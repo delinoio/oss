@@ -1,0 +1,12 @@
+{
+  "name": "delinoio-oss-workspace",
+  "packageManager": "pnpm@10.26.2",
+  "private": true,
+  "scripts": {
+    "prepare": "lefthook install; ./scripts/prepare-apps.sh"
+  },
+  "devDependencies": {
+    "lefthook": "^2.1.1",
+    "turbo": "^2.8.9"
+  }
+}

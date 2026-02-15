@@ -1,0 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+]
+
+# Release profile optimizations
+[profile.release]
+# Enable Link-Time Optimization for smaller binaries
+lto = true
+# Use single codegen unit for better optimization
+codegen-units = 1
+# Strip symbols from the binary
+strip = true
+# Optimize for size with good performance
+opt-level = "z"
+
+# Profile for generating debug symbols (used for Sentry upload before stripping)
+[profile.release-with-debug]
+inherits = "release"
+# Keep debug info for symbol upload
+strip = false
+debug = true

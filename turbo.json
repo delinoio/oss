@@ -1,0 +1,48 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "CHECKOUT_SUCCESS_URL",
+    "POLAR_ACCESS_TOKEN",
+    "PUBLIC_SKIP_MODE_SELECTION",
+    "PUBLIC_DEFAULT_MODE",
+    "PUBLIC_REMOTE_SERVER_URL"
+  ],
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "build": {
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        ".env",
+        "src/**",
+        "**/*.proto",
+        "**/*.go",
+        "**/*.ts",
+        "**/*.mts",
+        "**/*.tsx",
+        "tsconfig.json",
+        "!**/e2e/",
+        "!.next/**",
+        "!*/**/*.test.ts",
+        "!*/**/*.test.tsx",
+        "!*/**/*.e2e.ts",
+        "!*/**/*.e2e.tsx",
+        "!*/**/*.cy.ts"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**"
+      ]
+    },
+    "test": {},
+    "lint": {
+      "dependsOn": [
+        "^lint"
+      ]
+    }
+  }
+}
