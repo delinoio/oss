@@ -5,7 +5,7 @@
 It is a multi-component project composed of a Go CLI, backend server, and Devkit web console.
 
 ## Path
-- CLI: `cli/thenv`
+- CLI: `cmds/thenv`
 - Server: `servers/thenv`
 - Web console mini app: `apps/devkit/src/apps/thenv`
 
@@ -30,7 +30,7 @@ It is a multi-component project composed of a Go CLI, backend server, and Devkit
 - Direct storage of plaintext secret material in frontend code
 
 ## Architecture
-- CLI (`cli/thenv`) handles local user workflows and secure interactions.
+- CLI (`cmds/thenv`) handles local user workflows and secure interactions.
 - Server (`servers/thenv`) handles storage, policy, and distribution APIs.
 - Web console (`apps/devkit/src/apps/thenv`) provides management and visibility in Devkit.
 
@@ -46,7 +46,7 @@ enum ThenvComponent {
 ```
 
 Component mapping contract:
-- `Cli` -> `cli/thenv`
+- `Cli` -> `cmds/thenv`
 - `Server` -> `servers/thenv`
 - `WebConsole` -> `apps/devkit/src/apps/thenv`
 
@@ -84,7 +84,7 @@ Required baseline logs:
 
 ## Build and Test
 Planned commands:
-- CLI build/test: `go build ./cli/thenv/...` and `go test ./cli/thenv/...`
+- CLI build/test: `go build ./cmds/thenv/...` and `go test ./cmds/thenv/...`
 - Server build/test: `go build ./servers/thenv/...` and `go test ./servers/thenv/...`
 - Web console tests: `pnpm --filter devkit... test`
 

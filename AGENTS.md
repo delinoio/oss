@@ -17,7 +17,7 @@
 - `apps/`: User-facing apps (Next.js and React Native).
 - `crates/`: Rust crates and Rust-based tooling.
 - `cmds/`: Go command tools for workflow orchestration.
-- `cli/`: Go command tools focused on operator and developer workflows.
+- `cli/`: Reserved domain for future standalone CLI tools.
 - `servers/`: Backend services and APIs.
 
 ### Project Domain Ownership
@@ -28,7 +28,7 @@
 - `devkit` -> `apps/devkit`
 - `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`
 - `devkit-remote-camera` -> `apps/devkit/src/apps/remote-camera`
-- `thenv` -> `cli/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
+- `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
 
 ### Documentation-First Policy
 
@@ -43,6 +43,6 @@
 - Keep Devkit mini-app directories at `apps/devkit/src/apps/<id>`.
 - Keep Devkit mini-app routes at `/apps/<id>`.
 - Keep thenv component mapping stable:
-- `cli` -> `cli/thenv`
+- `cli` -> `cmds/thenv`
 - `server` -> `servers/thenv`
 - `web-console` -> `apps/devkit/src/apps/thenv`

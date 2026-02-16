@@ -17,7 +17,7 @@
 
 ### Integration Rules
 
-- Changes to server interfaces must be synchronized with `cli/thenv` and `apps/devkit/src/apps/thenv` contracts.
+- Changes to server interfaces must be synchronized with `cmds/thenv` and `apps/devkit/src/apps/thenv` contracts.
 - Update `docs/project-thenv.md` for every interface or trust model update.
 
 ### Testing and Validation

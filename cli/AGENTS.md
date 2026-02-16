@@ -6,21 +6,21 @@
 
 ### Scope in This Domain
 
-- `cli/thenv`: Secure `.env` sharing CLI.
+- No active project is currently assigned in this domain.
+- This domain remains reserved for future standalone CLI projects.
 
 ### CLI Rules
 
-- Keep user-facing operations explicit (`push`, `pull`, `list`, `rotate`).
-- Do not log secret values.
-- Keep operation-level audit metadata in logs.
-- Keep server integration contracts synchronized with `servers/thenv` documentation.
+- Keep command boundaries and user-facing operations explicit.
+- Do not log secret values in sensitive flows.
+- Keep operation-level audit metadata in logs when handling privileged actions.
 
 ### Integration Rules
 
-- Any interface change between CLI and server must update `docs/project-thenv.md`.
-- Keep Devkit web console assumptions out of CLI runtime unless documented as shared contract.
+- Any cross-domain interface contract must be documented in the relevant `docs/project-*.md`.
+- Keep frontend assumptions out of CLI runtime unless documented as shared contract.
 
 ### Testing and Validation
 
 - Run relevant Go tests (`go test`) when code in this domain changes.
-- Update docs in `docs/` whenever operation semantics or trust boundaries change.
+- Update docs in `docs/` whenever operation semantics, interfaces, or trust boundaries change.
