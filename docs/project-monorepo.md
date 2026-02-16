@@ -8,7 +8,6 @@ The monorepo is documentation-first: structure, ownership, and contracts must be
 - `apps/`: User-facing applications (web and mobile).
 - `crates/`: Rust crates and Rust-based tooling.
 - `cmds/`: Go command-line tools (current home for active Go CLIs).
-- `cli/`: Reserved domain for future standalone CLI projects if separation is needed.
 - `servers/`: Backend services and APIs.
 - `docs/`: Canonical project documentation and cross-project contracts.
 

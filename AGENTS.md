@@ -17,7 +17,6 @@
 - `apps/`: User-facing apps (Next.js and React Native).
 - `crates/`: Rust crates and Rust-based tooling.
 - `cmds/`: Go command tools for workflow orchestration.
-- `cli/`: Reserved domain for future standalone CLI tools.
 - `servers/`: Backend services and APIs.
 
 ### Project Domain Ownership
