@@ -13,7 +13,7 @@ The monorepo is documentation-first: structure, ownership, and contracts must be
 
 ## Canonical Directory Map
 - `docs/project-template.md`: Required structure for new project docs.
-- `docs/project-monorepo.md`: Monorepo-wide rules and contracts.
+- `docs/monorepo.md`: Monorepo-wide rules and contracts.
 - `docs/project-nodeup.md`: Rust-based Node.js version manager.
 - `docs/project-derun.md`: Go tool for AI coding-agent workflows.
 - `docs/project-mpapp.md`: Expo React Native mobile app.
@@ -78,7 +78,7 @@ enum ThenvComponent {
 - Reserve a unique `project-id`.
 - Create project path skeleton and add `.gitkeep` if implementation is not started.
 - Add `docs/project-<project-id>.md` using `docs/project-template.md`.
-- Update `docs/project-monorepo.md` canonical map and contracts if needed.
+- Update `docs/monorepo.md` canonical map and contracts if needed.
 - Update the relevant domain-level `AGENTS.md`.
 - Ensure path and naming contracts are consistent across docs.
 

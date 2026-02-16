@@ -1,6 +1,6 @@
 ### Instructions for `apps/`
 
-- Follow `docs/project-monorepo.md` and project-specific docs before adding or changing app code.
+- Follow `docs/monorepo.md` and project-specific docs before adding or changing app code.
 - Keep app-specific contracts synchronized in `docs/project-*.md` in the same change.
 - Write all source and comments in English.
 
