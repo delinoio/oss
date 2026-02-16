@@ -90,4 +90,4 @@ Planned commands:
 
 ## References
 - `docs/project-template.md`
-- `docs/project-monorepo.md`
+- `docs/monorepo.md`

@@ -1,6 +1,6 @@
 ### Instructions for `servers/`
 
-- Follow `docs/project-monorepo.md` and server-specific docs before implementation.
+- Follow `docs/monorepo.md` and server-specific docs before implementation.
 - Write all source and comments in English.
 - Prefer enums or typed constants over free-form strings for API contracts.
 

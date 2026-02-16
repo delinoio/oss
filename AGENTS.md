@@ -33,7 +33,7 @@
 
 - New project creation requires `docs/project-<id>.md` before runtime implementation.
 - Every structural change to project paths must update the corresponding `docs/project-*.md` in the same change.
-- New projects must also update `docs/project-monorepo.md` canonical map.
+- New projects must also update `docs/monorepo.md` canonical map.
 - Domain-level `AGENTS.md` files must remain aligned with `docs/` contracts.
 
 ### Project Bootstrap Rules

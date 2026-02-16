@@ -1,6 +1,6 @@
 ### Instructions for `cmds/`
 
-- Follow `docs/project-monorepo.md` and command-specific docs in `docs/project-*.md`.
+- Follow `docs/monorepo.md` and command-specific docs in `docs/project-*.md`.
 - Write all source and comments in English.
 - Prefer enums or typed constants over free-form string values.
 

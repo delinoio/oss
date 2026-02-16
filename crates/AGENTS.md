@@ -1,6 +1,6 @@
 ### Instructions for `crates/`
 
-- Follow `docs/project-monorepo.md` and each crate-specific project document.
+- Follow `docs/monorepo.md` and each crate-specific project document.
 - Write all source and comments in English.
 - Prefer enums over free-form strings for stable internal and external contracts.
 
