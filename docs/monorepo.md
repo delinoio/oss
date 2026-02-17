@@ -15,7 +15,7 @@ The monorepo is documentation-first: structure, ownership, and contracts must be
 - `docs/project-template.md`: Required structure for new project docs.
 - `docs/monorepo.md`: Monorepo-wide rules and contracts.
 - `docs/project-nodeup.md`: Rust-based Node.js version manager.
-- `docs/project-derun.md`: Go tool for AI coding-agent workflows.
+- `docs/project-derun.md`: Go CLI for terminal-fidelity run execution and MCP output bridge access for AI.
 - `docs/project-mpapp.md`: Expo React Native mobile app.
 - `docs/project-devkit.md`: Next.js 16 web micro-app platform.
 - `docs/project-devkit-commit-tracker.md`: Commit Tracker mini app.
