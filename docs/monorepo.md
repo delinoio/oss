@@ -18,7 +18,7 @@ The monorepo is documentation-first: structure, ownership, and contracts must be
 - `docs/project-derun.md`: Go tool for AI coding-agent workflows.
 - `docs/project-mpapp.md`: Expo React Native mobile app.
 - `docs/project-devkit.md`: Next.js 16 web micro-app platform.
-- `docs/project-devkit-commit-tracker.md`: Commit Tracker mini app.
+- `docs/project-devkit-commit-tracker.md`: Commit Tracker contracts (Web UI + API server + collector).
 - `docs/project-devkit-remote-camera.md`: Remote Camera mini app.
 - `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
 
@@ -46,6 +46,22 @@ enum DevkitMiniAppId {
   Thenv = "thenv",
 }
 ```
+
+## Commit Tracker Component Contract
+`devkit-commit-tracker` is documented as a single project with three planned components:
+
+```ts
+enum CommitTrackerComponent {
+  WebApp = "web-app",
+  ApiServer = "api-server",
+  Collector = "collector",
+}
+```
+
+Component mapping:
+- `WebApp` -> `apps/devkit/src/apps/commit-tracker`
+- `ApiServer` -> `servers/commit-tracker` (planned)
+- `Collector` -> `cmds/commit-tracker` (planned)
 
 ## Devkit Routing Contract
 All Devkit mini apps must be exposed at:
@@ -92,3 +108,4 @@ enum ThenvComponent {
 - New project creation is blocked until its project document exists.
 - Domain-level `AGENTS.md` files are policy mirrors and must stay aligned with `docs/`.
 - If a project splits into multiple deployables, the project doc must include path ownership and integration boundaries.
+- `docs/project-devkit-commit-tracker.md` remains the canonical single document for commit tracker UI/API/collector contracts.
