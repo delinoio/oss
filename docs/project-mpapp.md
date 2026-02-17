@@ -111,28 +111,35 @@ Canonical pointer movement payload:
 
 ```ts
 type PointerMoveSample = {
-  actionId: MpappInputAction.Move
-  deltaX: number
-  deltaY: number
-  timestampMs: number
-  sensitivity: number
+  actionId: MpappInputAction.Move;
+  deltaX: number;
+  deltaY: number;
+  timestampMs: number;
+  sensitivity: number;
 }
 ```
 
 Canonical click payload:
 
 ```ts
-type PointerClickSample = {
-  actionId: MpappInputAction.LeftClick | MpappInputAction.RightClick
-  button: MpappClickButton
-  timestampMs: number
-}
+type PointerClickSample =
+  | {
+      actionId: MpappInputAction.LeftClick;
+      button: MpappClickButton.Left;
+      timestampMs: number;
+    }
+  | {
+      actionId: MpappInputAction.RightClick;
+      button: MpappClickButton.Right;
+      timestampMs: number;
+    };
 ```
 
 MVP interface constraints:
 - Every emitted input sample must include `timestampMs`.
 - `deltaX` and `deltaY` are gesture-derived relative movement values, not absolute coordinates.
 - `MpappInputAction` values are stable contracts and must not be renamed without a documented migration.
+- Click payloads must preserve valid `actionId` and `button` pairs by the `PointerClickSample` discriminated union.
 
 Android and iOS scope contract:
 - Android MVP supports direct Bluetooth mouse flow.
