@@ -20,6 +20,7 @@ It provides shared navigation, shared auth/session surface, and consistent routi
 - Mini app registration/discovery conventions
 - Stable route contract for micro apps
 - Common observability and UI baseline across apps
+- Integration patterns for backend-coupled mini apps via typed API contracts
 
 ## Out of Scope
 - Replacing full standalone product websites
@@ -31,6 +32,7 @@ It provides shared navigation, shared auth/session surface, and consistent routi
 - Mini apps live under `src/apps/<id>`.
 - Router maps each mini app to `/apps/<id>`.
 - Shared services layer exposes standard platform utilities.
+- Backend-coupled mini apps consume backend APIs while preserving shell-owned auth/session/navigation behavior.
 
 ## Interfaces
 Canonical mini app IDs:
@@ -60,6 +62,11 @@ Mini app registration contract (conceptual):
 - `title`
 - `route`
 - `entry`
+- `integrationMode` (`shell-only` or `backend-coupled`)
+
+Backend-coupled mini app example:
+- `commit-tracker` uses Connect RPC APIs from `servers/commit-tracker` (planned).
+- Devkit shell remains the owner of global auth/session/navigation concerns.
 
 ## Storage
 - Session-level web state in browser storage as needed.
