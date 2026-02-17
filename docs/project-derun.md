@@ -1,99 +1,199 @@
 # Project: derun
 
 ## Goal
-`derun` is a Go CLI that helps teams run AI coding-agent workflows consistently.
-It standardizes task execution, context loading, and repeatable command orchestration for agent-driven development.
+`derun` is a Go CLI that provides terminal-faithful command execution for humans and MCP-based output retrieval for AI.
+Its primary contract is zero-intrusion command proxying for `derun run`, with side-channel transcript capture that can be queried later through `derun mcp`.
 
 ## Path
-- `cmds/derun`
+- Planned CLI path: `cmds/derun`
 
 ## Runtime and Language
 - Go CLI
 
 ## Users
-- Engineers using coding agents in local repositories
-- Automation maintainers who need deterministic agent execution wrappers
+- Engineers running interactive commands in local terminals
+- AI coding agents that need replay/tail access to command output
+- Tool maintainers who need deterministic local session capture and retrieval
 
 ## In Scope
-- Define and run reusable AI-agent task workflows
-- Load workflow configuration from repository-local files
-- Normalize execution environment and command invocation
-- Provide structured logging and error traces for debugging
+- `derun run` command execution with terminal-fidelity proxy behavior
+- Full stdin/TTY/ANSI passthrough without output mutation in user-visible streams
+- Local transcript capture for AI retrieval as raw output bytes plus indexed chunks
+- `derun mcp` stdio MCP server exposing session discovery and output read tools
+- Historical replay and live tail over cursor-based MCP APIs
+- Cross-platform transport abstraction with POSIX PTY and Windows ConPTY support
+- Retention garbage collection with 24-hour default TTL for session artifacts
 
 ## Out of Scope
-- Hosting model inference directly
-- Replacing editor integrations
-- Managing deployment infrastructure
+- Remote execution service or multi-host session aggregation
+- AI-initiated keystroke injection into active user sessions in v1
+- Secret redaction transforms that mutate captured raw output bytes
+- Replacing shell/runtime behavior beyond proxy and capture boundaries
 
 ## Architecture
-- CLI parser resolves subcommands and options.
-- Workflow loader parses local workflow config.
-- Runner executes configured steps with controlled environment.
-- Reporter emits structured logs and status summaries.
+Primary components:
+- CLI Router: resolves `run` and `mcp` command families.
+- Run Executor: launches child command and owns lifecycle/exit propagation.
+- PTY/Pipe Transport Adapter: chooses `posix-pty`, `windows-conpty`, or pipe fallback mode.
+- Transcript Writer: duplicates output stream to append-only storage side channel.
+- Session Indexer: records byte offsets, channel metadata, and cursor progression.
+- MCP Bridge Server: exposes read-only session/output tools over stdio.
+- Retention GC: removes expired session artifacts at startup and periodic MCP intervals.
+
+Runtime flow:
+1. `derun run` allocates PTY/ConPTY when interactive TTY is present; otherwise uses pipe transport.
+2. Child output bytes are forwarded to the user terminal unchanged and simultaneously persisted to transcript storage.
+3. Session metadata and index entries are updated incrementally as chunks are written.
+4. `derun mcp` serves `list/get/read/wait` tools, reading session state by cursor and long-polling for live updates.
+5. Final session state and exit metadata are persisted at process termination.
 
 ## Interfaces
 Canonical command identifiers:
 
 ```ts
 enum DerunCommand {
-  Init = "init",
   Run = "run",
-  List = "list",
-  Validate = "validate",
+  Mcp = "mcp",
 }
 ```
 
-Canonical workflow execution status values:
+Canonical session lifecycle states:
 
 ```ts
-enum DerunRunStatus {
-  Pending = "pending",
+enum DerunSessionState {
+  Starting = "starting",
   Running = "running",
-  Succeeded = "succeeded",
+  Exited = "exited",
+  Signaled = "signaled",
   Failed = "failed",
-  Canceled = "canceled",
+  Expired = "expired",
 }
 ```
 
-Planned config contract (high-level):
-- Workflow name
-- Ordered steps
-- Environment variables (non-secret and secret references)
-- Failure policy
+Canonical output channels:
+
+```ts
+enum DerunOutputChannel {
+  Pty = "pty",
+  Stdout = "stdout",
+  Stderr = "stderr",
+}
+```
+
+Canonical transport modes:
+
+```ts
+enum DerunTransportMode {
+  PosixPty = "posix-pty",
+  WindowsConPty = "windows-conpty",
+  Pipe = "pipe",
+}
+```
+
+Canonical MCP tool identifiers:
+
+```ts
+enum DerunMcpTool {
+  ListSessions = "derun_list_sessions",
+  GetSession = "derun_get_session",
+  ReadOutput = "derun_read_output",
+  WaitOutput = "derun_wait_output",
+}
+```
+
+Command contracts:
+- `derun run [--session-id <id>] [--retention <duration>] -- <command> [args...]`
+: Executes user command with terminal-fidelity proxying and side-channel transcript capture.
+- `derun mcp`
+: Starts stdio MCP server for AI-driven session/output retrieval.
+
+MCP I/O contracts:
+- `derun_list_sessions(state?, limit?)`
+: Returns active/recent session metadata with session identifier and lifecycle state.
+- `derun_get_session(session_id)`
+: Returns lifecycle, execution metadata, transport mode, and retention metadata.
+- `derun_read_output(session_id, cursor?, max_bytes?)`
+: Returns raw output chunks, `next_cursor`, and `eof` flag.
+- `derun_wait_output(session_id, cursor, timeout_ms)`
+: Long-polls for live output and returns chunk delta with new cursor.
+
+Terminal fidelity rules:
+- No prefix/banner injection into child stdout/stderr streams.
+- Interactive sessions must forward stdin bytes, resize events, and termination signals.
+- Child exit code or signal must be propagated as `derun run` process exit result.
+- Capture pipeline must be side-channel only and must not transform forwarded bytes.
+
+Session discovery/attach contract:
+- Explicit session identifier attach model only.
+- No implicit "latest active session" selection in v1.
 
 ## Storage
-- Local config files inside repository.
-- Optional local cache for workflow metadata.
-- No central server dependency required for baseline execution.
+State roots:
+- POSIX: `$XDG_STATE_HOME/derun` (fallback: `~/.local/state/derun`)
+- Windows: `%LOCALAPPDATA%/derun/state`
+
+Per-session artifact layout:
+- `meta.json`: immutable session identity and command metadata
+- `output.bin`: append-only raw output bytes
+- `index.jsonl`: chunk index records (`offset`, `length`, `channel`, `timestamp`)
+- `final.json`: final lifecycle state, exit code/signal, end timestamps
+
+Retention contract:
+- Default retention TTL: 24 hours.
+- Expired session cleanup runs at `derun run` startup and periodic intervals in `derun mcp`.
+- Active sessions must never be removed during retention sweeps.
 
 ## Security
-- Never print secret values in logs.
-- Support explicit allowlist for inherited environment variables.
-- Fail closed on invalid workflow definitions.
+- Session storage is same-user local only with restrictive filesystem permissions:
+- Directory permissions: `0700`
+- File permissions: `0600`
+- Persist output stream only by default; stdin is proxied but not persisted.
+- Reject path traversal and symlink escape conditions while loading session artifacts.
+- Keep MCP tool surface read-only in v1.
+- Do not emit secret values into operational logs.
 
 ## Logging
 Required baseline logs:
-- Selected workflow and resolved config path
-- Step lifecycle transitions
-- Exit codes and failure context
-- Total run duration and final status
+- `session_id`
+- `transport_mode`
+- `tty_attached`
+- `chunk_offset`
+- `chunk_size`
+- `state_transition`
+- `exit_code`
+- `signal`
+- `cleanup_result`
+
+Logging boundary rules:
+- Structured logs must go to internal log sink.
+- Child stdout/stderr streams must remain unmodified terminal payload.
 
 ## Build and Test
 Planned commands:
 - Build: `go build ./cmds/derun/...`
 - Test: `go test ./cmds/derun/...`
-- Full Go validation: `go test ./...`
+- Workspace validation: `go test ./...`
+
+Required behavioral test scenarios:
+1. ANSI/curses app parity (`vim`, colorized output) through `derun run`.
+2. Signal/exit propagation (`Ctrl-C`, process exit code, termination signal).
+3. Live tail through `derun mcp` while command runs in another terminal.
+4. Historical replay from cursor `0` after command completion.
+5. Concurrent sessions with isolated metadata and cursors.
+6. Large-output chunking with stable `next_cursor` semantics.
+7. TTL expiration removes only expired sessions and preserves active sessions.
+8. Windows ConPTY parity tests and POSIX PTY parity tests.
 
 ## Roadmap
-- Phase 1: Core workflow execution and validation.
-- Phase 2: Rich step templates and environment profiles.
-- Phase 3: Remote status reporting adapters.
-- Phase 4: Team policy enforcement and reusable workflow libraries.
+- Phase 1: Terminal-fidelity `run` execution and transcript persistence.
+- Phase 2: MCP replay/live-tail tool surface and cursor consistency guarantees.
+- Phase 3: Cross-platform hardening for PTY/ConPTY behavior and stress tests.
+- Phase 4: Optional policy and ACL extensions for session access governance.
 
 ## Open Questions
-- Final configuration file name and schema format.
-- Required minimum set of built-in step types.
-- Policy for interactive prompts in non-TTY contexts.
+- Final MCP schema versioning strategy and backward compatibility policy.
+- Optional compression policy for large session outputs while preserving raw replay fidelity.
+- Multi-process lock strategy details for concurrent writers and readers on slow filesystems.
 
 ## References
 - `docs/project-template.md`
