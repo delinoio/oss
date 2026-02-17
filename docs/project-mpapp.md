@@ -1,43 +1,64 @@
 # Project: mpapp
 
 ## Goal
-`mpapp` is an Expo-based React Native app that allows a mobile device to act as a Bluetooth mouse.
-It focuses on reliable pointer and click control from mobile hardware.
+`mpapp` is an Expo-based React Native app that turns a phone into a Bluetooth mouse pointer.
+The core user flow is:
+- Drag on an on-screen touchpad area to move the remote cursor.
+- Press fixed on-screen buttons for left click and right click.
+- Pair, connect, and disconnect with clear in-app session state.
 
 ## Path
-- `apps/mpapp`
+- `apps/mpapp` (planned app directory, not scaffolded yet)
 
 ## Runtime and Language
 - Expo React Native (TypeScript)
+- Custom native Android integration through Expo development builds for Bluetooth HID support
 
 ## Users
-- End users who want to use a phone as a Bluetooth mouse
-- QA engineers validating cross-platform mobile input behavior
+- End users who want to control a cursor from a phone
+- QA engineers validating gesture-to-pointer behavior and Bluetooth lifecycle reliability
 
 ## In Scope
-- Bluetooth mouse mode lifecycle (pair, connect, disconnect)
-- Pointer movement and click actions from mobile gestures
-- Basic in-app connection state and diagnostics
-- Permission and capability checks per platform
+- Android-first Bluetooth mouse lifecycle: capability check, permission check, pair, connect, disconnect, recover
+- Pointer movement from touchpad drag gestures only
+- Two explicit click controls: left-click button and right-click button
+- In-app connection state feedback and deterministic error messaging
+- Local diagnostics and structured logs for connection and input flow troubleshooting
 
 ## Out of Scope
-- Keyboard emulation in initial versions
-- Desktop companion application features beyond Bluetooth mouse role
-- Account system and cloud synchronization
+- iOS direct Bluetooth HID mouse behavior in MVP (tracked as research-only)
+- Scroll, middle-click, keyboard emulation, and advanced gesture profiles in MVP
+- User accounts, cloud sync, and server-side telemetry pipelines
+- Desktop companion functionality unless required by a future iOS strategy decision
 
 ## Architecture
-- App shell initializes Expo runtime and platform capability checks.
-- Bluetooth controller module manages pairing and connection lifecycle.
-- Input translation module maps gestures to pointer/click events.
-- Status UI module displays connection and diagnostics state.
+- App shell initializes runtime, checks platform capability, and hosts top-level state.
+- Session state machine handles lifecycle transitions (`Idle -> PermissionCheck -> Pairing -> Connecting -> Connected -> Error`).
+- Input surface module exposes:
+  - A touchpad region for drag capture
+  - Dedicated left-click and right-click controls
+- Input translation module converts gesture deltas into pointer movement samples with sensitivity applied.
+- Android HID transport adapter maps canonical input actions to Android Bluetooth HID operations.
+- Diagnostics module records structured events, failures, and latency observations in local storage.
 
 ## Interfaces
+Canonical platform scope:
+
+```ts
+enum MpappPlatformScope {
+  AndroidMvp = "android-mvp",
+  IosResearch = "ios-research",
+}
+```
+
 Canonical app mode identifiers:
 
 ```ts
 enum MpappMode {
   Idle = "idle",
+  PermissionCheck = "permission-check",
   Pairing = "pairing",
+  Connecting = "connecting",
   Connected = "connected",
   Error = "error",
 }
@@ -50,19 +71,100 @@ enum MpappInputAction {
   Move = "move",
   LeftClick = "left-click",
   RightClick = "right-click",
-  Scroll = "scroll",
 }
 ```
 
+Canonical click button identifiers:
+
+```ts
+enum MpappClickButton {
+  Left = "left",
+  Right = "right",
+}
+```
+
+Canonical connection events:
+
+```ts
+enum MpappConnectionEvent {
+  StartPairing = "start-pairing",
+  ConnectSuccess = "connect-success",
+  ConnectFailure = "connect-failure",
+  Disconnect = "disconnect",
+  PermissionDenied = "permission-denied",
+}
+```
+
+Canonical error codes:
+
+```ts
+enum MpappErrorCode {
+  BluetoothUnavailable = "bluetooth-unavailable",
+  PermissionDenied = "permission-denied",
+  PairingTimeout = "pairing-timeout",
+  TransportFailure = "transport-failure",
+  UnsupportedPlatform = "unsupported-platform",
+}
+```
+
+Canonical pointer movement payload:
+
+```ts
+type PointerMoveSample = {
+  actionId: MpappInputAction.Move
+  deltaX: number
+  deltaY: number
+  timestampMs: number
+  sensitivity: number
+}
+```
+
+Canonical click payload:
+
+```ts
+type PointerClickSample = {
+  actionId: MpappInputAction.LeftClick | MpappInputAction.RightClick
+  button: MpappClickButton
+  timestampMs: number
+}
+```
+
+MVP interface constraints:
+- Every emitted input sample must include `timestampMs`.
+- `deltaX` and `deltaY` are gesture-derived relative movement values, not absolute coordinates.
+- `MpappInputAction` values are stable contracts and must not be renamed without a documented migration.
+
+Android and iOS scope contract:
+- Android MVP supports direct Bluetooth mouse flow.
+- iOS is explicitly documented as `IosResearch` and excluded from direct HID delivery in MVP.
+
+Permissions and capability contract (Android MVP):
+- Check Bluetooth availability before entering pairing flow.
+- Gate pairing/connection on runtime permission results.
+- Surface `MpappErrorCode.PermissionDenied` when permission requirements are not satisfied.
+
+Reference feasibility links:
+- [Expo SDK modules](https://docs.expo.dev/versions/latest/)
+- [Expo custom native code workflow](https://docs.expo.dev/workflow/customizing/)
+- [Android BluetoothHidDevice API](https://developer.android.com/reference/android/bluetooth/BluetoothHidDevice)
+- [Apple Bluetooth overview (Core Bluetooth / MFi context)](https://developer-mdn.apple.com/bluetooth/)
+- [Apple Core Bluetooth Concepts (BLE central/peripheral model)](https://developer.apple.com/library/archive/documentation/NetworkingInternetWeb/Conceptual/CoreBluetooth_concepts/AboutCoreBluetooth/Introduction.html)
+
 ## Storage
-- Local app settings for user preferences.
-- Optional session diagnostics for troubleshooting.
-- No mandatory account-linked persistent storage in initial scope.
+- Local preferences only:
+  - Pointer sensitivity
+  - Optional axis inversion flags
+- Local diagnostics ring buffer with bounded retention for troubleshooting.
+- No account-linked persistence in MVP.
+- No cloud upload of raw input traces in MVP.
 
 ## Security
-- Request only minimum Bluetooth permissions.
-- Keep connection/session metadata local by default.
-- Avoid transmitting unrelated device data.
+- Request minimum required Bluetooth permissions at runtime for Android flow.
+- Restrict diagnostics to local device by default.
+- Do not collect or transmit unrelated device data.
+- Treat connection lifecycle and input events as sensitive operational data.
+- Enforce explicit unsupported-platform handling:
+  - iOS direct HID path is out of MVP and must return `MpappErrorCode.UnsupportedPlatform`.
 
 ## Logging
 Required baseline logs:
@@ -71,23 +173,57 @@ Required baseline logs:
 - Input translation pipeline errors
 - Disconnection reasons
 
+Required structured fields for each log event:
+- `sessionId`
+- `connectionState`
+- `actionType`
+- `latencyMs`
+- `failureReason`
+- `platform`
+- `osVersion`
+
+Recommended event families:
+- `permission.check`
+- `connection.transition`
+- `input.move`
+- `input.click`
+- `transport.error`
+
 ## Build and Test
-Planned commands:
+Document validation checklist for this spec:
+- Confirm scope only includes `Move`, `LeftClick`, and `RightClick` for MVP.
+- Confirm all interface identifiers are enum-based and stable.
+- Confirm failure handling includes permission-denied and transport-failure paths.
+- Confirm Android-first and iOS-research-only boundaries are explicit.
+
+Planned implementation commands when app scaffolding exists:
 - Install dependencies: `pnpm install`
 - App tests: `pnpm test --filter mpapp...`
-- Expo runtime checks will be defined when project scaffolding is added.
+
+MVP acceptance criteria scenarios:
+1. Drag start/move/end emits pointer delta samples without dropping movement segments under normal interaction.
+2. Tapping the left-click button emits exactly one `left-click` action.
+3. Tapping the right-click button emits exactly one `right-click` action.
+4. Attempting input before a connected state shows a clear disabled or error state.
+5. Permission denial shows a retry path and logs required structured fields.
+6. Disconnect events follow the documented state transition order and provide reconnect guidance.
+7. High input frequency follows documented sampling or throttle limits and remains observable in logs.
 
 ## Roadmap
-- Phase 1: Pair/connect/disconnect and basic pointer actions.
-- Phase 2: Gesture tuning, latency improvements, diagnostics UI.
-- Phase 3: Reliability hardening across supported mobile platforms.
-- Phase 4: Advanced input profiles and accessibility enhancements.
+- Phase 1: Android MVP with drag-based movement, left-click, right-click, lifecycle state UI, and diagnostics baseline.
+- Phase 2: Reliability hardening, latency tuning, and sampling or throttle optimization for Android devices.
+- Phase 3: Re-evaluate iOS feasibility and decide whether to add a documented alternate strategy.
 
 ## Open Questions
-- Final supported OS/device matrix for first release.
-- Gesture mapping defaults for one-handed vs two-handed use.
-- Background behavior constraints by platform policy.
+- Minimum supported Android OS/API level for stable HID behavior.
+- Default pointer sensitivity and whether presets are required for onboarding.
+- iOS strategy after research: keep unsupported, or introduce an alternate bridge-based approach.
 
 ## References
 - `docs/project-template.md`
 - `docs/monorepo.md`
+- [Expo SDK modules](https://docs.expo.dev/versions/latest/)
+- [Expo custom native code workflow](https://docs.expo.dev/workflow/customizing/)
+- [Android BluetoothHidDevice API](https://developer.android.com/reference/android/bluetooth/BluetoothHidDevice)
+- [Apple Bluetooth overview (Core Bluetooth / MFi context)](https://developer-mdn.apple.com/bluetooth/)
+- [Apple Core Bluetooth Concepts (BLE central/peripheral model)](https://developer.apple.com/library/archive/documentation/NetworkingInternetWeb/Conceptual/CoreBluetooth_concepts/AboutCoreBluetooth/Introduction.html)
