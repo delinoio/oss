@@ -19,7 +19,7 @@ The monorepo is documentation-first: structure, ownership, and contracts must be
 - `docs/project-mpapp.md`: Expo React Native mobile app.
 - `docs/project-devkit.md`: Next.js 16 web micro-app platform.
 - `docs/project-devkit-commit-tracker.md`: Commit Tracker contracts (Web UI + API server + collector).
-- `docs/project-devkit-remote-camera.md`: Remote Camera mini app.
+- `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app.
 - `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
 
 ## Project Identifier Contract
@@ -32,7 +32,7 @@ enum ProjectId {
   Mpapp = "mpapp",
   Devkit = "devkit",
   DevkitCommitTracker = "devkit-commit-tracker",
-  DevkitRemoteCamera = "devkit-remote-camera",
+  DevkitRemoteFilePicker = "devkit-remote-file-picker",
   Thenv = "thenv",
 }
 ```
@@ -42,7 +42,7 @@ enum ProjectId {
 ```ts
 enum DevkitMiniAppId {
   CommitTracker = "commit-tracker",
-  RemoteCamera = "remote-camera",
+  RemoteFilePicker = "remote-file-picker",
   Thenv = "thenv",
 }
 ```
@@ -72,7 +72,7 @@ All Devkit mini apps must be exposed at:
 
 Examples:
 - `/apps/commit-tracker`
-- `/apps/remote-camera`
+- `/apps/remote-file-picker`
 - `/apps/thenv`
 
 ## Thenv Component Contract
