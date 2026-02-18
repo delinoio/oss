@@ -26,7 +26,7 @@
 - `mpapp` -> `apps/mpapp`
 - `devkit` -> `apps/devkit`
 - `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`
-- `devkit-remote-camera` -> `apps/devkit/src/apps/remote-camera`
+- `devkit-remote-file-picker` -> `apps/devkit/src/apps/remote-file-picker`
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
 
 ### Documentation-First Policy

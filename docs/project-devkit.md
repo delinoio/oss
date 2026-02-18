@@ -40,7 +40,7 @@ Canonical mini app IDs:
 ```ts
 enum DevkitMiniAppId {
   CommitTracker = "commit-tracker",
-  RemoteCamera = "remote-camera",
+  RemoteFilePicker = "remote-file-picker",
   Thenv = "thenv",
 }
 ```
@@ -92,7 +92,7 @@ Planned commands:
 
 ## Roadmap
 - Phase 1: Platform shell and route conventions.
-- Phase 2: Add initial mini apps (Commit Tracker, Remote Camera, thenv console).
+- Phase 2: Add initial mini apps (Commit Tracker, Remote File Picker, thenv console).
 - Phase 3: Introduce shared app registration and diagnostics tooling.
 - Phase 4: Scale to many mini apps with stronger governance.
 
