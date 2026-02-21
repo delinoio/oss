@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import {
   PanResponder,
   Pressable,
@@ -18,30 +18,33 @@ export function TouchpadSurface({ disabled, onMove }: TouchpadSurfaceProps) {
   const previousDxRef = useRef(0);
   const previousDyRef = useRef(0);
 
-  const resetDeltaAccumulator = () => {
+  const resetDeltaAccumulator = useCallback(() => {
     previousDxRef.current = 0;
     previousDyRef.current = 0;
-  };
+  }, []);
 
-  const handleMove = (
-    _event: GestureResponderEvent,
-    gestureState: PanResponderGestureState,
-  ) => {
-    if (disabled) {
-      return;
-    }
+  const handleMove = useCallback(
+    (
+      _event: GestureResponderEvent,
+      gestureState: PanResponderGestureState,
+    ) => {
+      if (disabled) {
+        return;
+      }
 
-    const deltaX = gestureState.dx - previousDxRef.current;
-    const deltaY = gestureState.dy - previousDyRef.current;
-    previousDxRef.current = gestureState.dx;
-    previousDyRef.current = gestureState.dy;
+      const deltaX = gestureState.dx - previousDxRef.current;
+      const deltaY = gestureState.dy - previousDyRef.current;
+      previousDxRef.current = gestureState.dx;
+      previousDyRef.current = gestureState.dy;
 
-    if (deltaX === 0 && deltaY === 0) {
-      return;
-    }
+      if (deltaX === 0 && deltaY === 0) {
+        return;
+      }
 
-    onMove(deltaX, deltaY);
-  };
+      onMove(deltaX, deltaY);
+    },
+    [disabled, onMove],
+  );
 
   const panResponder = useMemo(
     () =>
@@ -53,7 +56,7 @@ export function TouchpadSurface({ disabled, onMove }: TouchpadSurfaceProps) {
         onPanResponderRelease: resetDeltaAccumulator,
         onPanResponderTerminate: resetDeltaAccumulator,
       }),
-    [disabled],
+    [disabled, handleMove, resetDeltaAccumulator],
   );
 
   return (
