@@ -34,7 +34,8 @@ It provides shared navigation, shared auth/session surface, and consistent routi
 - Static route pages map each mini app to `/apps/<id>`.
 - Shared services layer exposes standard platform utilities.
 - Enum-based registration lives in `src/lib/mini-app-registry.ts`.
-- Shell-only bootstrap uses placeholder pages for canonical mini app routes.
+- Current route maturity mix:
+: `commit-tracker` and `remote-file-picker` are placeholders, `thenv` is live metadata console UI.
 - Backend-coupled mini apps consume backend APIs while preserving shell-owned auth/session/navigation behavior.
 
 ## Interfaces
@@ -64,11 +65,12 @@ Mini app registration contract (conceptual):
 - `id` (enum-style stable identifier)
 - `title`
 - `route`
-- `status` (`placeholder` during shell bootstrap)
+- `status` (`placeholder` or `live`)
 - `integrationMode` (`shell-only` or `backend-coupled`)
 
 Backend-coupled mini app example:
 - `commit-tracker` placeholder route is live and reserved for Connect RPC-backed flows from `servers/commit-tracker`.
+- `thenv` route is implemented as metadata management UI backed by Devkit API proxy routes to `servers/thenv` Connect RPC endpoints.
 - Devkit shell remains the owner of global auth/session/navigation concerns.
 
 ## Storage
