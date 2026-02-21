@@ -196,3 +196,8 @@ vite.config.ts.timestamp-*
 
 # Turborepo
 .turbo/
+
+# thenv proto generated code
+servers/thenv/gen/
+cmds/thenv/gen/
+apps/devkit/src/gen/thenv/

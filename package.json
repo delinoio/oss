@@ -3,7 +3,9 @@
   "packageManager": "pnpm@10.26.2",
   "private": true,
   "scripts": {
-    "prepare": "lefthook install; ./scripts/prepare-apps.sh"
+    "prepare": "lefthook install; ./scripts/prepare-apps.sh",
+    "proto:lint": "buf lint",
+    "proto:generate": "./scripts/proto/generate.sh"
   },
   "devDependencies": {
     "lefthook": "^2.1.1",
