@@ -8,11 +8,12 @@ The core user flow is:
 - Pair, connect, and disconnect with clear in-app session state.
 
 ## Path
-- `apps/mpapp` (planned app directory, not scaffolded yet)
+- `apps/mpapp`
 
 ## Runtime and Language
 - Expo React Native (TypeScript)
 - Custom native Android integration through Expo development builds for Bluetooth HID support
+- Expo development client + EAS build profile configuration is included in the repository.
 
 ## Users
 - End users who want to control a cursor from a phone
@@ -38,7 +39,7 @@ The core user flow is:
   - A touchpad region for drag capture
   - Dedicated left-click and right-click controls
 - Input translation module converts gesture deltas into pointer movement samples with sensitivity applied.
-- Android HID transport adapter maps canonical input actions to Android Bluetooth HID operations.
+- Android HID transport adapter is implemented as a TypeScript `HidAdapter` contract with a stub transport implementation for MVP integration stability.
 - Diagnostics module records structured events, failures, and latency observations in local storage.
 
 ## Interfaces
@@ -149,6 +150,7 @@ Permissions and capability contract (Android MVP):
 - Check Bluetooth availability before entering pairing flow.
 - Gate pairing/connection on runtime permission results.
 - Surface `MpappErrorCode.PermissionDenied` when permission requirements are not satisfied.
+- Require Android API level `31+` for MVP runtime support.
 
 Reference feasibility links:
 - [Expo SDK modules](https://docs.expo.dev/versions/latest/)
@@ -161,7 +163,8 @@ Reference feasibility links:
 - Local preferences only:
   - Pointer sensitivity
   - Optional axis inversion flags
-- Local diagnostics ring buffer with bounded retention for troubleshooting.
+- Local diagnostics ring buffer with bounded retention (`300`) for troubleshooting.
+- Diagnostics storage key: `mpapp.diagnostics.v1`.
 - No account-linked persistence in MVP.
 - No cloud upload of raw input traces in MVP.
 
@@ -203,9 +206,10 @@ Document validation checklist for this spec:
 - Confirm failure handling includes permission-denied and transport-failure paths.
 - Confirm Android-first and iOS-research-only boundaries are explicit.
 
-Planned implementation commands when app scaffolding exists:
-- Install dependencies: `pnpm install`
-- App tests: `pnpm test --filter mpapp...`
+Implementation commands:
+- Install dependencies from repository root: `pnpm install`
+- App tests from `apps/mpapp`: `pnpm test`
+- Workspace-filtered app tests from repository root: `pnpm --filter mpapp test`
 
 MVP acceptance criteria scenarios:
 1. Drag start/move/end emits pointer delta samples without dropping movement segments under normal interaction.
@@ -222,8 +226,7 @@ MVP acceptance criteria scenarios:
 - Phase 3: Re-evaluate iOS feasibility and decide whether to add a documented alternate strategy.
 
 ## Open Questions
-- Minimum supported Android OS/API level for stable HID behavior.
-- Default pointer sensitivity and whether presets are required for onboarding.
+- Native Android HID bridge rollout timeline after stub validation.
 - iOS strategy after research: keep unsupported, or introduce an alternate bridge-based approach.
 
 ## References
