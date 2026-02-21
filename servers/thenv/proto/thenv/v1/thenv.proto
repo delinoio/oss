@@ -1,0 +1,189 @@
+syntax = "proto3";
+
+package thenv.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/servers/thenv/gen/proto/thenv/v1;thenvv1";
+
+enum FileType {
+  FILE_TYPE_UNSPECIFIED = 0;
+  FILE_TYPE_ENV = 1;
+  FILE_TYPE_DEV_VARS = 2;
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_READER = 1;
+  ROLE_WRITER = 2;
+  ROLE_ADMIN = 3;
+}
+
+enum BundleStatus {
+  BUNDLE_STATUS_UNSPECIFIED = 0;
+  BUNDLE_STATUS_ACTIVE = 1;
+  BUNDLE_STATUS_ARCHIVED = 2;
+}
+
+enum ConflictPolicy {
+  CONFLICT_POLICY_UNSPECIFIED = 0;
+  CONFLICT_POLICY_FAIL_CLOSED = 1;
+  CONFLICT_POLICY_FORCE_OVERWRITE = 2;
+}
+
+enum AuditEventType {
+  AUDIT_EVENT_TYPE_UNSPECIFIED = 0;
+  AUDIT_EVENT_TYPE_PUSH = 1;
+  AUDIT_EVENT_TYPE_PULL = 2;
+  AUDIT_EVENT_TYPE_LIST = 3;
+  AUDIT_EVENT_TYPE_ROTATE = 4;
+  AUDIT_EVENT_TYPE_ACTIVATE = 5;
+  AUDIT_EVENT_TYPE_POLICY_UPDATE = 6;
+}
+
+enum Outcome {
+  OUTCOME_UNSPECIFIED = 0;
+  OUTCOME_SUCCESS = 1;
+  OUTCOME_DENIED = 2;
+  OUTCOME_FAILED = 3;
+}
+
+message Scope {
+  string workspace_id = 1;
+  string project_id = 2;
+  string environment_id = 3;
+}
+
+message BundleFile {
+  FileType file_type = 1;
+  bytes plaintext = 2;
+}
+
+message BundleVersionSummary {
+  string bundle_version_id = 1;
+  BundleStatus status = 2;
+  string created_by = 3;
+  google.protobuf.Timestamp created_at = 4;
+  repeated FileType file_types = 5;
+  string source_version_id = 6;
+}
+
+message PushBundleVersionRequest {
+  Scope scope = 1;
+  repeated BundleFile files = 2;
+  map<string, string> metadata = 3;
+}
+
+message PushBundleVersionResponse {
+  BundleVersionSummary version = 1;
+}
+
+message PullActiveBundleRequest {
+  Scope scope = 1;
+  string bundle_version_id = 2;
+}
+
+message PullActiveBundleResponse {
+  BundleVersionSummary version = 1;
+  repeated BundleFile files = 2;
+}
+
+message ListBundleVersionsRequest {
+  Scope scope = 1;
+  int32 limit = 2;
+  string cursor = 3;
+}
+
+message ListBundleVersionsResponse {
+  repeated BundleVersionSummary versions = 1;
+  string next_cursor = 2;
+}
+
+message ActivateBundleVersionRequest {
+  Scope scope = 1;
+  string bundle_version_id = 2;
+}
+
+message ActivateBundleVersionResponse {
+  BundleVersionSummary previous_active = 1;
+  BundleVersionSummary active = 2;
+}
+
+message RotateBundleVersionRequest {
+  Scope scope = 1;
+  string from_version_id = 2;
+}
+
+message RotateBundleVersionResponse {
+  BundleVersionSummary version = 1;
+  BundleVersionSummary previous_active = 2;
+}
+
+message PolicyBinding {
+  string subject = 1;
+  Role role = 2;
+}
+
+message GetPolicyRequest {
+  Scope scope = 1;
+}
+
+message GetPolicyResponse {
+  repeated PolicyBinding bindings = 1;
+  int64 policy_revision = 2;
+}
+
+message SetPolicyRequest {
+  Scope scope = 1;
+  repeated PolicyBinding bindings = 2;
+}
+
+message SetPolicyResponse {
+  repeated PolicyBinding bindings = 1;
+  int64 policy_revision = 2;
+}
+
+message ListAuditEventsRequest {
+  Scope scope = 1;
+  AuditEventType event_type = 2;
+  string actor = 3;
+  google.protobuf.Timestamp from_time = 4;
+  google.protobuf.Timestamp to_time = 5;
+  int32 limit = 6;
+  string cursor = 7;
+}
+
+message AuditEvent {
+  string event_id = 1;
+  AuditEventType event_type = 2;
+  string actor = 3;
+  Scope scope = 4;
+  string bundle_version_id = 5;
+  string target_bundle_version_id = 6;
+  Outcome outcome = 7;
+  string request_id = 8;
+  string trace_id = 9;
+  google.protobuf.Timestamp created_at = 10;
+}
+
+message ListAuditEventsResponse {
+  repeated AuditEvent events = 1;
+  string next_cursor = 2;
+}
+
+service BundleService {
+  rpc PushBundleVersion(PushBundleVersionRequest) returns (PushBundleVersionResponse);
+  rpc PullActiveBundle(PullActiveBundleRequest) returns (PullActiveBundleResponse);
+  rpc ListBundleVersions(ListBundleVersionsRequest) returns (ListBundleVersionsResponse);
+  rpc ActivateBundleVersion(ActivateBundleVersionRequest) returns (ActivateBundleVersionResponse);
+  rpc RotateBundleVersion(RotateBundleVersionRequest) returns (RotateBundleVersionResponse);
+}
+
+service PolicyService {
+  rpc GetPolicy(GetPolicyRequest) returns (GetPolicyResponse);
+  rpc SetPolicy(SetPolicyRequest) returns (SetPolicyResponse);
+}
+
+service AuditService {
+  rpc ListAuditEvents(ListAuditEventsRequest) returns (ListAuditEventsResponse);
+}
