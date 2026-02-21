@@ -39,6 +39,7 @@ The core user flow is:
   - A touchpad region for drag capture
   - Dedicated left-click and right-click controls
 - Input translation module converts gesture deltas into pointer movement samples with sensitivity applied.
+- Touchpad gesture responder instances must be recreated when movement callback dependencies change so runtime sensitivity updates take effect without reconnecting.
 - Android HID transport adapter is implemented as a TypeScript `HidAdapter` contract with a stub transport implementation for MVP integration stability.
 - Diagnostics module records structured events, failures, and latency observations in local storage.
 
