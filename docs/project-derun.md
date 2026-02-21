@@ -5,7 +5,7 @@
 Its primary contract is zero-intrusion command proxying for `derun run`, with side-channel transcript capture that can be queried later through `derun mcp`.
 
 ## Path
-- Planned CLI path: `cmds/derun`
+- Canonical CLI path: `cmds/derun`
 
 ## Runtime and Language
 - Go CLI
@@ -39,6 +39,15 @@ Primary components:
 - Session Indexer: records byte offsets, channel metadata, and cursor progression.
 - MCP Bridge Server: exposes read-only session/output tools over stdio.
 - Retention GC: removes expired session artifacts at startup and periodic MCP intervals.
+
+Implemented package layout:
+- `cmds/derun/internal/cli`: command parsing and command dispatch (`run`, `mcp`).
+- `cmds/derun/internal/transport`: process execution for pipe mode and POSIX PTY mode.
+- `cmds/derun/internal/state`: session artifact storage, append locking, and cursor reads.
+- `cmds/derun/internal/mcp`: MCP stdio server, framing, tool routing, and tool handlers.
+- `cmds/derun/internal/capture`: side-channel output writer.
+- `cmds/derun/internal/retention`: retention GC sweep.
+- `cmds/derun/internal/logging`: JSONL structured log sink.
 
 Runtime flow:
 1. `derun run` allocates PTY/ConPTY when interactive TTY is present; otherwise uses pipe transport.
@@ -117,6 +126,11 @@ MCP I/O contracts:
 - `derun_wait_output(session_id, cursor, timeout_ms)`
 : Long-polls for live output and returns chunk delta with new cursor.
 
+Schema-version contract:
+- Every MCP tool response includes `schema_version`.
+- Initial schema version is `v1alpha1`.
+- Cursor values are stringified unsigned byte offsets.
+
 Terminal fidelity rules:
 - No prefix/banner injection into child stdout/stderr streams.
 - Interactive sessions must forward stdin bytes, resize events, and termination signals.
@@ -142,6 +156,10 @@ Retention contract:
 - Default retention TTL: 24 hours.
 - Expired session cleanup runs at `derun run` startup and periodic intervals in `derun mcp`.
 - Active sessions must never be removed during retention sweeps.
+
+Write consistency contract:
+- `meta.json` and `final.json` are written atomically via temp-file + rename.
+- `output.bin` and `index.jsonl` append operations are guarded by per-session advisory file lock (`append.lock`).
 
 ## Security
 - Session storage is same-user local only with restrictive filesystem permissions:
@@ -169,10 +187,15 @@ Logging boundary rules:
 - Child stdout/stderr streams must remain unmodified terminal payload.
 
 ## Build and Test
-Planned commands:
+Validation commands:
 - Build: `go build ./cmds/derun/...`
 - Test: `go test ./cmds/derun/...`
 - Workspace validation: `go test ./...`
+
+Implemented defaults:
+- `derun_read_output` default `max_bytes`: `65536`.
+- `derun_wait_output` default `timeout_ms`: `30000` (cap `60000`).
+- MCP retention sweep interval: every 10 minutes.
 
 Required behavioral test scenarios:
 1. ANSI/curses app parity (`vim`, colorized output) through `derun run`.
@@ -193,7 +216,7 @@ Required behavioral test scenarios:
 ## Open Questions
 - Final MCP schema versioning strategy and backward compatibility policy.
 - Optional compression policy for large session outputs while preserving raw replay fidelity.
-- Multi-process lock strategy details for concurrent writers and readers on slow filesystems.
+- Slow-filesystem lock behavior and retry policy tuning beyond advisory lock v1 baseline.
 
 ## References
 - `docs/project-template.md`
