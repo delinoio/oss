@@ -431,6 +431,53 @@ fn check_and_update_detect_newer_version() {
 
 #[test]
 #[serial]
+fn update_reports_already_up_to_date_when_latest_is_already_installed() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.2.0", Some("Jod")), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+    env.register_release(
+        "22.2.0",
+        make_archive("22.2.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.2\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    env.command().args(["update", "22.1.0"]).assert().success();
+
+    env.command()
+        .args(["--output", "json", "update", "22.1.0"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "\"status\": \"already-up-to-date\"",
+        ));
+}
+
+#[test]
+#[serial]
+fn override_set_rejects_invalid_selector() {
+    let env = TestEnv::new();
+    let project_dir = env.root.join("project-invalid-override");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["override", "set", "22.x"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("Invalid selector"));
+}
+
+#[test]
+#[serial]
 fn missing_runtime_without_install_flag_fails() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);
