@@ -19,10 +19,11 @@ The primary goal is deterministic multi-version Node.js execution with automatic
 - Toolchain lifecycle management: list, install, uninstall, and local-link runtime directories.
 - Runtime selection controls: global default runtime, per-directory overrides, and explicit one-shot execution.
 - Runtime-aware introspection commands: active runtime and runtime home discovery.
-- Update flows for installed runtimes and nodeup itself.
-- Shell completion generation for supported shells.
+- Update flows for installed runtimes.
+- Shim-aware command delegation for `node`, `npm`, and `npx`.
 - Dispatch behavior based on executable name (`argv[0]`) for runtime shims.
 - Automatic Node.js binary download and activation when a requested runtime is missing.
+- Human and JSON output modes (`--output human|json`) for machine-parseable command output.
 
 ## Out of Scope
 - JavaScript package manager features (`npm`, `pnpm`, `yarn`) beyond runtime delegation
@@ -34,11 +35,11 @@ The primary goal is deterministic multi-version Node.js execution with automatic
 ## Architecture
 - Top-level command router dispatches to rustup-style subcommand groups (`toolchain`, `show`, `override`, `self`) and leaf commands (`default`, `update`, `check`, `run`, `which`, `completions`).
 - Version resolver normalizes user input into a canonical runtime selector (exact version and stable aliases such as `lts`, `current`, `latest`).
-- Runtime installer/downloader fetches, verifies, and stages Node.js artifacts before activation.
-- Runtime store manager maintains installed runtimes, cache metadata, and activation pointers.
+- Runtime installer/downloader fetches official Node.js archives, validates `SHA256` checksums from `SHASUMS256.txt`, and stages verified artifacts before activation.
+- Runtime store manager maintains installed runtimes, linked runtime metadata, tracked selectors, and activation pointers.
 - Override manager resolves runtime precedence by directory scope and fallback defaults.
 - Shim dispatcher handles executable-name-based mode branching for `node`, `npm`, `npx`, and other managed aliases.
-- Self-management module handles nodeup binary update, uninstall, and internal metadata migration paths.
+- Self-management and completion modules are currently explicit skeleton commands returning a deterministic `NotImplemented` response.
 
 ## Interfaces
 Canonical nodeup command identifiers:
@@ -132,10 +133,10 @@ Command contracts:
 : Output: resolved nodeup home directory path.
 - `nodeup update [runtime]...`
 : Input: optional runtime selectors.
-: Behavior: updates selected runtimes; with no selectors, updates all installed runtimes and nodeup self channel policy.
-: Output: update summary by runtime plus nodeup self-update result.
+: Behavior: updates selected runtimes; with no selectors, updates tracked selectors from config and falls back to installed runtimes.
+: Output: update summary by selector/runtime.
 - `nodeup check`
-: Output: available update status for installed runtimes and nodeup binary.
+: Output: available update status for installed runtimes.
 - `nodeup override list`
 : Output: directory-to-runtime override mapping table.
 - `nodeup override set <runtime> [--path <path>]`
@@ -152,14 +153,14 @@ Command contracts:
 : Input: delegated executable name and optional explicit runtime selector.
 : Output: concrete executable path that would be executed.
 - `nodeup self update`
-: Output: nodeup binary update result.
+: Output: `NotImplemented` error in current phase.
 - `nodeup self uninstall`
-: Output: nodeup uninstall result.
+: Output: `NotImplemented` error in current phase.
 - `nodeup self upgrade-data`
-: Output: internal metadata format upgrade result.
+: Output: `NotImplemented` error in current phase.
 - `nodeup completions <shell> [command]`
 : Input: target shell and optional command scope.
-: Output: completion script on stdout.
+: Output: `NotImplemented` error in current phase.
 
 Resolution precedence contract:
 - Explicit runtime in command invocation (`run`, `which --runtime`) has highest priority.
@@ -176,10 +177,18 @@ Symlink contract:
 - Runtime behavior branches by `argv[0]`.
 
 ## Storage
-- Install root: managed Node.js runtimes per version.
-- Cache root: downloaded archives and metadata.
-- Config root: optional defaults (preferred channel/version).
-- Exact path conventions will be finalized during implementation and recorded in this document.
+- Install root: managed Node.js runtimes per version (`data/toolchains/<version>`).
+- Cache root: downloaded archives and metadata (`cache/downloads/*`).
+- Config root:
+: `config/settings.toml` for schema version, default selector, linked runtimes, and tracked selectors.
+: `config/overrides.toml` for per-path runtime selector overrides.
+- Default path policy:
+: POSIX data: `$XDG_DATA_HOME/nodeup` (fallback `~/.local/share/nodeup`)
+: POSIX cache: `$XDG_CACHE_HOME/nodeup` (fallback `~/.cache/nodeup`)
+: POSIX config: `$XDG_CONFIG_HOME/nodeup` (fallback `~/.config/nodeup`)
+- Test/dev overrides:
+: `NODEUP_DATA_HOME`, `NODEUP_CACHE_HOME`, `NODEUP_CONFIG_HOME`
+: `NODEUP_INDEX_URL`, `NODEUP_DOWNLOAD_BASE_URL`, `NODEUP_FORCE_PLATFORM`
 
 ## Security
 - Validate download integrity before activation.
@@ -211,11 +220,9 @@ Planned commands:
 - Phase 4: Cross-platform shim parity and CI hardening.
 
 ## Open Questions
-- Primary source and fallback policy for Node.js release metadata feeds.
-- Checksum policy details (algorithm set, signature strategy, and rotation handling).
-- Locking strategy for concurrent installs/updates across processes.
-- Auto-install defaults for non-interactive CI environments.
-- Self-update rollout channel policy (stable-only vs staged rollout).
+- Signature verification scope beyond `SHA256` checksum matching (for example GPG signature validation).
+- Cross-platform archive support expansion timeline (Windows zip installation path).
+- Self-update rollout policy and release channel strategy for `nodeup` binary updates.
 
 ## References
 - `docs/project-template.md`
