@@ -58,3 +58,28 @@ export function parseAuditEventLabel(value: string): string {
       return "unspecified";
   }
 }
+
+export function bundleStatusLabel(value: unknown): string {
+  if (typeof value === "number") {
+    switch (value) {
+      case 1:
+        return "active";
+      case 2:
+        return "archived";
+      default:
+        return "unspecified";
+    }
+  }
+
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "1") {
+    return "active";
+  }
+  if (normalized === "2") {
+    return "archived";
+  }
+  if (normalized === "active" || normalized === "archived") {
+    return normalized;
+  }
+  return "unspecified";
+}

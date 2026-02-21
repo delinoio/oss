@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  bundleStatusLabel,
   normalizeRoleValue,
   parseAuditEventLabel,
   roleCodeFromValue,
@@ -18,4 +19,10 @@ test("parseAuditEventLabel supports numeric and string inputs", () => {
   assert.equal(parseAuditEventLabel("1"), "push");
   assert.equal(parseAuditEventLabel("policy-update"), "policy-update");
   assert.equal(parseAuditEventLabel("noop"), "unspecified");
+});
+
+test("bundleStatusLabel normalizes numeric and text values", () => {
+  assert.equal(bundleStatusLabel(1), "active");
+  assert.equal(bundleStatusLabel("2"), "archived");
+  assert.equal(bundleStatusLabel("unknown"), "unspecified");
 });

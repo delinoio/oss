@@ -1,4 +1,4 @@
-import { parseAuditEventLabel, roleCodeFromValue, roleLabelFromUnknown } from "./thenv-normalize";
+import { bundleStatusLabel, parseAuditEventLabel, roleCodeFromValue, roleLabelFromUnknown } from "./thenv-normalize";
 
 export type ThenvScope = {
   workspaceId: string;
@@ -91,7 +91,7 @@ export async function listBundleVersions(scope: ThenvScope, limit = 20): Promise
 
   return (payload.versions ?? []).map((version) => ({
     bundleVersionId: String(version.bundleVersionId ?? ""),
-    status: String(version.status ?? "unknown"),
+    status: bundleStatusLabel(version.status),
     createdBy: String(version.createdBy ?? ""),
     createdAt: String(version.createdAt ?? ""),
     sourceVersionId: String(version.sourceVersionId ?? ""),
