@@ -24,9 +24,17 @@ describe("mini-app-registry", () => {
     ]);
   });
 
-  it("contains only placeholder mini apps during shell-only bootstrap", () => {
+  it("keeps thenv as live while other mini apps remain placeholders", () => {
+    const thenvRegistration = MINI_APP_REGISTRATIONS.find(
+      (registration) => registration.id === DevkitMiniAppId.Thenv,
+    );
+    expect(thenvRegistration?.status).toBe(MiniAppStatus.Live);
+
+    const nonThenvRegistrations = MINI_APP_REGISTRATIONS.filter(
+      (registration) => registration.id !== DevkitMiniAppId.Thenv,
+    );
     expect(
-      MINI_APP_REGISTRATIONS.every(
+      nonThenvRegistrations.every(
         (registration) => registration.status === MiniAppStatus.Placeholder,
       ),
     ).toBe(true);

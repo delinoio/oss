@@ -3,13 +3,16 @@
 ## Goal
 `thenv` provides secure sharing of `.env` and `.dev.vars` files across teams with explicit trust boundaries.
 It is a multi-component system composed of a Go CLI, backend server, and Devkit web console.
-The Phase 1 target is a decision-complete contract for versioned bundle distribution at `workspace/project/environment` scope.
+Phase 1 MVP is implemented as a metadata-safe vertical slice at `workspace/project/environment` scope.
 
 ## Path
 - CLI: `cmds/thenv`
 - Server: `servers/thenv`
+- Connect proto contract: `servers/thenv/proto/thenv/v1/thenv.proto`
+- Generated Go RPC code: `servers/thenv/gen/proto/thenv/v1`
 - Web console mini app: `apps/devkit/src/apps/thenv`
-- Web console route placeholder: `apps/devkit/src/app/apps/thenv/page.tsx`
+- Web console route: `apps/devkit/src/app/apps/thenv/page.tsx`
+- Devkit API proxy routes: `apps/devkit/src/app/api/thenv/*`
 
 ## Runtime and Language
 - CLI: Go
@@ -38,15 +41,16 @@ The Phase 1 target is a decision-complete contract for versioned bundle distribu
 - End-to-end client-only encryption in Phase 1.
 - Per-key ACL policy in Phase 1.
 - Merge-on-pull behavior as a default sync strategy.
+- Full OIDC signature validation and external KMS integration in MVP.
 
 ## Architecture
 - CLI (`cmds/thenv`) handles local workflows:
 : Local file parse (`.env`, `.dev.vars`), push orchestration, pull file materialization, and conflict enforcement.
 - Server (`servers/thenv`) handles business flows over Connect RPC:
-: Bundle version storage, active pointer state, policy enforcement, decryption for authorized pull, and audit event persistence.
+: Bundle version storage, active pointer state, policy enforcement, envelope encryption/decryption, and audit event persistence.
 - Web console (`apps/devkit/src/apps/thenv`) handles management and visibility:
 : Version inventory, active version switching, role policy management, and audit browsing without secret value rendering.
-- Current Devkit shell bootstrap exposes `/apps/thenv` as a placeholder route while business features are deferred.
+- Devkit API routes (`apps/devkit/src/app/api/thenv/*`) proxy web requests to Connect RPC procedures.
 
 Trust boundary and plaintext handling:
 - Plaintext is allowed in CLI process memory when reading local source files and writing pulled output files.
@@ -54,7 +58,7 @@ Trust boundary and plaintext handling:
 - Plaintext is not allowed in persistent server storage, logs, metrics labels, frontend state, or browser storage.
 
 Communication boundary:
-- Business flows must use Connect RPC between clients (CLI/web backend adapters) and `servers/thenv`.
+- Business flows use Connect RPC between clients (CLI/web backend adapters) and `servers/thenv`.
 - Tauri-specific bindings are not part of the thenv business contract.
 
 ## Interfaces
@@ -68,82 +72,11 @@ enum ThenvComponent {
 }
 ```
 
-Component mapping contract:
-- `Cli` -> `cmds/thenv`
-- `Server` -> `servers/thenv`
-- `WebConsole` -> `apps/devkit/src/apps/thenv`
-
-Devkit route contract for web console:
+Devkit route contract:
 - `/apps/thenv`
-- Current route state: placeholder page rendered by Devkit shell bootstrap.
+- Current route state: metadata management console (no plaintext payload rendering).
 
-High-level operation identifiers:
-
-```ts
-enum ThenvOperation {
-  Push = "push",
-  Pull = "pull",
-  List = "list",
-  Rotate = "rotate",
-}
-```
-
-Canonical file type identifiers:
-
-```ts
-enum ThenvFileType {
-  Env = "env",
-  DevVars = "dev-vars",
-}
-```
-
-Canonical role identifiers:
-
-```ts
-enum ThenvRole {
-  Reader = "reader",
-  Writer = "writer",
-  Admin = "admin",
-}
-```
-
-Canonical bundle lifecycle identifiers:
-
-```ts
-enum ThenvBundleStatus {
-  Active = "active",
-  Archived = "archived",
-}
-```
-
-Canonical pull conflict policy identifiers:
-
-```ts
-enum ThenvConflictPolicy {
-  FailClosed = "fail-closed",
-  ForceOverwrite = "force-overwrite",
-}
-```
-
-Canonical audit event identifiers:
-
-```ts
-enum ThenvAuditEventType {
-  Push = "push",
-  Pull = "pull",
-  List = "list",
-  Rotate = "rotate",
-  Activate = "activate",
-  PolicyUpdate = "policy-update",
-}
-```
-
-Namespace contract:
-- Every bundle operation must include `workspaceId`, `projectId`, and `environmentId`.
-- CLI scope flags are mandatory for all core commands:
-: `--workspace <id> --project <id> --env <id>`
-
-Connect RPC service contract:
+Connect RPC services (implemented):
 - `BundleService`
 : `PushBundleVersion`
 : `PullActiveBundle`
@@ -156,166 +89,152 @@ Connect RPC service contract:
 - `AuditService`
 : `ListAuditEvents`
 
-Connect RPC operation contract (high-level):
-- `PushBundleVersion`
-: Input: scope IDs, one or more file payloads keyed by `ThenvFileType`, optional metadata.
-: Behavior: creates a new immutable version and updates audit log.
-: Output: `bundleVersionId`, `createdAt`, `status`.
-- `PullActiveBundle`
-: Input: scope IDs and optional explicit `bundleVersionId` override.
-: Behavior: resolves active version when override is absent; returns files authorized by RBAC.
-: Output: version metadata and plaintext file contents for authorized CLI pull clients only.
-- `ListBundleVersions`
-: Input: scope IDs, pagination options.
-: Output: version summaries without secret contents.
-- `ActivateBundleVersion`
-: Input: scope IDs and target `bundleVersionId`.
-: Behavior: atomically moves active pointer to target version.
-: Output: previous/next active version metadata.
-- `RotateBundleVersion`
-: Input: scope IDs and optional source version metadata.
-: Behavior: creates a new version and then activates it (new version + pointer move).
-: Output: new `bundleVersionId` and activation metadata.
-- `GetPolicy`
-: Input: scope IDs.
-: Output: role bindings for subjects in target scope.
-- `SetPolicy`
-: Input: scope IDs and full replacement or patch policy payload.
-: Output: resulting policy revision metadata.
-- `ListAuditEvents`
-: Input: scope IDs, filters (`eventType`, time range, actor), pagination.
-: Output: audit event stream without secret values.
+Proto file type identifiers:
+
+```txt
+FILE_TYPE_ENV
+FILE_TYPE_DEV_VARS
+```
+
+Proto role identifiers:
+
+```txt
+ROLE_READER
+ROLE_WRITER
+ROLE_ADMIN
+```
 
 Role authorization contract:
-- `Reader`
+- `ROLE_READER`
 : Allowed: `PullActiveBundle`, `ListBundleVersions`.
-: Denied: `PushBundleVersion`, `RotateBundleVersion`, `ActivateBundleVersion`, `SetPolicy`.
-- `Writer`
-: Allowed: all `Reader` operations plus `PushBundleVersion`, `RotateBundleVersion`.
-: Denied: `SetPolicy`, `ActivateBundleVersion` unless explicitly promoted.
-- `Admin`
-: Allowed: all `Writer` operations plus `ActivateBundleVersion`, `GetPolicy`, `SetPolicy`, `ListAuditEvents`.
+: Denied: `PushBundleVersion`, `RotateBundleVersion`, `ActivateBundleVersion`, `SetPolicy`, `ListAuditEvents`.
+- `ROLE_WRITER`
+: Allowed: reader operations plus `PushBundleVersion`, `RotateBundleVersion`.
+: Denied: `SetPolicy`, `ActivateBundleVersion`, `ListAuditEvents`.
+- `ROLE_ADMIN`
+: Allowed: all writer operations plus `ActivateBundleVersion`, `GetPolicy`, `SetPolicy`, `ListAuditEvents`.
 
 CLI command contract:
-- `thenv push --workspace <id> --project <id> --env <id> [--env-file <path>] [--dev-vars-file <path>]`
+- `thenv push --workspace <id> --project <id> --env <id> [--env-file <path>] [--dev-vars-file <path>] [--server <url>] [--token <subject>]`
 : Requires at least one input file.
 : Creates a new version in target scope.
-- `thenv pull --workspace <id> --project <id> --env <id> [--output-env-file <path>] [--output-dev-vars-file <path>] [--force]`
+- `thenv pull --workspace <id> --project <id> --env <id> [--output-env-file <path>] [--output-dev-vars-file <path>] [--version <id>] [--force] [--server <url>] [--token <subject>]`
 : Default conflict policy is `fail-closed`.
 : If target output exists and content differs, operation fails unless `--force` is supplied.
-: Output files must be written with restrictive default permissions (`0600`).
-- `thenv list --workspace <id> --project <id> --env <id> [--limit <n>] [--cursor <token>]`
+: Output files are written with restrictive default permissions (`0600`).
+- `thenv list --workspace <id> --project <id> --env <id> [--limit <n>] [--cursor <token>] [--server <url>] [--token <subject>]`
 : Returns version metadata only.
-- `thenv rotate --workspace <id> --project <id> --env <id> [--from-version <id>]`
-: Creates new version and moves active pointer to that version.
-
-Web console contract:
-- Must never reveal or download plaintext secret values in Phase 1.
-- Must support version list, active version switch, policy management, and audit browsing.
-- Must display masked/metadata-only representations for sensitive fields.
+- `thenv rotate --workspace <id> --project <id> --env <id> [--from-version <id>] [--server <url>] [--token <subject>]`
+: Creates a new version and moves active pointer to that version.
 
 ## Storage
-Server-owned logical entities:
-- `BundleVersion`
-: Fields: `bundleVersionId`, scope IDs, `status`, `createdBy`, `createdAt`, `sourceVersionId` (optional).
-- `BundleFilePayload`
-: Fields: `bundleVersionId`, `fileType`, ciphertext payload, encrypted data key, checksum, byte length.
-- `ActiveBundlePointer`
-: Fields: scope IDs, active `bundleVersionId`, `updatedBy`, `updatedAt`.
-- `PolicyBinding`
-: Fields: scope IDs, subject identifier, `role`, `policyRevision`.
-- `AuditEvent`
-: Fields: `eventId`, `eventType`, actor metadata, scope IDs, target version metadata, outcome, timestamp, request correlation IDs.
-
-Retention defaults:
-- Bundle versions: unlimited by default.
-- Audit events: unlimited by default.
-- Future retention pruning policies may be added as explicit administrative configuration.
+Server-owned logical entities (SQLite):
+- `bundle_versions`
+: `bundle_version_id`, scope IDs, `status`, `created_by`, `created_at_unix_ns`, `source_version_id`.
+- `bundle_file_payloads`
+: `bundle_version_id`, `file_type`, ciphertext payload, encrypted DEK, nonces, checksum, byte length.
+- `active_bundle_pointers`
+: scope IDs, active `bundle_version_id`, `updated_by`, `updated_at_unix_ns`.
+- `policy_bindings`
+: scope IDs, subject identifier, `role`.
+- `policy_revisions`
+: scope IDs, monotonically increasing `revision`.
+- `audit_events`
+: `event_id`, `event_type`, actor metadata, scope IDs, target version metadata, outcome, timestamp, request correlation IDs.
 
 Local and frontend storage:
-- CLI may cache non-secret metadata (for example, last successful version reference).
-- CLI must not persist decrypted secrets outside destination files explicitly written by pull.
-- Web console stores view state only and must not persist secret payloads.
+- CLI does not persist decrypted secrets outside destination files explicitly written by pull.
+- Web console stores metadata view state only and never stores secret payloads.
 
 ## Security
 - Transport security:
-: All RPC traffic must use TLS.
+: Deployments should expose RPC traffic over TLS.
+: Local MVP development defaults to `http://127.0.0.1:8087`.
 - At-rest security:
-: Use server-side envelope encryption.
-: Each file payload uses a data encryption key (DEK).
-: DEKs are encrypted by a workspace-level key encryption key managed by KMS/HSM-compatible backend.
-- Authentication:
-: Use OIDC/JWT identity tokens.
-: Reject expired, invalid-signature, or wrong-audience tokens.
+: Server-side envelope encryption is required for bundle payloads.
+: Each payload uses a random DEK (AES-256-GCM).
+: DEK is encrypted with a master key from `THENV_MASTER_KEY_B64` (AES-256-GCM).
+- Authentication (MVP):
+: Bearer token subject is treated as actor identity.
+: Token string is not logged.
 - Authorization:
-: Apply RBAC checks for every RPC operation at `workspace/project/environment` scope.
+: RBAC checks are applied for every RPC operation at `workspace/project/environment` scope.
 : Deny by default on missing bindings.
+: Bootstrap admin subject is configurable (`THENV_BOOTSTRAP_ADMIN_SUBJECT`, default `admin`).
 - Secret exposure rules:
-: Never show full secret values in default CLI or web output.
+: Never show full secret values in CLI default output or web console output.
 : Never return secret payloads from policy/audit/list operations.
-: Web console Phase 1 is metadata-only for secret data.
+: Web console is metadata-only for secret data.
 - File output safety:
 : Pull writes files with restrictive default permissions (`0600`).
 : Existing file conflicts require explicit `--force` override.
 - Audit requirements:
-: All sensitive operations must emit immutable audit events.
+: Sensitive operations emit immutable audit events with actor/scope/outcome metadata.
 
 ## Logging
 Required baseline logs:
-- `operation`: one of `ThenvOperation`
-- `event_type`: one of `ThenvAuditEventType` where applicable
-- `actor`: subject/user/service identity metadata (no raw token logging)
-- `scope`: `workspaceId`, `projectId`, `environmentId`
-- `role_decision`: role evaluated and allow/deny result
+- `operation`
+- `event_type`
+- `actor`
+- `scope`
+- `role_decision`
 - `bundle_version_id` and `target_bundle_version_id` when applicable
-- `file_types`: set of `ThenvFileType` only, never file contents
-- `conflict_policy`: one of `ThenvConflictPolicy` for pull operations
-- `result`: success/failure and classified failure code
-- `request_id` and `trace_id` for incident reconstruction
+- `file_types` for bundle operations
+- `conflict_policy` for CLI pull operations
+- `result`
+- `request_id` and `trace_id`
 
 Prohibited log content:
 - Plaintext secret values
 - Full `.env` or `.dev.vars` payloads
 - Decrypted key material
 - Raw authentication tokens
-- Stack traces containing secret payload fragments
+
+## Runtime Defaults
+Server environment variables:
+- `THENV_ADDR` (default: `127.0.0.1:8087`)
+- `THENV_DB_PATH` (default: `${XDG_CONFIG_HOME or OS config dir}/thenv/thenv.sqlite3`)
+- `THENV_MASTER_KEY_B64` (required, base64-encoded 32-byte key)
+- `THENV_BOOTSTRAP_ADMIN_SUBJECT` (default: `admin`)
+
+CLI environment variables:
+- `THENV_SERVER_URL` (default: `http://127.0.0.1:8087`)
+- `THENV_TOKEN` (default: `admin`)
+
+Devkit environment variables (optional):
+- `THENV_SERVER_URL` or `NEXT_PUBLIC_THENV_SERVER_URL`
+- `THENV_WEB_TOKEN` or `THENV_TOKEN` or `NEXT_PUBLIC_THENV_TOKEN`
 
 ## Build and Test
 Current commands:
 - CLI build/test: `go build ./cmds/thenv/...` and `go test ./cmds/thenv/...`
 - Server build/test: `go build ./servers/thenv/...` and `go test ./servers/thenv/...`
-- Web console tests: `pnpm --filter devkit... test`
+- Web console tests: `cd apps/devkit && pnpm test`
 
-Documentation acceptance scenarios:
-- Push scenarios:
-: Push `.env` only.
-: Push `.dev.vars` only.
-: Push both file types in one version.
-- Pull scenarios:
-: Pull creates missing output files.
-: Pull fails on content conflict by default.
-: Pull succeeds on conflict with explicit `--force`.
-- Authorization scenarios:
-: `reader` can pull/list only.
-: `writer` can push/rotate plus reader operations.
-: `admin` can policy and activation operations.
-- Versioning scenarios:
-: `rotate` creates a new version and updates active pointer.
-: Previous versions remain addressable for explicit pull.
-- Audit and logging scenarios:
-: Sensitive operations emit actor/scope/result/event IDs.
-: Secret/plaintext values never appear in audit or logs.
+Acceptance-focused scenarios:
+1. Push `.env` only.
+2. Push `.dev.vars` only.
+3. Push both file types in one version.
+4. Pull creates missing output files with `0600` permissions.
+5. Pull fails on content conflict by default.
+6. Pull succeeds on conflict with explicit `--force`.
+7. `ROLE_READER` can pull/list only.
+8. `ROLE_WRITER` can push/rotate plus reader operations.
+9. `ROLE_ADMIN` can activate/set policy/list audit.
+10. `rotate` creates a new version and updates active pointer.
+11. Sensitive operations emit audit metadata without plaintext values.
+12. Web console renders metadata only and never plaintext secrets.
 
 ## Roadmap
 - Phase 1: Connect RPC foundation, versioned multi-file bundles, RBAC, and secure push/pull/list/rotate flows.
-- Phase 2: Policy UX expansion, richer audit filtering/export, and operational hardening.
-- Phase 3: Key rotation automation, retention policy controls, and ecosystem integrations.
+- Phase 2: OIDC/JWT verification, richer audit filtering/export, and operational hardening.
+- Phase 3: External KMS integration, key rotation automation, and retention controls.
 - Phase 4: Enterprise governance features (compliance controls, delegated administration, policy automation).
 
 ## Open Questions
-- OIDC provider and tenant-mapping strategy for workspace identity.
+- OIDC provider and tenant-mapping strategy for production identity.
 - KMS backend selection and key lifecycle SLOs for production deployments.
-- Maximum payload size limits and rate-limiting defaults for push/pull APIs.
+- Maximum payload size and rate-limiting defaults for push/pull APIs.
 - Fine-grained audit read permissions for non-admin roles.
 
 ## References
