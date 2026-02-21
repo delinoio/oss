@@ -1,0 +1,31 @@
+{
+  "name": "mpapp",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo/AppEntry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "test": "jest --config ./jest.config.ts --runInBand",
+    "lint": "expo lint",
+    "prepare:app": "echo 'mpapp: no prepare step'"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "expo": "^53.0.0",
+    "expo-dev-client": "^5.0.0",
+    "expo-status-bar": "~2.2.3",
+    "react": "^19.0.0",
+    "react-native": "^0.79.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@types/jest": "^29.5.14",
+    "@types/react": "^19.0.10",
+    "jest": "^29.7.0",
+    "jest-expo": "^53.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  }
+}

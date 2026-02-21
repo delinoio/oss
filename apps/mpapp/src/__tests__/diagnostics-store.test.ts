@@ -1,0 +1,69 @@
+import {
+  MpappActionType,
+  MpappLogEventFamily,
+  MpappMode,
+} from "../contracts/enums";
+import {
+  AsyncStorageDiagnosticsStore,
+  DIAGNOSTICS_RING_BUFFER_LIMIT,
+  buildLogEvent,
+} from "../diagnostics/diagnostics-store";
+
+describe("diagnostics store", () => {
+  it("enforces ring buffer limit and returns newest first", async () => {
+    const memoryStore: Record<string, string> = {};
+    const store = new AsyncStorageDiagnosticsStore({
+      getItem: async (key: string) => memoryStore[key] ?? null,
+      setItem: async (key: string, value: string) => {
+        memoryStore[key] = value;
+      },
+      removeItem: async (key: string) => {
+        delete memoryStore[key];
+      },
+    });
+
+    await store.clear();
+
+    for (let i = 0; i < DIAGNOSTICS_RING_BUFFER_LIMIT + 5; i += 1) {
+      await store.append(
+        buildLogEvent({
+          eventFamily: MpappLogEventFamily.InputMove,
+          actionType: MpappActionType.Move,
+          sessionId: "session-a",
+          connectionState: MpappMode.Connected,
+          latencyMs: i,
+          platform: "android",
+          osVersion: "34",
+          payload: { index: i },
+        }),
+      );
+    }
+
+    const recent = await store.listRecent(400);
+    expect(recent).toHaveLength(DIAGNOSTICS_RING_BUFFER_LIMIT);
+    expect(recent[0]?.payload).toMatchObject({ index: DIAGNOSTICS_RING_BUFFER_LIMIT + 4 });
+  });
+
+  it("retains entries with the default in-memory fallback store", async () => {
+    const store = new AsyncStorageDiagnosticsStore();
+    await store.clear();
+
+    const event = buildLogEvent({
+      eventFamily: MpappLogEventFamily.InputClick,
+      actionType: MpappActionType.LeftClick,
+      sessionId: "session-fallback",
+      connectionState: MpappMode.Connected,
+      latencyMs: 1,
+      platform: "android",
+      osVersion: "34",
+      payload: { source: "fallback" },
+    });
+
+    await store.append(event);
+    const recent = await store.listRecent(1);
+
+    expect(recent).toHaveLength(1);
+    expect(recent[0]?.eventId).toBe(event.eventId);
+    expect(recent[0]?.payload).toMatchObject({ source: "fallback" });
+  });
+});

@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "mpapp",
+    "slug": "mpapp",
+    "version": "0.1.0",
+    "scheme": "mpapp",
+    "orientation": "portrait",
+    "platforms": ["android", "ios"],
+    "jsEngine": "hermes",
+    "newArchEnabled": true,
+    "plugins": ["expo-dev-client"],
+    "android": {
+      "package": "io.delino.mpapp",
+      "minSdkVersion": 31,
+      "permissions": [
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN"
+      ]
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "extra": {
+      "mpapp": {
+        "platformScope": "android-mvp",
+        "defaultSensitivity": 1,
+        "sensitivityMin": 0.5,
+        "sensitivityMax": 2
+      }
+    }
+  }
+}
