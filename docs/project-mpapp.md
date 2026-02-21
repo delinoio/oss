@@ -176,9 +176,6 @@ Reference feasibility links:
 - Treat connection lifecycle and input events as sensitive operational data.
 - Enforce explicit unsupported-platform handling:
   - iOS direct HID path is out of MVP and must return `MpappErrorCode.UnsupportedPlatform`.
-- Workspace dependency security baseline for this project:
-  - `minimatch@<10.2.1` is force-resolved to `>=10.2.1`.
-  - `ajv@>=7.0.0-alpha.0 <8.18.0` is force-resolved to `>=8.18.0`.
 
 ## Logging
 Required baseline logs:
