@@ -9,7 +9,6 @@ Its primary contract is zero-intrusion command proxying for `derun run`, with si
 
 ## Runtime and Language
 - Go CLI
-- Go toolchain patch baseline: `go1.25.7` or newer patch release on the `1.25` line.
 
 ## Users
 - Engineers running interactive commands in local terminals
