@@ -1,0 +1,73 @@
+name: thenv-ci
+
+on:
+  push:
+    paths:
+      - "cmds/thenv/**"
+      - "servers/thenv/**"
+      - "apps/devkit/**"
+      - "pkg/thenv/**"
+      - "protos/thenv/**"
+      - "buf.yaml"
+      - "buf.gen.yaml"
+      - "go.mod"
+      - "go.sum"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/thenv-ci.yml"
+  pull_request:
+    paths:
+      - "cmds/thenv/**"
+      - "servers/thenv/**"
+      - "apps/devkit/**"
+      - "pkg/thenv/**"
+      - "protos/thenv/**"
+      - "buf.yaml"
+      - "buf.gen.yaml"
+      - "go.mod"
+      - "go.sum"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/thenv-ci.yml"
+
+jobs:
+  thenv:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.2
+
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+
+      - name: Install protoc Go plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.9
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.19.1
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint and generate proto
+        run: |
+          buf lint
+          buf generate
+
+      - name: Run thenv Go tests
+        run: go test ./cmds/thenv/... ./servers/thenv/...
+
+      - name: Run devkit tests
+        run: pnpm --dir apps/devkit test

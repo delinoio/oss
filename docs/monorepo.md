@@ -9,6 +9,7 @@ The monorepo is documentation-first: structure, ownership, and contracts must be
 - `crates/`: Rust crates and Rust-based tooling.
 - `cmds/`: Go command-line tools (current home for active Go CLIs).
 - `servers/`: Backend services and APIs.
+- `protos/`: Connect/Protobuf interface schemas and code-generation inputs.
 - `docs/`: Canonical project documentation and cross-project contracts.
 
 ## Canonical Directory Map
@@ -21,6 +22,7 @@ The monorepo is documentation-first: structure, ownership, and contracts must be
 - `docs/project-devkit-commit-tracker.md`: Commit Tracker contracts (Web UI + API server + collector).
 - `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app.
 - `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
+- `protos/thenv/v1/thenv.proto`: Canonical thenv Connect RPC schema.
 
 ## Project Identifier Contract
 Treat project IDs as stable enum-style values:
@@ -89,6 +91,13 @@ enum ThenvComponent {
 - `Cli` -> `cmds/thenv`
 - `Server` -> `servers/thenv`
 - `WebConsole` -> `apps/devkit/src/apps/thenv`
+
+Proto contract mapping:
+- `Schema` -> `protos/thenv/v1/thenv.proto`
+- Generated outputs are ephemeral and must not be committed:
+: `servers/thenv/gen`
+: `cmds/thenv/gen`
+: `apps/devkit/src/gen/thenv`
 
 ## New Project Onboarding Checklist
 - Reserve a unique `project-id`.

@@ -1,4 +1,4 @@
-import { normalizeRoleValue, parseAuditEventLabel } from "./thenv-normalize";
+import { parseAuditEventLabel, roleCodeFromValue, roleLabelFromUnknown } from "./thenv-normalize";
 
 export type ThenvScope = {
   workspaceId: string;
@@ -107,7 +107,7 @@ export async function getPolicy(scope: ThenvScope): Promise<{ policyRevision: nu
     policyRevision: Number(payload.policyRevision ?? 0),
     bindings: (payload.bindings ?? []).map((binding) => ({
       subject: String(binding.subject ?? ""),
-      role: normalizeRoleValue(String(binding.role ?? "reader")),
+      role: roleLabelFromUnknown(binding.role),
     })),
   };
 }
@@ -141,7 +141,7 @@ export async function setPolicy(scope: ThenvScope, bindings: PolicyBinding[]): P
     scope,
     bindings: bindings.map((binding) => ({
       subject: binding.subject,
-      role: normalizeRoleValue(binding.role),
+      role: roleCodeFromValue(binding.role),
     })),
   });
 }

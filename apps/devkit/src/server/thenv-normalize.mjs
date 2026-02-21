@@ -8,6 +8,31 @@ export function normalizeRoleValue(role) {
   return normalized;
 }
 
+export function roleCodeFromValue(role) {
+  switch (normalizeRoleValue(role)) {
+    case "writer":
+      return 2;
+    case "admin":
+      return 3;
+    default:
+      return 1;
+  }
+}
+
+export function roleLabelFromUnknown(value) {
+  if (typeof value === "number") {
+    switch (value) {
+      case 2:
+        return "writer";
+      case 3:
+        return "admin";
+      default:
+        return "reader";
+    }
+  }
+  return normalizeRoleValue(String(value));
+}
+
 export function parseAuditEventLabel(value) {
   const normalized = String(value).trim().toLowerCase();
   switch (normalized) {
