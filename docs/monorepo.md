@@ -107,12 +107,6 @@ enum ThenvComponent {
 - Use `$(...)` for command substitution; do not use legacy backticks in new scripts.
 - Apply strict quoting and escaping for all dynamic shell values to prevent command injection and parsing bugs.
 
-## Dependency Security Baseline
-- Workspace-level `pnpm` security overrides are maintained in root `pnpm-workspace.yaml` when advisories require transitive fixes.
-- Current workspace overrides:
-  - `minimatch@<10.2.1` -> `>=10.2.1`
-  - `ajv@>=7.0.0-alpha.0 <8.18.0` -> `>=8.18.0`
-
 ## Documentation Lifecycle Rules
 - Every structural repository change must update relevant `docs/project-*.md` files in the same change set.
 - New project creation is blocked until its project document exists.
