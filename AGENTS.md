@@ -7,6 +7,7 @@
 - If you modified Rust code, run `cargo test` from the root directory before finishing your task.
 - If you modified frontend code, run `pnpm test` from the frontend directory before finishing your task.
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
+- After `git add`, run `git commit` without unnecessary delay so staged changes are preserved in history.
 - Do not guess; rather search for the web.
 - Debug by logging. You should write enough logging code.
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
