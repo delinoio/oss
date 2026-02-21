@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{collections::HashSet, fs, path::PathBuf};
 
 use serde::Serialize;
 use tracing::info;
@@ -129,7 +129,7 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
         if settings
             .default_selector
             .as_ref()
-            .is_some_and(|default| default == runtime || default == &version)
+            .is_some_and(|default| selector_references_version(default, &version))
         {
             return Err(NodeupError::conflict(format!(
                 "Cannot uninstall {version}; it is used as default runtime"
@@ -139,7 +139,7 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
         if overrides
             .entries
             .iter()
-            .any(|entry| entry.selector == runtime.as_str() || entry.selector == version)
+            .any(|entry| selector_references_version(&entry.selector, &version))
         {
             return Err(NodeupError::conflict(format!(
                 "Cannot uninstall {version}; it is referenced by an override"
@@ -150,15 +150,34 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
         removed_versions.push(version);
     }
 
-    settings
-        .tracked_selectors
-        .retain(|selector| !removed_versions.contains(selector));
+    let removed_versions = removed_versions.into_iter().collect::<HashSet<_>>();
+    settings.tracked_selectors.retain(|selector| {
+        if let Some(canonical_selector_version) = canonical_version_selector(selector) {
+            !removed_versions.contains(&canonical_selector_version)
+        } else {
+            !removed_versions.contains(selector)
+        }
+    });
     app.store.save_settings(&settings)?;
 
+    let mut removed_versions = removed_versions.into_iter().collect::<Vec<_>>();
+    removed_versions.sort();
     let human = format!("Removed {} runtime(s)", removed_versions.len());
     print_output(output, &human, &removed_versions)?;
 
     Ok(0)
+}
+
+fn selector_references_version(selector: &str, target_version: &str) -> bool {
+    canonical_version_selector(selector)
+        .is_some_and(|canonical_selector_version| canonical_selector_version == target_version)
+}
+
+fn canonical_version_selector(selector: &str) -> Option<String> {
+    match RuntimeSelector::parse(selector).ok()? {
+        RuntimeSelector::Version(version) => Some(format!("v{version}")),
+        _ => None,
+    }
 }
 
 fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result<i32> {

@@ -119,7 +119,8 @@ Command contracts:
 : Output: per-runtime installation/update result and resolved runtime identifier.
 - `nodeup toolchain uninstall <runtime>...`
 : Input: one or more installed runtime selectors.
-: Output: removal result and final installed runtime count.
+: Behavior: uninstallation guards treat canonical equivalent spellings (`22.1.0` and `v22.1.0`) as the same selector when checking default/override references.
+: Output: removal result and final installed runtime count; tracked selectors for removed versions are cleaned in canonical form.
 - `nodeup toolchain link <name> <path>`
 : Input: custom runtime name and local runtime directory path.
 : Output: linked custom runtime registration result.

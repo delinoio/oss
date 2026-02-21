@@ -206,6 +206,98 @@ fn install_list_uninstall_flow() {
 
 #[test]
 #[serial]
+fn uninstall_blocks_default_selector_with_mixed_version_spelling() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    env.command()
+        .args(["toolchain", "uninstall", "v22.1.0"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("used as default runtime"));
+}
+
+#[test]
+#[serial]
+fn uninstall_blocks_override_selector_with_mixed_version_spelling() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-mixed-override");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["override", "set", "22.1.0"])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["toolchain", "uninstall", "v22.1.0"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("referenced by an override"));
+}
+
+#[test]
+#[serial]
+fn uninstall_removes_tracked_selector_across_version_spellings() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.2.0", Some("Jod")), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["toolchain", "uninstall", "v22.1.0"])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["update"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("No runtimes to update"));
+}
+
+#[test]
+#[serial]
 fn default_override_show_precedence() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod")), ("24.0.0", None)]);
