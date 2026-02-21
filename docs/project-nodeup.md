@@ -135,6 +135,7 @@ Command contracts:
 - `nodeup update [runtime]...`
 : Input: optional runtime selectors.
 : Behavior: updates selected runtimes; with no selectors, updates tracked selectors from config and falls back to installed runtimes.
+: Behavior: explicit version updates report `already-up-to-date` when the newest candidate runtime is already installed.
 : Output: update summary by selector/runtime.
 - `nodeup check`
 : Output: available update status for installed runtimes.
@@ -142,6 +143,7 @@ Command contracts:
 : Output: directory-to-runtime override mapping table.
 - `nodeup override set <runtime> [--path <path>]`
 : Input: runtime selector and optional directory path.
+: Behavior: validates selector syntax before persisting and stores canonical selector IDs (for example `22.1.0` is stored as `v22.1.0`).
 : Output: applied override scope and runtime.
 - `nodeup override unset [--path <path>] [--nonexistent]`
 : Input: optional directory path or nonexistent cleanup flag.

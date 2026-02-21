@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
 use serde::Serialize;
+use tracing::info;
 
 use crate::{
     cli::{OutputFormat, OverrideCommand},
     commands::print_output,
     errors::Result,
+    selectors::RuntimeSelector,
     NodeupApp,
 };
 
@@ -47,15 +49,30 @@ fn set(runtime: &str, path: Option<&str>, output: OutputFormat, app: &NodeupApp)
         None => std::env::current_dir()?,
     };
 
-    app.overrides.set(&target_path, runtime)?;
-    app.store.track_selector(runtime)?;
+    let selector = RuntimeSelector::parse(runtime)?;
+    let canonical_selector = selector.stable_id();
 
+    app.overrides.set(&target_path, &canonical_selector)?;
+    app.store.track_selector(&canonical_selector)?;
+
+    info!(
+        command_path = "nodeup.override.set",
+        path = %target_path.display(),
+        selector_input = %runtime,
+        selector_canonical = %canonical_selector,
+        "Configured runtime override"
+    );
+
+    let human = format!(
+        "Override set: {} -> {}",
+        target_path.display(),
+        canonical_selector
+    );
     let response = serde_json::json!({
         "path": target_path,
-        "selector": runtime,
+        "selector": canonical_selector,
         "status": "set"
     });
-    let human = format!("Override set: {} -> {runtime}", target_path.display());
 
     print_output(output, &human, &response)?;
     Ok(0)

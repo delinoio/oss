@@ -1,10 +1,12 @@
 use semver::Version;
 use serde::Serialize;
+use tracing::info;
 
 use crate::{
     cli::OutputFormat,
     commands::print_output,
     errors::{NodeupError, Result},
+    installer::InstallState,
     release_index::normalize_version,
     resolver::ResolvedRuntimeTarget,
     selectors::RuntimeSelector,
@@ -88,25 +90,50 @@ pub fn update(runtimes: Vec<String>, output: OutputFormat, app: &NodeupApp) -> R
                     selector,
                     previous_runtime: None,
                     updated_runtime: Some(report.version),
-                    status: if report.state == crate::installer::InstallState::AlreadyInstalled {
+                    status: if report.state == InstallState::AlreadyInstalled {
                         "already-up-to-date".to_string()
                     } else {
                         "updated".to_string()
                     },
                 });
+                if let Some(entry) = updates.last() {
+                    info!(
+                        command_path = "nodeup.update.channel",
+                        selector = %entry.selector,
+                        updated_runtime = ?entry.updated_runtime,
+                        status = %entry.status,
+                        "Processed channel update selector"
+                    );
+                }
             }
             RuntimeSelector::Version(version) => {
                 let current = format!("v{version}");
                 let next = latest_newer_version(app, &current)?;
                 if let Some(next_version) = next {
-                    app.installer
+                    let report = app
+                        .installer
                         .ensure_installed(&next_version, &app.releases)?;
+                    let status = if report.state == InstallState::AlreadyInstalled {
+                        "already-up-to-date"
+                    } else {
+                        "updated"
+                    };
                     updates.push(UpdateEntry {
                         selector,
                         previous_runtime: Some(current),
-                        updated_runtime: Some(next_version),
-                        status: "updated".to_string(),
+                        updated_runtime: Some(report.version),
+                        status: status.to_string(),
                     });
+                    if let Some(entry) = updates.last() {
+                        info!(
+                            command_path = "nodeup.update.version",
+                            selector = %entry.selector,
+                            previous_runtime = ?entry.previous_runtime,
+                            updated_runtime = ?entry.updated_runtime,
+                            status = %entry.status,
+                            "Processed explicit version update selector"
+                        );
+                    }
                 } else {
                     updates.push(UpdateEntry {
                         selector,
@@ -114,6 +141,16 @@ pub fn update(runtimes: Vec<String>, output: OutputFormat, app: &NodeupApp) -> R
                         updated_runtime: Some(current),
                         status: "already-up-to-date".to_string(),
                     });
+                    if let Some(entry) = updates.last() {
+                        info!(
+                            command_path = "nodeup.update.version",
+                            selector = %entry.selector,
+                            previous_runtime = ?entry.previous_runtime,
+                            updated_runtime = ?entry.updated_runtime,
+                            status = %entry.status,
+                            "Processed explicit version update selector"
+                        );
+                    }
                 }
             }
         }
