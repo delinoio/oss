@@ -113,6 +113,7 @@ enum DerunMcpTool {
 Command contracts:
 - `derun run [--session-id <id>] [--retention <duration>] -- <command> [args...]`
 : Executes user command with terminal-fidelity proxying and side-channel transcript capture.
+- `derun run` must reject explicit `--session-id` values when persisted metadata already exists (`meta.json` or `final.json`), returning exit code `2` without mutating existing artifacts.
 - `derun mcp`
 : Starts stdio MCP server for AI-driven session/output retrieval.
 
@@ -137,6 +138,7 @@ Terminal fidelity rules:
 - Interactive sessions must forward stdin bytes, resize events, and termination signals.
 - Child exit code or signal must be propagated as `derun run` process exit result.
 - Capture pipeline must be side-channel only and must not transform forwarded bytes.
+- PTY eligibility must use OS terminal probing (`isatty` semantics, e.g. ioctl/GetConsoleMode), not character-device-only checks.
 
 Session discovery/attach contract:
 - Explicit session identifier attach model only.

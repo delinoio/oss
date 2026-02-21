@@ -56,6 +56,30 @@ func (s *Store) EnsureSessionDir(sessionID string) error {
 	return EnsureDir(dir)
 }
 
+func (s *Store) HasSessionMetadata(sessionID string) (bool, error) {
+	metaPath, err := s.sessionFile(sessionID, metaFileName)
+	if err != nil {
+		return false, err
+	}
+	if _, err := os.Stat(metaPath); err == nil {
+		return true, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("stat meta file: %w", err)
+	}
+
+	finalPath, err := s.sessionFile(sessionID, finalFileName)
+	if err != nil {
+		return false, err
+	}
+	if _, err := os.Stat(finalPath); err == nil {
+		return true, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("stat final file: %w", err)
+	}
+
+	return false, nil
+}
+
 func (s *Store) WriteMeta(meta session.Meta) error {
 	if err := s.EnsureSessionDir(meta.SessionID); err != nil {
 		return err

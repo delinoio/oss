@@ -72,10 +72,24 @@ func ExecuteRun(args []string) int {
 	}
 
 	if sessionID == "" {
-		sessionID, err = session.NewULID(time.Now().UTC())
+		sessionID, err = generateUniqueSessionID(store, logger)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "generate session id: %v\n", err)
 			return 1
+		}
+	} else {
+		hasMetadata, err := store.HasSessionMetadata(sessionID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "check session metadata: %v\n", err)
+			return 1
+		}
+		if hasMetadata {
+			logger.Event("session_id_rejected", map[string]any{
+				"session_id": sessionID,
+				"reason":     "metadata_exists",
+			})
+			fmt.Fprintf(os.Stderr, "session id already exists: %s\n", sessionID)
+			return 2
 		}
 	}
 
@@ -205,15 +219,25 @@ func resolveStateRootForRun() (string, error) {
 	return state.ResolveStateRoot()
 }
 
-func isTerminal(file *os.File) bool {
-	if file == nil {
-		return false
+func generateUniqueSessionID(store *state.Store, logger *logging.Logger) (string, error) {
+	for attempt := 1; attempt <= 5; attempt++ {
+		sessionID, err := session.NewULID(time.Now().UTC())
+		if err != nil {
+			return "", err
+		}
+		hasMetadata, err := store.HasSessionMetadata(sessionID)
+		if err != nil {
+			return "", err
+		}
+		if !hasMetadata {
+			return sessionID, nil
+		}
+		logger.Event("session_id_collision", map[string]any{
+			"session_id": sessionID,
+			"attempt":    attempt,
+		})
 	}
-	info, err := file.Stat()
-	if err != nil {
-		return false
-	}
-	return (info.Mode() & os.ModeCharDevice) != 0
+	return "", fmt.Errorf("too many session id collisions")
 }
 
 func derefInt(v *int) int {
