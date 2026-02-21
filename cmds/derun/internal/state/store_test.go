@@ -120,6 +120,65 @@ func TestStoreAppendAndReadOutput(t *testing.T) {
 	}
 }
 
+func TestStoreHasSessionMetadata(t *testing.T) {
+	root := testutil.TempStateRoot(t)
+	store, err := New(root)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	sessionID := "01J0S222222222222222222222"
+	hasMetadata, err := store.HasSessionMetadata(sessionID)
+	if err != nil {
+		t.Fatalf("HasSessionMetadata returned error: %v", err)
+	}
+	if hasMetadata {
+		t.Fatalf("expected hasMetadata=false before writes")
+	}
+
+	meta := session.Meta{
+		SchemaVersion:    "v1alpha1",
+		SessionID:        sessionID,
+		Command:          []string{"echo", "ok"},
+		WorkingDirectory: "/tmp",
+		StartedAt:        time.Now().UTC(),
+		RetentionSeconds: int64((24 * time.Hour).Seconds()),
+		TransportMode:    contracts.DerunTransportModePipe,
+		TTYAttached:      false,
+		PID:              100,
+	}
+	if err := store.WriteMeta(meta); err != nil {
+		t.Fatalf("WriteMeta returned error: %v", err)
+	}
+
+	hasMetadata, err = store.HasSessionMetadata(sessionID)
+	if err != nil {
+		t.Fatalf("HasSessionMetadata returned error after WriteMeta: %v", err)
+	}
+	if !hasMetadata {
+		t.Fatalf("expected hasMetadata=true after WriteMeta")
+	}
+
+	sessionIDFinalOnly := "01J0S333333333333333333333"
+	final := session.Final{
+		SchemaVersion: "v1alpha1",
+		SessionID:     sessionIDFinalOnly,
+		State:         contracts.DerunSessionStateExited,
+		EndedAt:       time.Now().UTC(),
+	}
+	if err := store.WriteFinal(final); err != nil {
+		t.Fatalf("WriteFinal returned error: %v", err)
+	}
+
+	hasMetadata, err = store.HasSessionMetadata(sessionIDFinalOnly)
+	if err != nil {
+		t.Fatalf("HasSessionMetadata returned error with final-only metadata: %v", err)
+	}
+	if !hasMetadata {
+		t.Fatalf("expected hasMetadata=true when final.json exists")
+	}
+}
+
 func ptr(v int) *int {
 	return &v
 }
