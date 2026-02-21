@@ -8,6 +8,7 @@
 - If you modified frontend code, run `pnpm test` from the frontend directory before finishing your task.
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - After `git add`, run `git commit` without unnecessary delay so staged changes are preserved in history.
+- After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
 - Do not guess; rather search for the web.
 - Debug by logging. You should write enough logging code.
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
