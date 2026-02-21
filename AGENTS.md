@@ -10,6 +10,7 @@
 - Do not guess; rather search for the web.
 - Debug by logging. You should write enough logging code.
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
+- When writing shell commands or scripts, treat backticks and command substitution carefully, prefer `$(...)` over legacy backticks, and apply strict escaping for all dynamic values.
 
 ### Monorepo Structure Map
 

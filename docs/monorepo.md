@@ -103,6 +103,10 @@ enum ThenvComponent {
 - Use `project-` prefix for all project docs.
 - Use enum-like canonical identifiers in documents where values must remain stable.
 
+## Shell Command Safety Rules
+- Use `$(...)` for command substitution; do not use legacy backticks in new scripts.
+- Apply strict quoting and escaping for all dynamic shell values to prevent command injection and parsing bugs.
+
 ## Documentation Lifecycle Rules
 - Every structural repository change must update relevant `docs/project-*.md` files in the same change set.
 - New project creation is blocked until its project document exists.
