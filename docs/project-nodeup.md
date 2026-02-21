@@ -213,8 +213,6 @@ Planned commands:
 - Build: `cargo build -p nodeup`
 - Test: `cargo test -p nodeup`
 - Workspace validation: `cargo test`
-- Dependency security baseline:
-  - `httpmock` dev dependency baseline is `0.8.3` or newer to avoid the deprecated `async-std` chain from older releases.
 
 ## Roadmap
 - Phase 1: Rustup-style command skeleton (`toolchain`, `default`, `show`, `override`, `run`, `which`).
