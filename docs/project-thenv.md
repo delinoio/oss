@@ -9,6 +9,7 @@ The Phase 1 target is a decision-complete contract for versioned bundle distribu
 - CLI: `cmds/thenv`
 - Server: `servers/thenv`
 - Web console mini app: `apps/devkit/src/apps/thenv`
+- Web console route placeholder: `apps/devkit/src/app/apps/thenv/page.tsx`
 
 ## Runtime and Language
 - CLI: Go
@@ -45,6 +46,7 @@ The Phase 1 target is a decision-complete contract for versioned bundle distribu
 : Bundle version storage, active pointer state, policy enforcement, decryption for authorized pull, and audit event persistence.
 - Web console (`apps/devkit/src/apps/thenv`) handles management and visibility:
 : Version inventory, active version switching, role policy management, and audit browsing without secret value rendering.
+- Current Devkit shell bootstrap exposes `/apps/thenv` as a placeholder route while business features are deferred.
 
 Trust boundary and plaintext handling:
 - Plaintext is allowed in CLI process memory when reading local source files and writing pulled output files.
@@ -73,6 +75,7 @@ Component mapping contract:
 
 Devkit route contract for web console:
 - `/apps/thenv`
+- Current route state: placeholder page rendered by Devkit shell bootstrap.
 
 High-level operation identifiers:
 
@@ -278,7 +281,7 @@ Prohibited log content:
 - Stack traces containing secret payload fragments
 
 ## Build and Test
-Planned commands:
+Current commands:
 - CLI build/test: `go build ./cmds/thenv/...` and `go test ./cmds/thenv/...`
 - Server build/test: `go build ./servers/thenv/...` and `go test ./servers/thenv/...`
 - Web console tests: `pnpm --filter devkit... test`

@@ -7,6 +7,7 @@ It provides shared navigation, shared auth/session surface, and consistent routi
 ## Path
 - `apps/devkit`
 - `apps/devkit/src/apps/*`
+- `apps/devkit/src/app/apps/*`
 
 ## Runtime and Language
 - Next.js 16 (TypeScript)
@@ -30,8 +31,10 @@ It provides shared navigation, shared auth/session surface, and consistent routi
 ## Architecture
 - Platform shell handles layout, navigation, and global providers.
 - Mini apps live under `src/apps/<id>`.
-- Router maps each mini app to `/apps/<id>`.
+- Static route pages map each mini app to `/apps/<id>`.
 - Shared services layer exposes standard platform utilities.
+- Enum-based registration lives in `src/lib/mini-app-registry.ts`.
+- Shell-only bootstrap uses placeholder pages for canonical mini app routes.
 - Backend-coupled mini apps consume backend APIs while preserving shell-owned auth/session/navigation behavior.
 
 ## Interfaces
@@ -61,11 +64,11 @@ Mini app registration contract (conceptual):
 - `id` (enum-style stable identifier)
 - `title`
 - `route`
-- `entry`
+- `status` (`placeholder` during shell bootstrap)
 - `integrationMode` (`shell-only` or `backend-coupled`)
 
 Backend-coupled mini app example:
-- `commit-tracker` uses Connect RPC APIs from `servers/commit-tracker` (planned).
+- `commit-tracker` placeholder route is live and reserved for Connect RPC-backed flows from `servers/commit-tracker`.
 - Devkit shell remains the owner of global auth/session/navigation concerns.
 
 ## Storage
@@ -82,13 +85,14 @@ Backend-coupled mini app example:
 Required baseline logs:
 - Mini app route resolution and load failures
 - Shared shell errors
+- Navigation and route render events with stable route and mini-app identifiers
 - API request failures with request correlation identifiers
 
 ## Build and Test
-Planned commands:
+Current commands:
 - Build: `pnpm --filter devkit... build`
 - Test: `pnpm --filter devkit... test`
-- Lint: `pnpm --filter devkit... lint`
+- Test runner: Vitest (`apps/devkit/vitest.config.ts`)
 
 ## Roadmap
 - Phase 1: Platform shell and route conventions.

@@ -12,6 +12,10 @@ This directory hosts the Devkit mini app with the stable id `remote-file-picker`
 - Support client-side metadata transforms (format conversion, size compression).
 - Return users to the host flow after completion.
 
+## Bootstrap Status
+- Placeholder route is implemented in the Devkit shell.
+- Signed URL upload and provider integrations are intentionally deferred.
+
 ## References
 - `docs/project-devkit-remote-file-picker.md`
 - `docs/project-devkit.md`
