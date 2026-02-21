@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -77,6 +78,52 @@ func TestToolHandlersIncludeSchemaVersion(t *testing.T) {
 	}
 	if waitPayload["schema_version"] != SchemaVersion {
 		t.Fatalf("missing schema version in wait payload")
+	}
+}
+
+func TestHandleWaitOutputLiveTailTimesOutForActiveSession(t *testing.T) {
+	root := testutil.TempStateRoot(t)
+	store, err := state.New(root)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+
+	sessionID := "01J0S444444444444444444444"
+	if err := store.WriteMeta(session.Meta{
+		SchemaVersion:    SchemaVersion,
+		SessionID:        sessionID,
+		Command:          []string{"sleep", "1"},
+		WorkingDirectory: "/tmp",
+		StartedAt:        time.Now().UTC().Add(-time.Minute),
+		RetentionSeconds: int64((24 * time.Hour).Seconds()),
+		TransportMode:    contracts.DerunTransportModePipe,
+		TTYAttached:      false,
+		PID:              os.Getpid(),
+	}); err != nil {
+		t.Fatalf("WriteMeta returned error: %v", err)
+	}
+	if _, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("hello"), time.Now().UTC()); err != nil {
+		t.Fatalf("AppendOutput returned error: %v", err)
+	}
+
+	started := time.Now()
+	waitPayload, err := handleWaitOutput(store, map[string]any{
+		"session_id": sessionID,
+		"cursor":     "5",
+		"timeout_ms": 200,
+	})
+	if err != nil {
+		t.Fatalf("handleWaitOutput returned error: %v", err)
+	}
+
+	if waitPayload["schema_version"] != SchemaVersion {
+		t.Fatalf("missing schema version in wait payload")
+	}
+	if timedOut, ok := waitPayload["timed_out"].(bool); !ok || !timedOut {
+		t.Fatalf("expected timed_out=true, got=%v", waitPayload["timed_out"])
+	}
+	if elapsed := time.Since(started); elapsed < 150*time.Millisecond {
+		t.Fatalf("wait_output returned too early: elapsed=%v", elapsed)
 	}
 }
 

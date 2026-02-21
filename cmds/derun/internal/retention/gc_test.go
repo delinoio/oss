@@ -25,44 +25,68 @@ func TestSweepRemovesOnlyExpiredCompletedSessions(t *testing.T) {
 	}
 	defer logger.Close()
 
-	expired := "01J0S111111111111111111111"
-	active := "01J0S222222222222222222222"
+	shortRetentionExpired := "01J0S111111111111111111111"
+	longRetentionActive := "01J0S222222222222222222222"
+	running := "01J0S333333333333333333333"
 
 	if err := store.WriteMeta(session.Meta{
 		SchemaVersion:    "v1alpha1",
-		SessionID:        expired,
+		SessionID:        shortRetentionExpired,
 		Command:          []string{"echo", "expired"},
 		WorkingDirectory: "/tmp",
 		StartedAt:        time.Now().UTC().Add(-2 * time.Hour),
-		RetentionSeconds: int64((24 * time.Hour).Seconds()),
+		RetentionSeconds: int64((10 * time.Minute).Seconds()),
 		TransportMode:    contracts.DerunTransportModePipe,
 		TTYAttached:      false,
 		PID:              1,
 	}); err != nil {
-		t.Fatalf("WriteMeta expired: %v", err)
+		t.Fatalf("WriteMeta shortRetentionExpired: %v", err)
 	}
 	if err := store.WriteFinal(session.Final{
 		SchemaVersion: "v1alpha1",
-		SessionID:     expired,
+		SessionID:     shortRetentionExpired,
 		State:         contracts.DerunSessionStateExited,
-		EndedAt:       time.Now().UTC().Add(-2 * time.Hour),
+		EndedAt:       time.Now().UTC().Add(-20 * time.Minute),
 		ExitCode:      intPtr(0),
 	}); err != nil {
-		t.Fatalf("WriteFinal expired: %v", err)
+		t.Fatalf("WriteFinal shortRetentionExpired: %v", err)
 	}
 
 	if err := store.WriteMeta(session.Meta{
 		SchemaVersion:    "v1alpha1",
-		SessionID:        active,
+		SessionID:        longRetentionActive,
+		Command:          []string{"echo", "long-retention"},
+		WorkingDirectory: "/tmp",
+		StartedAt:        time.Now().UTC().Add(-2 * time.Hour),
+		RetentionSeconds: int64((4 * time.Hour).Seconds()),
+		TransportMode:    contracts.DerunTransportModePipe,
+		TTYAttached:      false,
+		PID:              1,
+	}); err != nil {
+		t.Fatalf("WriteMeta longRetentionActive: %v", err)
+	}
+	if err := store.WriteFinal(session.Final{
+		SchemaVersion: "v1alpha1",
+		SessionID:     longRetentionActive,
+		State:         contracts.DerunSessionStateExited,
+		EndedAt:       time.Now().UTC().Add(-2 * time.Hour),
+		ExitCode:      intPtr(0),
+	}); err != nil {
+		t.Fatalf("WriteFinal longRetentionActive: %v", err)
+	}
+
+	if err := store.WriteMeta(session.Meta{
+		SchemaVersion:    "v1alpha1",
+		SessionID:        running,
 		Command:          []string{"sleep", "1"},
 		WorkingDirectory: "/tmp",
 		StartedAt:        time.Now().UTC().Add(-2 * time.Hour),
-		RetentionSeconds: int64((24 * time.Hour).Seconds()),
+		RetentionSeconds: int64((1 * time.Minute).Seconds()),
 		TransportMode:    contracts.DerunTransportModePipe,
 		TTYAttached:      false,
 		PID:              os.Getpid(),
 	}); err != nil {
-		t.Fatalf("WriteMeta active: %v", err)
+		t.Fatalf("WriteMeta running: %v", err)
 	}
 
 	result, err := Sweep(store, 30*time.Minute, logger)
@@ -73,13 +97,17 @@ func TestSweepRemovesOnlyExpiredCompletedSessions(t *testing.T) {
 		t.Fatalf("unexpected removed count: got=%d want=1", result.Removed)
 	}
 
-	expiredPath := filepath.Join(root, "sessions", expired)
-	if _, err := os.Stat(expiredPath); !os.IsNotExist(err) {
-		t.Fatalf("expired session should be removed")
+	shortExpiredPath := filepath.Join(root, "sessions", shortRetentionExpired)
+	if _, err := os.Stat(shortExpiredPath); !os.IsNotExist(err) {
+		t.Fatalf("short-retention expired session should be removed")
 	}
-	activePath := filepath.Join(root, "sessions", active)
-	if _, err := os.Stat(activePath); err != nil {
-		t.Fatalf("active session should stay: %v", err)
+	longRetentionPath := filepath.Join(root, "sessions", longRetentionActive)
+	if _, err := os.Stat(longRetentionPath); err != nil {
+		t.Fatalf("long-retention session should stay: %v", err)
+	}
+	runningPath := filepath.Join(root, "sessions", running)
+	if _, err := os.Stat(runningPath); err != nil {
+		t.Fatalf("running session should stay: %v", err)
 	}
 }
 

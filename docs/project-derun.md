@@ -125,6 +125,7 @@ MCP I/O contracts:
 : Returns raw output chunks, `next_cursor`, and `eof` flag.
 - `derun_wait_output(session_id, cursor, timeout_ms)`
 : Long-polls for live output and returns chunk delta with new cursor.
+- `derun_wait_output` must wait until new output bytes arrive or timeout when the session is still active and the cursor is at the current output tail.
 
 Schema-version contract:
 - Every MCP tool response includes `schema_version`.
@@ -154,6 +155,7 @@ Per-session artifact layout:
 
 Retention contract:
 - Default retention TTL: 24 hours.
+- Per-session `retention_seconds` from `meta.json` overrides the global sweep default when present.
 - Expired session cleanup runs at `derun run` startup and periodic intervals in `derun mcp`.
 - Active sessions must never be removed during retention sweeps.
 

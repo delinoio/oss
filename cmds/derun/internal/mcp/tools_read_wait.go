@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/delinoio/oss/cmds/derun/internal/contracts"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
 )
 
@@ -94,7 +95,7 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 		if err != nil {
 			return nil, fmt.Errorf("wait read output: %w", err)
 		}
-		if len(chunks) > 0 || eof {
+		if len(chunks) > 0 {
 			return map[string]any{
 				"schema_version": SchemaVersion,
 				"session_id":     sessionID,
@@ -104,6 +105,23 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 				"timed_out":      false,
 				"waited_ms":      time.Since(started).Milliseconds(),
 			}, nil
+		}
+		if eof {
+			detail, err := store.GetSession(sessionID)
+			if err != nil {
+				return nil, fmt.Errorf("get session detail: %w", err)
+			}
+			if !isSessionActive(detail.State) {
+				return map[string]any{
+					"schema_version": SchemaVersion,
+					"session_id":     sessionID,
+					"chunks":         chunks,
+					"next_cursor":    strconv.FormatUint(nextCursor, 10),
+					"eof":            eof,
+					"timed_out":      false,
+					"waited_ms":      time.Since(started).Milliseconds(),
+				}, nil
+			}
 		}
 		if time.Since(started) >= timeout {
 			break
@@ -122,6 +140,10 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 		"next_cursor":    strconv.FormatUint(nextCursor, 10),
 		"eof":            eof,
 		"timed_out":      true,
-		"waited_ms":      timeout.Milliseconds(),
+		"waited_ms":      time.Since(started).Milliseconds(),
 	}, nil
+}
+
+func isSessionActive(sessionState contracts.DerunSessionState) bool {
+	return sessionState == contracts.DerunSessionStateStarting || sessionState == contracts.DerunSessionStateRunning
 }

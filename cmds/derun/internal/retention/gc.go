@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/delinoio/oss/cmds/derun/internal/contracts"
 	"github.com/delinoio/oss/cmds/derun/internal/logging"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
 )
@@ -41,14 +42,19 @@ func Sweep(store *state.Store, ttl time.Duration, logger *logging.Logger) (Resul
 			continue
 		}
 
-		expiresAt := detail.StartedAt.Add(ttl)
+		effectiveTTL := ttl
+		if detail.RetentionSeconds > 0 {
+			effectiveTTL = time.Duration(detail.RetentionSeconds) * time.Second
+		}
+
+		expiresAt := detail.StartedAt.Add(effectiveTTL)
 		if detail.EndedAt != nil {
-			expiresAt = detail.EndedAt.Add(ttl)
+			expiresAt = detail.EndedAt.Add(effectiveTTL)
 		}
 		if now.Before(expiresAt) {
 			continue
 		}
-		if detail.State == "running" || detail.State == "starting" {
+		if detail.State == contracts.DerunSessionStateRunning || detail.State == contracts.DerunSessionStateStarting {
 			continue
 		}
 
