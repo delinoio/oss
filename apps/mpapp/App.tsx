@@ -31,6 +31,8 @@ import {
 } from "./src/diagnostics/diagnostics-store";
 import {
   INITIAL_SESSION_STATE,
+  type MpappSessionEvent,
+  type MpappSessionState,
   MpappSessionEventType,
   reduceSessionState,
 } from "./src/state/session-machine";
@@ -57,6 +59,7 @@ export default function App() {
     reduceSessionState,
     INITIAL_SESSION_STATE,
   );
+  const sessionStateRef = useRef<MpappSessionState>(INITIAL_SESSION_STATE);
   const [sensitivity, setSensitivity] = useState(1.0);
 
   const adapter = useMemo(() => new AndroidHidStubAdapter(), []);
@@ -78,6 +81,15 @@ export default function App() {
     [platformDescriptor],
   );
 
+  const dispatchSessionEvent = useCallback((event: MpappSessionEvent) => {
+    sessionStateRef.current = reduceSessionState(sessionStateRef.current, event);
+    dispatch(event);
+  }, []);
+
+  useEffect(() => {
+    sessionStateRef.current = sessionState;
+  }, [sessionState]);
+
   const appendLog = useCallback(
     async (params: {
       eventFamily: MpappLogEventFamily;
@@ -90,7 +102,7 @@ export default function App() {
         eventFamily: params.eventFamily,
         actionType: params.actionType,
         sessionId: sessionIdRef.current,
-        connectionState: sessionState.mode,
+        connectionState: sessionStateRef.current.mode,
         latencyMs: params.latencyMs,
         failureReason: params.failureReason,
         payload: params.payload,
@@ -104,7 +116,7 @@ export default function App() {
         latencyMs: event.latencyMs,
       });
     },
-    [sessionState.mode],
+    [],
   );
 
   useEffect(() => {
@@ -112,7 +124,7 @@ export default function App() {
       return;
     }
 
-    dispatch({
+    dispatchSessionEvent({
       type: MpappSessionEventType.ConnectFailure,
       errorCode: MpappErrorCode.UnsupportedPlatform,
       message: platformSupport.reason,
@@ -128,14 +140,14 @@ export default function App() {
         version: platformDescriptor.version,
       },
     });
-  }, [appendLog, platformDescriptor, platformSupport]);
+  }, [appendLog, dispatchSessionEvent, platformDescriptor, platformSupport]);
 
   const handleConnect = useCallback(async () => {
     if (!platformSupport.supported) {
       return;
     }
 
-    dispatch({ type: MpappSessionEventType.StartPermissionCheck });
+    dispatchSessionEvent({ type: MpappSessionEventType.StartPermissionCheck });
 
     const permissionStart = Date.now();
     const permissionResult = await requestAndroidBluetoothPermissions(
@@ -168,19 +180,19 @@ export default function App() {
     });
 
     if (!permissionResult.granted) {
-      dispatch({ type: MpappSessionEventType.PermissionDenied });
+      dispatchSessionEvent({ type: MpappSessionEventType.PermissionDenied });
       return;
     }
 
-    dispatch({ type: MpappSessionEventType.PermissionGranted });
-    dispatch({ type: MpappSessionEventType.StartPairing });
-    dispatch({ type: MpappSessionEventType.StartConnecting });
+    dispatchSessionEvent({ type: MpappSessionEventType.PermissionGranted });
+    dispatchSessionEvent({ type: MpappSessionEventType.StartPairing });
+    dispatchSessionEvent({ type: MpappSessionEventType.StartConnecting });
 
     const connectStart = Date.now();
     const connectResult = await adapter.pairAndConnect();
 
     if (!connectResult.ok) {
-      dispatch({
+      dispatchSessionEvent({
         type: MpappSessionEventType.ConnectFailure,
         errorCode: connectResult.errorCode,
         message: connectResult.message,
@@ -195,20 +207,20 @@ export default function App() {
       return;
     }
 
-    dispatch({ type: MpappSessionEventType.ConnectSuccess });
+    dispatchSessionEvent({ type: MpappSessionEventType.ConnectSuccess });
     await appendLog({
       eventFamily: MpappLogEventFamily.ConnectionTransition,
       actionType: MpappActionType.Connect,
       latencyMs: Date.now() - connectStart,
     });
-  }, [adapter, appendLog, platformSupport.supported]);
+  }, [adapter, appendLog, dispatchSessionEvent, platformSupport.supported]);
 
   const handleDisconnect = useCallback(async () => {
     const disconnectStart = Date.now();
     const disconnectResult = await adapter.disconnect();
 
     if (!disconnectResult.ok) {
-      dispatch({
+      dispatchSessionEvent({
         type: MpappSessionEventType.ConnectFailure,
         errorCode: disconnectResult.errorCode,
         message: disconnectResult.message,
@@ -222,13 +234,13 @@ export default function App() {
       return;
     }
 
-    dispatch({ type: MpappSessionEventType.Disconnect });
+    dispatchSessionEvent({ type: MpappSessionEventType.Disconnect });
     await appendLog({
       eventFamily: MpappLogEventFamily.ConnectionTransition,
       actionType: MpappActionType.Disconnect,
       latencyMs: Date.now() - disconnectStart,
     });
-  }, [adapter, appendLog]);
+  }, [adapter, appendLog, dispatchSessionEvent]);
 
   const handleMove = useCallback(
     (deltaX: number, deltaY: number) => {

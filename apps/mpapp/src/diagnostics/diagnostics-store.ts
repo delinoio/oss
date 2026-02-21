@@ -20,15 +20,19 @@ type DiagnosticsStorage = {
   removeItem(key: string): Promise<void>;
 };
 
+const inMemoryFallbackData: Record<string, string> = {};
+
 const inMemoryFallbackStorage: DiagnosticsStorage = {
-  async getItem() {
-    return null;
+  async getItem(key: string) {
+    return Object.prototype.hasOwnProperty.call(inMemoryFallbackData, key)
+      ? inMemoryFallbackData[key]
+      : null;
   },
-  async setItem() {
-    return;
+  async setItem(key: string, value: string) {
+    inMemoryFallbackData[key] = value;
   },
-  async removeItem() {
-    return;
+  async removeItem(key: string) {
+    delete inMemoryFallbackData[key];
   },
 };
 

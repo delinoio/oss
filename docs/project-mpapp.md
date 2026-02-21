@@ -165,6 +165,7 @@ Reference feasibility links:
   - Optional axis inversion flags
 - Local diagnostics ring buffer with bounded retention (`300`) for troubleshooting.
 - Diagnostics storage key: `mpapp.diagnostics.v1`.
+- If AsyncStorage is unavailable, diagnostics fall back to an in-memory store that still preserves recent entries during process lifetime.
 - No account-linked persistence in MVP.
 - No cloud upload of raw input traces in MVP.
 
@@ -191,6 +192,9 @@ Required structured fields for each log event:
 - `failureReason`
 - `platform`
 - `osVersion`
+
+Connection state logging contract:
+- `connectionState` must be captured from the latest session state snapshot at log emission time, including async lifecycle and transport callbacks.
 
 Recommended event families:
 - `permission.check`

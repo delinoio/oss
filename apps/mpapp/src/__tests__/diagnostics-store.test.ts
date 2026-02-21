@@ -43,4 +43,27 @@ describe("diagnostics store", () => {
     expect(recent).toHaveLength(DIAGNOSTICS_RING_BUFFER_LIMIT);
     expect(recent[0]?.payload).toMatchObject({ index: DIAGNOSTICS_RING_BUFFER_LIMIT + 4 });
   });
+
+  it("retains entries with the default in-memory fallback store", async () => {
+    const store = new AsyncStorageDiagnosticsStore();
+    await store.clear();
+
+    const event = buildLogEvent({
+      eventFamily: MpappLogEventFamily.InputClick,
+      actionType: MpappActionType.LeftClick,
+      sessionId: "session-fallback",
+      connectionState: MpappMode.Connected,
+      latencyMs: 1,
+      platform: "android",
+      osVersion: "34",
+      payload: { source: "fallback" },
+    });
+
+    await store.append(event);
+    const recent = await store.listRecent(1);
+
+    expect(recent).toHaveLength(1);
+    expect(recent[0]?.eventId).toBe(event.eventId);
+    expect(recent[0]?.payload).toMatchObject({ source: "fallback" });
+  });
 });
