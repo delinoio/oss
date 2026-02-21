@@ -6,6 +6,7 @@ It allows users to pick files from cloud providers, local folders, or a mobile c
 
 ## Path
 - `apps/devkit/src/apps/remote-file-picker`
+- Route placeholder: `apps/devkit/src/app/apps/remote-file-picker/page.tsx`
 
 ## Runtime and Language
 - Next.js 16 mini app module (TypeScript)
@@ -28,11 +29,12 @@ It allows users to pick files from cloud providers, local folders, or a mobile c
 - Provider account admin or enterprise policy management.
 
 ## Architecture
-- Entry request parser and contract validator.
-- Source adapter layer for each picker source.
-- Client-side preprocessing stage for format conversion and compression.
-- Signed URL upload orchestrator with progress/error handling.
-- Host-app return bridge (redirect/postMessage callback contract).
+- Current shell bootstrap provides a placeholder route and static ownership boundary.
+- Entry request parser and contract validator are deferred.
+- Source adapter layer for each picker source is deferred.
+- Client-side preprocessing stage for format conversion and compression is deferred.
+- Signed URL upload orchestrator with progress/error handling is deferred.
+- Host-app return bridge (redirect/postMessage callback contract) is deferred.
 
 ## Interfaces
 Canonical mini app identifier:
@@ -83,6 +85,7 @@ interface UploadMetadata {
 
 Route contract:
 - `/apps/remote-file-picker`
+- Current route state: placeholder page rendered by Devkit shell bootstrap.
 
 Conceptual host request contract:
 - Signed URL payload (URL, headers, provider type, expiry metadata)
@@ -110,7 +113,7 @@ Required baseline logs:
 - Return flow success/failure
 
 ## Build and Test
-Planned commands:
+Current commands:
 - `pnpm --filter devkit... test`
 - Module-focused tests for picker source adapters and signed URL upload orchestration.
 

@@ -6,6 +6,7 @@ It provides commit history visualization, pull-request base-vs-head comparisons,
 
 ## Path
 - Web app: `apps/devkit/src/apps/commit-tracker`
+- Web route placeholder: `apps/devkit/src/app/apps/commit-tracker/page.tsx`
 - API server and provider reporter: `servers/commit-tracker` (planned)
 - CI collector and ingestion CLI: `cmds/commit-tracker` (planned)
 
@@ -39,7 +40,8 @@ It provides commit history visualization, pull-request base-vs-head comparisons,
 - Collector uploads commit metrics from CI and benchmark tools through Connect RPC ingestion endpoints.
 - API server stores metric definitions and measurements, then computes commit and pull request comparisons (`base` vs `head`).
 - Provider reporter emits markdown comparison comments and aggregate status checks to provider APIs.
-- Web app visualizes metric timelines, pull request deltas, and percentile/histogram summaries.
+- Web app route is currently a Devkit shell placeholder with enum-based registration.
+- Full visualization UI (timelines, deltas, percentile/histogram summaries) is deferred after shell bootstrap.
 - Devkit shell continues to own global auth/session/navigation concerns.
 
 ## Interfaces
@@ -53,6 +55,7 @@ enum MiniAppId {
 
 Route contract:
 - `/apps/commit-tracker`
+- Current route state: placeholder page rendered by Devkit shell bootstrap.
 
 Canonical component identifiers:
 
@@ -182,7 +185,7 @@ Required structured fields:
 - `delta_percent`
 
 ## Build and Test
-Planned commands:
+Current commands:
 - Web app tests: `pnpm --filter devkit... test`
 - API server tests (planned): `go test ./servers/commit-tracker/...`
 - Collector tests (planned): `go test ./cmds/commit-tracker/...`
