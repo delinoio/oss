@@ -32,9 +32,10 @@ Phase 1 is implemented for local file and mobile camera sources with direct clie
 ## Architecture
 - Route renders `RemoteFilePickerApp` inside Devkit shell.
 - Host request parser validates a base64url `request` query parameter and rejects invalid payloads with stable error codes.
+- Host request parser enforces provider-specific signed URL host validation (`aws-s3` must target S3 hosts, `gcp-cloud-storage` must target Cloud Storage hosts).
 - Source adapter layer supports local file picker and mobile camera capture.
 - Upload orchestrator performs signed URL uploads with `XMLHttpRequest` to emit progress and converts synchronous setup failures into structured upload failure results.
-- Completion bridge delivers results through `window.opener.postMessage` first, with redirect callback fallback.
+- Completion bridge attempts `window.opener.postMessage` handoff first, then uses redirect callback delivery as the confirmed completion path.
 - Client-side metadata transformation/compression is explicitly skipped in Phase 1 and logged as skipped.
 
 ## Interfaces
@@ -140,6 +141,7 @@ Route contract:
 
 ## Security
 - Validate signed URL origin/protocol and expiry before upload attempts.
+- Validate signed URL host against declared provider before upload attempts.
 - Enforce provider/method compatibility (`gcp-cloud-storage` only `PUT` in Phase 1).
 - Validate callback return URLs with explicit protocol allowlist (`http`/`https`) before redirect fallback.
 - Never log signed URL query secrets or provider access tokens.

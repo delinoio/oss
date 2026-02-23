@@ -74,6 +74,7 @@ export enum RequestValidationErrorCode {
   InvalidRequestEncoding = "invalid-request-encoding",
   InvalidRequestJson = "invalid-request-json",
   InvalidRequestPayload = "invalid-request-payload",
+  InvalidSignedUrlHost = "invalid-signed-url-host",
   UnsupportedSource = "unsupported-source",
   SignedUrlExpired = "signed-url-expired",
   UnsupportedProviderMethod = "unsupported-provider-method",

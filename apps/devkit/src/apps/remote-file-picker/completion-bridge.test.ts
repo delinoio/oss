@@ -25,12 +25,13 @@ function buildCompletionResult() {
 }
 
 describe("deliverCompletionResult", () => {
-  it("delivers completion through postMessage when opener is available", () => {
+  it("uses redirect fallback after postMessage handoff", () => {
     const postMessage = vi.fn();
     const assign = vi.fn();
 
+    const completion = buildCompletionResult();
     const result = deliverCompletionResult(
-      buildCompletionResult(),
+      completion,
       {
         returnUrl: "https://host.example/completion",
         postMessageTargetOrigin: "https://host.example",
@@ -50,17 +51,21 @@ describe("deliverCompletionResult", () => {
 
     expect(result).toEqual({
       delivered: true,
-      channel: "post-message",
-      message: "Completion delivered to opener via postMessage.",
+      channel: "redirect",
+      message: "Completion delivered via redirect callback after postMessage handoff.",
     });
     expect(postMessage).toHaveBeenCalledWith(
       {
         type: REMOTE_FILE_PICKER_POST_MESSAGE_TYPE,
-        payload: buildCompletionResult(),
+        payload: completion,
       },
       "https://host.example",
     );
-    expect(assign).not.toHaveBeenCalled();
+    expect(assign).toHaveBeenCalledTimes(1);
+
+    const redirectedUrl = new URL(assign.mock.calls[0][0] as string);
+    const encodedResult = redirectedUrl.searchParams.get("result");
+    expect(JSON.parse(decodeBase64Url(encodedResult || ""))).toEqual(completion);
   });
 
   it("falls back to redirect when opener is unavailable", () => {
@@ -127,6 +132,40 @@ describe("deliverCompletionResult", () => {
       delivered: true,
       channel: "redirect",
       message: "Completion delivered via redirect callback.",
+    });
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports failure when redirect fallback cannot be completed", () => {
+    const postMessage = vi.fn();
+    const assign = vi.fn(() => {
+      throw new Error("redirect blocked");
+    });
+
+    const result = deliverCompletionResult(
+      buildCompletionResult(),
+      {
+        returnUrl: "https://host.example/completion",
+        postMessageTargetOrigin: "https://host.example",
+      },
+      {
+        windowRef: {
+          opener: {
+            closed: false,
+            postMessage,
+          },
+          location: {
+            assign,
+          },
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      delivered: false,
+      channel: "failed",
+      message: "Completion delivery failed for both postMessage and redirect fallback.",
     });
     expect(postMessage).toHaveBeenCalledTimes(1);
     expect(assign).toHaveBeenCalledTimes(1);

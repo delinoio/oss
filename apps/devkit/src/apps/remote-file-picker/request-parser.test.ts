@@ -149,6 +149,44 @@ describe("parseRemoteFilePickerRequestFromSearch", () => {
     });
   });
 
+  it("rejects signed URL hosts that do not match aws-s3 provider", () => {
+    const payload = buildValidRequestPayload();
+    payload.uploadTarget.url = "https://attacker.example.com/upload-target";
+
+    const result = parseRemoteFilePickerRequestFromSearch(
+      `?request=${encodeJsonBase64Url(payload)}`,
+      NOW,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: RequestValidationErrorCode.InvalidSignedUrlHost,
+        message: "uploadTarget.url host is not allowed for provider aws-s3.",
+      },
+    });
+  });
+
+  it("rejects signed URL hosts that do not match gcp-cloud-storage provider", () => {
+    const payload = buildValidRequestPayload();
+    payload.uploadTarget.provider = SignedUrlProvider.GcpCloudStorage;
+    payload.uploadTarget.url = "https://bucket.s3.amazonaws.com/image.png";
+
+    const result = parseRemoteFilePickerRequestFromSearch(
+      `?request=${encodeJsonBase64Url(payload)}`,
+      NOW,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: RequestValidationErrorCode.InvalidSignedUrlHost,
+        message:
+          "uploadTarget.url host is not allowed for provider gcp-cloud-storage.",
+      },
+    });
+  });
+
   it("rejects invalid callback URLs", () => {
     const payload = buildValidRequestPayload();
     payload.callback.returnUrl = "/host/complete";

@@ -17,6 +17,9 @@ const PHASE_ONE_SOURCES = new Set<PickerSource>([
   PickerSource.MobileCamera,
 ]);
 const ALLOWED_CALLBACK_PROTOCOLS = new Set(["http:", "https:"]);
+const AWS_S3_HOST_PATTERN = /(^|\.)s3([.-][a-z0-9-]+)*\.amazonaws\.com(\.cn)?$/i;
+const GCP_STORAGE_HOST = "storage.googleapis.com";
+const GCP_STORAGE_HOST_SUFFIX = ".storage.googleapis.com";
 
 function buildError(
   code: RequestValidationErrorCode,
@@ -41,6 +44,25 @@ function isValidationError(value: unknown): value is RequestValidationError {
     typeof value.code === "string" &&
     typeof value.message === "string"
   );
+}
+
+function isSignedUrlHostAllowed(
+  provider: SignedUrlProvider,
+  hostname: string,
+): boolean {
+  const normalizedHostname = hostname.toLowerCase();
+
+  switch (provider) {
+    case SignedUrlProvider.AwsS3:
+      return AWS_S3_HOST_PATTERN.test(normalizedHostname);
+    case SignedUrlProvider.GcpCloudStorage:
+      return (
+        normalizedHostname === GCP_STORAGE_HOST ||
+        normalizedHostname.endsWith(GCP_STORAGE_HOST_SUFFIX)
+      );
+    default:
+      return false;
+  }
 }
 
 function parseNonEmptyString(
@@ -174,6 +196,13 @@ function parseUploadTarget(
     return {
       code: RequestValidationErrorCode.InvalidRequestPayload,
       message: "uploadTarget.url must use https.",
+    };
+  }
+
+  if (!isSignedUrlHostAllowed(normalizedProvider, parsedUploadUrl.hostname)) {
+    return {
+      code: RequestValidationErrorCode.InvalidSignedUrlHost,
+      message: `uploadTarget.url host is not allowed for provider ${normalizedProvider}.`,
     };
   }
 

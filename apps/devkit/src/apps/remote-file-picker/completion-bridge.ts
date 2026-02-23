@@ -38,6 +38,7 @@ export function deliverCompletionResult(
   dependencies: CompletionBridgeDependencies = {},
 ): CompletionDeliveryResult {
   const windowRef = dependencies.windowRef ?? (window as CompletionBridgeWindow);
+  let postMessageAttempted = false;
 
   if (callback.postMessageTargetOrigin && windowRef.opener && !windowRef.opener.closed) {
     try {
@@ -48,12 +49,7 @@ export function deliverCompletionResult(
         },
         callback.postMessageTargetOrigin,
       );
-
-      return {
-        delivered: true,
-        channel: CompletionDeliveryChannel.PostMessage,
-        message: "Completion delivered to opener via postMessage.",
-      };
+      postMessageAttempted = true;
     } catch {
       // Fallback to redirect below.
     }
@@ -66,7 +62,9 @@ export function deliverCompletionResult(
     return {
       delivered: true,
       channel: CompletionDeliveryChannel.Redirect,
-      message: "Completion delivered via redirect callback.",
+      message: postMessageAttempted
+        ? "Completion delivered via redirect callback after postMessage handoff."
+        : "Completion delivered via redirect callback.",
     };
   } catch {
     return {
