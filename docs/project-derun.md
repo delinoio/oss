@@ -170,7 +170,8 @@ Write consistency contract:
 - Directory permissions: `0700`
 - File permissions: `0600`
 - Persist output stream only by default; stdin is proxied but not persisted.
-- Reject path traversal and symlink escape conditions while loading session artifacts.
+- Resolve canonical real paths before session artifact IO and reject path traversal or symlink escape outside `sessions/<session-id>`.
+- Apply traversal/symlink checks consistently for `meta.json`, `final.json`, `output.bin`, `index.jsonl`, and `append.lock` across read and write flows.
 - Keep MCP tool surface read-only in v1.
 - Do not emit secret values into operational logs.
 
@@ -210,6 +211,7 @@ Required behavioral test scenarios:
 6. Large-output chunking with stable `next_cursor` semantics.
 7. TTL expiration removes only expired sessions and preserves active sessions.
 8. Windows ConPTY parity tests and POSIX PTY parity tests.
+9. Session artifact traversal and symlink-escape attempts are rejected for both read and write operations.
 
 ## Roadmap
 - Phase 1: Terminal-fidelity `run` execution and transcript persistence.
