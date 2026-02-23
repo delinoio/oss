@@ -107,11 +107,18 @@ enum ThenvComponent {
 - Use `$(...)` for command substitution; do not use legacy backticks in new scripts.
 - Apply strict quoting and escaping for all dynamic shell values to prevent command injection and parsing bugs.
 
+## Logging Rules
+- Write sufficient logs to support debugging, incident analysis, and operational troubleshooting.
+- Prefer structured logging over ad-hoc plain text logs for business and system events.
+- Go code should use `log/slog` (or a compatible structured logger built on it).
+- Rust code should use `tracing` (or a compatible structured logging facade).
+
 ## Documentation Lifecycle Rules
 - Every structural repository change must update relevant `docs/project-*.md` files in the same change set.
 - New project creation is blocked until its project document exists.
 - Domain-level `AGENTS.md` files are policy mirrors and must stay aligned with `docs/`.
 - After staging files with `git add`, create a commit with `git commit` without unnecessary delay.
+- Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - After addressing pull request review comments and pushing updates, resolve the corresponding review threads.
 - If a project splits into multiple deployables, the project doc must include path ownership and integration boundaries.
 - `docs/project-devkit-commit-tracker.md` remains the canonical single document for commit tracker UI/API/collector contracts.

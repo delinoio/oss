@@ -47,8 +47,9 @@ Document persistent data, cache, local files, and retention expectations.
 Document trust boundaries, secrets handling, permissions, and data safety rules.
 
 ## Logging
-Document required log fields and debugging expectations.
+Document required structured log fields and debugging expectations.
 Include minimum operational logs for troubleshooting.
+Prefer structured logging libraries (Go: `log/slog`, Rust: `tracing`) for operational and business events.
 
 ## Build and Test
 Define local build commands, validation commands, and CI expectations.

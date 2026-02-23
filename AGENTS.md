@@ -8,9 +8,12 @@
 - If you modified frontend code, run `pnpm test` from the frontend directory before finishing your task.
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - After `git add`, run `git commit` without unnecessary delay so staged changes are preserved in history.
+- Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
 - Do not guess; rather search for the web.
 - Debug by logging. You should write enough logging code.
+- Write sufficient logs for debugging and operational troubleshooting.
+- Prefer structured logging libraries for business and system logs (Go: `log/slog`, Rust: `tracing`).
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
 - When writing shell commands or scripts, treat backticks and command substitution carefully, prefer `$(...)` over legacy backticks, and apply strict escaping for all dynamic values.
 
