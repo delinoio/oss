@@ -2,7 +2,10 @@ package state
 
 import (
 	"encoding/base64"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -179,6 +182,340 @@ func TestStoreHasSessionMetadata(t *testing.T) {
 	}
 }
 
+func TestStoreRejectsTraversalSessionIDAcrossEntrypoints(t *testing.T) {
+	root := testutil.TempStateRoot(t)
+	store, err := New(root)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	invalidSessionIDs := []string{
+		"..",
+		"../escape",
+		"with/slash",
+		`with\backslash`,
+	}
+
+	operations := []struct {
+		name string
+		run  func(sessionID string) error
+	}{
+		{
+			name: "WriteMeta",
+			run: func(sessionID string) error {
+				return store.WriteMeta(newTestMeta(sessionID))
+			},
+		},
+		{
+			name: "WriteFinal",
+			run: func(sessionID string) error {
+				return store.WriteFinal(newTestFinal(sessionID))
+			},
+		},
+		{
+			name: "AppendOutput",
+			run: func(sessionID string) error {
+				_, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("payload"), time.Now().UTC())
+				return err
+			},
+		},
+		{
+			name: "ReadOutput",
+			run: func(sessionID string) error {
+				_, _, _, err := store.ReadOutput(sessionID, 0, 1024)
+				return err
+			},
+		},
+		{
+			name: "GetSession",
+			run: func(sessionID string) error {
+				_, err := store.GetSession(sessionID)
+				return err
+			},
+		},
+		{
+			name: "HasSessionMetadata",
+			run: func(sessionID string) error {
+				_, err := store.HasSessionMetadata(sessionID)
+				return err
+			},
+		},
+	}
+
+	sanitizer := strings.NewReplacer("/", "_", "\\", "_")
+	for _, operation := range operations {
+		operation := operation
+		for _, sessionID := range invalidSessionIDs {
+			sessionID := sessionID
+			t.Run(operation.name+"_"+sanitizer.Replace(sessionID), func(t *testing.T) {
+				err := operation.run(sessionID)
+				if err == nil {
+					t.Fatalf("expected error for invalid session id: %q", sessionID)
+				}
+				if !strings.Contains(err.Error(), "session id") {
+					t.Fatalf("unexpected error for session id %q: %v", sessionID, err)
+				}
+			})
+		}
+	}
+}
+
+func TestStoreRejectsSessionDirectorySymlinkEscape(t *testing.T) {
+	requireSymlinkSupport(t)
+
+	root := testutil.TempStateRoot(t)
+	store, err := New(root)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	sessionID := "01J0S444444444444444444444"
+	outsideDir := filepath.Join(t.TempDir(), "outside-session")
+	if err := os.MkdirAll(outsideDir, 0o700); err != nil {
+		t.Fatalf("mkdir outside dir: %v", err)
+	}
+	sessionPath := filepath.Join(root, "sessions", sessionID)
+	if err := os.Symlink(outsideDir, sessionPath); err != nil {
+		t.Fatalf("create session directory symlink: %v", err)
+	}
+
+	assertSymlinkEscapeError(t, store.WriteMeta(newTestMeta(sessionID)))
+	assertSymlinkEscapeError(t, store.WriteFinal(newTestFinal(sessionID)))
+	_, appendErr := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("payload"), time.Now().UTC())
+	assertSymlinkEscapeError(t, appendErr)
+	_, getErr := store.GetSession(sessionID)
+	assertSymlinkEscapeError(t, getErr)
+	_, _, _, readErr := store.ReadOutput(sessionID, 0, 1024)
+	assertSymlinkEscapeError(t, readErr)
+}
+
+func TestStoreRejectsSessionArtifactSymlinkEscape(t *testing.T) {
+	requireSymlinkSupport(t)
+
+	t.Run("meta file", func(t *testing.T) {
+		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0S555555555555555555555")
+		outsideMeta := filepath.Join(t.TempDir(), "meta.json")
+		if err := os.WriteFile(outsideMeta, []byte("{}"), 0o600); err != nil {
+			t.Fatalf("write outside meta file: %v", err)
+		}
+		if err := os.Symlink(outsideMeta, filepath.Join(sessionDir, metaFileName)); err != nil {
+			t.Fatalf("create meta symlink: %v", err)
+		}
+		assertSymlinkEscapeError(t, store.WriteMeta(newTestMeta(sessionID)))
+	})
+
+	t.Run("final file", func(t *testing.T) {
+		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0S666666666666666666666")
+		outsideFinal := filepath.Join(t.TempDir(), "final.json")
+		if err := os.WriteFile(outsideFinal, []byte("{}"), 0o600); err != nil {
+			t.Fatalf("write outside final file: %v", err)
+		}
+		if err := os.Symlink(outsideFinal, filepath.Join(sessionDir, finalFileName)); err != nil {
+			t.Fatalf("create final symlink: %v", err)
+		}
+		assertSymlinkEscapeError(t, store.WriteFinal(newTestFinal(sessionID)))
+	})
+
+	t.Run("append lock file", func(t *testing.T) {
+		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0S777777777777777777777")
+		outsideLock := filepath.Join(t.TempDir(), "append.lock")
+		if err := os.WriteFile(outsideLock, []byte(""), 0o600); err != nil {
+			t.Fatalf("write outside lock file: %v", err)
+		}
+		if err := os.Symlink(outsideLock, filepath.Join(sessionDir, lockFileName)); err != nil {
+			t.Fatalf("create lock symlink: %v", err)
+		}
+		_, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("payload"), time.Now().UTC())
+		assertSymlinkEscapeError(t, err)
+	})
+
+	t.Run("output file append", func(t *testing.T) {
+		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0S888888888888888888888")
+		outsideOutput := filepath.Join(t.TempDir(), "output.bin")
+		if err := os.WriteFile(outsideOutput, []byte(""), 0o600); err != nil {
+			t.Fatalf("write outside output file: %v", err)
+		}
+		if err := os.Symlink(outsideOutput, filepath.Join(sessionDir, outputFileName)); err != nil {
+			t.Fatalf("create output symlink: %v", err)
+		}
+		_, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("payload"), time.Now().UTC())
+		assertSymlinkEscapeError(t, err)
+	})
+
+	t.Run("output file append with dangling target", func(t *testing.T) {
+		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0S898989898989898989898")
+		outsideRoot := filepath.Join(t.TempDir(), "outside")
+		if err := os.MkdirAll(outsideRoot, 0o700); err != nil {
+			t.Fatalf("mkdir outside root: %v", err)
+		}
+		danglingTarget := filepath.Join(outsideRoot, "new-output.bin")
+		if err := os.Symlink(danglingTarget, filepath.Join(sessionDir, outputFileName)); err != nil {
+			t.Fatalf("create dangling output symlink: %v", err)
+		}
+
+		_, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("payload"), time.Now().UTC())
+		assertSymlinkEscapeError(t, err)
+		if _, statErr := os.Stat(danglingTarget); !os.IsNotExist(statErr) {
+			t.Fatalf("dangling target should not be created, statErr=%v", statErr)
+		}
+	})
+
+	t.Run("output file read", func(t *testing.T) {
+		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0S999999999999999999999")
+		if _, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("hello"), time.Now().UTC()); err != nil {
+			t.Fatalf("AppendOutput setup returned error: %v", err)
+		}
+
+		outputPath := filepath.Join(sessionDir, outputFileName)
+		if err := os.Remove(outputPath); err != nil {
+			t.Fatalf("remove output file: %v", err)
+		}
+		outsideOutput := filepath.Join(t.TempDir(), "output.bin")
+		if err := os.WriteFile(outsideOutput, []byte("hello"), 0o600); err != nil {
+			t.Fatalf("write outside output file: %v", err)
+		}
+		if err := os.Symlink(outsideOutput, outputPath); err != nil {
+			t.Fatalf("create output symlink: %v", err)
+		}
+
+		_, _, _, err := store.ReadOutput(sessionID, 0, 1024)
+		assertSymlinkEscapeError(t, err)
+	})
+
+	t.Run("index file append", func(t *testing.T) {
+		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0T111111111111111111111")
+		outsideIndex := filepath.Join(t.TempDir(), "index.jsonl")
+		if err := os.WriteFile(outsideIndex, []byte(""), 0o600); err != nil {
+			t.Fatalf("write outside index file: %v", err)
+		}
+		if err := os.Symlink(outsideIndex, filepath.Join(sessionDir, indexFileName)); err != nil {
+			t.Fatalf("create index symlink: %v", err)
+		}
+		_, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("payload"), time.Now().UTC())
+		assertSymlinkEscapeError(t, err)
+	})
+
+	t.Run("index file read", func(t *testing.T) {
+		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0T222222222222222222222")
+		if _, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("hello"), time.Now().UTC()); err != nil {
+			t.Fatalf("AppendOutput setup returned error: %v", err)
+		}
+
+		indexPath := filepath.Join(sessionDir, indexFileName)
+		if err := os.Remove(indexPath); err != nil {
+			t.Fatalf("remove index file: %v", err)
+		}
+		outsideIndex := filepath.Join(t.TempDir(), "index.jsonl")
+		if err := os.WriteFile(outsideIndex, []byte(""), 0o600); err != nil {
+			t.Fatalf("write outside index file: %v", err)
+		}
+		if err := os.Symlink(outsideIndex, indexPath); err != nil {
+			t.Fatalf("create index symlink: %v", err)
+		}
+
+		_, _, _, err := store.ReadOutput(sessionID, 0, 1024)
+		assertSymlinkEscapeError(t, err)
+	})
+}
+
+func TestStoreAllowsInSessionSymlinkTargets(t *testing.T) {
+	requireSymlinkSupport(t)
+
+	store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0T333333333333333333333")
+	internalArtifactsDir := filepath.Join(sessionDir, "artifacts")
+	if err := os.MkdirAll(internalArtifactsDir, 0o700); err != nil {
+		t.Fatalf("mkdir internal artifacts dir: %v", err)
+	}
+
+	if err := os.Symlink(filepath.Join(internalArtifactsDir, lockFileName), filepath.Join(sessionDir, lockFileName)); err != nil {
+		t.Fatalf("create lock symlink: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(internalArtifactsDir, outputFileName), filepath.Join(sessionDir, outputFileName)); err != nil {
+		t.Fatalf("create output symlink: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(internalArtifactsDir, indexFileName), filepath.Join(sessionDir, indexFileName)); err != nil {
+		t.Fatalf("create index symlink: %v", err)
+	}
+
+	if _, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("hello"), time.Now().UTC()); err != nil {
+		t.Fatalf("AppendOutput returned error: %v", err)
+	}
+	chunks, nextCursor, eof, err := store.ReadOutput(sessionID, 0, 1024)
+	if err != nil {
+		t.Fatalf("ReadOutput returned error: %v", err)
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("unexpected chunk count: got=%d want=1", len(chunks))
+	}
+	if nextCursor != 5 {
+		t.Fatalf("unexpected next cursor: got=%d want=5", nextCursor)
+	}
+	if !eof {
+		t.Fatalf("expected eof=true")
+	}
+}
+
 func ptr(v int) *int {
 	return &v
+}
+
+func newTestMeta(sessionID string) session.Meta {
+	return session.Meta{
+		SchemaVersion:    "v1alpha1",
+		SessionID:        sessionID,
+		Command:          []string{"echo", "ok"},
+		WorkingDirectory: "/tmp",
+		StartedAt:        time.Now().UTC().Add(-time.Minute),
+		RetentionSeconds: int64((24 * time.Hour).Seconds()),
+		TransportMode:    contracts.DerunTransportModePipe,
+		TTYAttached:      false,
+		PID:              123,
+	}
+}
+
+func newTestFinal(sessionID string) session.Final {
+	return session.Final{
+		SchemaVersion: "v1alpha1",
+		SessionID:     sessionID,
+		State:         contracts.DerunSessionStateExited,
+		EndedAt:       time.Now().UTC(),
+		ExitCode:      ptr(0),
+	}
+}
+
+func newStoreWithSessionDir(t *testing.T, sessionID string) (*Store, string, string) {
+	t.Helper()
+	root := testutil.TempStateRoot(t)
+	store, err := New(root)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	if err := store.EnsureSessionDir(sessionID); err != nil {
+		t.Fatalf("EnsureSessionDir returned error: %v", err)
+	}
+	sessionDir := filepath.Join(root, "sessions", sessionID)
+	return store, sessionID, sessionDir
+}
+
+func requireSymlinkSupport(t *testing.T) {
+	t.Helper()
+	probeDir := t.TempDir()
+	targetDir := filepath.Join(probeDir, "target-dir")
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		t.Fatalf("mkdir target dir: %v", err)
+	}
+	dirLink := filepath.Join(probeDir, "dir-link")
+	if err := os.Symlink(targetDir, dirLink); err != nil {
+		t.Skipf("symlink not supported in test environment: %v", err)
+	}
+}
+
+func assertSymlinkEscapeError(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected symlink escape error")
+	}
+	if !strings.Contains(err.Error(), "symlink") || !strings.Contains(err.Error(), "escape") {
+		t.Fatalf("expected symlink escape error, got: %v", err)
+	}
 }
