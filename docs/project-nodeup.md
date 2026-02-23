@@ -201,14 +201,17 @@ Symlink contract:
 
 ## Logging
 Required baseline logs:
-- Command path (`nodeup.<group>.<subcommand>` or `nodeup.<command>`) and argument shape (excluding sensitive values)
+- Command path (`nodeup.<group>.<subcommand>` or `nodeup.<command>`) and `arg_shape` JSON payload (single structured field, sanitized)
 - Runtime selector source (`explicit`, `override`, `default`) and resolved runtime
-- Override lookup result (`path`, `matched`, `fallback_reason`)
+- Override lookup result (`path`, `matched`, `fallback_reason`) with stable fallback codes:
+: `override-matched`
+: `fallback-to-default`
+: `no-default-selector`
 - Download source, checksum algorithm, checksum validation result, and install result
 - Dispatch executable alias (`argv[0]`) and resolved executable path
-- Self-management actions (`self update`, `self uninstall`, `self upgrade-data`) and outcome status
-- Delegated process lifecycle for `run` (spawn, exit code, signal)
-- Completion generation target shell and success/failure status
+- Self-management actions (`self update`, `self uninstall`, `self upgrade-data`) and outcome status (`outcome=not-implemented` in current phase)
+- Delegated process lifecycle for `run` with spawn/execution logs plus termination detail (`exit_code`, `signal`)
+- Completion generation target shell and success/failure status (`action=generate`, `outcome=not-implemented` in current phase)
 
 ## Build and Test
 Planned commands:
