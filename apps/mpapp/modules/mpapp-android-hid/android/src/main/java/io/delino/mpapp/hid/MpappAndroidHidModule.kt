@@ -459,7 +459,8 @@ class MpappAndroidHidModule : Module() {
     private const val PROFILE_PROXY_TIMEOUT_SECONDS = 3L
     private const val APP_REGISTRATION_TIMEOUT_SECONDS = 3L
     private const val CONNECTION_TIMEOUT_SECONDS = 10L
-    private const val REPORT_ID_MOUSE = 1
+    // Descriptor does not define a Report ID (0x85), so report ID must be 0.
+    private const val REPORT_ID_MOUSE = 0
 
     private const val BUTTONS_NONE: Byte = 0x00
     private const val BUTTON_LEFT: Byte = 0x01

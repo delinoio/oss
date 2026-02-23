@@ -1,8 +1,5 @@
 import { MpappHidTransportMode } from "../contracts/enums";
 
-const HID_TRANSPORT_MODE_ENV_KEY = "EXPO_PUBLIC_MPAPP_HID_TRANSPORT_MODE";
-const HID_TARGET_HOST_ADDRESS_ENV_KEY = "EXPO_PUBLIC_MPAPP_HID_TARGET_HOST_ADDRESS";
-
 type RuntimeEnvironment = Record<string, string | undefined>;
 
 type ExpoMpappExtra = {
@@ -79,16 +76,20 @@ function readExpoMpappExtraFromConstants(): ExpoMpappExtra {
 export function resolveMpappRuntimeConfig(
   options: ResolveMpappRuntimeConfigOptions = {},
 ): MpappRuntimeConfig {
-  const environment = options.env ?? process.env;
+  const explicitEnvironment = options.env;
   const expoMpappExtra = options.expoMpappExtra ?? readExpoMpappExtraFromConstants();
 
+  // Keep static EXPO_PUBLIC_* access so Expo can inline values in app bundles.
   const envTransportMode = parseTransportMode(
-    environment[HID_TRANSPORT_MODE_ENV_KEY],
+    explicitEnvironment?.EXPO_PUBLIC_MPAPP_HID_TRANSPORT_MODE ??
+      process.env.EXPO_PUBLIC_MPAPP_HID_TRANSPORT_MODE,
   );
   const extraTransportMode = parseTransportMode(expoMpappExtra.hidTransportMode);
 
+  // Keep static EXPO_PUBLIC_* access so Expo can inline values in app bundles.
   const envTargetHostAddress = parseHostAddress(
-    environment[HID_TARGET_HOST_ADDRESS_ENV_KEY],
+    explicitEnvironment?.EXPO_PUBLIC_MPAPP_HID_TARGET_HOST_ADDRESS ??
+      process.env.EXPO_PUBLIC_MPAPP_HID_TARGET_HOST_ADDRESS,
   );
   const extraTargetHostAddress = parseHostAddress(
     expoMpappExtra.hidTargetHostAddress,
