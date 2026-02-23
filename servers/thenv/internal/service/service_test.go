@@ -245,6 +245,38 @@ func TestJWTWithoutSubjectIsRejected(t *testing.T) {
 	}
 }
 
+func TestSubjectMismatchWithBearerIsRejected(t *testing.T) {
+	svc, serverURL := newTestServiceAndServer(t)
+	defer func() {
+		_ = svc.Close()
+	}()
+
+	httpClient := &http.Client{}
+	bundleClient := thenvv1connect.NewBundleServiceClient(httpClient, serverURL)
+	scope := &thenvv1.Scope{WorkspaceId: "ws-auth-4", ProjectId: "proj-auth-4", EnvironmentId: "dev"}
+
+	pushReq := connect.NewRequest(&thenvv1.PushBundleVersionRequest{
+		Scope: scope,
+		Files: []*thenvv1.BundleFile{{
+			FileType:  thenvv1.FileType_FILE_TYPE_ENV,
+			Plaintext: []byte("SUBJECT_MISMATCH=1\n"),
+		}},
+	})
+	setAuthHeaders(pushReq, "opaque-token-a", "admin")
+
+	_, err := bundleClient.PushBundleVersion(context.Background(), pushReq)
+	if err == nil {
+		t.Fatal("expected subject mismatch to be rejected")
+	}
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("expected connect error, got=%v", err)
+	}
+	if connectErr.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("expected unauthenticated error, got=%s", connectErr.Code())
+	}
+}
+
 func TestLegacySubjectEqualToTokenIsHashedInAuditAndLogs(t *testing.T) {
 	token := "opaque-token-value-for-hash-assertion"
 	logBuffer := &bytes.Buffer{}

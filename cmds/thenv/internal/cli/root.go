@@ -57,7 +57,7 @@ type commonFlags struct {
 func registerCommonFlags(fs *flag.FlagSet, common *commonFlags) {
 	fs.StringVar(&common.serverURL, "server", resolveServerURL(), "thenv server base URL")
 	fs.StringVar(&common.token, "token", resolveToken(), "bearer token value")
-	fs.StringVar(&common.subject, "subject", resolveSubject(), "subject identity sent in X-Thenv-Subject header (defaults to token)")
+	fs.StringVar(&common.subject, "subject", resolveSubject(), "subject identity sent in X-Thenv-Subject header (must match token; defaults to token)")
 	fs.StringVar(&common.workspaceID, "workspace", "", "workspace scope id")
 	fs.StringVar(&common.projectID, "project", "", "project scope id")
 	fs.StringVar(&common.environmentID, "env", "", "environment scope id")

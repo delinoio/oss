@@ -156,6 +156,7 @@ Local and frontend storage:
 : DEK is encrypted with a master key from `THENV_MASTER_KEY_B64` (AES-256-GCM).
 - Authentication (MVP):
 : Subject is resolved from `X-Thenv-Subject` only.
+: `X-Thenv-Subject` must exactly match the `Authorization: Bearer <token>` value for authorization to proceed.
 : Bearer token payload/claims are not parsed for identity derivation in the server.
 : Requests without explicit `X-Thenv-Subject` are rejected as unauthenticated.
 : Raw bearer token bytes are never stored in actor-facing metadata fields.
@@ -204,12 +205,12 @@ Server environment variables:
 CLI environment variables:
 - `THENV_SERVER_URL` (default: `http://127.0.0.1:8087`)
 - `THENV_TOKEN` (default: `admin`)
-- `THENV_SUBJECT` (optional; defaults to `THENV_TOKEN` value in CLI requests)
+- `THENV_SUBJECT` (optional; defaults to `THENV_TOKEN` value, and must match token for server authorization)
 
 Devkit environment variables (optional):
 - `THENV_SERVER_URL` or `NEXT_PUBLIC_THENV_SERVER_URL`
 - `THENV_WEB_TOKEN` or `THENV_TOKEN` or `NEXT_PUBLIC_THENV_TOKEN`
-- `THENV_WEB_SUBJECT` or `THENV_SUBJECT` or `NEXT_PUBLIC_THENV_SUBJECT` (defaults to resolved token value in Devkit proxy requests)
+- `THENV_WEB_SUBJECT` or `THENV_SUBJECT` or `NEXT_PUBLIC_THENV_SUBJECT` (defaults to resolved token value and must match token for server authorization)
 
 ## Build and Test
 Current commands:

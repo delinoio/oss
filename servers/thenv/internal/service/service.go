@@ -51,12 +51,13 @@ type scopeKey struct {
 }
 
 type callMeta struct {
-	subject    string
-	actor      string
-	requestID  string
-	traceID    string
-	role       thenvv1.Role
-	authSource authIdentitySource
+	subject      string
+	actor        string
+	requestID    string
+	traceID      string
+	role         thenvv1.Role
+	authSource   authIdentitySource
+	subjectBound bool
 }
 
 type authIdentitySource uint8
@@ -1186,6 +1187,11 @@ func (s *Service) authorize(
 		s.logOperation(meta, scope, operation, eventType, contracts.RoleDecisionDeny, contracts.OperationResultDenied, "", "", nil, err)
 		return callMeta{}, err
 	}
+	if !meta.subjectBound {
+		err := connect.NewError(connect.CodeUnauthenticated, errors.New("subject must match bearer token"))
+		s.logOperation(meta, scope, operation, eventType, contracts.RoleDecisionDeny, contracts.OperationResultDenied, "", "", nil, err)
+		return callMeta{}, err
+	}
 
 	if err := s.ensureBootstrapBinding(ctx, s.db, scope, meta.subject); err != nil {
 		s.logOperation(meta, scope, operation, eventType, contracts.RoleDecisionDeny, contracts.OperationResultFailure, "", "", nil, err)
@@ -1340,8 +1346,9 @@ func extractCallMeta(headers http.Header) callMeta {
 	if subject != "" {
 		authSource = authIdentitySourceHeader
 	}
+	subjectBound := subject != "" && bearerToken != "" && subject == bearerToken
 	actor := subject
-	if subject != "" && bearerToken != "" && subject == bearerToken {
+	if subjectBound {
 		actor = hashLegacyTokenActor(subject)
 		authSource = authIdentitySourceHashedLegacy
 	}
@@ -1355,11 +1362,12 @@ func extractCallMeta(headers http.Header) callMeta {
 	}
 
 	return callMeta{
-		subject:    subject,
-		actor:      actor,
-		requestID:  requestID,
-		traceID:    traceID,
-		authSource: authSource,
+		subject:      subject,
+		actor:        actor,
+		requestID:    requestID,
+		traceID:      traceID,
+		authSource:   authSource,
+		subjectBound: subjectBound,
 	}
 }
 
