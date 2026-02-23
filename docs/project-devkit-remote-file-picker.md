@@ -2,39 +2,40 @@
 
 ## Goal
 `devkit-remote-file-picker` is a Devkit mini app for signed URL based image uploads.
-It allows users to pick files from cloud providers, local folders, or a mobile camera flow, then upload directly from the client to AWS or GCP signed URLs.
+Phase 1 is implemented for local file and mobile camera sources with direct client uploads to AWS S3 and GCP Cloud Storage signed URLs.
 
 ## Path
 - `apps/devkit/src/apps/remote-file-picker`
-- Route placeholder: `apps/devkit/src/app/apps/remote-file-picker/page.tsx`
+- Route implementation: `apps/devkit/src/app/apps/remote-file-picker/page.tsx`
 
 ## Runtime and Language
 - Next.js 16 mini app module (TypeScript)
 
 ## Users
 - Product flows that need delegated file selection and upload
-- End users who must upload images from Google Drive, OneDrive, local storage, or camera capture
+- End users who must upload images from local storage or mobile camera capture
 
 ## In Scope
-- Entry flow from host app via redirect or popup with upload request payload.
-- Source picker UI with Google Drive, OneDrive, local file picker, and mobile camera capture.
+- Entry flow from host app with base64url-encoded request payload in query params.
+- Source picker UI for `local-file` and `mobile-camera`.
 - Direct client-side upload to signed URLs.
-- Signed URL type support for AWS S3 and GCP Cloud Storage.
-- Return flow to host app after upload completion.
-- Upload metadata options for file format conversion and size compression.
+- Signed URL type support for AWS S3 (`PUT`/`POST`) and GCP Cloud Storage (`PUT`).
+- Upload progress and error UX.
+- Return flow to host app after upload completion via postMessage or redirect fallback.
 
 ## Out of Scope
+- Google Drive and OneDrive adapters (deferred to Phase 2).
 - Persistent media library management.
 - Long-running server-side transcoding pipelines.
 - Provider account admin or enterprise policy management.
 
 ## Architecture
-- Current shell bootstrap provides a placeholder route and static ownership boundary.
-- Entry request parser and contract validator are deferred.
-- Source adapter layer for each picker source is deferred.
-- Client-side preprocessing stage for format conversion and compression is deferred.
-- Signed URL upload orchestrator with progress/error handling is deferred.
-- Host-app return bridge (redirect/postMessage callback contract) is deferred.
+- Route renders `RemoteFilePickerApp` inside Devkit shell.
+- Host request parser validates a base64url `request` query parameter and rejects invalid payloads with stable error codes.
+- Source adapter layer supports local file picker and mobile camera capture.
+- Upload orchestrator performs signed URL uploads with `XMLHttpRequest` to emit progress.
+- Completion bridge delivers results through `window.opener.postMessage` first, with redirect callback fallback.
+- Client-side metadata transformation/compression is explicitly skipped in Phase 1 and logged as skipped.
 
 ## Interfaces
 Canonical mini app identifier:
@@ -45,7 +46,7 @@ enum MiniAppId {
 }
 ```
 
-Signed URL target contract:
+Signed URL provider contract:
 
 ```ts
 enum SignedUrlProvider {
@@ -58,74 +59,115 @@ Picker source contract:
 
 ```ts
 enum PickerSource {
-  GoogleDrive = "google-drive",
-  OneDrive = "onedrive",
   LocalFile = "local-file",
   MobileCamera = "mobile-camera",
+  GoogleDrive = "google-drive",
+  OneDrive = "onedrive",
 }
 ```
 
-Upload metadata contract (conceptual):
+Upload target contract:
 
 ```ts
-enum OutputImageFormat {
-  Original = "original",
-  Jpeg = "jpeg",
-  Png = "png",
-  Webp = "webp",
+enum UploadHttpMethod {
+  Put = "PUT",
+  Post = "POST",
 }
 
-interface UploadMetadata {
-  outputFormat: OutputImageFormat;
-  compressionQualityPercent?: number;
-  maxWidthPx?: number;
-  maxHeightPx?: number;
+interface SignedUrlUploadTarget {
+  provider: SignedUrlProvider;
+  method: UploadHttpMethod;
+  url: string;
+  expiresAt: string;
+  headers?: Record<string, string>;
+  formFields?: Record<string, string>;
+  fileFieldName?: string;
+}
+```
+
+Host request contract:
+
+```ts
+interface RemoteFilePickerRequest {
+  requestId: string;
+  uploadTarget: SignedUrlUploadTarget;
+  allowedSources: PickerSource[];
+  fileConstraints?: {
+    maxBytes?: number;
+    allowedMimeTypes?: string[];
+  };
+  callback: {
+    returnUrl: string;
+    postMessageTargetOrigin?: string;
+  };
+}
+```
+
+Completion contract:
+
+```ts
+enum RemoteFilePickerCompletionStatus {
+  Success = "success",
+  Failure = "failure",
+}
+
+interface RemoteFilePickerCompletionResult {
+  requestId: string;
+  provider: SignedUrlProvider;
+  status: RemoteFilePickerCompletionStatus;
+  uploadedAt: string;
+  file?: {
+    name: string;
+    sizeBytes: number;
+    mimeType: string;
+  };
+  error?: {
+    code: string;
+    message: string;
+    httpStatus?: number;
+  };
 }
 ```
 
 Route contract:
 - `/apps/remote-file-picker`
-- Current route state: placeholder page rendered by Devkit shell bootstrap.
-
-Conceptual host request contract:
-- Signed URL payload (URL, headers, provider type, expiry metadata)
-- Allowed sources and file constraints
-- Return URL or callback channel details
-- Optional metadata transformation preferences
+- Entry payload transport: query param `request=<base64url-json>`.
 
 ## Storage
-- Ephemeral client state for active request, picker selection, and upload progress.
+- Ephemeral client state for active request, picker selection, upload progress, and completion status.
 - No standalone mini app database.
-- Sensitive request tokens must stay in memory-only state when possible.
+- Sensitive request tokens stay in memory and are never persisted.
 
 ## Security
-- Validate signed URL origin and expiry before upload attempts.
-- Restrict provider OAuth scopes to minimum read/upload requirements.
+- Validate signed URL origin/protocol and expiry before upload attempts.
+- Enforce provider/method compatibility (`gcp-cloud-storage` only `PUT` in Phase 1).
 - Never log signed URL query secrets or provider access tokens.
-- Enforce file type and size guards before upload.
+- Enforce file type and size constraints before upload.
 
 ## Logging
 Required baseline logs:
 - Entry request validation result
 - Picker source selection and source adapter failures
-- Preprocessing result and compression decision
-- Upload request/result with correlation identifier
+- Preprocessing decision (`skipped` in Phase 1)
+- Upload request/result with request correlation id
 - Return flow success/failure
 
 ## Build and Test
 Current commands:
 - `pnpm --filter devkit... test`
-- Module-focused tests for picker source adapters and signed URL upload orchestration.
+- Module-focused tests:
+  - request parser validation
+  - upload orchestrator success/failure
+  - completion bridge channel fallback
 
 ## Roadmap
-- Phase 1: Local file and mobile camera upload to signed URLs.
+- Phase 1: Implemented local file and mobile camera upload to signed URLs.
 - Phase 2: Google Drive and OneDrive source adapters.
 - Phase 3: Metadata transform presets and reliability hardening.
 
 ## Open Questions
-- OAuth authorization flow ownership between host app and mini app.
-- Exact callback transport contract for popup mode vs redirect mode.
-- Supported transformation limits for low-memory mobile browsers.
+- OAuth authorization flow ownership between host app and mini app for Phase 2 cloud providers.
+- Supported transformation limits for low-memory mobile browsers once preprocessing is enabled.
 
 ## References
 - `docs/project-template.md`

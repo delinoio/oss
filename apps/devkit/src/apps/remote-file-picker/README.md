@@ -5,16 +5,17 @@ This directory hosts the Devkit mini app with the stable id `remote-file-picker`
 ## Route Contract
 - `/apps/remote-file-picker`
 
-## Core Responsibilities
-- Parse and validate host upload requests.
-- Allow users to select a source (cloud drive, local file, mobile camera).
-- Upload selected files directly to AWS S3 or GCP Cloud Storage signed URLs.
-- Support client-side metadata transforms (format conversion, size compression).
-- Return users to the host flow after completion.
+## Implemented in Phase 1
+- Parse and validate host upload requests from `request=<base64url-json>` query payloads.
+- Support `local-file` and `mobile-camera` source selection.
+- Upload selected files directly to AWS S3 and GCP Cloud Storage signed URLs.
+- Render upload progress and clear validation/upload errors.
+- Return completion to host flow via `postMessage` with redirect fallback.
 
-## Bootstrap Status
-- Placeholder route is implemented in the Devkit shell.
-- Signed URL upload and provider integrations are intentionally deferred.
+## Deferred to Phase 2
+- Google Drive adapter
+- OneDrive adapter
+- Client-side image transformation presets
 
 ## References
 - `docs/project-devkit-remote-file-picker.md`
