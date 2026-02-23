@@ -48,6 +48,7 @@ func Execute(args []string) int {
 type commonFlags struct {
 	serverURL     string
 	token         string
+	subject       string
 	workspaceID   string
 	projectID     string
 	environmentID string
@@ -55,7 +56,8 @@ type commonFlags struct {
 
 func registerCommonFlags(fs *flag.FlagSet, common *commonFlags) {
 	fs.StringVar(&common.serverURL, "server", resolveServerURL(), "thenv server base URL")
-	fs.StringVar(&common.token, "token", resolveToken(), "bearer token value used as actor subject")
+	fs.StringVar(&common.token, "token", resolveToken(), "bearer token value")
+	fs.StringVar(&common.subject, "subject", resolveSubject(), "subject identity sent in X-Thenv-Subject header (defaults to token)")
 	fs.StringVar(&common.workspaceID, "workspace", "", "workspace scope id")
 	fs.StringVar(&common.projectID, "project", "", "project scope id")
 	fs.StringVar(&common.environmentID, "env", "", "environment scope id")
@@ -80,6 +82,13 @@ func (f commonFlags) scope() *thenvv1.Scope {
 		ProjectId:     strings.TrimSpace(f.projectID),
 		EnvironmentId: strings.TrimSpace(f.environmentID),
 	}
+}
+
+func (f commonFlags) resolvedSubject() string {
+	if subject := strings.TrimSpace(f.subject); subject != "" {
+		return subject
+	}
+	return strings.TrimSpace(f.token)
 }
 
 func executePush(args []string) int {
@@ -131,7 +140,7 @@ func executePush(args []string) int {
 	}
 
 	req := connect.NewRequest(&thenvv1.PushBundleVersionRequest{Scope: common.scope(), Files: files})
-	applyAuthHeaders(req, common.token)
+	applyAuthHeaders(req, common.token, common.resolvedSubject())
 
 	res, err := bundleClient.PushBundleVersion(context.Background(), req)
 	if err != nil {
@@ -191,7 +200,7 @@ func executePull(args []string) int {
 	bundleClient := newBundleClient(common.serverURL)
 
 	req := connect.NewRequest(&thenvv1.PullActiveBundleRequest{Scope: common.scope(), BundleVersionId: strings.TrimSpace(bundleVersionID)})
-	applyAuthHeaders(req, common.token)
+	applyAuthHeaders(req, common.token, common.resolvedSubject())
 
 	res, err := bundleClient.PullActiveBundle(context.Background(), req)
 	if err != nil {
@@ -274,7 +283,7 @@ func executeList(args []string) int {
 	bundleClient := newBundleClient(common.serverURL)
 
 	req := connect.NewRequest(&thenvv1.ListBundleVersionsRequest{Scope: common.scope(), Limit: int32(limit), Cursor: strings.TrimSpace(cursor)})
-	applyAuthHeaders(req, common.token)
+	applyAuthHeaders(req, common.token, common.resolvedSubject())
 
 	res, err := bundleClient.ListBundleVersions(context.Background(), req)
 	if err != nil {
@@ -339,7 +348,7 @@ func executeRotate(args []string) int {
 	bundleClient := newBundleClient(common.serverURL)
 
 	req := connect.NewRequest(&thenvv1.RotateBundleVersionRequest{Scope: common.scope(), FromVersionId: strings.TrimSpace(fromVersionID)})
-	applyAuthHeaders(req, common.token)
+	applyAuthHeaders(req, common.token, common.resolvedSubject())
 
 	res, err := bundleClient.RotateBundleVersion(context.Background(), req)
 	if err != nil {
@@ -403,8 +412,12 @@ func hasConflict(path string, content []byte) (bool, error) {
 	return true, nil
 }
 
-func applyAuthHeaders[T any](req *connect.Request[T], token string) {
+func applyAuthHeaders[T any](req *connect.Request[T], token string, subject string) {
 	req.Header().Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	trimmedSubject := strings.TrimSpace(subject)
+	if trimmedSubject != "" {
+		req.Header().Set("X-Thenv-Subject", trimmedSubject)
+	}
 	req.Header().Set("X-Request-Id", newRequestID("req"))
 	req.Header().Set("X-Trace-Id", newRequestID("trace"))
 }
@@ -429,6 +442,10 @@ func resolveToken() string {
 	return "admin"
 }
 
+func resolveSubject() string {
+	return strings.TrimSpace(os.Getenv("THENV_SUBJECT"))
+}
+
 func renderError(err error) string {
 	var connectErr *connect.Error
 	if errors.As(err, &connectErr) {
@@ -439,8 +456,8 @@ func renderError(err error) string {
 
 func printUsage() {
 	_, _ = fmt.Fprintln(os.Stderr, "usage:")
-	_, _ = fmt.Fprintln(os.Stderr, "  thenv push --workspace <id> --project <id> --env <id> [--env-file <path>] [--dev-vars-file <path>] [--server <url>] [--token <subject>]")
-	_, _ = fmt.Fprintln(os.Stderr, "  thenv pull --workspace <id> --project <id> --env <id> [--output-env-file <path>] [--output-dev-vars-file <path>] [--version <id>] [--force] [--server <url>] [--token <subject>]")
-	_, _ = fmt.Fprintln(os.Stderr, "  thenv list --workspace <id> --project <id> --env <id> [--limit <n>] [--cursor <token>] [--server <url>] [--token <subject>]")
-	_, _ = fmt.Fprintln(os.Stderr, "  thenv rotate --workspace <id> --project <id> --env <id> [--from-version <id>] [--server <url>] [--token <subject>]")
+	_, _ = fmt.Fprintln(os.Stderr, "  thenv push --workspace <id> --project <id> --env <id> [--env-file <path>] [--dev-vars-file <path>] [--server <url>] [--token <token>] [--subject <subject>]")
+	_, _ = fmt.Fprintln(os.Stderr, "  thenv pull --workspace <id> --project <id> --env <id> [--output-env-file <path>] [--output-dev-vars-file <path>] [--version <id>] [--force] [--server <url>] [--token <token>] [--subject <subject>]")
+	_, _ = fmt.Fprintln(os.Stderr, "  thenv list --workspace <id> --project <id> --env <id> [--limit <n>] [--cursor <token>] [--server <url>] [--token <token>] [--subject <subject>]")
+	_, _ = fmt.Fprintln(os.Stderr, "  thenv rotate --workspace <id> --project <id> --env <id> [--from-version <id>] [--server <url>] [--token <token>] [--subject <subject>]")
 }
