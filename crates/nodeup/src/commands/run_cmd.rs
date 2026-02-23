@@ -68,7 +68,7 @@ pub fn execute(
 
     info!(
         command_path = "nodeup.run",
-        selector_source = ?resolved.source,
+        selector_source = resolved.source.as_str(),
         selector = %resolved.selector,
         runtime = %resolved.runtime_id(),
         delegated_command,
