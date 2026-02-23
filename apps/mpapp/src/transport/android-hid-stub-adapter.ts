@@ -2,7 +2,7 @@ import { MpappErrorCode } from "../contracts/enums";
 import type { PointerClickSample, PointerMoveSample, Result } from "../contracts/types";
 import type { HidAdapter } from "./hid-adapter";
 
-type AndroidHidStubAdapterOptions = {
+export type AndroidHidStubAdapterOptions = {
   failConnect?: boolean;
   connectLatencyMs?: number;
   ioLatencyMs?: number;

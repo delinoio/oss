@@ -17,6 +17,7 @@ import {
   MpappLogEventFamily,
   MpappMode,
 } from "./src/contracts/enums";
+import { resolveMpappRuntimeConfig } from "./src/config/mpapp-runtime-config";
 import { createConnectedClickSample, createPointerMoveSample } from "./src/input/translate-gesture";
 import {
   evaluatePlatformSupport,
@@ -36,7 +37,7 @@ import {
   MpappSessionEventType,
   reduceSessionState,
 } from "./src/state/session-machine";
-import { AndroidHidStubAdapter } from "./src/transport/android-hid-stub-adapter";
+import { createHidAdapter } from "./src/transport/hid-adapter-factory";
 import { ClickControls } from "./src/components/click-controls";
 import { SessionStatus } from "./src/components/session-status";
 import { TouchpadSurface } from "./src/components/touchpad-surface";
@@ -62,11 +63,26 @@ export default function App() {
   const sessionStateRef = useRef<MpappSessionState>(INITIAL_SESSION_STATE);
   const [sensitivity, setSensitivity] = useState(1.0);
 
-  const adapter = useMemo(() => new AndroidHidStubAdapter(), []);
+  const runtimeConfig = useMemo(() => resolveMpappRuntimeConfig(), []);
+  const adapter = useMemo(
+    () =>
+      createHidAdapter({
+        runtimeConfig,
+      }),
+    [runtimeConfig],
+  );
   const diagnosticsStoreRef = useRef<DiagnosticsStore>(
     new AsyncStorageDiagnosticsStore(),
   );
   const sessionIdRef = useRef<string>(createSessionId());
+  const transportLogContext = useMemo(
+    () => ({
+      transportMode: runtimeConfig.hidTransportMode,
+      targetHostAddress: runtimeConfig.hidTargetHostAddress,
+      targetHostConfigured: Boolean(runtimeConfig.hidTargetHostAddress),
+    }),
+    [runtimeConfig.hidTargetHostAddress, runtimeConfig.hidTransportMode],
+  );
 
   const platformDescriptor = useMemo<PlatformDescriptor>(
     () => ({
@@ -105,7 +121,10 @@ export default function App() {
         connectionState: sessionStateRef.current.mode,
         latencyMs: params.latencyMs,
         failureReason: params.failureReason,
-        payload: params.payload,
+        payload: {
+          ...transportLogContext,
+          ...(params.payload ?? {}),
+        },
         platform: Platform.OS,
         osVersion: String(Platform.Version),
       });
@@ -116,7 +135,7 @@ export default function App() {
         latencyMs: event.latencyMs,
       });
     },
-    [],
+    [transportLogContext],
   );
 
   useEffect(() => {
@@ -203,6 +222,9 @@ export default function App() {
         actionType: MpappActionType.Connect,
         latencyMs: Date.now() - connectStart,
         failureReason: connectResult.message,
+        payload: {
+          nativeErrorCode: connectResult.nativeErrorCode ?? null,
+        },
       });
       return;
     }
@@ -230,6 +252,9 @@ export default function App() {
         actionType: MpappActionType.Disconnect,
         latencyMs: Date.now() - disconnectStart,
         failureReason: disconnectResult.message,
+        payload: {
+          nativeErrorCode: disconnectResult.nativeErrorCode ?? null,
+        },
       });
       return;
     }
@@ -260,6 +285,7 @@ export default function App() {
             failureReason: sendResult.message,
             payload: {
               actionId: sample.actionId,
+              nativeErrorCode: sendResult.nativeErrorCode ?? null,
             },
           });
           return;
@@ -300,6 +326,7 @@ export default function App() {
             failureReason: sendResult.message,
             payload: {
               actionId: sample.actionId,
+              nativeErrorCode: sendResult.nativeErrorCode ?? null,
             },
           });
           return;
