@@ -5,9 +5,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -35,7 +38,7 @@ func TestPushPullRotateAndListFlow(t *testing.T) {
 			Plaintext: []byte("API_KEY=secret-value\n"),
 		}},
 	})
-	pushReq.Header().Set("Authorization", "Bearer admin")
+	setAuthHeaders(pushReq, "admin", "admin")
 
 	pushRes, err := bundleClient.PushBundleVersion(context.Background(), pushReq)
 	if err != nil {
@@ -46,7 +49,7 @@ func TestPushPullRotateAndListFlow(t *testing.T) {
 	}
 
 	listReq := connect.NewRequest(&thenvv1.ListBundleVersionsRequest{Scope: scope, Limit: 10})
-	listReq.Header().Set("Authorization", "Bearer admin")
+	setAuthHeaders(listReq, "admin", "admin")
 	listRes, err := bundleClient.ListBundleVersions(context.Background(), listReq)
 	if err != nil {
 		t.Fatalf("ListBundleVersions returned error: %v", err)
@@ -56,7 +59,7 @@ func TestPushPullRotateAndListFlow(t *testing.T) {
 	}
 
 	pullReq := connect.NewRequest(&thenvv1.PullActiveBundleRequest{Scope: scope})
-	pullReq.Header().Set("Authorization", "Bearer admin")
+	setAuthHeaders(pullReq, "admin", "admin")
 	pullRes, err := bundleClient.PullActiveBundle(context.Background(), pullReq)
 	if err != nil {
 		t.Fatalf("PullActiveBundle returned error: %v", err)
@@ -69,7 +72,7 @@ func TestPushPullRotateAndListFlow(t *testing.T) {
 	}
 
 	rotateReq := connect.NewRequest(&thenvv1.RotateBundleVersionRequest{Scope: scope})
-	rotateReq.Header().Set("Authorization", "Bearer admin")
+	setAuthHeaders(rotateReq, "admin", "admin")
 	rotateRes, err := bundleClient.RotateBundleVersion(context.Background(), rotateReq)
 	if err != nil {
 		t.Fatalf("RotateBundleVersion returned error: %v", err)
@@ -109,7 +112,7 @@ func TestRolePolicyEnforcement(t *testing.T) {
 			{Subject: "reader", Role: thenvv1.Role_ROLE_READER},
 		},
 	})
-	setPolicyReq.Header().Set("Authorization", "Bearer admin")
+	setAuthHeaders(setPolicyReq, "admin", "admin")
 	if _, err := policyClient.SetPolicy(context.Background(), setPolicyReq); err != nil {
 		t.Fatalf("SetPolicy returned error: %v", err)
 	}
@@ -121,19 +124,19 @@ func TestRolePolicyEnforcement(t *testing.T) {
 			Plaintext: []byte("X=1\n"),
 		}},
 	})
-	pushReq.Header().Set("Authorization", "Bearer admin")
+	setAuthHeaders(pushReq, "admin", "admin")
 	if _, err := bundleClient.PushBundleVersion(context.Background(), pushReq); err != nil {
 		t.Fatalf("admin push returned error: %v", err)
 	}
 
 	readerPushReq := connect.NewRequest(pushReq.Msg)
-	readerPushReq.Header().Set("Authorization", "Bearer reader")
+	setAuthHeaders(readerPushReq, "reader", "reader")
 	if _, err := bundleClient.PushBundleVersion(context.Background(), readerPushReq); err == nil {
 		t.Fatal("expected reader push to fail")
 	}
 
 	readerPullReq := connect.NewRequest(&thenvv1.PullActiveBundleRequest{Scope: scope})
-	readerPullReq.Header().Set("Authorization", "Bearer reader")
+	setAuthHeaders(readerPullReq, "reader", "reader")
 	if _, err := bundleClient.PullActiveBundle(context.Background(), readerPullReq); err != nil {
 		t.Fatalf("reader pull returned error: %v", err)
 	}
@@ -157,7 +160,7 @@ func TestPayloadStoredEncrypted(t *testing.T) {
 			Plaintext: plaintext,
 		}},
 	})
-	pushReq.Header().Set("Authorization", "Bearer admin")
+	setAuthHeaders(pushReq, "admin", "admin")
 	pushRes, err := bundleClient.PushBundleVersion(context.Background(), pushReq)
 	if err != nil {
 		t.Fatalf("PushBundleVersion returned error: %v", err)
@@ -179,7 +182,154 @@ func TestPayloadStoredEncrypted(t *testing.T) {
 	}
 }
 
+func TestOpaqueBearerWithoutSubjectIsRejected(t *testing.T) {
+	svc, serverURL := newTestServiceAndServer(t)
+	defer func() {
+		_ = svc.Close()
+	}()
+
+	httpClient := &http.Client{}
+	bundleClient := thenvv1connect.NewBundleServiceClient(httpClient, serverURL)
+	scope := &thenvv1.Scope{WorkspaceId: "ws-auth-1", ProjectId: "proj-auth-1", EnvironmentId: "dev"}
+
+	pushReq := connect.NewRequest(&thenvv1.PushBundleVersionRequest{
+		Scope: scope,
+		Files: []*thenvv1.BundleFile{{
+			FileType:  thenvv1.FileType_FILE_TYPE_ENV,
+			Plaintext: []byte("TOKEN_CHECK=1\n"),
+		}},
+	})
+	pushReq.Header().Set("Authorization", "Bearer opaque-token-without-subject")
+
+	_, err := bundleClient.PushBundleVersion(context.Background(), pushReq)
+	if err == nil {
+		t.Fatal("expected opaque bearer token without subject to be rejected")
+	}
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("expected connect error, got=%v", err)
+	}
+	if connectErr.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("expected unauthenticated error, got=%s", connectErr.Code())
+	}
+}
+
+func TestJWTSubjectIsUsedForActor(t *testing.T) {
+	logBuffer := &bytes.Buffer{}
+	svc, serverURL := newTestServiceAndServerWithBootstrapAndLogger(t, "admin", logging.NewWithWriter(logBuffer))
+	defer func() {
+		_ = svc.Close()
+	}()
+
+	httpClient := &http.Client{}
+	bundleClient := thenvv1connect.NewBundleServiceClient(httpClient, serverURL)
+	scope := &thenvv1.Scope{WorkspaceId: "ws-auth-2", ProjectId: "proj-auth-2", EnvironmentId: "dev"}
+
+	jwtToken := mustUnsignedJWTWithSubject(t, "admin")
+	pushReq := connect.NewRequest(&thenvv1.PushBundleVersionRequest{
+		Scope: scope,
+		Files: []*thenvv1.BundleFile{{
+			FileType:  thenvv1.FileType_FILE_TYPE_ENV,
+			Plaintext: []byte("JWT_SUBJECT=1\n"),
+		}},
+	})
+	pushReq.Header().Set("Authorization", "Bearer "+jwtToken)
+
+	pushRes, err := bundleClient.PushBundleVersion(context.Background(), pushReq)
+	if err != nil {
+		t.Fatalf("PushBundleVersion returned error: %v", err)
+	}
+
+	var createdBy string
+	err = svc.db.QueryRowContext(
+		context.Background(),
+		`SELECT created_by FROM bundle_versions WHERE bundle_version_id = ?`,
+		pushRes.Msg.GetVersion().GetBundleVersionId(),
+	).Scan(&createdBy)
+	if err != nil {
+		t.Fatalf("query created_by returned error: %v", err)
+	}
+	if createdBy != "admin" {
+		t.Fatalf("expected created_by to be admin, got=%q", createdBy)
+	}
+
+	var actor string
+	err = svc.db.QueryRowContext(
+		context.Background(),
+		`SELECT actor FROM audit_events ORDER BY created_at_unix_ns DESC, event_id DESC LIMIT 1`,
+	).Scan(&actor)
+	if err != nil {
+		t.Fatalf("query audit actor returned error: %v", err)
+	}
+	if actor != "admin" {
+		t.Fatalf("expected audit actor to be admin, got=%q", actor)
+	}
+	if strings.Contains(logBuffer.String(), jwtToken) {
+		t.Fatal("log output contains raw JWT token")
+	}
+}
+
+func TestLegacySubjectEqualToTokenIsHashedInAuditAndLogs(t *testing.T) {
+	token := "opaque-token-value-for-hash-assertion"
+	logBuffer := &bytes.Buffer{}
+	svc, serverURL := newTestServiceAndServerWithBootstrapAndLogger(t, token, logging.NewWithWriter(logBuffer))
+	defer func() {
+		_ = svc.Close()
+	}()
+
+	httpClient := &http.Client{}
+	bundleClient := thenvv1connect.NewBundleServiceClient(httpClient, serverURL)
+	scope := &thenvv1.Scope{WorkspaceId: "ws-auth-3", ProjectId: "proj-auth-3", EnvironmentId: "dev"}
+
+	pushReq := connect.NewRequest(&thenvv1.PushBundleVersionRequest{
+		Scope: scope,
+		Files: []*thenvv1.BundleFile{{
+			FileType:  thenvv1.FileType_FILE_TYPE_ENV,
+			Plaintext: []byte("HASHED_ACTOR=1\n"),
+		}},
+	})
+	setAuthHeaders(pushReq, token, token)
+	pushRes, err := bundleClient.PushBundleVersion(context.Background(), pushReq)
+	if err != nil {
+		t.Fatalf("PushBundleVersion returned error: %v", err)
+	}
+
+	expectedActor := hashLegacyTokenActor(token)
+	var createdBy string
+	err = svc.db.QueryRowContext(
+		context.Background(),
+		`SELECT created_by FROM bundle_versions WHERE bundle_version_id = ?`,
+		pushRes.Msg.GetVersion().GetBundleVersionId(),
+	).Scan(&createdBy)
+	if err != nil {
+		t.Fatalf("query created_by returned error: %v", err)
+	}
+	if createdBy != expectedActor {
+		t.Fatalf("expected created_by=%q, got=%q", expectedActor, createdBy)
+	}
+
+	var actor string
+	err = svc.db.QueryRowContext(
+		context.Background(),
+		`SELECT actor FROM audit_events ORDER BY created_at_unix_ns DESC, event_id DESC LIMIT 1`,
+	).Scan(&actor)
+	if err != nil {
+		t.Fatalf("query audit actor returned error: %v", err)
+	}
+	if actor != expectedActor {
+		t.Fatalf("expected audit actor=%q, got=%q", expectedActor, actor)
+	}
+	logOutput := logBuffer.String()
+	if strings.Contains(logOutput, token) {
+		t.Fatal("log output contains raw bearer token")
+	}
+}
+
 func newTestServiceAndServer(t *testing.T) (*Service, string) {
+	return newTestServiceAndServerWithBootstrapAndLogger(t, "admin", logging.New())
+}
+
+func newTestServiceAndServerWithBootstrapAndLogger(t *testing.T, bootstrapAdminSubject string, logger *logging.Logger) (*Service, string) {
 	t.Helper()
 
 	masterKey := bytes.Repeat([]byte{0x42}, 32)
@@ -189,8 +339,8 @@ func newTestServiceAndServer(t *testing.T) (*Service, string) {
 	svc, err := New(context.Background(), Config{
 		DBPath:                dbPath,
 		MasterKeyBase64:       masterKeyB64,
-		BootstrapAdminSubject: "admin",
-	}, logging.New())
+		BootstrapAdminSubject: bootstrapAdminSubject,
+	}, logger)
 	if err != nil {
 		t.Fatalf("service.New returned error: %v", err)
 	}
@@ -209,6 +359,25 @@ func newTestServiceAndServer(t *testing.T) (*Service, string) {
 	})
 
 	return svc, ts.URL
+}
+
+func setAuthHeaders[T any](req *connect.Request[T], token string, subject string) {
+	req.Header().Set("Authorization", "Bearer "+strings.TrimSpace(token))
+	trimmedSubject := strings.TrimSpace(subject)
+	if trimmedSubject != "" {
+		req.Header().Set("X-Thenv-Subject", trimmedSubject)
+	}
+}
+
+func mustUnsignedJWTWithSubject(t *testing.T, subject string) string {
+	t.Helper()
+
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+	payload, err := json.Marshal(map[string]string{"sub": subject})
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	return header + "." + base64.RawURLEncoding.EncodeToString(payload) + ".signature"
 }
 
 func mustOpenSQLite(t *testing.T, dbPath string) *sql.DB {

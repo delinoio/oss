@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -51,10 +52,34 @@ type scopeKey struct {
 }
 
 type callMeta struct {
-	actor     string
-	requestID string
-	traceID   string
-	role      thenvv1.Role
+	subject    string
+	actor      string
+	requestID  string
+	traceID    string
+	role       thenvv1.Role
+	authSource authIdentitySource
+}
+
+type authIdentitySource uint8
+
+const (
+	authIdentitySourceUnspecified authIdentitySource = iota
+	authIdentitySourceHeader
+	authIdentitySourceJWT
+	authIdentitySourceHashedLegacy
+)
+
+func (s authIdentitySource) String() string {
+	switch s {
+	case authIdentitySourceHeader:
+		return "header"
+	case authIdentitySourceJWT:
+		return "jwt"
+	case authIdentitySourceHashedLegacy:
+		return "hashed-legacy"
+	default:
+		return "unspecified"
+	}
 }
 
 type queryer interface {
@@ -1160,18 +1185,18 @@ func (s *Service) authorize(
 	eventType thenvv1.AuditEventType,
 ) (callMeta, error) {
 	meta := extractCallMeta(headers)
-	if strings.TrimSpace(meta.actor) == "" {
-		err := connect.NewError(connect.CodeUnauthenticated, errors.New("missing bearer token"))
+	if strings.TrimSpace(meta.subject) == "" {
+		err := connect.NewError(connect.CodeUnauthenticated, errors.New("missing actor subject"))
 		s.logOperation(meta, scope, operation, eventType, contracts.RoleDecisionDeny, contracts.OperationResultDenied, "", "", nil, err)
 		return callMeta{}, err
 	}
 
-	if err := s.ensureBootstrapBinding(ctx, s.db, scope, meta.actor); err != nil {
+	if err := s.ensureBootstrapBinding(ctx, s.db, scope, meta.subject); err != nil {
 		s.logOperation(meta, scope, operation, eventType, contracts.RoleDecisionDeny, contracts.OperationResultFailure, "", "", nil, err)
 		return callMeta{}, connect.NewError(connect.CodeInternal, err)
 	}
 
-	role, ok, err := s.lookupRole(ctx, s.db, scope, meta.actor)
+	role, ok, err := s.lookupRole(ctx, s.db, scope, meta.subject)
 	if err != nil {
 		s.logOperation(meta, scope, operation, eventType, contracts.RoleDecisionDeny, contracts.OperationResultFailure, "", "", nil, err)
 		return callMeta{}, connect.NewError(connect.CodeInternal, err)
@@ -1194,12 +1219,12 @@ func (s *Service) authorize(
 	return meta, nil
 }
 
-func (s *Service) ensureBootstrapBinding(ctx context.Context, q queryer, scope scopeKey, actor string) error {
-	if actor != s.bootstrapAdminSubject {
+func (s *Service) ensureBootstrapBinding(ctx context.Context, q queryer, scope scopeKey, subject string) error {
+	if subject != s.bootstrapAdminSubject {
 		return nil
 	}
 
-	_, found, err := s.lookupRole(ctx, q, scope, actor)
+	_, found, err := s.lookupRole(ctx, q, scope, subject)
 	if err != nil {
 		return err
 	}
@@ -1217,7 +1242,7 @@ func (s *Service) ensureBootstrapBinding(ctx context.Context, q queryer, scope s
 			scope.workspaceID,
 			scope.projectID,
 			scope.environmentID,
-			actor,
+			subject,
 			int32(thenvv1.Role_ROLE_ADMIN),
 		); err != nil {
 			return err
@@ -1241,7 +1266,7 @@ func (s *Service) ensureBootstrapBinding(ctx context.Context, q queryer, scope s
 		scope.workspaceID,
 		scope.projectID,
 		scope.environmentID,
-		actor,
+		subject,
 		int32(thenvv1.Role_ROLE_ADMIN),
 	); err != nil {
 		return err
@@ -1313,13 +1338,21 @@ func roleSatisfies(currentRole thenvv1.Role, requiredRole thenvv1.Role) bool {
 }
 
 func extractCallMeta(headers http.Header) callMeta {
-	authHeader := strings.TrimSpace(headers.Get("Authorization"))
-	actor := ""
-	if len(authHeader) >= len("Bearer ") && strings.EqualFold(authHeader[:7], "Bearer ") {
-		actor = strings.TrimSpace(authHeader[7:])
+	bearerToken := extractBearerToken(headers)
+	subject := strings.TrimSpace(headers.Get("X-Thenv-Subject"))
+	authSource := authIdentitySourceUnspecified
+	if subject != "" {
+		authSource = authIdentitySourceHeader
+	} else {
+		subject = extractJWTSubject(bearerToken)
+		if subject != "" {
+			authSource = authIdentitySourceJWT
+		}
 	}
-	if actor == "" {
-		actor = strings.TrimSpace(headers.Get("X-Thenv-Subject"))
+	actor := subject
+	if subject != "" && bearerToken != "" && subject == bearerToken {
+		actor = hashLegacyTokenActor(subject)
+		authSource = authIdentitySourceHashedLegacy
 	}
 	requestID := strings.TrimSpace(headers.Get("X-Request-Id"))
 	if requestID == "" {
@@ -1330,7 +1363,52 @@ func extractCallMeta(headers http.Header) callMeta {
 		traceID = newRequestID("trace")
 	}
 
-	return callMeta{actor: actor, requestID: requestID, traceID: traceID}
+	return callMeta{
+		subject:    subject,
+		actor:      actor,
+		requestID:  requestID,
+		traceID:    traceID,
+		authSource: authSource,
+	}
+}
+
+func extractBearerToken(headers http.Header) string {
+	authHeader := strings.TrimSpace(headers.Get("Authorization"))
+	if len(authHeader) < len("Bearer ") {
+		return ""
+	}
+	if !strings.EqualFold(authHeader[:len("Bearer ")], "Bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(authHeader[len("Bearer "):])
+}
+
+func extractJWTSubject(bearerToken string) string {
+	parts := strings.Split(strings.TrimSpace(bearerToken), ".")
+	if len(parts) != 3 {
+		return ""
+	}
+
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		payload, err = base64.URLEncoding.DecodeString(parts[1])
+		if err != nil {
+			return ""
+		}
+	}
+
+	var claims struct {
+		Subject string `json:"sub"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(claims.Subject)
+}
+
+func hashLegacyTokenActor(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return "token_sha256:" + hex.EncodeToString(sum[:8])
 }
 
 func newRequestID(prefix string) string {
@@ -1557,6 +1635,7 @@ func (s *Service) logOperation(
 		"operation":                operation,
 		"event_type":               eventType.String(),
 		"actor":                    meta.actor,
+		"auth_identity_source":     meta.authSource.String(),
 		"scope":                    map[string]string{"workspaceId": scope.workspaceID, "projectId": scope.projectID, "environmentId": scope.environmentID},
 		"role_decision":            roleDecision,
 		"role":                     meta.role.String(),
