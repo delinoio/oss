@@ -52,6 +52,12 @@ impl TestEnv {
         command
     }
 
+    fn command_with_info_logs(&self) -> Command {
+        let mut command = self.command();
+        command.env("RUST_LOG", "nodeup=info");
+        command
+    }
+
     fn command_with_program(&self, program: &Path) -> std::process::Command {
         let mut command = std::process::Command::new(program);
         self.apply_env_std(&mut command);
@@ -337,6 +343,119 @@ fn default_override_show_precedence() {
         .assert()
         .success()
         .stdout(predicates::str::contains("v24.0.0"));
+}
+
+#[test]
+#[serial]
+fn override_resolution_logs_hit_with_fallback_reason() {
+    let env = TestEnv::new();
+    let project_dir = env.root.join("project-override-hit-logs");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["override", "set", "22.1.0"])
+        .assert()
+        .success();
+
+    env.command_with_info_logs()
+        .current_dir(&project_dir)
+        .args(["show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "command_path=\"nodeup.resolve.override\"",
+        ))
+        .stdout(predicates::str::contains("matched=true"))
+        .stdout(predicates::str::contains(
+            "fallback_reason=\"override-matched\"",
+        ));
+}
+
+#[test]
+#[serial]
+fn override_resolution_logs_miss_without_default_selector() {
+    let env = TestEnv::new();
+
+    env.command_with_info_logs()
+        .args(["show", "active-runtime"])
+        .assert()
+        .failure()
+        .stdout(predicates::str::contains(
+            "command_path=\"nodeup.resolve.override\"",
+        ))
+        .stdout(predicates::str::contains("matched=false"))
+        .stdout(predicates::str::contains(
+            "fallback_reason=\"no-default-selector\"",
+        ));
+}
+
+#[test]
+#[serial]
+fn self_update_logs_action_and_outcome() {
+    let env = TestEnv::new();
+
+    env.command_with_info_logs()
+        .args(["self", "update"])
+        .assert()
+        .failure()
+        .stdout(predicates::str::contains("command_path=\"nodeup.self\""))
+        .stdout(predicates::str::contains("action=\"self update\""))
+        .stdout(predicates::str::contains("outcome=\"not-implemented\""));
+}
+
+#[test]
+#[serial]
+fn completions_logs_action_and_outcome() {
+    let env = TestEnv::new();
+
+    env.command_with_info_logs()
+        .args(["completions", "zsh"])
+        .assert()
+        .failure()
+        .stdout(predicates::str::contains(
+            "command_path=\"nodeup.completions\"",
+        ))
+        .stdout(predicates::str::contains("action=\"generate\""))
+        .stdout(predicates::str::contains("outcome=\"not-implemented\""));
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn run_logs_exit_code_and_signal_details() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-logs");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+
+    let delegated = runtime_bin.join("node");
+    fs::write(&delegated, "#!/bin/sh\necho delegated-log\nexit 7\n").unwrap();
+    let mut permissions = fs::metadata(&delegated).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&delegated, permissions).unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-logs",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command_with_info_logs()
+        .args(["run", "linked-logs", "node"])
+        .assert()
+        .code(7)
+        .stdout(predicates::str::contains(
+            "command_path=\"nodeup.run.process\"",
+        ))
+        .stdout(predicates::str::contains("exit_code=7"))
+        .stdout(predicates::str::contains("signal=None"));
 }
 
 #[test]
