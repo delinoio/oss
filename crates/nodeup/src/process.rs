@@ -26,18 +26,41 @@ pub fn run_command(command_path: &Path, args: &[OsString], command_path_key: &st
             ))
         })?;
 
-    let exit_code = status_code(status);
+    let termination = status_details(status);
 
     info!(
         command_path = command_path_key,
         executable = %command_path.display(),
-        exit_code,
+        exit_code = termination.exit_code,
+        signal = ?termination.signal,
         "Delegated process finished"
     );
 
-    Ok(exit_code)
+    Ok(termination.exit_code)
 }
 
-fn status_code(status: ExitStatus) -> i32 {
-    status.code().unwrap_or(1)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProcessTermination {
+    exit_code: i32,
+    signal: Option<i32>,
+}
+
+fn status_details(status: ExitStatus) -> ProcessTermination {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+
+        ProcessTermination {
+            exit_code: status.code().unwrap_or(1),
+            signal: status.signal(),
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        ProcessTermination {
+            exit_code: status.code().unwrap_or(1),
+            signal: None,
+        }
+    }
 }

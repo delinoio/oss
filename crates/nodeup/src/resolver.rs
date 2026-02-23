@@ -9,7 +9,7 @@ use crate::{
     release_index::{normalize_version, ReleaseIndexClient},
     selectors::RuntimeSelector,
     store::Store,
-    types::RuntimeSelectorSource,
+    types::{OverrideLookupFallbackReason, RuntimeSelectorSource},
 };
 
 #[derive(Debug, Clone)]
@@ -86,7 +86,9 @@ impl RuntimeResolver {
             info!(
                 command_path = "nodeup.resolve.override",
                 path = %path.display(),
+                matched = true,
                 matched_path = %override_entry.path,
+                fallback_reason = OverrideLookupFallbackReason::OverrideMatched.as_str(),
                 selector = %override_entry.selector,
                 "Resolved runtime selector from override"
             );
@@ -98,8 +100,23 @@ impl RuntimeResolver {
 
         let settings = self.store.load_settings()?;
         if let Some(selector) = settings.default_selector {
+            info!(
+                command_path = "nodeup.resolve.override",
+                path = %path.display(),
+                matched = false,
+                fallback_reason = OverrideLookupFallbackReason::FallbackToDefault.as_str(),
+                "No directory override matched; falling back to default selector"
+            );
             return self.resolve_selector_with_source(&selector, RuntimeSelectorSource::Default);
         }
+
+        info!(
+            command_path = "nodeup.resolve.override",
+            path = %path.display(),
+            matched = false,
+            fallback_reason = OverrideLookupFallbackReason::NoDefaultSelector.as_str(),
+            "No directory override or default selector found"
+        );
 
         Err(NodeupError::not_found(
             "No runtime selector resolved. Set a default runtime or directory override",
@@ -134,7 +151,7 @@ impl RuntimeResolver {
 
         info!(
             command_path = "nodeup.resolve.selector",
-            selector_source = ?source,
+            selector_source = source.as_str(),
             selector = %selector,
             resolved_runtime = %runtime_id_for_target(&target),
             "Resolved runtime selector"

@@ -133,6 +133,34 @@ pub enum RuntimeSelectorSource {
     Default,
 }
 
+impl RuntimeSelectorSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Explicit => "explicit",
+            Self::Override => "override",
+            Self::Default => "default",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OverrideLookupFallbackReason {
+    OverrideMatched,
+    FallbackToDefault,
+    NoDefaultSelector,
+}
+
+impl OverrideLookupFallbackReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::OverrideMatched => "override-matched",
+            Self::FallbackToDefault => "fallback-to-default",
+            Self::NoDefaultSelector => "no-default-selector",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlatformTarget {
