@@ -22,20 +22,33 @@ function resolveToken(): string {
     process.env.THENV_TOKEN ??
     process.env.NEXT_PUBLIC_THENV_TOKEN ??
     "admin"
-  );
+  ).trim();
+}
+
+function resolveSubject(token: string): string {
+  const configured =
+    process.env.THENV_WEB_SUBJECT ??
+    process.env.THENV_SUBJECT ??
+    process.env.NEXT_PUBLIC_THENV_SUBJECT ??
+    token;
+  return configured.trim() || token;
 }
 
 export async function callThenvRpc<Req extends object, Res>(
   procedure: string,
   requestBody: Req,
 ): Promise<Res> {
+  const token = resolveToken();
+  const subject = resolveSubject(token);
+
   const response = await fetch(`${resolveServerURL()}${procedure}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${resolveToken()}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       "Connect-Protocol-Version": CONNECT_PROTOCOL_VERSION,
       "X-Request-Id": `devkit-${Date.now()}`,
+      "X-Thenv-Subject": subject,
       "X-Trace-Id": `devkit-trace-${Date.now()}`,
     },
     body: JSON.stringify(requestBody),

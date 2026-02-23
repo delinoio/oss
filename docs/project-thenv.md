@@ -115,16 +115,16 @@ Role authorization contract:
 : Allowed: all writer operations plus `ActivateBundleVersion`, `GetPolicy`, `SetPolicy`, `ListAuditEvents`.
 
 CLI command contract:
-- `thenv push --workspace <id> --project <id> --env <id> [--env-file <path>] [--dev-vars-file <path>] [--server <url>] [--token <subject>]`
+- `thenv push --workspace <id> --project <id> --env <id> [--env-file <path>] [--dev-vars-file <path>] [--server <url>] [--token <token>] [--subject <subject>]`
 : Requires at least one input file.
 : Creates a new version in target scope.
-- `thenv pull --workspace <id> --project <id> --env <id> [--output-env-file <path>] [--output-dev-vars-file <path>] [--version <id>] [--force] [--server <url>] [--token <subject>]`
+- `thenv pull --workspace <id> --project <id> --env <id> [--output-env-file <path>] [--output-dev-vars-file <path>] [--version <id>] [--force] [--server <url>] [--token <token>] [--subject <subject>]`
 : Default conflict policy is `fail-closed`.
 : If target output exists and content differs, operation fails unless `--force` is supplied.
 : Output files are written with restrictive default permissions (`0600`).
-- `thenv list --workspace <id> --project <id> --env <id> [--limit <n>] [--cursor <token>] [--server <url>] [--token <subject>]`
+- `thenv list --workspace <id> --project <id> --env <id> [--limit <n>] [--cursor <token>] [--server <url>] [--token <token>] [--subject <subject>]`
 : Returns version metadata only.
-- `thenv rotate --workspace <id> --project <id> --env <id> [--from-version <id>] [--server <url>] [--token <subject>]`
+- `thenv rotate --workspace <id> --project <id> --env <id> [--from-version <id>] [--server <url>] [--token <token>] [--subject <subject>]`
 : Creates a new version and moves active pointer to that version.
 
 ## Storage
@@ -155,8 +155,12 @@ Local and frontend storage:
 : Each payload uses a random DEK (AES-256-GCM).
 : DEK is encrypted with a master key from `THENV_MASTER_KEY_B64` (AES-256-GCM).
 - Authentication (MVP):
-: Bearer token subject is treated as actor identity.
-: Token string is not logged.
+: Subject is resolved from `X-Thenv-Subject` only.
+: `X-Thenv-Subject` must exactly match the `Authorization: Bearer <token>` value for authorization to proceed.
+: Bearer token payload/claims are not parsed for identity derivation in the server.
+: Requests without explicit `X-Thenv-Subject` are rejected as unauthenticated.
+: Raw bearer token bytes are never stored in actor-facing metadata fields.
+: If subject equals bearer token value (legacy compatibility), actor is stored as deterministic redaction `token_sha256:<prefix>`.
 - Authorization:
 : RBAC checks are applied for every RPC operation at `workspace/project/environment` scope.
 : Deny by default on missing bindings.
@@ -176,6 +180,7 @@ Required baseline logs:
 - `operation`
 - `event_type`
 - `actor`
+- `auth_identity_source`
 - `scope`
 - `role_decision`
 - `bundle_version_id` and `target_bundle_version_id` when applicable
@@ -200,10 +205,12 @@ Server environment variables:
 CLI environment variables:
 - `THENV_SERVER_URL` (default: `http://127.0.0.1:8087`)
 - `THENV_TOKEN` (default: `admin`)
+- `THENV_SUBJECT` (optional; defaults to `THENV_TOKEN` value, and must match token for server authorization)
 
 Devkit environment variables (optional):
 - `THENV_SERVER_URL` or `NEXT_PUBLIC_THENV_SERVER_URL`
 - `THENV_WEB_TOKEN` or `THENV_TOKEN` or `NEXT_PUBLIC_THENV_TOKEN`
+- `THENV_WEB_SUBJECT` or `THENV_SUBJECT` or `NEXT_PUBLIC_THENV_SUBJECT` (defaults to resolved token value and must match token for server authorization)
 
 ## Build and Test
 Current commands:

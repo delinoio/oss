@@ -2,17 +2,26 @@ package logging
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"sync"
 	"time"
 )
 
 type Logger struct {
-	mu sync.Mutex
+	mu     sync.Mutex
+	writer io.Writer
 }
 
 func New() *Logger {
-	return &Logger{}
+	return NewWithWriter(os.Stderr)
+}
+
+func NewWithWriter(writer io.Writer) *Logger {
+	if writer == nil {
+		writer = io.Discard
+	}
+	return &Logger{writer: writer}
 }
 
 func (l *Logger) Event(fields map[string]any) {
@@ -33,5 +42,5 @@ func (l *Logger) Event(fields map[string]any) {
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	_, _ = os.Stderr.Write(append(encoded, '\n'))
+	_, _ = l.writer.Write(append(encoded, '\n'))
 }
