@@ -43,7 +43,7 @@ const miniAppRegistrations: readonly MiniAppRegistration[] = [
     id: DevkitMiniAppId.RemoteFilePicker,
     title: "Remote File Picker",
     route: DevkitRoute.RemoteFilePicker,
-    status: MiniAppStatus.Placeholder,
+    status: MiniAppStatus.Live,
     integrationMode: MiniAppIntegrationMode.BackendCoupled,
     docsPath: "docs/project-devkit-remote-file-picker.md",
   },

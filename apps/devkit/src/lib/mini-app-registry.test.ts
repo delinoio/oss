@@ -24,19 +24,22 @@ describe("mini-app-registry", () => {
     ]);
   });
 
-  it("keeps thenv as live while other mini apps remain placeholders", () => {
+  it("keeps thenv and remote-file-picker as live mini apps", () => {
     const thenvRegistration = MINI_APP_REGISTRATIONS.find(
       (registration) => registration.id === DevkitMiniAppId.Thenv,
     );
     expect(thenvRegistration?.status).toBe(MiniAppStatus.Live);
 
-    const nonThenvRegistrations = MINI_APP_REGISTRATIONS.filter(
-      (registration) => registration.id !== DevkitMiniAppId.Thenv,
+    const remoteFilePickerRegistration = MINI_APP_REGISTRATIONS.find(
+      (registration) => registration.id === DevkitMiniAppId.RemoteFilePicker,
+    );
+    expect(remoteFilePickerRegistration?.status).toBe(MiniAppStatus.Live);
+
+    const commitTrackerRegistration = MINI_APP_REGISTRATIONS.find(
+      (registration) => registration.id === DevkitMiniAppId.CommitTracker,
     );
     expect(
-      nonThenvRegistrations.every(
-        (registration) => registration.status === MiniAppStatus.Placeholder,
-      ),
+      commitTrackerRegistration?.status === MiniAppStatus.Placeholder,
     ).toBe(true);
   });
 
