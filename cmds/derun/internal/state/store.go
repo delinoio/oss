@@ -477,6 +477,14 @@ func validateSessionID(sessionID string) error {
 }
 
 func resolvePathWithSymlinks(path string) (string, error) {
+	return resolvePathWithSymlinksAtDepth(path, 0)
+}
+
+func resolvePathWithSymlinksAtDepth(path string, depth int) (string, error) {
+	if depth > 64 {
+		return "", fmt.Errorf("resolve symlinks depth exceeded for %s", path)
+	}
+
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return "", fmt.Errorf("resolve absolute path %s: %w", path, err)
@@ -496,6 +504,29 @@ func resolvePathWithSymlinks(path string) (string, error) {
 		if !errors.Is(err, os.ErrNotExist) {
 			return "", fmt.Errorf("eval symlinks %s: %w", current, err)
 		}
+
+		// EvalSymlinks returns os.ErrNotExist for dangling symlink targets as well.
+		// Detect that case and continue resolution from the symlink target.
+		pathInfo, lstatErr := os.Lstat(current)
+		if lstatErr == nil && pathInfo.Mode()&os.ModeSymlink != 0 {
+			linkTarget, readlinkErr := os.Readlink(current)
+			if readlinkErr != nil {
+				return "", fmt.Errorf("read symlink %s: %w", current, readlinkErr)
+			}
+			resolvedLink := linkTarget
+			if !filepath.IsAbs(resolvedLink) {
+				resolvedLink = filepath.Join(filepath.Dir(current), resolvedLink)
+			}
+			resolvedLink = filepath.Clean(resolvedLink)
+			for i := len(missingSegments) - 1; i >= 0; i-- {
+				resolvedLink = filepath.Join(resolvedLink, missingSegments[i])
+			}
+			return resolvePathWithSymlinksAtDepth(resolvedLink, depth+1)
+		}
+		if lstatErr != nil && !errors.Is(lstatErr, os.ErrNotExist) {
+			return "", fmt.Errorf("lstat path %s: %w", current, lstatErr)
+		}
+
 		parent := filepath.Dir(current)
 		if parent == current {
 			return "", fmt.Errorf("eval symlinks %s: %w", current, err)

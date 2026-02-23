@@ -342,6 +342,24 @@ func TestStoreRejectsSessionArtifactSymlinkEscape(t *testing.T) {
 		assertSymlinkEscapeError(t, err)
 	})
 
+	t.Run("output file append with dangling target", func(t *testing.T) {
+		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0S898989898989898989898")
+		outsideRoot := filepath.Join(t.TempDir(), "outside")
+		if err := os.MkdirAll(outsideRoot, 0o700); err != nil {
+			t.Fatalf("mkdir outside root: %v", err)
+		}
+		danglingTarget := filepath.Join(outsideRoot, "new-output.bin")
+		if err := os.Symlink(danglingTarget, filepath.Join(sessionDir, outputFileName)); err != nil {
+			t.Fatalf("create dangling output symlink: %v", err)
+		}
+
+		_, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("payload"), time.Now().UTC())
+		assertSymlinkEscapeError(t, err)
+		if _, statErr := os.Stat(danglingTarget); !os.IsNotExist(statErr) {
+			t.Fatalf("dangling target should not be created, statErr=%v", statErr)
+		}
+	})
+
 	t.Run("output file read", func(t *testing.T) {
 		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0S999999999999999999999")
 		if _, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("hello"), time.Now().UTC()); err != nil {

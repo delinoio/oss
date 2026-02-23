@@ -170,7 +170,7 @@ Write consistency contract:
 - Directory permissions: `0700`
 - File permissions: `0600`
 - Persist output stream only by default; stdin is proxied but not persisted.
-- Resolve canonical real paths before session artifact IO and reject path traversal or symlink escape outside `sessions/<session-id>`.
+- Resolve canonical real paths before session artifact IO and reject path traversal or symlink escape outside `sessions/<session-id>`, including dangling symlink targets.
 - Apply traversal/symlink checks consistently for `meta.json`, `final.json`, `output.bin`, `index.jsonl`, and `append.lock` across read and write flows.
 - Keep MCP tool surface read-only in v1.
 - Do not emit secret values into operational logs.
