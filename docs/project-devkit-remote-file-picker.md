@@ -141,6 +141,7 @@ Route contract:
 ## Security
 - Validate signed URL origin/protocol and expiry before upload attempts.
 - Enforce provider/method compatibility (`gcp-cloud-storage` only `PUT` in Phase 1).
+- Validate callback return URLs with explicit protocol allowlist (`http`/`https`) before redirect fallback.
 - Never log signed URL query secrets or provider access tokens.
 - Enforce file type and size constraints before upload.
 

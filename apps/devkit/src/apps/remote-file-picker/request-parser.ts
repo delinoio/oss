@@ -16,6 +16,7 @@ const PHASE_ONE_SOURCES = new Set<PickerSource>([
   PickerSource.LocalFile,
   PickerSource.MobileCamera,
 ]);
+const ALLOWED_CALLBACK_PROTOCOLS = new Set(["http:", "https:"]);
 
 function buildError(
   code: RequestValidationErrorCode,
@@ -352,6 +353,13 @@ function parseCallback(rawValue: unknown): CompletionCallback | RequestValidatio
     return {
       code: RequestValidationErrorCode.InvalidCallback,
       message: "callback.returnUrl must be an absolute URL.",
+    };
+  }
+
+  if (!ALLOWED_CALLBACK_PROTOCOLS.has(parsedReturnUrl.protocol)) {
+    return {
+      code: RequestValidationErrorCode.InvalidCallback,
+      message: "callback.returnUrl must use http or https.",
     };
   }
 

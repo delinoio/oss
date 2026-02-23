@@ -166,4 +166,22 @@ describe("parseRemoteFilePickerRequestFromSearch", () => {
       },
     });
   });
+
+  it("rejects callback URLs with unsafe schemes", () => {
+    const payload = buildValidRequestPayload();
+    payload.callback.returnUrl = "javascript:alert('xss')";
+
+    const result = parseRemoteFilePickerRequestFromSearch(
+      `?request=${encodeJsonBase64Url(payload)}`,
+      NOW,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: RequestValidationErrorCode.InvalidCallback,
+        message: "callback.returnUrl must use http or https.",
+      },
+    });
+  });
 });
