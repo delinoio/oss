@@ -107,6 +107,12 @@ enum ThenvComponent {
 - Use `$(...)` for command substitution; do not use legacy backticks in new scripts.
 - Apply strict quoting and escaping for all dynamic shell values to prevent command injection and parsing bugs.
 
+## Logging Rules
+- Write sufficient logs to support debugging, incident analysis, and operational troubleshooting.
+- Prefer structured logging over ad-hoc plain text logs for business and system events.
+- Go code should use `log/slog` (or a compatible structured logger built on it).
+- Rust code should use `tracing` (or a compatible structured logging facade).
+
 ## Documentation Lifecycle Rules
 - Every structural repository change must update relevant `docs/project-*.md` files in the same change set.
 - New project creation is blocked until its project document exists.
