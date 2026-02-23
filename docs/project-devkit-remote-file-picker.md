@@ -33,7 +33,7 @@ Phase 1 is implemented for local file and mobile camera sources with direct clie
 - Route renders `RemoteFilePickerApp` inside Devkit shell.
 - Host request parser validates a base64url `request` query parameter and rejects invalid payloads with stable error codes.
 - Source adapter layer supports local file picker and mobile camera capture.
-- Upload orchestrator performs signed URL uploads with `XMLHttpRequest` to emit progress.
+- Upload orchestrator performs signed URL uploads with `XMLHttpRequest` to emit progress and converts synchronous setup failures into structured upload failure results.
 - Completion bridge delivers results through `window.opener.postMessage` first, with redirect callback fallback.
 - Client-side metadata transformation/compression is explicitly skipped in Phase 1 and logged as skipped.
 

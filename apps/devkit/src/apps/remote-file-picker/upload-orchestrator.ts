@@ -28,6 +28,16 @@ export interface UploadFileToSignedUrlParams {
   createRequest?: () => UploadRequestLike;
 }
 
+function toErrorMessage(error: unknown, fallbackMessage: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  if (typeof error === "string" && error) {
+    return error;
+  }
+  return fallbackMessage;
+}
+
 function parseResponseHeaders(rawHeaders: string): Record<string, string> {
   return rawHeaders
     .split("\n")
@@ -84,7 +94,31 @@ export function uploadFileToSignedUrl({
   const requestFactory = createRequest ?? (() => new XMLHttpRequest());
 
   return new Promise<SignedUrlUploadResult>((resolve) => {
-    const request = requestFactory();
+    let isSettled = false;
+    const settle = (result: SignedUrlUploadResult) => {
+      if (isSettled) {
+        return;
+      }
+      isSettled = true;
+      resolve(result);
+    };
+
+    let request: UploadRequestLike;
+    try {
+      request = requestFactory();
+    } catch (error) {
+      settle(
+        buildFailureResult(
+          0,
+          UploadFailureCode.NetworkError,
+          `Failed to initialize upload request: ${toErrorMessage(
+            error,
+            "unknown initialization error",
+          )}.`,
+        ),
+      );
+      return;
+    }
 
     request.upload.onprogress = (event) => {
       if (!onProgress) {
@@ -105,7 +139,7 @@ export function uploadFileToSignedUrl({
     request.onload = () => {
       const responseText = request.responseText || "";
       if (request.status >= 200 && request.status < 300) {
-        resolve({
+        settle({
           ok: true,
           statusCode: request.status,
           responseText,
@@ -114,7 +148,7 @@ export function uploadFileToSignedUrl({
         return;
       }
 
-      resolve(
+      settle(
         buildFailureResult(
           request.status,
           UploadFailureCode.HttpError,
@@ -125,7 +159,7 @@ export function uploadFileToSignedUrl({
     };
 
     request.onerror = () => {
-      resolve(
+      settle(
         buildFailureResult(
           request.status || 0,
           UploadFailureCode.NetworkError,
@@ -136,7 +170,7 @@ export function uploadFileToSignedUrl({
     };
 
     request.onabort = () => {
-      resolve(
+      settle(
         buildFailureResult(
           request.status || 0,
           UploadFailureCode.Aborted,
@@ -146,11 +180,25 @@ export function uploadFileToSignedUrl({
       );
     };
 
-    request.open(target.method, target.url);
-    for (const [headerName, headerValue] of Object.entries(target.headers ?? {})) {
-      request.setRequestHeader(headerName, headerValue);
-    }
+    try {
+      request.open(target.method, target.url);
+      for (const [headerName, headerValue] of Object.entries(target.headers ?? {})) {
+        request.setRequestHeader(headerName, headerValue);
+      }
 
-    request.send(createBody(file, target));
+      request.send(createBody(file, target));
+    } catch (error) {
+      settle(
+        buildFailureResult(
+          request.status || 0,
+          UploadFailureCode.NetworkError,
+          `Failed to start upload request: ${toErrorMessage(
+            error,
+            "unknown setup error",
+          )}.`,
+          request.responseText,
+        ),
+      );
+    }
   });
 }

@@ -14,6 +14,9 @@ interface MockRequestOptions {
   onSend?: (body: XMLHttpRequestBodyInit | null) => void;
   onOpen?: (method: string, url: string) => void;
   onSetRequestHeader?: (name: string, value: string) => void;
+  openError?: Error;
+  setRequestHeaderError?: Error;
+  sendError?: Error;
 }
 
 function createMockRequest(options: MockRequestOptions) {
@@ -30,12 +33,21 @@ function createMockRequest(options: MockRequestOptions) {
       return options.responseHeaders ?? "";
     },
     open(method: string, url: string) {
+      if (options.openError) {
+        throw options.openError;
+      }
       options.onOpen?.(method, url);
     },
     setRequestHeader(name: string, value: string) {
+      if (options.setRequestHeaderError) {
+        throw options.setRequestHeaderError;
+      }
       options.onSetRequestHeader?.(name, value);
     },
     send(body: XMLHttpRequestBodyInit | null) {
+      if (options.sendError) {
+        throw options.sendError;
+      }
       options.onSend?.(body);
       for (const progressEvent of options.progressEvents ?? []) {
         this.upload.onprogress?.({
@@ -215,6 +227,62 @@ describe("uploadFileToSignedUrl", () => {
       statusCode: 0,
       code: UploadFailureCode.NetworkError,
       message: "Network error while uploading file.",
+      responseText: "",
+    });
+  });
+
+  it("returns failure instead of throwing when request creation fails", async () => {
+    const file = new File(["x"], "file.txt", { type: "text/plain" });
+
+    await expect(
+      uploadFileToSignedUrl({
+        file,
+        target: {
+          provider: SignedUrlProvider.GcpCloudStorage,
+          method: UploadHttpMethod.Put,
+          url: "https://storage.googleapis.com/example/object",
+          expiresAt: "2026-02-23T23:00:00.000Z",
+        },
+        createRequest: () => {
+          throw new Error("factory exploded");
+        },
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      statusCode: 0,
+      code: UploadFailureCode.NetworkError,
+      message: "Failed to initialize upload request: factory exploded.",
+      responseText: undefined,
+    });
+  });
+
+  it("returns failure when header setup throws synchronously", async () => {
+    const file = new File(["x"], "file.txt", { type: "text/plain" });
+
+    const result = await uploadFileToSignedUrl({
+      file,
+      target: {
+        provider: SignedUrlProvider.AwsS3,
+        method: UploadHttpMethod.Put,
+        url: "https://s3.example.com/object",
+        expiresAt: "2026-02-23T23:00:00.000Z",
+        headers: {
+          "invalid header": "bad-value",
+        },
+      },
+      createRequest: () =>
+        createMockRequest({
+          trigger: "load",
+          status: 200,
+          setRequestHeaderError: new Error("invalid header name"),
+        }),
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      statusCode: 200,
+      code: UploadFailureCode.NetworkError,
+      message: "Failed to start upload request: invalid header name.",
       responseText: "",
     });
   });
