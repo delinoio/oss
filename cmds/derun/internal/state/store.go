@@ -114,16 +114,21 @@ func (s *Store) AppendOutput(sessionID string, channel contracts.DerunOutputChan
 	if err != nil {
 		return 0, err
 	}
+	outputPath, err := s.sessionFile(sessionID, outputFileName)
+	if err != nil {
+		return 0, err
+	}
+	indexPath, err := s.sessionFile(sessionID, indexFileName)
+	if err != nil {
+		return 0, err
+	}
+
 	lockHandle, err := lockFile(lockPath)
 	if err != nil {
 		return 0, err
 	}
 	defer unlockFile(lockHandle)
 
-	outputPath, err := s.sessionFile(sessionID, outputFileName)
-	if err != nil {
-		return 0, err
-	}
 	outputFile, err := os.OpenFile(outputPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return 0, fmt.Errorf("open output file: %w", err)
@@ -153,10 +158,6 @@ func (s *Store) AppendOutput(sessionID string, channel contracts.DerunOutputChan
 	}
 	line = append(line, '\n')
 
-	indexPath, err := s.sessionFile(sessionID, indexFileName)
-	if err != nil {
-		return 0, err
-	}
 	indexFile, err := os.OpenFile(indexPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return 0, fmt.Errorf("open index file: %w", err)
@@ -359,11 +360,24 @@ func (s *Store) sessionDir(sessionID string) (string, error) {
 	if err := validateSessionID(sessionID); err != nil {
 		return "", err
 	}
-	base := filepath.Join(s.root, "sessions")
+	base := filepath.Clean(filepath.Join(s.root, "sessions"))
 	dir := filepath.Clean(filepath.Join(base, sessionID))
-	if !strings.HasPrefix(dir, base+string(os.PathSeparator)) && dir != base {
+	if !isWithinPath(base, dir) {
 		return "", fmt.Errorf("invalid session path")
 	}
+
+	resolvedBase, err := resolvePathWithSymlinks(base)
+	if err != nil {
+		return "", fmt.Errorf("resolve sessions path: %w", err)
+	}
+	resolvedDir, err := resolvePathWithSymlinks(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolve session path: %w", err)
+	}
+	if !isWithinPath(resolvedBase, resolvedDir) {
+		return "", fmt.Errorf("session path symlink escape: resolved=%s base=%s", resolvedDir, resolvedBase)
+	}
+
 	return dir, nil
 }
 
@@ -373,9 +387,22 @@ func (s *Store) sessionFile(sessionID, fileName string) (string, error) {
 		return "", err
 	}
 	path := filepath.Clean(filepath.Join(dir, fileName))
-	if !strings.HasPrefix(path, dir+string(os.PathSeparator)) {
+	if !isWithinPath(dir, path) {
 		return "", fmt.Errorf("invalid session file path")
 	}
+
+	resolvedDir, err := resolvePathWithSymlinks(dir)
+	if err != nil {
+		return "", fmt.Errorf("resolve session directory path: %w", err)
+	}
+	resolvedPath, err := resolvePathWithSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve session file path: %w", err)
+	}
+	if !isWithinPath(resolvedDir, resolvedPath) {
+		return "", fmt.Errorf("session file symlink escape: file=%s resolved=%s session=%s", path, resolvedPath, resolvedDir)
+	}
+
 	return path, nil
 }
 
@@ -447,6 +474,52 @@ func validateSessionID(sessionID string) error {
 		return fmt.Errorf("session id contains path separator")
 	}
 	return nil
+}
+
+func resolvePathWithSymlinks(path string) (string, error) {
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve absolute path %s: %w", path, err)
+	}
+	current := filepath.Clean(absolutePath)
+	missingSegments := make([]string, 0, 4)
+
+	for {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			resolvedPath := filepath.Clean(resolved)
+			for i := len(missingSegments) - 1; i >= 0; i-- {
+				resolvedPath = filepath.Join(resolvedPath, missingSegments[i])
+			}
+			return resolvedPath, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("eval symlinks %s: %w", current, err)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("eval symlinks %s: %w", current, err)
+		}
+		missingSegments = append(missingSegments, filepath.Base(current))
+		current = parent
+	}
+}
+
+func isWithinPath(basePath, candidatePath string) bool {
+	relPath, err := filepath.Rel(basePath, candidatePath)
+	if err != nil {
+		return false
+	}
+	if relPath == "." {
+		return true
+	}
+	if relPath == ".." {
+		return false
+	}
+	if strings.HasPrefix(relPath, ".."+string(os.PathSeparator)) {
+		return false
+	}
+	return !filepath.IsAbs(relPath)
 }
 
 func readJSON(path string, target any) error {
