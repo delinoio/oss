@@ -39,6 +39,11 @@ export enum MpappErrorCode {
   UnsupportedPlatform = "unsupported-platform",
 }
 
+export enum MpappHidTransportMode {
+  NativeAndroidHid = "native-android-hid",
+  Stub = "stub",
+}
+
 export enum MpappLogEventFamily {
   PermissionCheck = "permission.check",
   ConnectionTransition = "connection.transition",

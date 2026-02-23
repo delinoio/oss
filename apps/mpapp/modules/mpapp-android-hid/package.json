@@ -1,0 +1,10 @@
+{
+  "name": "mpapp-android-hid",
+  "version": "0.1.0",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true,
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

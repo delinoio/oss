@@ -35,6 +35,7 @@ export type Result =
       ok: false;
       errorCode: MpappErrorCode;
       message: string;
+      nativeErrorCode?: string;
     };
 
 export type MpappLogEvent = {

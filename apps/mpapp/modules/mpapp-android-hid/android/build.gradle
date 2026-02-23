@@ -1,0 +1,22 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+apply plugin: 'expo-module-gradle-plugin'
+
+group = 'io.delino.mpapp.hid'
+version = '0.1.0'
+
+android {
+  namespace 'io.delino.mpapp.hid'
+  defaultConfig {
+    minSdkVersion 31
+    targetSdkVersion 35
+  }
+
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  implementation project(':expo-modules-core')
+}

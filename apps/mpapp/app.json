@@ -8,6 +8,9 @@
     "platforms": ["android", "ios"],
     "jsEngine": "hermes",
     "newArchEnabled": true,
+    "autolinking": {
+      "nativeModulesDir": "./modules"
+    },
     "plugins": ["expo-dev-client"],
     "android": {
       "package": "io.delino.mpapp",
@@ -23,6 +26,8 @@
     "extra": {
       "mpapp": {
         "platformScope": "android-mvp",
+        "hidTransportMode": "native-android-hid",
+        "hidTargetHostAddress": "",
         "defaultSensitivity": 1,
         "sensitivityMin": 0.5,
         "sensitivityMax": 2

@@ -40,7 +40,17 @@ The core user flow is:
   - Dedicated left-click and right-click controls
 - Input translation module converts gesture deltas into pointer movement samples with sensitivity applied.
 - Touchpad gesture responder instances must be recreated when movement callback dependencies change so runtime sensitivity updates take effect without reconnecting.
-- Android HID transport adapter is implemented as a TypeScript `HidAdapter` contract with a stub transport implementation for MVP integration stability.
+- Android HID transport adapter is implemented as a TypeScript `HidAdapter` contract with:
+  - `native-android-hid` mode backed by a local Expo native module at `apps/mpapp/modules/mpapp-android-hid`
+  - `stub` mode backed by `AndroidHidStubAdapter` for deterministic tests and local simulation
+- Runtime transport mode selection resolves in priority order:
+  - `EXPO_PUBLIC_MPAPP_HID_TRANSPORT_MODE` env override
+  - `expo.extra.mpapp.hidTransportMode` in app config
+  - default `native-android-hid`
+- Native mode host target selection resolves in priority order:
+  - `EXPO_PUBLIC_MPAPP_HID_TARGET_HOST_ADDRESS` env override
+  - `expo.extra.mpapp.hidTargetHostAddress` in app config
+  - `null` (which is an explicit connect-time error in native mode)
 - Diagnostics module records structured events, failures, and latency observations in local storage.
 
 ## Interfaces
@@ -109,6 +119,24 @@ enum MpappErrorCode {
 }
 ```
 
+Canonical HID transport mode identifiers:
+
+```ts
+enum MpappHidTransportMode {
+  NativeAndroidHid = "native-android-hid",
+  Stub = "stub",
+}
+```
+
+Canonical runtime transport config contract:
+
+```ts
+type MpappRuntimeConfig = {
+  hidTransportMode: MpappHidTransportMode;
+  hidTargetHostAddress: string | null;
+}
+```
+
 Canonical pointer movement payload:
 
 ```ts
@@ -142,6 +170,8 @@ MVP interface constraints:
 - `deltaX` and `deltaY` are gesture-derived relative movement values, not absolute coordinates.
 - `MpappInputAction` values are stable contracts and must not be renamed without a documented migration.
 - Click payloads must preserve valid `actionId` and `button` pairs by the `PointerClickSample` discriminated union.
+- `MpappHidTransportMode` values are stable runtime contract values and must not be renamed without migration.
+- Native transport failures may include `nativeErrorCode` for diagnostics, but `MpappErrorCode` remains the canonical app-facing error contract.
 
 Android and iOS scope contract:
 - Android MVP supports direct Bluetooth mouse flow.
@@ -152,6 +182,7 @@ Permissions and capability contract (Android MVP):
 - Gate pairing/connection on runtime permission results.
 - Surface `MpappErrorCode.PermissionDenied` when permission requirements are not satisfied.
 - Require Android API level `31+` for MVP runtime support.
+- In `native-android-hid` mode, pairing requires a configured Bluetooth host address (`XX:XX:XX:XX:XX:XX`).
 
 Reference feasibility links:
 - [Expo SDK modules](https://docs.expo.dev/versions/latest/)
@@ -193,6 +224,12 @@ Required structured fields for each log event:
 - `failureReason`
 - `platform`
 - `osVersion`
+- `transportMode`
+- `targetHostConfigured`
+
+Additional transport diagnostics fields when available:
+- `targetHostAddress`
+- `nativeErrorCode`
 
 Connection state logging contract:
 - `connectionState` must be captured from the latest session state snapshot at log emission time, including async lifecycle and transport callbacks.
@@ -224,6 +261,8 @@ MVP acceptance criteria scenarios:
 5. Permission denial shows a retry path and logs required structured fields.
 6. Disconnect events follow the documented state transition order and provide reconnect guidance.
 7. High input frequency follows documented sampling or throttle limits and remains observable in logs.
+8. Runtime transport switch can intentionally select `native-android-hid` or `stub` and logs selected mode.
+9. Native transport failures preserve canonical `MpappErrorCode` while recording `nativeErrorCode` in diagnostics.
 
 ## Roadmap
 - Phase 1: Android MVP with drag-based movement, left-click, right-click, lifecycle state UI, and diagnostics baseline.
@@ -231,7 +270,6 @@ MVP acceptance criteria scenarios:
 - Phase 3: Re-evaluate iOS feasibility and decide whether to add a documented alternate strategy.
 
 ## Open Questions
-- Native Android HID bridge rollout timeline after stub validation.
 - iOS strategy after research: keep unsupported, or introduce an alternate bridge-based approach.
 
 ## References
