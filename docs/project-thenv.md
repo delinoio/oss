@@ -155,8 +155,9 @@ Local and frontend storage:
 : Each payload uses a random DEK (AES-256-GCM).
 : DEK is encrypted with a master key from `THENV_MASTER_KEY_B64` (AES-256-GCM).
 - Authentication (MVP):
-: Subject resolution order is `X-Thenv-Subject` header first, then JWT `sub` from bearer token.
-: Non-JWT bearer tokens without explicit `X-Thenv-Subject` are rejected as unauthenticated.
+: Subject is resolved from `X-Thenv-Subject` only.
+: Bearer token payload/claims are not parsed for identity derivation in the server.
+: Requests without explicit `X-Thenv-Subject` are rejected as unauthenticated.
 : Raw bearer token bytes are never stored in actor-facing metadata fields.
 : If subject equals bearer token value (legacy compatibility), actor is stored as deterministic redaction `token_sha256:<prefix>`.
 - Authorization:

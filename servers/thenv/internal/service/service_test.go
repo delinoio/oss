@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -214,9 +213,8 @@ func TestOpaqueBearerWithoutSubjectIsRejected(t *testing.T) {
 	}
 }
 
-func TestJWTSubjectIsUsedForActor(t *testing.T) {
-	logBuffer := &bytes.Buffer{}
-	svc, serverURL := newTestServiceAndServerWithBootstrapAndLogger(t, "admin", logging.NewWithWriter(logBuffer))
+func TestJWTWithoutSubjectIsRejected(t *testing.T) {
+	svc, serverURL := newTestServiceAndServer(t)
 	defer func() {
 		_ = svc.Close()
 	}()
@@ -225,7 +223,6 @@ func TestJWTSubjectIsUsedForActor(t *testing.T) {
 	bundleClient := thenvv1connect.NewBundleServiceClient(httpClient, serverURL)
 	scope := &thenvv1.Scope{WorkspaceId: "ws-auth-2", ProjectId: "proj-auth-2", EnvironmentId: "dev"}
 
-	jwtToken := mustUnsignedJWTWithSubject(t, "admin")
 	pushReq := connect.NewRequest(&thenvv1.PushBundleVersionRequest{
 		Scope: scope,
 		Files: []*thenvv1.BundleFile{{
@@ -233,39 +230,18 @@ func TestJWTSubjectIsUsedForActor(t *testing.T) {
 			Plaintext: []byte("JWT_SUBJECT=1\n"),
 		}},
 	})
-	pushReq.Header().Set("Authorization", "Bearer "+jwtToken)
+	pushReq.Header().Set("Authorization", "Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbiJ9.signature")
 
-	pushRes, err := bundleClient.PushBundleVersion(context.Background(), pushReq)
-	if err != nil {
-		t.Fatalf("PushBundleVersion returned error: %v", err)
+	_, err := bundleClient.PushBundleVersion(context.Background(), pushReq)
+	if err == nil {
+		t.Fatal("expected JWT without explicit subject header to be rejected")
 	}
-
-	var createdBy string
-	err = svc.db.QueryRowContext(
-		context.Background(),
-		`SELECT created_by FROM bundle_versions WHERE bundle_version_id = ?`,
-		pushRes.Msg.GetVersion().GetBundleVersionId(),
-	).Scan(&createdBy)
-	if err != nil {
-		t.Fatalf("query created_by returned error: %v", err)
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("expected connect error, got=%v", err)
 	}
-	if createdBy != "admin" {
-		t.Fatalf("expected created_by to be admin, got=%q", createdBy)
-	}
-
-	var actor string
-	err = svc.db.QueryRowContext(
-		context.Background(),
-		`SELECT actor FROM audit_events ORDER BY created_at_unix_ns DESC, event_id DESC LIMIT 1`,
-	).Scan(&actor)
-	if err != nil {
-		t.Fatalf("query audit actor returned error: %v", err)
-	}
-	if actor != "admin" {
-		t.Fatalf("expected audit actor to be admin, got=%q", actor)
-	}
-	if strings.Contains(logBuffer.String(), jwtToken) {
-		t.Fatal("log output contains raw JWT token")
+	if connectErr.Code() != connect.CodeUnauthenticated {
+		t.Fatalf("expected unauthenticated error, got=%s", connectErr.Code())
 	}
 }
 
@@ -367,17 +343,6 @@ func setAuthHeaders[T any](req *connect.Request[T], token string, subject string
 	if trimmedSubject != "" {
 		req.Header().Set("X-Thenv-Subject", trimmedSubject)
 	}
-}
-
-func mustUnsignedJWTWithSubject(t *testing.T, subject string) string {
-	t.Helper()
-
-	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
-	payload, err := json.Marshal(map[string]string{"sub": subject})
-	if err != nil {
-		t.Fatalf("json.Marshal returned error: %v", err)
-	}
-	return header + "." + base64.RawURLEncoding.EncodeToString(payload) + ".signature"
 }
 
 func mustOpenSQLite(t *testing.T, dbPath string) *sql.DB {

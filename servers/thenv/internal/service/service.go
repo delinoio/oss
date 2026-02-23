@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -65,7 +64,6 @@ type authIdentitySource uint8
 const (
 	authIdentitySourceUnspecified authIdentitySource = iota
 	authIdentitySourceHeader
-	authIdentitySourceJWT
 	authIdentitySourceHashedLegacy
 )
 
@@ -73,8 +71,6 @@ func (s authIdentitySource) String() string {
 	switch s {
 	case authIdentitySourceHeader:
 		return "header"
-	case authIdentitySourceJWT:
-		return "jwt"
 	case authIdentitySourceHashedLegacy:
 		return "hashed-legacy"
 	default:
@@ -1343,11 +1339,6 @@ func extractCallMeta(headers http.Header) callMeta {
 	authSource := authIdentitySourceUnspecified
 	if subject != "" {
 		authSource = authIdentitySourceHeader
-	} else {
-		subject = extractJWTSubject(bearerToken)
-		if subject != "" {
-			authSource = authIdentitySourceJWT
-		}
 	}
 	actor := subject
 	if subject != "" && bearerToken != "" && subject == bearerToken {
@@ -1381,29 +1372,6 @@ func extractBearerToken(headers http.Header) string {
 		return ""
 	}
 	return strings.TrimSpace(authHeader[len("Bearer "):])
-}
-
-func extractJWTSubject(bearerToken string) string {
-	parts := strings.Split(strings.TrimSpace(bearerToken), ".")
-	if len(parts) != 3 {
-		return ""
-	}
-
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		payload, err = base64.URLEncoding.DecodeString(parts[1])
-		if err != nil {
-			return ""
-		}
-	}
-
-	var claims struct {
-		Subject string `json:"sub"`
-	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(claims.Subject)
 }
 
 func hashLegacyTokenActor(token string) string {
