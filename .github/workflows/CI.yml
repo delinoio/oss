@@ -135,8 +135,8 @@ jobs:
       - name: Run go test
         run: go test ./...
 
-  rust:
-    name: Rust Checks
+  rust-fmt:
+    name: Rust fmt
     runs-on: ubuntu-latest
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch' }}
@@ -148,7 +148,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-01-01
-          components: rustfmt, clippy
+          components: rustfmt
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -156,14 +156,49 @@ jobs:
       - name: Run rustfmt
         run: cargo fmt --all --check
 
+  rust-clippy:
+    name: Rust clippy
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-01-01
+          components: clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  rust-test:
+    name: Rust test
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-01-01
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
       - name: Run cargo test
         run: cargo test --workspace --all-targets
 
-  node:
-    name: Node Checks
+  node-devkit-test:
+    name: Node devkit test
     runs-on: ubuntu-latest
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
@@ -189,11 +224,83 @@ jobs:
       - name: Run Devkit tests
         run: pnpm --filter devkit... test
 
+  node-devkit-build:
+    name: Node devkit build
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Run Devkit build
         run: pnpm --filter devkit... build
 
+  node-mpapp-test:
+    name: Node mpapp test
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Run mpapp tests
         run: pnpm --filter mpapp test
+
+  node-mpapp-lint:
+    name: Node mpapp lint
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Run mpapp lint
         run: pnpm --filter mpapp lint
@@ -206,16 +313,26 @@ jobs:
       - docs-consistency
       - go-quality
       - go-test
-      - rust
-      - node
+      - rust-fmt
+      - rust-clippy
+      - rust-test
+      - node-devkit-test
+      - node-devkit-build
+      - node-mpapp-test
+      - node-mpapp-lint
     steps:
       - name: Ensure no required job failed
         env:
           DOCS_RESULT: ${{ needs.docs-consistency.result }}
           GO_QUALITY_RESULT: ${{ needs.go-quality.result }}
           GO_TEST_RESULT: ${{ needs.go-test.result }}
-          RUST_RESULT: ${{ needs.rust.result }}
-          NODE_RESULT: ${{ needs.node.result }}
+          RUST_FMT_RESULT: ${{ needs.rust-fmt.result }}
+          RUST_CLIPPY_RESULT: ${{ needs.rust-clippy.result }}
+          RUST_TEST_RESULT: ${{ needs.rust-test.result }}
+          NODE_DEVKIT_TEST_RESULT: ${{ needs.node-devkit-test.result }}
+          NODE_DEVKIT_BUILD_RESULT: ${{ needs.node-devkit-build.result }}
+          NODE_MPAPP_TEST_RESULT: ${{ needs.node-mpapp-test.result }}
+          NODE_MPAPP_LINT_RESULT: ${{ needs.node-mpapp-lint.result }}
         run: |
           set -euo pipefail
 
@@ -223,8 +340,13 @@ jobs:
             "$DOCS_RESULT" \
             "$GO_QUALITY_RESULT" \
             "$GO_TEST_RESULT" \
-            "$RUST_RESULT" \
-            "$NODE_RESULT"; do
+            "$RUST_FMT_RESULT" \
+            "$RUST_CLIPPY_RESULT" \
+            "$RUST_TEST_RESULT" \
+            "$NODE_DEVKIT_TEST_RESULT" \
+            "$NODE_DEVKIT_BUILD_RESULT" \
+            "$NODE_MPAPP_TEST_RESULT" \
+            "$NODE_MPAPP_LINT_RESULT"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "A required CI job failed or was cancelled."
               exit 1
