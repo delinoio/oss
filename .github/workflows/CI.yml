@@ -63,19 +63,14 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Check gofmt
+      - name: Check go fmt
         run: |
           set -euo pipefail
 
-          mapfile -d '' -t go_files < <(find . -type f -name '*.go' -print0 | sort -z)
-          if [ "${#go_files[@]}" -eq 0 ]; then
-            exit 0
-          fi
-
-          mapfile -t unformatted < <(gofmt -l "${go_files[@]}")
-          if [ "${#unformatted[@]}" -gt 0 ]; then
-            echo "::error::Go files are not formatted with gofmt:"
-            printf '%s\n' "${unformatted[@]}"
+          formatted_output="$(go fmt ./...)"
+          if [ -n "$formatted_output" ]; then
+            echo "::error::go fmt reformatted files. Run 'go fmt ./...' locally and commit the result."
+            printf '%s\n' "$formatted_output"
             exit 1
           fi
 
