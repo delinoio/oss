@@ -31,11 +31,13 @@ jobs:
         with:
           filters: |
             go:
+              - .github/workflows/CI.yml
               - go.mod
               - go.sum
               - cmds/**
               - servers/**
             node:
+              - .github/workflows/CI.yml
               - package.json
               - pnpm-lock.yaml
               - pnpm-workspace.yaml
@@ -43,6 +45,7 @@ jobs:
               - apps/**
               - packages/**
             rust:
+              - .github/workflows/CI.yml
               - Cargo.toml
               - Cargo.lock
               - rust-toolchain

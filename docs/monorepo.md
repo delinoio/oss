@@ -130,6 +130,7 @@ Coverage expectations:
 
 Change-scoped execution rules:
 - CI uses path-based change detection to skip unaffected domain jobs by default.
+- Changes to `.github/workflows/CI.yml` force all `go`, `node`, and `rust` domain jobs to run.
 - `workflow_dispatch` runs all domain jobs regardless of changed paths.
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
 
