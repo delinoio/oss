@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
   push:
-  merge_group:
-  workflow_dispatch:
+    branches: [main]
 
 permissions:
   contents: read
