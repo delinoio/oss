@@ -3,6 +3,7 @@
 - Follow `docs/monorepo.md` and project-specific docs before adding or changing app code.
 - Keep app-specific contracts synchronized in `docs/project-*.md` in the same change.
 - Write all source and comments in English.
+- Follow Toss Design Guidelines for frontend UX/UI decisions across web and mobile apps.
 
 ### Scope in This Domain
 
