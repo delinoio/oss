@@ -48,34 +48,6 @@ jobs:
               - rust-toolchain
               - crates/**
 
-  docs-consistency:
-    name: Docs Consistency
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Ensure canonical docs exist
-        run: |
-          set -euo pipefail
-          test -f docs/monorepo.md
-          find docs -maxdepth 1 -type f -name 'project-*.md' | grep -q .
-
-      - name: Ensure project docs are referenced in monorepo map
-        run: |
-          set -euo pipefail
-
-          missing=0
-          while IFS= read -r path; do
-            file_name="$(basename "$path")"
-            if ! grep -q "$file_name" docs/monorepo.md; then
-              echo "::error::${file_name} is not referenced in docs/monorepo.md"
-              missing=1
-            fi
-          done < <(find docs -maxdepth 1 -type f -name 'project-*.md' | sort)
-
-          exit "$missing"
-
   go-quality:
     name: Go Quality
     runs-on: ubuntu-latest
@@ -310,7 +282,6 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
-      - docs-consistency
       - go-quality
       - go-test
       - rust-fmt

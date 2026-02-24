@@ -117,7 +117,6 @@ enum ThenvComponent {
 Repository-wide CI is defined in `.github/workflows/CI.yml`.
 
 Coverage expectations:
-- `docs-consistency`: validates canonical documentation presence and ensures every `docs/project-*.md` file is referenced from `docs/monorepo.md`.
 - `go-quality`: runs `gofmt` verification and `go vet ./...` on Ubuntu.
 - `go-test`: runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - `rust-fmt`: runs `cargo fmt --all --check`.
