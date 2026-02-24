@@ -181,6 +181,64 @@ fn make_archive(version: &str, target: &str, scripts: &[(&str, &str)]) -> Vec<u8
 
 #[test]
 #[serial]
+fn help_lists_top_level_subcommand_descriptions() {
+    let env = TestEnv::new();
+
+    env.command()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Manage installed runtimes"))
+        .stdout(predicates::str::contains(
+            "Set or show the global default runtime",
+        ))
+        .stdout(predicates::str::contains(
+            "Show runtime resolution details and nodeup directories",
+        ))
+        .stdout(predicates::str::contains(
+            "Update selected runtimes or tracked selectors",
+        ))
+        .stdout(predicates::str::contains(
+            "Manage directory-scoped runtime overrides",
+        ))
+        .stdout(predicates::str::contains(
+            "Generate shell completion scripts",
+        ));
+}
+
+#[test]
+#[serial]
+fn help_lists_nested_subcommand_descriptions() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("List installed runtimes"))
+        .stdout(predicates::str::contains("Install one or more runtimes"))
+        .stdout(predicates::str::contains("Uninstall one or more runtimes"))
+        .stdout(predicates::str::contains(
+            "Link an existing local runtime directory",
+        ));
+
+    env.command()
+        .args(["override", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "List configured directory overrides",
+        ))
+        .stdout(predicates::str::contains(
+            "Set a runtime override for a directory",
+        ))
+        .stdout(predicates::str::contains(
+            "Remove a runtime override for a directory",
+        ));
+}
+
+#[test]
+#[serial]
 fn install_list_uninstall_flow() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);
