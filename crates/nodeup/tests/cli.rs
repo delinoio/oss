@@ -164,7 +164,7 @@ fn make_archive(version: &str, target: &str, scripts: &[(&str, &str)]) -> Vec<u8
             let path = format!("{root_name}/bin/{script_name}");
             let mut header = tar::Header::new_gnu();
             header.set_mode(0o755);
-            header.set_size(script_body.as_bytes().len() as u64);
+            header.set_size(script_body.len() as u64);
             header.set_cksum();
             builder
                 .append_data(&mut header, path, script_body.as_bytes())

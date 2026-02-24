@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn latest_and_lts_resolution_from_stubbed_entries() {
-        let entries = vec![
+        let entries = [
             ReleaseEntry {
                 version: "v24.0.0".to_string(),
                 lts: serde_json::Value::Bool(false),
