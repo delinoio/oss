@@ -113,6 +113,26 @@ enum ThenvComponent {
 - Go code should use `log/slog` (or a compatible structured logger built on it).
 - Rust code should use `tracing` (or a compatible structured logging facade).
 
+## CI Baseline
+Repository-wide CI is defined in `.github/workflows/CI.yml`.
+
+Coverage expectations:
+- `go-quality`: runs `go fmt ./...` (fails if formatting changes are applied) and `go vet ./...` on Ubuntu.
+- `go-test`: runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
+- `rust-fmt`: runs `cargo fmt --all --check`.
+- `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
+- `rust-test`: runs `cargo test --workspace --all-targets`.
+- `node-devkit-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter devkit... test`.
+- `node-devkit-build`: runs `pnpm install --frozen-lockfile` and `pnpm --filter devkit... build`.
+- `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
+- `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
+- `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
+
+Change-scoped execution rules:
+- CI uses path-based change detection to skip unaffected domain jobs by default.
+- `workflow_dispatch` runs all domain jobs regardless of changed paths.
+- When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
+
 ## Documentation Lifecycle Rules
 - Every structural repository change must update relevant `docs/project-*.md` files in the same change set.
 - New project creation is blocked until its project document exists.
