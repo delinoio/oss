@@ -196,3 +196,6 @@ vite.config.ts.timestamp-*
 
 # Turborepo
 .turbo/
+
+# air tmp files
+tmp/
