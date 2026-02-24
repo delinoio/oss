@@ -309,20 +309,26 @@ export function RemoteFilePickerApp() {
 
   if (!request && !requestError) {
     return (
-      <section aria-label="remote file picker">
-        <h2 style={{ marginTop: 0 }}>Remote File Picker Upload</h2>
-        <p>Loading host upload request...</p>
+      <section aria-label="remote file picker" className="dk-stack">
+        <div className="dk-card">
+          <p className="dk-eyebrow">Upload Session</p>
+          <h2 className="dk-section-title">Remote File Picker Upload</h2>
+          <p className="dk-paragraph">Loading host upload request...</p>
+        </div>
       </section>
     );
   }
 
   if (requestError) {
     return (
-      <section aria-label="remote file picker">
-        <h2 style={{ marginTop: 0 }}>Remote File Picker Upload</h2>
-        <p role="alert" style={{ color: "#9f1111" }}>
-          {requestError}
-        </p>
+      <section aria-label="remote file picker" className="dk-stack">
+        <div className="dk-card">
+          <p className="dk-eyebrow">Upload Session</p>
+          <h2 className="dk-section-title">Remote File Picker Upload</h2>
+          <p role="alert" className="dk-alert">
+            {requestError}
+          </p>
+        </div>
       </section>
     );
   }
@@ -332,28 +338,46 @@ export function RemoteFilePickerApp() {
   }
 
   return (
-    <section aria-label="remote file picker">
-      <h2 style={{ marginTop: 0 }}>Remote File Picker Upload</h2>
-      <p>
-        Request id: <code>{request.requestId}</code>
-      </p>
-      <p>
-        Signed URL provider: <strong>{providerLabel(request.uploadTarget.provider)}</strong>
-      </p>
+    <section aria-label="remote file picker" className="dk-stack">
+      <section className="dk-card" aria-label="upload request details">
+        <p className="dk-eyebrow">Upload Session</p>
+        <h2 className="dk-section-title">Remote File Picker Upload</h2>
+        <p className="dk-paragraph">
+          This flow uploads a selected file to the host-provided signed URL target.
+        </p>
 
-      <section aria-label="source picker" style={{ marginTop: "1.25rem" }}>
-        <h3>Choose Source</h3>
-        <div style={{ display: "grid", gap: "0.75rem" }}>
+        <div className="dk-meta-grid">
+          <div className="dk-meta-item">
+            <p className="dk-meta-key">Request ID</p>
+            <p className="dk-meta-value">
+              <code className="dk-mono">{request.requestId}</code>
+            </p>
+          </div>
+          <div className="dk-meta-item">
+            <p className="dk-meta-key">Signed URL Provider</p>
+            <p className="dk-meta-value">{providerLabel(request.uploadTarget.provider)}</p>
+          </div>
+        </div>
+      </section>
+
+      <section aria-label="source picker" className="dk-card">
+        <h3 className="dk-subsection-title">Choose Source</h3>
+        <p className="dk-subtle">Pick a source and choose exactly one file.</p>
+
+        <div className="dk-source-list">
           {adapters.map((adapter) => (
-            <div key={adapter.source}>
-              <button
-                type="button"
-                onClick={() => openFilePicker(adapter.source)}
-                disabled={isUploading}
-              >
-                {adapter.buttonLabel}
-              </button>
-              <p style={{ margin: "0.4rem 0 0", color: "#43556b" }}>{adapter.description}</p>
+            <div key={adapter.source} className="dk-source-item">
+              <div className="dk-button-group">
+                <button
+                  type="button"
+                  className="dk-button dk-button-secondary"
+                  onClick={() => openFilePicker(adapter.source)}
+                  disabled={isUploading}
+                >
+                  {adapter.buttonLabel}
+                </button>
+              </div>
+              <p className="dk-source-description">{adapter.description}</p>
             </div>
           ))}
         </div>
@@ -375,38 +399,46 @@ export function RemoteFilePickerApp() {
         onChange={(event) => handleFileChosen(PickerSource.MobileCamera, event)}
       />
 
-      <section aria-label="upload summary" style={{ marginTop: "1.25rem" }}>
-        <h3>Upload Summary</h3>
+      <section aria-label="upload summary" className="dk-card">
+        <h3 className="dk-subsection-title">Upload Summary</h3>
+
         {selectedFile ? (
-          <p>
+          <p className="dk-subtle">
             Selected file: <strong>{selectedFile.name}</strong> ({selectedFile.type || "unknown"},{" "}
             {selectedFile.size} bytes)
           </p>
         ) : (
-          <p>No file selected yet.</p>
+          <p className="dk-empty">No file selected yet.</p>
         )}
 
-        <button
-          type="button"
-          disabled={!selectedFile || isUploading}
-          onClick={() => {
-            void handleUpload();
-          }}
-        >
-          {isUploading ? "Uploading..." : "Upload to signed URL"}
-        </button>
+        <div className="dk-button-group">
+          <button
+            type="button"
+            className="dk-button"
+            disabled={!selectedFile || isUploading}
+            onClick={() => {
+              void handleUpload();
+            }}
+          >
+            {isUploading ? "Uploading..." : "Upload to signed URL"}
+          </button>
+        </div>
 
         {uploadProgressPercent > 0 ? (
-          <div style={{ marginTop: "0.75rem" }}>
-            <progress max={100} value={uploadProgressPercent} />
-            <p style={{ margin: "0.25rem 0 0" }}>Upload progress: {uploadProgressPercent}%</p>
+          <div className="dk-progress-wrap">
+            <progress className="dk-progress" max={100} value={uploadProgressPercent} />
+            <p className="dk-progress-label">Upload progress: {uploadProgressPercent}%</p>
           </div>
         ) : null}
 
-        {uploadMessage ? <p>{uploadMessage}</p> : null}
-        {completionMessage ? <p role="status">{completionMessage}</p> : null}
+        {uploadMessage ? <p className="dk-status">{uploadMessage}</p> : null}
+        {completionMessage ? (
+          <p role="status" className="dk-success">
+            {completionMessage}
+          </p>
+        ) : null}
         {errorMessage ? (
-          <p role="alert" style={{ color: "#9f1111" }}>
+          <p role="alert" className="dk-alert">
             {errorMessage}
           </p>
         ) : null}

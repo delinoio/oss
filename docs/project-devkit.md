@@ -3,6 +3,7 @@
 ## Goal
 `devkit` is a Next.js 16 web platform that hosts many web micro apps inside one shell.
 It provides shared navigation, shared auth/session surface, and consistent routing for mini apps.
+The shell visual baseline follows Toss Design System-inspired foundations (color, typography, spacing) for consistency.
 
 ## Path
 - `apps/devkit`
@@ -30,6 +31,7 @@ It provides shared navigation, shared auth/session surface, and consistent routi
 
 ## Architecture
 - Platform shell handles layout, navigation, and global providers.
+- Shared UI tokens map to Toss-style foundation colors and typography, then flow to shell and mini-app surfaces.
 - Mini apps live under `src/apps/<id>`.
 - Static route pages map each mini app to `/apps/<id>`.
 - Shared services layer exposes standard platform utilities.
