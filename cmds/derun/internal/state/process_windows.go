@@ -19,5 +19,5 @@ func processAlive(pid int) bool {
 	if err != nil {
 		return false
 	}
-	return waitStatus == windows.WAIT_TIMEOUT
+	return waitStatus == uint32(windows.WAIT_TIMEOUT)
 }
