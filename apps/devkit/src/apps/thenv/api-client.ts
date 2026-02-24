@@ -6,22 +6,11 @@ import {
   ThenvScope,
 } from "@/apps/thenv/contracts";
 
-interface ScopeQueryParams {
-  workspace: string;
-  project: string;
-  environment: string;
-}
-
-function toScopeQueryParams(scope: ThenvScope): ScopeQueryParams {
-  return {
-    workspace: scope.workspaceId,
-    project: scope.projectId,
-    environment: scope.environmentId,
-  };
-}
-
 function withScope(pathname: string, scope: ThenvScope): string {
-  const query = new URLSearchParams(toScopeQueryParams(scope));
+  const query = new URLSearchParams();
+  query.set("workspace", scope.workspaceId);
+  query.set("project", scope.projectId);
+  query.set("environment", scope.environmentId);
   return `${pathname}?${query.toString()}`;
 }
 
