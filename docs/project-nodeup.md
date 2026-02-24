@@ -194,6 +194,11 @@ Help output contract:
 - `nodeup <group> --help` must show one-line descriptions for nested subcommands in grouped command families (`toolchain`, `show`, `override`, `self`).
 - `nodeup <command> --help` should include concise argument descriptions for required and optional inputs.
 
+Help output contract:
+- `nodeup --help` must show one-line descriptions for all top-level commands (`toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `self`, `completions`).
+- `nodeup <group> --help` must show one-line descriptions for nested subcommands in grouped command families (`toolchain`, `show`, `override`, `self`).
+- `nodeup <command> --help` should include concise argument descriptions for required and optional inputs.
+
 Resolution precedence contract:
 - Explicit runtime in command invocation (`run`, `which --runtime`) has highest priority.
 - Directory override (`override set`) takes precedence over global default.
