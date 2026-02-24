@@ -4,17 +4,16 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
+	"github.com/delinoio/oss/cmds/derun/internal/session"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
 )
 
 func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 	stateRoot := t.TempDir()
-	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
-		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+	t.Setenv("DERUN_STATE_ROOT", stateRoot)
 
 	exitCode := ExecuteRun([]string{"--", "sh", "-c", "printf 'out'; printf 'err' 1>&2; exit 7"})
 	if exitCode != 7 {
@@ -33,10 +32,7 @@ func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 	if total != 1 || len(sessions) != 1 {
 		t.Fatalf("unexpected sessions: total=%d len=%d", total, len(sessions))
 	}
-	detail, err := store.GetSession(sessions[0].SessionID)
-	if err != nil {
-		t.Fatalf("GetSession returned error: %v", err)
-	}
+	detail := waitForSessionDetail(t, store, sessions[0].SessionID)
 	if detail.State != contracts.DerunSessionStateExited {
 		t.Fatalf("unexpected state: %s", detail.State)
 	}
@@ -55,10 +51,7 @@ func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 
 func TestExecuteRunRejectsDuplicateSessionID(t *testing.T) {
 	stateRoot := t.TempDir()
-	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
-		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+	t.Setenv("DERUN_STATE_ROOT", stateRoot)
 
 	sessionID := "01J0S444444444444444444444"
 	firstExitCode := ExecuteRun([]string{"--session-id", sessionID, "--", "sh", "-c", "printf 'first'"})
@@ -97,5 +90,21 @@ func TestExecuteRunRejectsDuplicateSessionID(t *testing.T) {
 	}
 	if total != 1 || len(sessions) != 1 {
 		t.Fatalf("unexpected sessions after duplicate rejection: total=%d len=%d", total, len(sessions))
+	}
+}
+
+func waitForSessionDetail(t *testing.T, store *state.Store, sessionID string) session.Detail {
+	t.Helper()
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		detail, err := store.GetSession(sessionID)
+		if err != nil {
+			t.Fatalf("GetSession returned error: %v", err)
+		}
+		if detail.OutputBytes > 0 || time.Now().After(deadline) {
+			return detail
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

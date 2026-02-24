@@ -213,6 +213,10 @@ Required behavioral test scenarios:
 8. Windows ConPTY parity tests and POSIX PTY parity tests.
 9. Session artifact traversal and symlink-escape attempts are rejected for both read and write operations.
 
+Current CI stability notes:
+- `cmds/derun/internal/cli` tests use `t.Setenv("DERUN_STATE_ROOT", ...)` to isolate state root overrides without leaking environment mutations across tests.
+- `TestExecuteRunPipeModeCapturesOutputAndExitCode` waits briefly for persisted chunk metadata before asserting output byte totals to avoid transient filesystem timing flakes in CI.
+
 ## Roadmap
 - Phase 1: Terminal-fidelity `run` execution and transcript persistence.
 - Phase 2: MCP replay/live-tail tool surface and cursor consistency guarantees.
