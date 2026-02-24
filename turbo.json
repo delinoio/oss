@@ -9,12 +9,41 @@
   ],
   "tasks": {
     "dev": {
+      "dependsOn": [
+        "build:api"
+      ],
       "cache": false,
       "persistent": true
     },
-    "build": {
+    "build:api":{
       "dependsOn": [
-        "^build"
+        "^build:api"
+      ],
+      "inputs": [
+        ".env",
+        "src/**",
+        "**/*.proto",
+        "**/*.go",
+        "**/*.ts",
+        "**/*.mts",
+        "**/*.tsx",
+        "tsconfig.json",
+        "!**/e2e/",
+        "!.next/**",
+        "!*/**/*.test.ts",
+        "!*/**/*.test.tsx",
+        "!*/**/*.e2e.ts",
+        "!*/**/*.e2e.tsx",
+        "!*/**/*.cy.ts"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**"
+      ]
+    },
+    "build":{
+      "dependsOn": [
+        "build:api"
       ],
       "inputs": [
         ".env",
