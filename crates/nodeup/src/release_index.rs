@@ -1,6 +1,7 @@
 use std::{thread, time::Duration};
 
 use reqwest::blocking::Client;
+use semver::Version;
 use serde::Deserialize;
 use tracing::info;
 
@@ -113,6 +114,43 @@ impl ReleaseIndexClient {
         })
     }
 
+    pub fn ensure_version_available(&self, version: &str) -> Result<()> {
+        let canonical_version = normalize_version(version);
+        let releases = self.fetch_index()?;
+        let found = releases
+            .iter()
+            .any(|entry| entry.version == canonical_version);
+        let suggestion = if found {
+            None
+        } else {
+            suggested_version_for_missing_release(&releases, &canonical_version)
+        };
+
+        info!(
+            command_path = "nodeup.release-index.lookup",
+            runtime = %canonical_version,
+            found,
+            suggestion = suggestion.as_deref().unwrap_or("none"),
+            "Validated explicit runtime version against release index"
+        );
+
+        if found {
+            return Ok(());
+        }
+
+        let message = match suggestion {
+            Some(candidate) => format!(
+                "Runtime {canonical_version} was not found in the Node.js release index. Did you \
+                 mean {candidate}?"
+            ),
+            None => {
+                format!("Runtime {canonical_version} was not found in the Node.js release index")
+            }
+        };
+
+        Err(NodeupError::not_found(message))
+    }
+
     pub fn archive_url(&self, version: &str, target_segment: &str) -> String {
         let version = normalize_version(version);
         format!(
@@ -143,6 +181,29 @@ pub fn normalize_version(version: &str) -> String {
     }
 }
 
+fn suggested_version_for_missing_release(
+    releases: &[ReleaseEntry],
+    requested_version: &str,
+) -> Option<String> {
+    let requested = Version::parse(requested_version.trim_start_matches('v')).ok()?;
+
+    let swapped_minor_patch = format!(
+        "v{}.{}.{}",
+        requested.major, requested.patch, requested.minor
+    );
+    if releases
+        .iter()
+        .any(|entry| entry.version == swapped_minor_patch)
+    {
+        return Some(swapped_minor_patch);
+    }
+
+    releases.iter().find_map(|entry| {
+        let parsed = Version::parse(entry.version.trim_start_matches('v')).ok()?;
+        (parsed.major == requested.major).then(|| entry.version.clone())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,5 +229,50 @@ mod tests {
     fn normalize_version_prefixes_when_missing() {
         assert_eq!(normalize_version("22.1.0"), "v22.1.0");
         assert_eq!(normalize_version("v22.1.0"), "v22.1.0");
+    }
+
+    #[test]
+    fn suggested_version_prefers_swapped_minor_patch_candidate() {
+        let releases = vec![
+            ReleaseEntry {
+                version: "v20.4.0".to_string(),
+                lts: serde_json::Value::String("Iron".to_string()),
+            },
+            ReleaseEntry {
+                version: "v20.3.1".to_string(),
+                lts: serde_json::Value::String("Iron".to_string()),
+            },
+        ];
+
+        let suggested = suggested_version_for_missing_release(&releases, "v20.0.4");
+        assert_eq!(suggested, Some("v20.4.0".to_string()));
+    }
+
+    #[test]
+    fn suggested_version_falls_back_to_same_major_release() {
+        let releases = vec![
+            ReleaseEntry {
+                version: "v22.11.0".to_string(),
+                lts: serde_json::Value::String("Jod".to_string()),
+            },
+            ReleaseEntry {
+                version: "v21.4.0".to_string(),
+                lts: serde_json::Value::Bool(false),
+            },
+        ];
+
+        let suggested = suggested_version_for_missing_release(&releases, "v22.0.4");
+        assert_eq!(suggested, Some("v22.11.0".to_string()));
+    }
+
+    #[test]
+    fn suggested_version_returns_none_when_major_is_missing() {
+        let releases = vec![ReleaseEntry {
+            version: "v22.11.0".to_string(),
+            lts: serde_json::Value::String("Jod".to_string()),
+        }];
+
+        let suggested = suggested_version_for_missing_release(&releases, "v19.0.4");
+        assert_eq!(suggested, None);
     }
 }

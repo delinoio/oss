@@ -54,6 +54,8 @@ impl RuntimeInstaller {
             });
         }
 
+        release_client.ensure_version_available(&canonical_version)?;
+
         let target = PlatformTarget::from_host().ok_or_else(|| {
             NodeupError::unsupported_platform(format!(
                 "nodeup currently supports macOS/Linux x64/arm64 only. host={}/{}",

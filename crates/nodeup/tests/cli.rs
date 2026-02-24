@@ -212,6 +212,22 @@ fn install_list_uninstall_flow() {
 
 #[test]
 #[serial]
+fn install_rejects_version_missing_from_release_index() {
+    let env = TestEnv::new();
+    env.register_index(&[("20.4.0", Some("Iron")), ("20.3.1", Some("Iron"))]);
+
+    env.command()
+        .args(["toolchain", "install", "20.0.4"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Runtime v20.0.4 was not found in the Node.js release index",
+        ))
+        .stderr(predicates::str::contains("Did you mean v20.4.0?"));
+}
+
+#[test]
+#[serial]
 fn uninstall_blocks_default_selector_with_mixed_version_spelling() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);

@@ -136,7 +136,8 @@ Subcommand contracts:
 - `nodeup toolchain install <runtime>...`
 : Input: one or more selectors; empty input is invalid.
 : Allowed selector kinds: `Version`, `Channel` (linked names are rejected for install).
-: Behavior: resolves each selector, downloads/validates runtime when missing, and tracks the original selector.
+: Behavior: resolves each selector, verifies resolved versions exist in the live Node.js release index, downloads/validates runtime when missing, and tracks the original selector.
+: Failure: explicit semantic versions that are not present in the release index fail with a deterministic not-found error (with a suggestion when an obvious nearby version exists).
 : Status field (`--output json`): `installed` or `already-installed`.
 - `nodeup toolchain uninstall <runtime>...`
 : Input: one or more selectors; empty input is invalid.
@@ -231,6 +232,7 @@ Required baseline logs:
 : `override-matched`
 : `fallback-to-default`
 : `no-default-selector`
+- Release index lookup result for explicit installs (`runtime`, `found`, `suggestion`)
 - Download source, checksum algorithm, checksum validation result, and install result
 - Dispatch executable alias (`argv[0]`) and resolved executable path
 - Self-management actions (`self update`, `self uninstall`, `self upgrade-data`) and outcome status (`outcome=not-implemented` in current phase)
