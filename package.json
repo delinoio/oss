@@ -3,7 +3,12 @@
   "packageManager": "pnpm@10.26.2",
   "private": true,
   "scripts": {
-    "prepare": "lefthook install; ./scripts/prepare-apps.sh"
+    "prepare": "lefthook install; ./scripts/prepare-apps.sh",
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "format": "turbo format"
   },
   "devDependencies": {
     "lefthook": "^2.1.1",
