@@ -1,0 +1,7 @@
+{
+    "name": "@servers/thenv",
+    "private": true,
+    "scripts": {
+        "dev": "air"
+    }
+}
