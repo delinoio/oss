@@ -24,7 +24,7 @@ describe("mini-app-registry", () => {
     ]);
   });
 
-  it("keeps thenv and remote-file-picker as live mini apps", () => {
+  it("keeps thenv, remote-file-picker, and commit-tracker as live mini apps", () => {
     const thenvRegistration = MINI_APP_REGISTRATIONS.find(
       (registration) => registration.id === DevkitMiniAppId.Thenv,
     );
@@ -38,9 +38,7 @@ describe("mini-app-registry", () => {
     const commitTrackerRegistration = MINI_APP_REGISTRATIONS.find(
       (registration) => registration.id === DevkitMiniAppId.CommitTracker,
     );
-    expect(
-      commitTrackerRegistration?.status === MiniAppStatus.Placeholder,
-    ).toBe(true);
+    expect(commitTrackerRegistration?.status).toBe(MiniAppStatus.Live);
   });
 
   it("validates unique ids and routes", () => {

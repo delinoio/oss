@@ -35,7 +35,7 @@ const miniAppRegistrations: readonly MiniAppRegistration[] = [
     id: DevkitMiniAppId.CommitTracker,
     title: "Commit Tracker",
     route: DevkitRoute.CommitTracker,
-    status: MiniAppStatus.Placeholder,
+    status: MiniAppStatus.Live,
     integrationMode: MiniAppIntegrationMode.BackendCoupled,
     docsPath: "docs/project-devkit-commit-tracker.md",
   },
