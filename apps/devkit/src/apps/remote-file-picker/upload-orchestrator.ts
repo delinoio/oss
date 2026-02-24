@@ -91,7 +91,11 @@ export function uploadFileToSignedUrl({
   onProgress,
   createRequest,
 }: UploadFileToSignedUrlParams): Promise<SignedUrlUploadResult> {
-  const requestFactory = createRequest ?? (() => new XMLHttpRequest());
+  const requestFactory: () => UploadRequestLike =
+    createRequest ??
+    (() => {
+      return new XMLHttpRequest() as unknown as UploadRequestLike;
+    });
 
   return new Promise<SignedUrlUploadResult>((resolve) => {
     let isSettled = false;

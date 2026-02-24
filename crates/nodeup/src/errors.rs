@@ -118,7 +118,7 @@ impl From<semver::Error> for NodeupError {
 
 impl From<NodeupError> for io::Error {
     fn from(value: NodeupError) -> Self {
-        io::Error::new(io::ErrorKind::Other, value.to_string())
+        io::Error::other(value.to_string())
     }
 }
 
