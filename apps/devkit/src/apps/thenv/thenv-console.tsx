@@ -196,229 +196,248 @@ export function ThenvConsole() {
   };
 
   return (
-    <section aria-label="thenv metadata console">
-      <h2 style={{ marginTop: 0 }}>Thenv Metadata Console</h2>
-      <p>
-        This console is metadata-only. It does not render plaintext secret values
-        from bundle payloads.
-      </p>
+    <section aria-label="thenv metadata console" className="dk-stack">
+      <div className="dk-card">
+        <p className="dk-eyebrow">Metadata Console</p>
+        <h2 className="dk-section-title">Thenv Metadata Console</h2>
+        <p className="dk-paragraph">
+          This console is metadata-only. It does not render plaintext secret values
+          from bundle payloads.
+        </p>
+      </div>
 
-      <form onSubmit={handleRefresh} style={{ marginBottom: "1.25rem" }}>
-        <fieldset style={{ border: "1px solid #d7e2ea", padding: "0.75rem" }}>
-          <legend>Scope</legend>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: "0.75rem",
-            }}
-          >
-            <label>
+      <form onSubmit={handleRefresh} className="dk-card">
+        <fieldset className="dk-fieldset">
+          <legend className="dk-fieldset-legend">Scope</legend>
+          <div className="dk-form-grid">
+            <label className="dk-field">
               Workspace
               <input
+                className="dk-input"
                 value={scope.workspaceId}
                 onChange={(event) =>
                   handleScopeChange("workspaceId", event.target.value)
                 }
-                style={{ width: "100%" }}
               />
             </label>
-            <label>
+            <label className="dk-field">
               Project
               <input
+                className="dk-input"
                 value={scope.projectId}
                 onChange={(event) =>
                   handleScopeChange("projectId", event.target.value)
                 }
-                style={{ width: "100%" }}
               />
             </label>
-            <label>
+            <label className="dk-field">
               Environment
               <input
+                className="dk-input"
                 value={scope.environmentId}
                 onChange={(event) =>
                   handleScopeChange("environmentId", event.target.value)
                 }
-                style={{ width: "100%" }}
               />
             </label>
           </div>
-          <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem" }}>
-            <button type="submit" disabled={loading}>
+
+          <div className="dk-button-group">
+            <button type="submit" className="dk-button" disabled={loading}>
               {loading ? "Loading..." : "Refresh"}
             </button>
-            <span>Active version: {activeVersion || "(none)"}</span>
+            <span className="dk-subtle">
+              Active version: <code className="dk-mono">{activeVersion || "(none)"}</code>
+            </span>
           </div>
         </fieldset>
       </form>
 
       {errorMessage ? (
-        <p role="alert" style={{ color: "#9f1111" }}>
+        <p role="alert" className="dk-alert">
           {errorMessage}
         </p>
       ) : null}
 
-      <section aria-label="version inventory" style={{ marginBottom: "1.5rem" }}>
-        <h3>Version Inventory</h3>
+      <section aria-label="version inventory" className="dk-card">
+        <h3 className="dk-subsection-title">Version Inventory</h3>
         {versions.length === 0 ? (
-          <p>No bundle versions were found for this scope.</p>
+          <p className="dk-empty">No bundle versions were found for this scope.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th align="left">Bundle Version</th>
-                <th align="left">Status</th>
-                <th align="left">Created By</th>
-                <th align="left">Created At</th>
-                <th align="left">File Types</th>
-              </tr>
-            </thead>
-            <tbody>
-              {versions.map((version) => (
-                <tr key={version.bundleVersionId}>
-                  <td>{version.bundleVersionId}</td>
-                  <td>{version.status}</td>
-                  <td>{version.createdBy}</td>
-                  <td>{formatTimestamp(version.createdAt)}</td>
-                  <td>{version.fileTypes.join(", ") || "-"}</td>
+          <div className="dk-table-wrap">
+            <table className="dk-table">
+              <thead>
+                <tr>
+                  <th>Bundle Version</th>
+                  <th>Status</th>
+                  <th>Created By</th>
+                  <th>Created At</th>
+                  <th>File Types</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {versions.map((version) => (
+                  <tr key={version.bundleVersionId}>
+                    <td>{version.bundleVersionId}</td>
+                    <td>{version.status}</td>
+                    <td>{version.createdBy}</td>
+                    <td>{formatTimestamp(version.createdAt)}</td>
+                    <td>{version.fileTypes.join(", ") || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
-      <section aria-label="active version switch" style={{ marginBottom: "1.5rem" }}>
-        <h3>Active Version Switch</h3>
-        <form onSubmit={handleActivate}>
-          <label>
+      <section aria-label="active version switch" className="dk-card">
+        <h3 className="dk-subsection-title">Active Version Switch</h3>
+        <form onSubmit={handleActivate} className="dk-stack">
+          <label className="dk-field">
             Target bundle version id
             <input
+              className="dk-input"
               value={activateTarget}
               onChange={(event) => setActivateTarget(event.target.value)}
-              style={{ width: "100%", maxWidth: "420px", display: "block" }}
             />
           </label>
-          <button type="submit" style={{ marginTop: "0.5rem" }} disabled={activating}>
-            {activating ? "Activating..." : "Activate Version"}
-          </button>
+          <div className="dk-button-group">
+            <button type="submit" className="dk-button" disabled={activating}>
+              {activating ? "Activating..." : "Activate Version"}
+            </button>
+          </div>
         </form>
       </section>
 
-      <section aria-label="policy bindings" style={{ marginBottom: "1.5rem" }}>
-        <h3>Policy Bindings</h3>
-        <p>Current revision: {policyRevision}</p>
+      <section aria-label="policy bindings" className="dk-card">
+        <h3 className="dk-subsection-title">Policy Bindings</h3>
+        <p className="dk-subtle">Current revision: {policyRevision}</p>
 
-        <div style={{ marginBottom: "0.75rem" }}>
-          <label>
-            Subject
-            <input
-              value={newSubject}
-              onChange={(event) => setNewSubject(event.target.value)}
-              style={{ marginLeft: "0.5rem" }}
-            />
-          </label>
-          <label style={{ marginLeft: "0.75rem" }}>
-            Role
-            <select
-              value={newRole}
-              onChange={(event) => setNewRole(event.target.value as ThenvRole)}
-              style={{ marginLeft: "0.5rem" }}
+        <div className="dk-stack">
+          <div className="dk-form-grid">
+            <label className="dk-field">
+              Subject
+              <input
+                className="dk-input"
+                value={newSubject}
+                onChange={(event) => setNewSubject(event.target.value)}
+              />
+            </label>
+            <label className="dk-field">
+              Role
+              <select
+                className="dk-select"
+                value={newRole}
+                onChange={(event) => setNewRole(event.target.value as ThenvRole)}
+              >
+                {ROLE_OPTIONS.map((role) => (
+                  <option key={role} value={role}>
+                    {roleLabel(role)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="dk-button-group">
+            <button
+              type="button"
+              className="dk-button dk-button-secondary"
+              onClick={handleAddBinding}
             >
-              {ROLE_OPTIONS.map((role) => (
-                <option key={role} value={role}>
-                  {roleLabel(role)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="button" onClick={handleAddBinding} style={{ marginLeft: "0.75rem" }}>
-            Add Binding
-          </button>
+              Add Binding
+            </button>
+          </div>
         </div>
 
         {draftBindings.length === 0 ? (
-          <p>No policy bindings configured.</p>
+          <p className="dk-empty">No policy bindings configured.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th align="left">Subject</th>
-                <th align="left">Role</th>
-                <th align="left">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {draftBindings.map((binding) => (
-                <tr key={binding.subject}>
-                  <td>{binding.subject}</td>
-                  <td>{roleLabel(binding.role)}</td>
-                  <td>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveBinding(binding.subject)}
-                    >
-                      Remove
-                    </button>
-                  </td>
+          <div className="dk-table-wrap">
+            <table className="dk-table">
+              <thead>
+                <tr>
+                  <th>Subject</th>
+                  <th>Role</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {draftBindings.map((binding) => (
+                  <tr key={binding.subject}>
+                    <td>{binding.subject}</td>
+                    <td>{roleLabel(binding.role)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="dk-button dk-button-danger"
+                        onClick={() => handleRemoveBinding(binding.subject)}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
 
-        <button
-          type="button"
-          onClick={handleSavePolicy}
-          disabled={savingPolicy}
-          style={{ marginTop: "0.75rem" }}
-        >
-          {savingPolicy ? "Saving..." : "Save Policy"}
-        </button>
+        <div className="dk-button-group">
+          <button
+            type="button"
+            className="dk-button"
+            onClick={handleSavePolicy}
+            disabled={savingPolicy}
+          >
+            {savingPolicy ? "Saving..." : "Save Policy"}
+          </button>
+        </div>
       </section>
 
-      <section aria-label="audit events">
-        <h3>Audit Events</h3>
+      <section aria-label="audit events" className="dk-card">
+        <h3 className="dk-subsection-title">Audit Events</h3>
         {auditEvents.length === 0 ? (
-          <p>No audit events were found for this scope.</p>
+          <p className="dk-empty">No audit events were found for this scope.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th align="left">Event</th>
-                <th align="left">Actor</th>
-                <th align="left">Bundle</th>
-                <th align="left">Target</th>
-                <th align="left">Request</th>
-                <th align="left">Created At</th>
-              </tr>
-            </thead>
-            <tbody>
-              {auditEvents.map((event) => (
-                <tr key={event.eventId}>
-                  <td>{event.eventType}</td>
-                  <td>{event.actor}</td>
-                  <td>{event.bundleVersionId || "-"}</td>
-                  <td>{event.targetBundleVersionId || "-"}</td>
-                  <td>{event.requestId}</td>
-                  <td>{formatTimestamp(event.createdAt)}</td>
+          <div className="dk-table-wrap">
+            <table className="dk-table">
+              <thead>
+                <tr>
+                  <th>Event</th>
+                  <th>Actor</th>
+                  <th>Bundle</th>
+                  <th>Target</th>
+                  <th>Request</th>
+                  <th>Created At</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {auditEvents.map((event) => (
+                  <tr key={event.eventId}>
+                    <td>{event.eventType}</td>
+                    <td>{event.actor}</td>
+                    <td>{event.bundleVersionId || "-"}</td>
+                    <td>{event.targetBundleVersionId || "-"}</td>
+                    <td>{event.requestId}</td>
+                    <td>{formatTimestamp(event.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 
-      <p style={{ marginTop: "1.5rem", fontSize: "0.875rem", color: "#3f4f63" }}>
-        Plaintext secret payloads are never shown in this UI.
-      </p>
-
-      {bindings.length > 0 ? (
-        <p style={{ marginTop: "0.5rem", fontSize: "0.875rem", color: "#3f4f63" }}>
-          Loaded {bindings.length} persisted binding(s).
-        </p>
-      ) : null}
+      <div className="dk-card dk-card-muted">
+        <p className="dk-subtle">Plaintext secret payloads are never shown in this UI.</p>
+        {bindings.length > 0 ? (
+          <p className="dk-subtle">
+            Loaded {bindings.length} persisted binding(s).
+          </p>
+        ) : null}
+      </div>
     </section>
   );
 }

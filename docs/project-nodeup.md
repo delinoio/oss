@@ -109,61 +109,85 @@ enum NodeupChannel {
 }
 ```
 
-Command contracts:
+CLI entrypoints:
+- `nodeup [--output <human|json>] <command> ...`
+- Shim dispatch path: when the same binary is invoked as `node`, `npm`, or `npx`, nodeup resolves the active runtime and delegates execution directly (without going through the management CLI parser).
+
+Global option contract:
+- `--output <human|json>` is available for all management commands and defaults to `human`.
+
+Runtime selector grammar:
+
+```ts
+enum NodeupRuntimeSelectorKind {
+  Version = "semver-with-optional-v-prefix",
+  Channel = "lts|current|latest",
+  LinkedName = "ascii-alnum-first + [ascii-alnum|_|-]*",
+}
+```
+
+- `22.1.0` and `v22.1.0` are equivalent version selectors and normalize to `v22.1.0`.
+- Linked runtime names must start with an ASCII alphanumeric character and may contain `_` or `-` after the first character.
+
+Subcommand contracts:
 - `nodeup toolchain list`
-: Input: optional verbose/quiet formatting flags.
-: Output: installed runtime list with optional detail metadata.
+: Input: none.
+: Output: installed runtime versions and linked runtime map.
 - `nodeup toolchain install <runtime>...`
-: Input: one or more runtime selectors.
-: Behavior: missing runtimes are downloaded, checksum-verified, and activated in local store.
-: Output: per-runtime installation/update result and resolved runtime identifier.
+: Input: one or more selectors; empty input is invalid.
+: Allowed selector kinds: `Version`, `Channel` (linked names are rejected for install).
+: Behavior: resolves each selector, downloads/validates runtime when missing, and tracks the original selector.
+: Status field (`--output json`): `installed` or `already-installed`.
 - `nodeup toolchain uninstall <runtime>...`
-: Input: one or more installed runtime selectors.
-: Behavior: uninstallation guards treat canonical equivalent spellings (`22.1.0` and `v22.1.0`) as the same selector when checking default/override references.
-: Output: removal result and final installed runtime count; tracked selectors for removed versions are cleaned in canonical form.
+: Input: one or more selectors; empty input is invalid.
+: Allowed selector kinds: exact `Version` only (channels/linked names are rejected).
+: Behavior: blocks removal if target runtime is referenced by default selector or any override; selector spelling is canonicalized so `22.1.0` and `v22.1.0` are treated as the same runtime.
+: Output: removed runtime list; tracked selectors that canonicalize to removed versions are deleted.
 - `nodeup toolchain link <name> <path>`
-: Input: custom runtime name and local runtime directory path.
-: Output: linked custom runtime registration result.
+: Input: linked runtime name and existing local runtime path.
+: Behavior: validates name format, canonicalizes path, stores it in linked runtimes, and tracks the selector.
+: Status field (`--output json`): `linked`.
 - `nodeup default [runtime]`
-: Input: global default runtime selector.
-: Behavior: installs runtime if missing.
-: Output: final default runtime identifier.
+: With `runtime`: resolves selector, installs if it resolves to a version and is missing, saves selector as global default, and tracks selector.
+: Without `runtime`: returns current default selector and resolved runtime (if configured).
 - `nodeup show active-runtime`
-: Output: currently active runtime after applying resolution precedence.
+: Output: resolved runtime (`runtime`), selection source (`explicit|override|default`), and canonical selector.
+: Failure: returns deterministic not-found error when neither override nor default selector exists.
 - `nodeup show home`
-: Output: resolved nodeup home directory path.
+: Output: `data_root`, `cache_root`, and `config_root`.
 - `nodeup update [runtime]...`
-: Input: optional runtime selectors.
-: Behavior: updates selected runtimes; with no selectors, updates tracked selectors from config and falls back to installed runtimes.
-: Behavior: explicit version updates report `already-up-to-date` when the newest candidate runtime is already installed.
-: Output: update summary by selector/runtime.
+: With selectors: processes exactly the provided selectors.
+: Without selectors: uses tracked selectors first; falls back to installed versions when tracked selector list is empty.
+: Status field (`--output json`): `updated`, `already-up-to-date`, or `skipped-linked-runtime`.
 - `nodeup check`
-: Output: available update status for installed runtimes.
+: Output: one row per installed runtime with `latest_available` and `has_update`.
 - `nodeup override list`
-: Output: directory-to-runtime override mapping table.
+: Output: configured override entries (`path`, `selector`).
 - `nodeup override set <runtime> [--path <path>]`
-: Input: runtime selector and optional directory path.
-: Behavior: validates selector syntax before persisting and stores canonical selector IDs (for example `22.1.0` is stored as `v22.1.0`).
-: Output: applied override scope and runtime.
+: Input: runtime selector and optional path (defaults to current directory).
+: Behavior: selector is validated and stored in canonical stable form (example: `22.1.0` -> `v22.1.0`), then tracked.
+: Status field (`--output json`): `set`.
 - `nodeup override unset [--path <path>] [--nonexistent]`
-: Input: optional directory path or nonexistent cleanup flag.
-: Output: removed override entries summary.
-- `nodeup run [--install] <runtime> <command>...`
-: Input: runtime selector and delegated command line.
-: Behavior: if `--install` is set, missing runtime is installed before execution.
-: Output: delegated process exit status and selected runtime.
+: Input: optional target path and optional cleanup flag for stale paths.
+: Output: removed override entries.
 - `nodeup which [--runtime <runtime>] <command>`
-: Input: delegated executable name and optional explicit runtime selector.
-: Output: concrete executable path that would be executed.
+: Input: delegated command name and optional explicit selector.
+: Behavior: resolves runtime precedence, verifies runtime availability, and prints concrete executable path.
+: Note: unlike `run`, this command does not auto-install missing runtimes.
+- `nodeup run [--install] <runtime> <command>...`
+: Input: explicit runtime selector and delegated argv (at least one command token is required).
+: Behavior: if resolved runtime version is missing, command fails unless `--install` is provided.
+: Output: delegated command result with runtime, delegated command name, and exit code.
+: Exit code: returns delegated process exit code on success path.
 - `nodeup self update`
-: Output: `NotImplemented` error in current phase.
+: Output: deterministic `NotImplemented` error in current phase.
 - `nodeup self uninstall`
-: Output: `NotImplemented` error in current phase.
+: Output: deterministic `NotImplemented` error in current phase.
 - `nodeup self upgrade-data`
-: Output: `NotImplemented` error in current phase.
+: Output: deterministic `NotImplemented` error in current phase.
 - `nodeup completions <shell> [command]`
 : Input: target shell and optional command scope.
-: Output: `NotImplemented` error in current phase.
+: Output: deterministic `NotImplemented` error in current phase.
 
 Resolution precedence contract:
 - Explicit runtime in command invocation (`run`, `which --runtime`) has highest priority.
@@ -172,7 +196,7 @@ Resolution precedence contract:
 - If no selector resolves and auto-install is disabled, command must fail with a deterministic error.
 
 Dispatch contract:
-- If invoked as `node`, `npm`, `npx`, or another managed alias, nodeup resolves target Node.js version and forwards execution.
+- If invoked as `node`, `npm`, or `npx`, nodeup resolves target Node.js version and forwards execution.
 - If invoked as `nodeup`, nodeup performs management commands.
 
 Symlink contract:

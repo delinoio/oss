@@ -42,9 +42,14 @@ export function DevkitShell({
     });
 
     return (
-      <main style={{ padding: "2rem" }}>
-        <h1>Access denied</h1>
-        <p>This route is blocked by the current auth guard policy.</p>
+      <main className="dk-main">
+        <section className="dk-card" aria-label="access denied">
+          <p className="dk-eyebrow">Guard Policy</p>
+          <h1 className="dk-section-title">Access denied</h1>
+          <p className="dk-paragraph">
+            This route is blocked by the current auth guard policy.
+          </p>
+        </section>
       </main>
     );
   }
@@ -57,49 +62,13 @@ export function DevkitShell({
   });
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "grid",
-        gridTemplateRows: "auto 1fr",
-      }}
-    >
-      <header
-        style={{
-          borderBottom: "1px solid #d7e2ea",
-          backgroundColor: "#ffffff",
-          padding: "1rem 2rem",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "1100px",
-            margin: "0 auto",
-          }}
-        >
-          <p
-            style={{
-              margin: "0 0 0.5rem",
-              fontSize: "0.75rem",
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "#3f4f63",
-            }}
-          >
-            Devkit Shell
-          </p>
-          <h1 style={{ margin: "0 0 1rem" }}>{title}</h1>
+    <div className="dk-root">
+      <header className="dk-topbar">
+        <div className="dk-topbar-inner">
+          <p className="dk-topbar-label">Devkit Shell</p>
+          <h1 className="dk-page-title">{title}</h1>
           <nav aria-label="Mini app navigation">
-            <ul
-              style={{
-                margin: 0,
-                padding: 0,
-                listStyle: "none",
-                display: "flex",
-                gap: "1rem",
-                flexWrap: "wrap",
-              }}
-            >
+            <ul className="dk-nav-list">
               {MINI_APP_REGISTRATIONS.map((registration) => (
                 <li key={registration.id}>
                   <Link
@@ -107,20 +76,7 @@ export function DevkitShell({
                     aria-current={
                       registration.route === currentRoute ? "page" : undefined
                     }
-                    style={{
-                      padding: "0.4rem 0.75rem",
-                      borderRadius: "999px",
-                      border:
-                        registration.route === currentRoute
-                          ? "1px solid #0c5fca"
-                          : "1px solid #d7e2ea",
-                      backgroundColor:
-                        registration.route === currentRoute
-                          ? "#e9f3ff"
-                          : "#ffffff",
-                      color: "#17324f",
-                      display: "inline-block",
-                    }}
+                    className="dk-nav-link"
                   >
                     {registration.title}
                   </Link>
@@ -130,14 +86,7 @@ export function DevkitShell({
           </nav>
         </div>
       </header>
-      <main
-        style={{
-          maxWidth: "1100px",
-          width: "100%",
-          margin: "0 auto",
-          padding: "2rem",
-        }}
-      >
+      <main className="dk-main">
         {children}
       </main>
     </div>
