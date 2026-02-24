@@ -129,6 +129,7 @@ Primary backend storage:
 
 Migration behavior:
 - Server auto-applies schema migrations at startup using `schema_migrations`.
+- Migration claiming is concurrency-safe via `INSERT ... ON CONFLICT DO NOTHING`, so parallel server startups do not fail on duplicate migration inserts.
 
 Core tables:
 - `metric_definitions`
@@ -166,6 +167,9 @@ Required structured fields:
 - `metric_key`
 - `evaluation_level`
 - `delta_percent`
+
+Sensitive logging rule:
+- `X-Commit-Tracker-Subject` remains required for authorization but must never be emitted in structured logs.
 
 ## Collector Input Contract
 CLI command:
@@ -209,6 +213,7 @@ Acceptance-focused scenarios:
 - `Neutral` verdict when base metric is missing
 - Direction-aware increase/decrease evaluation
 - Deterministic delta-percent behavior when base value is `0`
+- Deterministic latest metric snapshot selection when multiple rows share the same `measured_at` timestamp
 - GitHub publish path writes comment + status and persists report row
 - GitHub auth failure maps to auth error response code
 - Unsupported provider publish paths return `FailedPrecondition`

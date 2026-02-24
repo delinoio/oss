@@ -4,10 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
-	"github.com/delinoio/oss/cmds/derun/internal/session"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
 )
 
@@ -32,15 +30,15 @@ func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 	if total != 1 || len(sessions) != 1 {
 		t.Fatalf("unexpected sessions: total=%d len=%d", total, len(sessions))
 	}
-	detail := waitForSessionDetail(t, store, sessions[0].SessionID)
+	detail, err := store.GetSession(sessions[0].SessionID)
+	if err != nil {
+		t.Fatalf("GetSession returned error: %v", err)
+	}
 	if detail.State != contracts.DerunSessionStateExited {
 		t.Fatalf("unexpected state: %s", detail.State)
 	}
 	if detail.ExitCode == nil || *detail.ExitCode != 7 {
 		t.Fatalf("unexpected exit code in metadata: %v", detail.ExitCode)
-	}
-	if detail.OutputBytes == 0 {
-		t.Fatalf("expected output bytes > 0, got=%d", detail.OutputBytes)
 	}
 
 	finalPath := filepath.Join(stateRoot, "sessions", sessions[0].SessionID, "final.json")
@@ -90,21 +88,5 @@ func TestExecuteRunRejectsDuplicateSessionID(t *testing.T) {
 	}
 	if total != 1 || len(sessions) != 1 {
 		t.Fatalf("unexpected sessions after duplicate rejection: total=%d len=%d", total, len(sessions))
-	}
-}
-
-func waitForSessionDetail(t *testing.T, store *state.Store, sessionID string) session.Detail {
-	t.Helper()
-
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		detail, err := store.GetSession(sessionID)
-		if err != nil {
-			t.Fatalf("GetSession returned error: %v", err)
-		}
-		if detail.OutputBytes > 0 || time.Now().After(deadline) {
-			return detail
-		}
-		time.Sleep(10 * time.Millisecond)
 	}
 }

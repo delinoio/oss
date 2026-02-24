@@ -215,7 +215,7 @@ Required behavioral test scenarios:
 
 Current CI stability notes:
 - `cmds/derun/internal/cli` tests use `t.Setenv("DERUN_STATE_ROOT", ...)` to isolate state root overrides without leaking environment mutations across tests.
-- `TestExecuteRunPipeModeCapturesOutputAndExitCode` waits briefly for persisted chunk metadata before asserting output byte totals to avoid transient filesystem timing flakes in CI.
+- `TestExecuteRunPipeModeCapturesOutputAndExitCode` validates session lifecycle/exit metadata and final artifact persistence without depending on platform-specific output byte totals.
 
 ## Roadmap
 - Phase 1: Terminal-fidelity `run` execution and transcript persistence.

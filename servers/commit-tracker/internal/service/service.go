@@ -209,11 +209,19 @@ func (s *Service) applyMigration(ctx context.Context, version int64, statements 
 		_ = tx.Rollback()
 	}()
 
-	var exists bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, version).Scan(&exists); err != nil {
+	claimResult, err := tx.ExecContext(
+		ctx,
+		`INSERT INTO schema_migrations(version) VALUES ($1) ON CONFLICT(version) DO NOTHING`,
+		version,
+	)
+	if err != nil {
 		return err
 	}
-	if exists {
+	claimedRows, err := claimResult.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if claimedRows == 0 {
 		return tx.Commit()
 	}
 
@@ -223,16 +231,11 @@ func (s *Service) applyMigration(ctx context.Context, version int64, statements 
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version) VALUES ($1)`, version); err != nil {
-		return err
-	}
-
 	return tx.Commit()
 }
 
 func (s *Service) UpsertCommitMetrics(ctx context.Context, req *connect.Request[committrackerv1.UpsertCommitMetricsRequest]) (*connect.Response[committrackerv1.UpsertCommitMetricsResponse], error) {
-	subject, err := s.authorize(req.Header())
-	if err != nil {
+	if _, err := s.authorize(req.Header()); err != nil {
 		return nil, err
 	}
 	if err := validateUpsertRequest(req.Msg); err != nil {
@@ -330,7 +333,6 @@ func (s *Service) UpsertCommitMetrics(ctx context.Context, req *connect.Request[
 			"metric_key":        metric.GetMetricKey(),
 			"evaluation_level":  "",
 			"delta_percent":     0,
-			"subject":           subject,
 			"warning_threshold": metric.GetWarningThresholdPercent(),
 			"fail_threshold":    metric.GetFailThresholdPercent(),
 		})
@@ -347,8 +349,7 @@ func (s *Service) UpsertCommitMetrics(ctx context.Context, req *connect.Request[
 }
 
 func (s *Service) ListMetricSeries(ctx context.Context, req *connect.Request[committrackerv1.ListMetricSeriesRequest]) (*connect.Response[committrackerv1.ListMetricSeriesResponse], error) {
-	subject, err := s.authorize(req.Header())
-	if err != nil {
+	if _, err := s.authorize(req.Header()); err != nil {
 		return nil, err
 	}
 	if err := validateSeriesRequest(req.Msg); err != nil {
@@ -480,7 +481,6 @@ func (s *Service) ListMetricSeries(ctx context.Context, req *connect.Request[com
 		"metric_key":         req.Msg.GetMetricKey(),
 		"evaluation_level":   "",
 		"delta_percent":      0,
-		"subject":            subject,
 		"series_point_count": len(points),
 	})
 
@@ -488,8 +488,7 @@ func (s *Service) ListMetricSeries(ctx context.Context, req *connect.Request[com
 }
 
 func (s *Service) GetPullRequestComparison(ctx context.Context, req *connect.Request[committrackerv1.GetPullRequestComparisonRequest]) (*connect.Response[committrackerv1.GetPullRequestComparisonResponse], error) {
-	subject, err := s.authorize(req.Header())
-	if err != nil {
+	if _, err := s.authorize(req.Header()); err != nil {
 		return nil, err
 	}
 
@@ -515,7 +514,6 @@ func (s *Service) GetPullRequestComparison(ctx context.Context, req *connect.Req
 			"metric_key":       item.GetMetricKey(),
 			"evaluation_level": item.GetEvaluationLevel().String(),
 			"delta_percent":    item.GetDeltaPercent(),
-			"subject":          subject,
 		})
 	}
 
@@ -523,8 +521,7 @@ func (s *Service) GetPullRequestComparison(ctx context.Context, req *connect.Req
 }
 
 func (s *Service) PublishPullRequestReport(ctx context.Context, req *connect.Request[committrackerv1.PublishPullRequestReportRequest]) (*connect.Response[committrackerv1.PublishPullRequestReportResponse], error) {
-	subject, err := s.authorize(req.Header())
-	if err != nil {
+	if _, err := s.authorize(req.Header()); err != nil {
 		return nil, err
 	}
 	if req.Msg.GetProvider() != committrackerv1.GitProviderKind_GIT_PROVIDER_KIND_GITHUB {
@@ -608,7 +605,6 @@ func (s *Service) PublishPullRequestReport(ctx context.Context, req *connect.Req
 			"metric_key":       item.GetMetricKey(),
 			"evaluation_level": item.GetEvaluationLevel().String(),
 			"delta_percent":    item.GetDeltaPercent(),
-			"subject":          subject,
 		})
 	}
 
@@ -728,7 +724,7 @@ func (s *Service) loadCommitMetrics(
 		}
 		query.WriteString(")")
 	}
-	query.WriteString(" ORDER BY cm.metric_key, cm.measured_at DESC")
+	query.WriteString(" ORDER BY cm.metric_key, cm.measured_at DESC, cm.id DESC")
 
 	rows, err := s.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
