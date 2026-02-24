@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          mapfile -t go_files < <(git ls-files '*.go')
+          mapfile -d '' -t go_files < <(find . -type f -name '*.go' -print0 | sort -z)
           if [ "${#go_files[@]}" -eq 0 ]; then
             exit 0
           fi

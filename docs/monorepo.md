@@ -117,7 +117,7 @@ enum ThenvComponent {
 Repository-wide CI is defined in `.github/workflows/CI.yml`.
 
 Coverage expectations:
-- `go-quality`: runs `gofmt` verification and `go vet ./...` on Ubuntu.
+- `go-quality`: runs `gofmt` verification for all repository `*.go` files and `go vet ./...` on Ubuntu.
 - `go-test`: runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
