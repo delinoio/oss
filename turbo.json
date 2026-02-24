@@ -1,12 +1,5 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalPassThroughEnv": [
-    "CHECKOUT_SUCCESS_URL",
-    "POLAR_ACCESS_TOKEN",
-    "PUBLIC_SKIP_MODE_SELECTION",
-    "PUBLIC_DEFAULT_MODE",
-    "PUBLIC_REMOTE_SERVER_URL"
-  ],
   "tasks": {
     "dev": {
       "dependsOn": [
