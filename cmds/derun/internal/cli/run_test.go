@@ -11,9 +11,12 @@ import (
 
 func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 	stateRoot := t.TempDir()
-	t.Setenv("DERUN_STATE_ROOT", stateRoot)
+	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
 
-	exitCode := ExecuteRun([]string{"--", "sh", "-c", "echo out; echo err 1>&2; exit 7"})
+	exitCode := ExecuteRun([]string{"--", "sh", "-c", "printf 'out'; printf 'err' 1>&2; exit 7"})
 	if exitCode != 7 {
 		t.Fatalf("unexpected exit code: got=%d want=7", exitCode)
 	}
@@ -40,6 +43,9 @@ func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 	if detail.ExitCode == nil || *detail.ExitCode != 7 {
 		t.Fatalf("unexpected exit code in metadata: %v", detail.ExitCode)
 	}
+	if detail.OutputBytes < 3 {
+		t.Fatalf("expected output bytes >= 3, got=%d", detail.OutputBytes)
+	}
 
 	finalPath := filepath.Join(stateRoot, "sessions", sessions[0].SessionID, "final.json")
 	if _, err := os.Stat(finalPath); err != nil {
@@ -49,10 +55,13 @@ func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 
 func TestExecuteRunRejectsDuplicateSessionID(t *testing.T) {
 	stateRoot := t.TempDir()
-	t.Setenv("DERUN_STATE_ROOT", stateRoot)
+	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
 
 	sessionID := "01J0S444444444444444444444"
-	firstExitCode := ExecuteRun([]string{"--session-id", sessionID, "--", "sh", "-c", "echo first"})
+	firstExitCode := ExecuteRun([]string{"--session-id", sessionID, "--", "sh", "-c", "printf 'first'"})
 	if firstExitCode != 0 {
 		t.Fatalf("unexpected first exit code: got=%d want=0", firstExitCode)
 	}
@@ -66,7 +75,7 @@ func TestExecuteRunRejectsDuplicateSessionID(t *testing.T) {
 		t.Fatalf("GetSession after first run returned error: %v", err)
 	}
 
-	secondExitCode := ExecuteRun([]string{"--session-id", sessionID, "--", "sh", "-c", "echo second; exit 9"})
+	secondExitCode := ExecuteRun([]string{"--session-id", sessionID, "--", "sh", "-c", "printf 'second'; exit 9"})
 	if secondExitCode != 2 {
 		t.Fatalf("unexpected second exit code: got=%d want=2", secondExitCode)
 	}
