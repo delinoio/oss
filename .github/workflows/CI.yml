@@ -321,34 +321,5 @@ jobs:
       - node-mpapp-test
       - node-mpapp-lint
     steps:
-      - name: Ensure no required job failed
-        env:
-          DOCS_RESULT: ${{ needs.docs-consistency.result }}
-          GO_QUALITY_RESULT: ${{ needs.go-quality.result }}
-          GO_TEST_RESULT: ${{ needs.go-test.result }}
-          RUST_FMT_RESULT: ${{ needs.rust-fmt.result }}
-          RUST_CLIPPY_RESULT: ${{ needs.rust-clippy.result }}
-          RUST_TEST_RESULT: ${{ needs.rust-test.result }}
-          NODE_DEVKIT_TEST_RESULT: ${{ needs.node-devkit-test.result }}
-          NODE_DEVKIT_BUILD_RESULT: ${{ needs.node-devkit-build.result }}
-          NODE_MPAPP_TEST_RESULT: ${{ needs.node-mpapp-test.result }}
-          NODE_MPAPP_LINT_RESULT: ${{ needs.node-mpapp-lint.result }}
-        run: |
-          set -euo pipefail
-
-          for result in \
-            "$DOCS_RESULT" \
-            "$GO_QUALITY_RESULT" \
-            "$GO_TEST_RESULT" \
-            "$RUST_FMT_RESULT" \
-            "$RUST_CLIPPY_RESULT" \
-            "$RUST_TEST_RESULT" \
-            "$NODE_DEVKIT_TEST_RESULT" \
-            "$NODE_DEVKIT_BUILD_RESULT" \
-            "$NODE_MPAPP_TEST_RESULT" \
-            "$NODE_MPAPP_LINT_RESULT"; do
-            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
-              echo "A required CI job failed or was cancelled."
-              exit 1
-            fi
-          done
+      - run: exit 1
+        if: ${{ always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
