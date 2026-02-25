@@ -280,6 +280,21 @@ impl Workspace {
             .iter()
             .any(|global| relative == Path::new(global))
     }
+
+    #[cfg(test)]
+    pub(crate) fn from_parts(
+        root: PathBuf,
+        packages: BTreeMap<String, WorkspacePackage>,
+        dependencies: BTreeMap<String, BTreeSet<String>>,
+        dependents: BTreeMap<String, BTreeSet<String>>,
+    ) -> Self {
+        Self {
+            root,
+            packages,
+            dependencies,
+            dependents,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -321,12 +336,7 @@ mod tests {
             BTreeSet::from(["app".to_string(), "cli".to_string()]),
         );
 
-        Workspace {
-            root,
-            packages,
-            dependencies,
-            dependents,
-        }
+        Workspace::from_parts(root, packages, dependencies, dependents)
     }
 
     #[test]

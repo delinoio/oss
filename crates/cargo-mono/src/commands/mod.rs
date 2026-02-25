@@ -2,6 +2,7 @@ mod bump;
 mod changed;
 mod list;
 mod publish;
+mod targeting;
 
 use serde::Serialize;
 use serde_json::{json, Value};

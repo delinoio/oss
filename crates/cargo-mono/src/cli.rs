@@ -67,7 +67,7 @@ pub struct BumpArgs {
     #[arg(long, value_enum)]
     pub level: BumpLevel,
     /// Prerelease identifier used with `--level prerelease`.
-    #[arg(long)]
+    #[arg(long, required_if_eq("level", "prerelease"))]
     pub preid: Option<String>,
     /// Also apply patch bumps to dependent workspace packages.
     #[arg(long)]
@@ -92,4 +92,37 @@ pub struct PublishArgs {
     /// Override publish registry.
     #[arg(long)]
     pub registry: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::Cli;
+
+    #[test]
+    fn bump_requires_level() {
+        let parsed = Cli::try_parse_from(["cargo", "bump"]);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn bump_rejects_multiple_target_selectors() {
+        let parsed = Cli::try_parse_from([
+            "cargo",
+            "bump",
+            "--level",
+            "patch",
+            "--all",
+            "--package",
+            "nodeup",
+        ]);
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn bump_requires_preid_for_prerelease_level() {
+        let parsed = Cli::try_parse_from(["cargo", "bump", "--level", "prerelease"]);
+        assert!(parsed.is_err());
+    }
 }
