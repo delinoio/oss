@@ -109,6 +109,7 @@ enum ThenvComponent {
 ## Shell Command Safety Rules
 - Use `$(...)` for command substitution; do not use legacy backticks in new scripts.
 - Apply strict quoting and escaping for all dynamic shell values to prevent command injection and parsing bugs.
+- If an operation is blocked by sandbox restrictions, retry it without sandbox restrictions using the required approval flow.
 
 ## Logging Rules
 - Write sufficient logs to support debugging, incident analysis, and operational troubleshooting.

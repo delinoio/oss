@@ -16,6 +16,7 @@
 - Prefer structured logging libraries for business and system logs (Go: `log/slog`, Rust: `tracing`).
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
 - When writing shell commands or scripts, treat backticks and command substitution carefully, prefer `$(...)` over legacy backticks, and apply strict escaping for all dynamic values.
+- If an operation is blocked by sandbox restrictions, retry it without sandbox restrictions using the required approval flow.
 
 ### Monorepo Structure Map
 
