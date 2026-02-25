@@ -48,7 +48,7 @@ enum DevkitMiniAppId {
 ```
 
 ## Commit Tracker Component Contract
-`devkit-commit-tracker` is documented as a single project with three planned components:
+`devkit-commit-tracker` is documented as a single project with three active components:
 
 ```ts
 enum CommitTrackerComponent {
@@ -60,8 +60,8 @@ enum CommitTrackerComponent {
 
 Component mapping:
 - `WebApp` -> `apps/devkit/src/apps/commit-tracker`
-- `ApiServer` -> `servers/commit-tracker` (planned)
-- `Collector` -> `cmds/commit-tracker` (planned)
+- `ApiServer` -> `servers/commit-tracker`
+- `Collector` -> `cmds/commit-tracker`
 
 ## Devkit Routing Contract
 All Devkit mini apps must be exposed at:

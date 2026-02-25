@@ -1,13 +1,19 @@
 # Commit Tracker Mini App
 
-This directory hosts the Devkit mini app with the stable id `commit-tracker`.
+This mini app provides a Phase 1 operational dashboard for commit-level engineering metrics.
 
 ## Route Contract
 - `/apps/commit-tracker`
 
-## Bootstrap Status
-- Placeholder route is implemented in the Devkit shell.
-- Business features and backend integrations are intentionally deferred.
+## Phase 1 Features
+- Metric series query with provider/repository/branch/environment filtering.
+- Pull request base-vs-head metric comparison with evaluation verdicts.
+- GitHub report publish action (comment + commit status) through backend API.
+
+## API Proxy Routes
+- `GET /api/commit-tracker/series`
+- `GET /api/commit-tracker/comparison`
+- `POST /api/commit-tracker/report`
 
 ## References
 - `docs/project-devkit-commit-tracker.md`

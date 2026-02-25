@@ -1,0 +1,159 @@
+syntax = "proto3";
+
+package committracker.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/servers/commit-tracker/gen/proto/committracker/v1;committrackerv1";
+
+enum GitProviderKind {
+  GIT_PROVIDER_KIND_UNSPECIFIED = 0;
+  GIT_PROVIDER_KIND_GITHUB = 1;
+  GIT_PROVIDER_KIND_GITLAB = 2;
+  GIT_PROVIDER_KIND_BITBUCKET = 3;
+}
+
+enum MetricValueKind {
+  METRIC_VALUE_KIND_UNSPECIFIED = 0;
+  METRIC_VALUE_KIND_UNIT_NUMBER = 1;
+  METRIC_VALUE_KIND_RATIO = 2;
+  METRIC_VALUE_KIND_DELTA_ONLY = 3;
+  METRIC_VALUE_KIND_BOOLEAN_GATE = 4;
+  METRIC_VALUE_KIND_HISTOGRAM = 5;
+  METRIC_VALUE_KIND_PERCENTILES = 6;
+}
+
+enum MetricDirection {
+  METRIC_DIRECTION_UNSPECIFIED = 0;
+  METRIC_DIRECTION_INCREASE_IS_BETTER = 1;
+  METRIC_DIRECTION_DECREASE_IS_BETTER = 2;
+}
+
+enum EvaluationLevel {
+  EVALUATION_LEVEL_UNSPECIFIED = 0;
+  EVALUATION_LEVEL_PASS = 1;
+  EVALUATION_LEVEL_WARN = 2;
+  EVALUATION_LEVEL_FAIL = 3;
+  EVALUATION_LEVEL_NEUTRAL = 4;
+}
+
+message MetricDatum {
+  string metric_key = 1;
+  string display_name = 2;
+  string unit = 3;
+  MetricValueKind value_kind = 4;
+  MetricDirection direction = 5;
+  double warning_threshold_percent = 6;
+  double fail_threshold_percent = 7;
+  double value = 8;
+}
+
+message UpsertCommitMetricsRequest {
+  GitProviderKind provider = 1;
+  string repository = 2;
+  string branch = 3;
+  string commit_sha = 4;
+  string run_id = 5;
+  string environment = 6;
+  google.protobuf.Timestamp measured_at = 7;
+  repeated MetricDatum metrics = 8;
+}
+
+message UpsertCommitMetricsResponse {
+  int32 upserted_count = 1;
+}
+
+message MetricSeriesPoint {
+  string metric_key = 1;
+  string display_name = 2;
+  string unit = 3;
+  MetricValueKind value_kind = 4;
+  MetricDirection direction = 5;
+  double warning_threshold_percent = 6;
+  double fail_threshold_percent = 7;
+  string commit_sha = 8;
+  string run_id = 9;
+  double value = 10;
+  google.protobuf.Timestamp measured_at = 11;
+}
+
+message ListMetricSeriesRequest {
+  GitProviderKind provider = 1;
+  string repository = 2;
+  string branch = 3;
+  string environment = 4;
+  string metric_key = 5;
+  google.protobuf.Timestamp from_time = 6;
+  google.protobuf.Timestamp to_time = 7;
+  int32 limit = 8;
+}
+
+message ListMetricSeriesResponse {
+  repeated MetricSeriesPoint points = 1;
+}
+
+message MetricComparison {
+  string metric_key = 1;
+  string display_name = 2;
+  string unit = 3;
+  MetricValueKind value_kind = 4;
+  MetricDirection direction = 5;
+  double warning_threshold_percent = 6;
+  double fail_threshold_percent = 7;
+  double base_value = 8;
+  double head_value = 9;
+  double delta = 10;
+  double delta_percent = 11;
+  EvaluationLevel evaluation_level = 12;
+  bool has_base_value = 13;
+  bool has_head_value = 14;
+}
+
+message GetPullRequestComparisonRequest {
+  GitProviderKind provider = 1;
+  string repository = 2;
+  string base_commit_sha = 3;
+  string head_commit_sha = 4;
+  string environment = 5;
+  repeated string metric_keys = 6;
+}
+
+message GetPullRequestComparisonResponse {
+  GitProviderKind provider = 1;
+  string repository = 2;
+  string base_commit_sha = 3;
+  string head_commit_sha = 4;
+  string environment = 5;
+  repeated MetricComparison comparisons = 6;
+  EvaluationLevel aggregate_evaluation = 7;
+}
+
+message PublishPullRequestReportRequest {
+  GitProviderKind provider = 1;
+  string repository = 2;
+  int64 pull_request = 3;
+  string base_commit_sha = 4;
+  string head_commit_sha = 5;
+  string environment = 6;
+  repeated string metric_keys = 7;
+}
+
+message PublishPullRequestReportResponse {
+  EvaluationLevel aggregate_evaluation = 1;
+  string markdown = 2;
+  string comment_url = 3;
+  string status_url = 4;
+}
+
+service MetricIngestionService {
+  rpc UpsertCommitMetrics(UpsertCommitMetricsRequest) returns (UpsertCommitMetricsResponse);
+}
+
+service MetricQueryService {
+  rpc ListMetricSeries(ListMetricSeriesRequest) returns (ListMetricSeriesResponse);
+  rpc GetPullRequestComparison(GetPullRequestComparisonRequest) returns (GetPullRequestComparisonResponse);
+}
+
+service ProviderReportService {
+  rpc PublishPullRequestReport(PublishPullRequestReportRequest) returns (PublishPullRequestReportResponse);
+}
