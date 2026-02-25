@@ -123,6 +123,9 @@ Devkit proxy API routes:
 - `GET /api/commit-tracker/comparison`
 - `POST /api/commit-tracker/report`
 
+Proxy error semantics:
+- `comparison` proxy preserves upstream HTTP status for Commit Tracker RPC failures (for example 400/401/412) instead of collapsing all failures into 502.
+
 ## Storage
 Primary backend storage:
 - PostgreSQL via `COMMIT_TRACKER_DATABASE_URL`
@@ -235,6 +238,11 @@ CLI:
 - `COMMIT_TRACKER_SERVER_URL` (optional default)
 - `COMMIT_TRACKER_TOKEN` (optional default)
 - `COMMIT_TRACKER_SUBJECT` (optional default)
+
+CLI auth resolution behavior:
+- `--token` and `--subject` flags do not embed secret-bearing environment defaults in flag usage output.
+- Runtime resolution order for token: `--token` then `COMMIT_TRACKER_TOKEN`.
+- Runtime resolution order for subject: `--subject` then `COMMIT_TRACKER_SUBJECT` then resolved token.
 
 ## Roadmap
 - Phase 1 (implemented): ingestion + comparison + GitHub publish + operational web dashboard

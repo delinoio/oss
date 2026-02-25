@@ -77,8 +77,8 @@ func execute(args []string, stdout io.Writer, stderr io.Writer) int {
 
 func registerCommonFlags(fs *flag.FlagSet, common *commonFlags) {
 	fs.StringVar(&common.serverURL, "server", resolveServerURL(), "commit-tracker server URL")
-	fs.StringVar(&common.token, "token", resolveToken(), "bearer token")
-	fs.StringVar(&common.subject, "subject", resolveSubject(common.token), "subject sent in X-Commit-Tracker-Subject header")
+	fs.StringVar(&common.token, "token", "", "bearer token (defaults to COMMIT_TRACKER_TOKEN at runtime)")
+	fs.StringVar(&common.subject, "subject", "", "subject sent in X-Commit-Tracker-Subject header (defaults to COMMIT_TRACKER_SUBJECT, then token)")
 }
 
 func (c *commonFlags) validate() error {
@@ -104,6 +104,11 @@ func executeIngest(args []string, stdout io.Writer, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	if strings.TrimSpace(common.token) == "" {
+		common.token = resolveToken()
+	}
+	common.subject = resolvedSubject(common.subject, common.token)
+
 	if err := common.validate(); err != nil {
 		fmt.Fprintln(stderr, err.Error())
 		return 2
@@ -136,7 +141,7 @@ func executeIngest(args []string, stdout io.Writer, stderr io.Writer) int {
 	client := committrackerv1connect.NewMetricIngestionServiceClient(httpClient, normalizeServerURL(common.serverURL))
 
 	request := connect.NewRequest(requestMessage)
-	applyAuthHeaders(request, common.token, resolvedSubject(common.subject, common.token))
+	applyAuthHeaders(request, common.token, common.subject)
 
 	response, err := client.UpsertCommitMetrics(context.Background(), request)
 	if err != nil {
@@ -198,7 +203,7 @@ func resolvedSubject(subject string, token string) string {
 	if strings.TrimSpace(subject) != "" {
 		return strings.TrimSpace(subject)
 	}
-	return strings.TrimSpace(token)
+	return resolveSubject(token)
 }
 
 func normalizeServerURL(raw string) string {

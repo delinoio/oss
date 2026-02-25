@@ -112,6 +112,75 @@ func TestExecuteIngestSuccess(t *testing.T) {
 	}
 }
 
+func TestExecuteIngestFlagUsageDoesNotLeakEnvToken(t *testing.T) {
+	t.Setenv("COMMIT_TRACKER_TOKEN", "super-secret-token")
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := execute([]string{"ingest", "--unknown-flag"}, stdout, stderr)
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got=%d", code)
+	}
+	if strings.Contains(stderr.String(), "super-secret-token") {
+		t.Fatalf("stderr should not include COMMIT_TRACKER_TOKEN, got=%s", stderr.String())
+	}
+}
+
+func TestExecuteIngestSubjectFallsBackToResolvedTokenAfterParse(t *testing.T) {
+	t.Setenv("COMMIT_TRACKER_TOKEN", "env-token")
+	t.Setenv("COMMIT_TRACKER_SUBJECT", "")
+
+	fake := &fakeMetricIngestionService{}
+	server := newIngestionTestServer(t, fake)
+
+	payload := `{
+	  "provider": "github",
+	  "repository": "acme/repo",
+	  "branch": "main",
+	  "commitSha": "abc123",
+	  "runId": "run-001",
+	  "environment": "ci",
+	  "metrics": [
+	    {
+	      "metricKey": "binary-size",
+	      "displayName": "Binary Size",
+	      "unit": "bytes",
+	      "valueKind": "unit-number",
+	      "direction": "decrease-is-better",
+	      "warningThresholdPercent": 5,
+	      "failThresholdPercent": 10,
+	      "value": 1234
+	    }
+	  ]
+	}`
+
+	inputPath := filepath.Join(t.TempDir(), "payload.json")
+	if err := os.WriteFile(inputPath, []byte(payload), 0o600); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := execute([]string{
+		"ingest",
+		"--server", server,
+		"--token", "cli-token",
+		"--input", inputPath,
+	}, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected success code 0, got=%d stderr=%s", code, stderr.String())
+	}
+
+	if fake.lastAuthorization != "Bearer cli-token" {
+		t.Fatalf("unexpected authorization header: %s", fake.lastAuthorization)
+	}
+	if fake.lastSubject != "cli-token" {
+		t.Fatalf("expected subject fallback to parsed token, got=%s", fake.lastSubject)
+	}
+}
+
 type fakeMetricIngestionService struct {
 	lastRequest       *committrackerv1.UpsertCommitMetricsRequest
 	lastAuthorization string
