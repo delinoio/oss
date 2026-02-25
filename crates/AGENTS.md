@@ -6,6 +6,7 @@
 
 ### Scope in This Domain
 
+- `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/nodeup`: Rust-based Node.js version manager.
 
 ### Rust Workspace Rules
@@ -19,6 +20,12 @@
 - Preserve rustup-like shim behavior: symlink strategy plus executable-name dispatch.
 - Keep channel and command identifiers stable and documented.
 - Record storage and download behavior in project docs whenever changed.
+
+### cargo-mono-Specific Rules
+
+- Keep command identifiers stable and documented in `docs/project-cargo-mono.md`.
+- Preserve `cargo mono` subcommand compatibility (`cargo-mono` binary naming contract).
+- Ensure release automation (`bump`, `publish`) logs include structured operational context.
 
 ### Testing and Validation
 

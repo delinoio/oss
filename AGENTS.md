@@ -29,6 +29,7 @@
 ### Project Domain Ownership
 
 - `nodeup` -> `crates/nodeup`
+- `cargo-mono` -> `crates/cargo-mono`
 - `derun` -> `cmds/derun`
 - `mpapp` -> `apps/mpapp`
 - `devkit` -> `apps/devkit`

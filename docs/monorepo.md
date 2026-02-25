@@ -14,6 +14,7 @@ The monorepo is documentation-first: structure, ownership, and contracts must be
 ## Canonical Directory Map
 - `docs/project-template.md`: Required structure for new project docs.
 - `docs/monorepo.md`: Monorepo-wide rules and contracts.
+- `docs/project-cargo-mono.md`: Cargo subcommand for Rust monorepo management.
 - `docs/project-nodeup.md`: Rust-based Node.js version manager.
 - `docs/project-derun.md`: Go CLI for terminal-fidelity run execution and MCP output bridge access for AI.
 - `docs/project-mpapp.md`: Expo React Native mobile app.
@@ -27,6 +28,7 @@ Treat project IDs as stable enum-style values:
 
 ```ts
 enum ProjectId {
+  CargoMono = "cargo-mono",
   Nodeup = "nodeup",
   Derun = "derun",
   Mpapp = "mpapp",
