@@ -81,7 +81,7 @@ impl Workspace {
             let publishable = package
                 .publish
                 .as_ref()
-                .map_or(true, |registries| !registries.is_empty());
+                .is_none_or(|registries| !registries.is_empty());
 
             let entry = WorkspacePackage {
                 name: package.name.clone(),
