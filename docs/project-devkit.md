@@ -9,6 +9,9 @@ The shell visual baseline follows Toss Design System-inspired foundations (color
 - `apps/devkit`
 - `apps/devkit/src/apps/*`
 - `apps/devkit/src/app/apps/*`
+- `apps/devkit/e2e/*`
+- `apps/devkit/playwright.visual.config.ts`
+- `scripts/run-devkit-visual-qa.sh`
 
 ## Runtime and Language
 - Next.js 16 (TypeScript)
@@ -97,6 +100,30 @@ Current commands:
 - Build: `pnpm --filter devkit... build`
 - Test: `pnpm --filter devkit... test`
 - Test runner: Vitest (`apps/devkit/vitest.config.ts`)
+- Visual QA browser setup: `pnpm --filter devkit... qa:visual:install-browser`
+- Visual QA run: `pnpm --filter devkit... qa:visual`
+- Full automation run (Midscene + OpenRouter + Codex CLI summary): `pnpm qa:visual:devkit`
+
+## Visual QA Automation
+Visual QA uses Midscene with Playwright to validate visual regressions and layout quality on key Devkit routes.
+The automation runner is `scripts/run-devkit-visual-qa.sh`.
+
+Required environment contract:
+- `MIDSCENE_MODEL_BASE_URL` (default: `https://openrouter.ai/api/v1`)
+- `MIDSCENE_MODEL_API_KEY` (or `OPENROUTER_API_KEY` fallback)
+- `MIDSCENE_MODEL_NAME` (default: `openai/gpt-4.1-mini`)
+- `MIDSCENE_MODEL_FAMILY` (default: `openai`)
+- `VISUAL_QA_BASE_URL` (default: `http://127.0.0.1:3100`)
+- `VISUAL_QA_SKIP_WEBSERVER` (`1` skips local dev server startup)
+- `VISUAL_QA_SKIP_CODEX_SUMMARY` (`1` skips Codex CLI report generation)
+
+Template file:
+- `apps/devkit/.env.visual-qa.example`
+
+Generated artifacts:
+- Playwright HTML/JSON reports: `apps/devkit/playwright-report/visual-qa/*`
+- Playwright result artifacts: `apps/devkit/test-results/visual-qa/*`
+- Codex summary report: `apps/devkit/playwright-report/visual-qa/codex/*.md`
 
 ## Roadmap
 - Phase 1: Platform shell and route conventions.

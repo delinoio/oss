@@ -120,6 +120,11 @@ web_modules/
 .env
 .env.*
 !.env.example
+!.env.*.example
+
+# Visual QA artifacts
+apps/devkit/playwright-report/
+apps/devkit/test-results/
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
