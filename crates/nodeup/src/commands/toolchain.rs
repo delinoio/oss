@@ -215,7 +215,7 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
         if settings
             .default_selector
             .as_ref()
-            .is_some_and(|default| selector_references_version(default, &version))
+            .is_some_and(|default| selector_references_version(default, version))
         {
             return Err(NodeupError::conflict(format!(
                 "Cannot uninstall {version}; it is used as default runtime"
@@ -225,7 +225,7 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
         if overrides
             .entries
             .iter()
-            .any(|entry| selector_references_version(&entry.selector, &version))
+            .any(|entry| selector_references_version(&entry.selector, version))
         {
             return Err(NodeupError::conflict(format!(
                 "Cannot uninstall {version}; it is referenced by an override"

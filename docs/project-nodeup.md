@@ -262,6 +262,7 @@ Required baseline logs:
 ## Build and Test
 Planned commands:
 - Build: `cargo build -p nodeup`
+- Lint: `cargo clippy -p nodeup --all-targets -- -D warnings`
 - Test: `cargo test -p nodeup`
 - Workspace validation: `cargo test`
 
