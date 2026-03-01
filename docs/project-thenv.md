@@ -50,6 +50,7 @@ Phase 1 MVP is implemented as a metadata-safe vertical slice at `workspace/proje
 : Bundle version storage, active pointer state, policy enforcement, envelope encryption/decryption, and audit event persistence.
 - Web console (`apps/devkit/src/apps/thenv`) handles management and visibility:
 : Version inventory, active version switching, role policy management, and audit browsing without secret value rendering.
+: Audit browsing renders outcome (`SUCCESS`, `DENIED`, `FAILED`, `UNSPECIFIED`) and supports optional `fromTime` / `toTime` range filtering.
 - Devkit API routes (`apps/devkit/src/app/api/thenv/*`) proxy web requests to Connect RPC procedures.
 
 Trust boundary and plaintext handling:
@@ -75,6 +76,8 @@ enum ThenvComponent {
 Devkit route contract:
 - `/apps/thenv`
 - Current route state: metadata management console (no plaintext payload rendering).
+- Audit filter contract:
+: Devkit audit proxy route `GET /api/thenv/audit` supports optional `fromTime` and `toTime` query parameters and forwards them to `AuditService.ListAuditEvents`.
 
 Connect RPC services (implemented):
 - `BundleService`
@@ -236,6 +239,7 @@ Acceptance-focused scenarios:
 11. Sensitive operations emit audit metadata without plaintext values.
 12. Web console renders metadata only and never plaintext secrets.
 13. CLI pull conflict failures and pull successes both emit structured baseline logs including `conflict_policy`, `request_id`, and `trace_id`.
+14. Web console audit table renders per-event outcome and honors optional `fromTime`/`toTime` filters via Devkit audit proxy route.
 
 ## Roadmap
 - Phase 1: Connect RPC foundation, versioned multi-file bundles, RBAC, and secure push/pull/list/rotate flows.

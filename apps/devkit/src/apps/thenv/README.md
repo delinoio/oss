@@ -8,7 +8,8 @@ This directory hosts the Devkit mini app with the stable id `thenv`.
 ## Responsibilities
 - Render metadata-only thenv management views.
 - Show bundle version inventory and active version switch controls.
-- Provide policy binding management and audit event browsing.
+- Provide policy binding management and audit event browsing with outcome badges.
+- Support audit time-range filtering (`fromTime`, `toTime`) in the metadata console.
 - Never render or persist plaintext secret payloads in browser state.
 
 ## Integration
