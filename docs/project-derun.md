@@ -178,6 +178,7 @@ Write consistency contract:
 - `derun run` writes initial `meta.json` before transport startup so startup-failure sessions remain discoverable via MCP list/get flows.
 - On successful process launch, `meta.json` is rewritten to persist the child PID while keeping session identity metadata stable.
 - `output.bin` and `index.jsonl` append operations are guarded by per-session advisory file lock (`append.lock`).
+- On Windows, `append.lock` uses an exclusive `LockFileEx` byte-range lock (offset `0`, length `1`) to serialize appenders.
 
 ## Security
 - Session storage is same-user local only with restrictive filesystem permissions:
@@ -232,6 +233,7 @@ Required behavioral test scenarios:
 8. Windows ConPTY parity tests and POSIX PTY parity tests.
 9. Session artifact traversal and symlink-escape attempts are rejected for both read and write operations.
 10. Missing-session MCP reads/waits fail consistently with deterministic `session not found` errors.
+11. Windows state flow keeps live sessions running and enforces append lock serialization.
 
 Behavioral coverage map:
 1. ANSI/curses PTY parity:
@@ -256,6 +258,9 @@ Behavioral coverage map:
 `cmds/derun/internal/state/store_test.go` (`TestStoreRejectsTraversalSessionIDAcrossEntrypoints`, `TestStoreRejectsSessionDirectorySymlinkEscape`, `TestStoreRejectsSessionArtifactSymlinkEscape`)
 10. Deterministic missing-session read/wait errors:
 `cmds/derun/internal/mcp/tools_test.go` (`TestHandleReadOutputMissingSessionReturnsError`, `TestHandleWaitOutputMissingSessionReturnsError`)
+11. Windows process liveness and append lock serialization:
+`cmds/derun/internal/state/process_windows_test.go` (`TestProcessAliveCurrentProcess`, `TestProcessAliveInvalidPID`, `TestProcessAliveTreatsAccessDeniedAsAlive`) and
+`cmds/derun/internal/state/store_windows_test.go` (`TestGetSessionKeepsRunningWhenPIDIsAlive`, `TestAppendOutputBlocksWhileAppendLockIsHeld`)
 
 ## Roadmap
 - Phase 1: Terminal-fidelity `run` execution and transcript persistence.
