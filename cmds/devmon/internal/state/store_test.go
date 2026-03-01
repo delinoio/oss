@@ -97,7 +97,7 @@ func TestMarkDaemonStartedRefreshesStartedAtOnRestart(t *testing.T) {
 	if err := store.MarkDaemonStarted(1111); err != nil {
 		t.Fatalf("MarkDaemonStarted (first) returned error: %v", err)
 	}
-	if err := store.MarkDaemonStopped(); err != nil {
+	if err := store.MarkDaemonStopped(1111); err != nil {
 		t.Fatalf("MarkDaemonStopped returned error: %v", err)
 	}
 
@@ -121,6 +121,86 @@ func TestMarkDaemonStartedRefreshesStartedAtOnRestart(t *testing.T) {
 	}
 	if !snapshot.Running {
 		t.Fatal("expected daemon to be marked as running after restart")
+	}
+}
+
+func TestMarkDaemonStoppedRequiresOwningPID(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "status.json")
+	store, err := NewStore(storePath, slog.Default())
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+
+	currentTime := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	store.nowFn = func() time.Time {
+		return currentTime
+	}
+
+	if err := store.MarkDaemonStarted(1111); err != nil {
+		t.Fatalf("MarkDaemonStarted (first daemon) returned error: %v", err)
+	}
+	if err := store.MarkHeartbeat(1111, 2); err != nil {
+		t.Fatalf("MarkHeartbeat (first daemon) returned error: %v", err)
+	}
+
+	currentTime = currentTime.Add(15 * time.Second)
+	if err := store.MarkDaemonStarted(2222); err != nil {
+		t.Fatalf("MarkDaemonStarted (second daemon) returned error: %v", err)
+	}
+	if err := store.MarkHeartbeat(2222, 3); err != nil {
+		t.Fatalf("MarkHeartbeat (second daemon) returned error: %v", err)
+	}
+	expectedUpdatedAt := currentTime.Format(time.RFC3339Nano)
+
+	currentTime = currentTime.Add(15 * time.Second)
+	if err := store.MarkDaemonStopped(1111); err != nil {
+		t.Fatalf("MarkDaemonStopped (first daemon) returned error: %v", err)
+	}
+
+	snapshotAfterStaleStop, err := store.Read()
+	if err != nil {
+		t.Fatalf("Read (after stale stop) returned error: %v", err)
+	}
+
+	if !snapshotAfterStaleStop.Running {
+		t.Fatal("expected daemon to remain running after stale stop attempt")
+	}
+	if snapshotAfterStaleStop.PID != 2222 {
+		t.Fatalf("expected pid=2222 after stale stop attempt, got=%d", snapshotAfterStaleStop.PID)
+	}
+	if snapshotAfterStaleStop.ActiveJobs != 3 {
+		t.Fatalf("expected active_jobs=3 after stale stop attempt, got=%d", snapshotAfterStaleStop.ActiveJobs)
+	}
+	if snapshotAfterStaleStop.UpdatedAt != expectedUpdatedAt {
+		t.Fatalf(
+			"expected updated_at to remain %s after stale stop attempt, got=%s",
+			expectedUpdatedAt,
+			snapshotAfterStaleStop.UpdatedAt,
+		)
+	}
+
+	currentTime = currentTime.Add(10 * time.Second)
+	if err := store.MarkDaemonStopped(2222); err != nil {
+		t.Fatalf("MarkDaemonStopped (second daemon) returned error: %v", err)
+	}
+
+	stoppedSnapshot, err := store.Read()
+	if err != nil {
+		t.Fatalf("Read (after owner stop) returned error: %v", err)
+	}
+
+	if stoppedSnapshot.Running {
+		t.Fatal("expected daemon to be marked as stopped when owner pid stops")
+	}
+	if stoppedSnapshot.PID != 0 {
+		t.Fatalf("expected pid=0 after owner stop, got=%d", stoppedSnapshot.PID)
+	}
+	if stoppedSnapshot.ActiveJobs != 0 {
+		t.Fatalf("expected active_jobs=0 after owner stop, got=%d", stoppedSnapshot.ActiveJobs)
+	}
+	expectedStoppedAt := currentTime.Format(time.RFC3339Nano)
+	if stoppedSnapshot.UpdatedAt != expectedStoppedAt {
+		t.Fatalf("expected updated_at=%s after owner stop, got=%s", expectedStoppedAt, stoppedSnapshot.UpdatedAt)
 	}
 }
 

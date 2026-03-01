@@ -86,7 +86,8 @@ func executeDaemon(args []string, stderr io.Writer) int {
 	runContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := stateStore.MarkDaemonStarted(os.Getpid()); err != nil {
+	daemonPID := os.Getpid()
+	if err := stateStore.MarkDaemonStarted(daemonPID); err != nil {
 		logging.Event(
 			logger,
 			slog.LevelError,
@@ -96,7 +97,7 @@ func executeDaemon(args []string, stderr io.Writer) int {
 		)
 	}
 	defer func() {
-		if err := stateStore.MarkDaemonStopped(); err != nil {
+		if err := stateStore.MarkDaemonStopped(daemonPID); err != nil {
 			logging.Event(
 				logger,
 				slog.LevelError,
@@ -109,7 +110,7 @@ func executeDaemon(args []string, stderr io.Writer) int {
 
 	heartbeatContext, cancelHeartbeat := context.WithCancel(runContext)
 	defer cancelHeartbeat()
-	go runHeartbeat(heartbeatContext, logger, stateStore, runner)
+	go runHeartbeat(heartbeatContext, logger, stateStore, runner, daemonPID)
 
 	if err := runner.Run(runContext); err != nil {
 		_, _ = fmt.Fprintf(stderr, "run daemon: %v\n", err)
@@ -245,7 +246,13 @@ func executeMenubar(args []string, stderr io.Writer) int {
 	return 0
 }
 
-func runHeartbeat(ctx context.Context, logger *slog.Logger, stateStore *state.Store, runner *scheduler.Runner) {
+func runHeartbeat(
+	ctx context.Context,
+	logger *slog.Logger,
+	stateStore *state.Store,
+	runner *scheduler.Runner,
+	daemonPID int,
+) {
 	const heartbeatInterval = 5 * time.Second
 
 	ticker := time.NewTicker(heartbeatInterval)
@@ -256,7 +263,7 @@ func runHeartbeat(ctx context.Context, logger *slog.Logger, stateStore *state.St
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := stateStore.MarkHeartbeat(os.Getpid(), runner.ActiveJobs()); err != nil {
+			if err := stateStore.MarkHeartbeat(daemonPID, runner.ActiveJobs()); err != nil {
 				logging.Event(
 					logger,
 					slog.LevelError,

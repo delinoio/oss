@@ -58,7 +58,7 @@ Runtime flow (daemon):
 5. Executor runs shell command in folder working directory, streams stdout/stderr line events, and returns outcome metadata.
 6. Runner updates state store with latest run/skip summary and active job count.
 7. Daemon heartbeat updates are written on a fixed interval.
-8. On `SIGINT`/`SIGTERM`, daemon stops new triggers, drains active runs, marks stopped state, and exits.
+8. On `SIGINT`/`SIGTERM`, daemon stops new triggers, drains active runs, marks stopped state only when caller PID still owns the snapshot, and exits.
 
 Runtime flow (service + menu bar):
 1. `devmon service install` validates daemon config, writes LaunchAgent plists for daemon and menu bar, and bootstraps both in `gui/<uid>`.
@@ -179,6 +179,7 @@ Scheduling contract:
 State file schema (`schema_version = "v1"`) includes:
 - daemon process state (`running`, `pid`, `started_at`, `last_heartbeat_at`)
 : `started_at` is refreshed on every daemon start so restart diagnostics reflect current process lifetime.
+: stop-state writes are PID-scoped; stale processes cannot overwrite a newer daemon state, and successful owner stop clears `pid`.
 - scheduler occupancy (`active_jobs`)
 - recent run summary (`outcome`, `folder_id`, `job_id`, `duration_ms`, `error`, `timestamp`)
 - recent skip summary (`outcome`, `folder_id`, `job_id`, `skip_reason`, `timestamp`)
