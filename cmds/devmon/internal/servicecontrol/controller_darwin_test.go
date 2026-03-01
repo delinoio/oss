@@ -4,6 +4,7 @@ package servicecontrol
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 func TestInstallWritesPlistsAndRunsLaunchctl(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	writeValidConfig(t, home)
 
 	runner := &fakeCommandRunner{}
 	manager, err := NewManager(
@@ -49,6 +51,17 @@ func TestInstallWritesPlistsAndRunsLaunchctl(t *testing.T) {
 	if !strings.Contains(string(daemonPlistContent), "io.delino.devmon.daemon") {
 		t.Fatalf("unexpected daemon plist content: %s", string(daemonPlistContent))
 	}
+	if !strings.Contains(string(daemonPlistContent), "<key>KeepAlive</key>\n  <true/>") {
+		t.Fatalf("expected daemon keepalive true, got=%s", string(daemonPlistContent))
+	}
+
+	menubarPlistContent, err := os.ReadFile(menubarPlistPath)
+	if err != nil {
+		t.Fatalf("ReadFile menubar plist returned error: %v", err)
+	}
+	if !strings.Contains(string(menubarPlistContent), "<key>KeepAlive</key>\n  <false/>") {
+		t.Fatalf("expected menubar keepalive false, got=%s", string(menubarPlistContent))
+	}
 
 	if !runner.hasCommand("plutil -lint " + daemonPlistPath) {
 		t.Fatalf("expected plutil lint for daemon plist, calls=%v", runner.calls)
@@ -58,6 +71,32 @@ func TestInstallWritesPlistsAndRunsLaunchctl(t *testing.T) {
 	}
 	if !runner.hasCommand("launchctl kickstart -k gui/") {
 		t.Fatalf("expected launchctl kickstart call, calls=%v", runner.calls)
+	}
+}
+
+func TestInstallFailsWhenConfigMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	runner := &fakeCommandRunner{}
+	manager, err := NewManager(
+		slog.Default(),
+		WithCommandRunner(runner),
+		WithStateReader(staticStateReader{snapshot: state.Snapshot{SchemaVersion: state.SchemaVersionV1}}),
+	)
+	if err != nil {
+		t.Fatalf("NewManager returned error: %v", err)
+	}
+
+	err = manager.Install(context.Background())
+	if err == nil {
+		t.Fatal("expected install to fail when config is missing")
+	}
+	if !strings.Contains(err.Error(), "daemon config file is missing") {
+		t.Fatalf("unexpected install error: %v", err)
+	}
+	if runner.hasCommand("launchctl ") {
+		t.Fatalf("install should fail before launchctl calls, calls=%v", runner.calls)
 	}
 }
 
@@ -126,4 +165,36 @@ type staticStateReader struct {
 
 func (reader staticStateReader) Read() (state.Snapshot, error) {
 	return reader.snapshot, reader.err
+}
+
+func writeValidConfig(t *testing.T, home string) {
+	t.Helper()
+
+	workspacePath := t.TempDir()
+	configPath := filepath.Join(home, ".config", "devmon", "devmon.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	content := fmt.Sprintf(`version = 1
+
+[daemon]
+max_concurrent_jobs = 1
+startup_run = true
+log_level = "info"
+
+[[folder]]
+id = "workspace-a"
+path = %q
+
+[[folder.job]]
+id = "job-a"
+interval = "1m"
+timeout = "30s"
+script = "echo ok"
+`, workspacePath)
+
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
 }

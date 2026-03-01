@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/delinoio/oss/cmds/devmon/internal/config"
 	"github.com/delinoio/oss/cmds/devmon/internal/logging"
 	"github.com/delinoio/oss/cmds/devmon/internal/paths"
 	"github.com/delinoio/oss/cmds/devmon/internal/state"
@@ -81,6 +82,10 @@ func newManager(options *managerOptions) (Manager, error) {
 }
 
 func (manager *darwinManager) Install(ctx context.Context) error {
+	if err := manager.validateDaemonConfig(); err != nil {
+		return err
+	}
+
 	if err := manager.ensureInstallDirectories(); err != nil {
 		return err
 	}
@@ -150,6 +155,10 @@ func (manager *darwinManager) Uninstall(ctx context.Context) error {
 }
 
 func (manager *darwinManager) Start(ctx context.Context) error {
+	if err := manager.validateDaemonConfig(); err != nil {
+		return err
+	}
+
 	if _, err := os.Stat(manager.daemonPlist); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("daemon launch agent is not installed: %s", manager.daemonPlist)
@@ -285,6 +294,8 @@ func (manager *darwinManager) renderDaemonPlist() (string, error) {
 		Arguments:  arguments,
 		StdoutPath: manager.daemonLogPath,
 		StderrPath: manager.daemonLogPath,
+		KeepAlive:  true,
+		RunAtLoad:  true,
 	})
 }
 
@@ -298,7 +309,24 @@ func (manager *darwinManager) renderMenubarPlist() (string, error) {
 		Arguments:  arguments,
 		StdoutPath: manager.menubarLogPath,
 		StderrPath: manager.menubarLogPath,
+		KeepAlive:  false,
+		RunAtLoad:  true,
 	})
+}
+
+func (manager *darwinManager) validateDaemonConfig() error {
+	if _, err := os.Stat(manager.configPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("daemon config file is missing: %s", manager.configPath)
+		}
+		return fmt.Errorf("check daemon config file: %w", err)
+	}
+
+	if _, err := config.Load(manager.configPath); err != nil {
+		return fmt.Errorf("daemon config validation failed: %w", err)
+	}
+
+	return nil
 }
 
 func (manager *darwinManager) validatePlist(ctx context.Context, plistPath string) error {
@@ -411,6 +439,8 @@ type renderPlistInput struct {
 	Arguments  []string
 	StdoutPath string
 	StderrPath string
+	KeepAlive  bool
+	RunAtLoad  bool
 }
 
 func renderPlist(input renderPlistInput) (string, error) {
@@ -442,18 +472,25 @@ func renderPlist(input renderPlistInput) (string, error) {
   <array>
 %s  </array>
   <key>KeepAlive</key>
-  <true/>
+  %s
   <key>RunAtLoad</key>
-  <true/>
+  %s
   <key>StandardOutPath</key>
   <string>%s</string>
   <key>StandardErrorPath</key>
   <string>%s</string>
 </dict>
 </plist>
-`, escapedLabel, argumentsBuilder.String(), escapeXML(input.StdoutPath), escapeXML(input.StderrPath))
+`, escapedLabel, argumentsBuilder.String(), toPlistBoolean(input.KeepAlive), toPlistBoolean(input.RunAtLoad), escapeXML(input.StdoutPath), escapeXML(input.StderrPath))
 
 	return content, nil
+}
+
+func toPlistBoolean(value bool) string {
+	if value {
+		return "<true/>"
+	}
+	return "<false/>"
 }
 
 func escapeXML(value string) string {

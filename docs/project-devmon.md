@@ -61,8 +61,8 @@ Runtime flow (daemon):
 8. On `SIGINT`/`SIGTERM`, daemon stops new triggers, drains active runs, marks stopped state, and exits.
 
 Runtime flow (service + menu bar):
-1. `devmon service install` writes LaunchAgent plists for daemon and menu bar and bootstraps both in `gui/<uid>`.
-2. LaunchAgents keep both processes alive and start them at login.
+1. `devmon service install` validates daemon config, writes LaunchAgent plists for daemon and menu bar, and bootstraps both in `gui/<uid>`.
+2. Daemon LaunchAgent is persistent (`KeepAlive=true`) and starts at login; menu bar LaunchAgent starts at login but is non-persistent (`KeepAlive=false`) so explicit quit is respected.
 3. `devmon menubar` polls `devmon service status` data and state file signals.
 4. Menu actions call lifecycle operations (`start`, `stop`) and local file open actions (`open log`, `open config`).
 
@@ -117,7 +117,7 @@ CLI command contracts:
 - `devmon validate --config <path>`
 : Validates config schema and runtime constraints without starting scheduling.
 - `devmon service install`
-: Installs and bootstraps LaunchAgents for daemon and menu bar.
+: Installs and bootstraps LaunchAgents for daemon and menu bar after validating daemon config.
 - `devmon service uninstall`
 : Bootouts daemon/menu bar LaunchAgents and removes plist files.
 - `devmon service start`
@@ -245,6 +245,7 @@ Required behavioral scenarios:
 11. State file updates on run completion and skip outcomes.
 12. Heartbeat staleness or missing PID process marks daemon health as non-running/error.
 13. Non-darwin service/menubar behavior returns deterministic unsupported errors.
+14. `service install` fails before `launchctl` operations when daemon config file is missing or invalid.
 
 ## Roadmap
 - Phase 1: shell-command scheduling, service lifecycle controls, menu bar management, and state persistence.
