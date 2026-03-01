@@ -252,6 +252,12 @@ Implementation commands:
 - Install dependencies from repository root: `pnpm install`
 - App tests from `apps/mpapp`: `pnpm test`
 - Workspace-filtered app tests from repository root: `pnpm --filter mpapp test`
+- App lint from `apps/mpapp`: `pnpm lint`
+- Workspace-filtered app lint from repository root: `pnpm --filter mpapp lint`
+
+Lint configuration contract:
+- `apps/mpapp/eslint.config.js` must exist and load `eslint-config-expo/flat` explicitly.
+- `eslint` and `eslint-config-expo` must remain declared in `apps/mpapp` `devDependencies` so CI never relies on Expo's interactive auto-configuration path.
 
 MVP acceptance criteria scenarios:
 1. Drag start/move/end emits pointer delta samples without dropping movement segments under normal interaction.
