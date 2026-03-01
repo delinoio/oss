@@ -1,8 +1,18 @@
-import { MpappClickButton, MpappErrorCode } from "../contracts/enums";
-import type { PointerClickSample, PointerMoveSample, Result } from "../contracts/types";
+import {
+  MpappBluetoothAvailabilityState,
+  MpappClickButton,
+  MpappErrorCode,
+} from "../contracts/enums";
+import type {
+  BluetoothAvailabilityResult,
+  PointerClickSample,
+  PointerMoveSample,
+  Result,
+} from "../contracts/types";
 import type { HidAdapter } from "./hid-adapter";
 import {
   getMpappAndroidHidNativeModule,
+  MpappAndroidHidNativeAvailabilityState,
   MpappAndroidHidNativeButton,
   MpappAndroidHidNativeErrorCode,
   type MpappAndroidHidNativeModule,
@@ -47,6 +57,36 @@ function mapNativeResult(nativeResult: MpappAndroidHidNativeResult): Result {
   };
 }
 
+function parseNativeAvailabilityState(
+  nativeResult: MpappAndroidHidNativeResult,
+): MpappBluetoothAvailabilityState {
+  const availabilityState = nativeResult.details?.availabilityState;
+
+  switch (availabilityState) {
+    case MpappAndroidHidNativeAvailabilityState.Available:
+      return MpappBluetoothAvailabilityState.Available;
+    case MpappAndroidHidNativeAvailabilityState.AdapterUnavailable:
+      return MpappBluetoothAvailabilityState.AdapterUnavailable;
+    case MpappAndroidHidNativeAvailabilityState.Disabled:
+      return MpappBluetoothAvailabilityState.Disabled;
+    case MpappAndroidHidNativeAvailabilityState.Unknown:
+      return MpappBluetoothAvailabilityState.Unknown;
+    default:
+      return nativeResult.ok
+        ? MpappBluetoothAvailabilityState.Available
+        : MpappBluetoothAvailabilityState.Unknown;
+  }
+}
+
+function createModuleUnavailableResult() {
+  return {
+    ok: false as const,
+    errorCode: MpappErrorCode.UnsupportedPlatform,
+    message: "Native Android HID module is unavailable on this runtime.",
+    nativeErrorCode: MpappAndroidHidNativeErrorCode.UnsupportedPlatform,
+  };
+}
+
 function maskBluetoothAddress(hostAddress: string): string {
   if (!BLUETOOTH_ADDRESS_REGEX.test(hostAddress)) {
     return "invalid";
@@ -77,6 +117,48 @@ export class AndroidNativeHidAdapter implements HidAdapter {
     }
   }
 
+  public async checkBluetoothAvailability(): Promise<BluetoothAvailabilityResult> {
+    if (!this.nativeModule) {
+      return {
+        ...createModuleUnavailableResult(),
+        availabilityState: MpappBluetoothAvailabilityState.Unknown,
+      };
+    }
+
+    try {
+      const nativeResult = await this.nativeModule.checkBluetoothAvailability();
+      const availabilityState = parseNativeAvailabilityState(nativeResult);
+
+      if (nativeResult.ok) {
+        return {
+          ok: true,
+          availabilityState: MpappBluetoothAvailabilityState.Available,
+        };
+      }
+
+      const failureAvailabilityState =
+        availabilityState === MpappBluetoothAvailabilityState.Available
+          ? MpappBluetoothAvailabilityState.Unknown
+          : availabilityState;
+
+      return {
+        ok: false,
+        availabilityState: failureAvailabilityState,
+        errorCode: mapNativeErrorCode(nativeResult.code),
+        message: nativeResult.message,
+        nativeErrorCode: nativeResult.code,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        availabilityState: MpappBluetoothAvailabilityState.Unknown,
+        errorCode: MpappErrorCode.TransportFailure,
+        message: `Native HID availability check failed: ${error instanceof Error ? error.message : String(error)}`,
+        nativeErrorCode: MpappAndroidHidNativeErrorCode.TransportFailure,
+      };
+    }
+  }
+
   public async pairAndConnect(): Promise<Result> {
     console.info("[mpapp][hid-native] pairAndConnect:start", {
       hostConfigured: Boolean(this.hostAddress),
@@ -102,12 +184,7 @@ export class AndroidNativeHidAdapter implements HidAdapter {
     }
 
     if (!this.nativeModule) {
-      return {
-        ok: false,
-        errorCode: MpappErrorCode.UnsupportedPlatform,
-        message: "Native Android HID module is unavailable on this runtime.",
-        nativeErrorCode: MpappAndroidHidNativeErrorCode.UnsupportedPlatform,
-      };
+      return createModuleUnavailableResult();
     }
 
     try {
@@ -125,12 +202,7 @@ export class AndroidNativeHidAdapter implements HidAdapter {
 
   public async disconnect(): Promise<Result> {
     if (!this.nativeModule) {
-      return {
-        ok: false,
-        errorCode: MpappErrorCode.UnsupportedPlatform,
-        message: "Native Android HID module is unavailable on this runtime.",
-        nativeErrorCode: MpappAndroidHidNativeErrorCode.UnsupportedPlatform,
-      };
+      return createModuleUnavailableResult();
     }
 
     try {
@@ -148,12 +220,7 @@ export class AndroidNativeHidAdapter implements HidAdapter {
 
   public async sendMove(sample: PointerMoveSample): Promise<Result> {
     if (!this.nativeModule) {
-      return {
-        ok: false,
-        errorCode: MpappErrorCode.UnsupportedPlatform,
-        message: "Native Android HID module is unavailable on this runtime.",
-        nativeErrorCode: MpappAndroidHidNativeErrorCode.UnsupportedPlatform,
-      };
+      return createModuleUnavailableResult();
     }
 
     try {
@@ -171,12 +238,7 @@ export class AndroidNativeHidAdapter implements HidAdapter {
 
   public async sendClick(sample: PointerClickSample): Promise<Result> {
     if (!this.nativeModule) {
-      return {
-        ok: false,
-        errorCode: MpappErrorCode.UnsupportedPlatform,
-        message: "Native Android HID module is unavailable on this runtime.",
-        nativeErrorCode: MpappAndroidHidNativeErrorCode.UnsupportedPlatform,
-      };
+      return createModuleUnavailableResult();
     }
 
     const nativeButton =

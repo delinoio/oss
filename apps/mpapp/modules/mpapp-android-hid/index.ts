@@ -1,5 +1,6 @@
 export {
   getMpappAndroidHidNativeModule,
+  MpappAndroidHidNativeAvailabilityState,
   MpappAndroidHidNativeButton,
   MpappAndroidHidNativeErrorCode,
 } from "./src/MpappAndroidHidModule";

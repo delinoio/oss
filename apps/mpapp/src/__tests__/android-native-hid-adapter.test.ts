@@ -1,5 +1,10 @@
-import { MpappClickButton, MpappErrorCode } from "../contracts/enums";
 import {
+  MpappBluetoothAvailabilityState,
+  MpappClickButton,
+  MpappErrorCode,
+} from "../contracts/enums";
+import {
+  MpappAndroidHidNativeAvailabilityState,
   MpappAndroidHidNativeButton,
   MpappAndroidHidNativeErrorCode,
   type MpappAndroidHidNativeModule,
@@ -10,6 +15,12 @@ function createNativeModule(
   overrides: Partial<MpappAndroidHidNativeModule> = {},
 ): MpappAndroidHidNativeModule {
   return {
+    checkBluetoothAvailability: async () => ({
+      ok: true,
+      details: {
+        availabilityState: MpappAndroidHidNativeAvailabilityState.Available,
+      },
+    }),
     pairAndConnect: async () => ({ ok: true }),
     disconnect: async () => ({ ok: true }),
     sendMove: async () => ({ ok: true }),
@@ -79,6 +90,57 @@ describe("android native HID adapter", () => {
         nativeErrorCode: nativeCode,
       });
     }
+  });
+
+  it("maps adapter-unavailable availability check failures", async () => {
+    const nativeModule = createNativeModule({
+      checkBluetoothAvailability: async () => ({
+        ok: false,
+        code: MpappAndroidHidNativeErrorCode.BluetoothUnavailable,
+        message: "Bluetooth adapter is unavailable on this device.",
+        details: {
+          availabilityState:
+            MpappAndroidHidNativeAvailabilityState.AdapterUnavailable,
+        },
+      }),
+    });
+    const adapter = new AndroidNativeHidAdapter({
+      hostAddress: "AA:BB:CC:DD:EE:FF",
+      nativeModule,
+    });
+
+    await expect(adapter.checkBluetoothAvailability()).resolves.toEqual({
+      ok: false,
+      availabilityState: MpappBluetoothAvailabilityState.AdapterUnavailable,
+      errorCode: MpappErrorCode.BluetoothUnavailable,
+      message: "Bluetooth adapter is unavailable on this device.",
+      nativeErrorCode: MpappAndroidHidNativeErrorCode.BluetoothUnavailable,
+    });
+  });
+
+  it("maps disabled availability check failures", async () => {
+    const nativeModule = createNativeModule({
+      checkBluetoothAvailability: async () => ({
+        ok: false,
+        code: MpappAndroidHidNativeErrorCode.BluetoothUnavailable,
+        message: "Bluetooth is disabled.",
+        details: {
+          availabilityState: MpappAndroidHidNativeAvailabilityState.Disabled,
+        },
+      }),
+    });
+    const adapter = new AndroidNativeHidAdapter({
+      hostAddress: "AA:BB:CC:DD:EE:FF",
+      nativeModule,
+    });
+
+    await expect(adapter.checkBluetoothAvailability()).resolves.toEqual({
+      ok: false,
+      availabilityState: MpappBluetoothAvailabilityState.Disabled,
+      errorCode: MpappErrorCode.BluetoothUnavailable,
+      message: "Bluetooth is disabled.",
+      nativeErrorCode: MpappAndroidHidNativeErrorCode.BluetoothUnavailable,
+    });
   });
 
   it("returns deterministic errors for missing or invalid host config", async () => {

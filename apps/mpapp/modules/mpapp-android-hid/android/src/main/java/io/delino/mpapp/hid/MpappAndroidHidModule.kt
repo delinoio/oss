@@ -25,6 +25,10 @@ class MpappAndroidHidModule : Module() {
   override fun definition() = ModuleDefinition {
     Name(MODULE_NAME)
 
+    AsyncFunction("checkBluetoothAvailability") {
+      checkBluetoothAvailability()
+    }
+
     AsyncFunction("pairAndConnect") { hostAddress: String ->
       pairAndConnect(hostAddress)
     }
@@ -66,18 +70,16 @@ class MpappAndroidHidModule : Module() {
       )
     }
 
+    val availabilityResult = checkBluetoothAvailability(context)
+    if (availabilityResult["ok"] == false) {
+      return availabilityResult
+    }
+
     val bluetoothAdapter = getBluetoothAdapter(context)
       ?: return failure(
         code = NativeErrorCode.BluetoothUnavailable,
         message = "Bluetooth adapter is unavailable on this device.",
       )
-
-    if (!bluetoothAdapter.isEnabled) {
-      return failure(
-        code = NativeErrorCode.BluetoothUnavailable,
-        message = "Bluetooth is disabled.",
-      )
-    }
 
     val normalizedAddress = hostAddress.trim()
     if (normalizedAddress.isEmpty()) {
@@ -215,6 +217,56 @@ class MpappAndroidHidModule : Module() {
     }
 
     return success()
+  }
+
+  private fun checkBluetoothAvailability(): Map<String, Any?> {
+    val context = appContext.reactContext
+      ?: return failure(
+        code = NativeErrorCode.TransportFailure,
+        message = "React context is unavailable.",
+        details = mapOf(
+          "availabilityState" to BluetoothAvailabilityState.Unknown.value,
+        ),
+      )
+
+    return checkBluetoothAvailability(context)
+  }
+
+  private fun checkBluetoothAvailability(context: Context): Map<String, Any?> {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+      return failure(
+        code = NativeErrorCode.UnsupportedPlatform,
+        message = "Bluetooth HID requires Android API 28+.",
+        details = mapOf(
+          "availabilityState" to BluetoothAvailabilityState.Unknown.value,
+        ),
+      )
+    }
+
+    val bluetoothAdapter = getBluetoothAdapter(context)
+      ?: return failure(
+        code = NativeErrorCode.BluetoothUnavailable,
+        message = "Bluetooth adapter is unavailable on this device.",
+        details = mapOf(
+          "availabilityState" to BluetoothAvailabilityState.AdapterUnavailable.value,
+        ),
+      )
+
+    if (!bluetoothAdapter.isEnabled) {
+      return failure(
+        code = NativeErrorCode.BluetoothUnavailable,
+        message = "Bluetooth is disabled.",
+        details = mapOf(
+          "availabilityState" to BluetoothAvailabilityState.Disabled.value,
+        ),
+      )
+    }
+
+    return success(
+      details = mapOf(
+        "availabilityState" to BluetoothAvailabilityState.Available.value,
+      ),
+    )
   }
 
   private fun disconnect(): Map<String, Any?> {
@@ -427,8 +479,15 @@ class MpappAndroidHidModule : Module() {
     connectedHost = null
   }
 
-  private fun success(): Map<String, Any?> {
-    return mapOf("ok" to true)
+  private fun success(details: Map<String, Any?> = emptyMap()): Map<String, Any?> {
+    return if (details.isEmpty()) {
+      mapOf("ok" to true)
+    } else {
+      mapOf(
+        "ok" to true,
+        "details" to details,
+      )
+    }
   }
 
   private fun failure(
@@ -452,6 +511,13 @@ class MpappAndroidHidModule : Module() {
     TransportFailure("transport-failure"),
     HostAddressRequired("host-address-required"),
     InvalidHostAddress("invalid-host-address"),
+  }
+
+  private enum class BluetoothAvailabilityState(val value: String) {
+    Available("available"),
+    AdapterUnavailable("adapter-unavailable"),
+    Disabled("disabled"),
+    Unknown("unknown"),
   }
 
   companion object {
