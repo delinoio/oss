@@ -740,6 +740,99 @@ fn override_resolution_logs_miss_without_default_selector() {
 
 #[test]
 #[serial]
+fn json_show_active_runtime_failure_emits_stderr_error_envelope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "show", "active-runtime"])
+        .output()
+        .expect("show active-runtime --output json");
+
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+    assert_eq!(
+        payload["message"],
+        "No runtime selector resolved. Set a default runtime or directory override"
+    );
+    assert_eq!(payload["exit_code"], 5);
+}
+
+#[test]
+#[serial]
+fn json_show_active_runtime_failure_remains_parseable_without_rust_log_env() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env_remove("RUST_LOG")
+        .args(["--output", "json", "show", "active-runtime"])
+        .output()
+        .expect("show active-runtime --output json without rust log env");
+
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+    assert_eq!(payload["exit_code"], 5);
+}
+
+#[test]
+#[serial]
+fn json_completions_failure_emits_stderr_error_envelope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "completions", "zsh"])
+        .output()
+        .expect("completions --output json");
+
+    assert_eq!(output.status.code(), Some(7));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-implemented");
+    assert_eq!(
+        payload["message"],
+        "nodeup completions for shell 'zsh' and scope '<all-commands>' is planned for the next \
+         phase"
+    );
+    assert_eq!(payload["exit_code"], 7);
+}
+
+#[test]
+#[serial]
+fn json_startup_failure_emits_stderr_error_envelope() {
+    let env = TestEnv::new();
+    let invalid_data_home = env.root.join("invalid-data-home");
+    fs::write(&invalid_data_home, "not-a-directory").unwrap();
+
+    let output = env
+        .command()
+        .env("NODEUP_DATA_HOME", &invalid_data_home)
+        .args(["--output", "json", "show", "home"])
+        .output()
+        .expect("startup failure --output json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "internal");
+    assert!(payload["message"].as_str().unwrap().contains("I/O error:"));
+
+    let process_exit_code = output.status.code().unwrap();
+    assert_ne!(process_exit_code, 0);
+    assert_eq!(payload["exit_code"], process_exit_code);
+}
+
+#[test]
+#[serial]
 fn self_update_reports_human_and_json_statuses() {
     let env = TestEnv::new();
     let target_binary = env.root.join("bin").join("nodeup");

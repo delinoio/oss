@@ -1,10 +1,12 @@
 use std::{fmt, io};
 
+use serde::Serialize;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, NodeupError>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ErrorKind {
     Internal,
     InvalidInput,
@@ -34,6 +36,13 @@ impl ErrorKind {
 pub struct NodeupError {
     pub kind: ErrorKind,
     pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NodeupErrorEnvelope {
+    pub kind: ErrorKind,
+    pub message: String,
+    pub exit_code: i32,
 }
 
 impl NodeupError {
@@ -74,6 +83,14 @@ impl NodeupError {
 
     pub fn exit_code(&self) -> i32 {
         self.kind.exit_code()
+    }
+
+    pub fn json_envelope(&self) -> NodeupErrorEnvelope {
+        NodeupErrorEnvelope {
+            kind: self.kind,
+            message: self.message.clone(),
+            exit_code: self.exit_code(),
+        }
     }
 }
 

@@ -116,6 +116,9 @@ CLI entrypoints:
 
 Global option contract:
 - `--output <human|json>` is available for all management commands and defaults to `human`.
+- In `--output json`, successful command payloads are written to stdout.
+- In `--output json`, handled command and startup failures emit a deterministic stderr JSON envelope with `kind`, `message`, and `exit_code`.
+- In `--output json`, default logging is disabled (`nodeup=off`) so JSON machine output stays parseable unless the operator explicitly sets `RUST_LOG`.
 
 Runtime selector grammar:
 
@@ -183,6 +186,7 @@ Subcommand contracts:
 : Note: unlike `run`, this command does not auto-install missing runtimes.
 - `nodeup run [--install] <runtime> <command>...`
 : Input: explicit runtime selector and delegated argv (at least one command token is required).
+: Input: delegated argv is opaque to nodeup after runtime selection; delegated flags such as `--output` do not alter nodeup global option parsing.
 : Behavior: if resolved runtime version is missing, command fails unless `--install` is provided.
 : Output: delegated command result with runtime, delegated command name, and exit code.
 : Output channels:
