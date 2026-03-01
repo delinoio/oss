@@ -46,6 +46,7 @@ The core user flow is:
 - Touchpad gesture end (`release` or `terminate`) flushes any pending coalesced movement so no in-progress segment is stranded.
 - Touchpad gesture responder instances must be recreated when movement callback dependencies change so runtime sensitivity updates take effect without reconnecting.
 - Input preferences module persists `sensitivity`, `invertX`, and `invertY` locally and hydrates them at app startup.
+- Startup hydration must not overwrite user-driven preference edits made before hydration completes.
 - Settings controls expose sensitivity increment/decrement plus `Invert X` and `Invert Y` toggles independently.
 - Android HID transport adapter is implemented as a TypeScript `HidAdapter` contract with:
   - `native-android-hid` mode backed by a local Expo native module at `apps/mpapp/modules/mpapp-android-hid`

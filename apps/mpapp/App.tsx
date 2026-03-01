@@ -102,6 +102,7 @@ export default function App() {
     DEFAULT_MPAPP_INPUT_PREFERENCES,
   );
   const [hasHydratedPreferences, setHasHydratedPreferences] = useState(false);
+  const hasLocalPreferenceEditsRef = useRef(false);
 
   const runtimeConfig = useMemo(() => resolveMpappRuntimeConfig(), []);
   const adapter = useMemo(
@@ -183,6 +184,13 @@ export default function App() {
       .load()
       .then((savedPreferences) => {
         if (!active) {
+          return;
+        }
+
+        if (hasLocalPreferenceEditsRef.current) {
+          console.info("[mpapp][preferences] hydration skipped due to local edits", {
+            savedPreferences,
+          });
           return;
         }
 
@@ -591,6 +599,7 @@ export default function App() {
   );
 
   const updateSensitivity = useCallback((delta: number) => {
+    hasLocalPreferenceEditsRef.current = true;
     setInputPreferences((previous) => ({
       ...previous,
       sensitivity: clampSensitivity(previous.sensitivity + delta),
@@ -598,6 +607,7 @@ export default function App() {
   }, []);
 
   const toggleAxisInversion = useCallback((axis: MpappAxisPreference) => {
+    hasLocalPreferenceEditsRef.current = true;
     setInputPreferences((previous) => {
       if (axis === MpappAxisPreference.X) {
         return {
