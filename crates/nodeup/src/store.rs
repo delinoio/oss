@@ -13,7 +13,7 @@ use crate::{
     paths::NodeupPaths,
 };
 
-const SETTINGS_SCHEMA_VERSION: u32 = 1;
+pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SettingsFile {
