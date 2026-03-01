@@ -96,6 +96,7 @@ Target selection contract (`bump`, `publish`):
 - Skips non-publishable crates and reports skip reasons.
 - Updates `package.version` for selected crates.
 - Updates internal dependency version requirements for bumped crates.
+- Updates root `Cargo.toml` `[workspace.dependencies]` version pins for bumped internal crates when present.
 - Optional dependent patch propagation via `--bump-dependents`.
 - Requires clean working tree unless `--allow-dirty` is provided.
 - Creates one commit: `chore(release): bump <n> crate(s)`.
