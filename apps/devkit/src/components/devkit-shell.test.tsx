@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, vi } from "vitest";
 
@@ -12,9 +12,26 @@ import * as logger from "@/lib/logger";
 
 import { DevkitShell } from "./devkit-shell";
 
+function mockMatchMedia(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
+}
+
 describe("DevkitShell", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("renders one navigation link per registered mini app", () => {
@@ -55,6 +72,7 @@ describe("DevkitShell", () => {
   });
 
   it("toggles drawer open and closed through the mobile menu button", async () => {
+    mockMatchMedia(true);
     const user = userEvent.setup();
 
     render(
@@ -77,6 +95,7 @@ describe("DevkitShell", () => {
   });
 
   it("closes the drawer when clicking overlay or navigation links", async () => {
+    mockMatchMedia(true);
     const user = userEvent.setup();
 
     render(
@@ -107,6 +126,35 @@ describe("DevkitShell", () => {
 
     await user.click(screen.getByRole("link", { name: "Home" }));
     expect(menuButton).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("removes hidden mobile drawer links from tab order when closed", async () => {
+    mockMatchMedia(true);
+    const user = userEvent.setup();
+
+    render(
+      <DevkitShell title="Home" currentRoute={DevkitRoute.Home}>
+        <p>content</p>
+      </DevkitShell>,
+    );
+
+    const menuButton = screen.getByRole("button", {
+      name: "Toggle mini app navigation menu",
+    });
+    const sidebarElement = document.getElementById("dk-shell-navigation");
+    const homeLink = sidebarElement?.querySelector('a[href="/"]');
+
+    expect(homeLink).toBeTruthy();
+
+    await waitFor(() => {
+      expect(homeLink).toHaveAttribute("tabindex", "-1");
+      expect(sidebarElement).toHaveAttribute("aria-hidden", "true");
+    });
+
+    await user.click(menuButton);
+
+    expect(homeLink).not.toHaveAttribute("tabindex");
+    expect(sidebarElement).not.toHaveAttribute("aria-hidden");
   });
 
   it("logs route render with required baseline fields", () => {

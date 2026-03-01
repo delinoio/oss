@@ -64,6 +64,7 @@ Shell navigation contract:
 - Includes `Home` route (`/`) and all mini app routes.
 - Uses route-aware active state (`aria-current="page"`) for the current page.
 - Keeps mini app link entries sourced from enum-backed registration (`MINI_APP_REGISTRATIONS`).
+- Mobile drawer keeps navigation links out of keyboard tab order while closed.
 
 Mini app directory contract:
 

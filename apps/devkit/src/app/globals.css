@@ -763,7 +763,7 @@ a {
     display: block;
     position: fixed;
     inset: 0;
-    z-index: 35;
+    z-index: 25;
     border: 0;
     padding: 0;
     margin: 0;
