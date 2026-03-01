@@ -1,9 +1,11 @@
 use serde::Serialize;
+use tracing::info;
 
 use crate::{
     cli::{OutputFormat, ShowCommand},
     commands::print_output,
-    errors::Result,
+    errors::{NodeupError, Result},
+    resolver::ResolvedRuntimeTarget,
     NodeupApp,
 };
 
@@ -31,6 +33,43 @@ pub fn execute(command: ShowCommand, output: OutputFormat, app: &NodeupApp) -> R
 fn show_active_runtime(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     let cwd = std::env::current_dir()?;
     let resolved = app.resolver.resolve_with_precedence(None, &cwd)?;
+
+    if let ResolvedRuntimeTarget::Version { version } = &resolved.target {
+        if !app.store.is_installed(version) {
+            info!(
+                command_path = "nodeup.show.active-runtime",
+                runtime = %resolved.runtime_id(),
+                selector = %resolved.selector,
+                selector_source = resolved.source.as_str(),
+                availability = false,
+                reason = "runtime-not-installed",
+                "Active runtime is unavailable"
+            );
+            return Err(NodeupError::not_found(format!(
+                "Runtime {} is not installed",
+                version
+            )));
+        }
+    }
+
+    let executable = resolved.executable_path(&app.store, "node");
+    if !executable.exists() {
+        info!(
+            command_path = "nodeup.show.active-runtime",
+            runtime = %resolved.runtime_id(),
+            selector = %resolved.selector,
+            selector_source = resolved.source.as_str(),
+            availability = false,
+            reason = "node-executable-missing",
+            executable = %executable.display(),
+            "Active runtime is unavailable"
+        );
+        return Err(NodeupError::not_found(format!(
+            "Command 'node' does not exist for runtime {}",
+            resolved.runtime_id()
+        )));
+    }
+
     let response = ActiveRuntimeResponse {
         runtime: resolved.runtime_id(),
         source: format!("{:?}", resolved.source).to_lowercase(),

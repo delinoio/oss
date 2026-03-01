@@ -675,6 +675,10 @@ fn default_override_show_precedence() {
     );
 
     env.command().args(["default", "22.1.0"]).assert().success();
+    env.command()
+        .args(["toolchain", "install", "24.0.0"])
+        .assert()
+        .success();
 
     let project_dir = env.root.join("project");
     fs::create_dir_all(&project_dir).unwrap();
@@ -695,8 +699,106 @@ fn default_override_show_precedence() {
 
 #[test]
 #[serial]
+fn show_active_runtime_fails_when_linked_runtime_path_is_deleted() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-deleted");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(
+        runtime_bin.join("node"),
+        "#!/bin/sh\necho linked-runtime-node\n",
+    )
+    .unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-runtime-deleted",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["default", "linked-runtime-deleted"])
+        .assert()
+        .success();
+
+    fs::remove_dir_all(&runtime_dir).unwrap();
+
+    env.command()
+        .args(["show", "active-runtime"])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicates::str::contains(
+            "Command 'node' does not exist for runtime linked-runtime-deleted",
+        ));
+}
+
+#[test]
+#[serial]
+fn show_active_runtime_logs_unavailable_reason_for_deleted_linked_runtime() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-deleted-logs");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(
+        runtime_bin.join("node"),
+        "#!/bin/sh\necho linked-runtime-node\n",
+    )
+    .unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-runtime-deleted-logs",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["default", "linked-runtime-deleted-logs"])
+        .assert()
+        .success();
+
+    fs::remove_dir_all(&runtime_dir).unwrap();
+
+    env.command_with_info_logs()
+        .args(["show", "active-runtime"])
+        .assert()
+        .failure()
+        .stdout(predicates::str::contains(
+            "command_path=\"nodeup.show.active-runtime\"",
+        ))
+        .stdout(predicates::str::contains("availability=false"))
+        .stdout(predicates::str::contains(
+            "reason=\"node-executable-missing\"",
+        ));
+}
+
+#[test]
+#[serial]
 fn override_resolution_logs_hit_with_fallback_reason() {
     let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
     let project_dir = env.root.join("project-override-hit-logs");
     fs::create_dir_all(&project_dir).unwrap();
 
