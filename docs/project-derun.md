@@ -257,6 +257,36 @@ Behavioral coverage map:
 10. Deterministic missing-session read/wait errors:
 `cmds/derun/internal/mcp/tools_test.go` (`TestHandleReadOutputMissingSessionReturnsError`, `TestHandleWaitOutputMissingSessionReturnsError`)
 
+## Codex MCP Local Integration
+Recommended local integration flow for Codex users:
+
+1. Add a project-local Codex config at `.codex/config.toml`:
+   - ```toml
+     [mcp_servers.derun]
+     command = "go"
+     args = ["run", "./cmds/derun", "mcp"]
+     startup_timeout_sec = 120
+
+     [mcp_servers.derun.env]
+     DERUN_STATE_ROOT = ".derun-state"
+     GOMODCACHE = ".gomodcache"
+     GOCACHE = ".gocache"
+     GOPATH = ".gopath"
+     ```
+2. Verify registration:
+   - `codex mcp get derun`
+   - `codex mcp list`
+3. Capture command output through `derun run`:
+   - `DERUN_STATE_ROOT=.derun-state go run ./cmds/derun run -- /bin/echo "hello-derun"`
+4. Query captured output through MCP tool calls (`derun_list_sessions`, `derun_get_session`, `derun_read_output`, `derun_wait_output`).
+
+Operational guidance:
+- Prefer workspace-local `DERUN_STATE_ROOT` for predictable permissions and reproducible session discovery in sandboxed environments.
+- For sandboxed Codex execution with `go run`, use workspace-local `GOMODCACHE`, `GOCACHE`, and `GOPATH`, and set a larger MCP `startup_timeout_sec` (for example `120`) under `[mcp_servers.derun]`.
+- Keep `derun` in project-local `.codex/config.toml` rather than global `~/.codex/config.toml`.
+- If project trust is not enabled, Codex can ignore project `config.toml`; enable trust for this workspace and retry.
+- Remove integration by deleting `[mcp_servers.derun]` and `[mcp_servers.derun.env]` from `.codex/config.toml`.
+
 ## Roadmap
 - Phase 1: Terminal-fidelity `run` execution and transcript persistence.
 - Phase 2: MCP replay/live-tail tool surface and cursor consistency guarantees.

@@ -1,0 +1,10 @@
+[mcp_servers.derun]
+command = "go"
+args = ["run", "./cmds/derun", "mcp"]
+startup_timeout_sec = 120
+
+[mcp_servers.derun.env]
+DERUN_STATE_ROOT = ".derun-state"
+GOMODCACHE = ".gomodcache"
+GOCACHE = ".gocache"
+GOPATH = ".gopath"
