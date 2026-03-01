@@ -72,6 +72,7 @@ impl TestEnv {
         command.env("NODEUP_INDEX_URL", &self.index_url);
         command.env("NODEUP_DOWNLOAD_BASE_URL", &self.download_base_url);
         command.env("NODEUP_FORCE_PLATFORM", "linux-x64");
+        command.env("RUST_LOG", "off");
     }
 
     fn apply_env_std(&self, command: &mut std::process::Command) {
@@ -81,6 +82,7 @@ impl TestEnv {
         command.env("NODEUP_INDEX_URL", &self.index_url);
         command.env("NODEUP_DOWNLOAD_BASE_URL", &self.download_base_url);
         command.env("NODEUP_FORCE_PLATFORM", "linux-x64");
+        command.env("RUST_LOG", "off");
     }
 
     fn register_release(
