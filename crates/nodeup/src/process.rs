@@ -82,10 +82,14 @@ fn status_details(status: ExitStatus) -> ProcessTermination {
     {
         use std::os::unix::process::ExitStatusExt;
 
-        ProcessTermination {
-            exit_code: status.code().unwrap_or(1),
-            signal: status.signal(),
-        }
+        let signal = status.signal();
+        let exit_code = match (status.code(), signal) {
+            (Some(code), _) => code,
+            (None, Some(signal)) => 128 + signal,
+            (None, None) => 1,
+        };
+
+        ProcessTermination { exit_code, signal }
     }
 
     #[cfg(not(unix))]
