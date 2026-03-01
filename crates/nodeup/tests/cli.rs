@@ -24,9 +24,10 @@ struct TestEnv {
 impl TestEnv {
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap().keep();
-        let data_root = root.join("data");
-        let cache_root = root.join("cache");
-        let config_root = root.join("config");
+        let nodeup_root = root.join("nodeup");
+        let data_root = nodeup_root.join("data");
+        let cache_root = nodeup_root.join("cache");
+        let config_root = nodeup_root.join("config");
         fs::create_dir_all(&data_root).unwrap();
         fs::create_dir_all(&cache_root).unwrap();
         fs::create_dir_all(&config_root).unwrap();
@@ -527,6 +528,39 @@ fn self_uninstall_removes_artifacts_and_logs_outcome() {
     assert!(!env.data_root.exists());
     assert!(!env.cache_root.exists());
     assert!(!env.config_root.exists());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_rejects_non_nodeup_owned_paths() {
+    let env = TestEnv::new();
+    let unsafe_root = env.root.join("unsafe-home");
+    let unsafe_cache = env.root.join("nodeup-cache");
+    let unsafe_config = env.root.join("nodeup-config");
+    fs::create_dir_all(&unsafe_root).unwrap();
+    fs::create_dir_all(&unsafe_cache).unwrap();
+    fs::create_dir_all(&unsafe_config).unwrap();
+    fs::write(unsafe_root.join("keep.txt"), "do-not-delete").unwrap();
+
+    let mut command = Command::new(assert_cmd::cargo::cargo_bin!("nodeup"));
+    command
+        .env("NODEUP_DATA_HOME", &unsafe_root)
+        .env("NODEUP_CACHE_HOME", &unsafe_cache)
+        .env("NODEUP_CONFIG_HOME", &unsafe_config)
+        .env("NODEUP_INDEX_URL", &env.index_url)
+        .env("NODEUP_DOWNLOAD_BASE_URL", &env.download_base_url)
+        .env("NODEUP_FORCE_PLATFORM", "linux-x64");
+
+    command
+        .args(["self", "uninstall"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to uninstall non-nodeup-owned path",
+        ));
+
+    assert!(unsafe_root.exists());
+    assert!(unsafe_root.join("keep.txt").exists());
 }
 
 #[test]

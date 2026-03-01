@@ -2,7 +2,7 @@ use std::{
     collections::BTreeMap,
     env, fs,
     io::Write,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 use serde::Serialize;
@@ -362,17 +362,81 @@ fn replace_binary(source: &Path, target: &Path) -> Result<()> {
     fs::set_permissions(staged.path(), source_permissions)?;
 
     let staged_path = staged.into_temp_path();
-    fs::rename(&staged_path, target).map_err(|error| {
-        NodeupError::new(
-            ErrorKind::Internal,
-            format!(
-                "Failed to replace binary {} with staged update: {error}",
-                target.display()
-            ),
-        )
-    })?;
+    if target.exists() {
+        let backup_target = backup_target_path(target)?;
+        if backup_target.exists() {
+            fs::remove_file(&backup_target).map_err(|error| {
+                NodeupError::new(
+                    ErrorKind::Internal,
+                    format!(
+                        "Failed to clean stale backup {} before self update: {error}",
+                        backup_target.display()
+                    ),
+                )
+            })?;
+        }
+
+        fs::rename(target, &backup_target).map_err(|error| {
+            NodeupError::new(
+                ErrorKind::Internal,
+                format!(
+                    "Failed to stage existing binary {} for replacement: {error}",
+                    target.display()
+                ),
+            )
+        })?;
+
+        if let Err(error) = fs::rename(&staged_path, target) {
+            let rollback = fs::rename(&backup_target, target);
+            return Err(NodeupError::new(
+                ErrorKind::Internal,
+                format!(
+                    "Failed to replace binary {} with staged update: {error}. Rollback status: {}",
+                    target.display(),
+                    if rollback.is_ok() {
+                        "restored-previous-binary"
+                    } else {
+                        "rollback-failed"
+                    }
+                ),
+            ));
+        }
+
+        fs::remove_file(&backup_target).map_err(|error| {
+            NodeupError::new(
+                ErrorKind::Internal,
+                format!(
+                    "Updated binary but failed to delete backup {}: {error}",
+                    backup_target.display()
+                ),
+            )
+        })?;
+    } else {
+        fs::rename(&staged_path, target).map_err(|error| {
+            NodeupError::new(
+                ErrorKind::Internal,
+                format!(
+                    "Failed to replace binary {} with staged update: {error}",
+                    target.display()
+                ),
+            )
+        })?;
+    }
 
     Ok(())
+}
+
+fn backup_target_path(target: &Path) -> Result<PathBuf> {
+    let filename = target.file_name().ok_or_else(|| {
+        NodeupError::invalid_input(format!(
+            "Cannot create backup path for binary without filename: {}",
+            target.display()
+        ))
+    })?;
+
+    let mut backup_name = filename.to_os_string();
+    backup_name.push(".nodeup-backup");
+    Ok(target.with_file_name(backup_name))
 }
 
 fn file_hash(path: &Path) -> Result<Vec<u8>> {
@@ -383,23 +447,49 @@ fn file_hash(path: &Path) -> Result<Vec<u8>> {
 }
 
 fn normalize_target_path(path: &Path) -> Result<PathBuf> {
-    if path.is_absolute() {
-        return Ok(path.to_path_buf());
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+
+    if absolute.exists() {
+        return Ok(absolute.canonicalize()?);
     }
 
-    Ok(std::env::current_dir()?.join(path))
+    Ok(absolute)
 }
 
 fn ensure_safe_uninstall_path(path: &Path) -> Result<()> {
-    let component_count = path.components().count();
-    if component_count <= 2 {
+    if path.parent().is_none() {
         return Err(NodeupError::invalid_input(format!(
             "Refusing to uninstall unsafe path: {}",
             path.display()
         )));
     }
 
+    let owned_by_nodeup = path.components().any(|component| match component {
+        Component::Normal(value) => value.to_str().is_some_and(is_nodeup_owned_component),
+        _ => false,
+    });
+
+    if !owned_by_nodeup {
+        return Err(NodeupError::invalid_input(format!(
+            "Refusing to uninstall non-nodeup-owned path: {}",
+            path.display()
+        )));
+    }
+
     Ok(())
+}
+
+fn is_nodeup_owned_component(component: &str) -> bool {
+    let lowercase = component.to_ascii_lowercase();
+    lowercase == "nodeup"
+        || lowercase.starts_with("nodeup-")
+        || lowercase.starts_with("nodeup_")
+        || lowercase.ends_with("-nodeup")
+        || lowercase.ends_with("_nodeup")
 }
 
 fn migrate_settings_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {
