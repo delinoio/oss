@@ -8,5 +8,5 @@ pre-commit:
     go-fmt:
       stage_fixed: true
       glob: "**/*.go"
-      run: go fmt ./...
+      run: ./scripts/generate-go-proto.sh && go fmt ./...
   
