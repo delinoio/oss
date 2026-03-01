@@ -144,6 +144,42 @@ func TestExecuteRunRejectsDuplicateSessionID(t *testing.T) {
 	}
 }
 
+func TestExecuteRunRejectsInvalidSessionID(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+
+	exitCode := ExecuteRun([]string{"--session-id", ".", "--", "sh", "-c", "printf 'should-not-run'"})
+	if exitCode != 2 {
+		t.Fatalf("unexpected exit code: got=%d want=2", exitCode)
+	}
+
+	sessionsPath := filepath.Join(stateRoot, "sessions")
+	artifactFiles := []string{
+		"meta.json",
+		"final.json",
+		"output.bin",
+		"index.jsonl",
+		"append.lock",
+	}
+	for _, artifact := range artifactFiles {
+		artifactPath := filepath.Join(sessionsPath, artifact)
+		if _, err := os.Stat(artifactPath); !os.IsNotExist(err) {
+			t.Fatalf("expected no root-level artifact %s after invalid session id rejection, stat err=%v", artifactPath, err)
+		}
+	}
+
+	entries, err := os.ReadDir(sessionsPath)
+	if err != nil {
+		t.Fatalf("ReadDir sessions path returned error: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected no session directories after invalid session id rejection, got=%d", len(entries))
+	}
+}
+
 func TestExecuteRunPersistsStartupFailureSessionMetadata(t *testing.T) {
 	stateRoot := t.TempDir()
 	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {

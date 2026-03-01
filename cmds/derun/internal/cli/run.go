@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -20,6 +21,13 @@ import (
 )
 
 const defaultRetention = 24 * time.Hour
+
+type sessionIDRejectionReason string
+
+const (
+	sessionIDRejectionReasonMetadataExists sessionIDRejectionReason = "metadata_exists"
+	sessionIDRejectionReasonInvalid        sessionIDRejectionReason = "invalid_session_id"
+)
 
 func ExecuteRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
@@ -80,13 +88,21 @@ func ExecuteRun(args []string) int {
 	} else {
 		hasMetadata, err := store.HasSessionMetadata(sessionID)
 		if err != nil {
+			if errors.Is(err, state.ErrInvalidSessionID) {
+				logger.Event("session_id_rejected", map[string]any{
+					"session_id": sessionID,
+					"reason":     string(sessionIDRejectionReasonInvalid),
+				})
+				fmt.Fprintf(os.Stderr, "invalid session id: %s\n", sessionID)
+				return 2
+			}
 			fmt.Fprintf(os.Stderr, "check session metadata: %v\n", err)
 			return 1
 		}
 		if hasMetadata {
 			logger.Event("session_id_rejected", map[string]any{
 				"session_id": sessionID,
-				"reason":     "metadata_exists",
+				"reason":     string(sessionIDRejectionReasonMetadataExists),
 			})
 			fmt.Fprintf(os.Stderr, "session id already exists: %s\n", sessionID)
 			return 2

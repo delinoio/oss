@@ -114,6 +114,7 @@ Command contracts:
 - `derun run [--session-id <id>] [--retention <duration>] -- <command> [args...]`
 : Executes user command with terminal-fidelity proxying and side-channel transcript capture.
 - `derun run` must reject explicit `--session-id` values when persisted metadata already exists (`meta.json` or `final.json`), returning exit code `2` without mutating existing artifacts.
+- `derun run` must reject explicit invalid `--session-id` values (including path-segment alias `"."`), returning exit code `2` without mutating session artifacts.
 - `derun mcp`
 : Starts stdio MCP server for AI-driven session/output retrieval.
 
@@ -176,6 +177,7 @@ Write consistency contract:
 - File permissions: `0600`
 - Persist output stream only by default; stdin is proxied but not persisted.
 - Resolve canonical real paths before session artifact IO and reject path traversal or symlink escape outside `sessions/<session-id>`, including dangling symlink targets.
+- Reject path-segment alias session IDs (for example `"."`) so all artifacts remain under `sessions/<session-id>/...` and never directly under `sessions/`.
 - Apply traversal/symlink checks consistently for `meta.json`, `final.json`, `output.bin`, `index.jsonl`, and `append.lock` across read and write flows.
 - Keep MCP tool surface read-only in v1.
 - Do not emit secret values into operational logs.

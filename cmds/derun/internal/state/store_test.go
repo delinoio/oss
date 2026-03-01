@@ -213,6 +213,7 @@ func TestStoreRejectsTraversalSessionIDAcrossEntrypoints(t *testing.T) {
 	}
 
 	invalidSessionIDs := []string{
+		".",
 		"..",
 		"../escape",
 		"with/slash",
@@ -274,6 +275,9 @@ func TestStoreRejectsTraversalSessionIDAcrossEntrypoints(t *testing.T) {
 				err := operation.run(sessionID)
 				if err == nil {
 					t.Fatalf("expected error for invalid session id: %q", sessionID)
+				}
+				if !errors.Is(err, ErrInvalidSessionID) {
+					t.Fatalf("expected ErrInvalidSessionID for session id %q, got: %v", sessionID, err)
 				}
 				if !strings.Contains(err.Error(), "session id") {
 					t.Fatalf("unexpected error for session id %q: %v", sessionID, err)
