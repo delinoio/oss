@@ -117,6 +117,7 @@ Provider behavior (Phase 1):
 - `GIT_PROVIDER_KIND_GITHUB`: live publish behavior (comment + commit status)
 - `GIT_PROVIDER_KIND_GITLAB`: contract available, publish path returns `FailedPrecondition`
 - `GIT_PROVIDER_KIND_BITBUCKET`: contract available, publish path returns `FailedPrecondition`
+- Provider enum validation is strict for RPC inputs; unknown enum values return `InvalidArgument`.
 
 Devkit proxy API routes:
 - `GET /api/commit-tracker/series`
@@ -160,6 +161,7 @@ Required baseline logs:
 - Pull-request comparison lifecycle success/failure
 - Provider publish attempts and outcomes
 - Route/UI loading and publish failures in web app
+- Authorization denied attempts (`result=denied`) for all RPC entrypoints
 
 Required structured fields:
 - `provider`
@@ -172,7 +174,7 @@ Required structured fields:
 - `delta_percent`
 
 Sensitive logging rule:
-- `X-Commit-Tracker-Subject` remains required for authorization but must never be emitted in structured logs.
+- `X-Commit-Tracker-Subject` and bearer token values remain required for authorization but must never be emitted in structured logs.
 
 ## Collector Input Contract
 CLI command:
@@ -217,9 +219,12 @@ Acceptance-focused scenarios:
 - Direction-aware increase/decrease evaluation
 - Deterministic delta-percent behavior when base value is `0`
 - Deterministic latest metric snapshot selection when multiple rows share the same `measured_at` timestamp
+- Unknown provider enum values return `InvalidArgument`
 - GitHub publish path writes comment + status and persists report row
 - GitHub auth failure maps to auth error response code
 - Unsupported provider publish paths return `FailedPrecondition`
+- Authorization failures return `Unauthenticated` and emit structured denied logs without token/subject leakage
+- Connect handler e2e path verifies `UpsertCommitMetrics` via generated client -> handler -> service
 
 ## Environment Variables
 Server:
