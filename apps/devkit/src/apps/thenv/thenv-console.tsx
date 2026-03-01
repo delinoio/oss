@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   activateVersion,
@@ -84,7 +84,9 @@ function outcomeBadgeClass(outcome: ThenvOutcome): string {
 export function ThenvConsole() {
   const [scope, setScope] = useState<ThenvScope>(DEFAULT_THENV_SCOPE);
   const [versions, setVersions] = useState<ThenvBundleVersionSummary[]>([]);
+  const [versionsNextCursor, setVersionsNextCursor] = useState<string>("");
   const [auditEvents, setAuditEvents] = useState<ThenvAuditEvent[]>([]);
+  const [auditNextCursor, setAuditNextCursor] = useState<string>("");
   const [bindings, setBindings] = useState<ThenvPolicyBinding[]>([]);
   const [policyRevision, setPolicyRevision] = useState<number>(0);
 
@@ -98,9 +100,13 @@ export function ThenvConsole() {
   const [appliedAuditToTime, setAppliedAuditToTime] = useState<string>("");
 
   const [loading, setLoading] = useState<boolean>(false);
+  const [loadingMoreVersions, setLoadingMoreVersions] = useState<boolean>(false);
+  const [loadingMoreAuditEvents, setLoadingMoreAuditEvents] = useState<boolean>(false);
   const [savingPolicy, setSavingPolicy] = useState<boolean>(false);
   const [activating, setActivating] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const versionsPaginationRevisionRef = useRef<number>(0);
+  const auditPaginationRevisionRef = useRef<number>(0);
 
   const activeVersion = useMemo(
     () =>
@@ -113,14 +119,30 @@ export function ThenvConsole() {
   const loadAuditEvents = useCallback(async (fromTime: string, toTime: string) => {
     setLoading(true);
     setErrorMessage("");
+    auditPaginationRevisionRef.current += 1;
+    setAuditNextCursor("");
 
+    const currentAuditRevision = auditPaginationRevisionRef.current;
     try {
       const auditResponse = await listAuditEvents({
         scope,
         fromTime: fromTime || undefined,
         toTime: toTime || undefined,
       });
+      if (currentAuditRevision !== auditPaginationRevisionRef.current) {
+        logInfo({
+          event: LogEvent.RouteRender,
+          route: "/apps/thenv",
+          message: "Ignored stale thenv audit first-page response.",
+          context: {
+            auditFromTime: fromTime || undefined,
+            auditToTime: toTime || undefined,
+          },
+        });
+        return;
+      }
       setAuditEvents(auditResponse.events);
+      setAuditNextCursor(auditResponse.nextCursor ?? "");
 
       logInfo({
         event: LogEvent.RouteRender,
@@ -129,6 +151,8 @@ export function ThenvConsole() {
         context: {
           auditFromTime: fromTime || undefined,
           auditToTime: toTime || undefined,
+          nextCursor: auditResponse.nextCursor || undefined,
+          loadedEventCount: auditResponse.events.length,
         },
       });
     } catch (error) {
@@ -153,7 +177,13 @@ export function ThenvConsole() {
   const loadConsoleData = useCallback(async (fromTime: string, toTime: string) => {
     setLoading(true);
     setErrorMessage("");
+    versionsPaginationRevisionRef.current += 1;
+    auditPaginationRevisionRef.current += 1;
+    setVersionsNextCursor("");
+    setAuditNextCursor("");
 
+    const currentVersionsRevision = versionsPaginationRevisionRef.current;
+    const currentAuditRevision = auditPaginationRevisionRef.current;
     try {
       const [versionsResponse, policyResponse, auditResponse] = await Promise.all([
         listVersions(scope),
@@ -164,12 +194,29 @@ export function ThenvConsole() {
           toTime: toTime || undefined,
         }),
       ]);
+      if (
+        currentVersionsRevision !== versionsPaginationRevisionRef.current ||
+        currentAuditRevision !== auditPaginationRevisionRef.current
+      ) {
+        logInfo({
+          event: LogEvent.RouteRender,
+          route: "/apps/thenv",
+          message: "Ignored stale thenv metadata console response.",
+          context: {
+            auditFromTime: fromTime || undefined,
+            auditToTime: toTime || undefined,
+          },
+        });
+        return;
+      }
 
       setVersions(versionsResponse.versions);
+      setVersionsNextCursor(versionsResponse.nextCursor ?? "");
       setBindings(policyResponse.bindings);
       setPolicyRevision(policyResponse.policyRevision);
       setDraftBindings(policyResponse.bindings);
       setAuditEvents(auditResponse.events);
+      setAuditNextCursor(auditResponse.nextCursor ?? "");
 
       logInfo({
         event: LogEvent.RouteRender,
@@ -178,6 +225,10 @@ export function ThenvConsole() {
         context: {
           auditFromTime: fromTime || undefined,
           auditToTime: toTime || undefined,
+          versionsNextCursor: versionsResponse.nextCursor || undefined,
+          auditNextCursor: auditResponse.nextCursor || undefined,
+          loadedVersionCount: versionsResponse.versions.length,
+          loadedAuditEventCount: auditResponse.events.length,
         },
       });
     } catch (error) {
@@ -227,6 +278,119 @@ export function ThenvConsole() {
     setAppliedAuditFromTime("");
     setAppliedAuditToTime("");
     void loadAuditEvents("", "");
+  };
+
+  const handleLoadMoreVersions = async () => {
+    if (!versionsNextCursor) {
+      return;
+    }
+
+    const currentVersionsRevision = versionsPaginationRevisionRef.current;
+    const cursor = versionsNextCursor;
+    setLoadingMoreVersions(true);
+    setErrorMessage("");
+    try {
+      const response = await listVersions(scope, { cursor });
+      if (currentVersionsRevision !== versionsPaginationRevisionRef.current) {
+        logInfo({
+          event: LogEvent.RouteRender,
+          route: "/apps/thenv",
+          message: "Ignored stale thenv bundle versions page response.",
+          context: { cursor },
+        });
+        return;
+      }
+      setVersions((previous) => [...previous, ...response.versions]);
+      setVersionsNextCursor(response.nextCursor ?? "");
+      logInfo({
+        event: LogEvent.RouteRender,
+        route: "/apps/thenv",
+        message: "Loaded additional thenv bundle versions.",
+        context: {
+          cursor,
+          nextCursor: response.nextCursor || undefined,
+          loadedVersionCount: response.versions.length,
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load additional versions.";
+      setErrorMessage(message);
+      logError({
+        event: LogEvent.RouteLoadError,
+        route: "/apps/thenv",
+        message,
+        error,
+        context: { cursor },
+      });
+    } finally {
+      setLoadingMoreVersions(false);
+    }
+  };
+
+  const handleLoadMoreAuditEvents = async () => {
+    if (!auditNextCursor) {
+      return;
+    }
+
+    const currentAuditRevision = auditPaginationRevisionRef.current;
+    const cursor = auditNextCursor;
+    setLoadingMoreAuditEvents(true);
+    setErrorMessage("");
+    try {
+      const response = await listAuditEvents({
+        scope,
+        fromTime: appliedAuditFromTime || undefined,
+        toTime: appliedAuditToTime || undefined,
+        cursor,
+      });
+      if (currentAuditRevision !== auditPaginationRevisionRef.current) {
+        logInfo({
+          event: LogEvent.RouteRender,
+          route: "/apps/thenv",
+          message: "Ignored stale thenv audit events page response.",
+          context: {
+            cursor,
+            auditFromTime: appliedAuditFromTime || undefined,
+            auditToTime: appliedAuditToTime || undefined,
+          },
+        });
+        return;
+      }
+      setAuditEvents((previous) => [...previous, ...response.events]);
+      setAuditNextCursor(response.nextCursor ?? "");
+      logInfo({
+        event: LogEvent.RouteRender,
+        route: "/apps/thenv",
+        message: "Loaded additional thenv audit events.",
+        context: {
+          cursor,
+          nextCursor: response.nextCursor || undefined,
+          loadedAuditEventCount: response.events.length,
+          auditFromTime: appliedAuditFromTime || undefined,
+          auditToTime: appliedAuditToTime || undefined,
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load additional audit events.";
+      setErrorMessage(message);
+      logError({
+        event: LogEvent.RouteLoadError,
+        route: "/apps/thenv",
+        message,
+        error,
+        context: {
+          cursor,
+          auditFromTime: appliedAuditFromTime || undefined,
+          auditToTime: appliedAuditToTime || undefined,
+        },
+      });
+    } finally {
+      setLoadingMoreAuditEvents(false);
+    }
   };
 
   const handleActivate = async (event: FormEvent) => {
@@ -393,6 +557,18 @@ export function ThenvConsole() {
             </table>
           </div>
         )}
+        {versionsNextCursor ? (
+          <div className="dk-button-group">
+            <button
+              type="button"
+              className="dk-button dk-button-secondary"
+              onClick={handleLoadMoreVersions}
+              disabled={loading || loadingMoreVersions}
+            >
+              {loadingMoreVersions ? "Loading More..." : "Load More Versions"}
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <section aria-label="active version switch" className="dk-card">
@@ -582,6 +758,18 @@ export function ThenvConsole() {
             </table>
           </div>
         )}
+        {auditNextCursor ? (
+          <div className="dk-button-group">
+            <button
+              type="button"
+              className="dk-button dk-button-secondary"
+              onClick={handleLoadMoreAuditEvents}
+              disabled={loading || loadingMoreAuditEvents}
+            >
+              {loadingMoreAuditEvents ? "Loading More..." : "Load More Audit Events"}
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <div className="dk-card dk-card-muted">

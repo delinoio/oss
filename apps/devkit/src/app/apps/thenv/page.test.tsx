@@ -4,24 +4,130 @@ import { beforeEach, vi } from "vitest";
 
 import ThenvPage from "./page";
 
-const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-  const url = typeof input === "string" ? input : input.toString();
+let failNextVersionsRequest = false;
+let failNextAuditRequest = false;
+let holdNextVersionsLoadMoreResponse = false;
+let holdNextAuditLoadMoreResponse = false;
+let releaseHeldVersionsLoadMoreResponse: (() => void) | null = null;
+let releaseHeldAuditLoadMoreResponse: (() => void) | null = null;
 
-  if (url.startsWith("/api/thenv/versions")) {
-    return new Response(JSON.stringify({ versions: [], nextCursor: "" }), {
+function buildVersionsLoadMoreResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      versions: [
+        {
+          bundleVersionId: "bundle-2",
+          status: "BUNDLE_STATUS_ARCHIVED",
+          createdBy: "operator@example.com",
+          createdAt: "2026-02-24T01:00:00Z",
+          fileTypes: ["FILE_TYPE_DEV_VARS"],
+        },
+      ],
+      nextCursor: "",
+    }),
+    {
       status: 200,
       headers: { "Content-Type": "application/json" },
-    });
+    },
+  );
+}
+
+function buildAuditLoadMoreResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      events: [
+        {
+          eventId: "evt-2",
+          eventType: "AUDIT_EVENT_TYPE_LIST",
+          actor: "operator@example.com",
+          bundleVersionId: "bundle-2",
+          targetBundleVersionId: "",
+          outcome: "OUTCOME_SUCCESS",
+          requestId: "req-2",
+          traceId: "trace-2",
+          createdAt: "2026-02-24T01:00:00Z",
+        },
+      ],
+      nextCursor: "",
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  const rawUrl = typeof input === "string" ? input : input.toString();
+  const parsedUrl = new URL(rawUrl, "http://localhost");
+
+  if (parsedUrl.pathname === "/api/thenv/versions") {
+    if (failNextVersionsRequest) {
+      failNextVersionsRequest = false;
+      return new Response("versions failed", { status: 500 });
+    }
+
+    const cursor = parsedUrl.searchParams.get("cursor");
+    if (cursor === "1") {
+      if (holdNextVersionsLoadMoreResponse) {
+        holdNextVersionsLoadMoreResponse = false;
+        return new Promise<Response>((resolve) => {
+          releaseHeldVersionsLoadMoreResponse = () => {
+            releaseHeldVersionsLoadMoreResponse = null;
+            resolve(buildVersionsLoadMoreResponse());
+          };
+        });
+      }
+      return buildVersionsLoadMoreResponse();
+    }
+
+    return new Response(
+      JSON.stringify({
+        versions: [
+          {
+            bundleVersionId: "bundle-1",
+            status: "BUNDLE_STATUS_ACTIVE",
+            createdBy: "operator@example.com",
+            createdAt: "2026-02-24T00:00:00Z",
+            fileTypes: ["FILE_TYPE_ENV"],
+          },
+        ],
+        nextCursor: "1",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
-  if (url.startsWith("/api/thenv/policy")) {
+  if (parsedUrl.pathname === "/api/thenv/policy") {
     return new Response(JSON.stringify({ bindings: [], policyRevision: 0 }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  if (url.startsWith("/api/thenv/audit")) {
+  if (parsedUrl.pathname === "/api/thenv/audit") {
+    if (failNextAuditRequest) {
+      failNextAuditRequest = false;
+      return new Response("audit failed", { status: 500 });
+    }
+
+    const cursor = parsedUrl.searchParams.get("cursor");
+    if (cursor === "1") {
+      if (holdNextAuditLoadMoreResponse) {
+        holdNextAuditLoadMoreResponse = false;
+        return new Promise<Response>((resolve) => {
+          releaseHeldAuditLoadMoreResponse = () => {
+            releaseHeldAuditLoadMoreResponse = null;
+            resolve(buildAuditLoadMoreResponse());
+          };
+        });
+      }
+      return buildAuditLoadMoreResponse();
+    }
+
     return new Response(
       JSON.stringify({
         events: [
@@ -37,7 +143,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
             createdAt: "2026-02-24T00:00:00Z",
           },
         ],
-        nextCursor: "",
+        nextCursor: "1",
       }),
       {
         status: 200,
@@ -46,21 +152,35 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     );
   }
 
-  return new Response(JSON.stringify({ error: `Unhandled URL: ${url}` }), {
+  return new Response(JSON.stringify({ error: `Unhandled URL: ${rawUrl}` }), {
     status: 404,
     headers: { "Content-Type": "application/json" },
   });
 });
 
-function auditCallUrls(): string[] {
+function callUrls(pathname: string): string[] {
   return fetchMock.mock.calls
     .map(([input]) => (typeof input === "string" ? input : input.toString()))
-    .filter((url) => url.startsWith("/api/thenv/audit"));
+    .filter((url) => new URL(url, "http://localhost").pathname === pathname);
+}
+
+function auditCallUrls(): string[] {
+  return callUrls("/api/thenv/audit");
+}
+
+function versionCallUrls(): string[] {
+  return callUrls("/api/thenv/versions");
 }
 
 describe("ThenvPage", () => {
   beforeEach(() => {
     fetchMock.mockClear();
+    failNextVersionsRequest = false;
+    failNextAuditRequest = false;
+    holdNextVersionsLoadMoreResponse = false;
+    holdNextAuditLoadMoreResponse = false;
+    releaseHeldVersionsLoadMoreResponse = null;
+    releaseHeldAuditLoadMoreResponse = null;
     vi.stubGlobal("fetch", fetchMock);
   });
 
@@ -103,6 +223,151 @@ describe("ThenvPage", () => {
             url.includes(`toTime=${encodeURIComponent(toTime)}`),
         ),
       ).toBe(true);
+    });
+  });
+
+  it("loads and appends the next version page", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Load More Versions" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Load More Versions" }));
+
+    expect(await screen.findByText("bundle-2")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load More Versions" })).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(
+        versionCallUrls().some((url) => url.includes("cursor=1")),
+      ).toBe(true);
+    });
+  });
+
+  it("loads additional audit events with applied from/to filter range", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    const fromTime = "2026-01-01T00:00:00Z";
+    const toTime = "2026-01-31T23:59:59Z";
+
+    await user.clear(screen.getByLabelText("From Time (ISO)"));
+    await user.type(screen.getByLabelText("From Time (ISO)"), fromTime);
+    await user.clear(screen.getByLabelText("To Time (ISO)"));
+    await user.type(screen.getByLabelText("To Time (ISO)"), toTime);
+    await user.click(screen.getByRole("button", { name: "Apply Audit Filters" }));
+
+    await waitFor(() => {
+      expect(
+        auditCallUrls().some(
+          (url) =>
+            url.includes(`fromTime=${encodeURIComponent(fromTime)}`) &&
+            url.includes(`toTime=${encodeURIComponent(toTime)}`),
+        ),
+      ).toBe(true);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Load More Audit Events" }));
+
+    expect(await screen.findByText("req-2")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Load More Audit Events" }),
+    ).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(
+        auditCallUrls().some(
+          (url) =>
+            url.includes("cursor=1") &&
+            url.includes(`fromTime=${encodeURIComponent(fromTime)}`) &&
+            url.includes(`toTime=${encodeURIComponent(toTime)}`),
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("clears stale version cursor when reload fails to prevent mixed pagination", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Load More Versions" }),
+    ).toBeInTheDocument();
+
+    failNextVersionsRequest = true;
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("versions failed");
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Load More Versions" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("clears stale audit cursor when filtered reload fails", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Load More Audit Events" }),
+    ).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText("From Time (ISO)"));
+    await user.type(screen.getByLabelText("From Time (ISO)"), "2026-01-01T00:00:00Z");
+    await user.clear(screen.getByLabelText("To Time (ISO)"));
+    await user.type(screen.getByLabelText("To Time (ISO)"), "2026-01-31T23:59:59Z");
+
+    failNextAuditRequest = true;
+    await user.click(screen.getByRole("button", { name: "Apply Audit Filters" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("audit failed");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Load More Audit Events" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("ignores stale in-flight version page responses after refresh", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Load More Versions" }),
+    ).toBeInTheDocument();
+
+    holdNextVersionsLoadMoreResponse = true;
+    await user.click(screen.getByRole("button", { name: "Load More Versions" }));
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    releaseHeldVersionsLoadMoreResponse?.();
+
+    await waitFor(() => {
+      expect(screen.queryByText("bundle-2")).not.toBeInTheDocument();
+    });
+  });
+
+  it("ignores stale in-flight audit page responses after filter updates", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Load More Audit Events" }),
+    ).toBeInTheDocument();
+
+    holdNextAuditLoadMoreResponse = true;
+    await user.click(screen.getByRole("button", { name: "Load More Audit Events" }));
+
+    await user.clear(screen.getByLabelText("From Time (ISO)"));
+    await user.type(screen.getByLabelText("From Time (ISO)"), "2026-01-01T00:00:00Z");
+    await user.clear(screen.getByLabelText("To Time (ISO)"));
+    await user.type(screen.getByLabelText("To Time (ISO)"), "2026-01-31T23:59:59Z");
+    await user.click(screen.getByRole("button", { name: "Apply Audit Filters" }));
+
+    releaseHeldAuditLoadMoreResponse?.();
+
+    await waitFor(() => {
+      expect(screen.queryByText("req-2")).not.toBeInTheDocument();
     });
   });
 

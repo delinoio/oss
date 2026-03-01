@@ -63,14 +63,17 @@ export interface ThenvAuditEvent {
   createdAt?: string;
 }
 
-export interface ThenvAuditQuery {
+export interface ThenvPaginationQuery {
+  limit?: number;
+  cursor?: string;
+}
+
+export interface ThenvAuditQuery extends ThenvPaginationQuery {
   scope: ThenvScope;
   actor?: string;
   eventType?: ThenvAuditEventType;
   fromTime?: string;
   toTime?: string;
-  limit?: number;
-  cursor?: string;
 }
 
 export interface ThenvListVersionsResponse {
