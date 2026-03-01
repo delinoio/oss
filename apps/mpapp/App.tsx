@@ -20,6 +20,10 @@ import {
   MpappMode,
 } from "./src/contracts/enums";
 import { resolveMpappRuntimeConfig } from "./src/config/mpapp-runtime-config";
+import {
+  createCoalescedMoveSamplingPolicy,
+  type MoveSamplingEmission,
+} from "./src/input/move-sampling-policy";
 import { createConnectedClickSample, createPointerMoveSample } from "./src/input/translate-gesture";
 import {
   evaluatePlatformSupport,
@@ -92,6 +96,7 @@ export default function App() {
   const diagnosticsStoreRef = useRef<DiagnosticsStore>(
     new AsyncStorageDiagnosticsStore(),
   );
+  const moveSamplingPolicyRef = useRef(createCoalescedMoveSamplingPolicy());
   const sessionIdRef = useRef<string>(createSessionId());
   const transportLogContext = useMemo(
     () => ({
@@ -123,6 +128,14 @@ export default function App() {
   useEffect(() => {
     sessionStateRef.current = sessionState;
   }, [sessionState]);
+
+  useEffect(() => {
+    if (sessionState.mode === MpappMode.Connected) {
+      return;
+    }
+
+    moveSamplingPolicyRef.current.reset();
+  }, [sessionState.mode]);
 
   const appendLog = useCallback(
     async (params: {
@@ -331,13 +344,13 @@ export default function App() {
     });
   }, [adapter, appendLog, dispatchSessionEvent]);
 
-  const handleMove = useCallback(
-    (deltaX: number, deltaY: number) => {
-      if (sessionState.mode !== MpappMode.Connected) {
-        return;
-      }
-
-      const sample = createPointerMoveSample(deltaX, deltaY, sensitivity);
+  const emitSampledMove = useCallback(
+    (moveEmission: MoveSamplingEmission) => {
+      const sample = createPointerMoveSample(
+        moveEmission.deltaX,
+        moveEmission.deltaY,
+        sensitivity,
+      );
       const sendStart = Date.now();
 
       void adapter.sendMove(sample).then(async (sendResult) => {
@@ -350,6 +363,7 @@ export default function App() {
             payload: {
               actionId: sample.actionId,
               nativeErrorCode: sendResult.nativeErrorCode ?? null,
+              ...moveEmission.diagnostics,
             },
           });
           return;
@@ -363,12 +377,42 @@ export default function App() {
             deltaX: sample.deltaX,
             deltaY: sample.deltaY,
             sensitivity: sample.sensitivity,
+            ...moveEmission.diagnostics,
           },
         });
       });
     },
-    [adapter, appendLog, sensitivity, sessionState.mode],
+    [adapter, appendLog, sensitivity],
   );
+
+  const handleMove = useCallback(
+    (deltaX: number, deltaY: number) => {
+      if (sessionState.mode !== MpappMode.Connected) {
+        return;
+      }
+
+      const moveEmission = moveSamplingPolicyRef.current.record(deltaX, deltaY);
+      if (!moveEmission) {
+        return;
+      }
+
+      emitSampledMove(moveEmission);
+    },
+    [emitSampledMove, sessionState.mode],
+  );
+
+  const handleMoveGestureEnd = useCallback(() => {
+    if (sessionState.mode !== MpappMode.Connected) {
+      return;
+    }
+
+    const moveEmission = moveSamplingPolicyRef.current.flush();
+    if (!moveEmission) {
+      return;
+    }
+
+    emitSampledMove(moveEmission);
+  }, [emitSampledMove, sessionState.mode]);
 
   const handleClick = useCallback(
     (button: MpappClickButton) => {
@@ -482,6 +526,7 @@ export default function App() {
         <TouchpadSurface
           disabled={sessionState.mode !== MpappMode.Connected}
           onMove={handleMove}
+          onGestureEnd={handleMoveGestureEnd}
         />
 
         <ClickControls
