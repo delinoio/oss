@@ -50,23 +50,34 @@ func RunPosixPTY(
 
 	resize := make(chan os.Signal, 1)
 	signal.Notify(resize, syscall.SIGWINCH)
+	resizeDone := make(chan struct{})
+	defer close(resizeDone)
 	defer signal.Stop(resize)
-	defer close(resize)
 	go func() {
-		for range resize {
-			_ = pty.InheritSize(os.Stdin, ptmx)
+		for {
+			select {
+			case <-resize:
+				_ = pty.InheritSize(os.Stdin, ptmx)
+			case <-resizeDone:
+				return
+			}
 		}
 	}()
-	resize <- syscall.SIGWINCH
 
 	signals := make(chan os.Signal, 8)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	signalForwardDone := make(chan struct{})
+	defer close(signalForwardDone)
 	defer signal.Stop(signals)
-	defer close(signals)
 	go func() {
-		for sig := range signals {
-			if cmd.Process != nil {
-				_ = cmd.Process.Signal(sig)
+		for {
+			select {
+			case sig := <-signals:
+				if cmd.Process != nil {
+					_ = cmd.Process.Signal(sig)
+				}
+			case <-signalForwardDone:
+				return
 			}
 		}
 	}()

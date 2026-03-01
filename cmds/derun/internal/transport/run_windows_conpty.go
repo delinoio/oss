@@ -117,15 +117,21 @@ func RunWindowsConPTY(
 
 	signals := make(chan os.Signal, 8)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	signalForwardDone := make(chan struct{})
+	defer close(signalForwardDone)
 	defer signal.Stop(signals)
-	defer close(signals)
 	go func() {
-		for sig := range signals {
-			switch sig {
-			case os.Interrupt:
-				_ = windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, processInfo.ProcessId)
-			default:
-				_ = windows.TerminateProcess(processInfo.Process, 1)
+		for {
+			select {
+			case sig := <-signals:
+				switch sig {
+				case os.Interrupt:
+					_ = windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, processInfo.ProcessId)
+				default:
+					_ = windows.TerminateProcess(processInfo.Process, 1)
+				}
+			case <-signalForwardDone:
+				return
 			}
 		}
 	}()

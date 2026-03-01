@@ -29,6 +29,15 @@ const (
 	sessionIDRejectionReasonInvalid        sessionIDRejectionReason = "invalid_session_id"
 )
 
+var (
+	runPipeTransport          = transport.RunPipe
+	runPosixPTYTransport      = transport.RunPosixPTY
+	runWindowsConPTYTransport = transport.RunWindowsConPTY
+	isConPTYUnavailableError  = transport.IsConPTYUnavailableError
+	terminalProbe             = isTerminal
+	runtimeGOOS               = runtime.GOOS
+)
+
 func ExecuteRun(args []string) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -120,8 +129,8 @@ func ExecuteRun(args []string) int {
 		return 1
 	}
 
-	ttyAttached := isTerminal(os.Stdin) && isTerminal(os.Stdout)
-	transportMode := selectTransportMode(ttyAttached, runtime.GOOS)
+	ttyAttached := terminalProbe(os.Stdin) && terminalProbe(os.Stdout)
+	transportMode := selectTransportMode(ttyAttached, runtimeGOOS)
 
 	startedAt := time.Now().UTC()
 	meta := session.Meta{
@@ -162,21 +171,40 @@ func ExecuteRun(args []string) int {
 	var runResult transport.RunResult
 	var runErr error
 
-	switch transportMode {
-	case contracts.DerunTransportModePosixPTY:
-		ptyCapture := capture.NewWriter(store, logger, sessionID, contracts.DerunOutputChannelPTY)
-		ptyOutput := io.MultiWriter(os.Stdout, ptyCapture)
-		runResult, runErr = transport.RunPosixPTY(ctx, commandArgs, workingDir, onStart, ptyOutput)
-	case contracts.DerunTransportModeWindowsConPTY:
-		ptyCapture := capture.NewWriter(store, logger, sessionID, contracts.DerunOutputChannelPTY)
-		ptyOutput := io.MultiWriter(os.Stdout, ptyCapture)
-		runResult, runErr = transport.RunWindowsConPTY(ctx, commandArgs, workingDir, onStart, ptyOutput)
-	default:
+	runPipe := func() {
 		stdoutCapture := capture.NewWriter(store, logger, sessionID, contracts.DerunOutputChannelStdout)
 		stderrCapture := capture.NewWriter(store, logger, sessionID, contracts.DerunOutputChannelStderr)
 		stdoutOutput := io.MultiWriter(os.Stdout, stdoutCapture)
 		stderrOutput := io.MultiWriter(os.Stderr, stderrCapture)
-		runResult, runErr = transport.RunPipe(ctx, commandArgs, workingDir, onStart, stdoutOutput, stderrOutput)
+		runResult, runErr = runPipeTransport(ctx, commandArgs, workingDir, onStart, stdoutOutput, stderrOutput)
+	}
+
+	switch transportMode {
+	case contracts.DerunTransportModePosixPTY:
+		ptyCapture := capture.NewWriter(store, logger, sessionID, contracts.DerunOutputChannelPTY)
+		ptyOutput := io.MultiWriter(os.Stdout, ptyCapture)
+		runResult, runErr = runPosixPTYTransport(ctx, commandArgs, workingDir, onStart, ptyOutput)
+	case contracts.DerunTransportModeWindowsConPTY:
+		ptyCapture := capture.NewWriter(store, logger, sessionID, contracts.DerunOutputChannelPTY)
+		ptyOutput := io.MultiWriter(os.Stdout, ptyCapture)
+		runResult, runErr = runWindowsConPTYTransport(ctx, commandArgs, workingDir, onStart, ptyOutput)
+		if runErr != nil && isConPTYUnavailableError(runErr) {
+			logger.Event("transport_fallback", map[string]any{
+				"session_id":      sessionID,
+				"fallback_from":   contracts.DerunTransportModeWindowsConPTY,
+				"fallback_to":     contracts.DerunTransportModePipe,
+				"fallback_reason": runErr.Error(),
+			})
+			transportMode = contracts.DerunTransportModePipe
+			meta.TransportMode = transportMode
+			if err := store.WriteMeta(meta); err != nil {
+				fmt.Fprintf(os.Stderr, "write fallback metadata: %v\n", err)
+				return 1
+			}
+			runPipe()
+		}
+	default:
+		runPipe()
 	}
 
 	final := session.Final{

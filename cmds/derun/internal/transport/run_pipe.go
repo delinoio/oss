@@ -46,12 +46,18 @@ func RunPipe(
 	// cannot race with onStart metadata persistence in caller paths.
 	signals := make(chan os.Signal, 8)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	signalForwardDone := make(chan struct{})
+	defer close(signalForwardDone)
 	defer signal.Stop(signals)
-	defer close(signals)
 	go func() {
-		for sig := range signals {
-			if cmd.Process != nil {
-				_ = cmd.Process.Signal(sig)
+		for {
+			select {
+			case sig := <-signals:
+				if cmd.Process != nil {
+					_ = cmd.Process.Signal(sig)
+				}
+			case <-signalForwardDone:
+				return
 			}
 		}
 	}()
