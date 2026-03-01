@@ -127,6 +127,7 @@ Provider behavior (Phase 1):
 - `GIT_PROVIDER_KIND_GITLAB`: contract available, publish path returns `FailedPrecondition`
 - `GIT_PROVIDER_KIND_BITBUCKET`: contract available, publish path returns `FailedPrecondition`
 - Provider enum validation is strict for RPC inputs; unknown enum values return `InvalidArgument`.
+- For `PublishPullRequestReport`, unknown provider enum values are rejected as `InvalidArgument` before the Phase 1 integration gate is evaluated.
 
 Devkit proxy API routes:
 - `GET /api/commit-tracker/series`

@@ -528,6 +528,9 @@ func (s *Service) PublishPullRequestReport(ctx context.Context, req *connect.Req
 		s.logDenied(contracts.OperationPublishPullRequestInfo, req.Msg, err)
 		return nil, err
 	}
+	if err := validateProvider(req.Msg.GetProvider()); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
 	if req.Msg.GetProvider() != committrackerv1.GitProviderKind_GIT_PROVIDER_KIND_GITHUB {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("provider integration is only live for github in phase 1"))
 	}

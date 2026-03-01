@@ -483,6 +483,33 @@ func TestPublishPullRequestReportUnsupportedProvider(t *testing.T) {
 	assertMockExpectations(t, mock)
 }
 
+func TestPublishPullRequestReportRejectsUnknownProvider(t *testing.T) {
+	svc, mock := newMockService(t, "", nil)
+	request := connect.NewRequest(&committrackerv1.PublishPullRequestReportRequest{
+		Provider:      committrackerv1.GitProviderKind(99),
+		Repository:    "acme/repo",
+		PullRequest:   9,
+		BaseCommitSha: "base",
+		HeadCommitSha: "head",
+		Environment:   "ci",
+	})
+	setAuthHeaders(request)
+
+	_, err := svc.PublishPullRequestReport(context.Background(), request)
+	if err == nil {
+		t.Fatal("expected invalid argument error")
+	}
+	var connectErr *connect.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("expected connect error, got=%v", err)
+	}
+	if connectErr.Code() != connect.CodeInvalidArgument {
+		t.Fatalf("expected invalid argument, got=%s", connectErr.Code())
+	}
+
+	assertMockExpectations(t, mock)
+}
+
 func newMockService(t *testing.T, githubAPIBase string, httpClient *http.Client) (*Service, sqlmock.Sqlmock) {
 	return newMockServiceWithLogger(t, githubAPIBase, httpClient, nil)
 }
