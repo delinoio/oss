@@ -78,6 +78,12 @@ Devkit route contract:
 - Current route state: metadata management console (no plaintext payload rendering).
 - Audit filter contract:
 : Devkit audit proxy route `GET /api/thenv/audit` supports optional `fromTime` and `toTime` query parameters and forwards them to `AuditService.ListAuditEvents`.
+- Devkit proxy input validation contract:
+: Scope defaults to `DEFAULT_THENV_SCOPE` when omitted, but explicit blank values are rejected with `400`.
+: Pagination fields enforce `limit` as integer `1..100` (default `20`) and `cursor` as empty or non-negative integer string.
+: `GET /api/thenv/audit` enforces `eventType` against `ThenvAuditEventType` enum values.
+: `PUT /api/thenv/policy` enforces binding `role` against `ROLE_READER | ROLE_WRITER | ROLE_ADMIN` and rejects malformed bindings.
+: Invalid request shapes, including malformed JSON in body routes, return deterministic `400` responses.
 
 Connect RPC services (implemented):
 - `BundleService`
