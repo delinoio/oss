@@ -193,7 +193,7 @@ Required baseline logs:
 Logging boundary rules:
 - Structured logs must go to internal log sink.
 - Child stdout/stderr streams must remain unmodified terminal payload.
-- Retention sweep must emit per-session `cleanup_result` logs for skip/remove/error outcomes with explicit `cleanup_reason` values (`not_expired`, `active_session`, `unreadable_not_expired`, `unreadable_expired`, `unreadable_stat_error`, `remove_error`).
+- Retention sweep must emit per-session `cleanup_result` logs for skip/remove/error outcomes with explicit `cleanup_reason` values (`not_expired`, `active_session`, `expired`, `unreadable_not_expired`, `unreadable_expired`, `unreadable_stat_error`, `remove_error`).
 
 ## Build and Test
 Validation commands:

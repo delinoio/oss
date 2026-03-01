@@ -29,6 +29,7 @@ type cleanupLogReason string
 const (
 	cleanupLogReasonNotExpired           cleanupLogReason = "not_expired"
 	cleanupLogReasonActiveSession        cleanupLogReason = "active_session"
+	cleanupLogReasonExpired              cleanupLogReason = "expired"
 	cleanupLogReasonUnreadableExpired    cleanupLogReason = "unreadable_expired"
 	cleanupLogReasonUnreadableNotExpired cleanupLogReason = "unreadable_not_expired"
 	cleanupLogReasonUnreadableStatErr    cleanupLogReason = "unreadable_stat_error"
@@ -100,7 +101,7 @@ func Sweep(store *state.Store, ttl time.Duration, logger *logging.Logger) (Resul
 			continue
 		}
 		result.Removed++
-		logCleanupResult(logger, sessionID, cleanupLogResultRemoved, "", nil)
+		logCleanupResult(logger, sessionID, cleanupLogResultRemoved, cleanupLogReasonExpired, nil)
 	}
 	return result, nil
 }

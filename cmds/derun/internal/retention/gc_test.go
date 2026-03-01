@@ -113,7 +113,7 @@ func TestSweepRemovesOnlyExpiredCompletedSessions(t *testing.T) {
 	}
 
 	cleanupEvents := readCleanupEventsBySession(t, root)
-	assertCleanupEvent(t, cleanupEvents, shortRetentionExpired, cleanupLogResultRemoved, "")
+	assertCleanupEvent(t, cleanupEvents, shortRetentionExpired, cleanupLogResultRemoved, cleanupLogReasonExpired)
 	assertCleanupEvent(t, cleanupEvents, longRetentionActive, cleanupLogResultSkipped, cleanupLogReasonNotExpired)
 	assertCleanupEvent(t, cleanupEvents, running, cleanupLogResultSkipped, cleanupLogReasonActiveSession)
 }
