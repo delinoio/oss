@@ -30,7 +30,7 @@ describe("thenv audit route", () => {
 
     const response = await GET(
       buildRequest(
-        "workspace=ws-a&project=proj-a&environment=dev&limit=25&cursor=cursor-1&actor=alice&eventType=AUDIT_EVENT_TYPE_PUSH&fromTime=2026-01-01T00:00:00Z&toTime=2026-01-31T23:59:59Z",
+        "workspace=ws-a&project=proj-a&environment=dev&limit=25&cursor=1&actor=alice&eventType=AUDIT_EVENT_TYPE_PUSH&fromTime=2026-01-01T00:00:00Z&toTime=2026-01-31T23:59:59Z",
       ),
     );
 
@@ -44,7 +44,7 @@ describe("thenv audit route", () => {
           environmentId: "dev",
         },
         limit: 25,
-        cursor: "cursor-1",
+        cursor: "1",
         actor: "alice",
         eventType: "AUDIT_EVENT_TYPE_PUSH",
         fromTime: "2026-01-01T00:00:00Z",
@@ -88,5 +88,67 @@ describe("thenv audit route", () => {
 
     expect(response.status).toBe(502);
     await expect(response.json()).resolves.toEqual({ error: "network down" });
+  });
+
+  it.each(["abc", "0", "101"])(
+    "returns 400 for invalid limit value %s",
+    async (limit) => {
+      vi.mocked(callThenvRpc).mockResolvedValue({ events: [], nextCursor: "" });
+
+      const response = await GET(
+        buildRequest(`workspace=ws-a&project=proj-a&environment=dev&limit=${limit}`),
+      );
+
+      expect(response.status).toBe(400);
+      expect(callThenvRpc).not.toHaveBeenCalled();
+      await expect(response.json()).resolves.toEqual({
+        error: "limit must be an integer between 1 and 100",
+      });
+    },
+  );
+
+  it("returns 400 for invalid eventType values", async () => {
+    vi.mocked(callThenvRpc).mockResolvedValue({ events: [], nextCursor: "" });
+
+    const response = await GET(
+      buildRequest(
+        "workspace=ws-a&project=proj-a&environment=dev&eventType=AUDIT_EVENT_TYPE_UNKNOWN",
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(callThenvRpc).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      error:
+        "eventType must be one of: AUDIT_EVENT_TYPE_UNSPECIFIED, AUDIT_EVENT_TYPE_PUSH, AUDIT_EVENT_TYPE_PULL, AUDIT_EVENT_TYPE_LIST, AUDIT_EVENT_TYPE_ROTATE, AUDIT_EVENT_TYPE_ACTIVATE, AUDIT_EVENT_TYPE_POLICY_UPDATE",
+    });
+  });
+
+  it("returns 400 for invalid cursor values", async () => {
+    vi.mocked(callThenvRpc).mockResolvedValue({ events: [], nextCursor: "" });
+
+    const response = await GET(
+      buildRequest("workspace=ws-a&project=proj-a&environment=dev&cursor=abc"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(callThenvRpc).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      error: "cursor must be a non-negative integer",
+    });
+  });
+
+  it("returns 400 for malformed scope query values", async () => {
+    vi.mocked(callThenvRpc).mockResolvedValue({ events: [], nextCursor: "" });
+
+    const response = await GET(
+      buildRequest("workspace=&project=proj-a&environment=dev"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(callThenvRpc).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toEqual({
+      error: "workspace must be a non-empty string",
+    });
   });
 });
