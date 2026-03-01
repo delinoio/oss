@@ -14,6 +14,7 @@ use tracing::info;
 use crate::{
     cli::{
         Cli, Command, OutputFormat, OverrideCommand, SelfCommand, ShowCommand, ToolchainCommand,
+        ToolchainListDetail,
     },
     errors::Result,
     types::{
@@ -93,7 +94,10 @@ fn command_invocation_metadata(
             CommandInvocationMetadata {
                 command_path: toolchain_command_path(subcommand),
                 arg_shape: match command {
-                    ToolchainCommand::List => json!({ "output": output }),
+                    ToolchainCommand::List { quiet, verbose } => json!({
+                        "output": output,
+                        "list_format": ToolchainListDetail::from_flags(*quiet, *verbose).as_str()
+                    }),
                     ToolchainCommand::Install { runtimes } => json!({
                         "output": output,
                         "runtimes_count": runtimes.len()
@@ -207,7 +211,7 @@ fn output_key(output: OutputFormat) -> &'static str {
 
 fn toolchain_command(command: &ToolchainCommand) -> NodeupToolchainCommand {
     match command {
-        ToolchainCommand::List => NodeupToolchainCommand::List,
+        ToolchainCommand::List { .. } => NodeupToolchainCommand::List,
         ToolchainCommand::Install { .. } => NodeupToolchainCommand::Install,
         ToolchainCommand::Uninstall { .. } => NodeupToolchainCommand::Uninstall,
         ToolchainCommand::Link { .. } => NodeupToolchainCommand::Link,
@@ -278,11 +282,17 @@ mod tests {
         let cases = vec![
             (
                 Command::Toolchain {
-                    command: ToolchainCommand::List,
+                    command: ToolchainCommand::List {
+                        quiet: false,
+                        verbose: false,
+                    },
                 },
                 OutputFormat::Human,
                 "nodeup.toolchain.list",
-                json!({ "output": "human" }),
+                json!({
+                    "output": "human",
+                    "list_format": "standard"
+                }),
             ),
             (
                 Command::Toolchain {
