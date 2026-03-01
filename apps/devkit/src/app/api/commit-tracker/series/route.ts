@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { callCommitTrackerRpc } from "@/app/api/commit-tracker/_lib/connect";
+import {
+  CommitTrackerApiError,
+  callCommitTrackerRpc,
+} from "@/app/api/commit-tracker/_lib/connect";
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,6 +35,13 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error) {
+    if (error instanceof CommitTrackerApiError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
+
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 502 });
   }

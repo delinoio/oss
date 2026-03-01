@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { callCommitTrackerRpc } from "@/app/api/commit-tracker/_lib/connect";
+import {
+  CommitTrackerApiError,
+  callCommitTrackerRpc,
+} from "@/app/api/commit-tracker/_lib/connect";
 
 interface PublishPullRequestReportBody {
   provider?: string;
@@ -40,6 +43,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json(response);
   } catch (error) {
+    if (error instanceof CommitTrackerApiError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status },
+      );
+    }
+
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 502 });
   }
