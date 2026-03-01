@@ -110,11 +110,25 @@ func (store *Store) MarkDaemonStarted(pid int) error {
 	return err
 }
 
-func (store *Store) MarkDaemonStopped() error {
-	_, err := store.mutate(func(snapshot *Snapshot, now time.Time) {
+func (store *Store) MarkDaemonStopped(pid int) error {
+	_, err := store.mutateIf(func(snapshot *Snapshot, now time.Time) bool {
+		if snapshot.PID != 0 && snapshot.PID != pid {
+			logging.Event(
+				store.logger,
+				slog.LevelWarn,
+				"state_store_mark_daemon_stopped_pid_mismatch",
+				slog.Int("caller_pid", pid),
+				slog.Int("owner_pid", snapshot.PID),
+				slog.String("path", store.path),
+			)
+			return false
+		}
+
 		snapshot.Running = false
+		snapshot.PID = 0
 		snapshot.ActiveJobs = 0
 		snapshot.UpdatedAt = now.UTC().Format(time.RFC3339Nano)
+		return true
 	})
 	return err
 }
@@ -208,6 +222,13 @@ func IsHeartbeatFresh(snapshot Snapshot, now time.Time, staleThreshold time.Dura
 }
 
 func (store *Store) mutate(updateFn func(snapshot *Snapshot, now time.Time)) (Snapshot, error) {
+	return store.mutateIf(func(snapshot *Snapshot, now time.Time) bool {
+		updateFn(snapshot, now)
+		return true
+	})
+}
+
+func (store *Store) mutateIf(updateFn func(snapshot *Snapshot, now time.Time) bool) (Snapshot, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
@@ -217,7 +238,10 @@ func (store *Store) mutate(updateFn func(snapshot *Snapshot, now time.Time)) (Sn
 	}
 
 	now := store.nowFn()
-	updateFn(&snapshot, now)
+	shouldSave := updateFn(&snapshot, now)
+	if !shouldSave {
+		return snapshot, nil
+	}
 
 	if err := store.saveLocked(snapshot); err != nil {
 		logging.Event(
