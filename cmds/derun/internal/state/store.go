@@ -27,7 +27,10 @@ const (
 	lockFileName   = "append.lock"
 )
 
-var ErrSessionNotFound = errors.New("session not found")
+var (
+	ErrSessionNotFound  = errors.New("session not found")
+	ErrInvalidSessionID = errors.New("invalid session id")
+)
 
 type Store struct {
 	root string
@@ -476,13 +479,16 @@ func (s *Store) readIndexEntries(sessionID string) ([]session.IndexEntry, error)
 
 func validateSessionID(sessionID string) error {
 	if sessionID == "" {
-		return errors.New("session id is empty")
+		return fmt.Errorf("%w: session id is empty", ErrInvalidSessionID)
+	}
+	if sessionID == "." {
+		return fmt.Errorf("%w: session id contains invalid path segment alias", ErrInvalidSessionID)
 	}
 	if strings.Contains(sessionID, "..") {
-		return fmt.Errorf("session id contains invalid path segment")
+		return fmt.Errorf("%w: session id contains invalid path segment", ErrInvalidSessionID)
 	}
 	if strings.ContainsAny(sessionID, `/\\`) {
-		return fmt.Errorf("session id contains path separator")
+		return fmt.Errorf("%w: session id contains path separator", ErrInvalidSessionID)
 	}
 	return nil
 }
