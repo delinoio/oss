@@ -2,11 +2,15 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/delinoio/oss/cmds/devmon/internal/servicecontrol"
 )
 
 func TestExecuteRequiresCommand(t *testing.T) {
@@ -92,4 +96,119 @@ log_level = "info"
 	if !strings.Contains(stderr.String(), "validate config") {
 		t.Fatalf("expected validate error message, got=%s", stderr.String())
 	}
+}
+
+func TestExecuteServiceStatusSuccess(t *testing.T) {
+	originalFactory := newServiceManager
+	t.Cleanup(func() {
+		newServiceManager = originalFactory
+	})
+
+	newServiceManager = func(_ *slog.Logger, _ ...servicecontrol.Option) (servicecontrol.Manager, error) {
+		return &fakeServiceManager{
+			statusSummary: servicecontrol.Summary{
+				Domain:       "gui/501",
+				DaemonHealth: servicecontrol.DaemonHealthRunning,
+			},
+		}, nil
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := execute([]string{"service", "status"}, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"daemon_health": "running"`) {
+		t.Fatalf("expected daemon health in output, got=%s", stdout.String())
+	}
+}
+
+func TestExecuteServiceUnknownAction(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := execute([]string{"service", "unknown"}, stdout, stderr)
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "unknown service action") {
+		t.Fatalf("expected unknown service action output, got=%s", stderr.String())
+	}
+}
+
+func TestExecuteServiceRejectsExtraArguments(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := execute([]string{"service", "status", "extra"}, stdout, stderr)
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "exactly one action") {
+		t.Fatalf("expected extra argument error, got=%s", stderr.String())
+	}
+}
+
+func TestExecuteMenubarWithArguments(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := execute([]string{"menubar", "--unexpected"}, stdout, stderr)
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got=%d", code)
+	}
+	if !strings.Contains(stderr.String(), "menubar does not accept arguments") {
+		t.Fatalf("expected menubar argument error, got=%s", stderr.String())
+	}
+}
+
+func TestExecuteMenubarRuns(t *testing.T) {
+	originalRunMenubar := runMenubar
+	t.Cleanup(func() {
+		runMenubar = originalRunMenubar
+	})
+
+	ran := false
+	runMenubar = func(_ context.Context, _ *slog.Logger) error {
+		ran = true
+		return nil
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := execute([]string{"menubar"}, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got=%d stderr=%s", code, stderr.String())
+	}
+	if !ran {
+		t.Fatal("expected menubar runner to be called")
+	}
+}
+
+type fakeServiceManager struct {
+	statusSummary servicecontrol.Summary
+	statusErr     error
+}
+
+func (manager *fakeServiceManager) Install(_ context.Context) error {
+	return nil
+}
+
+func (manager *fakeServiceManager) Uninstall(_ context.Context) error {
+	return nil
+}
+
+func (manager *fakeServiceManager) Start(_ context.Context) error {
+	return nil
+}
+
+func (manager *fakeServiceManager) Stop(_ context.Context) error {
+	return nil
+}
+
+func (manager *fakeServiceManager) Status(_ context.Context) (servicecontrol.Summary, error) {
+	return manager.statusSummary, manager.statusErr
 }

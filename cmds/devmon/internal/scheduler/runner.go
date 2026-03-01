@@ -12,12 +12,14 @@ import (
 	"github.com/delinoio/oss/cmds/devmon/internal/contracts"
 	"github.com/delinoio/oss/cmds/devmon/internal/executor"
 	"github.com/delinoio/oss/cmds/devmon/internal/logging"
+	"github.com/delinoio/oss/cmds/devmon/internal/state"
 )
 
 type Runner struct {
 	config   *config.Config
 	logger   *slog.Logger
 	executor executor.Executor
+	state    *state.Store
 
 	semaphore chan struct{}
 
@@ -43,6 +45,10 @@ func NewRunner(cfg *config.Config, logger *slog.Logger, commandExecutor executor
 		semaphore: make(chan struct{}, cfg.Daemon.MaxConcurrentJobs),
 		running:   make(map[string]bool),
 	}
+}
+
+func (runner *Runner) SetStateStore(stateStore *state.Store) {
+	runner.state = stateStore
 }
 
 func (runner *Runner) Run(ctx context.Context) error {
@@ -127,6 +133,7 @@ func (runner *Runner) trigger(ctx context.Context, job scheduledJob, triggerSour
 		runner.activeJobs++
 		activeJobs := runner.activeJobs
 		runner.mu.Unlock()
+		runner.markRunStarted(job, activeJobs)
 
 		runner.runWaitGroup.Add(1)
 		go runner.executeRun(ctx, job, runID, triggerSource, jobKey, activeJobs)
@@ -220,6 +227,11 @@ func (runner *Runner) executeRun(
 		slog.Int("active_jobs", runner.currentActiveJobs()),
 		slog.String("trigger", triggerSource),
 	)
+	activeJobsAfterCompletion := runner.currentActiveJobs() - 1
+	if activeJobsAfterCompletion < 0 {
+		activeJobsAfterCompletion = 0
+	}
+	runner.markRunCompleted(job, result, activeJobsAfterCompletion)
 }
 
 func (runner *Runner) logSkip(
@@ -248,6 +260,7 @@ func (runner *Runner) logSkip(
 		slog.Int("active_jobs", activeJobs),
 		slog.String("trigger", triggerSource),
 	)
+	runner.markRunSkipped(job, outcome, skipReason, activeJobs)
 }
 
 func (runner *Runner) nextRunID() string {
@@ -266,6 +279,75 @@ func (runner *Runner) currentActiveJobs() int {
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
 	return runner.activeJobs
+}
+
+func (runner *Runner) ActiveJobs() int {
+	return runner.currentActiveJobs()
+}
+
+func (runner *Runner) markRunStarted(job scheduledJob, activeJobs int) {
+	if runner.state == nil {
+		return
+	}
+	if err := runner.state.MarkRunStarted(job.folder.ID, job.job.ID, activeJobs); err != nil {
+		logging.Event(
+			runner.logger,
+			slog.LevelError,
+			"state_store_mark_run_started_failed",
+			slog.String("folder_id", job.folder.ID),
+			slog.String("job_id", job.job.ID),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
+func (runner *Runner) markRunCompleted(job scheduledJob, result executor.Result, activeJobs int) {
+	if runner.state == nil {
+		return
+	}
+	errorText := ""
+	if result.Err != nil {
+		errorText = result.Err.Error()
+	}
+	if err := runner.state.MarkRunCompleted(state.RunCompletedInput{
+		Outcome:    result.Outcome,
+		FolderID:   job.folder.ID,
+		JobID:      job.job.ID,
+		DurationMS: result.Duration.Milliseconds(),
+		Error:      errorText,
+		ActiveJobs: activeJobs,
+	}); err != nil {
+		logging.Event(
+			runner.logger,
+			slog.LevelError,
+			"state_store_mark_run_completed_failed",
+			slog.String("folder_id", job.folder.ID),
+			slog.String("job_id", job.job.ID),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
+func (runner *Runner) markRunSkipped(job scheduledJob, outcome contracts.DevmonRunOutcome, skipReason string, activeJobs int) {
+	if runner.state == nil {
+		return
+	}
+	if err := runner.state.MarkRunSkipped(state.RunSkippedInput{
+		Outcome:    outcome,
+		FolderID:   job.folder.ID,
+		JobID:      job.job.ID,
+		SkipReason: skipReason,
+		ActiveJobs: activeJobs,
+	}); err != nil {
+		logging.Event(
+			runner.logger,
+			slog.LevelError,
+			"state_store_mark_run_skipped_failed",
+			slog.String("folder_id", job.folder.ID),
+			slog.String("job_id", job.job.ID),
+			slog.String("error", err.Error()),
+		)
+	}
 }
 
 func (runner *Runner) flattenJobs() []scheduledJob {
