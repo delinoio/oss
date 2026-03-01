@@ -130,10 +130,7 @@ func TestConcurrentSessionsAreIsolated(t *testing.T) {
 			t.Fatalf("unexpected state for %s: got=%s want=%s", tc.sessionID, detail.State, contracts.DerunSessionStateExited)
 		}
 
-		outputText := readAllOutput(t, store, tc.sessionID)
-		if !strings.Contains(outputText, tc.token) {
-			t.Fatalf("session %s output missing token %q: %q", tc.sessionID, tc.token, outputText)
-		}
+		outputText := waitForOutputContainingToken(t, store, tc.sessionID, tc.token, 2*time.Second)
 		for _, other := range sessions {
 			if other.sessionID == tc.sessionID {
 				continue
@@ -226,6 +223,29 @@ func readAllOutput(t *testing.T, store *state.Store, sessionID string) string {
 		builder.Write(decoded)
 	}
 	return builder.String()
+}
+
+func waitForOutputContainingToken(
+	t *testing.T,
+	store *state.Store,
+	sessionID string,
+	token string,
+	timeout time.Duration,
+) string {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	lastOutput := ""
+	for time.Now().Before(deadline) {
+		lastOutput = readAllOutput(t, store, sessionID)
+		if strings.Contains(lastOutput, token) {
+			return lastOutput
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatalf("session %s output missing token %q within %s: %q", sessionID, token, timeout, lastOutput)
+	return ""
 }
 
 func waitForSessionPID(t *testing.T, store *state.Store, sessionID string, timeout time.Duration) int {
