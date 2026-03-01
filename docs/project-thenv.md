@@ -240,6 +240,7 @@ Acceptance-focused scenarios:
 12. Web console renders metadata only and never plaintext secrets.
 13. CLI pull conflict failures and pull successes both emit structured baseline logs including `conflict_policy`, `request_id`, and `trace_id`.
 14. Web console audit table renders per-event outcome and honors optional `fromTime`/`toTime` filters via Devkit audit proxy route.
+15. Applying/clearing audit time-range filters refreshes only audit data and does not discard unsaved policy draft bindings in the web console.
 
 ## Roadmap
 - Phase 1: Connect RPC foundation, versioned multi-file bundles, RBAC, and secure push/pull/list/rotate flows.

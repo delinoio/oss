@@ -105,4 +105,25 @@ describe("ThenvPage", () => {
       ).toBe(true);
     });
   });
+
+  it("keeps unsaved policy draft bindings when applying audit filters", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    await screen.findByText("Denied");
+
+    await user.type(screen.getByLabelText("Subject"), "draft-user");
+    await user.click(screen.getByRole("button", { name: "Add Binding" }));
+    expect(screen.getByText("draft-user")).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText("From Time (ISO)"));
+    await user.type(screen.getByLabelText("From Time (ISO)"), "2026-01-01T00:00:00Z");
+    await user.clear(screen.getByLabelText("To Time (ISO)"));
+    await user.type(screen.getByLabelText("To Time (ISO)"), "2026-01-31T23:59:59Z");
+    await user.click(screen.getByRole("button", { name: "Apply Audit Filters" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("draft-user")).toBeInTheDocument();
+    });
+  });
 });

@@ -110,7 +110,47 @@ export function ThenvConsole() {
     [versions],
   );
 
-  const loadConsoleData = useCallback(async () => {
+  const loadAuditEvents = useCallback(async (fromTime: string, toTime: string) => {
+    setLoading(true);
+    setErrorMessage("");
+
+    try {
+      const auditResponse = await listAuditEvents({
+        scope,
+        fromTime: fromTime || undefined,
+        toTime: toTime || undefined,
+      });
+      setAuditEvents(auditResponse.events);
+
+      logInfo({
+        event: LogEvent.RouteRender,
+        route: "/apps/thenv",
+        message: "Loaded thenv audit events.",
+        context: {
+          auditFromTime: fromTime || undefined,
+          auditToTime: toTime || undefined,
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load thenv audit data.";
+      setErrorMessage(message);
+      logError({
+        event: LogEvent.RouteLoadError,
+        route: "/apps/thenv",
+        message,
+        error,
+        context: {
+          auditFromTime: fromTime || undefined,
+          auditToTime: toTime || undefined,
+        },
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [scope]);
+
+  const loadConsoleData = useCallback(async (fromTime: string, toTime: string) => {
     setLoading(true);
     setErrorMessage("");
 
@@ -120,8 +160,8 @@ export function ThenvConsole() {
         getPolicy(scope),
         listAuditEvents({
           scope,
-          fromTime: appliedAuditFromTime || undefined,
-          toTime: appliedAuditToTime || undefined,
+          fromTime: fromTime || undefined,
+          toTime: toTime || undefined,
         }),
       ]);
 
@@ -136,8 +176,8 @@ export function ThenvConsole() {
         route: "/apps/thenv",
         message: "Loaded thenv metadata console state.",
         context: {
-          auditFromTime: appliedAuditFromTime || undefined,
-          auditToTime: appliedAuditToTime || undefined,
+          auditFromTime: fromTime || undefined,
+          auditToTime: toTime || undefined,
         },
       });
     } catch (error) {
@@ -150,18 +190,18 @@ export function ThenvConsole() {
         message,
         error,
         context: {
-          auditFromTime: appliedAuditFromTime || undefined,
-          auditToTime: appliedAuditToTime || undefined,
+          auditFromTime: fromTime || undefined,
+          auditToTime: toTime || undefined,
         },
       });
     } finally {
       setLoading(false);
     }
-  }, [appliedAuditFromTime, appliedAuditToTime, scope]);
+  }, [scope]);
 
   useEffect(() => {
-    void loadConsoleData();
-  }, [loadConsoleData]);
+    void loadConsoleData(appliedAuditFromTime, appliedAuditToTime);
+  }, [scope]);
 
   const handleScopeChange = (key: keyof ThenvScope, value: string) => {
     setScope((previous) => ({ ...previous, [key]: value }));
@@ -169,13 +209,16 @@ export function ThenvConsole() {
 
   const handleRefresh = (event: FormEvent) => {
     event.preventDefault();
-    void loadConsoleData();
+    void loadConsoleData(appliedAuditFromTime, appliedAuditToTime);
   };
 
   const handleApplyAuditFilters = (event: FormEvent) => {
     event.preventDefault();
-    setAppliedAuditFromTime(auditFromTimeInput.trim());
-    setAppliedAuditToTime(auditToTimeInput.trim());
+    const nextFromTime = auditFromTimeInput.trim();
+    const nextToTime = auditToTimeInput.trim();
+    setAppliedAuditFromTime(nextFromTime);
+    setAppliedAuditToTime(nextToTime);
+    void loadAuditEvents(nextFromTime, nextToTime);
   };
 
   const handleClearAuditFilters = () => {
@@ -183,6 +226,7 @@ export function ThenvConsole() {
     setAuditToTimeInput("");
     setAppliedAuditFromTime("");
     setAppliedAuditToTime("");
+    void loadAuditEvents("", "");
   };
 
   const handleActivate = async (event: FormEvent) => {
@@ -198,7 +242,7 @@ export function ThenvConsole() {
     try {
       await activateVersion(scope, target);
       setActivateTarget("");
-      await loadConsoleData();
+      await loadConsoleData(appliedAuditFromTime, appliedAuditToTime);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Activate operation failed.",
@@ -245,7 +289,7 @@ export function ThenvConsole() {
       setBindings(response.bindings);
       setDraftBindings(response.bindings);
       setPolicyRevision(response.policyRevision);
-      await loadConsoleData();
+      await loadConsoleData(appliedAuditFromTime, appliedAuditToTime);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Save policy request failed.",
