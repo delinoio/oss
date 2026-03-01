@@ -21,7 +21,12 @@ pub fn execute(args: &ChangedArgs, output: OutputFormat, app: &CargoMonoApp) -> 
     let changed_files = git::changed_files(&args.base, args.include_uncommitted)?;
     let changed_packages = app
         .workspace
-        .changed_packages(&changed_files.paths, !args.direct_only)
+        .changed_packages_with_filters(
+            &changed_files.paths,
+            !args.direct_only,
+            &args.include_path,
+            &args.exclude_path,
+        )?
         .into_iter()
         .collect::<Vec<_>>();
 

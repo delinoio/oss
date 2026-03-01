@@ -4,6 +4,7 @@ use std::{
 };
 
 use cargo_metadata::{MetadataCommand, PackageId};
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use semver::Version;
 use serde::Serialize;
 
@@ -154,19 +155,46 @@ impl Workspace {
         changed_paths: &BTreeSet<PathBuf>,
         include_dependents: bool,
     ) -> BTreeSet<String> {
+        let empty_filters = Vec::<String>::new();
+        self.changed_packages_with_filters(
+            changed_paths,
+            include_dependents,
+            &empty_filters,
+            &empty_filters,
+        )
+        .expect("empty changed path filters must be valid")
+    }
+
+    pub fn changed_packages_with_filters(
+        &self,
+        changed_paths: &BTreeSet<PathBuf>,
+        include_dependents: bool,
+        include_path_patterns: &[String],
+        exclude_path_patterns: &[String],
+    ) -> Result<BTreeSet<String>> {
         if changed_paths
             .iter()
             .any(|path| self.is_global_impact_path(path))
         {
-            return self.all_package_names();
+            return Ok(self.all_package_names());
         }
 
+        let include_path_globset = compile_globset(include_path_patterns, "--include-path")?;
+        let exclude_path_globset = compile_globset(exclude_path_patterns, "--exclude-path")?;
         let mut direct_matches = BTreeSet::new();
 
         for raw_path in changed_paths {
             let Some(relative_path) = self.normalize_relative_path(raw_path) else {
                 continue;
             };
+
+            if path_is_excluded_by_filters(
+                &relative_path,
+                include_path_globset.as_ref(),
+                exclude_path_globset.as_ref(),
+            ) {
+                continue;
+            }
 
             for (name, package) in &self.packages {
                 if relative_path.starts_with(&package.directory_relative_path) {
@@ -176,10 +204,10 @@ impl Workspace {
         }
 
         if include_dependents {
-            return self.expand_dependents(&direct_matches);
+            return Ok(self.expand_dependents(&direct_matches));
         }
 
-        direct_matches
+        Ok(direct_matches)
     }
 
     pub fn expand_dependents(&self, names: &BTreeSet<String>) -> BTreeSet<String> {
@@ -297,9 +325,42 @@ impl Workspace {
     }
 }
 
+fn compile_globset(patterns: &[String], flag: &str) -> Result<Option<GlobSet>> {
+    if patterns.is_empty() {
+        return Ok(None);
+    }
+
+    let mut builder = GlobSetBuilder::new();
+    for pattern in patterns {
+        let glob = Glob::new(pattern).map_err(|error| {
+            CargoMonoError::invalid_input(format!("Invalid {flag} pattern `{pattern}`: {error}"))
+        })?;
+        builder.add(glob);
+    }
+
+    let globset = builder.build().map_err(|error| {
+        CargoMonoError::invalid_input(format!("Failed to build {flag} matcher: {error}"))
+    })?;
+
+    Ok(Some(globset))
+}
+
+fn path_is_excluded_by_filters(
+    relative_path: &Path,
+    include_path_globset: Option<&GlobSet>,
+    exclude_path_globset: Option<&GlobSet>,
+) -> bool {
+    let normalized_path = relative_path.to_string_lossy().replace('\\', "/");
+    let include_override =
+        include_path_globset.is_some_and(|globset| globset.is_match(&normalized_path));
+    let excluded = exclude_path_globset.is_some_and(|globset| globset.is_match(&normalized_path));
+    excluded && !include_override
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::errors::ErrorKind;
 
     fn package(name: &str, root: &Path) -> WorkspacePackage {
         let directory_relative_path = PathBuf::from(format!("crates/{name}"));
@@ -368,6 +429,86 @@ mod tests {
         let paths = BTreeSet::from([PathBuf::from("Cargo.toml")]);
 
         let changed = workspace.changed_packages(&paths, false);
+
+        assert_eq!(
+            changed,
+            BTreeSet::from(["app".to_string(), "cli".to_string(), "core".to_string()])
+        );
+    }
+
+    #[test]
+    fn changed_packages_with_filters_excludes_agents_docs_by_default() {
+        let workspace = fixture_workspace();
+        let paths = BTreeSet::from([PathBuf::from("crates/core/AGENTS.md")]);
+        let include_path_patterns = Vec::new();
+        let exclude_path_patterns = vec!["**/AGENTS.md".to_string()];
+
+        let changed = workspace
+            .changed_packages_with_filters(
+                &paths,
+                false,
+                &include_path_patterns,
+                &exclude_path_patterns,
+            )
+            .unwrap();
+
+        assert_eq!(changed, BTreeSet::new());
+    }
+
+    #[test]
+    fn changed_packages_with_filters_include_override_reincludes_agents_docs() {
+        let workspace = fixture_workspace();
+        let paths = BTreeSet::from([PathBuf::from("crates/core/AGENTS.md")]);
+        let include_path_patterns = vec!["**/AGENTS.md".to_string()];
+        let exclude_path_patterns = vec!["**/AGENTS.md".to_string()];
+
+        let changed = workspace
+            .changed_packages_with_filters(
+                &paths,
+                false,
+                &include_path_patterns,
+                &exclude_path_patterns,
+            )
+            .unwrap();
+
+        assert_eq!(changed, BTreeSet::from(["core".to_string()]));
+    }
+
+    #[test]
+    fn changed_packages_with_filters_rejects_invalid_exclude_pattern() {
+        let workspace = fixture_workspace();
+        let paths = BTreeSet::from([PathBuf::from("crates/core/src/lib.rs")]);
+        let include_path_patterns = Vec::new();
+        let exclude_path_patterns = vec!["[".to_string()];
+
+        let error = workspace
+            .changed_packages_with_filters(
+                &paths,
+                false,
+                &include_path_patterns,
+                &exclude_path_patterns,
+            )
+            .expect_err("expected invalid exclude pattern error");
+
+        assert_eq!(error.kind, ErrorKind::InvalidInput);
+        assert!(error.message.contains("--exclude-path"));
+    }
+
+    #[test]
+    fn changed_packages_with_filters_global_impact_paths_cannot_be_excluded() {
+        let workspace = fixture_workspace();
+        let paths = BTreeSet::from([PathBuf::from("Cargo.toml")]);
+        let include_path_patterns = Vec::new();
+        let exclude_path_patterns = vec!["Cargo.toml".to_string()];
+
+        let changed = workspace
+            .changed_packages_with_filters(
+                &paths,
+                false,
+                &include_path_patterns,
+                &exclude_path_patterns,
+            )
+            .unwrap();
 
         assert_eq!(
             changed,

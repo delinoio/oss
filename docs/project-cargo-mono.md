@@ -84,13 +84,19 @@ Target selection contract (`bump`, `publish`):
 - `--changed` uses `changed` computation contract.
 - `--package <name>` supports repeated explicit package targeting.
 - Selectors are mutually exclusive (`--all`, `--changed`, `--package`).
+- `--changed` honors `--include-path` and `--exclude-path` filters from `ChangedArgs`.
 
 `changed` contract:
 - Base ref default: `origin/main`.
 - Computes merge base with `git merge-base <base> HEAD`.
 - Uses `git diff --name-only <merge-base> HEAD` as baseline.
 - `--include-uncommitted` additionally includes staged, unstaged, and untracked paths.
+- `--exclude-path <glob>` is repeatable and defaults to excluding `**/AGENTS.md`.
+- `--include-path <glob>` is repeatable and acts as an override for excluded paths.
+- Include/exclude glob matching is evaluated against workspace-relative paths using `/`.
+- Invalid include/exclude glob values fail with an invalid-input error.
 - Global impact files (`Cargo.toml`, `Cargo.lock`, `rust-toolchain`) mark all workspace packages as changed.
+- Global impact files cannot be filtered out by include/exclude path rules.
 - Default mode includes direct changes plus reverse dependency propagation.
 - `--direct-only` disables reverse dependency propagation.
 

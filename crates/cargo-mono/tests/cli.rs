@@ -118,6 +118,84 @@ fn changed_accepts_base_override() {
 }
 
 #[test]
+fn changed_excludes_agents_docs_by_default() {
+    let temp_dir = init_library_workspace();
+    fs::write(
+        temp_dir.path().join("crates/alpha/AGENTS.md"),
+        "agent docs\n",
+    )
+    .expect("failed to write AGENTS.md");
+    run_git(temp_dir.path(), &["add", "crates/alpha/AGENTS.md"]);
+    run_git(
+        temp_dir.path(),
+        &[
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "docs",
+        ],
+    );
+
+    cargo_mono_command()
+        .current_dir(temp_dir.path())
+        .args([
+            "--output",
+            "json",
+            "changed",
+            "--base",
+            "HEAD~1",
+            "--direct-only",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"packages\": []"));
+}
+
+#[test]
+fn changed_include_path_reincludes_agents_docs() {
+    let temp_dir = init_library_workspace();
+    fs::write(
+        temp_dir.path().join("crates/alpha/AGENTS.md"),
+        "agent docs\n",
+    )
+    .expect("failed to write AGENTS.md");
+    run_git(temp_dir.path(), &["add", "crates/alpha/AGENTS.md"]);
+    run_git(
+        temp_dir.path(),
+        &[
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "docs",
+        ],
+    );
+
+    cargo_mono_command()
+        .current_dir(temp_dir.path())
+        .args([
+            "--output",
+            "json",
+            "changed",
+            "--base",
+            "HEAD~1",
+            "--direct-only",
+            "--include-path",
+            "**/AGENTS.md",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"alpha\""));
+}
+
+#[test]
 fn bump_succeeds_when_metadata_creates_untracked_lockfile() {
     let temp_dir = init_library_workspace();
 

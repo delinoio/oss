@@ -23,7 +23,12 @@ pub fn resolve_targets(
 ) -> Result<ResolvedTargets> {
     if target.changed {
         let changed_files = git::changed_files(&changed.base, changed.include_uncommitted)?;
-        let names = workspace.changed_packages(&changed_files.paths, !changed.direct_only);
+        let names = workspace.changed_packages_with_filters(
+            &changed_files.paths,
+            !changed.direct_only,
+            &changed.include_path,
+            &changed.exclude_path,
+        )?;
 
         return Ok(ResolvedTargets {
             selector: TargetSelector::Changed,

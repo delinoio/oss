@@ -74,6 +74,10 @@ pub enum Command {
     Publish(PublishArgs),
 }
 
+fn default_exclude_path_patterns() -> Vec<String> {
+    vec!["**/AGENTS.md".to_string()]
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct ChangedArgs {
     /// Base ref used for merge-base and diff calculation.
@@ -85,6 +89,16 @@ pub struct ChangedArgs {
     /// Disable reverse dependency expansion and return direct matches only.
     #[arg(long)]
     pub direct_only: bool,
+    /// Add changed-path include override glob(s).
+    #[arg(long, value_name = "GLOB")]
+    pub include_path: Vec<String>,
+    /// Add changed-path exclude glob(s).
+    #[arg(
+        long,
+        value_name = "GLOB",
+        default_values_t = default_exclude_path_patterns()
+    )]
+    pub exclude_path: Vec<String>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -144,7 +158,7 @@ mod tests {
 
     use clap::Parser;
 
-    use super::{normalized_args_os, Cli};
+    use super::{normalized_args_os, Cli, Command};
 
     #[test]
     fn bump_requires_level() {
@@ -170,6 +184,45 @@ mod tests {
     fn bump_requires_preid_for_prerelease_level() {
         let parsed = Cli::try_parse_from(["cargo", "bump", "--level", "prerelease"]);
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn changed_uses_default_exclude_path_pattern() {
+        let cli = Cli::parse_from(["cargo", "changed"]);
+        let Command::Changed(args) = cli.command else {
+            panic!("expected changed command");
+        };
+
+        assert!(args.include_path.is_empty());
+        assert_eq!(args.exclude_path, vec!["**/AGENTS.md".to_string()]);
+    }
+
+    #[test]
+    fn changed_accepts_repeatable_path_filters() {
+        let cli = Cli::parse_from([
+            "cargo",
+            "changed",
+            "--include-path",
+            "**/README.md",
+            "--include-path",
+            "**/AGENTS.md",
+            "--exclude-path",
+            "**/*.md",
+            "--exclude-path",
+            "docs/**",
+        ]);
+        let Command::Changed(args) = cli.command else {
+            panic!("expected changed command");
+        };
+
+        assert_eq!(
+            args.include_path,
+            vec!["**/README.md".to_string(), "**/AGENTS.md".to_string()]
+        );
+        assert_eq!(
+            args.exclude_path,
+            vec!["**/*.md".to_string(), "docs/**".to_string()]
+        );
     }
 
     #[test]
