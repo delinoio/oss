@@ -22,6 +22,7 @@ The monorepo is documentation-first: structure, ownership, and contracts must be
 - `docs/project-devkit-commit-tracker.md`: Commit Tracker contracts (Web UI + API server + collector).
 - `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app.
 - `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
+- `docs/project-devmon.md`: Go CLI daemon for recurring folder command automation.
 
 ## Project Identifier Contract
 Treat project IDs as stable enum-style values:
@@ -31,6 +32,7 @@ enum ProjectId {
   CargoMono = "cargo-mono",
   Nodeup = "nodeup",
   Derun = "derun",
+  Devmon = "devmon",
   Mpapp = "mpapp",
   Devkit = "devkit",
   DevkitCommitTracker = "devkit-commit-tracker",

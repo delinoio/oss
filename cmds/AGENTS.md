@@ -7,6 +7,7 @@
 ### Scope in This Domain
 
 - `cmds/derun`: Go tool for AI coding-agent workflow orchestration.
+- `cmds/devmon`: Go daemon CLI for recurring folder command automation.
 - `cmds/thenv`: Secure `.env` sharing CLI.
 
 ### Go Command Rules
@@ -24,5 +25,6 @@
 ### Testing and Validation
 
 - Run relevant Go tests (`go test`) when code in this domain changes.
+- Update `docs/project-devmon.md` whenever devmon command shape or config contracts change.
 - Update `docs/project-derun.md` whenever command shape or config contracts change.
 - Update `docs/project-thenv.md` whenever thenv CLI operations or trust boundaries change.

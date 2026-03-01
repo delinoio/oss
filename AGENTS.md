@@ -31,6 +31,7 @@
 - `nodeup` -> `crates/nodeup`
 - `cargo-mono` -> `crates/cargo-mono`
 - `derun` -> `cmds/derun`
+- `devmon` -> `cmds/devmon`
 - `mpapp` -> `apps/mpapp`
 - `devkit` -> `apps/devkit`
 - `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`
