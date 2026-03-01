@@ -565,6 +565,122 @@ a {
   color: var(--tds-gray-600);
 }
 
+.dk-ct-root {
+  gap: 14px;
+}
+
+.dk-ct-header {
+  background:
+    linear-gradient(180deg, rgba(232, 243, 255, 0.42) 0%, rgba(255, 255, 255, 0) 55%),
+    #ffffff;
+}
+
+.dk-ct-form-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.dk-ct-actions {
+  margin-top: 4px;
+}
+
+.dk-ct-compact-field {
+  max-width: 260px;
+}
+
+.dk-ct-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dk-ct-num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.dk-ct-metric-cell {
+  font-weight: 600;
+  color: var(--tds-gray-800);
+}
+
+.dk-ct-verdict-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.dk-ct-badge-pass {
+  color: var(--tds-green-700);
+  background: var(--tds-green-50);
+  border-color: #beeccf;
+}
+
+.dk-ct-badge-warn {
+  color: #9f5f00;
+  background: #fff8eb;
+  border-color: #ffe4b8;
+}
+
+.dk-ct-badge-fail {
+  color: var(--tds-red-700);
+  background: var(--tds-red-50);
+  border-color: #f7c5cc;
+}
+
+.dk-ct-badge-neutral {
+  color: var(--tds-gray-700);
+  background: var(--tds-gray-100);
+  border-color: var(--tds-gray-200);
+}
+
+.dk-ct-row-pass td {
+  background: rgba(234, 250, 240, 0.3);
+}
+
+.dk-ct-row-warn td {
+  background: rgba(255, 248, 235, 0.45);
+}
+
+.dk-ct-row-fail td {
+  background: rgba(250, 224, 228, 0.32);
+}
+
+.dk-ct-row-neutral td {
+  background: #ffffff;
+}
+
+.dk-ct-delta-positive {
+  color: var(--tds-blue-700) !important;
+}
+
+.dk-ct-delta-negative {
+  color: var(--tds-green-700) !important;
+}
+
+.dk-ct-delta-neutral {
+  color: var(--tds-gray-700) !important;
+}
+
+@media (max-width: 900px) {
+  .dk-ct-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dk-ct-compact-field {
+    max-width: 100%;
+  }
+}
+
 @media (max-width: 720px) {
   .dk-topbar-inner {
     padding: 18px 16px 16px;
@@ -580,5 +696,9 @@ a {
 
   .dk-table {
     min-width: 540px;
+  }
+
+  .dk-ct-verdict-badge {
+    min-width: 76px;
   }
 }

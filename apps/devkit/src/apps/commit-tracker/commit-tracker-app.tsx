@@ -36,6 +36,47 @@ function formatNumber(value: number): string {
   return Number.isFinite(value) ? value.toFixed(3) : "-";
 }
 
+function formatDeltaPercent(value: number): string {
+  return Number.isFinite(value) ? `${value.toFixed(2)}%` : "-";
+}
+
+function verdictBadgeClass(level: EvaluationLevel): string {
+  switch (level) {
+    case EvaluationLevel.Pass:
+      return "dk-ct-badge-pass";
+    case EvaluationLevel.Warn:
+      return "dk-ct-badge-warn";
+    case EvaluationLevel.Fail:
+      return "dk-ct-badge-fail";
+    case EvaluationLevel.Neutral:
+      return "dk-ct-badge-neutral";
+    default:
+      return "dk-ct-badge-neutral";
+  }
+}
+
+function verdictRowClass(level: EvaluationLevel): string {
+  switch (level) {
+    case EvaluationLevel.Pass:
+      return "dk-ct-row-pass";
+    case EvaluationLevel.Warn:
+      return "dk-ct-row-warn";
+    case EvaluationLevel.Fail:
+      return "dk-ct-row-fail";
+    case EvaluationLevel.Neutral:
+      return "dk-ct-row-neutral";
+    default:
+      return "dk-ct-row-neutral";
+  }
+}
+
+function deltaClass(value: number): string {
+  if (!Number.isFinite(value) || value === 0) {
+    return "dk-ct-delta-neutral";
+  }
+  return value > 0 ? "dk-ct-delta-positive" : "dk-ct-delta-negative";
+}
+
 export function CommitTrackerApp() {
   const [provider, setProvider] = useState<GitProviderKind>(GitProviderKind.GitHub);
   const [repository, setRepository] = useState<string>("acme/repo");
@@ -205,165 +246,156 @@ export function CommitTrackerApp() {
   };
 
   return (
-    <section aria-label="commit tracker dashboard">
-      <h2 style={{ marginTop: 0 }}>Commit Tracker Dashboard</h2>
-      <p>
-        Track commit-level metrics, compare base/head commits, and publish provider
-        reports for pull requests.
-      </p>
+    <section aria-label="commit tracker dashboard" className="dk-stack dk-ct-root">
+      <section className="dk-card dk-ct-header">
+        <p className="dk-eyebrow">Operational Dashboard</p>
+        <h2 className="dk-section-title">Commit Tracker Dashboard</h2>
+        <p className="dk-paragraph">
+          Track commit-level metrics, compare base/head commits, and publish provider
+          reports for pull requests.
+        </p>
+      </section>
 
-      <form onSubmit={handleLoadSeries} style={{ marginBottom: "1rem" }}>
-        <fieldset style={{ border: "1px solid #d7e2ea", padding: "0.75rem" }}>
-          <legend>Filters</legend>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: "0.75rem",
-            }}
-          >
-            <label>
+      <form onSubmit={handleLoadSeries} className="dk-card">
+        <fieldset className="dk-fieldset">
+          <legend className="dk-fieldset-legend">Filters</legend>
+          <div className="dk-form-grid dk-ct-form-grid">
+            <label className="dk-field">
               Provider
               <select
+                className="dk-select"
                 value={provider}
                 onChange={(event) => setProvider(event.target.value as GitProviderKind)}
-                style={{ width: "100%" }}
               >
                 <option value={GitProviderKind.GitHub}>GitHub</option>
                 <option value={GitProviderKind.GitLab}>GitLab</option>
                 <option value={GitProviderKind.Bitbucket}>Bitbucket</option>
               </select>
             </label>
-            <label>
+            <label className="dk-field">
               Repository
               <input
+                className="dk-input"
                 value={repository}
                 onChange={(event) => setRepository(event.target.value)}
-                style={{ width: "100%" }}
               />
             </label>
-            <label>
+            <label className="dk-field">
               Branch
               <input
+                className="dk-input"
                 value={branch}
                 onChange={(event) => setBranch(event.target.value)}
-                style={{ width: "100%" }}
               />
             </label>
-            <label>
+            <label className="dk-field">
               Environment
               <input
+                className="dk-input"
                 value={environment}
                 onChange={(event) => setEnvironment(event.target.value)}
-                style={{ width: "100%" }}
               />
             </label>
-            <label>
+            <label className="dk-field">
               Metric Key
               <input
+                className="dk-input"
                 value={metricKey}
                 onChange={(event) => setMetricKey(event.target.value)}
-                style={{ width: "100%" }}
                 placeholder="optional"
               />
             </label>
-            <label>
+            <label className="dk-field">
               From Time (ISO)
               <input
+                className="dk-input"
                 value={fromTime}
                 onChange={(event) => setFromTime(event.target.value)}
-                style={{ width: "100%" }}
                 placeholder="2026-01-01T00:00:00Z"
               />
             </label>
-            <label>
+            <label className="dk-field">
               To Time (ISO)
               <input
+                className="dk-input"
                 value={toTime}
                 onChange={(event) => setToTime(event.target.value)}
-                style={{ width: "100%" }}
                 placeholder="2026-01-31T23:59:59Z"
               />
             </label>
-            <label>
+            <label className="dk-field">
               Limit
               <input
+                className="dk-input"
                 type="number"
                 min={1}
                 max={500}
                 value={limit}
                 onChange={(event) => setLimit(Number(event.target.value) || 50)}
-                style={{ width: "100%" }}
               />
             </label>
           </div>
-          <div style={{ marginTop: "0.75rem" }}>
-            <button type="submit" disabled={loadingSeries}>
+          <div className="dk-button-group dk-ct-actions">
+            <button type="submit" className="dk-button" disabled={loadingSeries}>
               {loadingSeries ? "Loading series..." : "Load Metric Series"}
             </button>
           </div>
         </fieldset>
       </form>
 
-      <form onSubmit={handleLoadComparison} style={{ marginBottom: "1rem" }}>
-        <fieldset style={{ border: "1px solid #d7e2ea", padding: "0.75rem" }}>
-          <legend>Pull Request Comparison</legend>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: "0.75rem",
-            }}
-          >
-            <label>
+      <form onSubmit={handleLoadComparison} className="dk-card">
+        <fieldset className="dk-fieldset">
+          <legend className="dk-fieldset-legend">Pull Request Comparison</legend>
+          <div className="dk-form-grid dk-ct-form-grid">
+            <label className="dk-field">
               Base Commit
               <input
+                className="dk-input"
                 value={baseCommitSha}
                 onChange={(event) => setBaseCommitSha(event.target.value)}
-                style={{ width: "100%" }}
               />
             </label>
-            <label>
+            <label className="dk-field">
               Head Commit
               <input
+                className="dk-input"
                 value={headCommitSha}
                 onChange={(event) => setHeadCommitSha(event.target.value)}
-                style={{ width: "100%" }}
               />
             </label>
-            <label>
+            <label className="dk-field">
               Metric Keys (comma-separated)
               <input
+                className="dk-input"
                 value={metricKeysInput}
                 onChange={(event) => setMetricKeysInput(event.target.value)}
-                style={{ width: "100%" }}
                 placeholder="binary-size,cpu-ms"
               />
             </label>
           </div>
-          <div style={{ marginTop: "0.75rem" }}>
-            <button type="submit" disabled={loadingComparison}>
+          <div className="dk-button-group dk-ct-actions">
+            <button type="submit" className="dk-button" disabled={loadingComparison}>
               {loadingComparison ? "Loading comparison..." : "Compare Pull Request"}
             </button>
           </div>
         </fieldset>
       </form>
 
-      <form onSubmit={handlePublishReport} style={{ marginBottom: "1rem" }}>
-        <fieldset style={{ border: "1px solid #d7e2ea", padding: "0.75rem" }}>
-          <legend>Publish Report</legend>
-          <label>
+      <form onSubmit={handlePublishReport} className="dk-card">
+        <fieldset className="dk-fieldset">
+          <legend className="dk-fieldset-legend">Publish Report</legend>
+          <label className="dk-field dk-ct-compact-field">
             Pull Request Number
             <input
+              className="dk-input"
               type="number"
               min={1}
               value={pullRequest}
               onChange={(event) => setPullRequest(Number(event.target.value) || 1)}
-              style={{ width: "100%", maxWidth: "220px" }}
             />
           </label>
-          <div style={{ marginTop: "0.75rem" }}>
-            <button type="submit" disabled={publishing}>
+          <div className="dk-button-group dk-ct-actions">
+            <button type="submit" className="dk-button" disabled={publishing}>
               {publishing ? "Publishing..." : "Publish Report to GitHub"}
             </button>
           </div>
@@ -371,105 +403,110 @@ export function CommitTrackerApp() {
       </form>
 
       {errorMessage ? (
-        <p role="alert" style={{ color: "#9f1111" }}>
+        <p role="alert" className="dk-alert">
           {errorMessage}
         </p>
       ) : null}
       {reportMessage ? (
-        <p role="status" style={{ color: "#0a6627" }}>
+        <p role="status" className="dk-success">
           {reportMessage}
         </p>
       ) : null}
 
-      <section aria-label="metric series" style={{ marginBottom: "1rem" }}>
-        <h3>Metric Series</h3>
+      <section aria-label="metric series" className="dk-card">
+        <h3 className="dk-subsection-title">Metric Series</h3>
         {series.length === 0 ? (
-          <p>No series loaded.</p>
+          <p className="dk-empty">No series loaded.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #d7e2ea" }}>
-                  Metric
-                </th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #d7e2ea" }}>
-                  Commit
-                </th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #d7e2ea" }}>
-                  Run
-                </th>
-                <th style={{ textAlign: "right", borderBottom: "1px solid #d7e2ea" }}>
-                  Value
-                </th>
-                <th style={{ textAlign: "left", borderBottom: "1px solid #d7e2ea" }}>
-                  Measured At
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {series.map((point) => (
-                <tr key={`${point.metricKey}-${point.commitSha}-${point.runId}`}>
-                  <td style={{ padding: "0.35rem 0" }}>{point.metricKey}</td>
-                  <td>{point.commitSha}</td>
-                  <td>{point.runId}</td>
-                  <td style={{ textAlign: "right" }}>{formatNumber(point.value)}</td>
-                  <td>{point.measuredAt || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section aria-label="pull request comparison">
-        <h3>Pull Request Comparison</h3>
-        {!comparison ? (
-          <p>No comparison loaded.</p>
-        ) : (
-          <>
-            <p>
-              Aggregate Verdict: <strong>{verdictLabel(comparison.aggregateEvaluation)}</strong>
-            </p>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div className="dk-table-wrap">
+            <table className="dk-table">
               <thead>
                 <tr>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #d7e2ea" }}>
-                    Metric
-                  </th>
-                  <th style={{ textAlign: "right", borderBottom: "1px solid #d7e2ea" }}>
-                    Base
-                  </th>
-                  <th style={{ textAlign: "right", borderBottom: "1px solid #d7e2ea" }}>
-                    Head
-                  </th>
-                  <th style={{ textAlign: "right", borderBottom: "1px solid #d7e2ea" }}>
-                    Delta
-                  </th>
-                  <th style={{ textAlign: "right", borderBottom: "1px solid #d7e2ea" }}>
-                    Delta %
-                  </th>
-                  <th style={{ textAlign: "left", borderBottom: "1px solid #d7e2ea" }}>
-                    Verdict
-                  </th>
+                  <th>Metric</th>
+                  <th>Commit</th>
+                  <th>Run</th>
+                  <th className="dk-ct-num">Value</th>
+                  <th>Measured At</th>
                 </tr>
               </thead>
               <tbody>
-                {comparison.comparisons.map((item: MetricComparison) => (
-                  <tr key={item.metricKey}>
-                    <td style={{ padding: "0.35rem 0" }}>{item.metricKey}</td>
-                    <td style={{ textAlign: "right" }}>
-                      {item.hasBaseValue ? formatNumber(item.baseValue) : "-"}
+                {series.map((point) => (
+                  <tr key={`${point.metricKey}-${point.commitSha}-${point.runId}`}>
+                    <td className="dk-ct-metric-cell">{point.metricKey}</td>
+                    <td>
+                      <code className="dk-mono">{point.commitSha}</code>
                     </td>
-                    <td style={{ textAlign: "right" }}>
-                      {item.hasHeadValue ? formatNumber(item.headValue) : "-"}
+                    <td>
+                      <code className="dk-mono">{point.runId}</code>
                     </td>
-                    <td style={{ textAlign: "right" }}>{formatNumber(item.delta)}</td>
-                    <td style={{ textAlign: "right" }}>{item.deltaPercent.toFixed(2)}%</td>
-                    <td>{verdictLabel(item.evaluationLevel)}</td>
+                    <td className="dk-ct-num">{formatNumber(point.value)}</td>
+                    <td>{point.measuredAt || "-"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </section>
+
+      <section aria-label="pull request comparison" className="dk-card">
+        <h3 className="dk-subsection-title">Pull Request Comparison</h3>
+        {!comparison ? (
+          <p className="dk-empty">No comparison loaded.</p>
+        ) : (
+          <>
+            <p className="dk-status dk-ct-summary">
+              Aggregate Verdict:{" "}
+              <span
+                className={`dk-ct-verdict-badge ${verdictBadgeClass(
+                  comparison.aggregateEvaluation,
+                )}`}
+              >
+                {verdictLabel(comparison.aggregateEvaluation)}
+              </span>
+            </p>
+            <div className="dk-table-wrap">
+              <table className="dk-table">
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th className="dk-ct-num">Base</th>
+                    <th className="dk-ct-num">Head</th>
+                    <th className="dk-ct-num">Delta</th>
+                    <th className="dk-ct-num">Delta %</th>
+                    <th>Verdict</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {comparison.comparisons.map((item: MetricComparison) => (
+                    <tr key={item.metricKey} className={verdictRowClass(item.evaluationLevel)}>
+                      <td className="dk-ct-metric-cell">{item.metricKey}</td>
+                      <td className="dk-ct-num">
+                        {item.hasBaseValue ? formatNumber(item.baseValue) : "-"}
+                      </td>
+                      <td className="dk-ct-num">
+                        {item.hasHeadValue ? formatNumber(item.headValue) : "-"}
+                      </td>
+                      <td className={`dk-ct-num ${deltaClass(item.delta)}`}>
+                        {formatNumber(item.delta)}
+                      </td>
+                      <td className={`dk-ct-num ${deltaClass(item.deltaPercent)}`}>
+                        {formatDeltaPercent(item.deltaPercent)}
+                      </td>
+                      <td>
+                        <span
+                          className={`dk-ct-verdict-badge ${verdictBadgeClass(
+                            item.evaluationLevel,
+                          )}`}
+                        >
+                          {verdictLabel(item.evaluationLevel)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </section>
