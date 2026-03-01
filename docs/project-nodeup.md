@@ -134,6 +134,7 @@ Subcommand contracts:
 : Input: optional detail flags for human output.
 : Behavior:
 : `--quiet` prints compact runtime identifiers only in human mode.
+: `--quiet` prints nothing when no runtime identifiers are available.
 : `--verbose` prints detailed runtime metadata (including resolved target paths) in human mode.
 : JSON output remains machine-parseable with the canonical `installed` and `linked` fields regardless of detail flag.
 : Output: installed runtime versions and linked runtime map.

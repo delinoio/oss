@@ -444,6 +444,18 @@ fn toolchain_list_rejects_conflicting_detail_flags() {
 
 #[test]
 #[serial]
+fn toolchain_list_quiet_emits_no_blank_line_when_empty() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "list", "--quiet"])
+        .assert()
+        .success()
+        .stdout(predicates::str::is_empty());
+}
+
+#[test]
+#[serial]
 fn uninstall_blocks_default_selector_with_mixed_version_spelling() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);

@@ -53,6 +53,12 @@ fn list(list_detail: ToolchainListDetail, output: OutputFormat, app: &NodeupApp)
     );
 
     let human = render_human_toolchain_list(list_detail, &response, app);
+    if output == OutputFormat::Human
+        && list_detail == ToolchainListDetail::Quiet
+        && human.is_empty()
+    {
+        return Ok(0);
+    }
     print_output(output, &human, &response)?;
 
     Ok(0)
