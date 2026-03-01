@@ -6,6 +6,7 @@ Its primary goal is to provide safe local command scheduling with clear operatio
 
 ## Path
 - Canonical CLI path: `cmds/devmon`
+- Operator README: `cmds/devmon/README.md`
 - Service lifecycle manager: `cmds/devmon/internal/servicecontrol`
 - Menu bar app: `cmds/devmon/internal/menubar`
 - Runtime status store: `cmds/devmon/internal/state`
