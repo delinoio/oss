@@ -68,6 +68,8 @@ func execute(args []string, stdout io.Writer, stderr io.Writer) int {
 	switch args[0] {
 	case string(contracts.CommitTrackerOperationIngest):
 		return executeIngest(args[1:], stdout, stderr)
+	case string(contracts.CommitTrackerOperationReport):
+		return executeReport(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		printUsage(stderr)
@@ -353,4 +355,5 @@ func printUsage(stderr io.Writer) {
 	fmt.Fprintln(stderr, "usage: commit-tracker <command> [options]")
 	fmt.Fprintln(stderr, "commands:")
 	fmt.Fprintln(stderr, "  ingest --input <path> --server <url> --token <token>")
+	fmt.Fprintln(stderr, "  report --repository <repo> --pull-request <number> --base-commit <sha> --head-commit <sha> --server <url> --token <token>")
 }
