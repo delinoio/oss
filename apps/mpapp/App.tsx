@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import {
   MpappActionType,
+  MpappBluetoothAvailabilityState,
   MpappClickButton,
   MpappErrorCode,
   MpappLogEventFamily,
@@ -53,6 +54,21 @@ function clampSensitivity(value: number): number {
 
 function createSessionId(): string {
   return `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getBluetoothUnavailableMessage(
+  availabilityState: MpappBluetoothAvailabilityState,
+): string {
+  switch (availabilityState) {
+    case MpappBluetoothAvailabilityState.Disabled:
+      return "Bluetooth is turned off. Enable Bluetooth and try connecting again.";
+    case MpappBluetoothAvailabilityState.AdapterUnavailable:
+      return "Bluetooth is unavailable on this device, so pairing cannot start.";
+    case MpappBluetoothAvailabilityState.Unknown:
+    case MpappBluetoothAvailabilityState.Available:
+    default:
+      return "Bluetooth availability check failed. Enable Bluetooth and retry.";
+  }
 }
 
 export default function App() {
@@ -200,6 +216,40 @@ export default function App() {
 
     if (!permissionResult.granted) {
       dispatchSessionEvent({ type: MpappSessionEventType.PermissionDenied });
+      return;
+    }
+
+    const availabilityStart = Date.now();
+    const availabilityResult = await adapter.checkBluetoothAvailability();
+
+    await appendLog({
+      eventFamily: availabilityResult.ok
+        ? MpappLogEventFamily.ConnectionTransition
+        : MpappLogEventFamily.TransportError,
+      actionType: MpappActionType.Connect,
+      latencyMs: Date.now() - availabilityStart,
+      failureReason: availabilityResult.ok ? null : availabilityResult.message,
+      payload: {
+        availabilityState: availabilityResult.availabilityState,
+        gate: "post-permission-pre-pairing",
+      },
+    });
+
+    if (!availabilityResult.ok) {
+      const errorCode =
+        availabilityResult.errorCode === MpappErrorCode.BluetoothUnavailable
+          ? MpappErrorCode.BluetoothUnavailable
+          : availabilityResult.errorCode;
+      const message =
+        errorCode === MpappErrorCode.BluetoothUnavailable
+          ? getBluetoothUnavailableMessage(availabilityResult.availabilityState)
+          : availabilityResult.message;
+
+      dispatchSessionEvent({
+        type: MpappSessionEventType.ConnectFailure,
+        errorCode,
+        message,
+      });
       return;
     }
 

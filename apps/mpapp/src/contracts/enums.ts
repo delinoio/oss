@@ -39,6 +39,13 @@ export enum MpappErrorCode {
   UnsupportedPlatform = "unsupported-platform",
 }
 
+export enum MpappBluetoothAvailabilityState {
+  Available = "available",
+  AdapterUnavailable = "adapter-unavailable",
+  Disabled = "disabled",
+  Unknown = "unknown",
+}
+
 export enum MpappHidTransportMode {
   NativeAndroidHid = "native-android-hid",
   Stub = "stub",

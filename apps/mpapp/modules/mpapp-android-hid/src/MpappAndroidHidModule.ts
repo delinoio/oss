@@ -15,15 +15,29 @@ export enum MpappAndroidHidNativeButton {
   Right = "right",
 }
 
+export enum MpappAndroidHidNativeAvailabilityState {
+  Available = "available",
+  AdapterUnavailable = "adapter-unavailable",
+  Disabled = "disabled",
+  Unknown = "unknown",
+}
+
 export type MpappAndroidHidNativeSuccessResult = {
   ok: true;
+  details?: {
+    availabilityState?: MpappAndroidHidNativeAvailabilityState;
+    [key: string]: unknown;
+  };
 };
 
 export type MpappAndroidHidNativeFailureResult = {
   ok: false;
   code: string;
   message: string;
-  details?: Record<string, unknown>;
+  details?: {
+    availabilityState?: MpappAndroidHidNativeAvailabilityState;
+    [key: string]: unknown;
+  };
 };
 
 export type MpappAndroidHidNativeResult =
@@ -31,6 +45,7 @@ export type MpappAndroidHidNativeResult =
   | MpappAndroidHidNativeFailureResult;
 
 export type MpappAndroidHidNativeModule = {
+  checkBluetoothAvailability(): Promise<MpappAndroidHidNativeResult>;
   pairAndConnect(hostAddress: string): Promise<MpappAndroidHidNativeResult>;
   disconnect(): Promise<MpappAndroidHidNativeResult>;
   sendMove(deltaX: number, deltaY: number): Promise<MpappAndroidHidNativeResult>;

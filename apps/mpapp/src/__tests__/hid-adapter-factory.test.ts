@@ -12,6 +12,7 @@ describe("hid adapter factory", () => {
       },
       nativeOptions: {
         nativeModule: {
+          checkBluetoothAvailability: async () => ({ ok: true }),
           pairAndConnect: async () => ({ ok: true }),
           disconnect: async () => ({ ok: true }),
           sendMove: async () => ({ ok: true }),

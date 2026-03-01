@@ -236,6 +236,7 @@ func (s *Service) applyMigration(ctx context.Context, version int64, statements 
 
 func (s *Service) UpsertCommitMetrics(ctx context.Context, req *connect.Request[committrackerv1.UpsertCommitMetricsRequest]) (*connect.Response[committrackerv1.UpsertCommitMetricsResponse], error) {
 	if _, err := s.authorize(req.Header()); err != nil {
+		s.logDenied(contracts.OperationUpsertCommitMetrics, req.Msg, err)
 		return nil, err
 	}
 	if err := validateUpsertRequest(req.Msg); err != nil {
@@ -350,6 +351,7 @@ func (s *Service) UpsertCommitMetrics(ctx context.Context, req *connect.Request[
 
 func (s *Service) ListMetricSeries(ctx context.Context, req *connect.Request[committrackerv1.ListMetricSeriesRequest]) (*connect.Response[committrackerv1.ListMetricSeriesResponse], error) {
 	if _, err := s.authorize(req.Header()); err != nil {
+		s.logDenied(contracts.OperationListMetricSeries, req.Msg, err)
 		return nil, err
 	}
 	if err := validateSeriesRequest(req.Msg); err != nil {
@@ -489,6 +491,7 @@ func (s *Service) ListMetricSeries(ctx context.Context, req *connect.Request[com
 
 func (s *Service) GetPullRequestComparison(ctx context.Context, req *connect.Request[committrackerv1.GetPullRequestComparisonRequest]) (*connect.Response[committrackerv1.GetPullRequestComparisonResponse], error) {
 	if _, err := s.authorize(req.Header()); err != nil {
+		s.logDenied(contracts.OperationGetPullRequestCompare, req.Msg, err)
 		return nil, err
 	}
 
@@ -522,7 +525,11 @@ func (s *Service) GetPullRequestComparison(ctx context.Context, req *connect.Req
 
 func (s *Service) PublishPullRequestReport(ctx context.Context, req *connect.Request[committrackerv1.PublishPullRequestReportRequest]) (*connect.Response[committrackerv1.PublishPullRequestReportResponse], error) {
 	if _, err := s.authorize(req.Header()); err != nil {
+		s.logDenied(contracts.OperationPublishPullRequestInfo, req.Msg, err)
 		return nil, err
+	}
+	if err := validateProvider(req.Msg.GetProvider()); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	if req.Msg.GetProvider() != committrackerv1.GitProviderKind_GIT_PROVIDER_KIND_GITHUB {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("provider integration is only live for github in phase 1"))
@@ -889,10 +896,16 @@ func validateComparisonRequest(request *committrackerv1.GetPullRequestComparison
 }
 
 func validateProvider(provider committrackerv1.GitProviderKind) error {
-	if provider == committrackerv1.GitProviderKind_GIT_PROVIDER_KIND_UNSPECIFIED {
+	switch provider {
+	case committrackerv1.GitProviderKind_GIT_PROVIDER_KIND_GITHUB,
+		committrackerv1.GitProviderKind_GIT_PROVIDER_KIND_GITLAB,
+		committrackerv1.GitProviderKind_GIT_PROVIDER_KIND_BITBUCKET:
+		return nil
+	case committrackerv1.GitProviderKind_GIT_PROVIDER_KIND_UNSPECIFIED:
 		return errors.New("provider is required")
+	default:
+		return fmt.Errorf("unsupported provider: %d", int32(provider))
 	}
-	return nil
 }
 
 func uniqueSortedMetricKeys(metricKeys []string) []string {
@@ -1237,6 +1250,53 @@ func (s *Service) logFailure(operation contracts.Operation, request any, metricK
 		"evaluation_level": evaluation,
 		"delta_percent":    deltaPercent,
 		"error":            err.Error(),
+	})
+}
+
+func (s *Service) logDenied(operation contracts.Operation, request any, err error) {
+	provider := ""
+	repository := ""
+	commit := ""
+	runID := ""
+	pullRequest := int64(0)
+
+	switch typed := request.(type) {
+	case *committrackerv1.UpsertCommitMetricsRequest:
+		provider = typed.GetProvider().String()
+		repository = typed.GetRepository()
+		commit = typed.GetCommitSha()
+		runID = typed.GetRunId()
+	case *committrackerv1.ListMetricSeriesRequest:
+		provider = typed.GetProvider().String()
+		repository = typed.GetRepository()
+	case *committrackerv1.GetPullRequestComparisonRequest:
+		provider = typed.GetProvider().String()
+		repository = typed.GetRepository()
+		commit = typed.GetHeadCommitSha()
+	case *committrackerv1.PublishPullRequestReportRequest:
+		provider = typed.GetProvider().String()
+		repository = typed.GetRepository()
+		commit = typed.GetHeadCommitSha()
+		pullRequest = typed.GetPullRequest()
+	}
+
+	errorMessage := ""
+	if err != nil {
+		errorMessage = err.Error()
+	}
+
+	s.logger.Event(map[string]any{
+		"operation":        operation,
+		"result":           contracts.OperationResultDenied,
+		"provider":         provider,
+		"repository":       repository,
+		"pull_request":     pullRequest,
+		"commit":           commit,
+		"run_id":           runID,
+		"metric_key":       "",
+		"evaluation_level": "",
+		"delta_percent":    0,
+		"error":            errorMessage,
 	})
 }
 
