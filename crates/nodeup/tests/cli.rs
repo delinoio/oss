@@ -450,16 +450,131 @@ fn override_resolution_logs_miss_without_default_selector() {
 
 #[test]
 #[serial]
-fn self_update_logs_action_and_outcome() {
+fn self_update_reports_human_and_json_statuses() {
     let env = TestEnv::new();
+    let target_binary = env.root.join("bin").join("nodeup");
+    let source_binary = env.root.join("nodeup-next");
+    fs::create_dir_all(target_binary.parent().unwrap()).unwrap();
+    fs::write(&target_binary, "nodeup-old").unwrap();
+    fs::write(&source_binary, "nodeup-new").unwrap();
 
-    env.command_with_info_logs()
+    env.command()
+        .env("NODEUP_SELF_BIN_PATH", target_binary.to_str().unwrap())
+        .env("NODEUP_SELF_UPDATE_SOURCE", source_binary.to_str().unwrap())
         .args(["self", "update"])
         .assert()
-        .failure()
-        .stdout(predicates::str::contains("command_path=\"nodeup.self\""))
+        .success()
+        .stdout(predicates::str::contains("Self update status: updated"));
+
+    env.command()
+        .env("NODEUP_SELF_BIN_PATH", target_binary.to_str().unwrap())
+        .env("NODEUP_SELF_UPDATE_SOURCE", source_binary.to_str().unwrap())
+        .args(["--output", "json", "self", "update"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "\"status\": \"already-up-to-date\"",
+        ));
+
+    assert_eq!(
+        fs::read(&target_binary).unwrap(),
+        fs::read(&source_binary).unwrap()
+    );
+}
+
+#[test]
+#[serial]
+fn self_update_logs_action_and_outcome_status() {
+    let env = TestEnv::new();
+    let target_binary = env.root.join("bin").join("nodeup");
+    let source_binary = env.root.join("nodeup-next");
+    fs::create_dir_all(target_binary.parent().unwrap()).unwrap();
+    fs::write(&target_binary, "nodeup-old").unwrap();
+    fs::write(&source_binary, "nodeup-new").unwrap();
+
+    env.command_with_info_logs()
+        .env("NODEUP_SELF_BIN_PATH", target_binary.to_str().unwrap())
+        .env("NODEUP_SELF_UPDATE_SOURCE", source_binary.to_str().unwrap())
+        .args(["--output", "json", "self", "update"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "command_path=\"nodeup.self.update\"",
+        ))
         .stdout(predicates::str::contains("action=\"self update\""))
-        .stdout(predicates::str::contains("outcome=\"not-implemented\""));
+        .stdout(predicates::str::contains("outcome=\"updated\""));
+}
+
+#[test]
+#[serial]
+fn self_uninstall_removes_artifacts_and_logs_outcome() {
+    let env = TestEnv::new();
+    fs::write(env.data_root.join("data-marker.txt"), "data").unwrap();
+    fs::write(env.cache_root.join("cache-marker.txt"), "cache").unwrap();
+    fs::write(env.config_root.join("config-marker.txt"), "config").unwrap();
+
+    env.command_with_info_logs()
+        .args(["--output", "json", "self", "uninstall"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"status\": \"removed\""))
+        .stdout(predicates::str::contains(
+            "command_path=\"nodeup.self.uninstall\"",
+        ))
+        .stdout(predicates::str::contains("action=\"self uninstall\""))
+        .stdout(predicates::str::contains("outcome=\"removed\""));
+
+    assert!(!env.data_root.exists());
+    assert!(!env.cache_root.exists());
+    assert!(!env.config_root.exists());
+}
+
+#[test]
+#[serial]
+fn self_upgrade_data_migrates_legacy_schema_files() {
+    let env = TestEnv::new();
+    let settings_file = env.config_root.join("settings.toml");
+    let overrides_file = env.config_root.join("overrides.toml");
+
+    fs::write(
+        &settings_file,
+        r#"default_selector = "22.1.0"
+tracked_selectors = ["22.1.0"]
+
+[linked_runtimes]
+local = "/tmp/local-runtime"
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        &overrides_file,
+        r#"[[entries]]
+path = "/tmp/project"
+selector = "22.1.0"
+"#,
+    )
+    .unwrap();
+
+    env.command_with_info_logs()
+        .args(["--output", "json", "self", "upgrade-data"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"status\": \"upgraded\""))
+        .stdout(predicates::str::contains(
+            "command_path=\"nodeup.self.upgrade-data\"",
+        ))
+        .stdout(predicates::str::contains("action=\"self upgrade-data\""))
+        .stdout(predicates::str::contains("outcome=\"upgraded\""))
+        .stdout(predicates::str::contains("\"from_schema\": 0"))
+        .stdout(predicates::str::contains("\"to_schema\": 1"));
+
+    let settings_content = fs::read_to_string(&settings_file).unwrap();
+    let overrides_content = fs::read_to_string(&overrides_file).unwrap();
+    assert!(settings_content.contains("schema_version = 1"));
+    assert!(overrides_content.contains("schema_version = 1"));
+
+    env.command().args(["override", "list"]).assert().success();
 }
 
 #[test]

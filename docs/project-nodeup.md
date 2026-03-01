@@ -39,7 +39,8 @@ The primary goal is deterministic multi-version Node.js execution with automatic
 - Runtime store manager maintains installed runtimes, linked runtime metadata, tracked selectors, and activation pointers.
 - Override manager resolves runtime precedence by directory scope and fallback defaults.
 - Shim dispatcher handles executable-name-based mode branching for `node`, `npm`, `npx`, and other managed aliases.
-- Self-management and completion modules are currently explicit skeleton commands returning a deterministic `NotImplemented` response.
+- Self-management module implements update/uninstall/data-migration flows with deterministic status outputs and action/outcome logs.
+- Completion module remains an explicit skeleton command returning deterministic `NotImplemented`.
 
 ## Interfaces
 Canonical nodeup command identifiers:
@@ -180,11 +181,14 @@ Subcommand contracts:
 : Output: delegated command result with runtime, delegated command name, and exit code.
 : Exit code: returns delegated process exit code on success path.
 - `nodeup self update`
-: Output: deterministic `NotImplemented` error in current phase.
+: Behavior: replaces the nodeup binary with the staged binary at `NODEUP_SELF_UPDATE_SOURCE` (target defaults to current executable and can be overridden by `NODEUP_SELF_BIN_PATH`).
+: Status field (`--output json`): `updated` or `already-up-to-date`.
 - `nodeup self uninstall`
-: Output: deterministic `NotImplemented` error in current phase.
+: Behavior: safely removes nodeup-managed `data`, `cache`, and `config` roots.
+: Status field (`--output json`): `removed` or `already-clean`.
 - `nodeup self upgrade-data`
-: Output: deterministic `NotImplemented` error in current phase.
+: Behavior: migrates `settings.toml` and `overrides.toml` schema to the current version, creating defaults when files are missing.
+: Status field (`--output json`): `upgraded` or `already-current`.
 - `nodeup completions <shell> [command]`
 : Input: target shell and optional command scope.
 : Output: deterministic `NotImplemented` error in current phase.
@@ -221,6 +225,7 @@ Symlink contract:
 - Test/dev overrides:
 : `NODEUP_DATA_HOME`, `NODEUP_CACHE_HOME`, `NODEUP_CONFIG_HOME`
 : `NODEUP_INDEX_URL`, `NODEUP_DOWNLOAD_BASE_URL`, `NODEUP_FORCE_PLATFORM`
+: `NODEUP_SELF_UPDATE_SOURCE`, `NODEUP_SELF_BIN_PATH`
 
 ## Security
 - Validate download integrity before activation.
@@ -238,7 +243,7 @@ Required baseline logs:
 : `no-default-selector`
 - Download source, checksum algorithm, checksum validation result, and install result
 - Dispatch executable alias (`argv[0]`) and resolved executable path
-- Self-management actions (`self update`, `self uninstall`, `self upgrade-data`) and outcome status (`outcome=not-implemented` in current phase)
+- Self-management actions (`self update`, `self uninstall`, `self upgrade-data`) and outcome status (`updated|already-up-to-date|removed|already-clean|upgraded|already-current|failed`)
 - Delegated process lifecycle for `run` with spawn/execution logs plus termination detail (`exit_code`, `signal`)
 - Completion generation target shell and success/failure status (`action=generate`, `outcome=not-implemented` in current phase)
 
@@ -251,7 +256,7 @@ Planned commands:
 ## Roadmap
 - Phase 1: Rustup-style command skeleton (`toolchain`, `default`, `show`, `override`, `run`, `which`).
 - Phase 2: Runtime installer, checksum verification, and command-level auto-install behavior.
-- Phase 3: Self-management and completion generation flows (`self`, `completions`).
+- Phase 3: Self-management flows (`self`) implemented; completion generation (`completions`) remains pending.
 - Phase 4: Cross-platform shim parity and CI hardening.
 
 ## Open Questions

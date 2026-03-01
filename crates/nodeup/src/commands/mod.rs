@@ -1,6 +1,7 @@
 mod default_cmd;
 mod override_cmd;
 mod run_cmd;
+mod self_cmd;
 mod show;
 mod skeleton;
 mod toolchain;
@@ -41,7 +42,7 @@ pub fn execute(cli: Cli, app: &NodeupApp) -> Result<i32> {
             runtime,
             command,
         } => run_cmd::execute(install, &runtime, &command, cli.output, app),
-        Command::SelfCmd { command } => skeleton::self_command(command),
+        Command::SelfCmd { command } => self_cmd::execute(command, cli.output, app),
         Command::Completions { shell, command } => {
             skeleton::completions(&shell, command.as_deref())
         }
