@@ -15,6 +15,27 @@ func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 		return
 	}
 
+	originalStdin := os.Stdin
+	originalStdout := os.Stdout
+
+	devNullRead, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open dev null for stdin: %v", err)
+	}
+	devNullWrite, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		_ = devNullRead.Close()
+		t.Fatalf("open dev null for stdout: %v", err)
+	}
+	os.Stdin = devNullRead
+	os.Stdout = devNullWrite
+	t.Cleanup(func() {
+		os.Stdin = originalStdin
+		os.Stdout = originalStdout
+		_ = devNullRead.Close()
+		_ = devNullWrite.Close()
+	})
+
 	stateRoot := t.TempDir()
 	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
 		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
