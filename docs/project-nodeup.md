@@ -39,7 +39,8 @@ The primary goal is deterministic multi-version Node.js execution with automatic
 - Runtime store manager maintains installed runtimes, linked runtime metadata, tracked selectors, and activation pointers.
 - Override manager resolves runtime precedence by directory scope and fallback defaults.
 - Shim dispatcher handles executable-name-based mode branching for `node`, `npm`, `npx`, and other managed aliases.
-- Self-management and completion modules are currently explicit skeleton commands returning a deterministic `NotImplemented` response.
+- Self-management commands are explicit skeleton commands returning a deterministic `NotImplemented` response.
+- Completion generation is implemented via clap command metadata and supports scoped script generation for a selected top-level command.
 
 ## Interfaces
 Canonical nodeup command identifiers:
@@ -186,8 +187,10 @@ Subcommand contracts:
 - `nodeup self upgrade-data`
 : Output: deterministic `NotImplemented` error in current phase.
 - `nodeup completions <shell> [command]`
-: Input: target shell and optional command scope.
-: Output: deterministic `NotImplemented` error in current phase.
+: Input: target shell (`bash|zsh|fish`) and optional top-level command scope.
+: Behavior: renders shell completion script text from the clap command tree; when `command` is provided, generated output contains only that top-level command branch.
+: Output (`--output human`): raw completion script text.
+: Output (`--output json`): deterministic metadata payload containing `shell`, `scope`, `status`, `script`, and `script_bytes`.
 
 Help output contract:
 - `nodeup --help` must show one-line descriptions for all top-level commands (`toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `self`, `completions`).
@@ -240,7 +243,7 @@ Required baseline logs:
 - Dispatch executable alias (`argv[0]`) and resolved executable path
 - Self-management actions (`self update`, `self uninstall`, `self upgrade-data`) and outcome status (`outcome=not-implemented` in current phase)
 - Delegated process lifecycle for `run` with spawn/execution logs plus termination detail (`exit_code`, `signal`)
-- Completion generation target shell and success/failure status (`action=generate`, `outcome=not-implemented` in current phase)
+- Completion generation target shell, optional scope, and status (`action=generate`, `outcome=generated`)
 
 ## Build and Test
 Planned commands:
@@ -251,7 +254,7 @@ Planned commands:
 ## Roadmap
 - Phase 1: Rustup-style command skeleton (`toolchain`, `default`, `show`, `override`, `run`, `which`).
 - Phase 2: Runtime installer, checksum verification, and command-level auto-install behavior.
-- Phase 3: Self-management and completion generation flows (`self`, `completions`).
+- Phase 3: Self-management flows (`self`) and completion generation flow hardening (`completions`).
 - Phase 4: Cross-platform shim parity and CI hardening.
 
 ## Open Questions

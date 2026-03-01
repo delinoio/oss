@@ -7,6 +7,7 @@ description = "Rustup-like Node.js version manager"
 
 [dependencies]
 clap = { version = "4.5.32", features = ["derive"] }
+clap_complete = "4.5.46"
 reqwest = { version = "0.12.14", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 semver = { version = "1.0.26", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }

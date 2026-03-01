@@ -470,12 +470,80 @@ fn completions_logs_action_and_outcome() {
     env.command_with_info_logs()
         .args(["completions", "zsh"])
         .assert()
-        .failure()
+        .success()
         .stdout(predicates::str::contains(
             "command_path=\"nodeup.completions\"",
         ))
         .stdout(predicates::str::contains("action=\"generate\""))
-        .stdout(predicates::str::contains("outcome=\"not-implemented\""));
+        .stdout(predicates::str::contains("outcome=\"generated\""));
+}
+
+#[test]
+#[serial]
+fn completions_supports_documented_shells() {
+    let env = TestEnv::new();
+
+    for shell in ["bash", "zsh", "fish"] {
+        env.command()
+            .args(["completions", shell])
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("nodeup"));
+    }
+}
+
+#[test]
+#[serial]
+fn completions_scope_narrows_generated_output() {
+    let env = TestEnv::new();
+
+    let all_output = env
+        .command()
+        .args(["completions", "bash"])
+        .output()
+        .unwrap();
+    assert!(all_output.status.success());
+    let scoped_output = env
+        .command()
+        .args(["completions", "bash", "run"])
+        .output()
+        .unwrap();
+    assert!(scoped_output.status.success());
+
+    let all_script = String::from_utf8(all_output.stdout).unwrap();
+    let scoped_script = String::from_utf8(scoped_output.stdout).unwrap();
+
+    assert!(all_script.contains("toolchain"));
+    assert!(scoped_script.contains("run"));
+    assert!(!scoped_script.contains("toolchain"));
+    assert!(scoped_script.len() < all_script.len());
+}
+
+#[test]
+#[serial]
+fn completions_json_output_includes_structured_metadata() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "completions", "fish", "run"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let payload: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["shell"], "fish");
+    assert_eq!(payload["scope"], "run");
+    assert_eq!(payload["status"], "generated");
+
+    let script = payload["script"]
+        .as_str()
+        .expect("completion payload includes script text");
+    assert!(script.contains("run"));
+    assert_eq!(
+        payload["script_bytes"],
+        serde_json::Value::from(script.len() as u64)
+    );
 }
 
 #[cfg(unix)]

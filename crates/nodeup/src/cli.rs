@@ -6,6 +6,23 @@ pub enum OutputFormat {
     Json,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+}
+
+impl CompletionShell {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bash => "bash",
+            Self::Zsh => "zsh",
+            Self::Fish => "fish",
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "nodeup",
@@ -79,7 +96,7 @@ pub enum Command {
     /// Generate shell completion scripts.
     Completions {
         /// Target shell (for example: `bash`, `zsh`, or `fish`).
-        shell: String,
+        shell: CompletionShell,
         /// Optional command scope for completion generation.
         command: Option<String>,
     },

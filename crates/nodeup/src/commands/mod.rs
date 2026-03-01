@@ -1,3 +1,4 @@
+mod completions;
 mod default_cmd;
 mod override_cmd;
 mod run_cmd;
@@ -43,7 +44,7 @@ pub fn execute(cli: Cli, app: &NodeupApp) -> Result<i32> {
         } => run_cmd::execute(install, &runtime, &command, cli.output, app),
         Command::SelfCmd { command } => skeleton::self_command(command),
         Command::Completions { shell, command } => {
-            skeleton::completions(&shell, command.as_deref())
+            completions::generate(shell, command.as_deref(), cli.output)
         }
     }
 }
@@ -191,7 +192,7 @@ fn command_invocation_metadata(
             command_path: "nodeup.completions",
             arg_shape: json!({
                 "output": output,
-                "shell": shell,
+                "shell": shell.as_str(),
                 "command_scope_provided": command.is_some()
             }),
         },
@@ -272,6 +273,7 @@ fn self_command_path(command: NodeupSelfCommand) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::CompletionShell;
 
     #[test]
     fn command_invocation_metadata_covers_all_command_paths() {
@@ -429,7 +431,7 @@ mod tests {
             ),
             (
                 Command::Completions {
-                    shell: "zsh".to_string(),
+                    shell: CompletionShell::Zsh,
                     command: Some("run".to_string()),
                 },
                 OutputFormat::Human,
