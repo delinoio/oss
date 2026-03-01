@@ -14,7 +14,7 @@ fn main() {
 }
 
 fn run() -> Result<i32, CargoMonoError> {
-    let app = CargoMonoApp::new()?;
     let cli = Cli::parse();
+    let app = CargoMonoApp::new()?;
     commands::execute(cli, &app)
 }

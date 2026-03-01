@@ -74,6 +74,8 @@ enum CargoMonoBumpLevel {
 
 CLI entrypoint:
 - `cargo mono [--output <human|json>] <subcommand> ...`
+- `cargo mono --help` and `cargo mono --version` must succeed without workspace discovery.
+- Workspace loading occurs after CLI parsing for executable subcommands (`list`, `changed`, `bump`, `publish`).
 
 Target selection contract (`bump`, `publish`):
 - `--all` default when no target selector is provided.
