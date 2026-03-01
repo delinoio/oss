@@ -49,8 +49,8 @@ func ExecuteRun(args []string) int {
 		fmt.Fprintln(os.Stderr, "run command requires target command")
 		return 2
 	}
-	if retentionDuration <= 0 {
-		fmt.Fprintln(os.Stderr, "retention must be positive")
+	if err := validateRetentionDuration(retentionDuration); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
 		return 2
 	}
 
@@ -233,6 +233,16 @@ func splitRunArgs(args []string) ([]string, []string) {
 		}
 	}
 	return args, nil
+}
+
+func validateRetentionDuration(retentionDuration time.Duration) error {
+	if retentionDuration <= 0 {
+		return errors.New("retention must be positive")
+	}
+	if retentionDuration%time.Second != 0 {
+		return errors.New("retention must be a whole number of seconds (for example: 1s, 30s, 5m)")
+	}
+	return nil
 }
 
 func resolveStateRootForRun() (string, error) {

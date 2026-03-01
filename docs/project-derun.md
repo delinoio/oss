@@ -113,6 +113,7 @@ enum DerunMcpTool {
 Command contracts:
 - `derun run [--session-id <id>] [--retention <duration>] -- <command> [args...]`
 : Executes user command with terminal-fidelity proxying and side-channel transcript capture.
+- `derun run --retention` values must be positive and use whole-second precision (`duration % 1s == 0`); sub-second or fractional-second values (for example `500ms`, `1500ms`) are rejected with exit code `2`.
 - `derun run` must reject explicit `--session-id` values when persisted metadata already exists (`meta.json` or `final.json`), returning exit code `2` without mutating existing artifacts.
 - `derun run` must reject explicit invalid `--session-id` values (including path-segment alias `"."`), returning exit code `2` without mutating session artifacts.
 - `derun mcp`
@@ -160,6 +161,7 @@ Per-session artifact layout:
 Retention contract:
 - Default retention TTL: 24 hours.
 - Per-session `retention_seconds` from `meta.json` overrides the global sweep default when present.
+- Retention metadata persists at second granularity (`retention_seconds`); CLI validation rejects `--retention` values that are not whole seconds so requested TTL never silently truncates.
 - Expired session cleanup runs at `derun run` startup and periodic intervals in `derun mcp`.
 - Unreadable/orphan session directories (for example missing or malformed `meta.json`) use fallback expiration: `lastTouchedAt + sweepTTL`, where `lastTouchedAt` is the latest filesystem modification time across the session directory and direct child artifacts.
 - Expired unreadable/orphan session directories are removed; non-expired unreadable/orphan session directories are retained.

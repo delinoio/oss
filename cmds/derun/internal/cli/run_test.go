@@ -180,6 +180,77 @@ func TestExecuteRunRejectsInvalidSessionID(t *testing.T) {
 	}
 }
 
+func TestExecuteRunRejectsNonWholeSecondRetention(t *testing.T) {
+	testCases := []struct {
+		name      string
+		retention string
+	}{
+		{
+			name:      "sub-second retention",
+			retention: "500ms",
+		},
+		{
+			name:      "fractional second retention",
+			retention: "1500ms",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			stateRoot := t.TempDir()
+			if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+				t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+			}
+			t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+
+			exitCode := ExecuteRun([]string{"--retention", tc.retention, "--", "sh", "-c", "printf 'should-not-run'"})
+			if exitCode != 2 {
+				t.Fatalf("unexpected exit code for retention %s: got=%d want=2", tc.retention, exitCode)
+			}
+
+			store, err := state.New(stateRoot)
+			if err != nil {
+				t.Fatalf("state.New returned error: %v", err)
+			}
+
+			sessions, total, err := store.ListSessions("", 10)
+			if err != nil {
+				t.Fatalf("ListSessions returned error: %v", err)
+			}
+			if total != 0 || len(sessions) != 0 {
+				t.Fatalf("expected no sessions for invalid retention %s: total=%d len=%d", tc.retention, total, len(sessions))
+			}
+		})
+	}
+}
+
+func TestExecuteRunPersistsWholeSecondRetention(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+
+	sessionID := "01J0S777777777777777777777"
+	exitCode := ExecuteRun([]string{"--session-id", sessionID, "--retention", "1s", "--", "sh", "-c", "printf 'retention-ok'"})
+	if exitCode != 0 {
+		t.Fatalf("unexpected exit code: got=%d want=0", exitCode)
+	}
+
+	store, err := state.New(stateRoot)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+
+	detail, err := store.GetSession(sessionID)
+	if err != nil {
+		t.Fatalf("GetSession returned error: %v", err)
+	}
+	if detail.RetentionSeconds != 1 {
+		t.Fatalf("unexpected retention seconds: got=%d want=1", detail.RetentionSeconds)
+	}
+}
+
 func TestExecuteRunPersistsStartupFailureSessionMetadata(t *testing.T) {
 	stateRoot := t.TempDir()
 	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
