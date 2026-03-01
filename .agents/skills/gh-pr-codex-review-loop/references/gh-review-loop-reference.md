@@ -13,6 +13,7 @@ Default Codex actors in bundled scripts:
 - `codex[bot]`
 - `openai-codex`
 - `openai-codex[bot]`
+- `chatgpt-codex-connector[bot]`
 
 If your workspace uses a different identity, pass `--actor <login>` or `--actor-regex "<pattern>"`.
 

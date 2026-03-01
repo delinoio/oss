@@ -9,6 +9,7 @@ const DEFAULT_ACTORS = [
   "codex[bot]",
   "openai-codex",
   "openai-codex[bot]",
+  "chatgpt-codex-connector[bot]",
 ];
 
 function printHelp() {
