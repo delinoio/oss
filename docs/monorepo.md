@@ -22,7 +22,7 @@ The monorepo is documentation-first: structure, ownership, and contracts must be
 - `docs/project-devkit-commit-tracker.md`: Commit Tracker contracts (Web UI + API server + collector).
 - `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app.
 - `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
-- `docs/project-devmon.md`: Go CLI daemon for recurring folder command automation.
+- `docs/project-devmon.md`: Go automation daemon with macOS menu bar-managed lifecycle controls.
 
 ## Project Identifier Contract
 Treat project IDs as stable enum-style values:

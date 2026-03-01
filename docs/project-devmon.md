@@ -1,51 +1,70 @@
 # Project: devmon
 
 ## Goal
-`devmon` is a Go CLI daemon that runs multiple customizable commands on configurable intervals across registered folders.
-Its primary goal is to automate repetitive local maintenance workflows (for example Git default-branch sync and Rust cleanup tasks) with safe scheduling and structured operational logs.
+`devmon` is a Go automation daemon that runs recurring folder jobs and can now be managed as a macOS user daemon from a menu bar app.
+Its primary goal is to provide safe local command scheduling with clear operational visibility and simple lifecycle control.
 
 ## Path
 - Canonical CLI path: `cmds/devmon`
+- Service lifecycle manager: `cmds/devmon/internal/servicecontrol`
+- Menu bar app: `cmds/devmon/internal/menubar`
+- Runtime status store: `cmds/devmon/internal/state`
 
 ## Runtime and Language
-- Go CLI daemon
+- Go CLI + macOS menu bar integration
 
 ## Users
 - Engineers maintaining multiple local repositories or workspace folders
-- Operators who want deterministic recurring local command automation
-- AI-assisted workflows that need explicit and observable local automation contracts
+- Operators who need deterministic recurring local command automation
+- macOS users who want to manage daemon lifecycle from the top menu bar
 
 ## In Scope
 - Foreground daemon command (`devmon daemon`) with graceful shutdown behavior
 - Configuration validation command (`devmon validate`)
+- Service lifecycle commands (`devmon service install|uninstall|start|stop|status`) on macOS
+- Menu bar command (`devmon menubar`) on macOS
+- LaunchAgent installation for both daemon and menu bar processes
 - TOML-based folder and job configuration (`devmon.toml`)
 - Interval-based scheduling with startup run support
 - Global concurrency limiting for all jobs
 - Per-job overlap protection (skip when previous run is still active)
 - Shell-command job execution (`shell -c script`) with timeout enforcement
 - Structured logs for lifecycle, skip reasons, and command output streams
+- Structured daemon status persistence for operational UI and status queries
 
 ## Out of Scope
-- Built-in background service lifecycle management (`start/stop/status`) in v1
+- System-domain (`root`) service management
 - Built-in non-shell job types in v1
 - Remote orchestration or multi-host execution
-- Command output persistence storage beyond process logs in v1
 - Queueing backlog execution when concurrency slots are exhausted
+- Cross-platform menu bar implementations in this phase
 
 ## Architecture
 Primary components:
-- CLI Router: parses `daemon` and `validate` commands and resolves config path.
+- CLI Router: parses `daemon`, `validate`, `service`, and `menubar` commands.
 - Config Loader/Validator: parses TOML, resolves folder paths, and enforces schema/runtime constraints.
 - Scheduler Runner: creates per-job timers, triggers startup runs, and applies overlap/concurrency policies.
 - Shell Executor: runs `shell -c script` in target folder with timeout and exit/outcome mapping.
+- Service Controller (`servicecontrol`): manages LaunchAgent plist generation/validation and `launchctl` operations.
+- Menu Bar App (`menubar`): polls service + daemon status and exposes start/stop/open actions.
+- State Store (`state`): writes daemon heartbeat and recent run/skip summaries to JSON.
 - Logging Adapter: emits structured operational events through Go `log/slog`.
 
-Runtime flow:
+Runtime flow (daemon):
 1. `devmon daemon --config <path>` loads and validates TOML configuration.
-2. Scheduler performs startup runs (effective `startup_run=true`) and starts interval tickers.
-3. On each trigger, runner checks enabled state, overlap guard, and global concurrency availability.
-4. Executor runs shell command in folder working directory, streams stdout/stderr line events, and returns outcome metadata.
-5. Daemon reacts to `SIGINT`/`SIGTERM` by stopping new triggers, cancelling active jobs, waiting for drain, then exiting.
+2. Daemon state store is initialized and marks process start (`pid`, `started_at`, heartbeat).
+3. Scheduler performs startup runs (effective `startup_run=true`) and starts interval tickers.
+4. On each trigger, runner checks enabled state, overlap guard, and global concurrency availability.
+5. Executor runs shell command in folder working directory, streams stdout/stderr line events, and returns outcome metadata.
+6. Runner updates state store with latest run/skip summary and active job count.
+7. Daemon heartbeat updates are written on a fixed interval.
+8. On `SIGINT`/`SIGTERM`, daemon stops new triggers, drains active runs, marks stopped state, and exits.
+
+Runtime flow (service + menu bar):
+1. `devmon service install` writes LaunchAgent plists for daemon and menu bar and bootstraps both in `gui/<uid>`.
+2. LaunchAgents keep both processes alive and start them at login.
+3. `devmon menubar` polls `devmon service status` data and state file signals.
+4. Menu actions call lifecycle operations (`start`, `stop`) and local file open actions (`open log`, `open config`).
 
 ## Interfaces
 Canonical command identifiers:
@@ -54,6 +73,20 @@ Canonical command identifiers:
 enum DevmonCommand {
   Daemon = "daemon",
   Validate = "validate",
+  Service = "service",
+  Menubar = "menubar",
+}
+```
+
+Canonical service action identifiers:
+
+```ts
+enum DevmonServiceAction {
+  Install = "install",
+  Uninstall = "uninstall",
+  Start = "start",
+  Stop = "stop",
+  Status = "status",
 }
 ```
 
@@ -83,6 +116,18 @@ CLI command contracts:
 : Runs the foreground scheduler daemon until interrupted.
 - `devmon validate --config <path>`
 : Validates config schema and runtime constraints without starting scheduling.
+- `devmon service install`
+: Installs and bootstraps LaunchAgents for daemon and menu bar.
+- `devmon service uninstall`
+: Bootouts daemon/menu bar LaunchAgents and removes plist files.
+- `devmon service start`
+: Starts daemon LaunchAgent in user GUI domain.
+- `devmon service stop`
+: Stops daemon LaunchAgent in user GUI domain.
+- `devmon service status`
+: Returns structured JSON status for daemon/menu bar load state plus daemon health summary.
+- `devmon menubar`
+: Runs the menu bar app process (macOS only).
 
 Config contract (`devmon.toml`):
 - Top-level:
@@ -107,6 +152,16 @@ Config contract (`devmon.toml`):
 : `script = "<shell script>"`
 : `startup_run = true|false` (optional; falls back to daemon-level default)
 
+Default path contract (single config strategy):
+- Config file: `~/.config/devmon/devmon.toml`
+- State file: `~/.local/state/devmon/status.json`
+- Daemon log file: `~/Library/Logs/devmon/daemon.log`
+- Daemon LaunchAgent plist: `~/Library/LaunchAgents/io.delino.devmon.daemon.plist`
+- Menu bar LaunchAgent plist: `~/Library/LaunchAgents/io.delino.devmon.menubar.plist`
+- LaunchAgent labels:
+: `io.delino.devmon.daemon`
+: `io.delino.devmon.menubar`
+
 Scheduling contract:
 - Startup run occurs immediately when effective startup flag is true.
 - Identical job re-entry is skipped with `skipped-overlap`.
@@ -114,16 +169,27 @@ Scheduling contract:
 - No backlog queueing is performed in v1.
 
 ## Storage
-- No project-owned persistent state in v1.
-- Reads configuration from `devmon.toml`.
+- Reads scheduler config from `devmon.toml`.
+- Writes daemon state summary JSON to `~/.local/state/devmon/status.json`.
+- Writes LaunchAgent plists under `~/Library/LaunchAgents/` for service-managed mode.
+- Writes daemon logs to `~/Library/Logs/devmon/daemon.log` when LaunchAgent routes stdio.
 - Uses process-memory scheduler state for active jobs and ticker lifecycle.
 - Relies on command-specific local side effects inside configured folder paths.
+
+State file schema (`schema_version = "v1"`) includes:
+- daemon process state (`running`, `pid`, `started_at`, `last_heartbeat_at`)
+- scheduler occupancy (`active_jobs`)
+- recent run summary (`outcome`, `folder_id`, `job_id`, `duration_ms`, `error`, `timestamp`)
+- recent skip summary (`outcome`, `folder_id`, `job_id`, `skip_reason`, `timestamp`)
+- latest daemon-level error summary (`last_error`)
 
 ## Security
 - Commands run only within explicitly configured folder paths.
 - Executor passes arguments directly to process APIs and avoids shell interpolation outside configured script text.
 - Timeout and cancellation boundaries prevent uncontrolled long-running jobs.
-- Structured logs must avoid leaking sensitive environment values from command output where possible; operators should avoid printing secrets in configured scripts.
+- Service management is scoped to macOS user GUI domain (`gui/<uid>`), not privileged system domain.
+- LaunchAgent-managed processes must not self-daemonize; lifecycle remains launchd-owned.
+- Structured logs and persisted status must avoid secret values from job command output where possible.
 
 ## Logging
 Required baseline fields:
@@ -144,6 +210,17 @@ Required baseline fields:
 - `max_concurrent_jobs`
 - `active_jobs`
 
+Service-control event fields:
+- `action`
+- `label`
+- `domain`
+- `result`
+- `error`
+
+Menu bar failure fields:
+- `action`
+- `error`
+
 Output stream logging:
 - Command stdout/stderr are logged line-by-line with `stream=stdout|stderr`.
 - Logging uses Go `log/slog` with structured JSON output.
@@ -151,7 +228,7 @@ Output stream logging:
 ## Build and Test
 Validation commands:
 - Build: `go build ./cmds/devmon/...`
-- Test: `go test ./cmds/devmon/...`
+- Devmon tests: `go test ./cmds/devmon/...`
 - Workspace validation: `go test ./...`
 
 Required behavioral scenarios:
@@ -161,13 +238,20 @@ Required behavioral scenarios:
 4. Global concurrency skip behavior when slots are exhausted.
 5. Timeout cancellation and outcome mapping.
 6. Signal-driven graceful daemon shutdown.
+7. `service install` writes/validates both plist files and bootstraps/kickstarts both labels.
+8. `service status` reports consistent daemon/menu bar load state and daemon health.
+9. `service stop` transitions daemon health to non-running and preserves deterministic output.
+10. `service uninstall` bootouts labels and removes plist files.
+11. State file updates on run completion and skip outcomes.
+12. Heartbeat staleness or missing PID process marks daemon health as non-running/error.
+13. Non-darwin service/menubar behavior returns deterministic unsupported errors.
 
 ## Roadmap
-- Phase 1: `shell-command` jobs with interval scheduling, concurrency caps, and structured logs.
-- Phase 2: Additional built-in job types and richer job policies.
-- Phase 3: Optional persistent run history and observability extensions.
+- Phase 1: shell-command scheduling, service lifecycle controls, menu bar management, and state persistence.
+- Phase 2: additional built-in job types and richer policy controls.
+- Phase 3: deeper observability (history retention, diagnostics views).
 
 ## Open Questions
-- Whether v2 should add queueing semantics for capacity-skipped runs.
+- Whether future versions should add queueing semantics for capacity-skipped runs.
 - Whether per-job concurrency limits should be added beyond overlap guard.
-- Whether daemon-level health endpoints are needed for external supervision integrations.
+- Whether service-management abstractions should be extended beyond macOS.
