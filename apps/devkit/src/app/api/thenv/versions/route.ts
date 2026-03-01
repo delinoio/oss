@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { callThenvRpc, parseScopeFromSearchParams } from "@/app/api/thenv/_lib/connect";
+import {
+  parseCursor,
+  parseLimit,
+  ThenvValidationError,
+} from "@/app/api/thenv/_lib/validation";
 
 interface ListBundleVersionsResponse {
   versions: Array<{
@@ -17,22 +22,24 @@ interface ListBundleVersionsResponse {
 export async function GET(request: NextRequest) {
   try {
     const scope = parseScopeFromSearchParams(request);
-    const limitRaw = request.nextUrl.searchParams.get("limit");
-    const cursor = request.nextUrl.searchParams.get("cursor") ?? "";
-
-    const limit = limitRaw ? Number.parseInt(limitRaw, 10) : 20;
+    const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
+    const cursor = parseCursor(request.nextUrl.searchParams.get("cursor"));
 
     const response = await callThenvRpc<object, ListBundleVersionsResponse>(
       "/thenv.v1.BundleService/ListBundleVersions",
       {
         scope,
-        limit: Number.isNaN(limit) ? 20 : limit,
+        limit,
         cursor,
       },
     );
 
     return NextResponse.json(response);
   } catch (error) {
+    if (error instanceof ThenvValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 502 });
   }
