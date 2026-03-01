@@ -187,9 +187,10 @@ Required structured fields:
 Sensitive logging rule:
 - `X-Commit-Tracker-Subject` and bearer token values remain required for authorization but must never be emitted in structured logs.
 
-## Collector Input Contract
-CLI command:
+## Collector CLI Contract
+CLI commands:
 - `commit-tracker ingest --input <path> --server <url> --token <token> [--subject <subject>]`
+- `commit-tracker report [--provider github] [--repository <owner/repo>] [--pull-request <number>] [--base-commit <sha>] [--head-commit <sha>] [--environment <env>] [--metric-key <key> ...] [--fail-on never|warn|fail] [--github-output <path>] --server <url> --token <token> [--subject <subject>]`
 
 Input JSON (`--input`) schema:
 
@@ -217,6 +218,37 @@ Input JSON (`--input`) schema:
 }
 ```
 
+Report context resolution behavior:
+- `repository`: `--repository` then `GITHUB_REPOSITORY`
+- `head_commit`: `--head-commit` then `GITHUB_SHA`
+- `pull_request`: `--pull-request` then `GITHUB_EVENT_PATH` (`pull_request.number`)
+- `base_commit`: `--base-commit` then `GITHUB_EVENT_PATH` (`pull_request.base.sha`)
+- `environment`: defaults to `ci` unless `--environment` overrides.
+
+Report output contract:
+- `stdout` JSON keys:
+  - `provider`
+  - `repository`
+  - `pullRequest`
+  - `baseCommitSha`
+  - `headCommitSha`
+  - `aggregateEvaluation`
+  - `commentUrl`
+  - `statusUrl`
+- GitHub Actions output file keys (`--github-output` then `GITHUB_OUTPUT`):
+  - `aggregate_evaluation`
+  - `comment_url`
+  - `status_url`
+  - `pull_request`
+  - `base_commit_sha`
+  - `head_commit_sha`
+
+Report exit code behavior:
+- `2`: argument parsing or input validation failures
+- `1`: RPC/network failure, output-file write failure, or `--fail-on` threshold breach
+- `0`: successful publish without threshold breach
+- `--fail-on` default is `fail` (`FAIL` only); `warn` fails on `WARN|FAIL`; `never` never fails on evaluation result.
+
 ## Build and Test
 Current commands:
 - Proto generation prerequisite: `./scripts/generate-go-proto.sh`
@@ -237,6 +269,9 @@ Acceptance-focused scenarios:
 - Unsupported provider publish paths return `FailedPrecondition`
 - Authorization failures return `Unauthenticated` and emit structured denied logs without token/subject leakage
 - Connect handler e2e path verifies `UpsertCommitMetrics` via generated client -> handler -> service
+- Report CLI resolves PR context from GitHub event payload and env defaults when flags are omitted
+- Report CLI writes both stdout JSON and GitHub Actions output keys
+- Report CLI applies `--fail-on` thresholds deterministically (`never|warn|fail`)
 
 ## Environment Variables
 Server:
@@ -255,11 +290,16 @@ CLI:
 - `COMMIT_TRACKER_SERVER_URL` (optional default)
 - `COMMIT_TRACKER_TOKEN` (optional default)
 - `COMMIT_TRACKER_SUBJECT` (optional default)
+- `GITHUB_REPOSITORY` (optional default for `report --repository`)
+- `GITHUB_SHA` (optional default for `report --head-commit`)
+- `GITHUB_EVENT_PATH` (optional default source for `report --pull-request` and `report --base-commit`)
+- `GITHUB_OUTPUT` (optional default destination for report output key-value entries)
 
 CLI auth resolution behavior:
 - `--token` and `--subject` flags do not embed secret-bearing environment defaults in flag usage output.
 - Runtime resolution order for token: `--token` then `COMMIT_TRACKER_TOKEN`.
 - Runtime resolution order for subject: `--subject` then `COMMIT_TRACKER_SUBJECT` then resolved token.
+- Runtime resolution order for report output file path: `--github-output` then `GITHUB_OUTPUT`.
 
 ## Roadmap
 - Phase 1 (implemented): ingestion + comparison + GitHub publish + operational web dashboard
