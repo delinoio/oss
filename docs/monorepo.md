@@ -153,7 +153,7 @@ Change-scoped execution rules:
 - Every structural repository change must update relevant `docs/project-*.md` files in the same change set.
 - New project creation is blocked until its project document exists.
 - Domain-level `AGENTS.md` files are policy mirrors and must stay aligned with `docs/`.
-- After staging files with `git add`, create a commit with `git commit` without unnecessary delay.
+- Run `git commit` only after `git add`; once files are staged, create the commit without unnecessary delay.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - After addressing pull request review comments and pushing updates, resolve the corresponding review threads.
 - If a project splits into multiple deployables, the project doc must include path ownership and integration boundaries.
