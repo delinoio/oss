@@ -233,6 +233,10 @@ Validation commands:
 - Build: `go build ./cmds/devmon/...`
 - Devmon tests: `go test ./cmds/devmon/...`
 - Workspace validation: `go test ./...`
+- Focused regression suites:
+: `go test ./cmds/devmon/internal/cli -count=1`
+: `go test ./cmds/devmon/internal/servicecontrol -count=1`
+: `go test ./cmds/devmon/internal/scheduler -count=1`
 
 Required behavioral scenarios:
 1. Config validation success and deterministic validation failures.
@@ -249,6 +253,12 @@ Required behavioral scenarios:
 12. Heartbeat staleness or missing PID process marks daemon health as non-running/error.
 13. Non-darwin service/menubar behavior returns deterministic unsupported errors.
 14. `service install` fails before `launchctl` operations when daemon config file is missing or invalid.
+
+Testing policy notes:
+- Behavioral tests are expected to map directly to the 14 required scenarios above.
+- Darwin-specific service lifecycle assertions live behind `//go:build darwin` tests.
+- Non-darwin suites must still verify deterministic unsupported errors for `service` and `menubar`.
+- Daemon shutdown tests may use internal test seams to avoid subprocess flakiness while keeping public CLI contracts unchanged.
 
 ## Roadmap
 - Phase 1: shell-command scheduling, service lifecycle controls, menu bar management, and state persistence.

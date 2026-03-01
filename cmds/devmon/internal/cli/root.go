@@ -25,6 +25,23 @@ import (
 
 var newServiceManager = servicecontrol.NewManager
 var runMenubar = menubar.Run
+var newSignalNotifyContext = signal.NotifyContext
+var newShellExecutor = executor.NewShellExecutor
+var newStateStore = state.NewStore
+
+type daemonRunner interface {
+	Run(ctx context.Context) error
+	SetStateStore(stateStore *state.Store)
+	ActiveJobs() int
+}
+
+type activeJobReader interface {
+	ActiveJobs() int
+}
+
+var newDaemonRunner = func(cfg *config.Config, logger *slog.Logger, commandExecutor executor.Executor) daemonRunner {
+	return scheduler.NewRunner(cfg, logger, commandExecutor)
+}
 
 func Execute(args []string) int {
 	return execute(args, os.Stdout, os.Stderr)
@@ -75,15 +92,15 @@ func executeDaemon(args []string, stderr io.Writer) int {
 		return 2
 	}
 
-	runner := scheduler.NewRunner(cfg, logger, executor.NewShellExecutor(logger))
-	stateStore, err := state.NewStore("", logger)
+	runner := newDaemonRunner(cfg, logger, newShellExecutor(logger))
+	stateStore, err := newStateStore("", logger)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "init state store: %v\n", err)
 		return 1
 	}
 	runner.SetStateStore(stateStore)
 
-	runContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	runContext, stop := newSignalNotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	daemonPID := os.Getpid()
@@ -250,7 +267,7 @@ func runHeartbeat(
 	ctx context.Context,
 	logger *slog.Logger,
 	stateStore *state.Store,
-	runner *scheduler.Runner,
+	runner activeJobReader,
 	daemonPID int,
 ) {
 	const heartbeatInterval = 5 * time.Second
