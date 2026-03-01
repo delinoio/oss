@@ -551,6 +551,107 @@ fn uninstall_removes_tracked_selector_across_version_spellings() {
 
 #[test]
 #[serial]
+fn uninstall_is_atomic_when_later_target_conflicts_with_default() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod")), ("24.0.0", None)]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+    env.register_release(
+        "24.0.0",
+        make_archive(
+            "24.0.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-24\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0", "24.0.0"])
+        .assert()
+        .success();
+
+    env.command().args(["default", "24.0.0"]).assert().success();
+
+    env.command()
+        .args(["toolchain", "uninstall", "22.1.0", "24.0.0"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("used as default runtime"));
+
+    assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
+    assert!(env.data_root.join("toolchains").join("v24.0.0").exists());
+}
+
+#[test]
+#[serial]
+fn uninstall_is_atomic_when_any_target_is_not_installed() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["toolchain", "uninstall", "22.1.0", "24.0.0"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Runtime v24.0.0 is not installed",
+        ));
+
+    assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn uninstall_deduplicates_canonical_duplicate_targets() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["toolchain", "uninstall", "v22.1.0", "22.1.0"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Removed 1 runtime(s)"));
+
+    assert!(!env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
 fn default_override_show_precedence() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod")), ("24.0.0", None)]);

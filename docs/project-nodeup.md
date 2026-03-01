@@ -147,7 +147,8 @@ Subcommand contracts:
 - `nodeup toolchain uninstall <runtime>...`
 : Input: one or more selectors; empty input is invalid.
 : Allowed selector kinds: exact `Version` only (channels/linked names are rejected).
-: Behavior: blocks removal if target runtime is referenced by default selector or any override; selector spelling is canonicalized so `22.1.0` and `v22.1.0` are treated as the same runtime.
+: Behavior: pre-validates all requested runtimes before deleting anything. Uninstall is atomic for command-level validation: if any requested target is invalid, not installed, or referenced by default selector/overrides, the command fails with no runtime deletions.
+: Behavior: selector spelling is canonicalized so `22.1.0` and `v22.1.0` map to the same runtime, and duplicate canonical targets in the same command are deduplicated.
 : Output: removed runtime list; tracked selectors that canonicalize to removed versions are deleted.
 - `nodeup toolchain link <name> <path>`
 : Input: linked runtime name and existing local runtime path.
