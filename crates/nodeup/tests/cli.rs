@@ -312,8 +312,7 @@ fn toolchain_list_standard_prints_summary_counts_only() {
         .assert()
         .success();
 
-    let linked_runtime = env.root.join("linked-runtime-standard");
-    fs::create_dir_all(&linked_runtime).unwrap();
+    let linked_runtime = create_linked_runtime(&env.root, "linked-runtime-standard");
 
     env.command()
         .args([
