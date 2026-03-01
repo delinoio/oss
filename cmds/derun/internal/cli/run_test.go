@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
@@ -140,5 +141,54 @@ func TestExecuteRunRejectsDuplicateSessionID(t *testing.T) {
 	}
 	if total != 1 || len(sessions) != 1 {
 		t.Fatalf("unexpected sessions after duplicate rejection: total=%d len=%d", total, len(sessions))
+	}
+}
+
+func TestExecuteRunPersistsStartupFailureSessionMetadata(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+
+	sessionID := "01J0S555555555555555555555"
+	exitCode := ExecuteRun([]string{"--session-id", sessionID, "--", "definitely-not-real-command-derun-test"})
+	if exitCode != 1 {
+		t.Fatalf("unexpected exit code: got=%d want=1", exitCode)
+	}
+
+	store, err := state.New(stateRoot)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+
+	sessions, total, err := store.ListSessions("", 10)
+	if err != nil {
+		t.Fatalf("ListSessions returned error: %v", err)
+	}
+	if total != 1 || len(sessions) != 1 {
+		t.Fatalf("expected failed startup session to be listed: total=%d len=%d", total, len(sessions))
+	}
+	if sessions[0].SessionID != sessionID {
+		t.Fatalf("unexpected listed session id: got=%s want=%s", sessions[0].SessionID, sessionID)
+	}
+
+	detail, err := store.GetSession(sessionID)
+	if err != nil {
+		t.Fatalf("GetSession returned error: %v", err)
+	}
+	if detail.State != contracts.DerunSessionStateFailed {
+		t.Fatalf("unexpected state: got=%s want=%s", detail.State, contracts.DerunSessionStateFailed)
+	}
+	if detail.Error == "" {
+		t.Fatalf("expected startup failure detail error")
+	}
+	if !strings.Contains(detail.Error, "start process") && !strings.Contains(detail.Error, "start pty process") {
+		t.Fatalf("unexpected startup failure error: %q", detail.Error)
+	}
+
+	metaPath := filepath.Join(stateRoot, "sessions", sessionID, "meta.json")
+	if _, err := os.Stat(metaPath); err != nil {
+		t.Fatalf("meta metadata should exist for failed startup session: %v", err)
 	}
 }
