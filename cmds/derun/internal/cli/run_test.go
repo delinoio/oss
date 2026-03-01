@@ -299,3 +299,41 @@ func TestExecuteRunPersistsStartupFailureSessionMetadata(t *testing.T) {
 		t.Fatalf("meta metadata should exist for failed startup session: %v", err)
 	}
 }
+
+func TestSelectTransportMode(t *testing.T) {
+	testCases := []struct {
+		name       string
+		tty        bool
+		goos       string
+		wantResult contracts.DerunTransportMode
+	}{
+		{
+			name:       "pipe mode without tty",
+			tty:        false,
+			goos:       "linux",
+			wantResult: contracts.DerunTransportModePipe,
+		},
+		{
+			name:       "posix pty mode on unix tty",
+			tty:        true,
+			goos:       "linux",
+			wantResult: contracts.DerunTransportModePosixPTY,
+		},
+		{
+			name:       "windows conpty mode on windows tty",
+			tty:        true,
+			goos:       "windows",
+			wantResult: contracts.DerunTransportModeWindowsConPTY,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := selectTransportMode(tc.tty, tc.goos)
+			if got != tc.wantResult {
+				t.Fatalf("unexpected transport mode: got=%s want=%s", got, tc.wantResult)
+			}
+		})
+	}
+}

@@ -121,10 +121,7 @@ func ExecuteRun(args []string) int {
 	}
 
 	ttyAttached := isTerminal(os.Stdin) && isTerminal(os.Stdout)
-	transportMode := contracts.DerunTransportModePipe
-	if ttyAttached && runtime.GOOS != "windows" {
-		transportMode = contracts.DerunTransportModePosixPTY
-	}
+	transportMode := selectTransportMode(ttyAttached, runtime.GOOS)
 
 	startedAt := time.Now().UTC()
 	meta := session.Meta{
@@ -170,6 +167,10 @@ func ExecuteRun(args []string) int {
 		ptyCapture := capture.NewWriter(store, logger, sessionID, contracts.DerunOutputChannelPTY)
 		ptyOutput := io.MultiWriter(os.Stdout, ptyCapture)
 		runResult, runErr = transport.RunPosixPTY(ctx, commandArgs, workingDir, onStart, ptyOutput)
+	case contracts.DerunTransportModeWindowsConPTY:
+		ptyCapture := capture.NewWriter(store, logger, sessionID, contracts.DerunOutputChannelPTY)
+		ptyOutput := io.MultiWriter(os.Stdout, ptyCapture)
+		runResult, runErr = transport.RunWindowsConPTY(ctx, commandArgs, workingDir, onStart, ptyOutput)
 	default:
 		stdoutCapture := capture.NewWriter(store, logger, sessionID, contracts.DerunOutputChannelStdout)
 		stderrCapture := capture.NewWriter(store, logger, sessionID, contracts.DerunOutputChannelStderr)
@@ -233,6 +234,16 @@ func splitRunArgs(args []string) ([]string, []string) {
 		}
 	}
 	return args, nil
+}
+
+func selectTransportMode(ttyAttached bool, goos string) contracts.DerunTransportMode {
+	if !ttyAttached {
+		return contracts.DerunTransportModePipe
+	}
+	if goos == "windows" {
+		return contracts.DerunTransportModeWindowsConPTY
+	}
+	return contracts.DerunTransportModePosixPTY
 }
 
 func validateRetentionDuration(retentionDuration time.Duration) error {
