@@ -20,6 +20,7 @@ export type MoveSamplingEmission = {
 
 export type MoveSamplingPolicy = {
   record(deltaX: number, deltaY: number): MoveSamplingEmission | null;
+  emitWhenDue(): MoveSamplingEmission | null;
   flush(): MoveSamplingEmission | null;
   reset(): void;
 };
@@ -31,7 +32,16 @@ type CreateCoalescedMoveSamplingPolicyOptions = {
 export function createCoalescedMoveSamplingPolicy(
   options: CreateCoalescedMoveSamplingPolicyOptions = {},
 ): MoveSamplingPolicy {
-  const now = options.now ?? Date.now;
+  const now =
+    options.now ??
+    (() => {
+      const performanceRef = globalThis.performance;
+      if (performanceRef && typeof performanceRef.now === "function") {
+        return performanceRef.now();
+      }
+
+      return Date.now();
+    });
 
   let pendingDeltaX = 0;
   let pendingDeltaY = 0;
@@ -87,6 +97,19 @@ export function createCoalescedMoveSamplingPolicy(
         return emitPending(nowMs);
       }
 
+      if (nowMs - lastEmissionTimestampMs < MOVE_THROTTLE_INTERVAL_MS) {
+        return null;
+      }
+
+      return emitPending(nowMs);
+    },
+
+    emitWhenDue(): MoveSamplingEmission | null {
+      if (pendingRawSampleCount === 0 || lastEmissionTimestampMs === null) {
+        return null;
+      }
+
+      const nowMs = now();
       if (nowMs - lastEmissionTimestampMs < MOVE_THROTTLE_INTERVAL_MS) {
         return null;
       }

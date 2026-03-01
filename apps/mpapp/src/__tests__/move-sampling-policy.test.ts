@@ -47,6 +47,25 @@ describe("move sampling policy", () => {
     expect(policy.record(3, -2)).toBeNull();
   });
 
+  it("emits trailing coalesced movement when the interval elapses without new input", () => {
+    const { policy, advance } = createPolicyHarness();
+    policy.record(1, 1);
+
+    advance(6);
+    expect(policy.record(2, -1)).toBeNull();
+
+    advance(9);
+    expect(policy.emitWhenDue()).toBeNull();
+
+    advance(1);
+    const trailingEmission = policy.emitWhenDue();
+    expect(trailingEmission).not.toBeNull();
+    expect(trailingEmission?.deltaX).toBe(2);
+    expect(trailingEmission?.deltaY).toBe(-1);
+    expect(trailingEmission?.diagnostics.samplingRawSampleCount).toBe(1);
+    expect(trailingEmission?.diagnostics.samplingCoalescedSampleCount).toBe(0);
+  });
+
   it("emits exactly at the interval boundary", () => {
     const { policy, advance } = createPolicyHarness();
     policy.record(1, 1);
@@ -96,6 +115,15 @@ describe("move sampling policy", () => {
     expect(flushedEmission?.deltaX).toBe(3);
     expect(flushedEmission?.deltaY).toBe(-1);
     expect(flushedEmission?.diagnostics.samplingWindowMs).toBe(8);
+  });
+
+  it("emitWhenDue returns null when there is no pending movement", () => {
+    const { policy, advance } = createPolicyHarness();
+    expect(policy.emitWhenDue()).toBeNull();
+
+    policy.record(1, 1);
+    advance(MOVE_THROTTLE_INTERVAL_MS);
+    expect(policy.emitWhenDue()).toBeNull();
   });
 
   it("reset clears pending samples and timing history", () => {

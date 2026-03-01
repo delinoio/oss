@@ -21,6 +21,7 @@ import {
 } from "./src/contracts/enums";
 import { resolveMpappRuntimeConfig } from "./src/config/mpapp-runtime-config";
 import {
+  MOVE_THROTTLE_INTERVAL_MS,
   createCoalescedMoveSamplingPolicy,
   type MoveSamplingEmission,
 } from "./src/input/move-sampling-policy";
@@ -412,6 +413,25 @@ export default function App() {
     }
 
     emitSampledMove(moveEmission);
+  }, [emitSampledMove, sessionState.mode]);
+
+  useEffect(() => {
+    if (sessionState.mode !== MpappMode.Connected) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      const moveEmission = moveSamplingPolicyRef.current.emitWhenDue();
+      if (!moveEmission) {
+        return;
+      }
+
+      emitSampledMove(moveEmission);
+    }, MOVE_THROTTLE_INTERVAL_MS);
+
+    return () => {
+      clearInterval(intervalId);
+    };
   }, [emitSampledMove, sessionState.mode]);
 
   const handleClick = useCallback(
