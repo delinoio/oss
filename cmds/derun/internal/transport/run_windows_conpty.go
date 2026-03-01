@@ -20,8 +20,7 @@ const (
 	defaultConPTYWidth  = 120
 	defaultConPTYHeight = 30
 	conPTYResizePollInt = 250 * time.Millisecond
-	conPTYStdinStopWait = 500 * time.Millisecond
-	conPTYDrainGrace    = 500 * time.Millisecond
+	conPTYDrainGrace    = 2 * time.Second
 	conPTYDrainTimeout  = 5 * time.Second
 )
 
@@ -195,12 +194,6 @@ func RunWindowsConPTY(
 	inWrite = 0
 	defer stdinWriter.Close()
 
-	stdinReader, err := duplicateFileHandle(os.Stdin, "conpty-stdin-read")
-	if err != nil {
-		return RunResult{}, fmt.Errorf("duplicate stdin handle: %w", err)
-	}
-	defer stdinReader.Close()
-
 	stdoutReader := os.NewFile(uintptr(outRead), "conpty-stdout-read")
 	if stdoutReader == nil {
 		return RunResult{}, fmt.Errorf("wrap conpty output reader")
@@ -217,10 +210,8 @@ func RunWindowsConPTY(
 		copyStdoutErr <- copyErr
 	}()
 
-	stdinCopyDone := make(chan struct{})
 	go func() {
-		defer close(stdinCopyDone)
-		_, copyErr := io.Copy(stdinWriter, stdinReader)
+		_, copyErr := io.Copy(stdinWriter, os.Stdin)
 		if copyErr != nil && !isBenignConPTYCopyErr(copyErr) {
 			_ = windows.TerminateProcess(processInfo.Process, 1)
 		}
@@ -242,12 +233,6 @@ func RunWindowsConPTY(
 	}
 	close(waitDone)
 	stopResize()
-	_ = stdinReader.Close()
-	_ = stdinWriter.Close()
-	select {
-	case <-stdinCopyDone:
-	case <-time.After(conPTYStdinStopWait):
-	}
 
 	var stdoutCopyErr error
 	select {
@@ -302,31 +287,6 @@ func closePseudoConsole(handle *windows.Handle) {
 	}
 	windows.ClosePseudoConsole(*handle)
 	*handle = 0
-}
-
-func duplicateFileHandle(file *os.File, name string) (*os.File, error) {
-	if file == nil {
-		return nil, fmt.Errorf("nil file handle")
-	}
-	process := windows.CurrentProcess()
-	var duplicated windows.Handle
-	if err := windows.DuplicateHandle(
-		process,
-		windows.Handle(file.Fd()),
-		process,
-		&duplicated,
-		0,
-		false,
-		windows.DUPLICATE_SAME_ACCESS,
-	); err != nil {
-		return nil, err
-	}
-	duplicateFile := os.NewFile(uintptr(duplicated), name)
-	if duplicateFile == nil {
-		closeHandle(&duplicated)
-		return nil, fmt.Errorf("wrap duplicated handle")
-	}
-	return duplicateFile, nil
 }
 
 func detectConPTYSize() windows.Coord {

@@ -214,6 +214,7 @@ Validation commands:
 - Test: `go test ./cmds/derun/...`
 - Workspace validation: `go test ./...`
 - CI gating: `.github/workflows/CI.yml` runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
+- Windows ConPTY E2E coverage requires console device handles (`CONIN$`, `CONOUT$`) and skips only when those handles are unavailable on the host.
 
 Implemented defaults:
 - `derun_read_output` default `max_bytes`: `65536`.

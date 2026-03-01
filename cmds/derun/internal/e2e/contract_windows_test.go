@@ -18,6 +18,27 @@ import (
 func TestWindowsConPTYRunnerParity(t *testing.T) {
 	setEnv(t, helperEnv, "1")
 
+	consoleIn, err := os.OpenFile("CONIN$", os.O_RDWR, 0)
+	if err != nil {
+		t.Skipf("console input handle unavailable: %v", err)
+	}
+	consoleOut, err := os.OpenFile("CONOUT$", os.O_RDWR, 0)
+	if err != nil {
+		t.Skipf("console output handle unavailable: %v", err)
+	}
+
+	originalStdin := os.Stdin
+	originalStdout := os.Stdout
+	originalStderr := os.Stderr
+	os.Stdin = consoleIn
+	os.Stdout = consoleOut
+	os.Stderr = consoleOut
+	t.Cleanup(func() {
+		os.Stdin = originalStdin
+		os.Stdout = originalStdout
+		os.Stderr = originalStderr
+	})
+
 	workingDir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd returned error: %v", err)
@@ -62,13 +83,11 @@ func TestInteractiveRunUsesWindowsConPTYTransport(t *testing.T) {
 	if err != nil {
 		t.Skipf("console input handle unavailable: %v", err)
 	}
-	defer consoleIn.Close()
 
 	consoleOut, err := os.OpenFile("CONOUT$", os.O_RDWR, 0)
 	if err != nil {
 		t.Skipf("console output handle unavailable: %v", err)
 	}
-	defer consoleOut.Close()
 
 	originalStdin := os.Stdin
 	originalStdout := os.Stdout
