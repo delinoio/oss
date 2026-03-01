@@ -231,8 +231,8 @@ func TestExecuteReportSuccessUsesEnvAndEventFallback(t *testing.T) {
 	server := newReportTestServer(t, fake)
 
 	t.Setenv("GITHUB_REPOSITORY", "acme/repo")
-	t.Setenv("GITHUB_SHA", "head-commit")
-	t.Setenv("GITHUB_EVENT_PATH", writePullRequestEvent(t, 42, "base-commit"))
+	t.Setenv("GITHUB_SHA", "merge-commit-sha")
+	t.Setenv("GITHUB_EVENT_PATH", writePullRequestEvent(t, 42, "base-commit", "pr-head-commit"))
 
 	outputPath := filepath.Join(t.TempDir(), "github-output.txt")
 	t.Setenv("GITHUB_OUTPUT", outputPath)
@@ -266,7 +266,7 @@ func TestExecuteReportSuccessUsesEnvAndEventFallback(t *testing.T) {
 	if fake.lastRequest.GetBaseCommitSha() != "base-commit" {
 		t.Fatalf("unexpected base commit: %s", fake.lastRequest.GetBaseCommitSha())
 	}
-	if fake.lastRequest.GetHeadCommitSha() != "head-commit" {
+	if fake.lastRequest.GetHeadCommitSha() != "pr-head-commit" {
 		t.Fatalf("unexpected head commit: %s", fake.lastRequest.GetHeadCommitSha())
 	}
 	if fake.lastRequest.GetEnvironment() != "ci" {
@@ -306,7 +306,7 @@ func TestExecuteReportSuccessUsesEnvAndEventFallback(t *testing.T) {
 	if !strings.Contains(outputString, "base_commit_sha=base-commit") {
 		t.Fatalf("expected base commit in github output, got=%s", outputString)
 	}
-	if !strings.Contains(outputString, "head_commit_sha=head-commit") {
+	if !strings.Contains(outputString, "head_commit_sha=pr-head-commit") {
 		t.Fatalf("expected head commit in github output, got=%s", outputString)
 	}
 }
@@ -319,7 +319,7 @@ func TestExecuteReportFlagsOverrideEventAndEnv(t *testing.T) {
 
 	t.Setenv("GITHUB_REPOSITORY", "env/repo")
 	t.Setenv("GITHUB_SHA", "env-head")
-	t.Setenv("GITHUB_EVENT_PATH", writePullRequestEvent(t, 77, "env-base"))
+	t.Setenv("GITHUB_EVENT_PATH", writePullRequestEvent(t, 77, "env-base", "event-head"))
 
 	stdout := &bytes.Buffer{}
 	stderr := &bytes.Buffer{}
@@ -389,6 +389,42 @@ func TestExecuteReportFailOnWarnReturnsExitOne(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "triggered failure threshold") {
 		t.Fatalf("expected fail-on warning message, got=%s", stderr.String())
+	}
+}
+
+func TestExecuteReportHeadCommitFallsBackToGitHubSHAWhenEventHeadMissing(t *testing.T) {
+	fake := &fakeProviderReportService{response: &committrackerv1.PublishPullRequestReportResponse{
+		AggregateEvaluation: committrackerv1.EvaluationLevel_EVALUATION_LEVEL_PASS,
+	}}
+	server := newReportTestServer(t, fake)
+
+	t.Setenv("GITHUB_REPOSITORY", "acme/repo")
+	t.Setenv("GITHUB_SHA", "fallback-head")
+
+	eventPath := filepath.Join(t.TempDir(), "event.json")
+	eventPayload := `{"pull_request":{"number":15,"base":{"sha":"base-commit"}}}`
+	if err := os.WriteFile(eventPath, []byte(eventPayload), 0o600); err != nil {
+		t.Fatalf("write event payload: %v", err)
+	}
+	t.Setenv("GITHUB_EVENT_PATH", eventPath)
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	code := execute([]string{
+		"report",
+		"--server", server,
+		"--token", "token-1",
+	}, stdout, stderr)
+	if code != 0 {
+		t.Fatalf("expected success code 0, got=%d stderr=%s", code, stderr.String())
+	}
+
+	if fake.lastRequest == nil {
+		t.Fatal("expected report request")
+	}
+	if fake.lastRequest.GetHeadCommitSha() != "fallback-head" {
+		t.Fatalf("expected GITHUB_SHA fallback, got=%s", fake.lastRequest.GetHeadCommitSha())
 	}
 }
 
@@ -557,10 +593,15 @@ func newReportTestServer(t *testing.T, service committrackerv1connect.ProviderRe
 	return server.URL
 }
 
-func writePullRequestEvent(t *testing.T, pullRequest int64, baseCommitSHA string) string {
+func writePullRequestEvent(t *testing.T, pullRequest int64, baseCommitSHA string, headCommitSHA string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "event.json")
-	payload := fmt.Sprintf(`{"pull_request":{"number":%d,"base":{"sha":"%s"}}}`, pullRequest, baseCommitSHA)
+	payload := fmt.Sprintf(
+		`{"pull_request":{"number":%d,"base":{"sha":"%s"},"head":{"sha":"%s"}}}`,
+		pullRequest,
+		baseCommitSHA,
+		headCommitSHA,
+	)
 	if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
 		t.Fatalf("write event payload: %v", err)
 	}

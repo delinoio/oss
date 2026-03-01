@@ -220,7 +220,7 @@ Input JSON (`--input`) schema:
 
 Report context resolution behavior:
 - `repository`: `--repository` then `GITHUB_REPOSITORY`
-- `head_commit`: `--head-commit` then `GITHUB_SHA`
+- `head_commit`: `--head-commit` then `GITHUB_EVENT_PATH` (`pull_request.head.sha`) then `GITHUB_SHA`
 - `pull_request`: `--pull-request` then `GITHUB_EVENT_PATH` (`pull_request.number`)
 - `base_commit`: `--base-commit` then `GITHUB_EVENT_PATH` (`pull_request.base.sha`)
 - `environment`: defaults to `ci` unless `--environment` overrides.
@@ -292,8 +292,9 @@ CLI:
 - `COMMIT_TRACKER_TOKEN` (optional default)
 - `COMMIT_TRACKER_SUBJECT` (optional default)
 - `GITHUB_REPOSITORY` (optional default for `report --repository`)
-- `GITHUB_SHA` (optional default for `report --head-commit`)
+- `GITHUB_SHA` (optional fallback default for `report --head-commit` after event payload resolution)
 - `GITHUB_EVENT_PATH` (optional default source for `report --pull-request` and `report --base-commit`)
+- `GITHUB_EVENT_PATH` (optional default source for `report --head-commit` via `pull_request.head.sha`)
 - `GITHUB_OUTPUT` (optional default destination for report output key-value entries)
 
 CLI auth resolution behavior:

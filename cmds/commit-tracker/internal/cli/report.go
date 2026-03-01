@@ -173,7 +173,7 @@ func (f *reportFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.repository, "repository", "", "repository owner/name (defaults to GITHUB_REPOSITORY)")
 	fs.Int64Var(&f.pullRequest, "pull-request", 0, "pull request number (defaults to pull_request.number from GITHUB_EVENT_PATH)")
 	fs.StringVar(&f.baseCommit, "base-commit", "", "base commit SHA (defaults to pull_request.base.sha from GITHUB_EVENT_PATH)")
-	fs.StringVar(&f.headCommit, "head-commit", "", "head commit SHA (defaults to GITHUB_SHA)")
+	fs.StringVar(&f.headCommit, "head-commit", "", "head commit SHA (defaults to pull_request.head.sha from GITHUB_EVENT_PATH, then GITHUB_SHA)")
 	fs.StringVar(&f.environment, "environment", f.environment, "metric environment label")
 	fs.Var(&f.metricKeys, "metric-key", "metric key filter (repeatable)")
 	fs.StringVar(&f.failOn, "fail-on", f.failOn, "failure threshold: never|warn|fail")
@@ -194,12 +194,9 @@ func (f reportFlags) toPublishPullRequestReportRequest() (*committrackerv1.Publi
 		return nil, errors.New("repository is required (--repository or GITHUB_REPOSITORY)")
 	}
 
-	headCommit := strings.TrimSpace(f.headCommit)
-	if headCommit == "" {
-		headCommit = strings.TrimSpace(os.Getenv("GITHUB_SHA"))
-	}
-	if headCommit == "" {
-		return nil, errors.New("head commit is required (--head-commit or GITHUB_SHA)")
+	headCommit, err := resolveHeadCommit(f.headCommit)
+	if err != nil {
+		return nil, err
 	}
 
 	pullRequest, baseCommit, err := resolvePullRequestContext(f.pullRequest, f.baseCommit)
