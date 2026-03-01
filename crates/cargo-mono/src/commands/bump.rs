@@ -84,8 +84,6 @@ pub fn execute(args: &BumpArgs, output: OutputFormat, app: &CargoMonoApp) -> Res
         );
     }
 
-    git::ensure_clean_working_tree(args.allow_dirty)?;
-
     let resolved = targeting::resolve_targets(&args.target, &args.changed, &app.workspace)?;
     let mut skipped_packages = BTreeMap::<String, BumpSkipReason>::new();
 
