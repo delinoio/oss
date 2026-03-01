@@ -122,6 +122,10 @@ func ExecuteRun(args []string) int {
 		TTYAttached:      ttyAttached,
 		PID:              0,
 	}
+	if err := store.WriteMeta(meta); err != nil {
+		fmt.Fprintf(os.Stderr, "write metadata: %v\n", err)
+		return 1
+	}
 
 	logger.Event("state_transition", map[string]any{
 		"session_id":       sessionID,
@@ -132,6 +136,9 @@ func ExecuteRun(args []string) int {
 
 	ctx := context.Background()
 	onStart := func(pid int) error {
+		if pid <= 0 {
+			return nil
+		}
 		meta.PID = pid
 		if err := store.WriteMeta(meta); err != nil {
 			return fmt.Errorf("write meta file: %w", err)

@@ -163,6 +163,8 @@ Retention contract:
 
 Write consistency contract:
 - `meta.json` and `final.json` are written atomically via temp-file + rename.
+- `derun run` writes initial `meta.json` before transport startup so startup-failure sessions remain discoverable via MCP list/get flows.
+- On successful process launch, `meta.json` is rewritten to persist the child PID while keeping session identity metadata stable.
 - `output.bin` and `index.jsonl` append operations are guarded by per-session advisory file lock (`append.lock`).
 
 ## Security
