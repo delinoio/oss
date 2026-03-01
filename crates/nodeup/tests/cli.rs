@@ -532,6 +532,29 @@ fn self_uninstall_removes_artifacts_and_logs_outcome() {
 
 #[test]
 #[serial]
+fn self_uninstall_reports_already_clean_on_repeated_runs() {
+    let env = TestEnv::new();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        "schema_version = 1\n",
+    )
+    .unwrap();
+
+    env.command()
+        .args(["--output", "json", "self", "uninstall"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"status\": \"removed\""));
+
+    env.command()
+        .args(["--output", "json", "self", "uninstall"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"status\": \"already-clean\""));
+}
+
+#[test]
+#[serial]
 fn self_uninstall_rejects_non_nodeup_owned_paths() {
     let env = TestEnv::new();
     let unsafe_root = env.root.join("unsafe-home");

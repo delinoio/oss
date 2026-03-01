@@ -8,7 +8,7 @@ use std::{
 use serde::Serialize;
 use tempfile::NamedTempFile;
 use toml::{value::Table, Value};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     cli::{OutputFormat, SelfCommand},
@@ -210,16 +210,35 @@ fn uninstall(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     let action = SelfAction::Uninstall;
 
     let mut removed_paths = Vec::new();
-    for path in [
-        &app.paths.data_root,
-        &app.paths.cache_root,
-        &app.paths.config_root,
+    for (path, bootstrap_child) in [
+        (
+            &app.paths.data_root,
+            app.paths
+                .toolchains_dir
+                .file_name()
+                .map(|value| value.to_os_string()),
+        ),
+        (
+            &app.paths.cache_root,
+            app.paths
+                .downloads_dir
+                .file_name()
+                .map(|value| value.to_os_string()),
+        ),
+        (&app.paths.config_root, None),
     ] {
         let normalized_path =
             normalize_target_path(path).map_err(|error| log_failure(action, error))?;
         ensure_safe_uninstall_path(&normalized_path).map_err(|error| log_failure(action, error))?;
 
-        if normalized_path.exists() {
+        let has_artifacts = if normalized_path.exists() {
+            path_has_artifacts(&normalized_path, bootstrap_child.as_deref())
+                .map_err(|error| log_failure(action, error))?
+        } else {
+            false
+        };
+
+        if has_artifacts {
             fs::remove_dir_all(&normalized_path).map_err(|error| {
                 log_failure(
                     action,
@@ -402,15 +421,17 @@ fn replace_binary(source: &Path, target: &Path) -> Result<()> {
             ));
         }
 
-        fs::remove_file(&backup_target).map_err(|error| {
-            NodeupError::new(
-                ErrorKind::Internal,
-                format!(
-                    "Updated binary but failed to delete backup {}: {error}",
-                    backup_target.display()
-                ),
-            )
-        })?;
+        if let Err(error) = fs::remove_file(&backup_target) {
+            warn!(
+                command_path = "nodeup.self.update",
+                action = "self update",
+                outcome = "updated",
+                cleanup_status = "deferred",
+                backup_path = %backup_target.display(),
+                cleanup_error = %error,
+                "Updated binary but deferred backup cleanup"
+            );
+        }
     } else {
         fs::rename(&staged_path, target).map_err(|error| {
             NodeupError::new(
@@ -490,6 +511,35 @@ fn is_nodeup_owned_component(component: &str) -> bool {
         || lowercase.starts_with("nodeup_")
         || lowercase.ends_with("-nodeup")
         || lowercase.ends_with("_nodeup")
+}
+
+fn path_has_artifacts(path: &Path, bootstrap_child: Option<&std::ffi::OsStr>) -> Result<bool> {
+    if !path.exists() {
+        return Ok(false);
+    }
+
+    for entry in fs::read_dir(path)? {
+        let entry = entry?;
+        if let Some(expected) = bootstrap_child {
+            if entry.file_name() == expected
+                && entry.file_type()?.is_dir()
+                && directory_is_empty(&entry.path())?
+            {
+                continue;
+            }
+        }
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+fn directory_is_empty(path: &Path) -> Result<bool> {
+    for entry in fs::read_dir(path)? {
+        let _ = entry?;
+        return Ok(false);
+    }
+    Ok(true)
 }
 
 fn migrate_settings_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {
