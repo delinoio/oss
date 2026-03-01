@@ -552,8 +552,10 @@ func operationAuditEventType(operation contracts.ThenvOperation) thenvv1.AuditEv
 
 func roleDecisionAndResultFromError(err error) (contracts.RoleDecision, contracts.OperationResult) {
 	var connectErr *connect.Error
-	if errors.As(err, &connectErr) && connectErr.Code() == connect.CodePermissionDenied {
-		return contracts.RoleDecisionDeny, contracts.OperationResultDenied
+	if errors.As(err, &connectErr) {
+		if connectErr.Code() == connect.CodePermissionDenied || connectErr.Code() == connect.CodeUnauthenticated {
+			return contracts.RoleDecisionDeny, contracts.OperationResultDenied
+		}
 	}
 	return contracts.RoleDecisionAllow, contracts.OperationResultFailure
 }

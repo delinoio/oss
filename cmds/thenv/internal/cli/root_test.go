@@ -251,6 +251,12 @@ func TestRoleDecisionAndResultFromError(t *testing.T) {
 			result:       contracts.OperationResultDenied,
 		},
 		{
+			name:         "unauthenticated connect error",
+			err:          connect.NewError(connect.CodeUnauthenticated, errors.New("subject mismatch")),
+			roleDecision: contracts.RoleDecisionDeny,
+			result:       contracts.OperationResultDenied,
+		},
+		{
 			name:         "generic error",
 			err:          errors.New("network timeout"),
 			roleDecision: contracts.RoleDecisionAllow,

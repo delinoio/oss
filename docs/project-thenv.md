@@ -189,6 +189,9 @@ Required baseline logs:
 - `result`
 - `request_id` and `trace_id`
 
+Result semantics:
+- Authorization and authentication rejections must emit `role_decision=deny` and `result=denied`.
+
 Prohibited log content:
 - Plaintext secret values
 - Full `.env` or `.dev.vars` payloads
