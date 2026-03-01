@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex PR Review Loop"
+  short_description: "Iterate PR fixes until Codex leaves a thumbs-up reaction."
+  default_prompt: "Use $gh-pr-codex-review-loop to iteratively address PR feedback until Codex reacts with :+1:."
