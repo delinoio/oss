@@ -24,7 +24,12 @@ import {
   createCoalescedMoveSamplingPolicy,
   type MoveSamplingEmission,
 } from "./src/input/move-sampling-policy";
-import { createConnectedClickSample, createPointerMoveSample } from "./src/input/translate-gesture";
+import {
+  applyAxisInversion,
+  createConnectedClickSample,
+  createPointerMoveSample,
+} from "./src/input/translate-gesture";
+import type { MpappInputPreferences } from "./src/contracts/types";
 import {
   evaluatePlatformSupport,
   requestAndroidBluetoothPermissions,
@@ -48,10 +53,20 @@ import { createHidAdapter } from "./src/transport/hid-adapter-factory";
 import { ClickControls } from "./src/components/click-controls";
 import { SessionStatus } from "./src/components/session-status";
 import { TouchpadSurface } from "./src/components/touchpad-surface";
+import {
+  AsyncStorageInputPreferencesStore,
+  DEFAULT_MPAPP_INPUT_PREFERENCES,
+  type InputPreferencesStore,
+} from "./src/preferences/input-preferences-store";
 
 const SENSITIVITY_STEP = 0.1;
 const SENSITIVITY_MIN = 0.5;
 const SENSITIVITY_MAX = 2;
+
+enum MpappAxisPreference {
+  X = "x",
+  Y = "y",
+}
 
 function clampSensitivity(value: number): number {
   const rounded = Number.parseFloat(value.toFixed(1));
@@ -83,7 +98,10 @@ export default function App() {
     INITIAL_SESSION_STATE,
   );
   const sessionStateRef = useRef<MpappSessionState>(INITIAL_SESSION_STATE);
-  const [sensitivity, setSensitivity] = useState(1.0);
+  const [inputPreferences, setInputPreferences] = useState<MpappInputPreferences>(
+    DEFAULT_MPAPP_INPUT_PREFERENCES,
+  );
+  const [hasHydratedPreferences, setHasHydratedPreferences] = useState(false);
 
   const runtimeConfig = useMemo(() => resolveMpappRuntimeConfig(), []);
   const adapter = useMemo(
@@ -95,6 +113,9 @@ export default function App() {
   );
   const diagnosticsStoreRef = useRef<DiagnosticsStore>(
     new AsyncStorageDiagnosticsStore(),
+  );
+  const inputPreferencesStoreRef = useRef<InputPreferencesStore>(
+    new AsyncStorageInputPreferencesStore(),
   );
   const moveSamplingPolicyRef = useRef(createCoalescedMoveSamplingPolicy());
   const moveDueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -154,6 +175,54 @@ export default function App() {
       clearMoveDueTimeout();
     };
   }, [clearMoveDueTimeout]);
+
+  useEffect(() => {
+    let active = true;
+
+    void inputPreferencesStoreRef.current
+      .load()
+      .then((savedPreferences) => {
+        if (!active) {
+          return;
+        }
+
+        setInputPreferences(savedPreferences);
+        console.info("[mpapp][preferences] hydrated", savedPreferences);
+      })
+      .catch((error: unknown) => {
+        if (!active) {
+          return;
+        }
+
+        console.warn("[mpapp][preferences] hydration failed", {
+          error,
+        });
+      })
+      .finally(() => {
+        if (!active) {
+          return;
+        }
+
+        setHasHydratedPreferences(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedPreferences) {
+      return;
+    }
+
+    void inputPreferencesStoreRef.current.save(inputPreferences).catch((error: unknown) => {
+      console.error("[mpapp][preferences] persist failed", {
+        error,
+        inputPreferences,
+      });
+    });
+  }, [hasHydratedPreferences, inputPreferences]);
 
   const appendLog = useCallback(
     async (params: {
@@ -364,10 +433,16 @@ export default function App() {
 
   const emitSampledMove = useCallback(
     (moveEmission: MoveSamplingEmission) => {
-      const sample = createPointerMoveSample(
+      const adjustedDelta = applyAxisInversion(
         moveEmission.deltaX,
         moveEmission.deltaY,
-        sensitivity,
+        inputPreferences.invertX,
+        inputPreferences.invertY,
+      );
+      const sample = createPointerMoveSample(
+        adjustedDelta.deltaX,
+        adjustedDelta.deltaY,
+        inputPreferences.sensitivity,
       );
       const sendStart = Date.now();
 
@@ -381,6 +456,8 @@ export default function App() {
             payload: {
               actionId: sample.actionId,
               nativeErrorCode: sendResult.nativeErrorCode ?? null,
+              invertX: inputPreferences.invertX,
+              invertY: inputPreferences.invertY,
               ...moveEmission.diagnostics,
             },
           });
@@ -395,12 +472,14 @@ export default function App() {
             deltaX: sample.deltaX,
             deltaY: sample.deltaY,
             sensitivity: sample.sensitivity,
+            invertX: inputPreferences.invertX,
+            invertY: inputPreferences.invertY,
             ...moveEmission.diagnostics,
           },
         });
       });
     },
-    [adapter, appendLog, sensitivity],
+    [adapter, appendLog, inputPreferences],
   );
 
   const emitDueMoveEmission = useCallback(() => {
@@ -511,6 +590,29 @@ export default function App() {
     [adapter, appendLog, sessionState.mode],
   );
 
+  const updateSensitivity = useCallback((delta: number) => {
+    setInputPreferences((previous) => ({
+      ...previous,
+      sensitivity: clampSensitivity(previous.sensitivity + delta),
+    }));
+  }, []);
+
+  const toggleAxisInversion = useCallback((axis: MpappAxisPreference) => {
+    setInputPreferences((previous) => {
+      if (axis === MpappAxisPreference.X) {
+        return {
+          ...previous,
+          invertX: !previous.invertX,
+        };
+      }
+
+      return {
+        ...previous,
+        invertY: !previous.invertY,
+      };
+    });
+  }, []);
+
   const canConnect =
     platformSupport.supported &&
     sessionState.mode !== MpappMode.Connected &&
@@ -550,15 +652,13 @@ export default function App() {
 
         <View style={styles.sensitivityRow}>
           <Text style={styles.sensitivityLabel}>
-            Sensitivity: {sensitivity.toFixed(1)}
+            Sensitivity: {inputPreferences.sensitivity.toFixed(1)}
           </Text>
 
           <View style={styles.sensitivityControls}>
             <Pressable
               onPress={() => {
-                setSensitivity((previous) =>
-                  clampSensitivity(previous - SENSITIVITY_STEP),
-                );
+                updateSensitivity(-SENSITIVITY_STEP);
               }}
               style={styles.sensitivityButton}
             >
@@ -567,13 +667,55 @@ export default function App() {
 
             <Pressable
               onPress={() => {
-                setSensitivity((previous) =>
-                  clampSensitivity(previous + SENSITIVITY_STEP),
-                );
+                updateSensitivity(SENSITIVITY_STEP);
               }}
               style={styles.sensitivityButton}
             >
               <Text style={styles.sensitivityButtonText}>+</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.inversionRow}>
+          <Text style={styles.sensitivityLabel}>Axis inversion</Text>
+
+          <View style={styles.inversionControls}>
+            <Pressable
+              onPress={() => {
+                toggleAxisInversion(MpappAxisPreference.X);
+              }}
+              style={[
+                styles.inversionButton,
+                inputPreferences.invertX ? styles.inversionButtonActive : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.inversionButtonText,
+                  inputPreferences.invertX ? styles.inversionButtonTextActive : null,
+                ]}
+              >
+                Invert X
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => {
+                toggleAxisInversion(MpappAxisPreference.Y);
+              }}
+              style={[
+                styles.inversionButton,
+                inputPreferences.invertY ? styles.inversionButtonActive : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.inversionButtonText,
+                  inputPreferences.invertY ? styles.inversionButtonTextActive : null,
+                ]}
+              >
+                Invert Y
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -652,6 +794,37 @@ const styles = StyleSheet.create({
   sensitivityControls: {
     flexDirection: "row",
     gap: 8,
+  },
+  inversionRow: {
+    width: "100%",
+    gap: 8,
+  },
+  inversionControls: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  inversionButton: {
+    flex: 1,
+    borderRadius: 10,
+    borderCurve: "continuous",
+    borderWidth: 1,
+    borderColor: "#94a3b8",
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ffffff",
+  },
+  inversionButtonActive: {
+    borderColor: "#0f766e",
+    backgroundColor: "#0f766e",
+  },
+  inversionButtonText: {
+    color: "#334155",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  inversionButtonTextActive: {
+    color: "#ffffff",
   },
   sensitivityButton: {
     width: 36,

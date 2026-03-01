@@ -34,6 +34,21 @@ export function createPointerMoveSample(
   };
 }
 
+export function applyAxisInversion(
+  deltaX: number,
+  deltaY: number,
+  invertX: boolean,
+  invertY: boolean,
+): {
+  deltaX: number;
+  deltaY: number;
+} {
+  return {
+    deltaX: invertX ? -deltaX : deltaX,
+    deltaY: invertY ? -deltaY : deltaY,
+  };
+}
+
 export function createPointerClickSample(
   button: MpappClickButton,
   timestampMs: number = Date.now(),

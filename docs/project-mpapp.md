@@ -38,13 +38,15 @@ The core user flow is:
 - Input surface module exposes:
   - A touchpad region for drag capture
   - Dedicated left-click and right-click controls
-- Input translation module converts gesture deltas into pointer movement samples with sensitivity applied.
+- Input translation module applies optional axis inversion flags and sensitivity when converting gesture deltas into pointer movement samples.
 - Input movement sampling policy coalesces drag deltas and emits at most one movement sample every `16ms` (`~60Hz`) while preserving summed pointer distance.
 - If coalesced movement remains pending after the latest drag update, the app must emit it when the `16ms` throttle window elapses even without additional movement callbacks.
 - Throttle interval checks must use a monotonic clock source so device wall-clock adjustments cannot stall movement emission.
 - The trailing movement emission timer must be scheduled from the computed due timestamp, not fixed-phase polling.
 - Touchpad gesture end (`release` or `terminate`) flushes any pending coalesced movement so no in-progress segment is stranded.
 - Touchpad gesture responder instances must be recreated when movement callback dependencies change so runtime sensitivity updates take effect without reconnecting.
+- Input preferences module persists `sensitivity`, `invertX`, and `invertY` locally and hydrates them at app startup.
+- Settings controls expose sensitivity increment/decrement plus `Invert X` and `Invert Y` toggles independently.
 - Android HID transport adapter is implemented as a TypeScript `HidAdapter` contract with:
   - `native-android-hid` mode backed by a local Expo native module at `apps/mpapp/modules/mpapp-android-hid`
   - `stub` mode backed by `AndroidHidStubAdapter` for deterministic tests and local simulation
@@ -207,6 +209,16 @@ type MpappRuntimeConfig = {
 }
 ```
 
+Canonical input preferences contract:
+
+```ts
+type MpappInputPreferences = {
+  sensitivity: number;
+  invertX: boolean;
+  invertY: boolean;
+}
+```
+
 Canonical pointer movement payload:
 
 ```ts
@@ -269,6 +281,8 @@ Reference feasibility links:
 - Local preferences only:
   - Pointer sensitivity
   - Optional axis inversion flags
+- Input preferences storage key: `mpapp.input-preferences.v1`.
+- If AsyncStorage is unavailable, input preferences fall back to an in-memory store and persist for process lifetime.
 - Local diagnostics ring buffer with bounded retention (`300`) for troubleshooting.
 - Diagnostics storage key: `mpapp.diagnostics.v1`.
 - If AsyncStorage is unavailable, diagnostics fall back to an in-memory store that still preserves recent entries during process lifetime.
@@ -314,6 +328,8 @@ Move sampling diagnostics payload contract for `input.move` and move-transport-f
 - `samplingCoalescedSampleCount` (`samplingRawSampleCount - 1`)
 - `samplingDroppedSampleCount` (`0` for coalescing policy)
 - `samplingEmittedSampleCount` (`1` per emitted movement sample)
+- `invertX` (boolean axis inversion state at emission time)
+- `invertY` (boolean axis inversion state at emission time)
 
 Disconnect diagnostics payload contract:
 - Disconnect transition logs must include `disconnectReason` as a machine-readable `MpappDisconnectReason` value for both success and failure paths.
