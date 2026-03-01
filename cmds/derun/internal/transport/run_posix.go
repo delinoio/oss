@@ -4,11 +4,13 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -48,23 +50,34 @@ func RunPosixPTY(
 
 	resize := make(chan os.Signal, 1)
 	signal.Notify(resize, syscall.SIGWINCH)
+	resizeDone := make(chan struct{})
+	defer close(resizeDone)
 	defer signal.Stop(resize)
-	defer close(resize)
 	go func() {
-		for range resize {
-			_ = pty.InheritSize(os.Stdin, ptmx)
+		for {
+			select {
+			case <-resize:
+				_ = pty.InheritSize(os.Stdin, ptmx)
+			case <-resizeDone:
+				return
+			}
 		}
 	}()
-	resize <- syscall.SIGWINCH
 
 	signals := make(chan os.Signal, 8)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	signalForwardDone := make(chan struct{})
+	defer close(signalForwardDone)
 	defer signal.Stop(signals)
-	defer close(signals)
 	go func() {
-		for sig := range signals {
-			if cmd.Process != nil {
-				_ = cmd.Process.Signal(sig)
+		for {
+			select {
+			case sig := <-signals:
+				if cmd.Process != nil {
+					_ = cmd.Process.Signal(sig)
+				}
+			case <-signalForwardDone:
+				return
 			}
 		}
 	}()
@@ -73,7 +86,7 @@ func RunPosixPTY(
 		_, _ = io.Copy(ptmx, os.Stdin)
 	}()
 
-	if _, err := io.Copy(ptyOutput, ptmx); err != nil {
+	if _, err := io.Copy(ptyOutput, ptmx); err != nil && !isBenignPTYOutputErr(err) {
 		return RunResult{}, fmt.Errorf("copy pty output: %w", err)
 	}
 	result, err := decodeExit(cmd.Wait())
@@ -81,4 +94,26 @@ func RunPosixPTY(
 		return RunResult{}, fmt.Errorf("wait for pty process: %w", err)
 	}
 	return result, nil
+}
+
+func isBenignPTYOutputErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if isBenignCopyErr(err) {
+		return true
+	}
+	var pathErr *os.PathError
+	if !errors.As(err, &pathErr) {
+		return false
+	}
+	if pathErr.Op != "read" {
+		return false
+	}
+	if !errors.Is(pathErr.Err, syscall.EIO) {
+		return false
+	}
+	// Linux PTYs can return EIO specifically when reading from /dev/ptmx after
+	// the slave side is closed. Restrict suppression to this read-close case.
+	return strings.Contains(strings.ToLower(pathErr.Path), "ptmx")
 }

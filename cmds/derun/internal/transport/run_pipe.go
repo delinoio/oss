@@ -41,6 +41,27 @@ func RunPipe(
 	if err := cmd.Start(); err != nil {
 		return RunResult{}, fmt.Errorf("start process: %w", err)
 	}
+
+	// Install forwarding handlers immediately after process start so SIGINT/SIGTERM
+	// cannot race with onStart metadata persistence in caller paths.
+	signals := make(chan os.Signal, 8)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	signalForwardDone := make(chan struct{})
+	defer close(signalForwardDone)
+	defer signal.Stop(signals)
+	go func() {
+		for {
+			select {
+			case sig := <-signals:
+				if cmd.Process != nil {
+					_ = cmd.Process.Signal(sig)
+				}
+			case <-signalForwardDone:
+				return
+			}
+		}
+	}()
+
 	if onStart != nil {
 		if err := onStart(cmd.Process.Pid); err != nil {
 			_ = cmd.Process.Kill()
@@ -48,18 +69,6 @@ func RunPipe(
 			return RunResult{}, err
 		}
 	}
-
-	signals := make(chan os.Signal, 8)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
-	defer signal.Stop(signals)
-	defer close(signals)
-	go func() {
-		for sig := range signals {
-			if cmd.Process != nil {
-				_ = cmd.Process.Signal(sig)
-			}
-		}
-	}()
 
 	var wg sync.WaitGroup
 	copyErr := make(chan error, 2)

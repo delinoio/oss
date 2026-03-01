@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +12,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
+	"github.com/delinoio/oss/cmds/derun/internal/transport"
 )
 
 func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
@@ -297,5 +301,134 @@ func TestExecuteRunPersistsStartupFailureSessionMetadata(t *testing.T) {
 	metaPath := filepath.Join(stateRoot, "sessions", sessionID, "meta.json")
 	if _, err := os.Stat(metaPath); err != nil {
 		t.Fatalf("meta metadata should exist for failed startup session: %v", err)
+	}
+}
+
+func TestSelectTransportMode(t *testing.T) {
+	testCases := []struct {
+		name       string
+		tty        bool
+		goos       string
+		wantResult contracts.DerunTransportMode
+	}{
+		{
+			name:       "pipe mode without tty",
+			tty:        false,
+			goos:       "linux",
+			wantResult: contracts.DerunTransportModePipe,
+		},
+		{
+			name:       "posix pty mode on unix tty",
+			tty:        true,
+			goos:       "linux",
+			wantResult: contracts.DerunTransportModePosixPTY,
+		},
+		{
+			name:       "windows conpty mode on windows tty",
+			tty:        true,
+			goos:       "windows",
+			wantResult: contracts.DerunTransportModeWindowsConPTY,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := selectTransportMode(tc.tty, tc.goos)
+			if got != tc.wantResult {
+				t.Fatalf("unexpected transport mode: got=%s want=%s", got, tc.wantResult)
+			}
+		})
+	}
+}
+
+func TestExecuteRunFallsBackToPipeWhenConPTYUnavailable(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") == "1" {
+		return
+	}
+
+	stateRoot := t.TempDir()
+	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+	if err := os.Setenv("GO_WANT_HELPER_PROCESS", "1"); err != nil {
+		t.Fatalf("Setenv GO_WANT_HELPER_PROCESS: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("GO_WANT_HELPER_PROCESS") })
+
+	originalStdin := os.Stdin
+	originalStdout := os.Stdout
+	devNullRead, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open dev null for stdin: %v", err)
+	}
+	devNullWrite, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		_ = devNullRead.Close()
+		t.Fatalf("open dev null for stdout: %v", err)
+	}
+	os.Stdin = devNullRead
+	os.Stdout = devNullWrite
+	t.Cleanup(func() {
+		os.Stdin = originalStdin
+		os.Stdout = originalStdout
+		_ = devNullRead.Close()
+		_ = devNullWrite.Close()
+	})
+
+	originalRunPipeTransport := runPipeTransport
+	originalRunPosixPTYTransport := runPosixPTYTransport
+	originalRunWindowsConPTYTransport := runWindowsConPTYTransport
+	originalIsConPTYUnavailableError := isConPTYUnavailableError
+	originalTerminalProbe := terminalProbe
+	originalRuntimeGOOS := runtimeGOOS
+	t.Cleanup(func() {
+		runPipeTransport = originalRunPipeTransport
+		runPosixPTYTransport = originalRunPosixPTYTransport
+		runWindowsConPTYTransport = originalRunWindowsConPTYTransport
+		isConPTYUnavailableError = originalIsConPTYUnavailableError
+		terminalProbe = originalTerminalProbe
+		runtimeGOOS = originalRuntimeGOOS
+	})
+
+	runtimeGOOS = "windows"
+	terminalProbe = func(_ *os.File) bool { return true }
+	runWindowsConPTYTransport = func(_ context.Context, _ []string, _ string, _ func(pid int) error, _ io.Writer) (transport.RunResult, error) {
+		return transport.RunResult{}, errors.New("create pseudo console: unsupported")
+	}
+	isConPTYUnavailableError = func(err error) bool {
+		return err != nil
+	}
+
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+
+	sessionID := "01J0S888888888888888888888"
+	exitCode := ExecuteRun([]string{
+		"--session-id",
+		sessionID,
+		"--",
+		testBinary,
+		"-test.run=^TestExecuteRunPipeModeCapturesOutputAndExitCodeHelperProcess$",
+		"--",
+		"helper",
+	})
+	if exitCode != 7 {
+		t.Fatalf("unexpected exit code: got=%d want=7", exitCode)
+	}
+
+	store, err := state.New(stateRoot)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+	detail, err := store.GetSession(sessionID)
+	if err != nil {
+		t.Fatalf("GetSession returned error: %v", err)
+	}
+	if detail.TransportMode != contracts.DerunTransportModePipe {
+		t.Fatalf("unexpected transport mode after fallback: got=%s want=%s", detail.TransportMode, contracts.DerunTransportModePipe)
 	}
 }
