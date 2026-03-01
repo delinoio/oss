@@ -105,6 +105,11 @@ enum ThenvComponent {
 - Use `project-` prefix for all project docs.
 - Use enum-like canonical identifiers in documents where values must remain stable.
 
+## Node Runtime Baseline
+- Root `.nvmrc` is the canonical Node.js runtime selector for local development workflows.
+- The current required runtime is Node.js `24` (LTS major line).
+- When bumping the runtime baseline, update `.nvmrc` and relevant CI/runtime docs in the same change set.
+
 ## Frontend Design Rules
 - Frontend work in `apps/` must follow Toss Design Guidelines for UX/UI decisions across web and mobile surfaces.
 
