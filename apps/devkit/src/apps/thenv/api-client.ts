@@ -3,6 +3,7 @@ import {
   ThenvGetPolicyResponse,
   ThenvListAuditEventsResponse,
   ThenvListVersionsResponse,
+  ThenvPaginationQuery,
   ThenvPolicyBinding,
   ThenvScope,
 } from "@/apps/thenv/contracts";
@@ -20,6 +21,18 @@ function scopeParams(scope: ThenvScope): URLSearchParams {
   return query;
 }
 
+function appendPaginationParams(
+  params: URLSearchParams,
+  pagination?: ThenvPaginationQuery,
+): void {
+  if (pagination?.limit && pagination.limit > 0) {
+    params.set("limit", String(pagination.limit));
+  }
+  if (pagination?.cursor) {
+    params.set("cursor", pagination.cursor);
+  }
+}
+
 function toAuditParams(query: ThenvAuditQuery): URLSearchParams {
   const params = scopeParams(query.scope);
 
@@ -35,12 +48,7 @@ function toAuditParams(query: ThenvAuditQuery): URLSearchParams {
   if (query.toTime) {
     params.set("toTime", query.toTime);
   }
-  if (query.limit && query.limit > 0) {
-    params.set("limit", String(query.limit));
-  }
-  if (query.cursor) {
-    params.set("cursor", query.cursor);
-  }
+  appendPaginationParams(params, query);
 
   return params;
 }
@@ -56,8 +64,11 @@ async function parseJsonResponse<T>(response: Response): Promise<T> {
 
 export async function listVersions(
   scope: ThenvScope,
+  pagination?: ThenvPaginationQuery,
 ): Promise<ThenvListVersionsResponse> {
-  const response = await fetch(withScope("/api/thenv/versions", scope), {
+  const params = scopeParams(scope);
+  appendPaginationParams(params, pagination);
+  const response = await fetch(`/api/thenv/versions?${params.toString()}`, {
     cache: "no-store",
   });
   return parseJsonResponse<ThenvListVersionsResponse>(response);
