@@ -221,6 +221,7 @@ mod tests {
             config_root: root.join("config"),
             toolchains_dir: root.join("data").join("toolchains"),
             downloads_dir: root.join("cache").join("downloads"),
+            release_index_cache_file: root.join("cache").join("release-index.json"),
             settings_file: root.join("config").join("settings.toml"),
             overrides_file: root.join("config").join("overrides.toml"),
         };

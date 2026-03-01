@@ -194,7 +194,7 @@ fn runtime_id_for_target(target: &ResolvedRuntimeTarget) -> String {
 mod tests {
     use std::{
         fs,
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
     use super::*;
@@ -213,6 +213,7 @@ mod tests {
             config_root: root.join("config"),
             toolchains_dir: root.join("data").join("toolchains"),
             downloads_dir: root.join("cache").join("downloads"),
+            release_index_cache_file: root.join("cache").join("release-index.json"),
             settings_file: root.join("config").join("settings.toml"),
             overrides_file: root.join("config").join("overrides.toml"),
         }
@@ -237,7 +238,11 @@ mod tests {
             "NODEUP_INDEX_URL",
             "https://nodejs.org/download/release/index.json",
         );
-        let release_client = ReleaseIndexClient::new().unwrap();
+        let release_client = ReleaseIndexClient::new(
+            paths.release_index_cache_file.clone(),
+            Duration::from_secs(600),
+        )
+        .unwrap();
         let resolver = RuntimeResolver::new(store, overrides, release_client);
 
         let resolved = resolver

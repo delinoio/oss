@@ -12,6 +12,7 @@ pub struct NodeupPaths {
     pub config_root: PathBuf,
     pub toolchains_dir: PathBuf,
     pub downloads_dir: PathBuf,
+    pub release_index_cache_file: PathBuf,
     pub settings_file: PathBuf,
     pub overrides_file: PathBuf,
 }
@@ -24,6 +25,7 @@ impl NodeupPaths {
 
         let toolchains_dir = data_root.join("toolchains");
         let downloads_dir = cache_root.join("downloads");
+        let release_index_cache_file = cache_root.join("release-index.json");
         let settings_file = config_root.join("settings.toml");
         let overrides_file = config_root.join("overrides.toml");
 
@@ -33,6 +35,7 @@ impl NodeupPaths {
             config_root,
             toolchains_dir,
             downloads_dir,
+            release_index_cache_file,
             settings_file,
             overrides_file,
         })

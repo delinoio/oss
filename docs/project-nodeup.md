@@ -35,6 +35,7 @@ The primary goal is deterministic multi-version Node.js execution with automatic
 ## Architecture
 - Top-level command router dispatches to rustup-style subcommand groups (`toolchain`, `show`, `override`, `self`) and leaf commands (`default`, `update`, `check`, `run`, `which`, `completions`).
 - Version resolver normalizes user input into a canonical runtime selector (exact version and stable aliases such as `lts`, `current`, `latest`).
+- Release index resolver caches channel metadata on disk (`cache/release-index.json`) with a default TTL of 10 minutes and stale-cache fallback when refresh fails.
 - Runtime installer/downloader fetches official Node.js archives, validates `SHA256` checksums from `SHASUMS256.txt`, and stages verified artifacts before activation.
 - Runtime store manager maintains installed runtimes, linked runtime metadata, tracked selectors, and activation pointers.
 - Override manager resolves runtime precedence by directory scope and fallback defaults.
@@ -134,6 +135,10 @@ enum NodeupRuntimeSelectorKind {
 - `22.1.0` and `v22.1.0` are equivalent version selectors and normalize to `v22.1.0`.
 - Linked runtime names must start with an ASCII alphanumeric character and may contain `_` or `-` after the first character.
 - Linked runtime names must not use reserved channel tokens: `lts`, `current`, `latest`.
+- Channel selector resolution (`lts|current|latest`) uses release-index disk caching:
+: Cached entries newer than TTL (`NODEUP_RELEASE_INDEX_TTL_SECONDS`, default `600`) are used without network access.
+: When cache is missing/expired, nodeup refreshes from `index.json`.
+: If refresh fails and a previous cache exists, nodeup falls back to stale cache entries.
 
 Subcommand contracts:
 - `nodeup toolchain list [--quiet|--verbose]`
@@ -237,7 +242,7 @@ Symlink contract:
 
 ## Storage
 - Install root: managed Node.js runtimes per version (`data/toolchains/<version>`).
-- Cache root: downloaded archives and metadata (`cache/downloads/*`).
+- Cache root: downloaded archives and runtime metadata (`cache/downloads/*`, `cache/release-index.json`).
 - Config root:
 : `config/settings.toml` for schema version, default selector, linked runtimes, and tracked selectors.
 : `config/overrides.toml` for per-path runtime selector overrides.
@@ -248,6 +253,7 @@ Symlink contract:
 - Test/dev overrides:
 : `NODEUP_DATA_HOME`, `NODEUP_CACHE_HOME`, `NODEUP_CONFIG_HOME`
 : `NODEUP_INDEX_URL`, `NODEUP_DOWNLOAD_BASE_URL`, `NODEUP_FORCE_PLATFORM`
+: `NODEUP_RELEASE_INDEX_TTL_SECONDS` (positive integer seconds; default `600`)
 : `NODEUP_SELF_UPDATE_SOURCE`, `NODEUP_SELF_BIN_PATH`
 
 ## Security
@@ -267,6 +273,13 @@ Required baseline logs:
 : `override-matched`
 : `fallback-to-default`
 : `no-default-selector`
+- Release-index cache lifecycle (`cache_path`, `age_seconds`, `ttl_seconds`, `outcome`) with stable outcomes:
+: `hit`
+: `miss`
+: `expired`
+: `refresh`
+: `stale-fallback`
+: `write-failure`
 - Download source, checksum algorithm, checksum validation result, and install result
 - Dispatch executable alias (`argv[0]`) and resolved executable path
 - Self-management actions (`self update`, `self uninstall`, `self upgrade-data`) and outcome status (`updated|already-up-to-date|removed|already-clean|upgraded|already-current|failed`)

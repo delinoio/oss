@@ -38,7 +38,9 @@ impl NodeupApp {
 
         let store = Store::new(paths.clone());
         let overrides = OverrideStore::new(paths.clone());
-        let releases = ReleaseIndexClient::new()?;
+        let release_index_ttl = ReleaseIndexClient::cache_ttl_from_env();
+        let releases =
+            ReleaseIndexClient::new(paths.release_index_cache_file.clone(), release_index_ttl)?;
         let installer = RuntimeInstaller::new(paths.clone());
         let resolver = RuntimeResolver::new(store.clone(), overrides.clone(), releases.clone());
 
