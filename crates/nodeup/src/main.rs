@@ -6,8 +6,8 @@ use nodeup::{
 };
 
 fn main() {
-    logging::init_logging();
     let json_error_output_requested = json_error_output_requested();
+    logging::init_logging(json_error_output_requested);
 
     match run() {
         Ok(code) => std::process::exit(code),
@@ -58,63 +58,77 @@ where
     }
 
     let mut json_output_requested = false;
-    let mut run_argument_state = RunArgumentState::OutsideRun;
+    let mut command_scan_state = CommandScanState::BeforeSubcommand;
+    let mut output_value_expected = false;
 
-    loop {
-        if run_argument_state == RunArgumentState::AfterRuntime {
+    while let Some(arg) = args.next() {
+        if command_scan_state == CommandScanState::RunDelegated {
             break;
         }
 
-        let Some(arg) = args.next() else {
-            break;
-        };
         let Some(arg) = arg.to_str() else {
+            output_value_expected = false;
             continue;
         };
 
+        if output_value_expected {
+            apply_output_value(arg, &mut json_output_requested);
+            output_value_expected = false;
+            continue;
+        }
+
         if arg == "--output" {
-            if let Some(value) = args.next().and_then(|value| value.into_string().ok()) {
-                match value.as_str() {
-                    "json" => json_output_requested = true,
-                    "human" => json_output_requested = false,
-                    _ => {}
-                }
-            }
+            output_value_expected = true;
             continue;
         }
 
         if let Some(value) = arg.strip_prefix("--output=") {
-            match value {
-                "json" => json_output_requested = true,
-                "human" => json_output_requested = false,
-                _ => {}
-            }
-        }
-
-        if run_argument_state == RunArgumentState::OutsideRun && arg == "run" {
-            run_argument_state = RunArgumentState::BeforeRuntime;
+            apply_output_value(value, &mut json_output_requested);
             continue;
         }
 
-        if run_argument_state == RunArgumentState::BeforeRuntime {
-            // `run` captures all arguments after the runtime selector as delegated argv.
-            // Stop scanning once runtime is encountered so delegated flags do not
-            // affect nodeup's own output mode detection.
-            if arg == "--install" || arg.starts_with('-') {
-                continue;
+        match command_scan_state {
+            CommandScanState::BeforeSubcommand => {
+                if arg.starts_with('-') {
+                    continue;
+                }
+
+                command_scan_state = if arg == "run" {
+                    CommandScanState::RunBeforeRuntime
+                } else {
+                    CommandScanState::AfterSubcommand
+                };
             }
-            run_argument_state = RunArgumentState::AfterRuntime;
+            CommandScanState::RunBeforeRuntime => {
+                // `run` captures all arguments after the runtime selector as delegated argv.
+                // Stop scanning once runtime is encountered so delegated flags do not
+                // affect nodeup's own output mode detection.
+                if arg.starts_with('-') {
+                    continue;
+                }
+                command_scan_state = CommandScanState::RunDelegated;
+            }
+            CommandScanState::RunDelegated | CommandScanState::AfterSubcommand => {}
         }
     }
 
     json_output_requested
 }
 
+fn apply_output_value(value: &str, json_output_requested: &mut bool) {
+    match value {
+        "json" => *json_output_requested = true,
+        "human" => *json_output_requested = false,
+        _ => {}
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RunArgumentState {
-    OutsideRun,
-    BeforeRuntime,
-    AfterRuntime,
+enum CommandScanState {
+    BeforeSubcommand,
+    RunBeforeRuntime,
+    RunDelegated,
+    AfterSubcommand,
 }
 
 #[cfg(test)]
@@ -179,6 +193,19 @@ mod tests {
             "lts",
             "node",
             "--output=human",
+        ])));
+    }
+
+    #[test]
+    fn positional_run_token_does_not_switch_run_mode_scanning() {
+        assert!(json_error_output_requested_from_args(os_args(&[
+            "nodeup",
+            "which",
+            "run",
+            "--runtime",
+            "22.1.0",
+            "--output",
+            "json",
         ])));
     }
 }

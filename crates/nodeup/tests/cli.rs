@@ -763,6 +763,26 @@ fn json_show_active_runtime_failure_emits_stderr_error_envelope() {
 
 #[test]
 #[serial]
+fn json_show_active_runtime_failure_remains_parseable_without_rust_log_env() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env_remove("RUST_LOG")
+        .args(["--output", "json", "show", "active-runtime"])
+        .output()
+        .expect("show active-runtime --output json without rust log env");
+
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+    assert_eq!(payload["exit_code"], 5);
+}
+
+#[test]
+#[serial]
 fn json_completions_failure_emits_stderr_error_envelope() {
     let env = TestEnv::new();
 

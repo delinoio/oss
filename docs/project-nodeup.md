@@ -118,6 +118,7 @@ Global option contract:
 - `--output <human|json>` is available for all management commands and defaults to `human`.
 - In `--output json`, successful command payloads are written to stdout.
 - In `--output json`, handled command and startup failures emit a deterministic stderr JSON envelope with `kind`, `message`, and `exit_code`.
+- In `--output json`, default logging is disabled (`nodeup=off`) so JSON machine output stays parseable unless the operator explicitly sets `RUST_LOG`.
 
 Runtime selector grammar:
 
