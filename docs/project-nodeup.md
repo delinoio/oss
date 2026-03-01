@@ -160,6 +160,7 @@ Subcommand contracts:
 - `nodeup show active-runtime`
 : Output: resolved runtime (`runtime`), selection source (`explicit|override|default`), and canonical selector.
 : Failure: returns deterministic not-found error when neither override nor default selector exists.
+: Failure: returns deterministic not-found error when the resolved runtime is unavailable or missing the delegated `node` executable (for example, when a linked runtime path has been deleted).
 - `nodeup show home`
 : Output: `data_root`, `cache_root`, and `config_root`.
 - `nodeup update [runtime]...`
