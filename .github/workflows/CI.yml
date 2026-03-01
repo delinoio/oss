@@ -66,6 +66,10 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Generate Go protobuf artifacts
+        shell: bash
+        run: ./scripts/generate-go-proto.sh
+
       - name: Check go fmt
         run: |
           set -euo pipefail
@@ -101,6 +105,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+
+      - name: Generate Go protobuf artifacts
+        shell: bash
+        run: ./scripts/generate-go-proto.sh
 
       - name: Run go test
         run: go test ./...
