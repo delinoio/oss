@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,6 +125,52 @@ func TestHandleWaitOutputLiveTailTimesOutForActiveSession(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed < 150*time.Millisecond {
 		t.Fatalf("wait_output returned too early: elapsed=%v", elapsed)
+	}
+}
+
+func TestHandleReadOutputMissingSessionReturnsError(t *testing.T) {
+	root := testutil.TempStateRoot(t)
+	store, err := state.New(root)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+
+	payload, err := handleReadOutput(store, map[string]any{
+		"session_id": "01J0S555555555555555555555",
+		"cursor":     "0",
+		"max_bytes":  1024,
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing session")
+	}
+	if !strings.Contains(err.Error(), "session not found") {
+		t.Fatalf("expected deterministic missing-session error, got: %v", err)
+	}
+	if payload != nil {
+		t.Fatalf("expected nil payload on error")
+	}
+}
+
+func TestHandleWaitOutputMissingSessionReturnsError(t *testing.T) {
+	root := testutil.TempStateRoot(t)
+	store, err := state.New(root)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+
+	payload, err := handleWaitOutput(store, map[string]any{
+		"session_id": "01J0S666666666666666666666",
+		"cursor":     "0",
+		"timeout_ms": 100,
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing session")
+	}
+	if !strings.Contains(err.Error(), "session not found") {
+		t.Fatalf("expected deterministic missing-session error, got: %v", err)
+	}
+	if payload != nil {
+		t.Fatalf("expected nil payload on error")
 	}
 }
 
