@@ -184,6 +184,21 @@ Required structured fields:
 - `evaluation_level`
 - `delta_percent`
 
+Web UI payload shape for commit-tracker route logs:
+- `provider` remains a top-level log field.
+- `repository`, `pull_request`, `commit`, `run_id`, `metric_key`, `evaluation_level`, and `delta_percent` are emitted in the `context` map with stable snake_case keys.
+
+Web UI placeholder defaults (when a singular value is not applicable):
+- `pull_request`: `0`
+- `commit`: `""`
+- `run_id`: `""`
+- `metric_key`: `""`
+- `evaluation_level`: `""`
+- `delta_percent`: `0`
+
+Publish failure context requirement:
+- `commit-tracker-report-publish` failure logs include `pull_request` and `commit` when those values are provided by user input.
+
 Sensitive logging rule:
 - `X-Commit-Tracker-Subject` and bearer token values remain required for authorization but must never be emitted in structured logs.
 

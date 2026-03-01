@@ -14,8 +14,13 @@ import {
   MetricSeriesPoint,
   PullRequestComparisonResponse,
 } from "@/apps/commit-tracker/contracts";
-import { DevkitMiniAppId } from "@/lib/mini-app-registry";
-import { LogEvent, logError, logInfo } from "@/lib/logger";
+import {
+  extractSingleComparisonDeltaPercent,
+  extractSingleMetricKey,
+  logCommitTrackerError,
+  logCommitTrackerInfo,
+} from "@/apps/commit-tracker/logging";
+import { LogEvent } from "@/lib/logger";
 
 function verdictLabel(level: EvaluationLevel): string {
   switch (level) {
@@ -117,6 +122,7 @@ export function CommitTrackerApp() {
     setLoadingSeries(true);
     setErrorMessage("");
     setReportMessage("");
+    const seriesMetricKey = metricKey.trim();
 
     try {
       const response = await listMetricSeries({
@@ -124,30 +130,34 @@ export function CommitTrackerApp() {
         repository,
         branch,
         environment,
-        metricKey: metricKey.trim() || undefined,
+        metricKey: seriesMetricKey || undefined,
         fromTime: fromTime.trim() || undefined,
         toTime: toTime.trim() || undefined,
         limit,
       });
       setSeries(response.points);
-      logInfo({
+      logCommitTrackerInfo({
         event: LogEvent.CommitTrackerSeriesLoad,
-        route: "/apps/commit-tracker",
-        miniAppId: DevkitMiniAppId.CommitTracker,
         provider,
         outcome: "success",
         message: "Loaded commit tracker metric series.",
+        repository,
+        metricKey: extractSingleMetricKey(
+          seriesMetricKey ? [seriesMetricKey] : [],
+        ),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load metric series.";
       setErrorMessage(message);
-      logError({
+      logCommitTrackerError({
         event: LogEvent.CommitTrackerSeriesLoad,
-        route: "/apps/commit-tracker",
-        miniAppId: DevkitMiniAppId.CommitTracker,
         provider,
         outcome: "failed",
         message,
+        repository,
+        metricKey: extractSingleMetricKey(
+          seriesMetricKey ? [seriesMetricKey] : [],
+        ),
         error,
       });
     } finally {
@@ -160,24 +170,29 @@ export function CommitTrackerApp() {
     setLoadingComparison(true);
     setErrorMessage("");
     setReportMessage("");
+    const comparisonCommit = headCommitSha.trim();
+    const comparisonMetricKey = extractSingleMetricKey(metricKeys);
 
     try {
       const response = await getPullRequestComparison({
         provider,
         repository,
         baseCommitSha: baseCommitSha.trim(),
-        headCommitSha: headCommitSha.trim(),
+        headCommitSha: comparisonCommit,
         environment,
         metricKeys,
       });
       setComparison(response);
-      logInfo({
+      logCommitTrackerInfo({
         event: LogEvent.CommitTrackerComparisonLoad,
-        route: "/apps/commit-tracker",
-        miniAppId: DevkitMiniAppId.CommitTracker,
         provider,
         outcome: "success",
         message: "Loaded pull request comparison.",
+        repository,
+        commit: comparisonCommit,
+        metricKey: comparisonMetricKey,
+        evaluationLevel: response.aggregateEvaluation,
+        deltaPercent: extractSingleComparisonDeltaPercent(response.comparisons),
       });
     } catch (error) {
       const message =
@@ -185,13 +200,14 @@ export function CommitTrackerApp() {
           ? error.message
           : "Failed to load pull request comparison.";
       setErrorMessage(message);
-      logError({
+      logCommitTrackerError({
         event: LogEvent.CommitTrackerComparisonLoad,
-        route: "/apps/commit-tracker",
-        miniAppId: DevkitMiniAppId.CommitTracker,
         provider,
         outcome: "failed",
         message,
+        repository,
+        commit: comparisonCommit,
+        metricKey: comparisonMetricKey,
         error,
       });
     } finally {
@@ -204,6 +220,8 @@ export function CommitTrackerApp() {
     setPublishing(true);
     setErrorMessage("");
     setReportMessage("");
+    const publishCommit = headCommitSha.trim();
+    const publishMetricKey = extractSingleMetricKey(metricKeys);
 
     try {
       const response = await publishPullRequestReport({
@@ -211,7 +229,7 @@ export function CommitTrackerApp() {
         repository,
         pullRequest,
         baseCommitSha: baseCommitSha.trim(),
-        headCommitSha: headCommitSha.trim(),
+        headCommitSha: publishCommit,
         environment,
         metricKeys,
       });
@@ -219,25 +237,30 @@ export function CommitTrackerApp() {
       setReportMessage(
         `Published report. Comment: ${response.commentUrl} | Status: ${response.statusUrl}`,
       );
-      logInfo({
+      logCommitTrackerInfo({
         event: LogEvent.CommitTrackerReportPublish,
-        route: "/apps/commit-tracker",
-        miniAppId: DevkitMiniAppId.CommitTracker,
         provider,
         outcome: "success",
         message: "Published pull request report.",
+        repository,
+        pullRequest,
+        commit: publishCommit,
+        metricKey: publishMetricKey,
+        evaluationLevel: response.aggregateEvaluation,
       });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to publish pull request report.";
       setErrorMessage(message);
-      logError({
+      logCommitTrackerError({
         event: LogEvent.CommitTrackerReportPublish,
-        route: "/apps/commit-tracker",
-        miniAppId: DevkitMiniAppId.CommitTracker,
         provider,
         outcome: "failed",
         message,
+        repository,
+        pullRequest,
+        commit: publishCommit,
+        metricKey: publishMetricKey,
         error,
       });
     } finally {
