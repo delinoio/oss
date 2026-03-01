@@ -31,11 +31,15 @@ The shell visual baseline follows Toss Design System-inspired foundations (color
 
 ## Architecture
 - Platform shell handles layout, navigation, and global providers.
+- Platform shell uses a responsive navigation layout:
+  - desktop: persistent left sidebar
+  - mobile (`max-width: 960px`): hamburger-triggered off-canvas drawer
 - Shared UI tokens map to Toss-style foundation colors and typography, then flow to shell and mini-app surfaces.
 - Mini apps live under `src/apps/<id>`.
 - Static route pages map each mini app to `/apps/<id>`.
 - Shared services layer exposes standard platform utilities.
 - Enum-based registration lives in `src/lib/mini-app-registry.ts`.
+- Shell navigation menu order is fixed as `Home (/)` first, then registered mini apps from `MINI_APP_REGISTRATIONS`.
 - Current route maturity mix: `commit-tracker`, `remote-file-picker`, and `thenv` are live.
 - Backend-coupled mini apps consume backend APIs while preserving shell-owned auth/session/navigation behavior.
 
@@ -55,6 +59,12 @@ Routing contract:
 ```txt
 /apps/<id>
 ```
+
+Shell navigation contract:
+- Includes `Home` route (`/`) and all mini app routes.
+- Uses route-aware active state (`aria-current="page"`) for the current page.
+- Keeps mini app link entries sourced from enum-backed registration (`MINI_APP_REGISTRATIONS`).
+- Mobile drawer keeps navigation links out of keyboard tab order while closed.
 
 Mini app directory contract:
 

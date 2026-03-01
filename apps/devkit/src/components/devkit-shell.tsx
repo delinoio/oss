@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { ReactNode } from "react";
 
 import {
@@ -6,12 +5,10 @@ import {
   AuthGuardDecision,
   evaluateAuthGuard,
 } from "@/lib/auth-guard";
-import {
-  DevkitMiniAppId,
-  DevkitRoute,
-  MINI_APP_REGISTRATIONS,
-} from "@/lib/mini-app-registry";
+import { DevkitMiniAppId, DevkitRoute } from "@/lib/mini-app-registry";
 import { LogEvent, logError, logInfo } from "@/lib/logger";
+
+import { DevkitShellLayout } from "./devkit-shell-layout";
 
 export interface DevkitShellProps {
   title: string;
@@ -62,33 +59,8 @@ export function DevkitShell({
   });
 
   return (
-    <div className="dk-root">
-      <header className="dk-topbar">
-        <div className="dk-topbar-inner">
-          <p className="dk-topbar-label">Devkit Shell</p>
-          <h1 className="dk-page-title">{title}</h1>
-          <nav aria-label="Mini app navigation">
-            <ul className="dk-nav-list">
-              {MINI_APP_REGISTRATIONS.map((registration) => (
-                <li key={registration.id}>
-                  <Link
-                    href={registration.route}
-                    aria-current={
-                      registration.route === currentRoute ? "page" : undefined
-                    }
-                    className="dk-nav-link"
-                  >
-                    {registration.title}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </div>
-      </header>
-      <main className="dk-main">
-        {children}
-      </main>
-    </div>
+    <DevkitShellLayout title={title} currentRoute={currentRoute}>
+      {children}
+    </DevkitShellLayout>
   );
 }
