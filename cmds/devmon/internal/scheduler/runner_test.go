@@ -171,6 +171,78 @@ func TestRunnerCapacitySkip(t *testing.T) {
 	}
 }
 
+func TestRunnerDisabledJobSkip(t *testing.T) {
+	logBuffer := &bytes.Buffer{}
+	logger, err := logging.NewWithWriter(logBuffer, "info")
+	if err != nil {
+		t.Fatalf("NewWithWriter returned error: %v", err)
+	}
+
+	fake := &fakeExecutor{}
+	cfg := testConfig(t, 2, true, []config.JobConfig{
+		testJob("disabled-job", false, "10ms", "1s", boolPtr(true)),
+	})
+
+	runner := NewRunner(cfg, logger, fake)
+	runContext, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- runner.Run(runContext)
+	}()
+
+	waitForCondition(t, time.Second, func() bool {
+		return strings.Contains(logBuffer.String(), `"outcome":"skipped-disabled"`)
+	})
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("runner did not stop")
+	}
+
+	logs := logBuffer.String()
+	if !strings.Contains(logs, `"skip_reason":"disabled"`) {
+		t.Fatalf("expected disabled skip log, got=%s", logs)
+	}
+	if fake.callCount() != 0 {
+		t.Fatalf("expected disabled job to avoid executor calls, got=%d", fake.callCount())
+	}
+}
+
+func TestRunnerJobStartupRunFalseOverridesDaemonDefault(t *testing.T) {
+	fake := &fakeExecutor{}
+	cfg := testConfig(t, 2, true, []config.JobConfig{
+		testJob("job-without-startup", true, "1h", "1s", boolPtr(false)),
+	})
+
+	runner := NewRunner(cfg, slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)), fake)
+	runContext, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- runner.Run(runContext)
+	}()
+
+	time.Sleep(120 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("runner did not stop")
+	}
+
+	if fake.callCount() != 0 {
+		t.Fatalf("expected no startup run for startup_run=false override, got=%d calls", fake.callCount())
+	}
+}
+
 func TestRunnerTimeoutOutcome(t *testing.T) {
 	logBuffer := &bytes.Buffer{}
 	logger, err := logging.NewWithWriter(logBuffer, "info")
