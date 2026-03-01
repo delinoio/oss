@@ -6,6 +6,56 @@ import ThenvPage from "./page";
 
 let failNextVersionsRequest = false;
 let failNextAuditRequest = false;
+let holdNextVersionsLoadMoreResponse = false;
+let holdNextAuditLoadMoreResponse = false;
+let releaseHeldVersionsLoadMoreResponse: (() => void) | null = null;
+let releaseHeldAuditLoadMoreResponse: (() => void) | null = null;
+
+function buildVersionsLoadMoreResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      versions: [
+        {
+          bundleVersionId: "bundle-2",
+          status: "BUNDLE_STATUS_ARCHIVED",
+          createdBy: "operator@example.com",
+          createdAt: "2026-02-24T01:00:00Z",
+          fileTypes: ["FILE_TYPE_DEV_VARS"],
+        },
+      ],
+      nextCursor: "",
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+function buildAuditLoadMoreResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      events: [
+        {
+          eventId: "evt-2",
+          eventType: "AUDIT_EVENT_TYPE_LIST",
+          actor: "operator@example.com",
+          bundleVersionId: "bundle-2",
+          targetBundleVersionId: "",
+          outcome: "OUTCOME_SUCCESS",
+          requestId: "req-2",
+          traceId: "trace-2",
+          createdAt: "2026-02-24T01:00:00Z",
+        },
+      ],
+      nextCursor: "",
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
   const rawUrl = typeof input === "string" ? input : input.toString();
@@ -19,24 +69,16 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
 
     const cursor = parsedUrl.searchParams.get("cursor");
     if (cursor === "1") {
-      return new Response(
-        JSON.stringify({
-          versions: [
-            {
-              bundleVersionId: "bundle-2",
-              status: "BUNDLE_STATUS_ARCHIVED",
-              createdBy: "operator@example.com",
-              createdAt: "2026-02-24T01:00:00Z",
-              fileTypes: ["FILE_TYPE_DEV_VARS"],
-            },
-          ],
-          nextCursor: "",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+      if (holdNextVersionsLoadMoreResponse) {
+        holdNextVersionsLoadMoreResponse = false;
+        return new Promise<Response>((resolve) => {
+          releaseHeldVersionsLoadMoreResponse = () => {
+            releaseHeldVersionsLoadMoreResponse = null;
+            resolve(buildVersionsLoadMoreResponse());
+          };
+        });
+      }
+      return buildVersionsLoadMoreResponse();
     }
 
     return new Response(
@@ -74,28 +116,16 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
 
     const cursor = parsedUrl.searchParams.get("cursor");
     if (cursor === "1") {
-      return new Response(
-        JSON.stringify({
-          events: [
-            {
-              eventId: "evt-2",
-              eventType: "AUDIT_EVENT_TYPE_LIST",
-              actor: "operator@example.com",
-              bundleVersionId: "bundle-2",
-              targetBundleVersionId: "",
-              outcome: "OUTCOME_SUCCESS",
-              requestId: "req-2",
-              traceId: "trace-2",
-              createdAt: "2026-02-24T01:00:00Z",
-            },
-          ],
-          nextCursor: "",
-        }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        },
-      );
+      if (holdNextAuditLoadMoreResponse) {
+        holdNextAuditLoadMoreResponse = false;
+        return new Promise<Response>((resolve) => {
+          releaseHeldAuditLoadMoreResponse = () => {
+            releaseHeldAuditLoadMoreResponse = null;
+            resolve(buildAuditLoadMoreResponse());
+          };
+        });
+      }
+      return buildAuditLoadMoreResponse();
     }
 
     return new Response(
@@ -147,6 +177,10 @@ describe("ThenvPage", () => {
     fetchMock.mockClear();
     failNextVersionsRequest = false;
     failNextAuditRequest = false;
+    holdNextVersionsLoadMoreResponse = false;
+    holdNextAuditLoadMoreResponse = false;
+    releaseHeldVersionsLoadMoreResponse = null;
+    releaseHeldAuditLoadMoreResponse = null;
     vi.stubGlobal("fetch", fetchMock);
   });
 
@@ -292,6 +326,48 @@ describe("ThenvPage", () => {
       expect(
         screen.queryByRole("button", { name: "Load More Audit Events" }),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  it("ignores stale in-flight version page responses after refresh", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Load More Versions" }),
+    ).toBeInTheDocument();
+
+    holdNextVersionsLoadMoreResponse = true;
+    await user.click(screen.getByRole("button", { name: "Load More Versions" }));
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    releaseHeldVersionsLoadMoreResponse?.();
+
+    await waitFor(() => {
+      expect(screen.queryByText("bundle-2")).not.toBeInTheDocument();
+    });
+  });
+
+  it("ignores stale in-flight audit page responses after filter updates", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Load More Audit Events" }),
+    ).toBeInTheDocument();
+
+    holdNextAuditLoadMoreResponse = true;
+    await user.click(screen.getByRole("button", { name: "Load More Audit Events" }));
+
+    await user.clear(screen.getByLabelText("From Time (ISO)"));
+    await user.type(screen.getByLabelText("From Time (ISO)"), "2026-01-01T00:00:00Z");
+    await user.clear(screen.getByLabelText("To Time (ISO)"));
+    await user.type(screen.getByLabelText("To Time (ISO)"), "2026-01-31T23:59:59Z");
+    await user.click(screen.getByRole("button", { name: "Apply Audit Filters" }));
+
+    releaseHeldAuditLoadMoreResponse?.();
+
+    await waitFor(() => {
+      expect(screen.queryByText("req-2")).not.toBeInTheDocument();
     });
   });
 

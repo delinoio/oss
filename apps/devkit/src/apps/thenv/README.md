@@ -12,6 +12,7 @@ This directory hosts the Devkit mini app with the stable id `thenv`.
 - Support audit time-range filtering (`fromTime`, `toTime`) in the metadata console.
 - Support cursor-based "Load More" pagination for version inventory and audit history views.
 - Clear stale pagination cursors when reloads fail so load-more actions cannot append mixed datasets.
+- Ignore stale in-flight load-more responses when scope or audit filter context changes.
 - Keep unsaved policy draft bindings intact when applying or clearing audit filters.
 - Never render or persist plaintext secret payloads in browser state.
 

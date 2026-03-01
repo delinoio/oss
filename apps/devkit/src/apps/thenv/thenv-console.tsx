@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   activateVersion,
@@ -105,6 +105,8 @@ export function ThenvConsole() {
   const [savingPolicy, setSavingPolicy] = useState<boolean>(false);
   const [activating, setActivating] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const versionsPaginationRevisionRef = useRef<number>(0);
+  const auditPaginationRevisionRef = useRef<number>(0);
 
   const activeVersion = useMemo(
     () =>
@@ -117,14 +119,28 @@ export function ThenvConsole() {
   const loadAuditEvents = useCallback(async (fromTime: string, toTime: string) => {
     setLoading(true);
     setErrorMessage("");
+    auditPaginationRevisionRef.current += 1;
     setAuditNextCursor("");
 
+    const currentAuditRevision = auditPaginationRevisionRef.current;
     try {
       const auditResponse = await listAuditEvents({
         scope,
         fromTime: fromTime || undefined,
         toTime: toTime || undefined,
       });
+      if (currentAuditRevision !== auditPaginationRevisionRef.current) {
+        logInfo({
+          event: LogEvent.RouteRender,
+          route: "/apps/thenv",
+          message: "Ignored stale thenv audit first-page response.",
+          context: {
+            auditFromTime: fromTime || undefined,
+            auditToTime: toTime || undefined,
+          },
+        });
+        return;
+      }
       setAuditEvents(auditResponse.events);
       setAuditNextCursor(auditResponse.nextCursor ?? "");
 
@@ -161,9 +177,13 @@ export function ThenvConsole() {
   const loadConsoleData = useCallback(async (fromTime: string, toTime: string) => {
     setLoading(true);
     setErrorMessage("");
+    versionsPaginationRevisionRef.current += 1;
+    auditPaginationRevisionRef.current += 1;
     setVersionsNextCursor("");
     setAuditNextCursor("");
 
+    const currentVersionsRevision = versionsPaginationRevisionRef.current;
+    const currentAuditRevision = auditPaginationRevisionRef.current;
     try {
       const [versionsResponse, policyResponse, auditResponse] = await Promise.all([
         listVersions(scope),
@@ -174,6 +194,21 @@ export function ThenvConsole() {
           toTime: toTime || undefined,
         }),
       ]);
+      if (
+        currentVersionsRevision !== versionsPaginationRevisionRef.current ||
+        currentAuditRevision !== auditPaginationRevisionRef.current
+      ) {
+        logInfo({
+          event: LogEvent.RouteRender,
+          route: "/apps/thenv",
+          message: "Ignored stale thenv metadata console response.",
+          context: {
+            auditFromTime: fromTime || undefined,
+            auditToTime: toTime || undefined,
+          },
+        });
+        return;
+      }
 
       setVersions(versionsResponse.versions);
       setVersionsNextCursor(versionsResponse.nextCursor ?? "");
@@ -250,11 +285,21 @@ export function ThenvConsole() {
       return;
     }
 
+    const currentVersionsRevision = versionsPaginationRevisionRef.current;
     const cursor = versionsNextCursor;
     setLoadingMoreVersions(true);
     setErrorMessage("");
     try {
       const response = await listVersions(scope, { cursor });
+      if (currentVersionsRevision !== versionsPaginationRevisionRef.current) {
+        logInfo({
+          event: LogEvent.RouteRender,
+          route: "/apps/thenv",
+          message: "Ignored stale thenv bundle versions page response.",
+          context: { cursor },
+        });
+        return;
+      }
       setVersions((previous) => [...previous, ...response.versions]);
       setVersionsNextCursor(response.nextCursor ?? "");
       logInfo({
@@ -288,6 +333,7 @@ export function ThenvConsole() {
       return;
     }
 
+    const currentAuditRevision = auditPaginationRevisionRef.current;
     const cursor = auditNextCursor;
     setLoadingMoreAuditEvents(true);
     setErrorMessage("");
@@ -298,6 +344,19 @@ export function ThenvConsole() {
         toTime: appliedAuditToTime || undefined,
         cursor,
       });
+      if (currentAuditRevision !== auditPaginationRevisionRef.current) {
+        logInfo({
+          event: LogEvent.RouteRender,
+          route: "/apps/thenv",
+          message: "Ignored stale thenv audit events page response.",
+          context: {
+            cursor,
+            auditFromTime: appliedAuditFromTime || undefined,
+            auditToTime: appliedAuditToTime || undefined,
+          },
+        });
+        return;
+      }
       setAuditEvents((previous) => [...previous, ...response.events]);
       setAuditNextCursor(response.nextCursor ?? "");
       logInfo({
