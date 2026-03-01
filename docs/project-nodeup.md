@@ -185,6 +185,7 @@ Subcommand contracts:
 : Note: unlike `run`, this command does not auto-install missing runtimes.
 - `nodeup run [--install] <runtime> <command>...`
 : Input: explicit runtime selector and delegated argv (at least one command token is required).
+: Input: delegated argv is opaque to nodeup after runtime selection; delegated flags such as `--output` do not alter nodeup global option parsing.
 : Behavior: if resolved runtime version is missing, command fails unless `--install` is provided.
 : Output: delegated command result with runtime, delegated command name, and exit code.
 : Output channels:

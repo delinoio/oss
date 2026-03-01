@@ -58,8 +58,16 @@ where
     }
 
     let mut json_output_requested = false;
+    let mut run_argument_state = RunArgumentState::OutsideRun;
 
-    while let Some(arg) = args.next() {
+    loop {
+        if run_argument_state == RunArgumentState::AfterRuntime {
+            break;
+        }
+
+        let Some(arg) = args.next() else {
+            break;
+        };
         let Some(arg) = arg.to_str() else {
             continue;
         };
@@ -82,9 +90,31 @@ where
                 _ => {}
             }
         }
+
+        if run_argument_state == RunArgumentState::OutsideRun && arg == "run" {
+            run_argument_state = RunArgumentState::BeforeRuntime;
+            continue;
+        }
+
+        if run_argument_state == RunArgumentState::BeforeRuntime {
+            // `run` captures all arguments after the runtime selector as delegated argv.
+            // Stop scanning once runtime is encountered so delegated flags do not
+            // affect nodeup's own output mode detection.
+            if arg == "--install" || arg.starts_with('-') {
+                continue;
+            }
+            run_argument_state = RunArgumentState::AfterRuntime;
+        }
     }
 
     json_output_requested
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RunArgumentState {
+    OutsideRun,
+    BeforeRuntime,
+    AfterRuntime,
 }
 
 #[cfg(test)]
@@ -118,6 +148,37 @@ mod tests {
     fn managed_alias_invocation_ignores_json_output_flags() {
         assert!(!json_error_output_requested_from_args(os_args(&[
             "node", "--output", "json",
+        ])));
+    }
+
+    #[test]
+    fn run_delegated_output_flags_do_not_toggle_json_mode() {
+        assert!(!json_error_output_requested_from_args(os_args(&[
+            "nodeup", "run", "lts", "node", "--output", "json",
+        ])));
+
+        assert!(!json_error_output_requested_from_args(os_args(&[
+            "nodeup",
+            "run",
+            "lts",
+            "node",
+            "--output=json",
+        ])));
+    }
+
+    #[test]
+    fn run_global_output_before_delegated_command_is_respected() {
+        assert!(json_error_output_requested_from_args(os_args(&[
+            "nodeup", "--output", "json", "run", "lts", "node", "--output", "human",
+        ])));
+
+        assert!(json_error_output_requested_from_args(os_args(&[
+            "nodeup",
+            "run",
+            "--output=json",
+            "lts",
+            "node",
+            "--output=human",
         ])));
     }
 }
