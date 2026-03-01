@@ -136,7 +136,7 @@ Devkit proxy API routes:
 - `POST /api/commit-tracker/report`
 
 Proxy error semantics:
-- `comparison` proxy preserves upstream HTTP status for Commit Tracker RPC failures (for example 400/401/412) instead of collapsing all failures into 502.
+- `series`, `comparison`, and `report` proxies preserve upstream HTTP status for Commit Tracker RPC failures (for example 400/401/412) instead of collapsing all failures into 502.
 
 ## Storage
 Primary backend storage:
