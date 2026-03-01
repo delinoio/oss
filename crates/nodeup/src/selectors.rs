@@ -25,11 +25,8 @@ impl RuntimeSelector {
             ));
         }
 
-        match normalized {
-            "lts" => return Ok(Self::Channel(NodeupChannel::Lts)),
-            "current" => return Ok(Self::Channel(NodeupChannel::Current)),
-            "latest" => return Ok(Self::Channel(NodeupChannel::Latest)),
-            _ => {}
+        if let Some(channel) = reserved_channel_selector(normalized) {
+            return Ok(Self::Channel(channel));
         }
 
         if let Some(stripped) = normalized.strip_prefix('v') {
@@ -85,6 +82,19 @@ pub fn is_valid_linked_name(input: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
+pub fn reserved_channel_selector(input: &str) -> Option<NodeupChannel> {
+    match input {
+        "lts" => Some(NodeupChannel::Lts),
+        "current" => Some(NodeupChannel::Current),
+        "latest" => Some(NodeupChannel::Latest),
+        _ => None,
+    }
+}
+
+pub fn is_reserved_channel_selector_token(input: &str) -> bool {
+    reserved_channel_selector(input).is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,5 +127,16 @@ mod tests {
             RuntimeSelector::parse("my-node").unwrap(),
             RuntimeSelector::LinkedName("my-node".to_string())
         );
+    }
+
+    #[test]
+    fn reserved_channel_selector_token_detection_is_exact_and_case_sensitive() {
+        assert!(is_reserved_channel_selector_token("lts"));
+        assert!(is_reserved_channel_selector_token("current"));
+        assert!(is_reserved_channel_selector_token("latest"));
+
+        assert!(!is_reserved_channel_selector_token("LTS"));
+        assert!(!is_reserved_channel_selector_token("Latest"));
+        assert!(!is_reserved_channel_selector_token("node-lts"));
     }
 }

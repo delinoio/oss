@@ -508,6 +508,73 @@ fn toolchain_list_json_output_is_stable_with_detail_flags() {
 
 #[test]
 #[serial]
+fn toolchain_link_rejects_reserved_channel_name_and_does_not_persist_selector() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-reserved-name");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n").unwrap();
+
+    let output = env
+        .command()
+        .args(["toolchain", "link", "lts", runtime_dir.to_str().unwrap()])
+        .output()
+        .expect("toolchain link with reserved channel selector");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Invalid linked runtime name: lts"));
+    assert!(stderr.contains(
+        "Reserved channel selectors cannot be used as linked runtime names: lts, current, latest",
+    ));
+
+    let list_output = env
+        .command()
+        .args(["--output", "json", "toolchain", "list"])
+        .output()
+        .expect("toolchain list after failed reserved-name link");
+    assert!(list_output.status.success());
+
+    let payload: Value = serde_json::from_slice(&list_output.stdout).unwrap();
+    assert!(payload["linked"].get("lts").is_none());
+}
+
+#[test]
+#[serial]
+fn json_toolchain_link_reserved_name_failure_emits_invalid_input_error_envelope() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-reserved-name-json");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n").unwrap();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "link",
+            "lts",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("toolchain link --output json with reserved channel selector");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Invalid linked runtime name: lts"));
+}
+
+#[test]
+#[serial]
 fn toolchain_link_rejects_regular_file_path_and_does_not_persist_selector() {
     let env = TestEnv::new();
     let invalid_path = env.root.join("not-a-runtime-file");

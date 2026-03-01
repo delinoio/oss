@@ -8,7 +8,7 @@ use crate::{
     commands::print_output,
     errors::{NodeupError, Result},
     resolver::ResolvedRuntimeTarget,
-    selectors::{is_valid_linked_name, RuntimeSelector},
+    selectors::{is_reserved_channel_selector_token, is_valid_linked_name, RuntimeSelector},
     NodeupApp,
 };
 
@@ -291,6 +291,21 @@ fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result
         );
         return Err(NodeupError::invalid_input(format!(
             "Invalid linked runtime name: {name}"
+        )));
+    }
+
+    if is_reserved_channel_selector_token(name) {
+        info!(
+            command_path = "nodeup.toolchain.link",
+            linked_name = %name,
+            requested_path = %path,
+            validation = false,
+            reason = "reserved-linked-name",
+            "Rejected linked runtime"
+        );
+        return Err(NodeupError::invalid_input(format!(
+            "Invalid linked runtime name: {name}. Reserved channel selectors cannot be used as \
+             linked runtime names: lts, current, latest"
         )));
     }
 

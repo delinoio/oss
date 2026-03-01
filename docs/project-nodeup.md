@@ -133,6 +133,7 @@ enum NodeupRuntimeSelectorKind {
 
 - `22.1.0` and `v22.1.0` are equivalent version selectors and normalize to `v22.1.0`.
 - Linked runtime names must start with an ASCII alphanumeric character and may contain `_` or `-` after the first character.
+- Linked runtime names must not use reserved channel tokens: `lts`, `current`, `latest`.
 
 Subcommand contracts:
 - `nodeup toolchain list [--quiet|--verbose]`
@@ -158,9 +159,9 @@ Subcommand contracts:
 : Output: removed runtime list; tracked selectors that canonicalize to removed versions are deleted.
 - `nodeup toolchain link <name> <path>`
 : Input: linked runtime name and local runtime directory path.
-: Behavior: validates name format, requires an existing directory target, canonicalizes path, validates the canonicalized path contains `bin/node`, stores it in linked runtimes, and tracks the selector.
+: Behavior: validates name format, rejects reserved channel selector names (`lts`, `current`, `latest`), requires an existing directory target, canonicalizes path, validates the canonicalized path contains `bin/node`, stores it in linked runtimes, and tracks the selector.
 : Failure: returns deterministic `not-found` when the provided path does not exist.
-: Failure: returns deterministic `invalid-input` when the provided path is not a directory or when `bin/node` is missing.
+: Failure: returns deterministic `invalid-input` when the linked runtime name is invalid or reserved, when the provided path is not a directory, or when `bin/node` is missing.
 : Status field (`--output json`): `linked`.
 - `nodeup default [runtime]`
 : With `runtime`: resolves selector, installs if it resolves to a version and is missing, saves selector as global default, and tracks selector.
