@@ -5,23 +5,86 @@ import { beforeEach, vi } from "vitest";
 import ThenvPage from "./page";
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-  const url = typeof input === "string" ? input : input.toString();
+  const rawUrl = typeof input === "string" ? input : input.toString();
+  const parsedUrl = new URL(rawUrl, "http://localhost");
 
-  if (url.startsWith("/api/thenv/versions")) {
-    return new Response(JSON.stringify({ versions: [], nextCursor: "" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+  if (parsedUrl.pathname === "/api/thenv/versions") {
+    const cursor = parsedUrl.searchParams.get("cursor");
+    if (cursor === "1") {
+      return new Response(
+        JSON.stringify({
+          versions: [
+            {
+              bundleVersionId: "bundle-2",
+              status: "BUNDLE_STATUS_ARCHIVED",
+              createdBy: "operator@example.com",
+              createdAt: "2026-02-24T01:00:00Z",
+              fileTypes: ["FILE_TYPE_DEV_VARS"],
+            },
+          ],
+          nextCursor: "",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        versions: [
+          {
+            bundleVersionId: "bundle-1",
+            status: "BUNDLE_STATUS_ACTIVE",
+            createdBy: "operator@example.com",
+            createdAt: "2026-02-24T00:00:00Z",
+            fileTypes: ["FILE_TYPE_ENV"],
+          },
+        ],
+        nextCursor: "1",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
-  if (url.startsWith("/api/thenv/policy")) {
+  if (parsedUrl.pathname === "/api/thenv/policy") {
     return new Response(JSON.stringify({ bindings: [], policyRevision: 0 }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  if (url.startsWith("/api/thenv/audit")) {
+  if (parsedUrl.pathname === "/api/thenv/audit") {
+    const cursor = parsedUrl.searchParams.get("cursor");
+    if (cursor === "1") {
+      return new Response(
+        JSON.stringify({
+          events: [
+            {
+              eventId: "evt-2",
+              eventType: "AUDIT_EVENT_TYPE_LIST",
+              actor: "operator@example.com",
+              bundleVersionId: "bundle-2",
+              targetBundleVersionId: "",
+              outcome: "OUTCOME_SUCCESS",
+              requestId: "req-2",
+              traceId: "trace-2",
+              createdAt: "2026-02-24T01:00:00Z",
+            },
+          ],
+          nextCursor: "",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
     return new Response(
       JSON.stringify({
         events: [
@@ -37,7 +100,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
             createdAt: "2026-02-24T00:00:00Z",
           },
         ],
-        nextCursor: "",
+        nextCursor: "1",
       }),
       {
         status: 200,
@@ -46,16 +109,24 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     );
   }
 
-  return new Response(JSON.stringify({ error: `Unhandled URL: ${url}` }), {
+  return new Response(JSON.stringify({ error: `Unhandled URL: ${rawUrl}` }), {
     status: 404,
     headers: { "Content-Type": "application/json" },
   });
 });
 
-function auditCallUrls(): string[] {
+function callUrls(pathname: string): string[] {
   return fetchMock.mock.calls
     .map(([input]) => (typeof input === "string" ? input : input.toString()))
-    .filter((url) => url.startsWith("/api/thenv/audit"));
+    .filter((url) => new URL(url, "http://localhost").pathname === pathname);
+}
+
+function auditCallUrls(): string[] {
+  return callUrls("/api/thenv/audit");
+}
+
+function versionCallUrls(): string[] {
+  return callUrls("/api/thenv/versions");
 }
 
 describe("ThenvPage", () => {
@@ -99,6 +170,68 @@ describe("ThenvPage", () => {
       expect(
         auditCallUrls().some(
           (url) =>
+            url.includes(`fromTime=${encodeURIComponent(fromTime)}`) &&
+            url.includes(`toTime=${encodeURIComponent(toTime)}`),
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("loads and appends the next version page", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Load More Versions" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Load More Versions" }));
+
+    expect(await screen.findByText("bundle-2")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Load More Versions" })).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(
+        versionCallUrls().some((url) => url.includes("cursor=1")),
+      ).toBe(true);
+    });
+  });
+
+  it("loads additional audit events with applied from/to filter range", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    const fromTime = "2026-01-01T00:00:00Z";
+    const toTime = "2026-01-31T23:59:59Z";
+
+    await user.clear(screen.getByLabelText("From Time (ISO)"));
+    await user.type(screen.getByLabelText("From Time (ISO)"), fromTime);
+    await user.clear(screen.getByLabelText("To Time (ISO)"));
+    await user.type(screen.getByLabelText("To Time (ISO)"), toTime);
+    await user.click(screen.getByRole("button", { name: "Apply Audit Filters" }));
+
+    await waitFor(() => {
+      expect(
+        auditCallUrls().some(
+          (url) =>
+            url.includes(`fromTime=${encodeURIComponent(fromTime)}`) &&
+            url.includes(`toTime=${encodeURIComponent(toTime)}`),
+        ),
+      ).toBe(true);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Load More Audit Events" }));
+
+    expect(await screen.findByText("req-2")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Load More Audit Events" }),
+    ).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(
+        auditCallUrls().some(
+          (url) =>
+            url.includes("cursor=1") &&
             url.includes(`fromTime=${encodeURIComponent(fromTime)}`) &&
             url.includes(`toTime=${encodeURIComponent(toTime)}`),
         ),
