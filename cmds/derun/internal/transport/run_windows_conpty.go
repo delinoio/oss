@@ -60,7 +60,7 @@ func RunWindowsConPTY(
 	if err := windows.CreatePseudoConsole(conPTYSize, inRead, outWrite, 0, &pseudoConsole); err != nil {
 		return RunResult{}, fmt.Errorf("create pseudo console: %w", err)
 	}
-	defer windows.ClosePseudoConsole(pseudoConsole)
+	defer closePseudoConsole(&pseudoConsole)
 
 	attributeList, err := windows.NewProcThreadAttributeList(1)
 	if err != nil {
@@ -138,6 +138,15 @@ func RunWindowsConPTY(
 
 	resizeStop := make(chan struct{})
 	resizeStopped := make(chan struct{})
+	stopResize := func() {
+		if resizeStop == nil {
+			return
+		}
+		close(resizeStop)
+		<-resizeStopped
+		resizeStop = nil
+		resizeStopped = nil
+	}
 	go func(initial windows.Coord) {
 		defer close(resizeStopped)
 		ticker := time.NewTicker(conPTYResizePollInt)
@@ -162,10 +171,7 @@ func RunWindowsConPTY(
 			}
 		}
 	}(conPTYSize)
-	defer func() {
-		close(resizeStop)
-		<-resizeStopped
-	}()
+	defer stopResize()
 
 	if onStart != nil {
 		if err := onStart(int(processInfo.ProcessId)); err != nil {
@@ -224,6 +230,8 @@ func RunWindowsConPTY(
 		return RunResult{}, fmt.Errorf("wait for conpty process: %w", err)
 	}
 	close(waitDone)
+	stopResize()
+	closePseudoConsole(&pseudoConsole)
 
 	if err := <-copyStdoutErr; err != nil {
 		return RunResult{}, fmt.Errorf("copy conpty output: %w", err)
@@ -256,6 +264,14 @@ func closeHandle(handle *windows.Handle) {
 		return
 	}
 	_ = windows.CloseHandle(*handle)
+	*handle = 0
+}
+
+func closePseudoConsole(handle *windows.Handle) {
+	if handle == nil || *handle == 0 {
+		return
+	}
+	windows.ClosePseudoConsole(*handle)
 	*handle = 0
 }
 

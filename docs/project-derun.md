@@ -141,6 +141,7 @@ Terminal fidelity rules:
 - No prefix/banner injection into child stdout/stderr streams.
 - Interactive sessions must forward stdin bytes, resize events, and termination signals.
 - Windows ConPTY interactive sessions must continuously synchronize console resize changes during active runs.
+- Windows ConPTY shutdown must close the pseudo console after child-process exit and before output-drain completion waits so PTY capture reaches EOF deterministically.
 - Signal-forwarding handlers must be registered before PID publication callbacks so startup-window interrupts are forwarded to the child process.
 - When interactive Windows ConPTY allocation is unavailable, `derun run` must fall back to pipe transport and continue command execution.
 - Child exit code or signal must be propagated as `derun run` process exit result.
