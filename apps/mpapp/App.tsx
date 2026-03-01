@@ -58,6 +58,10 @@ import {
   DEFAULT_MPAPP_INPUT_PREFERENCES,
   type InputPreferencesStore,
 } from "./src/preferences/input-preferences-store";
+import {
+  mergeHydratedInputPreferences,
+  MpappInputPreferenceKey,
+} from "./src/preferences/merge-hydrated-input-preferences";
 
 const SENSITIVITY_STEP = 0.1;
 const SENSITIVITY_MIN = 0.5;
@@ -102,7 +106,10 @@ export default function App() {
     DEFAULT_MPAPP_INPUT_PREFERENCES,
   );
   const [canPersistPreferences, setCanPersistPreferences] = useState(false);
-  const hasLocalPreferenceEditsRef = useRef(false);
+  const inputPreferencesRef = useRef<MpappInputPreferences>(
+    DEFAULT_MPAPP_INPUT_PREFERENCES,
+  );
+  const editedPreferenceKeysRef = useRef<Set<MpappInputPreferenceKey>>(new Set());
 
   const runtimeConfig = useMemo(() => resolveMpappRuntimeConfig(), []);
   const adapter = useMemo(
@@ -163,6 +170,10 @@ export default function App() {
   }, [sessionState]);
 
   useEffect(() => {
+    inputPreferencesRef.current = inputPreferences;
+  }, [inputPreferences]);
+
+  useEffect(() => {
     if (sessionState.mode === MpappMode.Connected) {
       return;
     }
@@ -187,16 +198,18 @@ export default function App() {
           return;
         }
 
-        if (hasLocalPreferenceEditsRef.current) {
-          console.info("[mpapp][preferences] hydration skipped due to local edits", {
-            savedPreferences,
-          });
-          setCanPersistPreferences(true);
-          return;
-        }
+        const mergedPreferences = mergeHydratedInputPreferences({
+          localPreferences: inputPreferencesRef.current,
+          savedPreferences,
+          locallyEditedKeys: editedPreferenceKeysRef.current,
+        });
 
-        setInputPreferences(savedPreferences);
-        console.info("[mpapp][preferences] hydrated", savedPreferences);
+        setInputPreferences(mergedPreferences);
+        console.info("[mpapp][preferences] hydrated", {
+          savedPreferences,
+          mergedPreferences,
+          locallyEditedKeys: Array.from(editedPreferenceKeysRef.current),
+        });
         setCanPersistPreferences(true);
       })
       .catch((error: unknown) => {
@@ -595,7 +608,7 @@ export default function App() {
   );
 
   const updateSensitivity = useCallback((delta: number) => {
-    hasLocalPreferenceEditsRef.current = true;
+    editedPreferenceKeysRef.current.add(MpappInputPreferenceKey.Sensitivity);
     setInputPreferences((previous) => ({
       ...previous,
       sensitivity: clampSensitivity(previous.sensitivity + delta),
@@ -603,15 +616,16 @@ export default function App() {
   }, []);
 
   const toggleAxisInversion = useCallback((axis: MpappAxisPreference) => {
-    hasLocalPreferenceEditsRef.current = true;
     setInputPreferences((previous) => {
       if (axis === MpappAxisPreference.X) {
+        editedPreferenceKeysRef.current.add(MpappInputPreferenceKey.InvertX);
         return {
           ...previous,
           invertX: !previous.invertX,
         };
       }
 
+      editedPreferenceKeysRef.current.add(MpappInputPreferenceKey.InvertY);
       return {
         ...previous,
         invertY: !previous.invertY,
