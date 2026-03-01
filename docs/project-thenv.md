@@ -232,6 +232,7 @@ Acceptance-focused scenarios:
 10. `rotate` creates a new version and updates active pointer.
 11. Sensitive operations emit audit metadata without plaintext values.
 12. Web console renders metadata only and never plaintext secrets.
+13. CLI pull conflict failures and pull successes both emit structured baseline logs including `conflict_policy`, `request_id`, and `trace_id`.
 
 ## Roadmap
 - Phase 1: Connect RPC foundation, versioned multi-file bundles, RBAC, and secure push/pull/list/rotate flows.
