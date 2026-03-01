@@ -39,6 +39,11 @@ The core user flow is:
   - A touchpad region for drag capture
   - Dedicated left-click and right-click controls
 - Input translation module converts gesture deltas into pointer movement samples with sensitivity applied.
+- Input movement sampling policy coalesces drag deltas and emits at most one movement sample every `16ms` (`~60Hz`) while preserving summed pointer distance.
+- If coalesced movement remains pending after the latest drag update, the app must emit it when the `16ms` throttle window elapses even without additional movement callbacks.
+- Throttle interval checks must use a monotonic clock source so device wall-clock adjustments cannot stall movement emission.
+- The trailing movement emission timer must be scheduled from the computed due timestamp, not fixed-phase polling.
+- Touchpad gesture end (`release` or `terminate`) flushes any pending coalesced movement so no in-progress segment is stranded.
 - Touchpad gesture responder instances must be recreated when movement callback dependencies change so runtime sensitivity updates take effect without reconnecting.
 - Android HID transport adapter is implemented as a TypeScript `HidAdapter` contract with:
   - `native-android-hid` mode backed by a local Expo native module at `apps/mpapp/modules/mpapp-android-hid`
@@ -185,6 +190,14 @@ enum MpappHidTransportMode {
 }
 ```
 
+Canonical move sampling policy identifiers:
+
+```ts
+enum MpappMoveSamplingPolicy {
+  CoalescedThrottle = "coalesced-throttle",
+}
+```
+
 Canonical runtime transport config contract:
 
 ```ts
@@ -228,6 +241,7 @@ MVP interface constraints:
 - `MpappInputAction` values are stable contracts and must not be renamed without a documented migration.
 - Click payloads must preserve valid `actionId` and `button` pairs by the `PointerClickSample` discriminated union.
 - `MpappHidTransportMode` values are stable runtime contract values and must not be renamed without migration.
+- `MpappMoveSamplingPolicy` values are stable runtime contract values and must not be renamed without migration.
 - `MpappDisconnectReason` values are stable lifecycle contract values and must not be renamed without migration.
 - Native transport failures may include `nativeErrorCode` for diagnostics, but `MpappErrorCode` remains the canonical app-facing error contract.
 
@@ -292,6 +306,15 @@ Additional transport diagnostics fields when available:
 - `nativeErrorCode`
 - `availabilityState`
 
+Move sampling diagnostics payload contract for `input.move` and move-transport-failure logs:
+- `samplingPolicy` (`coalesced-throttle`)
+- `samplingIntervalMs` (`16`)
+- `samplingWindowMs` (elapsed window represented by one emitted movement sample)
+- `samplingRawSampleCount` (raw gesture movement samples observed in the window)
+- `samplingCoalescedSampleCount` (`samplingRawSampleCount - 1`)
+- `samplingDroppedSampleCount` (`0` for coalescing policy)
+- `samplingEmittedSampleCount` (`1` per emitted movement sample)
+
 Disconnect diagnostics payload contract:
 - Disconnect transition logs must include `disconnectReason` as a machine-readable `MpappDisconnectReason` value for both success and failure paths.
 - Disconnect failure logs must continue to include `nativeErrorCode` when available.
@@ -331,7 +354,7 @@ MVP acceptance criteria scenarios:
 4. Attempting input before a connected state shows a clear disabled or error state.
 5. Permission denial shows a retry path and logs required structured fields.
 6. Disconnect events follow the documented state transition order, persist machine-readable disconnect reasons, and provide reason-specific reconnect guidance in the session status UI.
-7. High input frequency follows documented sampling or throttle limits and remains observable in logs.
+7. High input frequency follows the documented `16ms` coalesced throttle policy, flushes pending movement on gesture end, and keeps sampling diagnostics observable in logs.
 8. Runtime transport switch can intentionally select `native-android-hid` or `stub` and logs selected mode.
 9. Native transport failures preserve canonical `MpappErrorCode` while recording `nativeErrorCode` in diagnostics.
 10. Bluetooth-unavailable and Bluetooth-disabled preflight branches block pairing/connecting and emit structured diagnostics.

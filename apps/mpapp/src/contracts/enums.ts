@@ -60,6 +60,10 @@ export enum MpappHidTransportMode {
   Stub = "stub",
 }
 
+export enum MpappMoveSamplingPolicy {
+  CoalescedThrottle = "coalesced-throttle",
+}
+
 export enum MpappLogEventFamily {
   PermissionCheck = "permission.check",
   ConnectionTransition = "connection.transition",

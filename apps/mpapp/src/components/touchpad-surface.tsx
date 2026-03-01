@@ -12,9 +12,14 @@ import {
 type TouchpadSurfaceProps = {
   disabled: boolean;
   onMove: (deltaX: number, deltaY: number) => void;
+  onGestureEnd: () => void;
 };
 
-export function TouchpadSurface({ disabled, onMove }: TouchpadSurfaceProps) {
+export function TouchpadSurface({
+  disabled,
+  onMove,
+  onGestureEnd,
+}: TouchpadSurfaceProps) {
   const previousDxRef = useRef(0);
   const previousDyRef = useRef(0);
 
@@ -46,6 +51,15 @@ export function TouchpadSurface({ disabled, onMove }: TouchpadSurfaceProps) {
     [disabled, onMove],
   );
 
+  const handleGestureEnd = useCallback(() => {
+    resetDeltaAccumulator();
+    if (disabled) {
+      return;
+    }
+
+    onGestureEnd();
+  }, [disabled, onGestureEnd, resetDeltaAccumulator]);
+
   const panResponder = useMemo(
     () =>
       PanResponder.create({
@@ -53,10 +67,10 @@ export function TouchpadSurface({ disabled, onMove }: TouchpadSurfaceProps) {
         onMoveShouldSetPanResponder: () => !disabled,
         onPanResponderGrant: resetDeltaAccumulator,
         onPanResponderMove: handleMove,
-        onPanResponderRelease: resetDeltaAccumulator,
-        onPanResponderTerminate: resetDeltaAccumulator,
+        onPanResponderRelease: handleGestureEnd,
+        onPanResponderTerminate: handleGestureEnd,
       }),
-    [disabled, handleMove, resetDeltaAccumulator],
+    [disabled, handleGestureEnd, handleMove, resetDeltaAccumulator],
   );
 
   return (

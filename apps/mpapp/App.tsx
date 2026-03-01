@@ -20,6 +20,10 @@ import {
   MpappMode,
 } from "./src/contracts/enums";
 import { resolveMpappRuntimeConfig } from "./src/config/mpapp-runtime-config";
+import {
+  createCoalescedMoveSamplingPolicy,
+  type MoveSamplingEmission,
+} from "./src/input/move-sampling-policy";
 import { createConnectedClickSample, createPointerMoveSample } from "./src/input/translate-gesture";
 import {
   evaluatePlatformSupport,
@@ -92,6 +96,9 @@ export default function App() {
   const diagnosticsStoreRef = useRef<DiagnosticsStore>(
     new AsyncStorageDiagnosticsStore(),
   );
+  const moveSamplingPolicyRef = useRef(createCoalescedMoveSamplingPolicy());
+  const moveDueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleDueMoveEmissionRef = useRef<() => void>(() => {});
   const sessionIdRef = useRef<string>(createSessionId());
   const transportLogContext = useMemo(
     () => ({
@@ -120,9 +127,33 @@ export default function App() {
     dispatch(event);
   }, []);
 
+  const clearMoveDueTimeout = useCallback(() => {
+    if (moveDueTimeoutRef.current === null) {
+      return;
+    }
+
+    clearTimeout(moveDueTimeoutRef.current);
+    moveDueTimeoutRef.current = null;
+  }, []);
+
   useEffect(() => {
     sessionStateRef.current = sessionState;
   }, [sessionState]);
+
+  useEffect(() => {
+    if (sessionState.mode === MpappMode.Connected) {
+      return;
+    }
+
+    clearMoveDueTimeout();
+    moveSamplingPolicyRef.current.reset();
+  }, [clearMoveDueTimeout, sessionState.mode]);
+
+  useEffect(() => {
+    return () => {
+      clearMoveDueTimeout();
+    };
+  }, [clearMoveDueTimeout]);
 
   const appendLog = useCallback(
     async (params: {
@@ -331,13 +362,13 @@ export default function App() {
     });
   }, [adapter, appendLog, dispatchSessionEvent]);
 
-  const handleMove = useCallback(
-    (deltaX: number, deltaY: number) => {
-      if (sessionState.mode !== MpappMode.Connected) {
-        return;
-      }
-
-      const sample = createPointerMoveSample(deltaX, deltaY, sensitivity);
+  const emitSampledMove = useCallback(
+    (moveEmission: MoveSamplingEmission) => {
+      const sample = createPointerMoveSample(
+        moveEmission.deltaX,
+        moveEmission.deltaY,
+        sensitivity,
+      );
       const sendStart = Date.now();
 
       void adapter.sendMove(sample).then(async (sendResult) => {
@@ -350,6 +381,7 @@ export default function App() {
             payload: {
               actionId: sample.actionId,
               nativeErrorCode: sendResult.nativeErrorCode ?? null,
+              ...moveEmission.diagnostics,
             },
           });
           return;
@@ -363,12 +395,79 @@ export default function App() {
             deltaX: sample.deltaX,
             deltaY: sample.deltaY,
             sensitivity: sample.sensitivity,
+            ...moveEmission.diagnostics,
           },
         });
       });
     },
-    [adapter, appendLog, sensitivity, sessionState.mode],
+    [adapter, appendLog, sensitivity],
   );
+
+  const emitDueMoveEmission = useCallback(() => {
+    if (sessionStateRef.current.mode !== MpappMode.Connected) {
+      return;
+    }
+
+    const moveEmission = moveSamplingPolicyRef.current.emitWhenDue();
+    if (moveEmission) {
+      emitSampledMove(moveEmission);
+    }
+
+    scheduleDueMoveEmissionRef.current();
+  }, [emitSampledMove]);
+
+  const scheduleDueMoveEmission = useCallback(() => {
+    clearMoveDueTimeout();
+    if (sessionStateRef.current.mode !== MpappMode.Connected) {
+      return;
+    }
+
+    const dueInMs = moveSamplingPolicyRef.current.timeUntilDueMs();
+    if (dueInMs === null) {
+      return;
+    }
+
+    moveDueTimeoutRef.current = setTimeout(() => {
+      moveDueTimeoutRef.current = null;
+      emitDueMoveEmission();
+    }, dueInMs);
+  }, [clearMoveDueTimeout, emitDueMoveEmission]);
+
+  useEffect(() => {
+    scheduleDueMoveEmissionRef.current = scheduleDueMoveEmission;
+  }, [scheduleDueMoveEmission]);
+
+  const handleMove = useCallback(
+    (deltaX: number, deltaY: number) => {
+      if (sessionState.mode !== MpappMode.Connected) {
+        return;
+      }
+
+      const moveEmission = moveSamplingPolicyRef.current.record(deltaX, deltaY);
+      if (!moveEmission) {
+        scheduleDueMoveEmission();
+        return;
+      }
+
+      emitSampledMove(moveEmission);
+      scheduleDueMoveEmission();
+    },
+    [emitSampledMove, scheduleDueMoveEmission, sessionState.mode],
+  );
+
+  const handleMoveGestureEnd = useCallback(() => {
+    if (sessionState.mode !== MpappMode.Connected) {
+      return;
+    }
+
+    clearMoveDueTimeout();
+    const moveEmission = moveSamplingPolicyRef.current.flush();
+    if (!moveEmission) {
+      return;
+    }
+
+    emitSampledMove(moveEmission);
+  }, [clearMoveDueTimeout, emitSampledMove, sessionState.mode]);
 
   const handleClick = useCallback(
     (button: MpappClickButton) => {
@@ -482,6 +581,7 @@ export default function App() {
         <TouchpadSurface
           disabled={sessionState.mode !== MpappMode.Connected}
           onMove={handleMove}
+          onGestureEnd={handleMoveGestureEnd}
         />
 
         <ClickControls
