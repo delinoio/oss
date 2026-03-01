@@ -5,20 +5,11 @@ import {
   parseScopeFromBody,
   parseScopeFromSearchParams,
 } from "@/app/api/thenv/_lib/connect";
-
-interface PolicyBindingPayload {
-  subject: string;
-  role: string;
-}
-
-interface SetPolicyBody {
-  scope?: {
-    workspaceId: string;
-    projectId: string;
-    environmentId: string;
-  };
-  bindings?: PolicyBindingPayload[];
-}
+import {
+  isMalformedJsonError,
+  parsePolicyBindings,
+  ThenvValidationError,
+} from "@/app/api/thenv/_lib/validation";
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,6 +20,10 @@ export async function GET(request: NextRequest) {
     );
     return NextResponse.json(response);
   } catch (error) {
+    if (error instanceof ThenvValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 502 });
   }
@@ -36,14 +31,9 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: Request) {
   try {
-    const body = (await request.json()) as SetPolicyBody;
+    const body = await request.json();
     const scope = parseScopeFromBody(body);
-    const bindings = (body.bindings ?? [])
-      .filter((binding) => binding.subject.trim().length > 0)
-      .map((binding) => ({
-        subject: binding.subject.trim(),
-        role: binding.role,
-      }));
+    const bindings = parsePolicyBindings(body);
 
     const response = await callThenvRpc<object, unknown>(
       "/thenv.v1.PolicyService/SetPolicy",
@@ -54,6 +44,17 @@ export async function PUT(request: Request) {
     );
     return NextResponse.json(response);
   } catch (error) {
+    if (error instanceof ThenvValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    if (isMalformedJsonError(error)) {
+      return NextResponse.json(
+        { error: "request body must be valid JSON" },
+        { status: 400 },
+      );
+    }
+
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 502 });
   }

@@ -1,6 +1,10 @@
 import { NextRequest } from "next/server";
 
-import { DEFAULT_THENV_SCOPE, ThenvScope } from "@/apps/thenv/contracts";
+import { ThenvScope } from "@/apps/thenv/contracts";
+import {
+  parseScopeFromBody as parseValidatedScopeFromBody,
+  parseScopeFromSearchParams as parseValidatedScopeFromSearchParams,
+} from "@/app/api/thenv/_lib/validation";
 
 const CONNECT_PROTOCOL_VERSION = "1";
 
@@ -69,35 +73,9 @@ export async function callThenvRpc<Req extends object, Res>(
 }
 
 export function parseScopeFromSearchParams(request: NextRequest): ThenvScope {
-  const workspaceId =
-    request.nextUrl.searchParams.get("workspace") ??
-    DEFAULT_THENV_SCOPE.workspaceId;
-  const projectId =
-    request.nextUrl.searchParams.get("project") ?? DEFAULT_THENV_SCOPE.projectId;
-  const environmentId =
-    request.nextUrl.searchParams.get("environment") ??
-    DEFAULT_THENV_SCOPE.environmentId;
-
-  return {
-    workspaceId,
-    projectId,
-    environmentId,
-  };
+  return parseValidatedScopeFromSearchParams(request.nextUrl.searchParams);
 }
 
-export interface ScopeBody {
-  scope?: ThenvScope;
-}
-
-export function parseScopeFromBody(payload: ScopeBody): ThenvScope {
-  const bodyScope = payload.scope;
-  if (!bodyScope) {
-    return DEFAULT_THENV_SCOPE;
-  }
-
-  return {
-    workspaceId: bodyScope.workspaceId || DEFAULT_THENV_SCOPE.workspaceId,
-    projectId: bodyScope.projectId || DEFAULT_THENV_SCOPE.projectId,
-    environmentId: bodyScope.environmentId || DEFAULT_THENV_SCOPE.environmentId,
-  };
+export function parseScopeFromBody(payload: unknown): ThenvScope {
+  return parseValidatedScopeFromBody(payload);
 }

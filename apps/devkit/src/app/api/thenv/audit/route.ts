@@ -1,26 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { callThenvRpc, parseScopeFromSearchParams } from "@/app/api/thenv/_lib/connect";
-import { ThenvAuditEventType } from "@/apps/thenv/contracts";
+import {
+  parseAuditEventType,
+  parseCursor,
+  parseLimit,
+  ThenvValidationError,
+} from "@/app/api/thenv/_lib/validation";
 
 export async function GET(request: NextRequest) {
   try {
     const scope = parseScopeFromSearchParams(request);
-    const limitRaw = request.nextUrl.searchParams.get("limit");
-    const cursor = request.nextUrl.searchParams.get("cursor") ?? "";
+    const limit = parseLimit(request.nextUrl.searchParams.get("limit"));
+    const cursor = parseCursor(request.nextUrl.searchParams.get("cursor"));
     const actor = request.nextUrl.searchParams.get("actor") ?? "";
-    const eventType =
-      request.nextUrl.searchParams.get("eventType") ??
-      ThenvAuditEventType.Unspecified;
+    const eventType = parseAuditEventType(
+      request.nextUrl.searchParams.get("eventType"),
+    );
     const fromTime = request.nextUrl.searchParams.get("fromTime") ?? "";
     const toTime = request.nextUrl.searchParams.get("toTime") ?? "";
-    const limit = limitRaw ? Number.parseInt(limitRaw, 10) : 20;
 
     const response = await callThenvRpc<object, unknown>(
       "/thenv.v1.AuditService/ListAuditEvents",
       {
         scope,
-        limit: Number.isNaN(limit) ? 20 : limit,
+        limit,
         cursor,
         actor,
         eventType,
@@ -31,6 +35,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error) {
+    if (error instanceof ThenvValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 502 });
   }
