@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, vi } from "vitest";
 
 import { AuthGuardDecision, AuthGuardResult } from "@/lib/auth-guard";
@@ -24,7 +25,18 @@ describe("DevkitShell", () => {
     );
 
     const links = screen.getAllByRole("link");
-    expect(links).toHaveLength(MINI_APP_REGISTRATIONS.length);
+    expect(links).toHaveLength(MINI_APP_REGISTRATIONS.length + 1);
+  });
+
+  it("marks the home route with aria-current", () => {
+    render(
+      <DevkitShell title="Home" currentRoute={DevkitRoute.Home}>
+        <p>home content</p>
+      </DevkitShell>,
+    );
+
+    const activeLink = screen.getByRole("link", { name: "Home" });
+    expect(activeLink).toHaveAttribute("aria-current", "page");
   });
 
   it("marks the active route with aria-current", () => {
@@ -40,6 +52,61 @@ describe("DevkitShell", () => {
 
     const activeLink = screen.getByRole("link", { name: "Remote File Picker" });
     expect(activeLink).toHaveAttribute("aria-current", "page");
+  });
+
+  it("toggles drawer open and closed through the mobile menu button", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <DevkitShell title="Home" currentRoute={DevkitRoute.Home}>
+        <p>content</p>
+      </DevkitShell>,
+    );
+
+    const menuButton = screen.getByRole("button", {
+      name: "Toggle mini app navigation menu",
+    });
+
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(menuButton);
+    expect(menuButton).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(menuButton);
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closes the drawer when clicking overlay or navigation links", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <DevkitShell
+        title="Remote"
+        currentRoute={DevkitRoute.RemoteFilePicker}
+        miniAppId={DevkitMiniAppId.RemoteFilePicker}
+      >
+        <p>content</p>
+      </DevkitShell>,
+    );
+
+    const menuButton = screen.getByRole("button", {
+      name: "Toggle mini app navigation menu",
+    });
+
+    await user.click(menuButton);
+    expect(menuButton).toHaveAttribute("aria-expanded", "true");
+
+    const closeButton = screen.getByRole("button", {
+      name: "Close mini app navigation menu",
+    });
+    await user.click(closeButton);
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(menuButton);
+    expect(menuButton).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(screen.getByRole("link", { name: "Home" }));
+    expect(menuButton).toHaveAttribute("aria-expanded", "false");
   });
 
   it("logs route render with required baseline fields", () => {
