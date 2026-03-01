@@ -37,7 +37,17 @@ func appendGitHubOutput(path string, entries []githubOutputEntry) error {
 		if key == "" {
 			continue
 		}
-		if _, err := fmt.Fprintf(outputFile, "%s=%s\n", key, escapeGitHubOutputValue(entry.Value)); err != nil {
+
+		value := entry.Value
+		if strings.Contains(value, "\n") || strings.Contains(value, "\r") {
+			delimiter := outputDelimiterFor(value)
+			if _, err := fmt.Fprintf(outputFile, "%s<<%s\n%s\n%s\n", key, delimiter, value, delimiter); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if _, err := fmt.Fprintf(outputFile, "%s=%s\n", key, value); err != nil {
 			return err
 		}
 	}
@@ -45,9 +55,10 @@ func appendGitHubOutput(path string, entries []githubOutputEntry) error {
 	return nil
 }
 
-func escapeGitHubOutputValue(value string) string {
-	escaped := strings.ReplaceAll(value, "%", "%25")
-	escaped = strings.ReplaceAll(escaped, "\r", "%0D")
-	escaped = strings.ReplaceAll(escaped, "\n", "%0A")
-	return escaped
+func outputDelimiterFor(value string) string {
+	delimiter := "COMMIT_TRACKER_OUTPUT_EOF"
+	for strings.Contains(value, delimiter) {
+		delimiter += "_X"
+	}
+	return delimiter
 }

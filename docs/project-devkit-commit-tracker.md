@@ -242,6 +242,7 @@ Report output contract:
   - `pull_request`
   - `base_commit_sha`
   - `head_commit_sha`
+  - values are written as raw literals (no percent-encoding rewrite); multiline values use GitHub output delimiter syntax.
 
 Report exit code behavior:
 - `2`: argument parsing or input validation failures
