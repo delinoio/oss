@@ -1,0 +1,74 @@
+version = 1
+
+[daemon]
+max_concurrent_jobs = 2
+startup_run = true
+log_level = "info"
+
+[[folder]]
+id = "oss-repo"
+path = "."
+
+[[folder.job]]
+id = "git-default-sync"
+type = "shell-command"
+enabled = true
+interval = "1m"
+timeout = "50s"
+shell = "sh"
+startup_run = true
+script = '''
+set -eu
+
+git fetch --prune origin
+
+default_ref=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD || true)
+if [ -z "$default_ref" ]; then
+  echo "origin/HEAD is not configured; skipping"
+  exit 0
+fi
+
+default_branch=${default_ref#origin/}
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+if [ "$current_branch" != "$default_branch" ]; then
+  echo "current branch is $current_branch, expected $default_branch; skipping"
+  exit 0
+fi
+
+if [ -n "$(git status --porcelain)" ]; then
+  echo "working tree is dirty; skipping"
+  exit 0
+fi
+
+local_sha=$(git rev-parse "$default_branch")
+remote_sha=$(git rev-parse "origin/$default_branch")
+if [ "$local_sha" = "$remote_sha" ]; then
+  echo "default branch already up to date"
+  exit 0
+fi
+
+git pull --ff-only origin "$default_branch"
+'''
+
+[[folder]]
+id = "rust-workspace"
+path = "."
+
+[[folder.job]]
+id = "cargo-clean"
+type = "shell-command"
+enabled = true
+interval = "6h"
+timeout = "10m"
+shell = "sh"
+startup_run = false
+script = '''
+set -eu
+
+if [ ! -f Cargo.toml ]; then
+  echo "Cargo.toml not found; skipping"
+  exit 0
+fi
+
+cargo clean
+'''
