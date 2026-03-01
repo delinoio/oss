@@ -14,10 +14,11 @@ export default function HomePage() {
       <section className="dk-stack" aria-label="devkit home">
         <div className="dk-card">
           <p className="dk-eyebrow">Platform Status</p>
-          <h2 className="dk-section-title">Shell-only bootstrap is active</h2>
+          <h2 className="dk-section-title">Live mini-app platform is active</h2>
           <p className="dk-paragraph">
-            Devkit routes are now reserved with enum-based registration and static
-            pages for each canonical mini app.
+            Devkit now serves live mini apps at /apps/&lt;id&gt; with enum-based
+            registration. Commit Tracker, Remote File Picker, and Thenv are active
+            routes.
           </p>
         </div>
 
