@@ -61,7 +61,11 @@ where
     let mut command_scan_state = CommandScanState::BeforeSubcommand;
     let mut output_value_expected = false;
 
-    while let Some(arg) = args.next() {
+    loop {
+        let Some(arg) = args.next() else {
+            break;
+        };
+
         if command_scan_state == CommandScanState::RunDelegated {
             break;
         }
