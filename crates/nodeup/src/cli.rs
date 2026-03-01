@@ -6,6 +6,33 @@ pub enum OutputFormat {
     Json,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolchainListDetail {
+    Standard,
+    Quiet,
+    Verbose,
+}
+
+impl ToolchainListDetail {
+    pub fn from_flags(quiet: bool, verbose: bool) -> Self {
+        if quiet {
+            Self::Quiet
+        } else if verbose {
+            Self::Verbose
+        } else {
+            Self::Standard
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Standard => "standard",
+            Self::Quiet => "quiet",
+            Self::Verbose => "verbose",
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "nodeup",
@@ -88,7 +115,14 @@ pub enum Command {
 #[derive(Debug, Subcommand)]
 pub enum ToolchainCommand {
     /// List installed runtimes.
-    List,
+    List {
+        /// Print compact runtime identifiers only.
+        #[arg(long, conflicts_with = "verbose")]
+        quiet: bool,
+        /// Include runtime metadata such as resolved target paths.
+        #[arg(long, conflicts_with = "quiet")]
+        verbose: bool,
+    },
     /// Install one or more runtimes.
     Install {
         /// Runtime selectors to install.

@@ -4,7 +4,7 @@ use serde::Serialize;
 use tracing::info;
 
 use crate::{
-    cli::{OutputFormat, ToolchainCommand},
+    cli::{OutputFormat, ToolchainCommand, ToolchainListDetail},
     commands::print_output,
     errors::{NodeupError, Result},
     resolver::ResolvedRuntimeTarget,
@@ -27,14 +27,16 @@ struct ToolchainInstallResult {
 
 pub fn execute(command: ToolchainCommand, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     match command {
-        ToolchainCommand::List => list(output, app),
+        ToolchainCommand::List { quiet, verbose } => {
+            list(ToolchainListDetail::from_flags(quiet, verbose), output, app)
+        }
         ToolchainCommand::Install { runtimes } => install(&runtimes, output, app),
         ToolchainCommand::Uninstall { runtimes } => uninstall(&runtimes, output, app),
         ToolchainCommand::Link { name, path } => link(&name, &path, output, app),
     }
 }
 
-fn list(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+fn list(list_detail: ToolchainListDetail, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     let settings = app.store.load_settings()?;
     let installed = app.store.list_installed_versions()?;
     let response = ToolchainListResponse {
@@ -42,14 +44,78 @@ fn list(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
         linked: settings.linked_runtimes,
     };
 
-    let human = format!(
-        "Installed runtimes: {} | Linked runtimes: {}",
-        response.installed.len(),
-        response.linked.len()
+    info!(
+        command_path = "nodeup.toolchain.list",
+        list_format = list_detail.as_str(),
+        installed_count = response.installed.len(),
+        linked_count = response.linked.len(),
+        "Listed runtimes"
     );
+
+    let human = render_human_toolchain_list(list_detail, &response, app);
+    if output == OutputFormat::Human
+        && list_detail == ToolchainListDetail::Quiet
+        && human.is_empty()
+    {
+        return Ok(0);
+    }
     print_output(output, &human, &response)?;
 
     Ok(0)
+}
+
+fn render_human_toolchain_list(
+    list_detail: ToolchainListDetail,
+    response: &ToolchainListResponse,
+    app: &NodeupApp,
+) -> String {
+    match list_detail {
+        ToolchainListDetail::Standard => format!(
+            "Installed runtimes: {} | Linked runtimes: {}",
+            response.installed.len(),
+            response.linked.len()
+        ),
+        ToolchainListDetail::Quiet => {
+            let mut identifiers = response.installed.clone();
+            identifiers.extend(response.linked.keys().cloned());
+
+            if identifiers.is_empty() {
+                String::new()
+            } else {
+                identifiers.join("\n")
+            }
+        }
+        ToolchainListDetail::Verbose => {
+            let mut lines = vec![format!(
+                "Installed runtimes ({}):",
+                response.installed.len()
+            )];
+
+            if response.installed.is_empty() {
+                lines.push("- (none)".to_string());
+            } else {
+                for runtime in &response.installed {
+                    lines.push(format!(
+                        "- {} -> {}",
+                        runtime,
+                        app.store.runtime_dir(runtime).display()
+                    ));
+                }
+            }
+
+            lines.push(format!("Linked runtimes ({}):", response.linked.len()));
+
+            if response.linked.is_empty() {
+                lines.push("- (none)".to_string());
+            } else {
+                for (name, path) in &response.linked {
+                    lines.push(format!("- {} -> {}", name, path));
+                }
+            }
+
+            lines.join("\n")
+        }
+    }
 }
 
 fn install(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result<i32> {

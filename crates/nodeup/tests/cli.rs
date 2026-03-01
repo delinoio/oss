@@ -7,6 +7,7 @@ use std::{
 
 use assert_cmd::Command;
 use httpmock::{Method::GET, MockServer};
+use serde_json::Value;
 use serial_test::serial;
 use sha2::{Digest, Sha256};
 use xz2::write::XzEncoder;
@@ -71,6 +72,7 @@ impl TestEnv {
         command.env("NODEUP_INDEX_URL", &self.index_url);
         command.env("NODEUP_DOWNLOAD_BASE_URL", &self.download_base_url);
         command.env("NODEUP_FORCE_PLATFORM", "linux-x64");
+        command.env("RUST_LOG", "off");
     }
 
     fn apply_env_std(&self, command: &mut std::process::Command) {
@@ -80,6 +82,7 @@ impl TestEnv {
         command.env("NODEUP_INDEX_URL", &self.index_url);
         command.env("NODEUP_DOWNLOAD_BASE_URL", &self.download_base_url);
         command.env("NODEUP_FORCE_PLATFORM", "linux-x64");
+        command.env("RUST_LOG", "off");
     }
 
     fn register_release(
@@ -266,6 +269,191 @@ fn install_list_uninstall_flow() {
         .args(["toolchain", "uninstall", "22.1.0"])
         .assert()
         .success();
+}
+
+#[test]
+#[serial]
+fn toolchain_list_quiet_prints_runtime_identifiers_only() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    let linked_runtime = env.root.join("linked-runtime-quiet");
+    fs::create_dir_all(&linked_runtime).unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-quiet",
+            linked_runtime.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args(["toolchain", "list", "--quiet"])
+        .output()
+        .expect("toolchain list --quiet");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines = stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect::<Vec<_>>();
+
+    assert_eq!(lines, vec!["v22.1.0", "linked-quiet"]);
+}
+
+#[test]
+#[serial]
+fn toolchain_list_verbose_includes_runtime_and_link_paths() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    let linked_runtime = env.root.join("linked-runtime-verbose");
+    fs::create_dir_all(&linked_runtime).unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-verbose",
+            linked_runtime.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args(["toolchain", "list", "--verbose"])
+        .output()
+        .expect("toolchain list --verbose");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let runtime_path = env.data_root.join("toolchains").join("v22.1.0");
+    let linked_path = fs::canonicalize(&linked_runtime).unwrap();
+
+    assert!(stdout.contains("Installed runtimes (1):"));
+    assert!(stdout.contains(&format!("- v22.1.0 -> {}", runtime_path.display())));
+    assert!(stdout.contains("Linked runtimes (1):"));
+    assert!(stdout.contains(&format!("- linked-verbose -> {}", linked_path.display())));
+}
+
+#[test]
+#[serial]
+fn toolchain_list_json_output_is_stable_with_detail_flags() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    let linked_runtime = env.root.join("linked-runtime-json");
+    fs::create_dir_all(&linked_runtime).unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-json",
+            linked_runtime.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let baseline = env
+        .command()
+        .args(["--output", "json", "toolchain", "list"])
+        .output()
+        .expect("baseline toolchain list --output json");
+    assert!(baseline.status.success());
+
+    let quiet = env
+        .command()
+        .args(["--output", "json", "toolchain", "list", "--quiet"])
+        .output()
+        .expect("quiet toolchain list --output json");
+    assert!(quiet.status.success());
+
+    let verbose = env
+        .command()
+        .args(["--output", "json", "toolchain", "list", "--verbose"])
+        .output()
+        .expect("verbose toolchain list --output json");
+    assert!(verbose.status.success());
+
+    let baseline_json: Value = serde_json::from_slice(&baseline.stdout).unwrap();
+    let quiet_json: Value = serde_json::from_slice(&quiet.stdout).unwrap();
+    let verbose_json: Value = serde_json::from_slice(&verbose.stdout).unwrap();
+
+    assert_eq!(baseline_json, quiet_json);
+    assert_eq!(baseline_json, verbose_json);
+}
+
+#[test]
+#[serial]
+fn toolchain_list_rejects_conflicting_detail_flags() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "list", "--quiet", "--verbose"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("cannot be used with '--verbose'"));
+}
+
+#[test]
+#[serial]
+fn toolchain_list_quiet_emits_no_blank_line_when_empty() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "list", "--quiet"])
+        .assert()
+        .success()
+        .stdout(predicates::str::is_empty());
 }
 
 #[test]

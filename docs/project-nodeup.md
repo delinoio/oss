@@ -130,8 +130,13 @@ enum NodeupRuntimeSelectorKind {
 - Linked runtime names must start with an ASCII alphanumeric character and may contain `_` or `-` after the first character.
 
 Subcommand contracts:
-- `nodeup toolchain list`
-: Input: none.
+- `nodeup toolchain list [--quiet|--verbose]`
+: Input: optional detail flags for human output.
+: Behavior:
+: `--quiet` prints compact runtime identifiers only in human mode.
+: `--quiet` prints nothing when no runtime identifiers are available.
+: `--verbose` prints detailed runtime metadata (including resolved target paths) in human mode.
+: JSON output remains machine-parseable with the canonical `installed` and `linked` fields regardless of detail flag.
 : Output: installed runtime versions and linked runtime map.
 - `nodeup toolchain install <runtime>...`
 : Input: one or more selectors; empty input is invalid.
