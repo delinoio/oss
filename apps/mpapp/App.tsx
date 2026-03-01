@@ -48,14 +48,21 @@ import { createHidAdapter } from "./src/transport/hid-adapter-factory";
 import { ClickControls } from "./src/components/click-controls";
 import { SessionStatus } from "./src/components/session-status";
 import { TouchpadSurface } from "./src/components/touchpad-surface";
+import { AsyncStorageInputPreferencesStore } from "./src/preferences/input-preferences-store";
+import {
+  clampInputPreferenceSensitivity,
+  DEFAULT_MPAPP_INPUT_PREFERENCES,
+  type MpappInputPreferences,
+} from "./src/preferences/input-preferences";
 
 const SENSITIVITY_STEP = 0.1;
-const SENSITIVITY_MIN = 0.5;
-const SENSITIVITY_MAX = 2;
+enum MpappInversionAxis {
+  InvertX = "invert-x",
+  InvertY = "invert-y",
+}
 
-function clampSensitivity(value: number): number {
-  const rounded = Number.parseFloat(value.toFixed(1));
-  return Math.max(SENSITIVITY_MIN, Math.min(SENSITIVITY_MAX, rounded));
+function roundToSingleDecimal(value: number): number {
+  return Number.parseFloat(value.toFixed(1));
 }
 
 function createSessionId(): string {
@@ -83,7 +90,9 @@ export default function App() {
     INITIAL_SESSION_STATE,
   );
   const sessionStateRef = useRef<MpappSessionState>(INITIAL_SESSION_STATE);
-  const [sensitivity, setSensitivity] = useState(1.0);
+  const [inputPreferences, setInputPreferences] = useState<MpappInputPreferences>(
+    DEFAULT_MPAPP_INPUT_PREFERENCES,
+  );
 
   const runtimeConfig = useMemo(() => resolveMpappRuntimeConfig(), []);
   const adapter = useMemo(
@@ -95,6 +104,9 @@ export default function App() {
   );
   const diagnosticsStoreRef = useRef<DiagnosticsStore>(
     new AsyncStorageDiagnosticsStore(),
+  );
+  const inputPreferencesStoreRef = useRef(
+    new AsyncStorageInputPreferencesStore(),
   );
   const moveSamplingPolicyRef = useRef(createCoalescedMoveSamplingPolicy());
   const moveDueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -150,10 +162,68 @@ export default function App() {
   }, [clearMoveDueTimeout, sessionState.mode]);
 
   useEffect(() => {
+    let mounted = true;
+
+    void inputPreferencesStoreRef.current.load().then((preferences) => {
+      if (!mounted) {
+        return;
+      }
+
+      setInputPreferences(preferences);
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     return () => {
       clearMoveDueTimeout();
     };
   }, [clearMoveDueTimeout]);
+
+  const updateInputPreferences = useCallback(
+    (updater: (previous: MpappInputPreferences) => MpappInputPreferences) => {
+      setInputPreferences((previous) => {
+        const nextPreferences = updater(previous);
+        void inputPreferencesStoreRef.current.save(nextPreferences);
+        return nextPreferences;
+      });
+    },
+    [],
+  );
+
+  const handleSensitivityUpdate = useCallback(
+    (delta: number) => {
+      updateInputPreferences((previous) => ({
+        ...previous,
+        sensitivity: roundToSingleDecimal(
+          clampInputPreferenceSensitivity(previous.sensitivity + delta),
+        ),
+      }));
+    },
+    [updateInputPreferences],
+  );
+
+  const handleInversionToggle = useCallback(
+    (axis: MpappInversionAxis) => {
+      updateInputPreferences((previous) => {
+        if (axis === MpappInversionAxis.InvertX) {
+          return {
+            ...previous,
+            invertX: !previous.invertX,
+          };
+        }
+
+        return {
+          ...previous,
+          invertY: !previous.invertY,
+        };
+      });
+    },
+    [updateInputPreferences],
+  );
 
   const appendLog = useCallback(
     async (params: {
@@ -367,7 +437,7 @@ export default function App() {
       const sample = createPointerMoveSample(
         moveEmission.deltaX,
         moveEmission.deltaY,
-        sensitivity,
+        inputPreferences,
       );
       const sendStart = Date.now();
 
@@ -395,12 +465,14 @@ export default function App() {
             deltaX: sample.deltaX,
             deltaY: sample.deltaY,
             sensitivity: sample.sensitivity,
+            invertX: inputPreferences.invertX,
+            invertY: inputPreferences.invertY,
             ...moveEmission.diagnostics,
           },
         });
       });
     },
-    [adapter, appendLog, sensitivity],
+    [adapter, appendLog, inputPreferences],
   );
 
   const emitDueMoveEmission = useCallback(() => {
@@ -550,31 +622,77 @@ export default function App() {
 
         <View style={styles.sensitivityRow}>
           <Text style={styles.sensitivityLabel}>
-            Sensitivity: {sensitivity.toFixed(1)}
+            Sensitivity: {inputPreferences.sensitivity.toFixed(1)}
           </Text>
 
-          <View style={styles.sensitivityControls}>
-            <Pressable
-              onPress={() => {
-                setSensitivity((previous) =>
-                  clampSensitivity(previous - SENSITIVITY_STEP),
-                );
-              }}
-              style={styles.sensitivityButton}
-            >
-              <Text style={styles.sensitivityButtonText}>-</Text>
-            </Pressable>
+          <View style={styles.preferenceControls}>
+            <View style={styles.sensitivityControls}>
+              <Pressable
+                onPress={() => {
+                  handleSensitivityUpdate(-SENSITIVITY_STEP);
+                }}
+                style={styles.sensitivityButton}
+              >
+                <Text style={styles.sensitivityButtonText}>-</Text>
+              </Pressable>
 
-            <Pressable
-              onPress={() => {
-                setSensitivity((previous) =>
-                  clampSensitivity(previous + SENSITIVITY_STEP),
-                );
-              }}
-              style={styles.sensitivityButton}
-            >
-              <Text style={styles.sensitivityButtonText}>+</Text>
-            </Pressable>
+              <Pressable
+                onPress={() => {
+                  handleSensitivityUpdate(SENSITIVITY_STEP);
+                }}
+                style={styles.sensitivityButton}
+              >
+                <Text style={styles.sensitivityButtonText}>+</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.inversionControls}>
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityState={{ checked: inputPreferences.invertX }}
+                onPress={() => {
+                  handleInversionToggle(MpappInversionAxis.InvertX);
+                }}
+                style={[
+                  styles.inversionButton,
+                  inputPreferences.invertX ? styles.inversionButtonActive : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.inversionButtonText,
+                    inputPreferences.invertX
+                      ? styles.inversionButtonTextActive
+                      : null,
+                  ]}
+                >
+                  Invert X
+                </Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityState={{ checked: inputPreferences.invertY }}
+                onPress={() => {
+                  handleInversionToggle(MpappInversionAxis.InvertY);
+                }}
+                style={[
+                  styles.inversionButton,
+                  inputPreferences.invertY ? styles.inversionButtonActive : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.inversionButtonText,
+                    inputPreferences.invertY
+                      ? styles.inversionButtonTextActive
+                      : null,
+                  ]}
+                >
+                  Invert Y
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </View>
 
@@ -649,6 +767,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 15,
   },
+  preferenceControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   sensitivityControls: {
     flexDirection: "row",
     gap: 8,
@@ -667,5 +790,30 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 18,
     lineHeight: 18,
+  },
+  inversionControls: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  inversionButton: {
+    borderRadius: 8,
+    borderCurve: "continuous",
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: "#94a3b8",
+    backgroundColor: "#f1f5f9",
+  },
+  inversionButtonActive: {
+    borderColor: "#0f766e",
+    backgroundColor: "#0f766e",
+  },
+  inversionButtonText: {
+    color: "#0f172a",
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  inversionButtonTextActive: {
+    color: "#f8fafc",
   },
 });

@@ -38,7 +38,7 @@ The core user flow is:
 - Input surface module exposes:
   - A touchpad region for drag capture
   - Dedicated left-click and right-click controls
-- Input translation module converts gesture deltas into pointer movement samples with sensitivity applied.
+- Input translation module converts gesture deltas into pointer movement samples with optional axis inversion applied before sensitivity scaling.
 - Input movement sampling policy coalesces drag deltas and emits at most one movement sample every `16ms` (`~60Hz`) while preserving summed pointer distance.
 - If coalesced movement remains pending after the latest drag update, the app must emit it when the `16ms` throttle window elapses even without additional movement callbacks.
 - Throttle interval checks must use a monotonic clock source so device wall-clock adjustments cannot stall movement emission.
@@ -207,6 +207,16 @@ type MpappRuntimeConfig = {
 }
 ```
 
+Canonical local input preferences contract:
+
+```ts
+type MpappInputPreferences = {
+  sensitivity: number;
+  invertX: boolean;
+  invertY: boolean;
+}
+```
+
 Canonical pointer movement payload:
 
 ```ts
@@ -269,6 +279,8 @@ Reference feasibility links:
 - Local preferences only:
   - Pointer sensitivity
   - Optional axis inversion flags
+- Input preferences storage key: `mpapp.input-preferences.v1`.
+- Input preferences persistence uses AsyncStorage when available, with an in-memory fallback in non-native/test environments.
 - Local diagnostics ring buffer with bounded retention (`300`) for troubleshooting.
 - Diagnostics storage key: `mpapp.diagnostics.v1`.
 - If AsyncStorage is unavailable, diagnostics fall back to an in-memory store that still preserves recent entries during process lifetime.
@@ -358,6 +370,8 @@ MVP acceptance criteria scenarios:
 8. Runtime transport switch can intentionally select `native-android-hid` or `stub` and logs selected mode.
 9. Native transport failures preserve canonical `MpappErrorCode` while recording `nativeErrorCode` in diagnostics.
 10. Bluetooth-unavailable and Bluetooth-disabled preflight branches block pairing/connecting and emit structured diagnostics.
+11. Local input preference changes persist across app restart, including sensitivity and inversion flags.
+12. Movement translation applies inversion flags before sensitivity scaling and emits the expected signed deltas for each inversion combination.
 
 ## Roadmap
 - Phase 1: Android MVP with drag-based movement, left-click, right-click, lifecycle state UI, and diagnostics baseline.

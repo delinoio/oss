@@ -4,31 +4,36 @@ import {
   MpappMode,
 } from "../contracts/enums";
 import type { PointerClickSample, PointerMoveSample } from "../contracts/types";
+import {
+  clampInputPreferenceSensitivity,
+  DEFAULT_INPUT_SENSITIVITY,
+  MAX_INPUT_SENSITIVITY,
+  MIN_INPUT_SENSITIVITY,
+  type MpappInputPreferences,
+} from "../preferences/input-preferences";
 
-export const DEFAULT_SENSITIVITY = 1.0;
-export const MIN_SENSITIVITY = 0.5;
-export const MAX_SENSITIVITY = 2.0;
+export const DEFAULT_SENSITIVITY = DEFAULT_INPUT_SENSITIVITY;
+export const MIN_SENSITIVITY = MIN_INPUT_SENSITIVITY;
+export const MAX_SENSITIVITY = MAX_INPUT_SENSITIVITY;
 
 export function clampSensitivity(rawSensitivity: number): number {
-  if (Number.isNaN(rawSensitivity) || !Number.isFinite(rawSensitivity)) {
-    return DEFAULT_SENSITIVITY;
-  }
-
-  return Math.min(MAX_SENSITIVITY, Math.max(MIN_SENSITIVITY, rawSensitivity));
+  return clampInputPreferenceSensitivity(rawSensitivity);
 }
 
 export function createPointerMoveSample(
   deltaX: number,
   deltaY: number,
-  sensitivity: number,
+  preferences: MpappInputPreferences,
   timestampMs: number = Date.now(),
 ): PointerMoveSample {
-  const normalizedSensitivity = clampSensitivity(sensitivity);
+  const normalizedSensitivity = clampSensitivity(preferences.sensitivity);
+  const effectiveDeltaX = preferences.invertX ? -deltaX : deltaX;
+  const effectiveDeltaY = preferences.invertY ? -deltaY : deltaY;
 
   return {
     actionId: MpappInputAction.Move,
-    deltaX: deltaX * normalizedSensitivity,
-    deltaY: deltaY * normalizedSensitivity,
+    deltaX: effectiveDeltaX * normalizedSensitivity,
+    deltaY: effectiveDeltaY * normalizedSensitivity,
     timestampMs,
     sensitivity: normalizedSensitivity,
   };
