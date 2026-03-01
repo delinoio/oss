@@ -116,6 +116,8 @@ CLI entrypoints:
 
 Global option contract:
 - `--output <human|json>` is available for all management commands and defaults to `human`.
+- In `--output json`, successful command payloads are written to stdout.
+- In `--output json`, handled command and startup failures emit a deterministic stderr JSON envelope with `kind`, `message`, and `exit_code`.
 
 Runtime selector grammar:
 
