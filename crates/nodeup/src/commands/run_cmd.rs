@@ -7,7 +7,7 @@ use crate::{
     cli::OutputFormat,
     commands::print_output,
     errors::{NodeupError, Result},
-    process::run_command,
+    process::{run_command, DelegatedStdioPolicy},
     resolver::ResolvedRuntimeTarget,
     types::RuntimeSelectorSource,
     NodeupApp,
@@ -76,7 +76,17 @@ pub fn execute(
         "Running delegated command"
     );
 
-    let exit_code = run_command(&executable, &delegated_args, "nodeup.run.process")?;
+    let stdio_policy = match output {
+        OutputFormat::Human => DelegatedStdioPolicy::Inherit,
+        OutputFormat::Json => DelegatedStdioPolicy::StdoutToStderr,
+    };
+
+    let exit_code = run_command(
+        &executable,
+        &delegated_args,
+        stdio_policy,
+        "nodeup.run.process",
+    )?;
 
     let response = RunResponse {
         runtime: resolved.runtime_id(),
