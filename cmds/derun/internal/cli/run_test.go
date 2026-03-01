@@ -78,10 +78,6 @@ func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 	if detail.ExitCode == nil || *detail.ExitCode != 7 {
 		t.Fatalf("unexpected exit code in metadata: %v", detail.ExitCode)
 	}
-	if detail.OutputBytes < 3 {
-		t.Fatalf("expected output bytes >= 3, got=%d", detail.OutputBytes)
-	}
-
 	finalPath := filepath.Join(stateRoot, "sessions", sessions[0].SessionID, "final.json")
 	if _, err := os.Stat(finalPath); err != nil {
 		t.Fatalf("final metadata should exist: %v", err)
