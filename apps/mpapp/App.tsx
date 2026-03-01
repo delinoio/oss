@@ -106,9 +106,6 @@ export default function App() {
     DEFAULT_MPAPP_INPUT_PREFERENCES,
   );
   const [canPersistPreferences, setCanPersistPreferences] = useState(false);
-  const inputPreferencesRef = useRef<MpappInputPreferences>(
-    DEFAULT_MPAPP_INPUT_PREFERENCES,
-  );
   const editedPreferenceKeysRef = useRef<Set<MpappInputPreferenceKey>>(new Set());
 
   const runtimeConfig = useMemo(() => resolveMpappRuntimeConfig(), []);
@@ -170,10 +167,6 @@ export default function App() {
   }, [sessionState]);
 
   useEffect(() => {
-    inputPreferencesRef.current = inputPreferences;
-  }, [inputPreferences]);
-
-  useEffect(() => {
     if (sessionState.mode === MpappMode.Connected) {
       return;
     }
@@ -198,17 +191,20 @@ export default function App() {
           return;
         }
 
-        const mergedPreferences = mergeHydratedInputPreferences({
-          localPreferences: inputPreferencesRef.current,
-          savedPreferences,
-          locallyEditedKeys: editedPreferenceKeysRef.current,
-        });
+        setInputPreferences((localPreferences) => {
+          const mergedPreferences = mergeHydratedInputPreferences({
+            localPreferences,
+            savedPreferences,
+            locallyEditedKeys: editedPreferenceKeysRef.current,
+          });
 
-        setInputPreferences(mergedPreferences);
-        console.info("[mpapp][preferences] hydrated", {
-          savedPreferences,
-          mergedPreferences,
-          locallyEditedKeys: Array.from(editedPreferenceKeysRef.current),
+          console.info("[mpapp][preferences] hydrated", {
+            savedPreferences,
+            mergedPreferences,
+            locallyEditedKeys: Array.from(editedPreferenceKeysRef.current),
+          });
+
+          return mergedPreferences;
         });
         setCanPersistPreferences(true);
       })
