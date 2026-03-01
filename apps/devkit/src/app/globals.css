@@ -67,22 +67,51 @@ a {
 .dk-root {
   min-height: 100vh;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-areas: "sidebar main";
 }
 
-.dk-topbar {
-  border-bottom: 1px solid var(--tds-gray-200);
-  background: rgba(249, 250, 251, 0.92);
-  backdrop-filter: blur(10px);
+.dk-mobile-topbar {
+  display: none;
 }
 
-.dk-topbar-inner {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 24px 24px 20px;
+.dk-shell-menu-button {
+  border: 1px solid var(--tds-gray-300);
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 6px 12px;
+  background: #ffffff;
+  color: var(--tds-gray-700);
+  font-size: 14px;
+  line-height: 21px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.dk-topbar-label {
+.dk-mobile-topbar-title {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 700;
+  color: var(--tds-gray-900);
+}
+
+.dk-sidebar {
+  grid-area: sidebar;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  border-right: 1px solid var(--tds-gray-200);
+  background: rgba(252, 253, 255, 0.96);
+  backdrop-filter: blur(12px);
+}
+
+.dk-sidebar-inner {
+  padding: 24px 16px;
+}
+
+.dk-sidebar-label {
   margin: 0 0 10px;
   font-size: 13px;
   line-height: 19.5px;
@@ -101,24 +130,22 @@ a {
   letter-spacing: -0.02em;
 }
 
-.dk-nav-list {
+.dk-sidebar-list {
   list-style: none;
-  margin: 16px 0 0;
+  margin: 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 8px;
 }
 
-.dk-nav-link {
-  display: inline-flex;
+.dk-sidebar-link {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: 40px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--tds-gray-200);
-  background-color: #ffffff;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--tds-gray-700);
   font-size: 15px;
   line-height: 22.5px;
@@ -129,22 +156,32 @@ a {
     color 120ms ease;
 }
 
-.dk-nav-link:hover {
-  border-color: var(--tds-gray-300);
-  color: var(--tds-gray-800);
+.dk-sidebar-link:hover {
+  border-color: var(--tds-gray-200);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--tds-gray-900);
 }
 
-.dk-nav-link[aria-current="page"] {
+.dk-sidebar-link[aria-current="page"] {
   border-color: var(--tds-blue-100);
-  background-color: var(--tds-blue-50);
+  background: var(--tds-blue-50);
   color: var(--tds-blue-900);
 }
 
+.dk-drawer-overlay {
+  display: none;
+}
+
 .dk-main {
-  max-width: 1120px;
+  grid-area: main;
   width: 100%;
+  max-width: 1120px;
   margin: 0 auto;
-  padding: 28px 24px 56px;
+  padding: 28px 32px 56px;
+}
+
+.dk-main-header {
+  margin: 0 0 20px;
 }
 
 .dk-stack {
@@ -375,7 +412,8 @@ a {
 .dk-input:focus-visible,
 .dk-select:focus-visible,
 .dk-button:focus-visible,
-.dk-nav-link:focus-visible,
+.dk-shell-menu-button:focus-visible,
+.dk-sidebar-link:focus-visible,
 .dk-app-link:focus-visible {
   outline: 3px solid rgba(49, 130, 246, 0.22);
   outline-offset: 1px;
@@ -681,12 +719,68 @@ a {
   }
 }
 
-@media (max-width: 720px) {
-  .dk-topbar-inner {
-    padding: 18px 16px 16px;
+@media (max-width: 960px) {
+  .dk-root {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "mobile-topbar"
+      "main";
+  }
+
+  .dk-mobile-topbar {
+    grid-area: mobile-topbar;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 64px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--tds-gray-200);
+    background: rgba(252, 253, 255, 0.96);
+    backdrop-filter: blur(10px);
+  }
+
+  .dk-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 40;
+    width: min(82vw, 320px);
+    height: auto;
+    transform: translateX(-105%);
+    transition: transform 160ms ease;
+    box-shadow: 0 24px 48px rgba(25, 31, 40, 0.22);
+  }
+
+  .dk-sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .dk-drawer-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    opacity: 0;
+    pointer-events: none;
+    background: rgba(25, 31, 40, 0.44);
+    transition: opacity 160ms ease;
+  }
+
+  .dk-drawer-overlay.is-open {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .dk-main {
+    max-width: none;
+    margin: 0;
     padding: 20px 16px 40px;
   }
 
