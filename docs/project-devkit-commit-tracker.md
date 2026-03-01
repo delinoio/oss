@@ -8,6 +8,7 @@
 - Web route: `apps/devkit/src/app/apps/commit-tracker/page.tsx`
 - Devkit API proxy routes: `apps/devkit/src/app/api/commit-tracker/*`
 - API server and provider reporter: `servers/commit-tracker`
+- Generated Go RPC code (gitignored; regenerate via `./scripts/generate-go-proto.sh`): `servers/commit-tracker/gen/proto/committracker/v1`
 - CI collector and ingestion CLI: `cmds/commit-tracker`
 
 ## Runtime and Language
@@ -206,6 +207,7 @@ Input JSON (`--input`) schema:
 
 ## Build and Test
 Current commands:
+- Proto generation prerequisite: `./scripts/generate-go-proto.sh`
 - Web app tests: `pnpm --filter devkit... test`
 - API server tests: `go test ./servers/commit-tracker/...`
 - Collector CLI tests: `go test ./cmds/commit-tracker/...`
