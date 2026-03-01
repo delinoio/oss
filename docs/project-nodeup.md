@@ -137,11 +137,13 @@ Subcommand contracts:
 - `nodeup toolchain list [--quiet|--verbose]`
 : Input: optional detail flags for human output.
 : Behavior:
+: Default human output prints aggregate counts only (`Installed runtimes: <n> | Linked runtimes: <n>`).
 : `--quiet` prints compact runtime identifiers only in human mode.
 : `--quiet` prints nothing when no runtime identifiers are available.
 : `--verbose` prints detailed runtime metadata (including resolved target paths) in human mode.
 : JSON output remains machine-parseable with the canonical `installed` and `linked` fields regardless of detail flag.
-: Output: installed runtime versions and linked runtime map.
+: Output (human default): aggregate installed/linked counts.
+: Output (`--verbose` human and `--output json`): installed runtime versions plus linked runtime map.
 - `nodeup toolchain install <runtime>...`
 : Input: one or more selectors; empty input is invalid.
 : Allowed selector kinds: `Version`, `Channel` (linked names are rejected for install).
