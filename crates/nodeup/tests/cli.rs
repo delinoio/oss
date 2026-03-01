@@ -729,6 +729,57 @@ fn run_with_install_executes_command() {
         .stdout(predicates::str::contains("node-run"));
 }
 
+#[cfg(unix)]
+#[test]
+#[serial]
+fn run_json_output_is_machine_parseable_with_delegated_output() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-json-streams");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+
+    let delegated = runtime_bin.join("node");
+    fs::write(
+        &delegated,
+        "#!/bin/sh\necho delegated-out\necho delegated-err >&2\nexit 9\n",
+    )
+    .unwrap();
+    let mut permissions = fs::metadata(&delegated).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&delegated, permissions).unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-json-streams",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "run", "linked-json-streams", "node"])
+        .output()
+        .expect("run --output json with delegated output");
+
+    assert_eq!(output.status.code(), Some(9));
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["runtime"], "linked-json-streams");
+    assert_eq!(payload["command"], "node");
+    assert_eq!(payload["exit_code"], 9);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stdout.contains("delegated-out"));
+    assert!(stderr.contains("delegated-out"));
+    assert!(stderr.contains("delegated-err"));
+}
+
 #[test]
 #[serial]
 fn shim_dispatch_uses_argv0_alias() {

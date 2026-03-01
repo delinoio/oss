@@ -4,7 +4,7 @@ use tracing::info;
 
 use crate::{
     errors::{NodeupError, Result},
-    process::run_command,
+    process::{run_command, DelegatedStdioPolicy},
     resolver::ResolvedRuntimeTarget,
     NodeupApp,
 };
@@ -46,6 +46,11 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
         "Dispatching managed alias"
     );
 
-    let exit_code = run_command(&executable, &delegated_args, "nodeup.dispatch.process")?;
+    let exit_code = run_command(
+        &executable,
+        &delegated_args,
+        DelegatedStdioPolicy::Inherit,
+        "nodeup.dispatch.process",
+    )?;
     Ok(Some(exit_code))
 }

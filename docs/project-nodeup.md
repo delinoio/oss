@@ -183,6 +183,9 @@ Subcommand contracts:
 : Input: explicit runtime selector and delegated argv (at least one command token is required).
 : Behavior: if resolved runtime version is missing, command fails unless `--install` is provided.
 : Output: delegated command result with runtime, delegated command name, and exit code.
+: Output channels:
+: In `--output human`, delegated stdout/stderr inherit terminal streams.
+: In `--output json`, stdout is reserved for the JSON result object and delegated stdout/stderr are streamed to stderr.
 : Exit code: returns delegated process exit code on success path.
 - `nodeup self update`
 : Output: deterministic `NotImplemented` error in current phase.
