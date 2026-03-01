@@ -92,9 +92,17 @@ func isBenignPTYOutputErr(err error) bool {
 	if isBenignCopyErr(err) {
 		return true
 	}
-	if errors.Is(err, syscall.EIO) {
-		return true
+	var pathErr *os.PathError
+	if !errors.As(err, &pathErr) {
+		return false
 	}
-	// Linux PTYs can return EIO when the slave side closes after the child exits.
-	return strings.Contains(strings.ToLower(err.Error()), "input/output error")
+	if pathErr.Op != "read" {
+		return false
+	}
+	if !errors.Is(pathErr.Err, syscall.EIO) {
+		return false
+	}
+	// Linux PTYs can return EIO specifically when reading from /dev/ptmx after
+	// the slave side is closed. Restrict suppression to this read-close case.
+	return strings.Contains(strings.ToLower(pathErr.Path), "ptmx")
 }

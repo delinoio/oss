@@ -140,6 +140,8 @@ Schema-version contract:
 Terminal fidelity rules:
 - No prefix/banner injection into child stdout/stderr streams.
 - Interactive sessions must forward stdin bytes, resize events, and termination signals.
+- Windows ConPTY interactive sessions must continuously synchronize console resize changes during active runs.
+- Signal-forwarding handlers must be registered before PID publication callbacks so startup-window interrupts are forwarded to the child process.
 - Child exit code or signal must be propagated as `derun run` process exit result.
 - Capture pipeline must be side-channel only and must not transform forwarded bytes.
 - POSIX PTY output readers must treat terminal-close `EIO` as a benign completion condition, not a runtime failure.

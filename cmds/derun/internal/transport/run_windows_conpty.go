@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -18,6 +19,7 @@ import (
 const (
 	defaultConPTYWidth  = 120
 	defaultConPTYHeight = 30
+	conPTYResizePollInt = 250 * time.Millisecond
 )
 
 func RunWindowsConPTY(
@@ -113,6 +115,52 @@ func RunWindowsConPTY(
 	defer closeHandle(&processInfo.Thread)
 	defer closeHandle(&processInfo.Process)
 
+	signals := make(chan os.Signal, 8)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(signals)
+	defer close(signals)
+	go func() {
+		for sig := range signals {
+			switch sig {
+			case os.Interrupt:
+				_ = windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, processInfo.ProcessId)
+			default:
+				_ = windows.TerminateProcess(processInfo.Process, 1)
+			}
+		}
+	}()
+
+	resizeStop := make(chan struct{})
+	resizeStopped := make(chan struct{})
+	go func(initial windows.Coord) {
+		defer close(resizeStopped)
+		ticker := time.NewTicker(conPTYResizePollInt)
+		defer ticker.Stop()
+
+		currentSize := initial
+		for {
+			select {
+			case <-resizeStop:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				nextSize := detectConPTYSize()
+				if nextSize == currentSize {
+					continue
+				}
+				if err := windows.ResizePseudoConsole(pseudoConsole, nextSize); err != nil {
+					continue
+				}
+				currentSize = nextSize
+			}
+		}
+	}(conPTYSize)
+	defer func() {
+		close(resizeStop)
+		<-resizeStopped
+	}()
+
 	if onStart != nil {
 		if err := onStart(int(processInfo.ProcessId)); err != nil {
 			_ = windows.TerminateProcess(processInfo.Process, 1)
@@ -138,22 +186,6 @@ func RunWindowsConPTY(
 	}
 	outRead = 0
 	defer stdoutReader.Close()
-
-	signals := make(chan os.Signal, 8)
-	signal.Notify(signals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	defer signal.Stop(signals)
-	defer close(signals)
-
-	go func() {
-		for sig := range signals {
-			switch sig {
-			case os.Interrupt:
-				_ = windows.GenerateConsoleCtrlEvent(windows.CTRL_BREAK_EVENT, processInfo.ProcessId)
-			default:
-				_ = windows.TerminateProcess(processInfo.Process, 1)
-			}
-		}
-	}()
 
 	copyStdoutErr := make(chan error, 1)
 	go func() {

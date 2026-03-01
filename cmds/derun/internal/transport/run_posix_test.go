@@ -26,14 +26,36 @@ func TestIsBenignPTYOutputErr(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "syscall eio",
+			name: "raw syscall eio is not automatically benign",
 			err:  syscall.EIO,
+			want: false,
+		},
+		{
+			name: "ptmx read-close eio",
+			err: &os.PathError{
+				Op:   "read",
+				Path: "/dev/ptmx",
+				Err:  syscall.EIO,
+			},
 			want: true,
 		},
 		{
-			name: "string input output error",
-			err:  errors.New("read /dev/ptmx: input/output error"),
-			want: true,
+			name: "ptmx write eio is not benign",
+			err: &os.PathError{
+				Op:   "write",
+				Path: "/dev/ptmx",
+				Err:  syscall.EIO,
+			},
+			want: false,
+		},
+		{
+			name: "non-ptmx read eio is not benign",
+			err: &os.PathError{
+				Op:   "read",
+				Path: "/tmp/output.bin",
+				Err:  syscall.EIO,
+			},
+			want: false,
 		},
 		{
 			name: "other error",
