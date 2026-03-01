@@ -42,6 +42,7 @@ The core user flow is:
 - Input movement sampling policy coalesces drag deltas and emits at most one movement sample every `16ms` (`~60Hz`) while preserving summed pointer distance.
 - If coalesced movement remains pending after the latest drag update, the app must emit it when the `16ms` throttle window elapses even without additional movement callbacks.
 - Throttle interval checks must use a monotonic clock source so device wall-clock adjustments cannot stall movement emission.
+- The trailing movement emission timer must be scheduled from the computed due timestamp, not fixed-phase polling.
 - Touchpad gesture end (`release` or `terminate`) flushes any pending coalesced movement so no in-progress segment is stranded.
 - Touchpad gesture responder instances must be recreated when movement callback dependencies change so runtime sensitivity updates take effect without reconnecting.
 - Android HID transport adapter is implemented as a TypeScript `HidAdapter` contract with:

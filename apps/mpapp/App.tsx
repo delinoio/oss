@@ -21,7 +21,6 @@ import {
 } from "./src/contracts/enums";
 import { resolveMpappRuntimeConfig } from "./src/config/mpapp-runtime-config";
 import {
-  MOVE_THROTTLE_INTERVAL_MS,
   createCoalescedMoveSamplingPolicy,
   type MoveSamplingEmission,
 } from "./src/input/move-sampling-policy";
@@ -98,6 +97,8 @@ export default function App() {
     new AsyncStorageDiagnosticsStore(),
   );
   const moveSamplingPolicyRef = useRef(createCoalescedMoveSamplingPolicy());
+  const moveDueTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleDueMoveEmissionRef = useRef<() => void>(() => {});
   const sessionIdRef = useRef<string>(createSessionId());
   const transportLogContext = useMemo(
     () => ({
@@ -126,6 +127,15 @@ export default function App() {
     dispatch(event);
   }, []);
 
+  const clearMoveDueTimeout = useCallback(() => {
+    if (moveDueTimeoutRef.current === null) {
+      return;
+    }
+
+    clearTimeout(moveDueTimeoutRef.current);
+    moveDueTimeoutRef.current = null;
+  }, []);
+
   useEffect(() => {
     sessionStateRef.current = sessionState;
   }, [sessionState]);
@@ -135,8 +145,15 @@ export default function App() {
       return;
     }
 
+    clearMoveDueTimeout();
     moveSamplingPolicyRef.current.reset();
-  }, [sessionState.mode]);
+  }, [clearMoveDueTimeout, sessionState.mode]);
+
+  useEffect(() => {
+    return () => {
+      clearMoveDueTimeout();
+    };
+  }, [clearMoveDueTimeout]);
 
   const appendLog = useCallback(
     async (params: {
@@ -386,6 +403,40 @@ export default function App() {
     [adapter, appendLog, sensitivity],
   );
 
+  const emitDueMoveEmission = useCallback(() => {
+    if (sessionStateRef.current.mode !== MpappMode.Connected) {
+      return;
+    }
+
+    const moveEmission = moveSamplingPolicyRef.current.emitWhenDue();
+    if (moveEmission) {
+      emitSampledMove(moveEmission);
+    }
+
+    scheduleDueMoveEmissionRef.current();
+  }, [emitSampledMove]);
+
+  const scheduleDueMoveEmission = useCallback(() => {
+    clearMoveDueTimeout();
+    if (sessionStateRef.current.mode !== MpappMode.Connected) {
+      return;
+    }
+
+    const dueInMs = moveSamplingPolicyRef.current.timeUntilDueMs();
+    if (dueInMs === null) {
+      return;
+    }
+
+    moveDueTimeoutRef.current = setTimeout(() => {
+      moveDueTimeoutRef.current = null;
+      emitDueMoveEmission();
+    }, dueInMs);
+  }, [clearMoveDueTimeout, emitDueMoveEmission]);
+
+  useEffect(() => {
+    scheduleDueMoveEmissionRef.current = scheduleDueMoveEmission;
+  }, [scheduleDueMoveEmission]);
+
   const handleMove = useCallback(
     (deltaX: number, deltaY: number) => {
       if (sessionState.mode !== MpappMode.Connected) {
@@ -394,12 +445,14 @@ export default function App() {
 
       const moveEmission = moveSamplingPolicyRef.current.record(deltaX, deltaY);
       if (!moveEmission) {
+        scheduleDueMoveEmission();
         return;
       }
 
       emitSampledMove(moveEmission);
+      scheduleDueMoveEmission();
     },
-    [emitSampledMove, sessionState.mode],
+    [emitSampledMove, scheduleDueMoveEmission, sessionState.mode],
   );
 
   const handleMoveGestureEnd = useCallback(() => {
@@ -407,32 +460,14 @@ export default function App() {
       return;
     }
 
+    clearMoveDueTimeout();
     const moveEmission = moveSamplingPolicyRef.current.flush();
     if (!moveEmission) {
       return;
     }
 
     emitSampledMove(moveEmission);
-  }, [emitSampledMove, sessionState.mode]);
-
-  useEffect(() => {
-    if (sessionState.mode !== MpappMode.Connected) {
-      return;
-    }
-
-    const intervalId = setInterval(() => {
-      const moveEmission = moveSamplingPolicyRef.current.emitWhenDue();
-      if (!moveEmission) {
-        return;
-      }
-
-      emitSampledMove(moveEmission);
-    }, MOVE_THROTTLE_INTERVAL_MS);
-
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [emitSampledMove, sessionState.mode]);
+  }, [clearMoveDueTimeout, emitSampledMove, sessionState.mode]);
 
   const handleClick = useCallback(
     (button: MpappClickButton) => {

@@ -20,6 +20,7 @@ export type MoveSamplingEmission = {
 
 export type MoveSamplingPolicy = {
   record(deltaX: number, deltaY: number): MoveSamplingEmission | null;
+  timeUntilDueMs(): number | null;
   emitWhenDue(): MoveSamplingEmission | null;
   flush(): MoveSamplingEmission | null;
   reset(): void;
@@ -115,6 +116,15 @@ export function createCoalescedMoveSamplingPolicy(
       }
 
       return emitPending(nowMs);
+    },
+
+    timeUntilDueMs(): number | null {
+      if (pendingRawSampleCount === 0 || lastEmissionTimestampMs === null) {
+        return null;
+      }
+
+      const elapsedMs = now() - lastEmissionTimestampMs;
+      return Math.max(0, MOVE_THROTTLE_INTERVAL_MS - elapsedMs);
     },
 
     flush(): MoveSamplingEmission | null {
