@@ -342,7 +342,13 @@ fn toolchain_list_quiet_prints_runtime_identifiers_only() {
         .success();
 
     let linked_runtime = env.root.join("linked-runtime-quiet");
-    fs::create_dir_all(&linked_runtime).unwrap();
+    let linked_runtime_bin = linked_runtime.join("bin");
+    fs::create_dir_all(&linked_runtime_bin).unwrap();
+    fs::write(
+        linked_runtime_bin.join("node"),
+        "#!/bin/sh\necho linked-runtime-quiet\n",
+    )
+    .unwrap();
 
     env.command()
         .args([
@@ -391,7 +397,13 @@ fn toolchain_list_verbose_includes_runtime_and_link_paths() {
         .success();
 
     let linked_runtime = env.root.join("linked-runtime-verbose");
-    fs::create_dir_all(&linked_runtime).unwrap();
+    let linked_runtime_bin = linked_runtime.join("bin");
+    fs::create_dir_all(&linked_runtime_bin).unwrap();
+    fs::write(
+        linked_runtime_bin.join("node"),
+        "#!/bin/sh\necho linked-runtime-verbose\n",
+    )
+    .unwrap();
 
     env.command()
         .args([
@@ -441,7 +453,13 @@ fn toolchain_list_json_output_is_stable_with_detail_flags() {
         .success();
 
     let linked_runtime = env.root.join("linked-runtime-json");
-    fs::create_dir_all(&linked_runtime).unwrap();
+    let linked_runtime_bin = linked_runtime.join("bin");
+    fs::create_dir_all(&linked_runtime_bin).unwrap();
+    fs::write(
+        linked_runtime_bin.join("node"),
+        "#!/bin/sh\necho linked-runtime-json\n",
+    )
+    .unwrap();
 
     env.command()
         .args([
@@ -480,6 +498,94 @@ fn toolchain_list_json_output_is_stable_with_detail_flags() {
 
     assert_eq!(baseline_json, quiet_json);
     assert_eq!(baseline_json, verbose_json);
+}
+
+#[test]
+#[serial]
+fn toolchain_link_rejects_regular_file_path_and_does_not_persist_selector() {
+    let env = TestEnv::new();
+    let invalid_path = env.root.join("not-a-runtime-file");
+    fs::write(&invalid_path, "not-a-runtime").unwrap();
+
+    let output = env
+        .command()
+        .args([
+            "toolchain",
+            "link",
+            "filelink",
+            invalid_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("toolchain link with regular file");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Linked runtime path is not a directory"));
+
+    let list_output = env
+        .command()
+        .args(["--output", "json", "toolchain", "list"])
+        .output()
+        .expect("toolchain list after failed file link");
+    assert!(list_output.status.success());
+
+    let payload: Value = serde_json::from_slice(&list_output.stdout).unwrap();
+    assert!(payload["linked"].get("filelink").is_none());
+}
+
+#[test]
+#[serial]
+fn toolchain_link_rejects_directory_without_node_binary() {
+    let env = TestEnv::new();
+    let invalid_path = env.root.join("not-a-runtime-directory");
+    fs::create_dir_all(&invalid_path).unwrap();
+
+    let output = env
+        .command()
+        .args([
+            "toolchain",
+            "link",
+            "dirlink",
+            invalid_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("toolchain link with directory missing node binary");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Linked runtime path must contain bin/node"));
+}
+
+#[test]
+#[serial]
+fn json_toolchain_link_failure_emits_invalid_input_error_envelope() {
+    let env = TestEnv::new();
+    let invalid_path = env.root.join("not-a-runtime-json");
+    fs::create_dir_all(&invalid_path).unwrap();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "link",
+            "jsonlink",
+            invalid_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("toolchain link --output json with invalid linked runtime path");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Linked runtime path must contain bin/node"));
 }
 
 #[test]
