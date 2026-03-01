@@ -104,7 +104,20 @@ enum MpappConnectionEvent {
   ConnectSuccess = "connect-success",
   ConnectFailure = "connect-failure",
   Disconnect = "disconnect",
+  DisconnectFailure = "disconnect-failure",
   PermissionDenied = "permission-denied",
+}
+```
+
+Canonical disconnect reasons:
+
+```ts
+enum MpappDisconnectReason {
+  UserAction = "user-action",
+  TransportLost = "transport-lost",
+  Timeout = "timeout",
+  PermissionRevoked = "permission-revoked",
+  Unknown = "unknown",
 }
 ```
 
@@ -215,6 +228,7 @@ MVP interface constraints:
 - `MpappInputAction` values are stable contracts and must not be renamed without a documented migration.
 - Click payloads must preserve valid `actionId` and `button` pairs by the `PointerClickSample` discriminated union.
 - `MpappHidTransportMode` values are stable runtime contract values and must not be renamed without migration.
+- `MpappDisconnectReason` values are stable lifecycle contract values and must not be renamed without migration.
 - Native transport failures may include `nativeErrorCode` for diagnostics, but `MpappErrorCode` remains the canonical app-facing error contract.
 
 Android and iOS scope contract:
@@ -278,6 +292,10 @@ Additional transport diagnostics fields when available:
 - `nativeErrorCode`
 - `availabilityState`
 
+Disconnect diagnostics payload contract:
+- Disconnect transition logs must include `disconnectReason` as a machine-readable `MpappDisconnectReason` value for both success and failure paths.
+- Disconnect failure logs must continue to include `nativeErrorCode` when available.
+
 Connection state logging contract:
 - `connectionState` must be captured from the latest session state snapshot at log emission time, including async lifecycle and transport callbacks.
 
@@ -312,7 +330,7 @@ MVP acceptance criteria scenarios:
 3. Tapping the right-click button emits exactly one `right-click` action.
 4. Attempting input before a connected state shows a clear disabled or error state.
 5. Permission denial shows a retry path and logs required structured fields.
-6. Disconnect events follow the documented state transition order and provide reconnect guidance.
+6. Disconnect events follow the documented state transition order, persist machine-readable disconnect reasons, and provide reason-specific reconnect guidance in the session status UI.
 7. High input frequency follows documented sampling or throttle limits and remains observable in logs.
 8. Runtime transport switch can intentionally select `native-android-hid` or `stub` and logs selected mode.
 9. Native transport failures preserve canonical `MpappErrorCode` while recording `nativeErrorCode` in diagnostics.
