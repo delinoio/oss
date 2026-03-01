@@ -142,6 +142,7 @@ Terminal fidelity rules:
 - Interactive sessions must forward stdin bytes, resize events, and termination signals.
 - Child exit code or signal must be propagated as `derun run` process exit result.
 - Capture pipeline must be side-channel only and must not transform forwarded bytes.
+- POSIX PTY output readers must treat terminal-close `EIO` as a benign completion condition, not a runtime failure.
 - PTY eligibility must use OS terminal probing (`isatty` semantics, e.g. ioctl/GetConsoleMode), not character-device-only checks.
 
 Session discovery/attach contract:

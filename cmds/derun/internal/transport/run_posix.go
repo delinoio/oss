@@ -4,11 +4,13 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/creack/pty"
@@ -73,7 +75,7 @@ func RunPosixPTY(
 		_, _ = io.Copy(ptmx, os.Stdin)
 	}()
 
-	if _, err := io.Copy(ptyOutput, ptmx); err != nil {
+	if _, err := io.Copy(ptyOutput, ptmx); err != nil && !isBenignPTYOutputErr(err) {
 		return RunResult{}, fmt.Errorf("copy pty output: %w", err)
 	}
 	result, err := decodeExit(cmd.Wait())
@@ -81,4 +83,18 @@ func RunPosixPTY(
 		return RunResult{}, fmt.Errorf("wait for pty process: %w", err)
 	}
 	return result, nil
+}
+
+func isBenignPTYOutputErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	if isBenignCopyErr(err) {
+		return true
+	}
+	if errors.Is(err, syscall.EIO) {
+		return true
+	}
+	// Linux PTYs can return EIO when the slave side closes after the child exits.
+	return strings.Contains(strings.ToLower(err.Error()), "input/output error")
 }
