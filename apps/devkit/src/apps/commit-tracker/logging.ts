@@ -18,6 +18,9 @@ interface CommitTrackerLogContext {
   delta_percent: number;
 }
 
+type CommitTrackerStructuredContext = CommitTrackerLogContext &
+  Record<string, string | number | boolean | undefined>;
+
 const DEFAULT_COMMIT_TRACKER_CONTEXT: Omit<
   CommitTrackerLogContext,
   "repository"
@@ -50,7 +53,7 @@ interface CommitTrackerLogInput extends CommitTrackerLogContextInput {
 
 function buildCommitTrackerContext(
   input: CommitTrackerLogContextInput,
-): CommitTrackerLogContext {
+): CommitTrackerStructuredContext {
   const pullRequest = input.pullRequest;
   const deltaPercent = input.deltaPercent;
 
@@ -73,6 +76,8 @@ function buildCommitTrackerContext(
 }
 
 function toCommitTrackerLogEntry(input: CommitTrackerLogInput): DevkitLogEntry {
+  const context = buildCommitTrackerContext(input);
+
   return {
     event: input.event,
     route: COMMIT_TRACKER_ROUTE,
@@ -81,7 +86,7 @@ function toCommitTrackerLogEntry(input: CommitTrackerLogInput): DevkitLogEntry {
     outcome: input.outcome,
     message: input.message,
     error: input.error,
-    context: buildCommitTrackerContext(input),
+    context,
   };
 }
 
