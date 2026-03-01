@@ -43,6 +43,33 @@ fn version_succeeds_outside_workspace() {
 }
 
 #[test]
+fn cargo_external_mode_help_succeeds_outside_workspace() {
+    let temp_dir = tempfile::tempdir().expect("failed to create tempdir");
+
+    Command::new(assert_cmd::cargo::cargo_bin!("cargo-mono"))
+        .current_dir(temp_dir.path())
+        .args(["mono", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list"))
+        .stdout(predicate::str::contains("changed"))
+        .stdout(predicate::str::contains("bump"))
+        .stdout(predicate::str::contains("publish"));
+}
+
+#[test]
+fn cargo_external_mode_version_succeeds_outside_workspace() {
+    let temp_dir = tempfile::tempdir().expect("failed to create tempdir");
+
+    Command::new(assert_cmd::cargo::cargo_bin!("cargo-mono"))
+        .current_dir(temp_dir.path())
+        .args(["mono", "--version"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
+}
+
+#[test]
 fn list_still_requires_workspace() {
     let temp_dir = tempfile::tempdir().expect("failed to create tempdir");
 
@@ -58,6 +85,16 @@ fn list_still_requires_workspace() {
 fn list_outputs_workspace_packages() {
     cargo_mono_command()
         .args(["--output", "json", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"packages\""))
+        .stdout(predicate::str::contains("\"nodeup\""));
+}
+
+#[test]
+fn cargo_external_mode_list_outputs_workspace_packages() {
+    Command::new(assert_cmd::cargo::cargo_bin!("cargo-mono"))
+        .args(["mono", "--output", "json", "list"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"packages\""))

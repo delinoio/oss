@@ -75,6 +75,7 @@ enum CargoMonoBumpLevel {
 CLI entrypoint:
 - `cargo mono [--output <human|json>] <subcommand> ...`
 - `cargo mono --help` and `cargo mono --version` must succeed without workspace discovery.
+- When invoked through Cargo external-subcommand mode, a forwarded leading `mono` token is normalized before parsing so `cargo mono <args>` matches direct `cargo-mono <args>` behavior.
 - `bump` and `publish` run a clean-working-tree preflight immediately after CLI parsing and before workspace loading.
 - Workspace loading occurs after CLI parsing for executable subcommands; for `bump`/`publish`, it occurs only after clean-tree preflight passes.
 
