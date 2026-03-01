@@ -101,9 +101,7 @@ func (store *Store) Read() (Snapshot, error) {
 func (store *Store) MarkDaemonStarted(pid int) error {
 	_, err := store.mutate(func(snapshot *Snapshot, now time.Time) {
 		timestamp := now.UTC().Format(time.RFC3339Nano)
-		if snapshot.StartedAt == "" {
-			snapshot.StartedAt = timestamp
-		}
+		snapshot.StartedAt = timestamp
 		snapshot.PID = pid
 		snapshot.Running = true
 		snapshot.LastHeartbeatAt = timestamp

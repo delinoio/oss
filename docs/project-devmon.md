@@ -178,6 +178,7 @@ Scheduling contract:
 
 State file schema (`schema_version = "v1"`) includes:
 - daemon process state (`running`, `pid`, `started_at`, `last_heartbeat_at`)
+: `started_at` is refreshed on every daemon start so restart diagnostics reflect current process lifetime.
 - scheduler occupancy (`active_jobs`)
 - recent run summary (`outcome`, `folder_id`, `job_id`, `duration_ms`, `error`, `timestamp`)
 - recent skip summary (`outcome`, `folder_id`, `job_id`, `skip_reason`, `timestamp`)

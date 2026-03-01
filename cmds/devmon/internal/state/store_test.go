@@ -81,6 +81,49 @@ func TestStoreLifecycleAndRunUpdates(t *testing.T) {
 	}
 }
 
+func TestMarkDaemonStartedRefreshesStartedAtOnRestart(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "status.json")
+	store, err := NewStore(storePath, slog.Default())
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+
+	firstStart := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	currentTime := firstStart
+	store.nowFn = func() time.Time {
+		return currentTime
+	}
+
+	if err := store.MarkDaemonStarted(1111); err != nil {
+		t.Fatalf("MarkDaemonStarted (first) returned error: %v", err)
+	}
+	if err := store.MarkDaemonStopped(); err != nil {
+		t.Fatalf("MarkDaemonStopped returned error: %v", err)
+	}
+
+	secondStart := firstStart.Add(15 * time.Minute)
+	currentTime = secondStart
+	if err := store.MarkDaemonStarted(2222); err != nil {
+		t.Fatalf("MarkDaemonStarted (second) returned error: %v", err)
+	}
+
+	snapshot, err := store.Read()
+	if err != nil {
+		t.Fatalf("Read returned error: %v", err)
+	}
+
+	expectedStartedAt := secondStart.Format(time.RFC3339Nano)
+	if snapshot.StartedAt != expectedStartedAt {
+		t.Fatalf("expected started_at=%s, got=%s", expectedStartedAt, snapshot.StartedAt)
+	}
+	if snapshot.PID != 2222 {
+		t.Fatalf("expected pid=2222, got=%d", snapshot.PID)
+	}
+	if !snapshot.Running {
+		t.Fatal("expected daemon to be marked as running after restart")
+	}
+}
+
 func TestIsHeartbeatFresh(t *testing.T) {
 	now := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
 
