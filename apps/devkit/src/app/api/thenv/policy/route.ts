@@ -6,7 +6,6 @@ import {
   parseScopeFromSearchParams,
 } from "@/app/api/thenv/_lib/connect";
 import {
-  isMalformedJsonError,
   parsePolicyBindings,
   ThenvValidationError,
 } from "@/app/api/thenv/_lib/validation";
@@ -30,8 +29,23 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: Request) {
+  let body: unknown;
+
   try {
-    const body = await request.json();
+    body = await request.json();
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return NextResponse.json(
+        { error: "request body must be valid JSON" },
+        { status: 400 },
+      );
+    }
+
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+
+  try {
     const scope = parseScopeFromBody(body);
     const bindings = parsePolicyBindings(body);
 
@@ -46,13 +60,6 @@ export async function PUT(request: Request) {
   } catch (error) {
     if (error instanceof ThenvValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
-    }
-
-    if (isMalformedJsonError(error)) {
-      return NextResponse.json(
-        { error: "request body must be valid JSON" },
-        { status: 400 },
-      );
     }
 
     const message = error instanceof Error ? error.message : "Unknown error";

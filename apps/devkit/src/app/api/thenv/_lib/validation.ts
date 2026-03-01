@@ -264,7 +264,3 @@ export function parseRequiredBodyString(
 
   return normalized;
 }
-
-export function isMalformedJsonError(error: unknown): boolean {
-  return error instanceof SyntaxError;
-}

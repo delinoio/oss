@@ -162,6 +162,28 @@ describe("thenv policy route", () => {
     });
   });
 
+  it("returns 502 when upstream payload parsing fails", async () => {
+    vi.mocked(callThenvRpc).mockRejectedValue(
+      new SyntaxError("upstream payload parse failed"),
+    );
+
+    const response = await PUT(
+      buildPutRequest({
+        scope: {
+          workspaceId: "ws-a",
+          projectId: "proj-a",
+          environmentId: "dev",
+        },
+        bindings: [{ subject: "alice", role: ThenvRole.Admin }],
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: "upstream payload parse failed",
+    });
+  });
+
   it("returns 502 for unexpected errors", async () => {
     vi.mocked(callThenvRpc).mockRejectedValue(new Error("network down"));
 

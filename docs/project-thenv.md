@@ -84,6 +84,7 @@ Devkit route contract:
 : `GET /api/thenv/audit` enforces `eventType` against `ThenvAuditEventType` enum values.
 : `PUT /api/thenv/policy` enforces binding `role` against `ROLE_READER | ROLE_WRITER | ROLE_ADMIN` and rejects malformed bindings.
 : Invalid request shapes, including malformed JSON in body routes, return deterministic `400` responses.
+: Upstream RPC/backend payload parse failures are surfaced as `502` proxy errors (not `400` input errors).
 
 Connect RPC services (implemented):
 - `BundleService`
