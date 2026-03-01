@@ -243,6 +243,16 @@ class MpappAndroidHidModule : Module() {
       )
     }
 
+    if (!hasBluetoothPermission(context, Manifest.permission.BLUETOOTH_CONNECT)) {
+      return failure(
+        code = NativeErrorCode.PermissionDenied,
+        message = "Bluetooth permission is required to query adapter state.",
+        details = mapOf(
+          "availabilityState" to BluetoothAvailabilityState.Unknown.value,
+        ),
+      )
+    }
+
     val bluetoothAdapter = getBluetoothAdapter(context)
       ?: return failure(
         code = NativeErrorCode.BluetoothUnavailable,
@@ -252,7 +262,19 @@ class MpappAndroidHidModule : Module() {
         ),
       )
 
-    if (!bluetoothAdapter.isEnabled) {
+    val isEnabled = try {
+      bluetoothAdapter.isEnabled
+    } catch (_: SecurityException) {
+      return failure(
+        code = NativeErrorCode.PermissionDenied,
+        message = "Bluetooth permission is required to query adapter state.",
+        details = mapOf(
+          "availabilityState" to BluetoothAvailabilityState.Unknown.value,
+        ),
+      )
+    }
+
+    if (!isEnabled) {
       return failure(
         code = NativeErrorCode.BluetoothUnavailable,
         message = "Bluetooth is disabled.",

@@ -43,7 +43,7 @@ The core user flow is:
 - Android HID transport adapter is implemented as a TypeScript `HidAdapter` contract with:
   - `native-android-hid` mode backed by a local Expo native module at `apps/mpapp/modules/mpapp-android-hid`
   - `stub` mode backed by `AndroidHidStubAdapter` for deterministic tests and local simulation
-  - `checkBluetoothAvailability()` preflight gate before runtime permission prompts and pairing
+  - `checkBluetoothAvailability()` preflight gate after runtime permission grant and before pairing
 - Runtime transport mode selection resolves in priority order:
   - `EXPO_PUBLIC_MPAPP_HID_TRANSPORT_MODE` env override
   - `expo.extra.mpapp.hidTransportMode` in app config
@@ -223,7 +223,7 @@ Android and iOS scope contract:
 
 Permissions and capability contract (Android MVP):
 - Check Bluetooth availability before entering pairing flow.
-- Run `HidAdapter.checkBluetoothAvailability()` before entering `StartPermissionCheck`.
+- Run `HidAdapter.checkBluetoothAvailability()` after permission grant and before `StartPairing`.
 - If Bluetooth is unavailable or disabled, stop the connect flow and surface `MpappErrorCode.BluetoothUnavailable` with actionable remediation text.
 - Gate pairing/connection on runtime permission results.
 - Surface `MpappErrorCode.PermissionDenied` when permission requirements are not satisfied.
@@ -310,7 +310,7 @@ MVP acceptance criteria scenarios:
 7. High input frequency follows documented sampling or throttle limits and remains observable in logs.
 8. Runtime transport switch can intentionally select `native-android-hid` or `stub` and logs selected mode.
 9. Native transport failures preserve canonical `MpappErrorCode` while recording `nativeErrorCode` in diagnostics.
-10. Bluetooth-unavailable and Bluetooth-disabled preflight branches block permission prompts and emit structured diagnostics.
+10. Bluetooth-unavailable and Bluetooth-disabled preflight branches block pairing/connecting and emit structured diagnostics.
 
 ## Roadmap
 - Phase 1: Android MVP with drag-based movement, left-click, right-click, lifecycle state UI, and diagnostics baseline.

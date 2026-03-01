@@ -182,40 +182,6 @@ export default function App() {
       return;
     }
 
-    const availabilityStart = Date.now();
-    const availabilityResult = await adapter.checkBluetoothAvailability();
-
-    await appendLog({
-      eventFamily: availabilityResult.ok
-        ? MpappLogEventFamily.ConnectionTransition
-        : MpappLogEventFamily.TransportError,
-      actionType: MpappActionType.Connect,
-      latencyMs: Date.now() - availabilityStart,
-      failureReason: availabilityResult.ok ? null : availabilityResult.message,
-      payload: {
-        availabilityState: availabilityResult.availabilityState,
-        gate: "pre-permission",
-      },
-    });
-
-    if (!availabilityResult.ok) {
-      const errorCode =
-        availabilityResult.errorCode === MpappErrorCode.BluetoothUnavailable
-          ? MpappErrorCode.BluetoothUnavailable
-          : availabilityResult.errorCode;
-      const message =
-        errorCode === MpappErrorCode.BluetoothUnavailable
-          ? getBluetoothUnavailableMessage(availabilityResult.availabilityState)
-          : availabilityResult.message;
-
-      dispatchSessionEvent({
-        type: MpappSessionEventType.ConnectFailure,
-        errorCode,
-        message,
-      });
-      return;
-    }
-
     dispatchSessionEvent({ type: MpappSessionEventType.StartPermissionCheck });
 
     const permissionStart = Date.now();
@@ -250,6 +216,40 @@ export default function App() {
 
     if (!permissionResult.granted) {
       dispatchSessionEvent({ type: MpappSessionEventType.PermissionDenied });
+      return;
+    }
+
+    const availabilityStart = Date.now();
+    const availabilityResult = await adapter.checkBluetoothAvailability();
+
+    await appendLog({
+      eventFamily: availabilityResult.ok
+        ? MpappLogEventFamily.ConnectionTransition
+        : MpappLogEventFamily.TransportError,
+      actionType: MpappActionType.Connect,
+      latencyMs: Date.now() - availabilityStart,
+      failureReason: availabilityResult.ok ? null : availabilityResult.message,
+      payload: {
+        availabilityState: availabilityResult.availabilityState,
+        gate: "post-permission-pre-pairing",
+      },
+    });
+
+    if (!availabilityResult.ok) {
+      const errorCode =
+        availabilityResult.errorCode === MpappErrorCode.BluetoothUnavailable
+          ? MpappErrorCode.BluetoothUnavailable
+          : availabilityResult.errorCode;
+      const message =
+        errorCode === MpappErrorCode.BluetoothUnavailable
+          ? getBluetoothUnavailableMessage(availabilityResult.availabilityState)
+          : availabilityResult.message;
+
+      dispatchSessionEvent({
+        type: MpappSessionEventType.ConnectFailure,
+        errorCode,
+        message,
+      });
       return;
     }
 

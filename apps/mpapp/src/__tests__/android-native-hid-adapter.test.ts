@@ -143,6 +143,31 @@ describe("android native HID adapter", () => {
     });
   });
 
+  it("maps permission-denied availability check failures", async () => {
+    const nativeModule = createNativeModule({
+      checkBluetoothAvailability: async () => ({
+        ok: false,
+        code: MpappAndroidHidNativeErrorCode.PermissionDenied,
+        message: "Bluetooth permission is required to query adapter state.",
+        details: {
+          availabilityState: MpappAndroidHidNativeAvailabilityState.Unknown,
+        },
+      }),
+    });
+    const adapter = new AndroidNativeHidAdapter({
+      hostAddress: "AA:BB:CC:DD:EE:FF",
+      nativeModule,
+    });
+
+    await expect(adapter.checkBluetoothAvailability()).resolves.toEqual({
+      ok: false,
+      availabilityState: MpappBluetoothAvailabilityState.Unknown,
+      errorCode: MpappErrorCode.PermissionDenied,
+      message: "Bluetooth permission is required to query adapter state.",
+      nativeErrorCode: MpappAndroidHidNativeErrorCode.PermissionDenied,
+    });
+  });
+
   it("returns deterministic errors for missing or invalid host config", async () => {
     const nativeModule = createNativeModule();
 
