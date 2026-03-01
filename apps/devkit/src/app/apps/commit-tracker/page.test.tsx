@@ -139,6 +139,23 @@ describe("CommitTrackerPage", () => {
     expect(failLabels.length).toBeGreaterThan(0);
   });
 
+  it("applies fail verdict badge styles in comparison results", async () => {
+    const user = userEvent.setup();
+    render(<CommitTrackerPage />);
+
+    await user.type(screen.getByLabelText("Base Commit"), "base-sha");
+    await user.type(screen.getByLabelText("Head Commit"), "head-sha");
+    await user.click(screen.getByRole("button", { name: "Compare Pull Request" }));
+
+    const failBadges = await screen.findAllByText("FAIL", {
+      selector: ".dk-ct-verdict-badge",
+    });
+    expect(failBadges.length).toBeGreaterThan(0);
+    expect(failBadges.some((badge) => badge.classList.contains("dk-ct-badge-fail"))).toBe(
+      true,
+    );
+  });
+
   it("publishes report and shows result message", async () => {
     const user = userEvent.setup();
     render(<CommitTrackerPage />);
