@@ -117,6 +117,7 @@ export function ThenvConsole() {
   const loadAuditEvents = useCallback(async (fromTime: string, toTime: string) => {
     setLoading(true);
     setErrorMessage("");
+    setAuditNextCursor("");
 
     try {
       const auditResponse = await listAuditEvents({
@@ -160,6 +161,8 @@ export function ThenvConsole() {
   const loadConsoleData = useCallback(async (fromTime: string, toTime: string) => {
     setLoading(true);
     setErrorMessage("");
+    setVersionsNextCursor("");
+    setAuditNextCursor("");
 
     try {
       const [versionsResponse, policyResponse, auditResponse] = await Promise.all([

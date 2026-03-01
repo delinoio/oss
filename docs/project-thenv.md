@@ -81,6 +81,7 @@ Devkit route contract:
 : Devkit audit proxy route `GET /api/thenv/audit` supports optional `fromTime` and `toTime` query parameters and forwards them to `AuditService.ListAuditEvents`.
 - Devkit pagination contract:
 : Devkit versions and audit views consume `nextCursor` and allow incremental page loading through explicit load-more actions.
+: If a full reload or filtered audit reload fails, stale pagination cursors are cleared before load-more actions can run.
 - Devkit proxy input validation contract:
 : Scope defaults to `DEFAULT_THENV_SCOPE` when omitted, but explicit blank values are rejected with `400`.
 : Pagination fields enforce `limit` as integer `1..100` (default `20`) and `cursor` as empty or non-negative integer string.
@@ -252,6 +253,7 @@ Acceptance-focused scenarios:
 14. Web console audit table renders per-event outcome and honors optional `fromTime`/`toTime` filters via Devkit audit proxy route.
 15. Applying/clearing audit time-range filters refreshes only audit data and does not discard unsaved policy draft bindings in the web console.
 16. Web console version and audit tables support cursor pagination and continue loading additional pages until `nextCursor` is empty.
+17. Failed scope refreshes or failed audit filter reloads clear stale cursors so load-more actions cannot append mixed-scope or mixed-filter rows.
 
 ## Roadmap
 - Phase 1: Connect RPC foundation, versioned multi-file bundles, RBAC, and secure push/pull/list/rotate flows.

@@ -4,11 +4,19 @@ import { beforeEach, vi } from "vitest";
 
 import ThenvPage from "./page";
 
+let failNextVersionsRequest = false;
+let failNextAuditRequest = false;
+
 const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
   const rawUrl = typeof input === "string" ? input : input.toString();
   const parsedUrl = new URL(rawUrl, "http://localhost");
 
   if (parsedUrl.pathname === "/api/thenv/versions") {
+    if (failNextVersionsRequest) {
+      failNextVersionsRequest = false;
+      return new Response("versions failed", { status: 500 });
+    }
+
     const cursor = parsedUrl.searchParams.get("cursor");
     if (cursor === "1") {
       return new Response(
@@ -59,6 +67,11 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
   }
 
   if (parsedUrl.pathname === "/api/thenv/audit") {
+    if (failNextAuditRequest) {
+      failNextAuditRequest = false;
+      return new Response("audit failed", { status: 500 });
+    }
+
     const cursor = parsedUrl.searchParams.get("cursor");
     if (cursor === "1") {
       return new Response(
@@ -132,6 +145,8 @@ function versionCallUrls(): string[] {
 describe("ThenvPage", () => {
   beforeEach(() => {
     fetchMock.mockClear();
+    failNextVersionsRequest = false;
+    failNextAuditRequest = false;
     vi.stubGlobal("fetch", fetchMock);
   });
 
@@ -236,6 +251,47 @@ describe("ThenvPage", () => {
             url.includes(`toTime=${encodeURIComponent(toTime)}`),
         ),
       ).toBe(true);
+    });
+  });
+
+  it("clears stale version cursor when reload fails to prevent mixed pagination", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Load More Versions" }),
+    ).toBeInTheDocument();
+
+    failNextVersionsRequest = true;
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("versions failed");
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Load More Versions" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("clears stale audit cursor when filtered reload fails", async () => {
+    const user = userEvent.setup();
+    render(<ThenvPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Load More Audit Events" }),
+    ).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText("From Time (ISO)"));
+    await user.type(screen.getByLabelText("From Time (ISO)"), "2026-01-01T00:00:00Z");
+    await user.clear(screen.getByLabelText("To Time (ISO)"));
+    await user.type(screen.getByLabelText("To Time (ISO)"), "2026-01-31T23:59:59Z");
+
+    failNextAuditRequest = true;
+    await user.click(screen.getByRole("button", { name: "Apply Audit Filters" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("audit failed");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", { name: "Load More Audit Events" }),
+      ).not.toBeInTheDocument();
     });
   });
 
