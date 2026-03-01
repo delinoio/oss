@@ -101,7 +101,7 @@ export default function App() {
   const [inputPreferences, setInputPreferences] = useState<MpappInputPreferences>(
     DEFAULT_MPAPP_INPUT_PREFERENCES,
   );
-  const [hasHydratedPreferences, setHasHydratedPreferences] = useState(false);
+  const [canPersistPreferences, setCanPersistPreferences] = useState(false);
   const hasLocalPreferenceEditsRef = useRef(false);
 
   const runtimeConfig = useMemo(() => resolveMpappRuntimeConfig(), []);
@@ -191,11 +191,13 @@ export default function App() {
           console.info("[mpapp][preferences] hydration skipped due to local edits", {
             savedPreferences,
           });
+          setCanPersistPreferences(true);
           return;
         }
 
         setInputPreferences(savedPreferences);
         console.info("[mpapp][preferences] hydrated", savedPreferences);
+        setCanPersistPreferences(true);
       })
       .catch((error: unknown) => {
         if (!active) {
@@ -205,13 +207,7 @@ export default function App() {
         console.warn("[mpapp][preferences] hydration failed", {
           error,
         });
-      })
-      .finally(() => {
-        if (!active) {
-          return;
-        }
-
-        setHasHydratedPreferences(true);
+        setCanPersistPreferences(false);
       });
 
     return () => {
@@ -220,7 +216,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!hasHydratedPreferences) {
+    if (!canPersistPreferences) {
       return;
     }
 
@@ -230,7 +226,7 @@ export default function App() {
         inputPreferences,
       });
     });
-  }, [hasHydratedPreferences, inputPreferences]);
+  }, [canPersistPreferences, inputPreferences]);
 
   const appendLog = useCallback(
     async (params: {

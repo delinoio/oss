@@ -284,6 +284,7 @@ Reference feasibility links:
   - Optional axis inversion flags
 - Input preferences storage key: `mpapp.input-preferences.v1`.
 - If AsyncStorage is unavailable, input preferences fall back to an in-memory store and persist for process lifetime.
+- Preference writes must be gated on successful startup read so transient hydration failures cannot overwrite existing persisted settings.
 - Local diagnostics ring buffer with bounded retention (`300`) for troubleshooting.
 - Diagnostics storage key: `mpapp.diagnostics.v1`.
 - If AsyncStorage is unavailable, diagnostics fall back to an in-memory store that still preserves recent entries during process lifetime.
