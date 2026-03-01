@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,13 +11,26 @@ import (
 )
 
 func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") == "1" {
+		return
+	}
+
 	stateRoot := t.TempDir()
 	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
 		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
 	}
 	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
 
-	exitCode := ExecuteRun([]string{"--", "sh", "-c", "printf 'out'; printf 'err' 1>&2; exit 7"})
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable returned error: %v", err)
+	}
+	if err := os.Setenv("GO_WANT_HELPER_PROCESS", "1"); err != nil {
+		t.Fatalf("Setenv GO_WANT_HELPER_PROCESS: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("GO_WANT_HELPER_PROCESS") })
+
+	exitCode := ExecuteRun([]string{"--", testBinary, "-test.run=^TestExecuteRunPipeModeCapturesOutputAndExitCodeHelperProcess$", "--", "helper"})
 	if exitCode != 7 {
 		t.Fatalf("unexpected exit code: got=%d want=7", exitCode)
 	}
@@ -51,6 +65,18 @@ func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 	if _, err := os.Stat(finalPath); err != nil {
 		t.Fatalf("final metadata should exist: %v", err)
 	}
+}
+
+func TestExecuteRunPipeModeCapturesOutputAndExitCodeHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
+	}
+	if len(os.Args) < 2 || os.Args[len(os.Args)-1] != "helper" {
+		return
+	}
+	_, _ = fmt.Fprint(os.Stdout, "out")
+	_, _ = fmt.Fprint(os.Stderr, "err")
+	os.Exit(7)
 }
 
 func TestExecuteRunRejectsDuplicateSessionID(t *testing.T) {
