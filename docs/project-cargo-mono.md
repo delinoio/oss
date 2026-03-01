@@ -75,7 +75,8 @@ enum CargoMonoBumpLevel {
 CLI entrypoint:
 - `cargo mono [--output <human|json>] <subcommand> ...`
 - `cargo mono --help` and `cargo mono --version` must succeed without workspace discovery.
-- Workspace loading occurs after CLI parsing for executable subcommands (`list`, `changed`, `bump`, `publish`).
+- `bump` and `publish` run a clean-working-tree preflight immediately after CLI parsing and before workspace loading.
+- Workspace loading occurs after CLI parsing for executable subcommands; for `bump`/`publish`, it occurs only after clean-tree preflight passes.
 
 Target selection contract (`bump`, `publish`):
 - `--all` default when no target selector is provided.
@@ -101,6 +102,7 @@ Target selection contract (`bump`, `publish`):
 - Updates root `Cargo.toml` `[workspace.dependencies]` version pins for bumped internal crates when present.
 - Optional dependent patch propagation via `--bump-dependents`.
 - Requires clean working tree unless `--allow-dirty` is provided.
+- Enforces clean-tree policy in preflight before workspace metadata loading to avoid false positives from metadata side effects (for example untracked `Cargo.lock` generation).
 - Creates one commit: `chore(release): bump <n> crate(s)`.
 - Creates crate tags: `<crate>-v<version>`.
 - Does not push commits or tags.
@@ -109,6 +111,7 @@ Target selection contract (`bump`, `publish`):
 - Publish execution is the default behavior.
 - `--dry-run` switches to validation-only publish mode.
 - Requires clean working tree unless `--allow-dirty` is provided.
+- Enforces clean-tree policy in preflight before workspace metadata loading to avoid false positives from metadata side effects (for example untracked `Cargo.lock` generation).
 - Default registry is crates.io; `--registry <name>` overrides.
 - Skips non-publishable crates and already-published versions with explicit summary output.
 - Publishes in workspace dependency topological order.
@@ -140,6 +143,7 @@ Required structured log fields:
 
 Operational expectations:
 - Log command invocation shape before execution.
+- Log clean-tree preflight start and outcome for `bump` and `publish`.
 - Log package selection decisions and skip reasons.
 - Log bump mutation summary (updated manifests, commit id, tags).
 - Log publish attempt lifecycle including retries and terminal outcome.

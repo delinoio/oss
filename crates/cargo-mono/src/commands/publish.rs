@@ -11,7 +11,6 @@ use crate::{
     cli::PublishArgs,
     commands::{print_output, targeting},
     errors::{CargoMonoError, Result},
-    git,
     types::{OutputFormat, PublishSkipReason},
     CargoMonoApp,
 };
@@ -74,8 +73,6 @@ struct PublishResult {
 }
 
 pub fn execute(args: &PublishArgs, output: OutputFormat, app: &CargoMonoApp) -> Result<i32> {
-    git::ensure_clean_working_tree(args.allow_dirty)?;
-
     let resolved = targeting::resolve_targets(&args.target, &args.changed, &app.workspace)?;
 
     let mode = if args.dry_run {
