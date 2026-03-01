@@ -180,7 +180,14 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
     let mut settings = app.store.load_settings()?;
     let overrides = app.overrides.load()?;
 
-    let mut removed_versions = Vec::new();
+    info!(
+        command_path = "nodeup.toolchain.uninstall",
+        requested_count = runtimes.len(),
+        "Starting uninstall preflight"
+    );
+
+    let mut unique_versions = Vec::new();
+    let mut seen_versions = HashSet::new();
     for runtime in runtimes {
         let selector = RuntimeSelector::parse(runtime)?;
         let version = match selector {
@@ -192,10 +199,23 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
             }
         };
 
+        if seen_versions.insert(version.clone()) {
+            unique_versions.push(version);
+        }
+    }
+
+    info!(
+        command_path = "nodeup.toolchain.uninstall",
+        requested_count = runtimes.len(),
+        unique_count = unique_versions.len(),
+        "Completed uninstall preflight target parsing"
+    );
+
+    for version in &unique_versions {
         if settings
             .default_selector
             .as_ref()
-            .is_some_and(|default| selector_references_version(default, &version))
+            .is_some_and(|default| selector_references_version(default, version))
         {
             return Err(NodeupError::conflict(format!(
                 "Cannot uninstall {version}; it is used as default runtime"
@@ -205,18 +225,25 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
         if overrides
             .entries
             .iter()
-            .any(|entry| selector_references_version(&entry.selector, &version))
+            .any(|entry| selector_references_version(&entry.selector, version))
         {
             return Err(NodeupError::conflict(format!(
                 "Cannot uninstall {version}; it is referenced by an override"
             )));
         }
 
-        app.store.remove_runtime(&version)?;
-        removed_versions.push(version);
+        if !app.store.is_installed(version) {
+            return Err(NodeupError::not_found(format!(
+                "Runtime {version} is not installed"
+            )));
+        }
     }
 
-    let removed_versions = removed_versions.into_iter().collect::<HashSet<_>>();
+    for version in &unique_versions {
+        app.store.remove_runtime(version)?;
+    }
+
+    let removed_versions = unique_versions.into_iter().collect::<HashSet<_>>();
     settings.tracked_selectors.retain(|selector| {
         if let Some(canonical_selector_version) = canonical_version_selector(selector) {
             !removed_versions.contains(&canonical_selector_version)
@@ -228,6 +255,12 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
 
     let mut removed_versions = removed_versions.into_iter().collect::<Vec<_>>();
     removed_versions.sort();
+    info!(
+        command_path = "nodeup.toolchain.uninstall",
+        removed_count = removed_versions.len(),
+        removed_versions = ?removed_versions,
+        "Completed runtime uninstall"
+    );
     let human = format!("Removed {} runtime(s)", removed_versions.len());
     print_output(output, &human, &removed_versions)?;
 
