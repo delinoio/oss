@@ -42,12 +42,13 @@ Primary components:
 
 Implemented package layout:
 - `cmds/derun/internal/cli`: command parsing and command dispatch (`run`, `mcp`).
-- `cmds/derun/internal/transport`: process execution for pipe mode and POSIX PTY mode.
+- `cmds/derun/internal/transport`: process execution for pipe mode, POSIX PTY mode, and Windows ConPTY mode.
 - `cmds/derun/internal/state`: session artifact storage, append locking, and cursor reads.
 - `cmds/derun/internal/mcp`: MCP stdio server, framing, tool routing, and tool handlers.
 - `cmds/derun/internal/capture`: side-channel output writer.
 - `cmds/derun/internal/retention`: retention GC sweep.
 - `cmds/derun/internal/logging`: JSONL structured log sink.
+- `cmds/derun/internal/e2e`: contract-level behavioral integration tests and helper fixtures.
 
 Runtime flow:
 1. `derun run` allocates PTY/ConPTY when interactive TTY is present; otherwise uses pipe transport.
@@ -207,6 +208,7 @@ Validation commands:
 - Build: `go build ./cmds/derun/...`
 - Test: `go test ./cmds/derun/...`
 - Workspace validation: `go test ./...`
+- CI gating: `.github/workflows/CI.yml` runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 
 Implemented defaults:
 - `derun_read_output` default `max_bytes`: `65536`.
@@ -224,6 +226,30 @@ Required behavioral test scenarios:
 8. Windows ConPTY parity tests and POSIX PTY parity tests.
 9. Session artifact traversal and symlink-escape attempts are rejected for both read and write operations.
 10. Missing-session MCP reads/waits fail consistently with deterministic `session not found` errors.
+
+Behavioral coverage map:
+1. ANSI/curses PTY parity:
+`cmds/derun/internal/e2e/contract_posix_test.go` (`TestANSIParityThroughRunWithPTY`)
+2. Signal/exit propagation:
+`cmds/derun/internal/e2e/contract_posix_test.go` (`TestSignalPropagationForCtrlC`) and
+`cmds/derun/internal/cli/run_test.go` (`TestExecuteRunPipeModeCapturesOutputAndExitCode`)
+3. Live tail via MCP while active:
+`cmds/derun/internal/mcp/server_contract_test.go` (`TestServerContractLiveTailThroughWaitOutput`)
+4. Historical replay from cursor `0`:
+`cmds/derun/internal/mcp/server_contract_test.go` (`TestServerContractHistoricalReplayFromCursorZero`)
+5. Concurrent session isolation:
+`cmds/derun/internal/e2e/contract_test.go` (`TestConcurrentSessionsAreIsolated`)
+6. Large-output chunking cursor stability:
+`cmds/derun/internal/e2e/contract_test.go` (`TestLargeOutputChunkingHasStableCursorProgression`)
+7. TTL expiration and active-session preservation:
+`cmds/derun/internal/retention/gc_test.go` (`TestSweepRemovesOnlyExpiredCompletedSessions`)
+8. Windows ConPTY + POSIX PTY parity:
+`cmds/derun/internal/e2e/contract_windows_test.go` (`TestWindowsConPTYRunnerParity`, `TestInteractiveRunUsesWindowsConPTYTransport`) and
+`cmds/derun/internal/e2e/contract_posix_test.go` (`TestANSIParityThroughRunWithPTY`)
+9. Traversal and symlink-escape rejection:
+`cmds/derun/internal/state/store_test.go` (`TestStoreRejectsTraversalSessionIDAcrossEntrypoints`, `TestStoreRejectsSessionDirectorySymlinkEscape`, `TestStoreRejectsSessionArtifactSymlinkEscape`)
+10. Deterministic missing-session read/wait errors:
+`cmds/derun/internal/mcp/tools_test.go` (`TestHandleReadOutputMissingSessionReturnsError`, `TestHandleWaitOutputMissingSessionReturnsError`)
 
 ## Roadmap
 - Phase 1: Terminal-fidelity `run` execution and transcript persistence.
