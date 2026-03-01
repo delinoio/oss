@@ -1,5 +1,6 @@
 import {
   MpappActionType,
+  MpappBluetoothAvailabilityState,
   MpappClickButton,
   MpappErrorCode,
   MpappInputAction,
@@ -33,6 +34,22 @@ export type Result =
     }
   | {
       ok: false;
+      errorCode: MpappErrorCode;
+      message: string;
+      nativeErrorCode?: string;
+    };
+
+export type BluetoothAvailabilityResult =
+  | {
+      ok: true;
+      availabilityState: MpappBluetoothAvailabilityState.Available;
+    }
+  | {
+      ok: false;
+      availabilityState:
+        | MpappBluetoothAvailabilityState.AdapterUnavailable
+        | MpappBluetoothAvailabilityState.Disabled
+        | MpappBluetoothAvailabilityState.Unknown;
       errorCode: MpappErrorCode;
       message: string;
       nativeErrorCode?: string;
