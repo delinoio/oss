@@ -116,6 +116,7 @@ CLI entrypoints:
 
 Global option contract:
 - `--output <human|json>` is available for all management commands and defaults to `human`.
+- In `--output human`, default logging uses `tracing` pretty formatting (`level=on`, `target=off`, `time=off`, `ansi=off`).
 - In `--output json`, successful command payloads are written to stdout.
 - In `--output json`, handled command and startup failures emit a deterministic stderr JSON envelope with `kind`, `message`, and `exit_code`.
 - In `--output json`, default logging is disabled (`nodeup=off`) so JSON machine output stays parseable unless the operator explicitly sets `RUST_LOG`.
@@ -255,6 +256,9 @@ Symlink contract:
 - Log provenance metadata for each installed version.
 
 ## Logging
+Default human-mode logging uses `tracing` pretty formatting with `level=on`, `target=off`, `time=off`, and `ansi=off`.
+In `--output json`, default logging remains disabled (`nodeup=off`) unless `RUST_LOG` is explicitly set.
+
 Required baseline logs:
 - Command path (`nodeup.<group>.<subcommand>` or `nodeup.<command>`) and `arg_shape` JSON payload (single structured field, sanitized)
 - Runtime selector source (`explicit`, `override`, `default`) and resolved runtime
