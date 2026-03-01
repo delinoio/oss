@@ -281,6 +281,14 @@ fn canonical_version_selector(selector: &str) -> Option<String> {
 
 fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     if !is_valid_linked_name(name) {
+        info!(
+            command_path = "nodeup.toolchain.link",
+            linked_name = %name,
+            requested_path = %path,
+            validation = false,
+            reason = "invalid-linked-name",
+            "Rejected linked runtime"
+        );
         return Err(NodeupError::invalid_input(format!(
             "Invalid linked runtime name: {name}"
         )));
@@ -288,19 +296,69 @@ fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result
 
     let runtime_path = PathBuf::from(path);
     if !runtime_path.exists() {
+        info!(
+            command_path = "nodeup.toolchain.link",
+            linked_name = %name,
+            requested_path = %runtime_path.display(),
+            validation = false,
+            reason = "linked-path-missing",
+            "Rejected linked runtime"
+        );
         return Err(NodeupError::not_found(format!(
             "Linked runtime path does not exist: {}",
             runtime_path.display()
         )));
     }
 
+    if !runtime_path.is_dir() {
+        info!(
+            command_path = "nodeup.toolchain.link",
+            linked_name = %name,
+            requested_path = %runtime_path.display(),
+            validation = false,
+            reason = "linked-path-not-directory",
+            "Rejected linked runtime"
+        );
+        return Err(NodeupError::invalid_input(format!(
+            "Linked runtime path is not a directory: {}",
+            runtime_path.display()
+        )));
+    }
+
     let absolute = fs::canonicalize(&runtime_path)?;
+    let node_executable = absolute.join("bin").join("node");
+    if !node_executable.exists() {
+        info!(
+            command_path = "nodeup.toolchain.link",
+            linked_name = %name,
+            requested_path = %runtime_path.display(),
+            resolved_path = %absolute.display(),
+            expected_node_path = %node_executable.display(),
+            validation = false,
+            reason = "node-executable-missing",
+            "Rejected linked runtime"
+        );
+        return Err(NodeupError::invalid_input(format!(
+            "Linked runtime path must contain bin/node: {}",
+            absolute.display()
+        )));
+    }
+
     let mut settings = app.store.load_settings()?;
     settings
         .linked_runtimes
         .insert(name.to_string(), absolute.to_string_lossy().to_string());
     app.store.save_settings(&settings)?;
     app.store.track_selector(name)?;
+
+    info!(
+        command_path = "nodeup.toolchain.link",
+        linked_name = %name,
+        linked_path = %absolute.display(),
+        validation = true,
+        status = "linked",
+        "Linked runtime"
+    );
 
     let message = format!("Linked runtime '{name}' -> {}", absolute.display());
     let response = serde_json::json!({
