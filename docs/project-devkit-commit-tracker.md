@@ -41,6 +41,7 @@
   - metric series table view
   - pull-request comparison table view
   - report publish action
+- Devkit dashboard UI for Commit Tracker is aligned to shared shell primitives (`dk-*`) with commit-tracker-scoped visual classes (`dk-ct-*`) for verdict emphasis.
 - Devkit shell remains the owner of auth/session/navigation concerns.
 
 ## Interfaces
@@ -55,6 +56,14 @@ enum DevkitMiniAppId {
 Route contract:
 - `/apps/commit-tracker`
 - Current route state: live dashboard route rendered by Devkit shell.
+
+UI presentation contract:
+- Dashboard layout uses shared Devkit classes for cards, fieldsets, form grids, table wrappers, and status messaging.
+- Verdict states are rendered with badge-first emphasis using `dk-ct-badge-pass|warn|fail|neutral`.
+- Pull-request comparison table rows use lightweight contextual tinting (`dk-ct-row-*`) to support quick scanning without overpowering badge readability.
+- Responsive behavior:
+  - filter/comparison forms collapse to single-column on narrow screens
+  - data tables remain horizontally scrollable via wrapper containers
 
 Canonical component identifiers:
 
