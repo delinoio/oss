@@ -42,6 +42,7 @@ pub struct ReleaseEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ReleaseIndexCachePayload {
     schema_version: u32,
+    index_url: String,
     fetched_at_epoch_seconds: u64,
     entries: Vec<ReleaseEntry>,
 }
@@ -287,6 +288,19 @@ impl ReleaseIndexClient {
             return None;
         }
 
+        if payload.index_url != self.index_url {
+            warn!(
+                command_path = "nodeup.release-index.cache",
+                cache_path = %self.cache_file.display(),
+                outcome = "miss",
+                reason = "index-url-mismatch",
+                cached_index_url = %payload.index_url,
+                requested_index_url = %self.index_url,
+                "Release index cache source URL mismatch; treating as cache miss"
+            );
+            return None;
+        }
+
         if payload.fetched_at_epoch_seconds > now_epoch_seconds {
             warn!(
                 command_path = "nodeup.release-index.cache",
@@ -317,6 +331,7 @@ impl ReleaseIndexClient {
 
         let payload = ReleaseIndexCachePayload {
             schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
+            index_url: self.index_url.clone(),
             fetched_at_epoch_seconds,
             entries: entries.to_vec(),
         };
@@ -426,18 +441,19 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_file = dir.path().join("release-index.json");
         let now = unix_epoch_seconds();
+        let server = MockServer::start();
         let cached_entries = vec![ReleaseEntry {
             version: "v24.14.0".to_string(),
             lts: serde_json::Value::String("Krypton".to_string()),
         }];
         let payload = ReleaseIndexCachePayload {
             schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
+            index_url: server.url("/index.json"),
             fetched_at_epoch_seconds: now,
             entries: cached_entries.clone(),
         };
         fs::write(&cache_file, serde_json::to_vec(&payload).unwrap()).unwrap();
 
-        let server = MockServer::start();
         let index_mock = server.mock(|when, then| {
             when.method(GET).path("/index.json");
             then.status(200)
@@ -464,8 +480,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_file = dir.path().join("release-index.json");
         let now = unix_epoch_seconds();
+        let server = MockServer::start();
         let stale_payload = ReleaseIndexCachePayload {
             schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
+            index_url: server.url("/index.json"),
             fetched_at_epoch_seconds: now.saturating_sub(3600),
             entries: vec![ReleaseEntry {
                 version: "v20.0.0".to_string(),
@@ -474,7 +492,6 @@ mod tests {
         };
         fs::write(&cache_file, serde_json::to_vec(&stale_payload).unwrap()).unwrap();
 
-        let server = MockServer::start();
         let index_mock = server.mock(|when, then| {
             when.method(GET).path("/index.json");
             then.status(200)
@@ -499,6 +516,7 @@ mod tests {
         let rewritten = fs::read_to_string(&cache_file).unwrap();
         let payload: ReleaseIndexCachePayload = serde_json::from_str(&rewritten).unwrap();
         assert_eq!(payload.schema_version, RELEASE_INDEX_CACHE_SCHEMA_VERSION);
+        assert_eq!(payload.index_url, server.url("/index.json"));
         assert_eq!(payload.entries[0].version, "v24.14.0");
         assert!(payload.fetched_at_epoch_seconds >= stale_payload.fetched_at_epoch_seconds);
     }
@@ -508,8 +526,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_file = dir.path().join("release-index.json");
         let now = unix_epoch_seconds();
+        let server = MockServer::start();
         let stale_payload = ReleaseIndexCachePayload {
             schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
+            index_url: server.url("/index.json"),
             fetched_at_epoch_seconds: now.saturating_sub(3600),
             entries: vec![ReleaseEntry {
                 version: "v22.11.0".to_string(),
@@ -518,7 +538,6 @@ mod tests {
         };
         fs::write(&cache_file, serde_json::to_vec(&stale_payload).unwrap()).unwrap();
 
-        let server = MockServer::start();
         let index_mock = server.mock(|when, then| {
             when.method(GET).path("/index.json");
             then.status(500);
@@ -535,6 +554,43 @@ mod tests {
         let fetched = client.fetch_index().unwrap();
         assert_eq!(fetched[0].version, "v22.11.0");
         index_mock.assert_calls(MAX_RETRIES);
+    }
+
+    #[test]
+    fn cache_source_url_mismatch_becomes_miss_and_refreshes() {
+        let dir = tempdir().unwrap();
+        let cache_file = dir.path().join("release-index.json");
+        let now = unix_epoch_seconds();
+        let stale_payload = ReleaseIndexCachePayload {
+            schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
+            index_url: "https://old-mirror.example/index.json".to_string(),
+            fetched_at_epoch_seconds: now,
+            entries: vec![ReleaseEntry {
+                version: "v20.0.0".to_string(),
+                lts: serde_json::Value::Bool(false),
+            }],
+        };
+        fs::write(&cache_file, serde_json::to_vec(&stale_payload).unwrap()).unwrap();
+
+        let server = MockServer::start();
+        let index_mock = server.mock(|when, then| {
+            when.method(GET).path("/index.json");
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"[{"version":"v24.14.0","lts":"Krypton"}]"#);
+        });
+
+        let client = ReleaseIndexClient::with_urls(
+            cache_file,
+            Duration::from_secs(600),
+            server.url("/index.json"),
+            server.url("/release"),
+        )
+        .unwrap();
+
+        let fetched = client.fetch_index().unwrap();
+        assert_eq!(fetched[0].version, "v24.14.0");
+        index_mock.assert_calls(1);
     }
 
     #[test]

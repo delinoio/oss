@@ -137,6 +137,7 @@ enum NodeupRuntimeSelectorKind {
 - Linked runtime names must not use reserved channel tokens: `lts`, `current`, `latest`.
 - Channel selector resolution (`lts|current|latest`) uses release-index disk caching:
 : Cached entries newer than TTL (`NODEUP_RELEASE_INDEX_TTL_SECONDS`, default `600`) are used without network access.
+: Cache entries are bound to the configured release index source (`NODEUP_INDEX_URL`); URL mismatch is treated as cache miss.
 : When cache is missing/expired, nodeup refreshes from `index.json`.
 : If refresh fails and a previous cache exists, nodeup falls back to stale cache entries.
 
