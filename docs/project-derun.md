@@ -261,7 +261,8 @@ Behavioral coverage map:
 Recommended local integration flow for Codex users:
 
 1. Register `derun` as a stdio MCP server:
-   - `codex mcp add derun --env DERUN_STATE_ROOT=/absolute/workspace/.derun-state -- go run /absolute/workspace/cmds/derun mcp`
+   - Base: `codex mcp add derun --env DERUN_STATE_ROOT=/absolute/workspace/.derun-state -- go run /absolute/workspace/cmds/derun mcp`
+   - Sandbox-friendly `go run` startup: `codex mcp add derun --env DERUN_STATE_ROOT=/absolute/workspace/.derun-state --env GOMODCACHE=/absolute/workspace/.gomodcache --env GOCACHE=/absolute/workspace/.gocache --env GOPATH=/absolute/workspace/.gopath -- go run /absolute/workspace/cmds/derun mcp`
 2. Verify registration:
    - `codex mcp get derun`
    - `codex mcp list`
@@ -271,6 +272,7 @@ Recommended local integration flow for Codex users:
 
 Operational guidance:
 - Prefer workspace-local `DERUN_STATE_ROOT` for predictable permissions and reproducible session discovery in sandboxed environments.
+- For sandboxed Codex execution with `go run`, use workspace-local `GOMODCACHE`, `GOCACHE`, and `GOPATH`, and set a larger MCP `startup_timeout_sec` (for example `120`) under `[mcp_servers.derun]`.
 - Re-register the MCP server if the workspace absolute path changes.
 - Remove integration with `codex mcp remove derun` when no longer needed.
 

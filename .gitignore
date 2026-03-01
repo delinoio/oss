@@ -203,3 +203,9 @@ vite.config.ts.timestamp-*
 
 # air tmp files
 tmp/
+
+# derun local integration state/cache
+.derun-state/
+.gocache/
+.gomodcache/
+.gopath/
