@@ -24,6 +24,13 @@ export enum ThenvAuditEventType {
   PolicyUpdate = "AUDIT_EVENT_TYPE_POLICY_UPDATE",
 }
 
+export enum ThenvOutcome {
+  Unspecified = "OUTCOME_UNSPECIFIED",
+  Success = "OUTCOME_SUCCESS",
+  Denied = "OUTCOME_DENIED",
+  Failed = "OUTCOME_FAILED",
+}
+
 export interface ThenvScope {
   workspaceId: string;
   projectId: string;
@@ -50,9 +57,20 @@ export interface ThenvAuditEvent {
   actor: string;
   bundleVersionId?: string;
   targetBundleVersionId?: string;
+  outcome: ThenvOutcome;
   requestId: string;
   traceId: string;
   createdAt?: string;
+}
+
+export interface ThenvAuditQuery {
+  scope: ThenvScope;
+  actor?: string;
+  eventType?: ThenvAuditEventType;
+  fromTime?: string;
+  toTime?: string;
+  limit?: number;
+  cursor?: string;
 }
 
 export interface ThenvListVersionsResponse {

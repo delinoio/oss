@@ -83,7 +83,7 @@ export function ThenvConsole() {
       const [versionsResponse, policyResponse, auditResponse] = await Promise.all([
         listVersions(scope),
         getPolicy(scope),
-        listAuditEvents(scope),
+        listAuditEvents({ scope }),
       ]);
 
       setVersions(versionsResponse.versions);

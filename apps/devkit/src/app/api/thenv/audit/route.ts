@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { callThenvRpc, parseScopeFromSearchParams } from "@/app/api/thenv/_lib/connect";
+import { ThenvAuditEventType } from "@/apps/thenv/contracts";
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,7 +9,11 @@ export async function GET(request: NextRequest) {
     const limitRaw = request.nextUrl.searchParams.get("limit");
     const cursor = request.nextUrl.searchParams.get("cursor") ?? "";
     const actor = request.nextUrl.searchParams.get("actor") ?? "";
-    const eventType = request.nextUrl.searchParams.get("eventType") ?? "AUDIT_EVENT_TYPE_UNSPECIFIED";
+    const eventType =
+      request.nextUrl.searchParams.get("eventType") ??
+      ThenvAuditEventType.Unspecified;
+    const fromTime = request.nextUrl.searchParams.get("fromTime") ?? "";
+    const toTime = request.nextUrl.searchParams.get("toTime") ?? "";
     const limit = limitRaw ? Number.parseInt(limitRaw, 10) : 20;
 
     const response = await callThenvRpc<object, unknown>(
@@ -19,6 +24,8 @@ export async function GET(request: NextRequest) {
         cursor,
         actor,
         eventType,
+        fromTime: fromTime || undefined,
+        toTime: toTime || undefined,
       },
     );
 
