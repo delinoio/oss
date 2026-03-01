@@ -274,6 +274,55 @@ fn install_list_uninstall_flow() {
 
 #[test]
 #[serial]
+fn toolchain_list_standard_prints_summary_counts_only() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    let linked_runtime = env.root.join("linked-runtime-standard");
+    fs::create_dir_all(&linked_runtime).unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-standard",
+            linked_runtime.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args(["toolchain", "list"])
+        .output()
+        .expect("toolchain list");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(stdout.contains("Installed runtimes: 1 | Linked runtimes: 1"));
+    assert!(!stdout.contains("Installed runtimes (1):"));
+    assert!(!stdout.contains("Linked runtimes (1):"));
+    assert!(!stdout.contains("- v22.1.0 ->"));
+    assert!(!stdout.contains("- linked-standard ->"));
+}
+
+#[test]
+#[serial]
 fn toolchain_list_quiet_prints_runtime_identifiers_only() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);
