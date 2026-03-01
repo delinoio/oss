@@ -709,6 +709,44 @@ a {
   color: var(--tds-gray-700) !important;
 }
 
+.dk-thenv-outcome-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.dk-thenv-outcome-success {
+  color: var(--tds-green-700);
+  background: var(--tds-green-50);
+  border-color: #beeccf;
+}
+
+.dk-thenv-outcome-denied {
+  color: #9f5f00;
+  background: #fff8eb;
+  border-color: #ffe4b8;
+}
+
+.dk-thenv-outcome-failed {
+  color: var(--tds-red-700);
+  background: var(--tds-red-50);
+  border-color: #f7c5cc;
+}
+
+.dk-thenv-outcome-unspecified {
+  color: var(--tds-gray-700);
+  background: var(--tds-gray-100);
+  border-color: var(--tds-gray-200);
+}
+
 @media (max-width: 900px) {
   .dk-ct-form-grid {
     grid-template-columns: 1fr;
