@@ -1,10 +1,9 @@
 use cargo_mono::{
-    cli::{Cli, Command as CargoMonoCommand},
+    cli::{self, Cli, Command as CargoMonoCommand},
     commands,
     errors::CargoMonoError,
     git, logging, CargoMonoApp,
 };
-use clap::Parser;
 use tracing::info;
 
 fn main() {
@@ -20,7 +19,7 @@ fn main() {
 }
 
 fn run() -> Result<i32, CargoMonoError> {
-    let cli = Cli::parse();
+    let cli = cli::parse_from_env();
     commands::log_invocation(&cli.command, cli.output);
     run_preflight_checks(&cli)?;
     let app = CargoMonoApp::new()?;

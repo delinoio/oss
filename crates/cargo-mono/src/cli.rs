@@ -1,3 +1,8 @@
+use std::{
+    ffi::{OsStr, OsString},
+    path::Path,
+};
+
 use clap::{ArgAction, Args, Parser, Subcommand};
 
 use crate::types::{BumpLevel, OutputFormat};
@@ -16,6 +21,45 @@ pub struct Cli {
 
     #[command(subcommand)]
     pub command: Command,
+}
+
+pub fn parse_from_env() -> Cli {
+    Cli::parse_from(normalized_args_os(std::env::args_os()))
+}
+
+fn normalized_args_os<I>(args: I) -> Vec<OsString>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut normalized: Vec<OsString> = args.into_iter().collect();
+    if should_strip_forwarded_mono_token(&normalized) {
+        tracing::debug!(
+            action = "normalize-cargo-external-subcommand-args",
+            outcome = "strip-forwarded-mono-token",
+            "Stripped Cargo-forwarded `mono` token from argv"
+        );
+        normalized.remove(1);
+    }
+
+    normalized
+}
+
+fn should_strip_forwarded_mono_token(args: &[OsString]) -> bool {
+    let Some(argv0) = args.first() else {
+        return false;
+    };
+    let Some(first_arg) = args.get(1) else {
+        return false;
+    };
+    if first_arg != OsStr::new("mono") {
+        return false;
+    }
+
+    let Some(executable_name) = Path::new(argv0).file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+
+    matches!(executable_name, "cargo-mono" | "cargo-mono.exe")
 }
 
 #[derive(Debug, Subcommand)]
@@ -96,9 +140,11 @@ pub struct PublishArgs {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+
     use clap::Parser;
 
-    use super::Cli;
+    use super::{normalized_args_os, Cli};
 
     #[test]
     fn bump_requires_level() {
@@ -124,5 +170,57 @@ mod tests {
     fn bump_requires_preid_for_prerelease_level() {
         let parsed = Cli::try_parse_from(["cargo", "bump", "--level", "prerelease"]);
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn strips_forwarded_mono_token_when_first_runtime_arg() {
+        let normalized = normalized_args_os(vec![
+            OsString::from("/tmp/cargo-mono"),
+            OsString::from("mono"),
+            OsString::from("list"),
+        ]);
+
+        assert_eq!(
+            normalized,
+            vec![OsString::from("/tmp/cargo-mono"), OsString::from("list")]
+        );
+    }
+
+    #[test]
+    fn keeps_args_unchanged_for_direct_invocation_shape() {
+        let normalized = normalized_args_os(vec![
+            OsString::from("/tmp/cargo-mono"),
+            OsString::from("--output"),
+            OsString::from("json"),
+            OsString::from("list"),
+        ]);
+
+        assert_eq!(
+            normalized,
+            vec![
+                OsString::from("/tmp/cargo-mono"),
+                OsString::from("--output"),
+                OsString::from("json"),
+                OsString::from("list"),
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_args_unchanged_when_argv0_is_not_cargo_mono() {
+        let normalized = normalized_args_os(vec![
+            OsString::from("/tmp/custom-runner"),
+            OsString::from("mono"),
+            OsString::from("list"),
+        ]);
+
+        assert_eq!(
+            normalized,
+            vec![
+                OsString::from("/tmp/custom-runner"),
+                OsString::from("mono"),
+                OsString::from("list"),
+            ]
+        );
     }
 }
