@@ -69,8 +69,14 @@ pub fn apply_workspace_bump(
 ) -> Result<ManifestUpdateResult> {
     let mut updated_manifests = BTreeSet::new();
     let mut dependency_updates = 0usize;
+    let root_manifest_path = workspace.root.join("Cargo.toml");
+    let mut root_manifest_processed = false;
 
     for package in workspace.packages() {
+        if package.manifest_path == root_manifest_path {
+            root_manifest_processed = true;
+        }
+
         let content = fs::read_to_string(&package.manifest_path)?;
         let mut document = content.parse::<DocumentMut>()?;
 
@@ -88,6 +94,18 @@ pub fn apply_workspace_bump(
         if changed {
             fs::write(&package.manifest_path, document.to_string())?;
             updated_manifests.insert(package.manifest_relative_path.clone());
+        }
+    }
+
+    if !root_manifest_processed {
+        let content = fs::read_to_string(&root_manifest_path)?;
+        let mut document = content.parse::<DocumentMut>()?;
+        let updates_in_manifest = update_dependency_versions(&mut document, bumped_versions);
+
+        if updates_in_manifest > 0 {
+            fs::write(&root_manifest_path, document.to_string())?;
+            dependency_updates += updates_in_manifest;
+            updated_manifests.insert(PathBuf::from("Cargo.toml"));
         }
     }
 
@@ -422,7 +440,73 @@ alpha = { workspace = true }
         assert!(beta_content.contains("alpha = { workspace = true }"));
     }
 
+    #[test]
+    fn apply_workspace_bump_updates_root_workspace_dependencies_for_virtual_workspace() {
+        let temp_dir = tempdir().unwrap();
+        let root = temp_dir.path();
+
+        let alpha_dir = root.join("crates/alpha");
+        fs::create_dir_all(&alpha_dir).unwrap();
+
+        let root_manifest = root.join("Cargo.toml");
+        let alpha_manifest = alpha_dir.join("Cargo.toml");
+
+        fs::write(
+            &root_manifest,
+            r#"[workspace]
+members = ["crates/alpha"]
+resolver = "2"
+
+[workspace.dependencies]
+alpha = { path = "crates/alpha", version = "0.1.0" }
+"#,
+        )
+        .unwrap();
+
+        fs::write(
+            &alpha_manifest,
+            r#"[package]
+name = "alpha"
+version = "0.1.0"
+"#,
+        )
+        .unwrap();
+
+        let workspace = workspace_fixture(root, vec![("alpha", "0.1.0")]);
+        let bumped_versions =
+            BTreeMap::from([("alpha".to_string(), Version::parse("0.2.0").unwrap())]);
+
+        let result = apply_workspace_bump(&workspace, &bumped_versions).unwrap();
+
+        assert_eq!(
+            result.updated_manifests,
+            BTreeSet::from([
+                PathBuf::from("Cargo.toml"),
+                PathBuf::from("crates/alpha/Cargo.toml")
+            ])
+        );
+        assert_eq!(result.dependency_updates, 1);
+
+        let root_content = fs::read_to_string(root_manifest).unwrap();
+        assert!(root_content.contains("alpha = { path = \"crates/alpha\", version = \"0.2.0\" }"));
+
+        let alpha_content = fs::read_to_string(alpha_manifest).unwrap();
+        assert!(alpha_content.contains("version = \"0.2.0\""));
+    }
+
     fn workspace_fixture(root: &Path, versions: Vec<(&str, &str)>) -> Workspace {
+        let root_manifest = root.join("Cargo.toml");
+        if !root_manifest.exists() {
+            let workspace_members = versions
+                .iter()
+                .map(|(name, _)| format!("\"crates/{name}\""))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let root_manifest_content =
+                format!("[workspace]\nresolver = \"2\"\nmembers = [{workspace_members}]\n");
+            fs::write(root_manifest, root_manifest_content).unwrap();
+        }
+
         let packages = versions
             .into_iter()
             .map(|(name, version)| {
