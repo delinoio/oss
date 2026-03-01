@@ -166,6 +166,26 @@ fn publish_fails_on_preexisting_dirty_tree_without_allow_dirty() {
     );
 }
 
+#[test]
+fn bump_dirty_tree_failure_still_logs_command_invocation() {
+    let temp_dir = init_library_workspace();
+    fs::write(temp_dir.path().join("scratch.txt"), "dirty\n").expect("failed to write scratch");
+
+    let mut command = Command::new(assert_cmd::cargo::cargo_bin!("cargo-mono"));
+    command.env("RUST_LOG", "cargo_mono=info");
+
+    command
+        .current_dir(temp_dir.path())
+        .args(["bump", "--level", "patch", "--package", "alpha"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("action=\"invoke-command\""))
+        .stdout(predicate::str::contains("command_path=\"bump\""))
+        .stderr(predicate::str::contains(
+            "Working tree is dirty; re-run with --allow-dirty to bypass this check",
+        ));
+}
+
 fn cargo_mono_command() -> Command {
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("cargo-mono"));
     command.env("RUST_LOG", "off");

@@ -16,14 +16,16 @@ use crate::{
 };
 
 pub fn execute(cli: Cli, app: &CargoMonoApp) -> Result<i32> {
-    log_command_invocation(&cli.command, cli.output);
-
     match cli.command {
         Command::List => list::execute(cli.output, app),
         Command::Changed(args) => changed::execute(&args, cli.output, app),
         Command::Bump(args) => bump::execute(&args, cli.output, app),
         Command::Publish(args) => publish::execute(&args, cli.output, app),
     }
+}
+
+pub fn log_invocation(command: &Command, output: OutputFormat) {
+    log_command_invocation(command, output);
 }
 
 pub fn print_output<T: Serialize>(
