@@ -127,6 +127,7 @@ MCP I/O contracts:
 - `derun_wait_output(session_id, cursor, timeout_ms)`
 : Long-polls for live output and returns chunk delta with new cursor.
 - `derun_wait_output` must wait until new output bytes arrive or timeout when the session is still active and the cursor is at the current output tail.
+- `derun_read_output` and `derun_wait_output` must both return a deterministic `session not found` tool error for unknown `session_id` values.
 
 Schema-version contract:
 - Every MCP tool response includes `schema_version`.
@@ -216,6 +217,7 @@ Required behavioral test scenarios:
 7. TTL expiration removes only expired sessions and preserves active sessions.
 8. Windows ConPTY parity tests and POSIX PTY parity tests.
 9. Session artifact traversal and symlink-escape attempts are rejected for both read and write operations.
+10. Missing-session MCP reads/waits fail consistently with deterministic `session not found` errors.
 
 ## Roadmap
 - Phase 1: Terminal-fidelity `run` execution and transcript persistence.

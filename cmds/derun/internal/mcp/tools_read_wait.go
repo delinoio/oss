@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -37,7 +38,7 @@ func handleReadOutput(store *state.Store, args map[string]any) (map[string]any, 
 
 	chunks, nextCursor, eof, err := store.ReadOutput(sessionID, cursor, maxBytes)
 	if err != nil {
-		return nil, fmt.Errorf("read output: %w", err)
+		return nil, wrapReadWaitError("read output", err)
 	}
 
 	return map[string]any{
@@ -93,7 +94,7 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 	for {
 		chunks, nextCursor, eof, err := store.ReadOutput(sessionID, cursor, maxBytes)
 		if err != nil {
-			return nil, fmt.Errorf("wait read output: %w", err)
+			return nil, wrapReadWaitError("wait read output", err)
 		}
 		if len(chunks) > 0 {
 			return map[string]any{
@@ -109,7 +110,7 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 		if eof {
 			detail, err := store.GetSession(sessionID)
 			if err != nil {
-				return nil, fmt.Errorf("get session detail: %w", err)
+				return nil, wrapReadWaitError("get session detail", err)
 			}
 			if !isSessionActive(detail.State) {
 				return map[string]any{
@@ -131,7 +132,7 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 
 	chunks, nextCursor, eof, err := store.ReadOutput(sessionID, cursor, maxBytes)
 	if err != nil {
-		return nil, fmt.Errorf("read output after timeout: %w", err)
+		return nil, wrapReadWaitError("read output after timeout", err)
 	}
 	return map[string]any{
 		"schema_version": SchemaVersion,
@@ -146,4 +147,11 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 
 func isSessionActive(sessionState contracts.DerunSessionState) bool {
 	return sessionState == contracts.DerunSessionStateStarting || sessionState == contracts.DerunSessionStateRunning
+}
+
+func wrapReadWaitError(prefix string, err error) error {
+	if errors.Is(err, state.ErrSessionNotFound) {
+		return state.ErrSessionNotFound
+	}
+	return fmt.Errorf("%s: %w", prefix, err)
 }

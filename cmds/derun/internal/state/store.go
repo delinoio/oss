@@ -27,6 +27,8 @@ const (
 	lockFileName   = "append.lock"
 )
 
+var ErrSessionNotFound = errors.New("session not found")
+
 type Store struct {
 	root string
 }
@@ -274,6 +276,15 @@ func (s *Store) ReadOutput(sessionID string, cursor uint64, maxBytes int) ([]ses
 	if maxBytes <= 0 {
 		maxBytes = 64 * 1024
 	}
+
+	hasMetadata, err := s.HasSessionMetadata(sessionID)
+	if err != nil {
+		return nil, cursor, false, fmt.Errorf("check session metadata: %w", err)
+	}
+	if !hasMetadata {
+		return nil, cursor, false, ErrSessionNotFound
+	}
+
 	entries, err := s.readIndexEntries(sessionID)
 	if err != nil {
 		if os.IsNotExist(err) {

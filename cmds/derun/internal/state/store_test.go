@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/base64"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -179,6 +180,28 @@ func TestStoreHasSessionMetadata(t *testing.T) {
 	}
 	if !hasMetadata {
 		t.Fatalf("expected hasMetadata=true when final.json exists")
+	}
+}
+
+func TestStoreReadOutputMissingSessionReturnsNotFound(t *testing.T) {
+	root := testutil.TempStateRoot(t)
+	store, err := New(root)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	chunks, nextCursor, eof, err := store.ReadOutput("01J0S000000000000000000000", 0, 1024)
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("expected ErrSessionNotFound, got: %v", err)
+	}
+	if chunks != nil {
+		t.Fatalf("expected no chunks, got=%d", len(chunks))
+	}
+	if nextCursor != 0 {
+		t.Fatalf("unexpected next cursor: got=%d want=0", nextCursor)
+	}
+	if eof {
+		t.Fatalf("expected eof=false on missing session")
 	}
 }
 
@@ -362,6 +385,9 @@ func TestStoreRejectsSessionArtifactSymlinkEscape(t *testing.T) {
 
 	t.Run("output file read", func(t *testing.T) {
 		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0S999999999999999999999")
+		if err := store.WriteMeta(newTestMeta(sessionID)); err != nil {
+			t.Fatalf("WriteMeta setup returned error: %v", err)
+		}
 		if _, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("hello"), time.Now().UTC()); err != nil {
 			t.Fatalf("AppendOutput setup returned error: %v", err)
 		}
@@ -397,6 +423,9 @@ func TestStoreRejectsSessionArtifactSymlinkEscape(t *testing.T) {
 
 	t.Run("index file read", func(t *testing.T) {
 		store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0T222222222222222222222")
+		if err := store.WriteMeta(newTestMeta(sessionID)); err != nil {
+			t.Fatalf("WriteMeta setup returned error: %v", err)
+		}
 		if _, err := store.AppendOutput(sessionID, contracts.DerunOutputChannelStdout, []byte("hello"), time.Now().UTC()); err != nil {
 			t.Fatalf("AppendOutput setup returned error: %v", err)
 		}
@@ -422,6 +451,9 @@ func TestStoreAllowsInSessionSymlinkTargets(t *testing.T) {
 	requireSymlinkSupport(t)
 
 	store, sessionID, sessionDir := newStoreWithSessionDir(t, "01J0T333333333333333333333")
+	if err := store.WriteMeta(newTestMeta(sessionID)); err != nil {
+		t.Fatalf("WriteMeta setup returned error: %v", err)
+	}
 	internalArtifactsDir := filepath.Join(sessionDir, "artifacts")
 	if err := os.MkdirAll(internalArtifactsDir, 0o700); err != nil {
 		t.Fatalf("mkdir internal artifacts dir: %v", err)
