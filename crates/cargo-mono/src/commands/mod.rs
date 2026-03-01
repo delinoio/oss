@@ -93,7 +93,9 @@ fn changed_arg_shape(args: &ChangedArgs, output: OutputFormat) -> Value {
         "output": output.as_str(),
         "base_ref": args.base,
         "include_uncommitted": args.include_uncommitted,
-        "direct_only": args.direct_only
+        "direct_only": args.direct_only,
+        "include_path": args.include_path,
+        "exclude_path": args.exclude_path
     })
 }
 
@@ -105,6 +107,8 @@ fn bump_arg_shape(args: &BumpArgs, output: OutputFormat) -> Value {
         "base_ref": args.changed.base,
         "include_uncommitted": args.changed.include_uncommitted,
         "direct_only": args.changed.direct_only,
+        "include_path": args.changed.include_path,
+        "exclude_path": args.changed.exclude_path,
         "level": args.level.as_str(),
         "preid_provided": args.preid.is_some(),
         "bump_dependents": args.bump_dependents,
@@ -120,6 +124,8 @@ fn publish_arg_shape(args: &PublishArgs, output: OutputFormat) -> Value {
         "base_ref": args.changed.base,
         "include_uncommitted": args.changed.include_uncommitted,
         "direct_only": args.changed.direct_only,
+        "include_path": args.changed.include_path,
+        "exclude_path": args.changed.exclude_path,
         "dry_run": args.dry_run,
         "allow_dirty": args.allow_dirty,
         "registry_provided": args.registry.is_some()
