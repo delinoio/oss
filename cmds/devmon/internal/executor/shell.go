@@ -97,8 +97,10 @@ func (executor *ShellExecutor) Execute(ctx context.Context, request Request) Res
 		executor.logStreamLines(request, "stderr", stderrPipe)
 	}()
 
-	waitErr := command.Wait()
+	// StdoutPipe/StderrPipe contract requires reads to complete before Wait.
+	// Waiting for stream readers first avoids intermittent "file already closed" errors.
 	streamWaitGroup.Wait()
+	waitErr := command.Wait()
 
 	result.Duration = executor.now().Sub(startTime)
 	result.ExitCode = resolveExitCode(waitErr)
