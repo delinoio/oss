@@ -183,6 +183,26 @@ fn make_archive(version: &str, target: &str, scripts: &[(&str, &str)]) -> Vec<u8
     encoder.finish().unwrap()
 }
 
+fn create_linked_runtime(root: &Path, name: &str) -> PathBuf {
+    let runtime_dir = root.join(name);
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+
+    let delegated = runtime_bin.join("node");
+    fs::write(&delegated, "#!/bin/sh\necho linked-runtime-node\n").unwrap();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(&delegated).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&delegated, permissions).unwrap();
+    }
+
+    runtime_dir
+}
+
 #[test]
 #[serial]
 fn help_lists_top_level_subcommand_descriptions() {
@@ -341,8 +361,7 @@ fn toolchain_list_quiet_prints_runtime_identifiers_only() {
         .assert()
         .success();
 
-    let linked_runtime = env.root.join("linked-runtime-quiet");
-    fs::create_dir_all(&linked_runtime).unwrap();
+    let linked_runtime = create_linked_runtime(&env.root, "linked-runtime-quiet");
 
     env.command()
         .args([
@@ -390,8 +409,7 @@ fn toolchain_list_verbose_includes_runtime_and_link_paths() {
         .assert()
         .success();
 
-    let linked_runtime = env.root.join("linked-runtime-verbose");
-    fs::create_dir_all(&linked_runtime).unwrap();
+    let linked_runtime = create_linked_runtime(&env.root, "linked-runtime-verbose");
 
     env.command()
         .args([
@@ -440,8 +458,7 @@ fn toolchain_list_json_output_is_stable_with_detail_flags() {
         .assert()
         .success();
 
-    let linked_runtime = env.root.join("linked-runtime-json");
-    fs::create_dir_all(&linked_runtime).unwrap();
+    let linked_runtime = create_linked_runtime(&env.root, "linked-runtime-json");
 
     env.command()
         .args([
@@ -480,6 +497,92 @@ fn toolchain_list_json_output_is_stable_with_detail_flags() {
 
     assert_eq!(baseline_json, quiet_json);
     assert_eq!(baseline_json, verbose_json);
+}
+
+#[test]
+#[serial]
+fn toolchain_link_rejects_runtime_without_bin_node() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-missing-node");
+    fs::create_dir_all(&runtime_dir).unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-missing-node",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "must contain executable bin/node",
+        ));
+}
+
+#[test]
+#[serial]
+fn json_toolchain_link_failure_emits_invalid_input_envelope() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-missing-node-json");
+    fs::create_dir_all(&runtime_dir).unwrap();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "link",
+            "linked-missing-node-json",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("toolchain link --output json missing bin/node");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("must contain executable bin/node"));
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn toolchain_link_rejects_non_executable_bin_node() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-non-executable-node");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+
+    let delegated = runtime_bin.join("node");
+    fs::write(&delegated, "#!/bin/sh\necho linked-runtime-node\n").unwrap();
+    let mut permissions = fs::metadata(&delegated).unwrap().permissions();
+    permissions.set_mode(0o644);
+    fs::set_permissions(&delegated, permissions).unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-non-executable-node",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "must contain executable bin/node",
+        ));
 }
 
 #[test]
@@ -750,14 +853,7 @@ fn default_override_show_precedence() {
 #[serial]
 fn show_active_runtime_fails_when_linked_runtime_path_is_deleted() {
     let env = TestEnv::new();
-    let runtime_dir = env.root.join("linked-runtime-deleted");
-    let runtime_bin = runtime_dir.join("bin");
-    fs::create_dir_all(&runtime_bin).unwrap();
-    fs::write(
-        runtime_bin.join("node"),
-        "#!/bin/sh\necho linked-runtime-node\n",
-    )
-    .unwrap();
+    let runtime_dir = create_linked_runtime(&env.root, "linked-runtime-deleted");
 
     env.command()
         .args([
@@ -790,14 +886,7 @@ fn show_active_runtime_fails_when_linked_runtime_path_is_deleted() {
 #[serial]
 fn show_active_runtime_logs_unavailable_reason_for_deleted_linked_runtime() {
     let env = TestEnv::new();
-    let runtime_dir = env.root.join("linked-runtime-deleted-logs");
-    let runtime_bin = runtime_dir.join("bin");
-    fs::create_dir_all(&runtime_bin).unwrap();
-    fs::write(
-        runtime_bin.join("node"),
-        "#!/bin/sh\necho linked-runtime-node\n",
-    )
-    .unwrap();
+    let runtime_dir = create_linked_runtime(&env.root, "linked-runtime-deleted-logs");
 
     env.command()
         .args([

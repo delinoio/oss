@@ -156,8 +156,9 @@ Subcommand contracts:
 : Behavior: selector spelling is canonicalized so `22.1.0` and `v22.1.0` map to the same runtime, and duplicate canonical targets in the same command are deduplicated.
 : Output: removed runtime list; tracked selectors that canonicalize to removed versions are deleted.
 - `nodeup toolchain link <name> <path>`
-: Input: linked runtime name and existing local runtime path.
-: Behavior: validates name format, canonicalizes path, stores it in linked runtimes, and tracks the selector.
+: Input: linked runtime name and existing local runtime path containing executable `bin/node`.
+: Behavior: validates name format, canonicalizes path, validates `bin/node` exists as an executable file, stores it in linked runtimes, and tracks the selector.
+: Failure: returns deterministic invalid-input error when `<path>/bin/node` is missing, not a regular file, or not executable.
 : Status field (`--output json`): `linked`.
 - `nodeup default [runtime]`
 : With `runtime`: resolves selector, installs if it resolves to a version and is missing, saves selector as global default, and tracks selector.

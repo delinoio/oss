@@ -1,4 +1,8 @@
-use std::{collections::HashSet, fs, path::PathBuf};
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use serde::Serialize;
 use tracing::info;
@@ -288,6 +292,14 @@ fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result
 
     let runtime_path = PathBuf::from(path);
     if !runtime_path.exists() {
+        info!(
+            command_path = "nodeup.toolchain.link",
+            name,
+            requested_path = %runtime_path.display(),
+            outcome = "rejected",
+            reason = "runtime-path-missing",
+            "Rejected linked runtime path"
+        );
         return Err(NodeupError::not_found(format!(
             "Linked runtime path does not exist: {}",
             runtime_path.display()
@@ -295,12 +307,21 @@ fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result
     }
 
     let absolute = fs::canonicalize(&runtime_path)?;
+    let node_path = validate_link_target(name, &absolute)?;
     let mut settings = app.store.load_settings()?;
     settings
         .linked_runtimes
         .insert(name.to_string(), absolute.to_string_lossy().to_string());
     app.store.save_settings(&settings)?;
     app.store.track_selector(name)?;
+    info!(
+        command_path = "nodeup.toolchain.link",
+        name,
+        linked_path = %absolute.display(),
+        node_path = %node_path.display(),
+        outcome = "linked",
+        "Linked runtime path"
+    );
 
     let message = format!("Linked runtime '{name}' -> {}", absolute.display());
     let response = serde_json::json!({
@@ -311,4 +332,63 @@ fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result
     print_output(output, &message, &response)?;
 
     Ok(0)
+}
+
+fn validate_link_target(name: &str, runtime_path: &Path) -> Result<PathBuf> {
+    let node_path = runtime_path.join("bin").join("node");
+    if !node_path.exists() {
+        info!(
+            command_path = "nodeup.toolchain.link",
+            name,
+            linked_path = %runtime_path.display(),
+            node_path = %node_path.display(),
+            outcome = "rejected",
+            reason = "node-missing",
+            "Rejected linked runtime path"
+        );
+        return Err(invalid_link_target_error(runtime_path));
+    }
+
+    let metadata = fs::metadata(&node_path)?;
+    if !metadata.is_file() {
+        info!(
+            command_path = "nodeup.toolchain.link",
+            name,
+            linked_path = %runtime_path.display(),
+            node_path = %node_path.display(),
+            outcome = "rejected",
+            reason = "node-not-file",
+            "Rejected linked runtime path"
+        );
+        return Err(invalid_link_target_error(runtime_path));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = metadata.permissions().mode();
+        if mode & 0o111 == 0 {
+            info!(
+                command_path = "nodeup.toolchain.link",
+                name,
+                linked_path = %runtime_path.display(),
+                node_path = %node_path.display(),
+                mode = format!("{mode:#o}"),
+                outcome = "rejected",
+                reason = "node-not-executable",
+                "Rejected linked runtime path"
+            );
+            return Err(invalid_link_target_error(runtime_path));
+        }
+    }
+
+    Ok(node_path)
+}
+
+fn invalid_link_target_error(runtime_path: &Path) -> NodeupError {
+    NodeupError::invalid_input(format!(
+        "Linked runtime path '{}' must contain executable bin/node",
+        runtime_path.display()
+    ))
 }
