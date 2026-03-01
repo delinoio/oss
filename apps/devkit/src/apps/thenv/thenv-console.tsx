@@ -14,6 +14,7 @@ import {
   ThenvAuditEvent,
   ThenvBundleStatus,
   ThenvBundleVersionSummary,
+  ThenvOutcome,
   ThenvPolicyBinding,
   ThenvRole,
   ThenvScope,
@@ -50,6 +51,36 @@ function roleLabel(role: ThenvRole): string {
   }
 }
 
+function outcomeLabel(outcome: ThenvOutcome): string {
+  switch (outcome) {
+    case ThenvOutcome.Success:
+      return "Success";
+    case ThenvOutcome.Denied:
+      return "Denied";
+    case ThenvOutcome.Failed:
+      return "Failed";
+    case ThenvOutcome.Unspecified:
+      return "Unspecified";
+    default:
+      return "Unspecified";
+  }
+}
+
+function outcomeBadgeClass(outcome: ThenvOutcome): string {
+  switch (outcome) {
+    case ThenvOutcome.Success:
+      return "dk-thenv-outcome-success";
+    case ThenvOutcome.Denied:
+      return "dk-thenv-outcome-denied";
+    case ThenvOutcome.Failed:
+      return "dk-thenv-outcome-failed";
+    case ThenvOutcome.Unspecified:
+      return "dk-thenv-outcome-unspecified";
+    default:
+      return "dk-thenv-outcome-unspecified";
+  }
+}
+
 export function ThenvConsole() {
   const [scope, setScope] = useState<ThenvScope>(DEFAULT_THENV_SCOPE);
   const [versions, setVersions] = useState<ThenvBundleVersionSummary[]>([]);
@@ -61,6 +92,10 @@ export function ThenvConsole() {
   const [newSubject, setNewSubject] = useState<string>("");
   const [newRole, setNewRole] = useState<ThenvRole>(ThenvRole.Reader);
   const [draftBindings, setDraftBindings] = useState<ThenvPolicyBinding[]>([]);
+  const [auditFromTimeInput, setAuditFromTimeInput] = useState<string>("");
+  const [auditToTimeInput, setAuditToTimeInput] = useState<string>("");
+  const [appliedAuditFromTime, setAppliedAuditFromTime] = useState<string>("");
+  const [appliedAuditToTime, setAppliedAuditToTime] = useState<string>("");
 
   const [loading, setLoading] = useState<boolean>(false);
   const [savingPolicy, setSavingPolicy] = useState<boolean>(false);
@@ -75,7 +110,47 @@ export function ThenvConsole() {
     [versions],
   );
 
-  const loadConsoleData = useCallback(async () => {
+  const loadAuditEvents = useCallback(async (fromTime: string, toTime: string) => {
+    setLoading(true);
+    setErrorMessage("");
+
+    try {
+      const auditResponse = await listAuditEvents({
+        scope,
+        fromTime: fromTime || undefined,
+        toTime: toTime || undefined,
+      });
+      setAuditEvents(auditResponse.events);
+
+      logInfo({
+        event: LogEvent.RouteRender,
+        route: "/apps/thenv",
+        message: "Loaded thenv audit events.",
+        context: {
+          auditFromTime: fromTime || undefined,
+          auditToTime: toTime || undefined,
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load thenv audit data.";
+      setErrorMessage(message);
+      logError({
+        event: LogEvent.RouteLoadError,
+        route: "/apps/thenv",
+        message,
+        error,
+        context: {
+          auditFromTime: fromTime || undefined,
+          auditToTime: toTime || undefined,
+        },
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [scope]);
+
+  const loadConsoleData = useCallback(async (fromTime: string, toTime: string) => {
     setLoading(true);
     setErrorMessage("");
 
@@ -83,7 +158,11 @@ export function ThenvConsole() {
       const [versionsResponse, policyResponse, auditResponse] = await Promise.all([
         listVersions(scope),
         getPolicy(scope),
-        listAuditEvents(scope),
+        listAuditEvents({
+          scope,
+          fromTime: fromTime || undefined,
+          toTime: toTime || undefined,
+        }),
       ]);
 
       setVersions(versionsResponse.versions);
@@ -96,6 +175,10 @@ export function ThenvConsole() {
         event: LogEvent.RouteRender,
         route: "/apps/thenv",
         message: "Loaded thenv metadata console state.",
+        context: {
+          auditFromTime: fromTime || undefined,
+          auditToTime: toTime || undefined,
+        },
       });
     } catch (error) {
       const message =
@@ -106,6 +189,10 @@ export function ThenvConsole() {
         route: "/apps/thenv",
         message,
         error,
+        context: {
+          auditFromTime: fromTime || undefined,
+          auditToTime: toTime || undefined,
+        },
       });
     } finally {
       setLoading(false);
@@ -113,8 +200,8 @@ export function ThenvConsole() {
   }, [scope]);
 
   useEffect(() => {
-    void loadConsoleData();
-  }, [loadConsoleData]);
+    void loadConsoleData(appliedAuditFromTime, appliedAuditToTime);
+  }, [scope]);
 
   const handleScopeChange = (key: keyof ThenvScope, value: string) => {
     setScope((previous) => ({ ...previous, [key]: value }));
@@ -122,7 +209,24 @@ export function ThenvConsole() {
 
   const handleRefresh = (event: FormEvent) => {
     event.preventDefault();
-    void loadConsoleData();
+    void loadConsoleData(appliedAuditFromTime, appliedAuditToTime);
+  };
+
+  const handleApplyAuditFilters = (event: FormEvent) => {
+    event.preventDefault();
+    const nextFromTime = auditFromTimeInput.trim();
+    const nextToTime = auditToTimeInput.trim();
+    setAppliedAuditFromTime(nextFromTime);
+    setAppliedAuditToTime(nextToTime);
+    void loadAuditEvents(nextFromTime, nextToTime);
+  };
+
+  const handleClearAuditFilters = () => {
+    setAuditFromTimeInput("");
+    setAuditToTimeInput("");
+    setAppliedAuditFromTime("");
+    setAppliedAuditToTime("");
+    void loadAuditEvents("", "");
   };
 
   const handleActivate = async (event: FormEvent) => {
@@ -138,7 +242,7 @@ export function ThenvConsole() {
     try {
       await activateVersion(scope, target);
       setActivateTarget("");
-      await loadConsoleData();
+      await loadConsoleData(appliedAuditFromTime, appliedAuditToTime);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Activate operation failed.",
@@ -185,7 +289,7 @@ export function ThenvConsole() {
       setBindings(response.bindings);
       setDraftBindings(response.bindings);
       setPolicyRevision(response.policyRevision);
-      await loadConsoleData();
+      await loadConsoleData(appliedAuditFromTime, appliedAuditToTime);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Save policy request failed.",
@@ -398,6 +502,48 @@ export function ThenvConsole() {
 
       <section aria-label="audit events" className="dk-card">
         <h3 className="dk-subsection-title">Audit Events</h3>
+        <form onSubmit={handleApplyAuditFilters} className="dk-stack">
+          <div className="dk-form-grid">
+            <label className="dk-field">
+              From Time (ISO)
+              <input
+                className="dk-input"
+                value={auditFromTimeInput}
+                onChange={(event) => setAuditFromTimeInput(event.target.value)}
+                placeholder="2026-01-01T00:00:00Z"
+              />
+            </label>
+            <label className="dk-field">
+              To Time (ISO)
+              <input
+                className="dk-input"
+                value={auditToTimeInput}
+                onChange={(event) => setAuditToTimeInput(event.target.value)}
+                placeholder="2026-01-31T23:59:59Z"
+              />
+            </label>
+          </div>
+          <div className="dk-button-group">
+            <button type="submit" className="dk-button" disabled={loading}>
+              Apply Audit Filters
+            </button>
+            <button
+              type="button"
+              className="dk-button dk-button-secondary"
+              onClick={handleClearAuditFilters}
+              disabled={loading}
+            >
+              Clear Audit Filters
+            </button>
+            <span className="dk-subtle">
+              Applied range:
+              {" "}
+              {appliedAuditFromTime || "-"}
+              {" to "}
+              {appliedAuditToTime || "-"}
+            </span>
+          </div>
+        </form>
         {auditEvents.length === 0 ? (
           <p className="dk-empty">No audit events were found for this scope.</p>
         ) : (
@@ -406,6 +552,7 @@ export function ThenvConsole() {
               <thead>
                 <tr>
                   <th>Event</th>
+                  <th>Outcome</th>
                   <th>Actor</th>
                   <th>Bundle</th>
                   <th>Target</th>
@@ -417,6 +564,13 @@ export function ThenvConsole() {
                 {auditEvents.map((event) => (
                   <tr key={event.eventId}>
                     <td>{event.eventType}</td>
+                    <td>
+                      <span
+                        className={`dk-thenv-outcome-badge ${outcomeBadgeClass(event.outcome)}`}
+                      >
+                        {outcomeLabel(event.outcome)}
+                      </span>
+                    </td>
                     <td>{event.actor}</td>
                     <td>{event.bundleVersionId || "-"}</td>
                     <td>{event.targetBundleVersionId || "-"}</td>

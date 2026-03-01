@@ -1,4 +1,5 @@
 import {
+  ThenvAuditQuery,
   ThenvGetPolicyResponse,
   ThenvListAuditEventsResponse,
   ThenvListVersionsResponse,
@@ -7,11 +8,41 @@ import {
 } from "@/apps/thenv/contracts";
 
 function withScope(pathname: string, scope: ThenvScope): string {
+  const query = scopeParams(scope);
+  return `${pathname}?${query.toString()}`;
+}
+
+function scopeParams(scope: ThenvScope): URLSearchParams {
   const query = new URLSearchParams();
   query.set("workspace", scope.workspaceId);
   query.set("project", scope.projectId);
   query.set("environment", scope.environmentId);
-  return `${pathname}?${query.toString()}`;
+  return query;
+}
+
+function toAuditParams(query: ThenvAuditQuery): URLSearchParams {
+  const params = scopeParams(query.scope);
+
+  if (query.actor) {
+    params.set("actor", query.actor);
+  }
+  if (query.eventType) {
+    params.set("eventType", query.eventType);
+  }
+  if (query.fromTime) {
+    params.set("fromTime", query.fromTime);
+  }
+  if (query.toTime) {
+    params.set("toTime", query.toTime);
+  }
+  if (query.limit && query.limit > 0) {
+    params.set("limit", String(query.limit));
+  }
+  if (query.cursor) {
+    params.set("cursor", query.cursor);
+  }
+
+  return params;
 }
 
 async function parseJsonResponse<T>(response: Response): Promise<T> {
@@ -70,9 +101,9 @@ export async function setPolicy(
 }
 
 export async function listAuditEvents(
-  scope: ThenvScope,
+  query: ThenvAuditQuery,
 ): Promise<ThenvListAuditEventsResponse> {
-  const response = await fetch(withScope("/api/thenv/audit", scope), {
+  const response = await fetch(`/api/thenv/audit?${toAuditParams(query).toString()}`, {
     cache: "no-store",
   });
   return parseJsonResponse<ThenvListAuditEventsResponse>(response);
