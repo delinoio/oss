@@ -293,7 +293,13 @@ fn toolchain_list_standard_prints_summary_counts_only() {
         .success();
 
     let linked_runtime = env.root.join("linked-runtime-standard");
-    fs::create_dir_all(&linked_runtime).unwrap();
+    let linked_runtime_bin = linked_runtime.join("bin");
+    fs::create_dir_all(&linked_runtime_bin).unwrap();
+    fs::write(
+        linked_runtime_bin.join("node"),
+        "#!/bin/sh\necho linked-runtime-standard\n",
+    )
+    .unwrap();
 
     env.command()
         .args([
