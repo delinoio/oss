@@ -184,7 +184,7 @@ Subcommand contracts:
 : Behavior: replaces the nodeup binary with the staged binary at `NODEUP_SELF_UPDATE_SOURCE` (target defaults to current executable and can be overridden by `NODEUP_SELF_BIN_PATH`).
 : Status field (`--output json`): `updated` or `already-up-to-date`.
 - `nodeup self uninstall`
-: Behavior: safely removes nodeup-managed `data`, `cache`, and `config` roots, refuses deletion when a configured path is not recognized as nodeup-owned, and reports `already-clean` when only empty bootstrap directories exist.
+: Behavior: validates all configured `data`, `cache`, and `config` roots before deleting anything, safely removes nodeup-managed roots only, refuses deletion when a configured path is not recognized as nodeup-owned, and reports `already-clean` when only empty bootstrap directories exist.
 : Status field (`--output json`): `removed` or `already-clean`.
 - `nodeup self upgrade-data`
 : Behavior: migrates `settings.toml` and `overrides.toml` schema to the current version, creating defaults when files are missing.

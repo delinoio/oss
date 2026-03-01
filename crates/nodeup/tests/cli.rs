@@ -588,6 +588,43 @@ fn self_uninstall_rejects_non_nodeup_owned_paths() {
 
 #[test]
 #[serial]
+fn self_uninstall_validates_all_roots_before_deleting() {
+    let env = TestEnv::new();
+    let safe_data_root = env.root.join("nodeup-data-safe");
+    let safe_cache_root = env.root.join("nodeup-cache-safe");
+    let unsafe_config_root = env.root.join("unsafe-config-home");
+
+    fs::create_dir_all(&safe_data_root).unwrap();
+    fs::create_dir_all(&safe_cache_root).unwrap();
+    fs::create_dir_all(&unsafe_config_root).unwrap();
+    fs::write(safe_data_root.join("keep-data.txt"), "keep-data").unwrap();
+    fs::write(safe_cache_root.join("keep-cache.txt"), "keep-cache").unwrap();
+
+    let mut command = Command::new(assert_cmd::cargo::cargo_bin!("nodeup"));
+    command
+        .env("NODEUP_DATA_HOME", &safe_data_root)
+        .env("NODEUP_CACHE_HOME", &safe_cache_root)
+        .env("NODEUP_CONFIG_HOME", &unsafe_config_root)
+        .env("NODEUP_INDEX_URL", &env.index_url)
+        .env("NODEUP_DOWNLOAD_BASE_URL", &env.download_base_url)
+        .env("NODEUP_FORCE_PLATFORM", "linux-x64");
+
+    command
+        .args(["self", "uninstall"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to uninstall non-nodeup-owned path",
+        ));
+
+    assert!(safe_data_root.exists());
+    assert!(safe_data_root.join("keep-data.txt").exists());
+    assert!(safe_cache_root.exists());
+    assert!(safe_cache_root.join("keep-cache.txt").exists());
+}
+
+#[test]
+#[serial]
 fn self_upgrade_data_migrates_legacy_schema_files() {
     let env = TestEnv::new();
     let settings_file = env.config_root.join("settings.toml");

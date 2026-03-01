@@ -209,7 +209,7 @@ fn update(output: OutputFormat, _app: &NodeupApp) -> Result<i32> {
 fn uninstall(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     let action = SelfAction::Uninstall;
 
-    let mut removed_paths = Vec::new();
+    let mut deletion_targets = Vec::new();
     for (path, bootstrap_child) in [
         (
             &app.paths.data_root,
@@ -239,20 +239,25 @@ fn uninstall(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
         };
 
         if has_artifacts {
-            fs::remove_dir_all(&normalized_path).map_err(|error| {
-                log_failure(
-                    action,
-                    NodeupError::new(
-                        ErrorKind::Internal,
-                        format!(
-                            "Failed to remove uninstall target {}: {error}",
-                            normalized_path.display()
-                        ),
-                    ),
-                )
-            })?;
-            removed_paths.push(normalized_path.display().to_string());
+            deletion_targets.push(normalized_path);
         }
+    }
+
+    let mut removed_paths = Vec::new();
+    for target in deletion_targets {
+        fs::remove_dir_all(&target).map_err(|error| {
+            log_failure(
+                action,
+                NodeupError::new(
+                    ErrorKind::Internal,
+                    format!(
+                        "Failed to remove uninstall target {}: {error}",
+                        target.display()
+                    ),
+                ),
+            )
+        })?;
+        removed_paths.push(target.display().to_string());
     }
 
     let status = if removed_paths.is_empty() {
@@ -535,10 +540,12 @@ fn path_has_artifacts(path: &Path, bootstrap_child: Option<&std::ffi::OsStr>) ->
 }
 
 fn directory_is_empty(path: &Path) -> Result<bool> {
-    for entry in fs::read_dir(path)? {
+    let mut entries = fs::read_dir(path)?;
+    if let Some(entry) = entries.next() {
         let _ = entry?;
         return Ok(false);
     }
+
     Ok(true)
 }
 
