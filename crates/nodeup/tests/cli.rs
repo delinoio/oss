@@ -933,11 +933,11 @@ fn show_active_runtime_logs_unavailable_reason_for_deleted_linked_runtime() {
         .assert()
         .failure()
         .stdout(predicates::str::contains(
-            "command_path=\"nodeup.show.active-runtime\"",
+            "command_path: \"nodeup.show.active-runtime\"",
         ))
-        .stdout(predicates::str::contains("availability=false"))
+        .stdout(predicates::str::contains("availability: false"))
         .stdout(predicates::str::contains(
-            "reason=\"node-executable-missing\"",
+            "reason: \"node-executable-missing\"",
         ));
 }
 
@@ -975,11 +975,11 @@ fn override_resolution_logs_hit_with_fallback_reason() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "command_path=\"nodeup.resolve.override\"",
+            "command_path: \"nodeup.resolve.override\"",
         ))
-        .stdout(predicates::str::contains("matched=true"))
+        .stdout(predicates::str::contains("matched: true"))
         .stdout(predicates::str::contains(
-            "fallback_reason=\"override-matched\"",
+            "fallback_reason: \"override-matched\"",
         ));
 }
 
@@ -993,11 +993,11 @@ fn override_resolution_logs_miss_without_default_selector() {
         .assert()
         .failure()
         .stdout(predicates::str::contains(
-            "command_path=\"nodeup.resolve.override\"",
+            "command_path: \"nodeup.resolve.override\"",
         ))
-        .stdout(predicates::str::contains("matched=false"))
+        .stdout(predicates::str::contains("matched: false"))
         .stdout(predicates::str::contains(
-            "fallback_reason=\"no-default-selector\"",
+            "fallback_reason: \"no-default-selector\"",
         ));
 }
 
@@ -1145,10 +1145,10 @@ fn self_update_logs_action_and_outcome_status() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "command_path=\"nodeup.self.update\"",
+            "command_path: \"nodeup.self.update\"",
         ))
-        .stdout(predicates::str::contains("action=\"self update\""))
-        .stdout(predicates::str::contains("outcome=\"updated\""));
+        .stdout(predicates::str::contains("action: \"self update\""))
+        .stdout(predicates::str::contains("outcome: \"updated\""));
 }
 
 #[test]
@@ -1165,10 +1165,10 @@ fn self_uninstall_removes_artifacts_and_logs_outcome() {
         .success()
         .stdout(predicates::str::contains("\"status\": \"removed\""))
         .stdout(predicates::str::contains(
-            "command_path=\"nodeup.self.uninstall\"",
+            "command_path: \"nodeup.self.uninstall\"",
         ))
-        .stdout(predicates::str::contains("action=\"self uninstall\""))
-        .stdout(predicates::str::contains("outcome=\"removed\""));
+        .stdout(predicates::str::contains("action: \"self uninstall\""))
+        .stdout(predicates::str::contains("outcome: \"removed\""));
 
     assert!(!env.data_root.exists());
     assert!(!env.cache_root.exists());
@@ -1301,10 +1301,10 @@ selector = "22.1.0"
         .success()
         .stdout(predicates::str::contains("\"status\": \"upgraded\""))
         .stdout(predicates::str::contains(
-            "command_path=\"nodeup.self.upgrade-data\"",
+            "command_path: \"nodeup.self.upgrade-data\"",
         ))
-        .stdout(predicates::str::contains("action=\"self upgrade-data\""))
-        .stdout(predicates::str::contains("outcome=\"upgraded\""))
+        .stdout(predicates::str::contains("action: \"self upgrade-data\""))
+        .stdout(predicates::str::contains("outcome: \"upgraded\""))
         .stdout(predicates::str::contains("\"from_schema\": 0"))
         .stdout(predicates::str::contains("\"to_schema\": 1"));
 
@@ -1326,10 +1326,10 @@ fn completions_logs_action_and_outcome() {
         .assert()
         .failure()
         .stdout(predicates::str::contains(
-            "command_path=\"nodeup.completions\"",
+            "command_path: \"nodeup.completions\"",
         ))
-        .stdout(predicates::str::contains("action=\"generate\""))
-        .stdout(predicates::str::contains("outcome=\"not-implemented\""));
+        .stdout(predicates::str::contains("action: \"generate\""))
+        .stdout(predicates::str::contains("outcome: \"not-implemented\""));
 }
 
 #[cfg(unix)]
@@ -1364,10 +1364,10 @@ fn run_logs_exit_code_and_signal_details() {
         .assert()
         .code(7)
         .stdout(predicates::str::contains(
-            "command_path=\"nodeup.run.process\"",
+            "command_path: \"nodeup.run.process\"",
         ))
-        .stdout(predicates::str::contains("exit_code=7"))
-        .stdout(predicates::str::contains("signal=None"));
+        .stdout(predicates::str::contains("exit_code: 7"))
+        .stdout(predicates::str::contains("signal: None"));
 }
 
 #[cfg(unix)]
@@ -1405,10 +1405,10 @@ fn run_maps_signal_termination_to_standard_exit_code() {
             "Delegated command 'node' exited with status 143",
         ))
         .stdout(predicates::str::contains(
-            "command_path=\"nodeup.run.process\"",
+            "command_path: \"nodeup.run.process\"",
         ))
-        .stdout(predicates::str::contains("exit_code=143"))
-        .stdout(predicates::str::contains("signal=Some(15)"));
+        .stdout(predicates::str::contains("exit_code: 143"))
+        .stdout(predicates::str::contains("signal: Some(15)"));
 }
 
 #[test]
