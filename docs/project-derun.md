@@ -257,6 +257,23 @@ Behavioral coverage map:
 10. Deterministic missing-session read/wait errors:
 `cmds/derun/internal/mcp/tools_test.go` (`TestHandleReadOutputMissingSessionReturnsError`, `TestHandleWaitOutputMissingSessionReturnsError`)
 
+## Codex MCP Local Integration
+Recommended local integration flow for Codex users:
+
+1. Register `derun` as a stdio MCP server:
+   - `codex mcp add derun --env DERUN_STATE_ROOT=/absolute/workspace/.derun-state -- go run /absolute/workspace/cmds/derun mcp`
+2. Verify registration:
+   - `codex mcp get derun`
+   - `codex mcp list`
+3. Capture command output through `derun run`:
+   - `DERUN_STATE_ROOT=/absolute/workspace/.derun-state go run /absolute/workspace/cmds/derun run -- /bin/echo "hello-derun"`
+4. Query captured output through MCP tool calls (`derun_list_sessions`, `derun_get_session`, `derun_read_output`, `derun_wait_output`).
+
+Operational guidance:
+- Prefer workspace-local `DERUN_STATE_ROOT` for predictable permissions and reproducible session discovery in sandboxed environments.
+- Re-register the MCP server if the workspace absolute path changes.
+- Remove integration with `codex mcp remove derun` when no longer needed.
+
 ## Roadmap
 - Phase 1: Terminal-fidelity `run` execution and transcript persistence.
 - Phase 2: MCP replay/live-tail tool surface and cursor consistency guarantees.
