@@ -114,6 +114,7 @@ Command contracts:
 - `derun run [--session-id <id>] [--retention <duration>] -- <command> [args...]`
 : Executes user command with terminal-fidelity proxying and side-channel transcript capture.
 - `derun run` must reject explicit `--session-id` values when persisted metadata already exists (`meta.json` or `final.json`), returning exit code `2` without mutating existing artifacts.
+- `derun run` must persist `meta.json` before process spawn, then update `pid` after successful start; startup failures must still persist `final.json` with failed state so the session remains discoverable through MCP list/get.
 - `derun mcp`
 : Starts stdio MCP server for AI-driven session/output retrieval.
 
@@ -212,6 +213,7 @@ Required behavioral test scenarios:
 7. TTL expiration removes only expired sessions and preserves active sessions.
 8. Windows ConPTY parity tests and POSIX PTY parity tests.
 9. Session artifact traversal and symlink-escape attempts are rejected for both read and write operations.
+10. Startup failures persist discoverable metadata and remain queryable via `derun_list_sessions` and `derun_get_session`.
 
 ## Roadmap
 - Phase 1: Terminal-fidelity `run` execution and transcript persistence.

@@ -219,7 +219,7 @@ func (s *Store) GetSession(sessionID string) (session.Detail, error) {
 		return session.Detail{}, fmt.Errorf("read meta file: %w", err)
 	}
 
-	state := contracts.DerunSessionStateRunning
+	state := contracts.DerunSessionStateStarting
 	var endedAt *time.Time
 	var exitCode *int
 	var signal string
@@ -240,8 +240,10 @@ func (s *Store) GetSession(sessionID string) (session.Detail, error) {
 	} else if !os.IsNotExist(err) {
 		return session.Detail{}, fmt.Errorf("read final file: %w", err)
 	} else {
-		if !processAlive(meta.PID) {
+		if meta.PID > 0 && !processAlive(meta.PID) {
 			state = contracts.DerunSessionStateFailed
+		} else if meta.PID > 0 {
+			state = contracts.DerunSessionStateRunning
 		}
 	}
 

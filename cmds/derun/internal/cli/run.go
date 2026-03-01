@@ -123,19 +123,25 @@ func ExecuteRun(args []string) int {
 		PID:              0,
 	}
 
-	logger.Event("state_transition", map[string]any{
-		"session_id":       sessionID,
-		"transport_mode":   transportMode,
-		"tty_attached":     ttyAttached,
-		"state_transition": string(contracts.DerunSessionStateStarting) + "->" + string(contracts.DerunSessionStateRunning),
-	})
+	if err := store.WriteMeta(meta); err != nil {
+		fmt.Fprintf(os.Stderr, "write meta file: %v\n", err)
+		return 1
+	}
 
+	processStarted := false
 	ctx := context.Background()
 	onStart := func(pid int) error {
+		processStarted = true
 		meta.PID = pid
 		if err := store.WriteMeta(meta); err != nil {
 			return fmt.Errorf("write meta file: %w", err)
 		}
+		logger.Event("state_transition", map[string]any{
+			"session_id":       sessionID,
+			"transport_mode":   transportMode,
+			"tty_attached":     ttyAttached,
+			"state_transition": string(contracts.DerunSessionStateStarting) + "->" + string(contracts.DerunSessionStateRunning),
+		})
 		return nil
 	}
 
@@ -163,9 +169,13 @@ func ExecuteRun(args []string) int {
 	if runErr != nil {
 		final.State = contracts.DerunSessionStateFailed
 		final.Error = runErr.Error()
+		fromState := contracts.DerunSessionStateStarting
+		if processStarted {
+			fromState = contracts.DerunSessionStateRunning
+		}
 		logger.Event("state_transition", map[string]any{
 			"session_id":       sessionID,
-			"state_transition": string(contracts.DerunSessionStateRunning) + "->" + string(contracts.DerunSessionStateFailed),
+			"state_transition": string(fromState) + "->" + string(contracts.DerunSessionStateFailed),
 		})
 	} else if runResult.Signal != "" {
 		final.State = contracts.DerunSessionStateSignaled

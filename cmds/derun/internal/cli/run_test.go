@@ -53,6 +53,53 @@ func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 	}
 }
 
+func TestExecuteRunStartupFailurePersistsDiscoverableMetadata(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+
+	exitCode := ExecuteRun([]string{"--", "definitely-not-real-command"})
+	if exitCode != 1 {
+		t.Fatalf("unexpected exit code: got=%d want=1", exitCode)
+	}
+
+	store, err := state.New(stateRoot)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+
+	sessions, total, err := store.ListSessions("", 10)
+	if err != nil {
+		t.Fatalf("ListSessions returned error: %v", err)
+	}
+	if total != 1 || len(sessions) != 1 {
+		t.Fatalf("unexpected sessions: total=%d len=%d", total, len(sessions))
+	}
+
+	sessionID := sessions[0].SessionID
+	metaPath := filepath.Join(stateRoot, "sessions", sessionID, "meta.json")
+	if _, err := os.Stat(metaPath); err != nil {
+		t.Fatalf("meta metadata should exist: %v", err)
+	}
+	finalPath := filepath.Join(stateRoot, "sessions", sessionID, "final.json")
+	if _, err := os.Stat(finalPath); err != nil {
+		t.Fatalf("final metadata should exist: %v", err)
+	}
+
+	detail, err := store.GetSession(sessionID)
+	if err != nil {
+		t.Fatalf("GetSession returned error: %v", err)
+	}
+	if detail.State != contracts.DerunSessionStateFailed {
+		t.Fatalf("unexpected state: got=%s want=%s", detail.State, contracts.DerunSessionStateFailed)
+	}
+	if detail.Error == "" {
+		t.Fatalf("expected failed session error to be populated")
+	}
+}
+
 func TestExecuteRunRejectsDuplicateSessionID(t *testing.T) {
 	stateRoot := t.TempDir()
 	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {

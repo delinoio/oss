@@ -182,6 +182,66 @@ func TestStoreHasSessionMetadata(t *testing.T) {
 	}
 }
 
+func TestStoreGetSessionStateWithoutFinalFromPID(t *testing.T) {
+	root := testutil.TempStateRoot(t)
+	store, err := New(root)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	startingSessionID := "01J0S454545454545454545454"
+	startingMeta := session.Meta{
+		SchemaVersion:    "v1alpha1",
+		SessionID:        startingSessionID,
+		Command:          []string{"sleep", "1"},
+		WorkingDirectory: "/tmp",
+		StartedAt:        time.Now().UTC().Add(-time.Minute),
+		RetentionSeconds: int64((24 * time.Hour).Seconds()),
+		TransportMode:    contracts.DerunTransportModePipe,
+		TTYAttached:      false,
+		PID:              0,
+	}
+	if err := store.WriteMeta(startingMeta); err != nil {
+		t.Fatalf("WriteMeta starting session returned error: %v", err)
+	}
+
+	startingDetail, err := store.GetSession(startingSessionID)
+	if err != nil {
+		t.Fatalf("GetSession for starting session returned error: %v", err)
+	}
+	if startingDetail.State != contracts.DerunSessionStateStarting {
+		t.Fatalf("unexpected starting session state: got=%s want=%s", startingDetail.State, contracts.DerunSessionStateStarting)
+	}
+
+	deadPID := os.Getpid() + 100000
+	for processAlive(deadPID) {
+		deadPID += 100000
+	}
+	failedSessionID := "01J0S565656565656565656565"
+	failedMeta := session.Meta{
+		SchemaVersion:    "v1alpha1",
+		SessionID:        failedSessionID,
+		Command:          []string{"sleep", "1"},
+		WorkingDirectory: "/tmp",
+		StartedAt:        time.Now().UTC().Add(-time.Minute),
+		RetentionSeconds: int64((24 * time.Hour).Seconds()),
+		TransportMode:    contracts.DerunTransportModePipe,
+		TTYAttached:      false,
+		PID:              deadPID,
+	}
+	if err := store.WriteMeta(failedMeta); err != nil {
+		t.Fatalf("WriteMeta failed session returned error: %v", err)
+	}
+
+	failedDetail, err := store.GetSession(failedSessionID)
+	if err != nil {
+		t.Fatalf("GetSession for failed session returned error: %v", err)
+	}
+	if failedDetail.State != contracts.DerunSessionStateFailed {
+		t.Fatalf("unexpected failed session state: got=%s want=%s", failedDetail.State, contracts.DerunSessionStateFailed)
+	}
+}
+
 func TestStoreRejectsTraversalSessionIDAcrossEntrypoints(t *testing.T) {
 	root := testutil.TempStateRoot(t)
 	store, err := New(root)
