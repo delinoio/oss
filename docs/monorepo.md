@@ -24,7 +24,7 @@ The monorepo is documentation-first: structure, ownership, and contracts must be
 - `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app.
 - `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
 - `docs/project-devmon.md`: Go automation daemon with macOS menu bar-managed lifecycle controls.
-- `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction.
+- `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation.
 
 ## Project Identifier Contract
 Treat project IDs as stable enum-style values:

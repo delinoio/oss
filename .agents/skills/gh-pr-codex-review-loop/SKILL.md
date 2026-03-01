@@ -25,12 +25,12 @@ Use GitHub CLI (`gh`) for all GitHub operations.
 
 1. Check approval signal:
 ```bash
-python3 scripts/check_codex_thumbs_up.py 123 --repo owner/repo
+node scripts/check_codex_thumbs_up.js 123 --repo owner/repo
 ```
 2. Stop immediately if `approved=true`.
 3. Collect Codex feedback context:
 ```bash
-python3 scripts/collect_codex_feedback.py 123 --repo owner/repo --format markdown
+node scripts/collect_codex_feedback.js 123 --repo owner/repo --format markdown
 ```
 4. Address all active feedback in a single coherent fix set.
 5. Run required project validations before commit.
@@ -54,11 +54,11 @@ git push
 
 ## Helper Scripts
 
-- `scripts/check_codex_thumbs_up.py`
+- `scripts/check_codex_thumbs_up.js`
   - Exit `0` when approval is detected.
   - Exit `1` when approval is not detected.
   - Print JSON summary for logs and automation.
-- `scripts/collect_codex_feedback.py`
+- `scripts/collect_codex_feedback.js`
   - Gather Codex-authored review summaries, inline comments, and discussion comments.
   - Output `markdown` (default) or `json`.
 
