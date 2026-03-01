@@ -65,6 +65,8 @@ impl TestEnv {
     }
 
     fn apply_env(&self, command: &mut Command) {
+        // Keep stdout deterministic for assertions unless a test opts in to logs.
+        command.env("RUST_LOG", "warn");
         command.env("NODEUP_DATA_HOME", &self.data_root);
         command.env("NODEUP_CACHE_HOME", &self.cache_root);
         command.env("NODEUP_CONFIG_HOME", &self.config_root);
@@ -74,6 +76,8 @@ impl TestEnv {
     }
 
     fn apply_env_std(&self, command: &mut std::process::Command) {
+        // Keep stdout deterministic for assertions unless a test opts in to logs.
+        command.env("RUST_LOG", "warn");
         command.env("NODEUP_DATA_HOME", &self.data_root);
         command.env("NODEUP_CACHE_HOME", &self.cache_root);
         command.env("NODEUP_CONFIG_HOME", &self.config_root);

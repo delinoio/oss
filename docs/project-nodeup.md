@@ -250,6 +250,7 @@ Planned commands:
 - Build: `cargo build -p nodeup`
 - Test: `cargo test -p nodeup`
 - Workspace validation: `cargo test`
+- Integration test stability: stdout-sensitive assertions must execute nodeup with `RUST_LOG=warn` unless a test explicitly validates info logs.
 
 ## Roadmap
 - Phase 1: Rustup-style command skeleton (`toolchain`, `default`, `show`, `override`, `run`, `which`).
