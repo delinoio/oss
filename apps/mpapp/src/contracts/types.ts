@@ -16,6 +16,12 @@ export type PointerMoveSample = {
   sensitivity: number;
 };
 
+export type MpappInputPreferences = {
+  sensitivity: number;
+  invertX: boolean;
+  invertY: boolean;
+};
+
 export type PointerClickSample =
   | {
       actionId: MpappInputAction.LeftClick;
