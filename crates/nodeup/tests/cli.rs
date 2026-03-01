@@ -913,6 +913,47 @@ fn run_logs_exit_code_and_signal_details() {
         .stdout(predicates::str::contains("signal=None"));
 }
 
+#[cfg(unix)]
+#[test]
+#[serial]
+fn run_maps_signal_termination_to_standard_exit_code() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-signal-exit");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+
+    let delegated = runtime_bin.join("node");
+    fs::write(&delegated, "#!/bin/sh\nkill -TERM $$\n").unwrap();
+    let mut permissions = fs::metadata(&delegated).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&delegated, permissions).unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-signal-exit",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command_with_info_logs()
+        .args(["run", "linked-signal-exit", "node"])
+        .assert()
+        .code(143)
+        .stdout(predicates::str::contains(
+            "Delegated command 'node' exited with status 143",
+        ))
+        .stdout(predicates::str::contains(
+            "command_path=\"nodeup.run.process\"",
+        ))
+        .stdout(predicates::str::contains("exit_code=143"))
+        .stdout(predicates::str::contains("signal=Some(15)"));
+}
+
 #[test]
 #[serial]
 fn run_with_install_executes_command() {
@@ -1018,6 +1059,50 @@ fn shim_dispatch_uses_argv0_alias() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("shim-ok"));
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn shim_dispatch_maps_signal_termination_to_standard_exit_code() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-shim-signal");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+
+    let delegated = runtime_bin.join("node");
+    fs::write(&delegated, "#!/bin/sh\nkill -TERM $$\n").unwrap();
+    let mut permissions = fs::metadata(&delegated).unwrap().permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&delegated, permissions).unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-shim-signal",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["default", "linked-shim-signal"])
+        .assert()
+        .success();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("node");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .output()
+        .expect("run shim binary with signal termination");
+
+    assert_eq!(output.status.code(), Some(143));
 }
 
 #[test]

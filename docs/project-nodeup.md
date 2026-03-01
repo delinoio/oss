@@ -187,7 +187,9 @@ Subcommand contracts:
 : Output channels:
 : In `--output human`, delegated stdout/stderr inherit terminal streams.
 : In `--output json`, stdout is reserved for the JSON result object and delegated stdout/stderr are streamed to stderr.
-: Exit code: returns delegated process exit code on success path.
+: Exit code:
+: Returns delegated process exit code on success path.
+: On Unix, when delegated process terminates by signal, returns `128 + signal` (for example `143` for `SIGTERM`) and reports the same mapped value in JSON `exit_code`.
 - `nodeup self update`
 : Behavior: replaces the nodeup binary with the staged binary at `NODEUP_SELF_UPDATE_SOURCE` (target defaults to current executable and can be overridden by `NODEUP_SELF_BIN_PATH`).
 : Status field (`--output json`): `updated` or `already-up-to-date`.
@@ -214,6 +216,7 @@ Resolution precedence contract:
 
 Dispatch contract:
 - If invoked as `node`, `npm`, or `npx`, nodeup resolves target Node.js version and forwards execution.
+- Managed-alias dispatch preserves delegated process exit semantics, including Unix signal mapping (`128 + signal`).
 - If invoked as `nodeup`, nodeup performs management commands.
 
 Symlink contract:
