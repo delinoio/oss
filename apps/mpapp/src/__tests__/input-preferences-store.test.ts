@@ -76,4 +76,29 @@ describe("input preferences store", () => {
       invertY: true,
     });
   });
+
+  it("switches to in-memory fallback when primary read fails", async () => {
+    let primarySetItemCalls = 0;
+    const store = new AsyncStorageInputPreferencesStore({
+      getItem: async () => {
+        throw new Error("Native bridge unavailable");
+      },
+      setItem: async () => {
+        primarySetItemCalls += 1;
+      },
+    });
+
+    const savedPreferences: MpappInputPreferences = {
+      sensitivity: 1.3,
+      invertX: true,
+      invertY: false,
+    };
+
+    await expect(store.load()).resolves.toBeDefined();
+    await store.save(savedPreferences);
+
+    const loadedPreferences = await store.load();
+    expect(loadedPreferences).toEqual(savedPreferences);
+    expect(primarySetItemCalls).toBe(0);
+  });
 });

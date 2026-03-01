@@ -103,24 +103,58 @@ function parseStoredInputPreferences(rawValue: string | null): MpappInputPrefere
 }
 
 export class AsyncStorageInputPreferencesStore implements InputPreferencesStore {
-  private readonly storage: InputPreferencesStorage;
+  private storage: InputPreferencesStorage;
 
   constructor(storage: InputPreferencesStorage = resolveDefaultStorage()) {
     this.storage = storage;
   }
 
+  private switchToFallbackStorage(params: {
+    operation: "load" | "save";
+    error: unknown;
+  }): void {
+    if (this.storage === inMemoryFallbackStorage) {
+      return;
+    }
+
+    console.warn("[mpapp][preferences-store] switching to in-memory fallback", {
+      operation: params.operation,
+      error: params.error,
+    });
+    this.storage = inMemoryFallbackStorage;
+  }
+
   public async load(): Promise<MpappInputPreferences> {
-    const storedValue = await this.storage.getItem(
-      MPAPP_INPUT_PREFERENCES_STORAGE_KEY,
-    );
+    let storedValue: string | null;
+    try {
+      storedValue = await this.storage.getItem(MPAPP_INPUT_PREFERENCES_STORAGE_KEY);
+    } catch (error: unknown) {
+      this.switchToFallbackStorage({
+        operation: "load",
+        error,
+      });
+      storedValue = await this.storage.getItem(MPAPP_INPUT_PREFERENCES_STORAGE_KEY);
+    }
+
     return parseStoredInputPreferences(storedValue);
   }
 
   public async save(preferences: MpappInputPreferences): Promise<void> {
     const normalizedPreferences = normalizeInputPreferences(preferences);
-    await this.storage.setItem(
-      MPAPP_INPUT_PREFERENCES_STORAGE_KEY,
-      JSON.stringify(normalizedPreferences),
-    );
+    try {
+      await this.storage.setItem(
+        MPAPP_INPUT_PREFERENCES_STORAGE_KEY,
+        JSON.stringify(normalizedPreferences),
+      );
+    } catch (error: unknown) {
+      this.switchToFallbackStorage({
+        operation: "save",
+        error,
+      });
+      await this.storage.setItem(
+        MPAPP_INPUT_PREFERENCES_STORAGE_KEY,
+        JSON.stringify(normalizedPreferences),
+      );
+    }
   }
 }
