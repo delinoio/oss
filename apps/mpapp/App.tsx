@@ -14,6 +14,7 @@ import {
   MpappActionType,
   MpappBluetoothAvailabilityState,
   MpappClickButton,
+  MpappDisconnectReason,
   MpappErrorCode,
   MpappLogEventFamily,
   MpappMode,
@@ -38,6 +39,7 @@ import {
   MpappSessionEventType,
   reduceSessionState,
 } from "./src/state/session-machine";
+import { resolveDisconnectReasonFromFailure } from "./src/state/disconnect-reason";
 import { createHidAdapter } from "./src/transport/hid-adapter-factory";
 import { ClickControls } from "./src/components/click-controls";
 import { SessionStatus } from "./src/components/session-status";
@@ -292,8 +294,13 @@ export default function App() {
     const disconnectResult = await adapter.disconnect();
 
     if (!disconnectResult.ok) {
+      const disconnectReason = resolveDisconnectReasonFromFailure(
+        disconnectResult.errorCode,
+        disconnectResult.nativeErrorCode,
+      );
       dispatchSessionEvent({
-        type: MpappSessionEventType.ConnectFailure,
+        type: MpappSessionEventType.DisconnectFailure,
+        reason: disconnectReason,
         errorCode: disconnectResult.errorCode,
         message: disconnectResult.message,
       });
@@ -303,17 +310,24 @@ export default function App() {
         latencyMs: Date.now() - disconnectStart,
         failureReason: disconnectResult.message,
         payload: {
+          disconnectReason,
           nativeErrorCode: disconnectResult.nativeErrorCode ?? null,
         },
       });
       return;
     }
 
-    dispatchSessionEvent({ type: MpappSessionEventType.Disconnect });
+    dispatchSessionEvent({
+      type: MpappSessionEventType.Disconnect,
+      reason: MpappDisconnectReason.UserAction,
+    });
     await appendLog({
       eventFamily: MpappLogEventFamily.ConnectionTransition,
       actionType: MpappActionType.Disconnect,
       latencyMs: Date.now() - disconnectStart,
+      payload: {
+        disconnectReason: MpappDisconnectReason.UserAction,
+      },
     });
   }, [adapter, appendLog, dispatchSessionEvent]);
 

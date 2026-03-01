@@ -28,7 +28,16 @@ export enum MpappConnectionEvent {
   ConnectSuccess = "connect-success",
   ConnectFailure = "connect-failure",
   Disconnect = "disconnect",
+  DisconnectFailure = "disconnect-failure",
   PermissionDenied = "permission-denied",
+}
+
+export enum MpappDisconnectReason {
+  UserAction = "user-action",
+  TransportLost = "transport-lost",
+  Timeout = "timeout",
+  PermissionRevoked = "permission-revoked",
+  Unknown = "unknown",
 }
 
 export enum MpappErrorCode {

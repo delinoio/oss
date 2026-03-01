@@ -1,5 +1,6 @@
 import {
   MpappConnectionEvent,
+  MpappDisconnectReason,
   MpappErrorCode,
   MpappMode,
 } from "../contracts/enums";
@@ -13,6 +14,7 @@ export enum MpappSessionEventType {
   ConnectSuccess = "connect-success",
   ConnectFailure = "connect-failure",
   Disconnect = "disconnect",
+  DisconnectFailure = "disconnect-failure",
   ResetError = "reset-error",
 }
 
@@ -28,7 +30,13 @@ export type MpappSessionEvent =
       errorCode: MpappErrorCode;
       message: string;
     }
-  | { type: MpappSessionEventType.Disconnect }
+  | { type: MpappSessionEventType.Disconnect; reason: MpappDisconnectReason }
+  | {
+      type: MpappSessionEventType.DisconnectFailure;
+      reason: MpappDisconnectReason;
+      errorCode: MpappErrorCode;
+      message: string;
+    }
   | { type: MpappSessionEventType.ResetError };
 
 export type MpappSessionState = {
@@ -36,6 +44,7 @@ export type MpappSessionState = {
   errorCode: MpappErrorCode | null;
   errorMessage: string | null;
   lastConnectionEvent: MpappConnectionEvent | null;
+  lastDisconnectReason: MpappDisconnectReason | null;
 };
 
 export const INITIAL_SESSION_STATE: MpappSessionState = {
@@ -43,6 +52,7 @@ export const INITIAL_SESSION_STATE: MpappSessionState = {
   errorCode: null,
   errorMessage: null,
   lastConnectionEvent: null,
+  lastDisconnectReason: null,
 };
 
 export function reduceSessionState(
@@ -56,6 +66,7 @@ export function reduceSessionState(
         errorCode: null,
         errorMessage: null,
         lastConnectionEvent: state.lastConnectionEvent,
+        lastDisconnectReason: state.lastDisconnectReason,
       };
 
     case MpappSessionEventType.PermissionGranted:
@@ -70,6 +81,7 @@ export function reduceSessionState(
         errorCode: MpappErrorCode.PermissionDenied,
         errorMessage: "Bluetooth permissions are required.",
         lastConnectionEvent: MpappConnectionEvent.PermissionDenied,
+        lastDisconnectReason: state.lastDisconnectReason,
       };
 
     case MpappSessionEventType.StartPairing:
@@ -93,6 +105,7 @@ export function reduceSessionState(
         errorCode: null,
         errorMessage: null,
         lastConnectionEvent: MpappConnectionEvent.ConnectSuccess,
+        lastDisconnectReason: null,
       };
 
     case MpappSessionEventType.ConnectFailure:
@@ -101,6 +114,7 @@ export function reduceSessionState(
         errorCode: event.errorCode,
         errorMessage: event.message,
         lastConnectionEvent: MpappConnectionEvent.ConnectFailure,
+        lastDisconnectReason: state.lastDisconnectReason,
       };
 
     case MpappSessionEventType.Disconnect:
@@ -109,12 +123,23 @@ export function reduceSessionState(
         errorCode: null,
         errorMessage: null,
         lastConnectionEvent: MpappConnectionEvent.Disconnect,
+        lastDisconnectReason: event.reason,
+      };
+
+    case MpappSessionEventType.DisconnectFailure:
+      return {
+        mode: MpappMode.Error,
+        errorCode: event.errorCode,
+        errorMessage: event.message,
+        lastConnectionEvent: MpappConnectionEvent.DisconnectFailure,
+        lastDisconnectReason: event.reason,
       };
 
     case MpappSessionEventType.ResetError:
       return {
         ...INITIAL_SESSION_STATE,
         lastConnectionEvent: state.lastConnectionEvent,
+        lastDisconnectReason: state.lastDisconnectReason,
       };
 
     default:
