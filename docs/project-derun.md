@@ -159,6 +159,8 @@ Retention contract:
 - Default retention TTL: 24 hours.
 - Per-session `retention_seconds` from `meta.json` overrides the global sweep default when present.
 - Expired session cleanup runs at `derun run` startup and periodic intervals in `derun mcp`.
+- Unreadable/orphan session directories (for example missing or malformed `meta.json`) use fallback expiration: `lastTouchedAt + sweepTTL`, where `lastTouchedAt` is the latest filesystem modification time across the session directory and direct child artifacts.
+- Expired unreadable/orphan session directories are removed; non-expired unreadable/orphan session directories are retained.
 - Active sessions must never be removed during retention sweeps.
 
 Write consistency contract:
@@ -186,10 +188,12 @@ Required baseline logs:
 - `exit_code`
 - `signal`
 - `cleanup_result`
+- `cleanup_reason`
 
 Logging boundary rules:
 - Structured logs must go to internal log sink.
 - Child stdout/stderr streams must remain unmodified terminal payload.
+- Retention sweep must emit per-session `cleanup_result` logs for skip/remove/error outcomes with explicit `cleanup_reason` values (`not_expired`, `active_session`, `expired`, `unreadable_not_expired`, `unreadable_expired`, `unreadable_stat_error`, `remove_error`).
 
 ## Build and Test
 Validation commands:
