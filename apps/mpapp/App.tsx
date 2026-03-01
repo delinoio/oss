@@ -93,6 +93,7 @@ export default function App() {
   const [inputPreferences, setInputPreferences] = useState<MpappInputPreferences>(
     DEFAULT_MPAPP_INPUT_PREFERENCES,
   );
+  const hasLocalPreferenceEditsRef = useRef(false);
 
   const runtimeConfig = useMemo(() => resolveMpappRuntimeConfig(), []);
   const adapter = useMemo(
@@ -169,7 +170,22 @@ export default function App() {
         return;
       }
 
-      setInputPreferences(preferences);
+      setInputPreferences((previous) => {
+        if (hasLocalPreferenceEditsRef.current) {
+          console.info("[mpapp][preferences]", {
+            event: "hydrate-skipped-local-edits",
+            previous,
+            hydrated: preferences,
+          });
+          return previous;
+        }
+
+        console.info("[mpapp][preferences]", {
+          event: "hydrate-applied",
+          hydrated: preferences,
+        });
+        return preferences;
+      });
     });
 
     return () => {
@@ -185,6 +201,7 @@ export default function App() {
 
   const updateInputPreferences = useCallback(
     (updater: (previous: MpappInputPreferences) => MpappInputPreferences) => {
+      hasLocalPreferenceEditsRef.current = true;
       setInputPreferences((previous) => {
         const nextPreferences = updater(previous);
         void inputPreferencesStoreRef.current.save(nextPreferences);
