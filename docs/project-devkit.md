@@ -41,6 +41,7 @@ The shell visual baseline follows Toss Design System-inspired foundations (color
 - Enum-based registration lives in `src/lib/mini-app-registry.ts`.
 - Shell navigation menu order is fixed as `Home (/)` first, then registered mini apps from `MINI_APP_REGISTRATIONS`.
 - Current route maturity mix: `commit-tracker`, `remote-file-picker`, and `thenv` are live.
+- Home route platform status messaging reflects live mini-app maturity and must not describe shell-only bootstrap state.
 - Backend-coupled mini apps consume backend APIs while preserving shell-owned auth/session/navigation behavior.
 
 ## Interfaces
