@@ -105,6 +105,7 @@ Required baseline logs:
 
 ## Build and Test
 Current commands:
+- Dev: `pnpm --filter devkit... dev` (fixed port `5990`)
 - Build: `pnpm --filter devkit... build`
 - Test: `pnpm --filter devkit... test`
 - Test runner: Vitest (`apps/devkit/vitest.config.ts`)
