@@ -38,6 +38,15 @@
         ]
       },
       {
+        "tab": "Cargo Mono",
+        "groups": [
+          {
+            "group": "Rust Monorepo Tooling",
+            "pages": ["cargo-mono"]
+          }
+        ]
+      },
+      {
         "tab": "Derun",
         "groups": [
           {

@@ -1,0 +1,48 @@
+# cargo-mono
+
+`cargo-mono` is a Cargo external subcommand (`cargo mono`) for monorepo-scale Rust workspace operations.
+
+## Why use cargo-mono
+
+- Discover and scope affected crates with deterministic workspace analysis.
+- Coordinate safe version bumps across internal dependencies.
+- Run release and publish workflows with structured operator-friendly output.
+
+## Core capabilities
+
+- Workspace discovery and reporting: `list`
+- Git-aware impact analysis: `changed`
+- Version orchestration and release tagging: `bump`
+- Dependency-aware publish flow: `publish`
+- Stable output contract: `--output human|json`
+
+## Common workflows
+
+List publishable workspace crates:
+
+```bash
+cargo mono list
+```
+
+Find crates changed from the default base ref:
+
+```bash
+cargo mono changed
+```
+
+Bump changed crates with dependent patch propagation:
+
+```bash
+cargo mono bump --changed --level patch --bump-dependents
+```
+
+Dry-run publish for selected changed crates:
+
+```bash
+cargo mono publish --changed --dry-run
+```
+
+## Related pages
+
+- [Projects Overview](projects-overview)
+- [Getting Started](getting-started)
