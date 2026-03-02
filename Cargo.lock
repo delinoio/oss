@@ -201,6 +201,7 @@ dependencies = [
  "clap",
  "globset",
  "predicates",
+ "reqwest",
  "semver",
  "serde",
  "serde_json",

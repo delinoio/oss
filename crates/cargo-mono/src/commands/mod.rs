@@ -15,6 +15,8 @@ use crate::{
     CargoMonoApp,
 };
 
+const PUBLISH_PREFETCH_CONCURRENCY_ENV: &str = "CARGO_MONO_PUBLISH_PREFETCH_CONCURRENCY";
+
 pub fn execute(cli: Cli, app: &CargoMonoApp) -> Result<i32> {
     match cli.command {
         Command::List => list::execute(cli.output, app),
@@ -128,8 +130,14 @@ fn publish_arg_shape(args: &PublishArgs, output: OutputFormat) -> Value {
         "exclude_path": args.changed.exclude_path,
         "dry_run": args.dry_run,
         "allow_dirty": args.allow_dirty,
-        "registry_provided": args.registry.is_some()
+        "registry_provided": args.registry.is_some(),
+        "prefetch_registry_eligible": publish_prefetch_registry_eligible(args.registry.as_deref()),
+        "prefetch_concurrency_env_set": std::env::var(PUBLISH_PREFETCH_CONCURRENCY_ENV).is_ok()
     })
+}
+
+fn publish_prefetch_registry_eligible(registry: Option<&str>) -> bool {
+    registry.is_none_or(|value| value.eq_ignore_ascii_case("crates-io"))
 }
 
 fn target_selector_key(target: &TargetArgs) -> &'static str {
