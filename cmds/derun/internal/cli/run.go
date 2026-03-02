@@ -48,11 +48,11 @@ func ExecuteRun(args []string) int {
 	fs.DurationVar(&retentionDuration, "retention", defaultRetention, "retention duration")
 
 	flagArgs, commandArgs, hasSeparator := splitRunArgs(args)
-	if !hasSeparator {
-		fmt.Fprintln(os.Stderr, "run command requires '--' separator before target command")
+	if err := fs.Parse(flagArgs); err != nil {
 		return 2
 	}
-	if err := fs.Parse(flagArgs); err != nil {
+	if !hasSeparator {
+		fmt.Fprintln(os.Stderr, "run command requires '--' separator before target command")
 		return 2
 	}
 	if len(commandArgs) == 0 {
@@ -262,7 +262,7 @@ func splitRunArgs(args []string) ([]string, []string, bool) {
 			return args[:i], args[i+1:], true
 		}
 	}
-	return nil, nil, false
+	return args, nil, false
 }
 
 func selectTransportMode(ttyAttached bool, goos string) contracts.DerunTransportMode {

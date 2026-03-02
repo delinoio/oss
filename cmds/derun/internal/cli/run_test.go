@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -131,6 +132,52 @@ func TestExecuteRunRejectsMissingTargetCommandAfterSeparator(t *testing.T) {
 	exitCode := ExecuteRun([]string{"--"})
 	if exitCode != 2 {
 		t.Fatalf("unexpected exit code: got=%d want=2", exitCode)
+	}
+
+	assertNoSessionsCreated(t, stateRoot)
+}
+
+func TestExecuteRunShowsHelpWithoutSeparator(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+
+	originalStderr := os.Stderr
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe returned error: %v", err)
+	}
+	os.Stderr = stderrWriter
+	t.Cleanup(func() {
+		os.Stderr = originalStderr
+		_ = stderrReader.Close()
+		_ = stderrWriter.Close()
+	})
+
+	stderrDone := make(chan string, 1)
+	go func() {
+		var stderrBuffer bytes.Buffer
+		_, _ = io.Copy(&stderrBuffer, stderrReader)
+		stderrDone <- stderrBuffer.String()
+	}()
+
+	exitCode := ExecuteRun([]string{"--help"})
+	if exitCode != 2 {
+		t.Fatalf("unexpected exit code: got=%d want=2", exitCode)
+	}
+
+	if err := stderrWriter.Close(); err != nil {
+		t.Fatalf("stderrWriter.Close returned error: %v", err)
+	}
+
+	stderrOutput := <-stderrDone
+	if strings.Contains(stderrOutput, "run command requires '--' separator before target command") {
+		t.Fatalf("help output should not include separator error: %q", stderrOutput)
+	}
+	if !strings.Contains(stderrOutput, "Usage of run:") {
+		t.Fatalf("help output should include usage text: %q", stderrOutput)
 	}
 
 	assertNoSessionsCreated(t, stateRoot)
