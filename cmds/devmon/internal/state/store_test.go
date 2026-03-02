@@ -2,7 +2,9 @@ package state
 
 import (
 	"log/slog"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,6 +80,18 @@ func TestStoreLifecycleAndRunUpdates(t *testing.T) {
 	}
 	if snapshot.LastSkip.SkipReason != "capacity" {
 		t.Fatalf("expected skip reason capacity, got=%s", snapshot.LastSkip.SkipReason)
+	}
+}
+
+func TestStorePathReturnsConfiguredPath(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "status.json")
+	store, err := NewStore(storePath, slog.Default())
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+
+	if store.Path() != storePath {
+		t.Fatalf("expected store path=%s, got=%s", storePath, store.Path())
 	}
 }
 
@@ -219,5 +233,131 @@ func TestIsHeartbeatFresh(t *testing.T) {
 	}
 	if IsHeartbeatFresh(staleSnapshot, now, 10*time.Second) {
 		t.Fatal("expected heartbeat to be stale")
+	}
+}
+
+func TestMarkRunCompletedLastErrorLifecycle(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "status.json")
+	store, err := NewStore(storePath, slog.Default())
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+
+	currentTime := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	store.nowFn = func() time.Time {
+		return currentTime
+	}
+
+	if err := store.MarkRunCompleted(RunCompletedInput{
+		Outcome:    contracts.DevmonRunOutcomeFailed,
+		FolderID:   "workspace-a",
+		JobID:      "job-a",
+		DurationMS: 100,
+		ActiveJobs: 0,
+	}); err != nil {
+		t.Fatalf("MarkRunCompleted(failed) returned error: %v", err)
+	}
+
+	snapshot, err := store.Read()
+	if err != nil {
+		t.Fatalf("Read returned error: %v", err)
+	}
+	if snapshot.LastError != "failed" {
+		t.Fatalf("expected last_error=failed, got=%q", snapshot.LastError)
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	if err := store.MarkRunCompleted(RunCompletedInput{
+		Outcome:    contracts.DevmonRunOutcomeTimeout,
+		FolderID:   "workspace-a",
+		JobID:      "job-a",
+		DurationMS: 100,
+		ActiveJobs: 0,
+	}); err != nil {
+		t.Fatalf("MarkRunCompleted(timeout) returned error: %v", err)
+	}
+
+	snapshot, err = store.Read()
+	if err != nil {
+		t.Fatalf("Read returned error: %v", err)
+	}
+	if snapshot.LastError != "timeout" {
+		t.Fatalf("expected last_error=timeout, got=%q", snapshot.LastError)
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	if err := store.MarkRunCompleted(RunCompletedInput{
+		Outcome:    contracts.DevmonRunOutcomeFailed,
+		FolderID:   "workspace-a",
+		JobID:      "job-a",
+		DurationMS: 100,
+		Error:      "process exited 42",
+		ActiveJobs: 0,
+	}); err != nil {
+		t.Fatalf("MarkRunCompleted(custom error) returned error: %v", err)
+	}
+
+	snapshot, err = store.Read()
+	if err != nil {
+		t.Fatalf("Read returned error: %v", err)
+	}
+	if snapshot.LastError != "process exited 42" {
+		t.Fatalf("expected last_error custom message, got=%q", snapshot.LastError)
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	if err := store.MarkRunCompleted(RunCompletedInput{
+		Outcome:    contracts.DevmonRunOutcomeSuccess,
+		FolderID:   "workspace-a",
+		JobID:      "job-a",
+		DurationMS: 80,
+		ActiveJobs: 0,
+	}); err != nil {
+		t.Fatalf("MarkRunCompleted(success) returned error: %v", err)
+	}
+
+	snapshot, err = store.Read()
+	if err != nil {
+		t.Fatalf("Read returned error: %v", err)
+	}
+	if snapshot.LastError != "" {
+		t.Fatalf("expected last_error to clear on success, got=%q", snapshot.LastError)
+	}
+}
+
+func TestReadFailsForInvalidJSON(t *testing.T) {
+	storePath := filepath.Join(t.TempDir(), "status.json")
+	if err := os.WriteFile(storePath, []byte("{this-is-not-json"), 0o600); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+
+	store, err := NewStore(storePath, slog.Default())
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+
+	_, err = store.Read()
+	if err == nil {
+		t.Fatal("expected read to fail for invalid JSON")
+	}
+	if !strings.Contains(err.Error(), "decode status file") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestIsHeartbeatFreshEdgeCases(t *testing.T) {
+	now := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+
+	if !IsHeartbeatFresh(Snapshot{}, now, 0) {
+		t.Fatal("expected non-positive threshold to always be fresh")
+	}
+
+	if IsHeartbeatFresh(Snapshot{}, now, 10*time.Second) {
+		t.Fatal("expected missing heartbeat timestamp to be stale")
+	}
+
+	invalidTimestamp := Snapshot{LastHeartbeatAt: "invalid-time"}
+	if IsHeartbeatFresh(invalidTimestamp, now, 10*time.Second) {
+		t.Fatal("expected invalid heartbeat timestamp to be stale")
 	}
 }

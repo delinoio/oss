@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/delinoio/oss/cmds/devmon/internal/contracts"
 	"github.com/delinoio/oss/cmds/devmon/internal/executor"
 	"github.com/delinoio/oss/cmds/devmon/internal/logging"
+	"github.com/delinoio/oss/cmds/devmon/internal/state"
 )
 
 type fakeExecutor struct {
@@ -327,6 +329,98 @@ func TestRunnerStopsAfterContextCancel(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("runner did not stop after context cancellation")
+	}
+}
+
+func TestRunnerRunRejectsNilConfig(t *testing.T) {
+	runner := &Runner{
+		logger:    slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)),
+		executor:  &fakeExecutor{},
+		semaphore: make(chan struct{}, 1),
+		running:   make(map[string]bool),
+	}
+
+	err := runner.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error for nil config")
+	}
+	if !strings.Contains(err.Error(), "config is nil") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunnerRunRejectsNilExecutor(t *testing.T) {
+	cfg := testConfig(t, 1, false, []config.JobConfig{
+		testJob("job-a", true, "1h", "1s", boolPtr(true)),
+	})
+	runner := &Runner{
+		config:    cfg,
+		logger:    slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil)),
+		semaphore: make(chan struct{}, cfg.Daemon.MaxConcurrentJobs),
+		running:   make(map[string]bool),
+	}
+
+	err := runner.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error for nil executor")
+	}
+	if !strings.Contains(err.Error(), "executor is nil") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunnerPersistsStateUpdates(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
+	fake := &fakeExecutor{}
+	cfg := testConfig(t, 1, true, []config.JobConfig{
+		testJob("stateful-job", true, "1h", "1s", boolPtr(true)),
+	})
+
+	runner := NewRunner(cfg, logger, fake)
+
+	statePath := filepath.Join(t.TempDir(), "status.json")
+	store, err := state.NewStore(statePath, logger)
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	runner.SetStateStore(store)
+
+	runContext, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- runner.Run(runContext)
+	}()
+
+	waitForCondition(t, time.Second, func() bool {
+		return fake.callCount() >= 1
+	})
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("runner did not stop")
+	}
+
+	snapshot, err := store.Read()
+	if err != nil {
+		t.Fatalf("Read returned error: %v", err)
+	}
+
+	if snapshot.LastRun == nil {
+		t.Fatalf("expected last run in state snapshot, got=%+v", snapshot)
+	}
+	if snapshot.LastRun.Outcome != contracts.DevmonRunOutcomeSuccess {
+		t.Fatalf("expected success outcome, got=%s", snapshot.LastRun.Outcome)
+	}
+	if snapshot.LastRun.JobID != "stateful-job" {
+		t.Fatalf("expected stateful-job, got=%s", snapshot.LastRun.JobID)
+	}
+	if runner.ActiveJobs() != 0 {
+		t.Fatalf("expected active jobs to be zero, got=%d", runner.ActiveJobs())
 	}
 }
 
