@@ -6,13 +6,18 @@ The primary goal is deterministic multi-version Node.js execution with automatic
 
 ## Path
 - `crates/nodeup`
+- `crates/nodeup/packaging`
+- `scripts/nodeup`
+- `.github/workflows/nodeup-release.yml`
 
 ## Runtime and Language
 - Rust CLI
+- Bash installer, packaging, and release helper scripts
 
 ## Users
 - Developers who need multiple Node.js versions on one machine
 - CI operators who need deterministic Node.js runtime selection
+- Operators who need one-command installation and clean removal flows
 
 ## In Scope
 - Rustup-style hierarchical command surface for Node.js runtime management.
@@ -24,6 +29,11 @@ The primary goal is deterministic multi-version Node.js execution with automatic
 - Dispatch behavior based on executable name (`argv[0]`) for runtime shims.
 - Automatic Node.js binary download and activation when a requested runtime is missing.
 - Human and JSON output modes (`--output human|json`) for machine-parseable command output.
+- Multi-channel installer and uninstaller entrypoints:
+: Homebrew (`brew tap ... && brew install nodeup`)
+: `curl + bash` bootstrap script
+: Linux package-manager based installation via release package artifacts (`apt`, `dnf`, `yum`, `pacman`, `zypper`)
+- GitHub Release automation for nodeup tarballs, package artifacts, checksums, and Homebrew formula synchronization.
 
 ## Out of Scope
 - JavaScript package manager features (`npm`, `pnpm`, `yarn`) beyond runtime delegation
@@ -31,6 +41,7 @@ The primary goal is deterministic multi-version Node.js execution with automatic
 - Remote execution services
 - Rust-only command families and concepts: `target`, `component`, `doc`, `man`, `set`
 - Rust compiler-specific target triples, standard library components, and documentation topics
+- Linux repository hosting and metadata serving for `apt`/`rpm` repositories (release artifacts only)
 
 ## Architecture
 - Top-level command router dispatches to rustup-style subcommand groups (`toolchain`, `show`, `override`, `self`) and leaf commands (`default`, `update`, `check`, `run`, `which`, `completions`).
@@ -41,7 +52,10 @@ The primary goal is deterministic multi-version Node.js execution with automatic
 - Override manager resolves runtime precedence by directory scope and fallback defaults.
 - Shim dispatcher handles executable-name-based mode branching for `node`, `npm`, `npx`, and other managed aliases.
 - Self-management module implements update/uninstall/data-migration flows with deterministic status outputs and action/outcome logs.
-- Completion module remains an explicit skeleton command returning deterministic `NotImplemented`.
+- Installer script layer (`scripts/nodeup/install.sh`) selects an install strategy (`homebrew`, `package`, `binary`) and writes deterministic install state metadata.
+- Uninstaller script layer (`scripts/nodeup/uninstall.sh`) performs clean removal by default (`nodeup self uninstall` + distribution-specific binary/package removal + PATH cleanup).
+- Packaging layer (`scripts/nodeup/build-packages.sh` + `crates/nodeup/packaging/nfpm.yaml`) builds `.deb`, `.rpm`, and `.pkg.tar.zst` artifacts from release binaries.
+- Homebrew formula renderer (`scripts/nodeup/render-homebrew-formula.sh`) generates `Formula/nodeup.rb` from release checksums.
 
 ## Interfaces
 Canonical nodeup command identifiers:
@@ -108,6 +122,29 @@ enum NodeupChannel {
   Lts = "lts",
   Current = "current",
   Latest = "latest",
+}
+```
+
+Canonical installer method identifiers:
+
+```ts
+enum NodeupInstallerMethod {
+  Auto = "auto",
+  Homebrew = "homebrew",
+  Package = "package",
+  Binary = "binary",
+}
+```
+
+Canonical Linux package-manager identifiers:
+
+```ts
+enum NodeupLinuxPackageManager {
+  Apt = "apt",
+  Dnf = "dnf",
+  Yum = "yum",
+  Pacman = "pacman",
+  Zypper = "zypper",
 }
 ```
 
@@ -221,6 +258,51 @@ Subcommand contracts:
 : Input: target shell and optional command scope.
 : Output: deterministic `NotImplemented` error in current phase.
 
+Installer entrypoint contracts:
+- `scripts/nodeup/install.sh`
+: Supported flags:
+: `--method auto|homebrew|package|binary`
+: `--version <latest|vX.Y.Z>`
+: `--manager apt|dnf|yum|pacman|zypper`
+: `--prefix <path>`
+: `--yes`
+: `--dry-run`
+: `--debug`
+: `--no-path-update`
+: Auto decision tree:
+: On macOS, select `homebrew` when `brew` is available, otherwise `binary`.
+: On Linux, select `package` only when a supported manager is detected and package-management privilege is available; otherwise select `binary`.
+- `scripts/nodeup/uninstall.sh`
+: Supported flags:
+: `--method auto|homebrew|package|binary`
+: `--manager apt|dnf|yum|pacman|zypper`
+: `--keep-data`
+: `--yes`
+: `--dry-run`
+: `--debug`
+: Default behavior executes `nodeup self uninstall` before distribution-level removal.
+: `--keep-data` skips `nodeup self uninstall` and only removes distribution-level binaries/packages and PATH integration.
+
+Release artifact naming contract:
+- Release tag format: `nodeup-vX.Y.Z`.
+- Tarball format: `nodeup-v<version>-<platform>-<arch>.tar.gz`.
+- Supported `<platform>-<arch>` tuples:
+: `linux-x64`
+: `linux-arm64`
+: `darwin-x64`
+: `darwin-arm64`
+- Checksum format: `nodeup-v<version>-checksums.txt` with `SHA256  <filename>` lines.
+- Linux package artifacts:
+: Debian (`apt`): `nodeup-v<version>-linux-<arch>.deb`
+: RPM (`dnf|yum|zypper`): `nodeup-v<version>-linux-<arch>.rpm`
+: Arch Linux (`pacman`): `nodeup-v<version>-linux-<arch>.pkg.tar.zst`
+
+Homebrew synchronization contract:
+- Tap repository: `delinoio/homebrew-tap`.
+- Formula path: `Formula/nodeup.rb`.
+- Formula source template: `crates/nodeup/packaging/homebrew/nodeup.rb.tmpl`.
+- Release workflow updates the formula in the tap repository after each successful nodeup release.
+
 Help output contract:
 - `nodeup --help` must show one-line descriptions for all top-level commands (`toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `self`, `completions`).
 - `nodeup <group> --help` must show one-line descriptions for nested subcommands in grouped command families (`toolchain`, `show`, `override`, `self`).
@@ -247,21 +329,27 @@ Symlink contract:
 - Config root:
 : `config/settings.toml` for schema version, default selector, linked runtimes, and tracked selectors.
 : `config/overrides.toml` for per-path runtime selector overrides.
+: `config/installer-state.env` for installer metadata (`method`, `manager`, `prefix`, `profile`, `version`, `tag`).
 - Default path policy:
 : POSIX data: `$XDG_DATA_HOME/nodeup` (fallback `~/.local/share/nodeup`)
 : POSIX cache: `$XDG_CACHE_HOME/nodeup` (fallback `~/.cache/nodeup`)
 : POSIX config: `$XDG_CONFIG_HOME/nodeup` (fallback `~/.config/nodeup`)
+: Installer binary prefix default: `~/.local` (binary mode)
 - Test/dev overrides:
 : `NODEUP_DATA_HOME`, `NODEUP_CACHE_HOME`, `NODEUP_CONFIG_HOME`
 : `NODEUP_INDEX_URL`, `NODEUP_DOWNLOAD_BASE_URL`, `NODEUP_FORCE_PLATFORM`
 : `NODEUP_RELEASE_INDEX_TTL_SECONDS` (positive integer seconds; default `600`)
 : `NODEUP_SELF_UPDATE_SOURCE`, `NODEUP_SELF_BIN_PATH`
+: `NODEUP_INSTALL_STATE_FILE` (installer/uninstaller state path override)
 
 ## Security
 - Validate download integrity before activation.
 - Restrict permissions on local install and cache directories.
 - Avoid executing unverified artifacts.
 - Log provenance metadata for each installed version.
+- Installer scripts must reject non-HTTPS release URLs.
+- Installer scripts must verify `SHA256` checksums from the release checksum file before extracting archives or installing package artifacts.
+- Uninstaller scripts must default to full data cleanup unless explicitly overridden with `--keep-data`.
 
 ## Logging
 Default human-mode logging uses `tracing` pretty formatting with `level=on`, `target=off`, `time=off`, and `ansi=off`.
@@ -289,21 +377,30 @@ Required baseline logs:
 
 ## Build and Test
 Planned commands:
-- Build: `cargo build -p nodeup`
-- Lint: `cargo clippy -p nodeup --all-targets -- -D warnings`
-- Test: `cargo test -p nodeup`
+- Build binary: `cargo build -p nodeup --release`
+- Lint Rust: `cargo clippy -p nodeup --all-targets -- -D warnings`
+- Test Rust crate: `cargo test -p nodeup`
 - Workspace validation: `cargo test`
+- Validate installer shell syntax: `bash -n scripts/nodeup/*.sh scripts/nodeup/lib/*.sh scripts/nodeup/tests/*.sh`
+- Validate installer shell quality: `shellcheck scripts/nodeup/*.sh scripts/nodeup/lib/*.sh scripts/nodeup/tests/*.sh`
+- Run installer test harness:
+: `bash scripts/nodeup/tests/install_test.sh`
+: `bash scripts/nodeup/tests/uninstall_test.sh`
+- Build Linux package artifacts from a release binary:
+: `scripts/nodeup/build-packages.sh --version <vX.Y.Z> --arch <x64|arm64> --binary <path-to-nodeup> --out-dir <dir>`
 
 ## Roadmap
 - Phase 1: Rustup-style command skeleton (`toolchain`, `default`, `show`, `override`, `run`, `which`).
 - Phase 2: Runtime installer, checksum verification, and command-level auto-install behavior.
 - Phase 3: Self-management flows (`self`) implemented; completion generation (`completions`) remains pending.
 - Phase 4: Cross-platform shim parity and CI hardening.
+- Phase 5: Multi-channel distribution automation (release artifacts, package artifacts, Homebrew tap synchronization).
 
 ## Open Questions
 - Signature verification scope beyond `SHA256` checksum matching (for example GPG signature validation).
 - Cross-platform archive support expansion timeline (Windows zip installation path).
 - Self-update rollout policy and release channel strategy for `nodeup` binary updates.
+- Linux repository hosting policy for first-party `apt`/`rpm` metadata (if promoted beyond artifact-based installation).
 
 ## References
 - `docs/project-template.md`
