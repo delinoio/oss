@@ -1,19 +1,26 @@
 package paths
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
 
 func TestPathFunctionsAreConsistentWithHomeDirectory(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	homeRoot := t.TempDir()
+	t.Setenv("HOME", homeRoot)
+	t.Setenv("USERPROFILE", homeRoot)
+
+	homeDirectory, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir returned error: %v", err)
+	}
 
 	configPath, err := ConfigPath()
 	if err != nil {
 		t.Fatalf("ConfigPath returned error: %v", err)
 	}
-	expectedConfigPath := filepath.Join(home, ".config", "devmon", "devmon.toml")
+	expectedConfigPath := filepath.Join(homeDirectory, ".config", "devmon", "devmon.toml")
 	if configPath != expectedConfigPath {
 		t.Fatalf("expected config path=%s, got=%s", expectedConfigPath, configPath)
 	}
@@ -30,7 +37,7 @@ func TestPathFunctionsAreConsistentWithHomeDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StatePath returned error: %v", err)
 	}
-	expectedStatePath := filepath.Join(home, ".local", "state", "devmon", "status.json")
+	expectedStatePath := filepath.Join(homeDirectory, ".local", "state", "devmon", "status.json")
 	if statePath != expectedStatePath {
 		t.Fatalf("expected state path=%s, got=%s", expectedStatePath, statePath)
 	}
@@ -47,7 +54,7 @@ func TestPathFunctionsAreConsistentWithHomeDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LogDirectory returned error: %v", err)
 	}
-	expectedLogDirectory := filepath.Join(home, "Library", "Logs", "devmon")
+	expectedLogDirectory := filepath.Join(homeDirectory, "Library", "Logs", "devmon")
 	if logDirectory != expectedLogDirectory {
 		t.Fatalf("expected log dir=%s, got=%s", expectedLogDirectory, logDirectory)
 	}
@@ -74,7 +81,7 @@ func TestPathFunctionsAreConsistentWithHomeDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LaunchAgentsDirectory returned error: %v", err)
 	}
-	expectedLaunchAgentsDirectory := filepath.Join(home, "Library", "LaunchAgents")
+	expectedLaunchAgentsDirectory := filepath.Join(homeDirectory, "Library", "LaunchAgents")
 	if launchAgentsDirectory != expectedLaunchAgentsDirectory {
 		t.Fatalf("expected launch agents dir=%s, got=%s", expectedLaunchAgentsDirectory, launchAgentsDirectory)
 	}
