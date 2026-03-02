@@ -120,6 +120,9 @@ Command contracts:
 - `derun mcp`
 : Starts stdio MCP server for AI-driven session/output retrieval.
 
+Workspace integration contract:
+- Root `pnpm dev` must execute `./scripts/dev.sh`, which runs `go -C <repo-root> run ./cmds/derun run -- turbo dev` with repository-local `DERUN_STATE_ROOT`, `GOMODCACHE`, `GOCACHE`, and `GOPATH` exports so local development sessions are discoverable by the configured `derun mcp` server.
+
 MCP I/O contracts:
 - `derun_list_sessions(state?, limit?)`
 : Returns active/recent session metadata with session identifier and lifecycle state.

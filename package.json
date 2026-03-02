@@ -5,7 +5,7 @@
   "scripts": {
     "prepare": "lefthook install; ./scripts/prepare-apps.sh",
     "predev": "./scripts/generate-go-proto.sh",
-    "dev": "turbo dev",
+    "dev": "./scripts/dev.sh",
     "build": "turbo build",
     "test": "turbo test",
     "lint": "turbo lint",
