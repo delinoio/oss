@@ -138,7 +138,7 @@ Target selection contract (`bump`, `publish`):
 - GitHub Actions auto-publish integration is defined in `.github/workflows/auto-publish.yml`.
 - Auto-publish triggers on `push` to `main` and `workflow_dispatch`, and enforces a `main` branch guard at job runtime.
 - Auto-publish requires `CARGO_REGISTRY_TOKEN` and maps it to Cargo registry authentication.
-- Auto-publish executes `cargo run -p cargo-mono -- publish --no-verify` for workspace-wide publish orchestration.
+- Auto-publish executes `cargo run -p cargo-mono -- publish` for workspace-wide publish orchestration.
 
 ## Storage
 - No project-owned persistent storage.

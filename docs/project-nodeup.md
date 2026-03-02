@@ -314,7 +314,7 @@ Planned commands:
 - Workspace validation: `cargo test`
 
 Release automation integration:
-- `.github/workflows/auto-publish.yml` runs workspace publish orchestration through `cargo run -p cargo-mono -- publish --no-verify`.
+- `.github/workflows/auto-publish.yml` runs workspace publish orchestration through `cargo run -p cargo-mono -- publish`.
 - The workflow triggers on `push` to `main` and `workflow_dispatch`, with a `main`-branch runtime guard.
 - Nodeup is included automatically when selected by `cargo-mono publish` as a publishable crate version.
 

@@ -44,4 +44,4 @@ jobs:
       - name: Publish workspace crates
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo run -p cargo-mono -- publish --no-verify
+        run: cargo run -p cargo-mono -- publish

@@ -201,7 +201,7 @@ Release automation baseline:
 - `auto-publish` is defined in `.github/workflows/auto-publish.yml`.
 - Trigger contract: runs on `push` to `main` and supports `workflow_dispatch`.
 - Branch guard contract: publish job runs only when `github.ref == 'refs/heads/main'`.
-- Publish command contract: `cargo run -p cargo-mono -- publish --no-verify`.
+- Publish command contract: `cargo run -p cargo-mono -- publish`.
 - Required secret contract: `CARGO_REGISTRY_TOKEN`.
 
 ### Documentation Lifecycle Rules
