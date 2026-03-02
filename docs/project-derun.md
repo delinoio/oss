@@ -217,6 +217,32 @@ Validation commands:
 - CI gating: `.github/workflows/CI.yml` runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - Windows ConPTY E2E coverage requires console device handles (`CONIN$`, `CONOUT$`) and may skip parity assertions when the host returns no ConPTY output bytes.
 
+## Local Codex MCP Integration
+Use this setup when Codex should consume `derun` sessions through local MCP over stdio.
+
+Prerequisites:
+- Go toolchain is installed and available on `PATH`.
+- Repository root is `/Users/kdy1/projects/oss`.
+- Session state root is `/Users/kdy1/.local/state/derun`.
+
+Register the MCP server:
+- `codex mcp add derun --env DERUN_STATE_ROOT=/Users/kdy1/.local/state/derun -- go -C /Users/kdy1/projects/oss run ./cmds/derun mcp`
+
+Verify registration:
+- `codex mcp get derun --json`
+- `codex mcp list --json`
+- Expected transport shape:
+  - `type`: `stdio`
+  - `command`: `go`
+  - `args`: `["-C", "/Users/kdy1/projects/oss", "run", "./cmds/derun", "mcp"]`
+  - `env.DERUN_STATE_ROOT`: `/Users/kdy1/.local/state/derun`
+
+Generate a sample session for MCP read validation:
+- `go -C /Users/kdy1/projects/oss run ./cmds/derun run -- /bin/zsh -lc 'echo derun-ok; sleep 1; echo done'`
+
+Rollback:
+- `codex mcp remove derun`
+
 Implemented defaults:
 - `derun_read_output` default `max_bytes`: `65536`.
 - `derun_wait_output` default `timeout_ms`: `30000` (cap `60000`).
