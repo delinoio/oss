@@ -22,4 +22,5 @@ pnpm --filter public-docs test
 - `documentation-lifecycle.mdx`: Rules for updating internal and public docs together.
 - `devmon.mdx`: Public project guide for `devmon`.
 - `nodeup.mdx`: Public project guide for `nodeup`.
+- `cargo-mono.mdx`: Public project guide for `cargo-mono`.
 - `derun.mdx`: Public project guide for `derun`.

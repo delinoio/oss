@@ -51,6 +51,7 @@ enum PublicDocsPageId {
   DocumentationLifecycle = "documentation-lifecycle",
   Devmon = "devmon",
   Nodeup = "nodeup",
+  CargoMono = "cargo-mono",
   Derun = "derun",
 }
 ```
@@ -61,9 +62,10 @@ Navigation contract:
 - Tab `Home` must include:
 : Group `Get Started` with `index` and `getting-started`.
 : Group `Reference` with `projects-overview` and `documentation-lifecycle`.
-- Tabs `Devmon`, `Nodeup`, and `Derun` must each be present as top-level tabs.
+- Tabs `Devmon`, `Nodeup`, `Cargo Mono`, and `Derun` must each be present as top-level tabs.
 - Tab `Devmon` must include page `devmon`.
 - Tab `Nodeup` must include page `nodeup`.
+- Tab `Cargo Mono` must include page `cargo-mono`.
 - Tab `Derun` must include page `derun`.
 
 Dev preview port contract:
