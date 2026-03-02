@@ -185,6 +185,72 @@ task func Build() Vc[Artifact] {
 	}
 }
 
+func TestCheckRejectsDuplicateTypeDeclarations(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Path string
+}
+
+type Artifact struct {
+    Digest string
+}
+
+task func Build() Vc[Artifact] {
+    return vc(Artifact{})
+}
+`)
+	result := Check(module)
+	foundDuplicateDiagnostic := false
+	for _, issue := range result.Diagnostics {
+		if issue.Message == "duplicate type declaration: Artifact" {
+			foundDuplicateDiagnostic = true
+			break
+		}
+	}
+	if !foundDuplicateDiagnostic {
+		t.Fatalf("expected duplicate type diagnostic, got=%+v", result.Diagnostics)
+	}
+	if len(result.Types) != 1 {
+		t.Fatalf("expected duplicate type to be emitted once, got=%d", len(result.Types))
+	}
+}
+
+func TestCheckDoesNotInferDependencyFromSelectorCallee(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Path string
+}
+
+type Helper struct {
+    Path string
+}
+
+task func Build() Vc[Artifact] {
+    helper := Helper{Path: "x"}
+    val := read(helper.Resolve())
+    return vc(val)
+}
+
+task func Resolve() Vc[Artifact] {
+    return vc(Artifact{Path: "task"})
+}
+`)
+	result := Check(module)
+
+	var buildDeps []string
+	for _, task := range result.Tasks {
+		if task.ID == "Build" {
+			buildDeps = task.Deps
+			break
+		}
+	}
+	if len(buildDeps) != 0 {
+		t.Fatalf("expected no inferred dependency for selector callee, got=%+v", buildDeps)
+	}
+}
+
 func parseModuleForTest(t *testing.T, source string) *ast.Module {
 	t.Helper()
 	tokens, lexDiagnostics := lexer.Lex(source)

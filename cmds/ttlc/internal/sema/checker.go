@@ -51,11 +51,23 @@ func Check(module *ast.Module) Result {
 		})
 	}
 
+	typeNames := make(map[string]struct{})
 	for _, declaration := range module.Decls {
 		typeDeclaration, ok := declaration.(*ast.TypeDecl)
 		if !ok {
 			continue
 		}
+		if _, exists := typeNames[typeDeclaration.Name]; exists {
+			result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
+				Kind:    contracts.DiagnosticKindTypeError,
+				Message: fmt.Sprintf("duplicate type declaration: %s", typeDeclaration.Name),
+				Line:    typeDeclaration.Span.Start.Line,
+				Column:  typeDeclaration.Span.Start.Column,
+			})
+			continue
+		}
+		typeNames[typeDeclaration.Name] = struct{}{}
+
 		fields := make([]TypeField, 0, len(typeDeclaration.Fields))
 		for _, field := range typeDeclaration.Fields {
 			fields = append(fields, TypeField{
@@ -139,7 +151,7 @@ func Check(module *ast.Module) Result {
 				if !ok {
 					return
 				}
-				dependencyName := callableName(dependencyCall.Callee)
+				dependencyName := callableTaskName(dependencyCall.Callee)
 				if dependencyName == "" {
 					return
 				}
@@ -188,11 +200,9 @@ func isVcReturnType(typeExpr *ast.TypeExpr) bool {
 	return len(typeExpr.TypeArgs) == 1
 }
 
-func callableName(expression ast.Expr) string {
+func callableTaskName(expression ast.Expr) string {
 	switch typed := expression.(type) {
 	case *ast.IdentifierExpr:
-		return typed.Name
-	case *ast.SelectorExpr:
 		return typed.Name
 	default:
 		return ""
