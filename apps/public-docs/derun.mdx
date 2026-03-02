@@ -1,0 +1,56 @@
+# derun
+
+`derun` is a terminal-faithful command runner with side-channel transcript capture and MCP-based output retrieval for AI workflows.
+
+## Why use derun
+
+- Keep terminal behavior unchanged for human operators.
+- Capture complete command transcripts for later replay and live tail.
+- Expose read-only MCP tools for deterministic session discovery and output access.
+
+## Core capabilities
+
+- Run mode: `derun run -- <command> [args...]`
+- MCP mode: `derun mcp`
+- Cursor-based output APIs over MCP:
+  - `derun_list_sessions`
+  - `derun_get_session`
+  - `derun_read_output`
+  - `derun_wait_output`
+
+## Quick start
+
+Run a command with transcript capture:
+
+```bash
+derun run -- ls -la
+```
+
+Run with an explicit session ID and retention:
+
+```bash
+derun run --session-id local-debug-001 --retention 24h -- go test ./...
+```
+
+Start MCP bridge server for session retrieval:
+
+```bash
+derun mcp
+```
+
+## Terminal fidelity rules
+
+- Child stdout/stderr are forwarded without mutation.
+- PTY transport is used for interactive terminals (POSIX PTY / Windows ConPTY).
+- Process exit code or signal semantics are preserved.
+
+## Retention and storage
+
+- Default retention TTL is 24 hours.
+- Session artifacts are stored under the local state root (`$XDG_STATE_HOME/derun` or fallback path).
+- Per-session artifacts include `meta.json`, `output.bin`, `index.jsonl`, and `final.json`.
+
+## Related pages
+
+- [Projects Overview](projects-overview)
+- [Documentation Lifecycle](documentation-lifecycle)

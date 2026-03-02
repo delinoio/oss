@@ -5,14 +5,46 @@
     "primary": "#0F766E"
   },
   "navigation": {
-    "groups": [
+    "tabs": [
       {
-        "group": "Get Started",
-        "pages": ["index", "getting-started"]
+        "tab": "Home",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["index", "getting-started"]
+          },
+          {
+            "group": "Reference",
+            "pages": ["projects-overview", "documentation-lifecycle"]
+          }
+        ]
       },
       {
-        "group": "Reference",
-        "pages": ["projects-overview", "documentation-lifecycle"]
+        "tab": "Devmon",
+        "groups": [
+          {
+            "group": "Automation Daemon",
+            "pages": ["devmon"]
+          }
+        ]
+      },
+      {
+        "tab": "Nodeup",
+        "groups": [
+          {
+            "group": "Node Runtime Manager",
+            "pages": ["nodeup"]
+          }
+        ]
+      },
+      {
+        "tab": "Derun",
+        "groups": [
+          {
+            "group": "Terminal Relay + MCP",
+            "pages": ["derun"]
+          }
+        ]
       }
     ]
   }
