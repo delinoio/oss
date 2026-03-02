@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,23 @@ import (
 	"github.com/delinoio/oss/cmds/derun/internal/state"
 	"github.com/delinoio/oss/cmds/derun/internal/transport"
 )
+
+func assertNoSessionsCreated(t *testing.T, stateRoot string) {
+	t.Helper()
+
+	store, err := state.New(stateRoot)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+
+	sessions, total, err := store.ListSessions("", 10)
+	if err != nil {
+		t.Fatalf("ListSessions returned error: %v", err)
+	}
+	if total != 0 || len(sessions) != 0 {
+		t.Fatalf("expected no sessions: total=%d len=%d", total, len(sessions))
+	}
+}
 
 func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") == "1" {
@@ -87,6 +105,82 @@ func TestExecuteRunPipeModeCapturesOutputAndExitCode(t *testing.T) {
 	if _, err := os.Stat(finalPath); err != nil {
 		t.Fatalf("final metadata should exist: %v", err)
 	}
+}
+
+func TestExecuteRunRejectsMissingCommandSeparator(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+
+	exitCode := ExecuteRun([]string{"echo", "hi"})
+	if exitCode != 2 {
+		t.Fatalf("unexpected exit code: got=%d want=2", exitCode)
+	}
+
+	assertNoSessionsCreated(t, stateRoot)
+}
+
+func TestExecuteRunRejectsMissingTargetCommandAfterSeparator(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+
+	exitCode := ExecuteRun([]string{"--"})
+	if exitCode != 2 {
+		t.Fatalf("unexpected exit code: got=%d want=2", exitCode)
+	}
+
+	assertNoSessionsCreated(t, stateRoot)
+}
+
+func TestExecuteRunShowsHelpWithoutSeparator(t *testing.T) {
+	stateRoot := t.TempDir()
+	if err := os.Setenv("DERUN_STATE_ROOT", stateRoot); err != nil {
+		t.Fatalf("Setenv DERUN_STATE_ROOT: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Unsetenv("DERUN_STATE_ROOT") })
+
+	originalStderr := os.Stderr
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe returned error: %v", err)
+	}
+	os.Stderr = stderrWriter
+	t.Cleanup(func() {
+		os.Stderr = originalStderr
+		_ = stderrReader.Close()
+		_ = stderrWriter.Close()
+	})
+
+	stderrDone := make(chan string, 1)
+	go func() {
+		var stderrBuffer bytes.Buffer
+		_, _ = io.Copy(&stderrBuffer, stderrReader)
+		stderrDone <- stderrBuffer.String()
+	}()
+
+	exitCode := ExecuteRun([]string{"--help"})
+	if exitCode != 2 {
+		t.Fatalf("unexpected exit code: got=%d want=2", exitCode)
+	}
+
+	if err := stderrWriter.Close(); err != nil {
+		t.Fatalf("stderrWriter.Close returned error: %v", err)
+	}
+
+	stderrOutput := <-stderrDone
+	if strings.Contains(stderrOutput, "run command requires '--' separator before target command") {
+		t.Fatalf("help output should not include separator error: %q", stderrOutput)
+	}
+	if !strings.Contains(stderrOutput, "Usage of run:") {
+		t.Fatalf("help output should include usage text: %q", stderrOutput)
+	}
+
+	assertNoSessionsCreated(t, stateRoot)
 }
 
 func TestExecuteRunPipeModeCapturesOutputAndExitCodeHelperProcess(t *testing.T) {
