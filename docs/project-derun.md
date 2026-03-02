@@ -268,8 +268,8 @@ Recommended local integration flow for Codex users:
 1. Add a project-local Codex config at `.codex/config.toml`:
    - ```toml
      [mcp_servers.derun]
-     command = "/bin/zsh"
-     args = ["-lc", "set -euo pipefail; repo_root=\"$(git rev-parse --show-toplevel)\"; export DERUN_STATE_ROOT=\"$repo_root/.derun-state\"; export GOMODCACHE=\"$repo_root/.gomodcache\"; export GOCACHE=\"$repo_root/.gocache\"; export GOPATH=\"$repo_root/.gopath\"; exec go -C \"$repo_root\" run ./cmds/derun mcp"]
+     command = "sh"
+     args = ["-c", "set -eu; repo_root=\"$(git rev-parse --show-toplevel)\"; export DERUN_STATE_ROOT=\"$repo_root/.derun-state\"; export GOMODCACHE=\"$repo_root/.gomodcache\"; export GOCACHE=\"$repo_root/.gocache\"; export GOPATH=\"$repo_root/.gopath\"; exec go -C \"$repo_root\" run ./cmds/derun mcp"]
      startup_timeout_sec = 120
      tool_timeout_sec = 60
      ```
@@ -287,6 +287,7 @@ Recommended local integration flow for Codex users:
 Operational guidance:
 - Keep the project in trusted mode so Codex loads project-local `.codex/config.toml`.
 - Prefer project-local `.codex/config.toml` over global `~/.codex/config.toml` for reproducible checkout-to-run behavior.
+- Use `command = "sh"` with POSIX-compatible script syntax to avoid shell path lock-in (for example hard-coded `/bin/zsh`).
 - Remove integration by deleting `[mcp_servers.derun]` from `.codex/config.toml`.
 
 ## Roadmap
