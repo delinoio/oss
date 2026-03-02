@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "crates/cargo-mono",
     "crates/nodeup",
+    "crates/serde-lite-derive",
+    "crates/serde-lite-derive-macros",
 ]
 
 # Release profile optimizations

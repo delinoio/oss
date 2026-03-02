@@ -1560,6 +1560,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-lite-derive"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde-lite-derive-macros",
+]
+
+[[package]]
+name = "serde-lite-derive-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
