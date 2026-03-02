@@ -171,6 +171,89 @@ func TestOpenResetsCacheOnSchemaVersionMismatch(t *testing.T) {
 	}
 }
 
+func TestOpenResetsUnversionedLegacySchema(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "cache", "cache.sqlite3")
+	if err := os.MkdirAll(filepath.Dir(databasePath), 0o700); err != nil {
+		t.Fatalf("create cache directory: %v", err)
+	}
+	db, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatalf("open sqlite directly: %v", err)
+	}
+
+	legacyStatements := []string{
+		`CREATE TABLE IF NOT EXISTS schema_meta(version INTEGER NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS task_cache(
+			task_key TEXT PRIMARY KEY,
+			input_fingerprint TEXT NOT NULL,
+			output_blob_ref TEXT,
+			deps TEXT NOT NULL,
+			metadata TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS task_deps(
+			task_key TEXT NOT NULL,
+			dep_task_key TEXT NOT NULL,
+			PRIMARY KEY(task_key, dep_task_key)
+		)`,
+		`CREATE TABLE IF NOT EXISTS cache_blobs(
+			blob_ref TEXT PRIMARY KEY,
+			codec TEXT NOT NULL,
+			bytes BLOB NOT NULL,
+			size_bytes INTEGER NOT NULL
+		)`,
+		`DELETE FROM schema_meta`,
+		`INSERT INTO task_cache(task_key, input_fingerprint, output_blob_ref, deps, metadata, updated_at)
+		 VALUES('legacy-task', 'legacy-input', '', '[]', '{}', '2026-03-02T00:00:00Z')`,
+	}
+	for _, statement := range legacyStatements {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("execute legacy schema statement: %v", err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite db: %v", err)
+	}
+
+	store, err := Open(databasePath)
+	if err != nil {
+		t.Fatalf("open store after legacy schema setup: %v", err)
+	}
+	defer store.Close()
+
+	versionRow := store.db.QueryRow(`SELECT version FROM schema_meta LIMIT 1`)
+	var version int
+	if err := versionRow.Scan(&version); err != nil {
+		t.Fatalf("read schema version: %v", err)
+	}
+	if version != schemaVersion {
+		t.Fatalf("unexpected schema version: got=%d want=%d", version, schemaVersion)
+	}
+
+	hasTask, err := store.HasTask("legacy-task")
+	if err != nil {
+		t.Fatalf("check legacy task presence: %v", err)
+	}
+	if hasTask {
+		t.Fatal("expected legacy task row to be removed by schema reset")
+	}
+
+	if err := store.UpsertTask(TaskRecord{
+		TaskKey:                 "task-key-1",
+		Module:                  "build",
+		TaskID:                  "Build",
+		InputContentHash:        "input-content-hash",
+		ParameterHash:           "parameter-hash",
+		EnvironmentSnapshotHash: "environment-hash",
+		InputFingerprint:        "input-hash",
+		Deps:                    []string{"dep-a"},
+		Metadata:                map[string]any{"module": "build"},
+		UpdatedAt:               time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert task on migrated schema: %v", err)
+	}
+}
+
 func TestGetTaskStateDetectsCorruption(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "cache", "cache.sqlite3")
 	store, err := Open(databasePath)

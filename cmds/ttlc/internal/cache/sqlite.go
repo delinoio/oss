@@ -402,6 +402,17 @@ func (s *Store) migrate() error {
 			return err
 		}
 	}
+	if !hasVersion {
+		shouldReset, err := s.requiresResetForUnversionedSchema()
+		if err != nil {
+			return err
+		}
+		if shouldReset {
+			if err := s.resetSchema(); err != nil {
+				return err
+			}
+		}
+	}
 
 	if err := s.ensureSchemaTables(); err != nil {
 		return err
@@ -410,6 +421,55 @@ func (s *Store) migrate() error {
 		return err
 	}
 	return nil
+}
+
+func (s *Store) requiresResetForUnversionedSchema() (bool, error) {
+	taskCacheExists, err := s.tableExists("task_cache")
+	if err != nil {
+		return false, err
+	}
+	if !taskCacheExists {
+		return false, nil
+	}
+
+	requiredColumns := []string{
+		"module",
+		"task_id",
+		"input_content_hash",
+		"parameter_hash",
+		"environment_snapshot_hash",
+	}
+	for _, column := range requiredColumns {
+		hasColumn, err := s.tableHasColumn("task_cache", column)
+		if err != nil {
+			return false, err
+		}
+		if !hasColumn {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *Store) tableExists(tableName string) (bool, error) {
+	row := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, tableName)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return false, fmt.Errorf("check table existence for %s: %w", tableName, err)
+	}
+	return count > 0, nil
+}
+
+func (s *Store) tableHasColumn(tableName string, columnName string) (bool, error) {
+	row := s.db.QueryRow(`SELECT 1 FROM pragma_table_info(?) WHERE name = ? LIMIT 1`, tableName, columnName)
+	var marker int
+	if err := row.Scan(&marker); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("check column %s on %s: %w", columnName, tableName, err)
+	}
+	return marker == 1, nil
 }
 
 func (s *Store) readSchemaVersion() (int, bool, error) {
