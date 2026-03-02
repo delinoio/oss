@@ -1,0 +1,60 @@
+# devmon
+
+`devmon` is a local automation daemon for recurring folder jobs, with optional macOS service and menu bar lifecycle control.
+
+## Why use devmon
+
+- Schedule recurring local workflows without building a separate cron setup.
+- Keep execution visibility with structured logs and persisted daemon status.
+- Control lifecycle from both CLI and menu bar on macOS.
+
+## Core capabilities
+
+- Foreground daemon mode: `devmon daemon --config <path>`
+- Config validation mode: `devmon validate --config <path>`
+- Service lifecycle mode (macOS): `devmon service install|uninstall|start|stop|status`
+- Menu bar mode (macOS): `devmon menubar`
+
+## Configuration model
+
+`devmon` uses a TOML config file (`devmon.toml`) with folder and job definitions.
+
+```toml
+version = 1
+
+[daemon]
+max_concurrent_jobs = 2
+startup_run = true
+log_level = "info"
+
+[[folder]]
+id = "workspace"
+path = "/Users/you/projects/oss"
+
+[[folder.job]]
+id = "go-test"
+type = "shell-command"
+enabled = true
+interval = "15m"
+timeout = "10m"
+shell = "/bin/zsh"
+script = "go test ./..."
+```
+
+## Scheduling semantics
+
+- Startup run is executed immediately when enabled.
+- Job overlap is blocked (`skipped-overlap`) when a previous run is still active.
+- Global concurrency limits are enforced (`skipped-capacity`) when all slots are full.
+- Timeouts are enforced per job.
+
+## Observability and state
+
+- Structured logging is implemented with Go `log/slog`.
+- Daemon state is persisted to `~/.local/state/devmon/status.json`.
+- Service mode writes LaunchAgent definitions under `~/Library/LaunchAgents`.
+
+## Related pages
+
+- [Projects Overview](projects-overview)
+- [Documentation Lifecycle](documentation-lifecycle)

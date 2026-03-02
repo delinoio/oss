@@ -1,0 +1,54 @@
+# nodeup
+
+`nodeup` is a Rust-based Node.js version manager with rustup-like commands and deterministic runtime selection.
+
+## Why use nodeup
+
+- Manage multiple Node.js runtimes with a single CLI.
+- Resolve runtime precedence consistently across default, override, and explicit execution.
+- Use stable human and JSON output modes for both operators and automation.
+
+## Core capabilities
+
+- Toolchain lifecycle: `toolchain list|install|uninstall|link`
+- Runtime selection: `default`, `override set|unset|list`, `show active-runtime`
+- Runtime-aware execution: `run`, `which`
+- Self-management: `self update|uninstall|upgrade-data`
+
+## Common workflows
+
+Set a global default runtime:
+
+```bash
+nodeup default lts
+```
+
+Install and run with an explicit runtime:
+
+```bash
+nodeup toolchain install 24.0.0
+nodeup run --install 24.0.0 node -v
+```
+
+Use a project directory override:
+
+```bash
+nodeup override set lts --path /path/to/project
+```
+
+## Runtime resolution precedence
+
+1. Explicit runtime selector in command invocation (`run`, `which --runtime`)
+2. Directory override selector (`override set`)
+3. Global default selector (`default`)
+
+## Output and logging behavior
+
+- `--output human|json` is available for management commands.
+- Human mode uses pretty `tracing` logs by default.
+- JSON mode writes machine payloads to stdout and keeps logs off by default unless explicitly enabled.
+
+## Related pages
+
+- [Projects Overview](projects-overview)
+- [Getting Started](getting-started)

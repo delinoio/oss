@@ -27,8 +27,8 @@ It delivers curated onboarding and project overview content while keeping detail
 
 ## Architecture
 - Mintlify app content is authored as MDX pages under `apps/public-docs`.
-- Site navigation and page grouping are defined in `apps/public-docs/docs.json`.
-- `docs.json` must include `colors.primary` and a `navigation` object using the `navigation.groups` array contract.
+- Site navigation, top tabs, and page grouping are defined in `apps/public-docs/docs.json`.
+- `docs.json` must include `colors.primary` and a `navigation` object using the `navigation.tabs` array contract.
 - Public docs summarize stable user-facing information from internal project contracts.
 - Internal contracts remain authoritative and must be updated before or alongside related public docs updates.
 
@@ -49,14 +49,22 @@ enum PublicDocsPageId {
   GettingStarted = "getting-started",
   ProjectsOverview = "projects-overview",
   DocumentationLifecycle = "documentation-lifecycle",
+  Devmon = "devmon",
+  Nodeup = "nodeup",
+  Derun = "derun",
 }
 ```
 
 Navigation contract:
 - `navigation` must be an object, not an array.
-- `navigation.groups` is the canonical group list.
-- Group `Get Started` must include `index` and `getting-started`.
-- Group `Reference` must include `projects-overview` and `documentation-lifecycle`.
+- `navigation.tabs` is the canonical top-level navigation list.
+- Tab `Home` must include:
+: Group `Get Started` with `index` and `getting-started`.
+: Group `Reference` with `projects-overview` and `documentation-lifecycle`.
+- Tabs `Devmon`, `Nodeup`, and `Derun` must each be present as top-level tabs.
+- Tab `Devmon` must include page `devmon`.
+- Tab `Nodeup` must include page `nodeup`.
+- Tab `Derun` must include page `derun`.
 
 Dev preview port contract:
 - `pnpm --filter public-docs dev` runs Mintlify with fixed port `46249`.
