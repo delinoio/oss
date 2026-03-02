@@ -1,0 +1,5 @@
+error: duplicate wire field name `id` in serialization; conflicts with field `first`
+ --> tests/ui/duplicate_wire_name.rs:7:22
+  |
+7 |     #[serde(rename = "id")]
+  |                      ^^^^

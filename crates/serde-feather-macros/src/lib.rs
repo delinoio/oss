@@ -2,6 +2,8 @@
 
 //! Proc-macro derive implementation for `serde-feather`.
 
+use std::collections::HashMap;
+
 use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use proc_macro_crate::{crate_name, FoundCrate};
@@ -53,6 +55,28 @@ struct ParsedStruct {
     ident: Ident,
     struct_name: LitStr,
     fields: Vec<ParsedField>,
+}
+
+#[derive(Clone, Copy)]
+enum WireDirection {
+    Serialize,
+    Deserialize,
+}
+
+impl WireDirection {
+    fn includes(self, field: &ParsedField) -> bool {
+        match self {
+            Self::Serialize => !field.skip_serializing,
+            Self::Deserialize => !field.skip_deserializing,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Serialize => "serialization",
+            Self::Deserialize => "deserialization",
+        }
+    }
 }
 
 fn expand_serialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
@@ -354,11 +378,42 @@ fn parse_input(input: &DeriveInput, macro_name: &str) -> syn::Result<ParsedStruc
         parsed_fields.push(parse_field(field)?);
     }
 
+    validate_unique_wire_field_names(&parsed_fields, WireDirection::Serialize)?;
+    validate_unique_wire_field_names(&parsed_fields, WireDirection::Deserialize)?;
+
     Ok(ParsedStruct {
         ident: input.ident.clone(),
         struct_name,
         fields: parsed_fields,
     })
+}
+
+fn validate_unique_wire_field_names(
+    parsed_fields: &[ParsedField],
+    direction: WireDirection,
+) -> syn::Result<()> {
+    let mut seen_by_name: HashMap<String, String> = HashMap::new();
+
+    for field in parsed_fields {
+        if !direction.includes(field) {
+            continue;
+        }
+
+        let wire_name = field.serialized_name.value();
+        let current_field = field.ident.to_string();
+        if let Some(previous_field) = seen_by_name.insert(wire_name.clone(), current_field) {
+            return Err(syn::Error::new(
+                field.serialized_name.span(),
+                format!(
+                    "duplicate wire field name `{wire_name}` in {}; conflicts with field \
+                     `{previous_field}`",
+                    direction.name()
+                ),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn parse_container_attributes(attrs: &[Attribute]) -> syn::Result<ContainerAttrOptions> {

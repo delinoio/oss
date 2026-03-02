@@ -90,6 +90,7 @@ MVP derive target and attribute contract:
 - Unknown input fields during deserialization must be ignored.
 - Struct deserialization must support both map and sequence struct encodings.
 - Overlapping `skip`, `skip_serializing`, and `skip_deserializing` combinations must be rejected deterministically.
+- Effective wire field names must be unique in both serialization and deserialization field sets.
 - Unsupported shapes and unsupported `serde(...)` attributes must fail with compile-time errors at attribute/type span.
 
 ## Storage
