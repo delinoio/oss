@@ -1,0 +1,14 @@
+{
+  "name": "Delino Public Docs",
+  "theme": "mint",
+  "navigation": [
+    {
+      "group": "Get Started",
+      "pages": ["index", "getting-started"]
+    },
+    {
+      "group": "Reference",
+      "pages": ["projects-overview", "documentation-lifecycle"]
+    }
+  ]
+}

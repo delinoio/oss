@@ -1,0 +1,42 @@
+# Getting Started
+
+This page describes how to run and update the Mintlify-based documentation app in this repository.
+
+## Prerequisites
+
+- Node.js 24 (`.nvmrc` is the workspace baseline)
+- `pnpm` 10+
+
+## Install Dependencies
+
+Run from the repository root:
+
+```bash
+pnpm install
+```
+
+## Start Local Docs Preview
+
+Run from the repository root:
+
+```bash
+pnpm --filter public-docs dev
+```
+
+Mintlify starts a local docs server for previewing navigation and page content.
+
+## Validate Links
+
+Run from the repository root:
+
+```bash
+pnpm --filter public-docs test
+```
+
+This executes `mint broken-links` and should pass before opening a pull request.
+
+## Editing Workflow
+
+1. Update or add page content under `apps/public-docs`.
+2. Keep page IDs and navigation entries in `apps/public-docs/docs.json` stable and synchronized.
+3. When structural or contract-level behavior changes, update the corresponding files in `docs/` and policy files in `AGENTS.md` as needed.

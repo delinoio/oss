@@ -1,0 +1,13 @@
+{
+  "name": "public-docs",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "prepare:app": "echo \"public-docs prepared\"",
+    "dev": "mint dev",
+    "test": "mint broken-links"
+  },
+  "devDependencies": {
+    "mint": "^4.2.392"
+  }
+}

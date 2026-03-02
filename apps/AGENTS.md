@@ -10,6 +10,7 @@
 
 - `apps/devkit`: Next.js 16 micro-app platform.
 - `apps/mpapp`: Expo React Native mobile app.
+- `apps/public-docs`: Mintlify public documentation app.
 
 ### Devkit Identifier Contract
 
@@ -36,7 +37,14 @@ enum DevkitMiniAppId {
 - `mpapp` must remain Expo-based unless a documented architecture decision changes it.
 - Bluetooth capabilities and permissions must be explicitly documented in `docs/project-mpapp.md`.
 
+### public-docs Rules
+
+- `public-docs` must remain Mintlify-based unless a documented architecture decision changes it.
+- Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/project-public-docs.md`.
+- When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
+
 ### Testing and Validation
 
 - If frontend code changes in this domain, run `pnpm test` before finishing.
+- If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.
