@@ -44,6 +44,19 @@ struct SkippedLeadingFieldModel {
     required: u8,
 }
 
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct SeqSkipAlignmentModel {
+    first: u8,
+    #[serde(skip_deserializing)]
+    legacy: u8,
+    second: u8,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct RawIdentifierModel {
+    r#type: u8,
+}
+
 #[test]
 fn round_trip_without_attributes() {
     let value = BasicModel {
@@ -140,4 +153,35 @@ fn deserializes_map_with_skipped_leading_field() {
             required: 33,
         }
     );
+}
+
+#[test]
+fn deserializes_sequence_with_skip_deserializing_alignment() {
+    let values = vec![5_u8, 77_u8, 9_u8];
+    let deserializer = serde_feather::serde::de::value::SeqDeserializer::<
+        _,
+        serde_feather::serde::de::value::Error,
+    >::new(values.into_iter());
+
+    let decoded = SeqSkipAlignmentModel::deserialize(deserializer)
+        .expect("deserialize sequence with skip_deserializing alignment");
+    assert_eq!(
+        decoded,
+        SeqSkipAlignmentModel {
+            first: 5,
+            legacy: 0,
+            second: 9,
+        }
+    );
+}
+
+#[test]
+fn normalizes_raw_identifier_field_names() {
+    let model = RawIdentifierModel { r#type: 3 };
+    let encoded = serde_json::to_string(&model).expect("serialize raw identifier field");
+    assert_eq!(encoded, r#"{"type":3}"#);
+
+    let decoded: RawIdentifierModel =
+        serde_json::from_str(r#"{"type":8}"#).expect("deserialize raw identifier field");
+    assert_eq!(decoded, RawIdentifierModel { r#type: 8 });
 }

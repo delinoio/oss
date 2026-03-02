@@ -9,7 +9,8 @@ use proc_macro2::{Span, TokenStream as TokenStream2};
 use proc_macro_crate::{crate_name, FoundCrate};
 use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input, spanned::Spanned, Attribute, Data, DeriveInput, Field, Fields, Ident, LitStr,
+    ext::IdentExt, parse_macro_input, spanned::Spanned, Attribute, Data, DeriveInput, Field,
+    Fields, Ident, LitStr,
 };
 
 #[proc_macro_derive(FeatherSerialize, attributes(serde))]
@@ -228,7 +229,25 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let construct_fields_in_map = construct_fields.clone();
     let construct_fields_in_seq = construct_fields;
 
-    let seq_field_decode_steps = bindings.iter().enumerate().map(|(seq_index, binding)| {
+    let seq_field_decode_steps = parsed.fields.iter().enumerate().map(|(seq_index, field)| {
+        if field.skip_deserializing {
+            if field.skip_serializing {
+                return quote! {};
+            }
+
+            return quote! {
+                if #crate_path::serde::de::SeqAccess::next_element::<#crate_path::serde::de::IgnoredAny>(&mut seq)?.is_none() {
+                    return ::core::result::Result::Err(
+                        #crate_path::serde::de::Error::invalid_length(#seq_index, &self),
+                    );
+                }
+            };
+        }
+
+        let binding = bindings
+            .iter()
+            .find(|binding| binding.field_index == seq_index)
+            .expect("binding for non-skipped field");
         let binding_ident = &binding.binding_ident;
         let field_ty = &binding.field_ty;
         if binding.default {
@@ -513,7 +532,7 @@ fn parse_field(field: &Field) -> syn::Result<ParsedField> {
 
     let serialized_name = options
         .rename
-        .unwrap_or_else(|| LitStr::new(&field_ident.to_string(), field_ident.span()));
+        .unwrap_or_else(|| LitStr::new(&field_ident.unraw().to_string(), field_ident.span()));
 
     Ok(ParsedField {
         ident: field_ident,
