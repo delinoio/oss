@@ -275,4 +275,5 @@ Behavioral coverage map:
 
 ## References
 - `docs/project-template.md`
-- `docs/monorepo.md`
+- `AGENTS.md`
+- `cmds/AGENTS.md`

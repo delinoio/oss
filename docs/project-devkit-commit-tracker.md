@@ -325,7 +325,10 @@ CLI auth resolution behavior:
 
 ## References
 - `docs/project-template.md`
-- `docs/monorepo.md`
+- `AGENTS.md`
+- `apps/AGENTS.md`
+- `cmds/AGENTS.md`
+- `servers/AGENTS.md`
 - `docs/project-devkit.md`
 - [GitHub REST API: Issue comments](https://docs.github.com/en/rest/issues/comments#create-an-issue-comment)
 - [GitHub REST API: Commit statuses](https://docs.github.com/en/rest/commits/statuses#create-a-commit-status)

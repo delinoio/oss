@@ -174,4 +174,5 @@ Planned commands:
 
 ## References
 - `docs/project-template.md`
-- `docs/monorepo.md`
+- `AGENTS.md`
+- `crates/AGENTS.md`
