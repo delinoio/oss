@@ -295,6 +295,13 @@ Required baseline logs:
 - Completion generation target shell and success/failure status (`action=generate`, `outcome=not-implemented` in current phase)
 
 ## Build and Test
+Local development install and shell-session patch:
+- `eval "$(./scripts/setup/nodeup-local.sh)"`
+- Script contract:
+: Installs from `crates/nodeup` using `cargo install --path .`.
+: Uses install root `${NODEUP_LOCAL_INSTALL_ROOT:-<repo>/.local/nodeup}`.
+: Prints shell exports for `PATH` and `NODEUP_SELF_BIN_PATH` so the current shell session can apply them immediately.
+
 Planned commands:
 - Build: `cargo build -p nodeup`
 - Lint: `cargo clippy -p nodeup --all-targets -- -D warnings`
