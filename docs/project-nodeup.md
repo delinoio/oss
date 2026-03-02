@@ -120,7 +120,7 @@ Global option contract:
 - In `--output human`, default logging uses `tracing` pretty formatting (`level=on`, `target=off`, `time=off`, `ansi=on`).
 - Log color override:
 : `NODEUP_LOG_COLOR=always|auto|never` controls ANSI color (`always` default).
-: If `NODEUP_LOG_COLOR` is unset or `auto`, `CLICOLOR_FORCE` (non-`0`) forces color and `NO_COLOR` or `CLICOLOR=0` disables color.
+: If `NODEUP_LOG_COLOR` is unset or `auto`, `NO_COLOR` disables color; otherwise color remains enabled.
 - In `--output json`, successful command payloads are written to stdout.
 - In `--output json`, handled command and startup failures emit a deterministic stderr JSON envelope with `kind`, `message`, and `exit_code`.
 - In `--output json`, default logging is disabled (`nodeup=off`) so JSON machine output stays parseable unless the operator explicitly sets `RUST_LOG`.

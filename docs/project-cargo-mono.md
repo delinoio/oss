@@ -80,7 +80,7 @@ CLI entrypoint:
 - Workspace loading occurs after CLI parsing for executable subcommands; for `bump`/`publish`, it occurs only after clean-tree preflight passes.
 - Log color override:
 : `CARGO_MONO_LOG_COLOR=always|auto|never` controls ANSI color (`always` default).
-: If `CARGO_MONO_LOG_COLOR` is unset or `auto`, `CLICOLOR_FORCE` (non-`0`) forces color and `NO_COLOR` or `CLICOLOR=0` disables color.
+: If `CARGO_MONO_LOG_COLOR` is unset or `auto`, `NO_COLOR` disables color; otherwise color remains enabled.
 
 Target selection contract (`bump`, `publish`):
 - `--all` default when no target selector is provided.

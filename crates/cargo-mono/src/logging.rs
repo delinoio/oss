@@ -2,8 +2,6 @@ use tracing_subscriber::EnvFilter;
 
 const CARGO_MONO_LOG_COLOR_ENV: &str = "CARGO_MONO_LOG_COLOR";
 const NO_COLOR_ENV: &str = "NO_COLOR";
-const CLICOLOR_ENV: &str = "CLICOLOR";
-const CLICOLOR_FORCE_ENV: &str = "CLICOLOR_FORCE";
 
 pub fn init_logging() {
     let env_filter =
@@ -20,33 +18,18 @@ pub fn init_logging() {
 fn log_color_enabled() -> bool {
     resolve_log_color_enabled(
         std::env::var(CARGO_MONO_LOG_COLOR_ENV).ok().as_deref(),
-        std::env::var(CLICOLOR_FORCE_ENV).ok().as_deref(),
         std::env::var(NO_COLOR_ENV).ok().as_deref(),
-        std::env::var(CLICOLOR_ENV).ok().as_deref(),
     )
 }
 
-fn resolve_log_color_enabled(
-    cargo_mono_log_color: Option<&str>,
-    clicolor_force: Option<&str>,
-    no_color: Option<&str>,
-    clicolor: Option<&str>,
-) -> bool {
+fn resolve_log_color_enabled(cargo_mono_log_color: Option<&str>, no_color: Option<&str>) -> bool {
     match cargo_mono_log_color.and_then(parse_log_color_mode) {
         Some(LogColorMode::Always) => return true,
         Some(LogColorMode::Never) => return false,
         Some(LogColorMode::Auto) | None => {}
     }
 
-    if clicolor_force.is_some_and(|raw| raw.trim() != "0") {
-        return true;
-    }
-
     if no_color.is_some() {
-        return false;
-    }
-
-    if clicolor.is_some_and(|raw| raw.trim() == "0") {
         return false;
     }
 
@@ -75,61 +58,31 @@ mod tests {
 
     #[test]
     fn default_enables_colored_logs() {
-        assert!(resolve_log_color_enabled(None, None, None, None));
+        assert!(resolve_log_color_enabled(None, None));
     }
 
     #[test]
     fn cargo_mono_override_can_disable_logs() {
-        assert!(!resolve_log_color_enabled(
-            Some("never"),
-            Some("1"),
-            None,
-            None
-        ));
+        assert!(!resolve_log_color_enabled(Some("never"), None));
     }
 
     #[test]
     fn cargo_mono_override_can_force_logs() {
-        assert!(resolve_log_color_enabled(
-            Some("always"),
-            None,
-            Some("1"),
-            Some("0")
-        ));
+        assert!(resolve_log_color_enabled(Some("always"), Some("1")));
     }
 
     #[test]
     fn auto_override_respects_global_disable() {
-        assert!(!resolve_log_color_enabled(
-            Some("auto"),
-            None,
-            Some("1"),
-            None
-        ));
+        assert!(!resolve_log_color_enabled(Some("auto"), Some("1")));
     }
 
     #[test]
-    fn clicolor_force_overrides_no_color() {
-        assert!(resolve_log_color_enabled(
-            None,
-            Some("1"),
-            Some("1"),
-            Some("0")
-        ));
+    fn no_color_disables_logs_without_override() {
+        assert!(!resolve_log_color_enabled(None, Some("1")));
     }
 
     #[test]
-    fn clicolor_zero_disables_logs_without_force() {
-        assert!(!resolve_log_color_enabled(None, None, None, Some("0")));
-    }
-
-    #[test]
-    fn invalid_override_falls_back_to_standard_envs() {
-        assert!(!resolve_log_color_enabled(
-            Some("invalid"),
-            None,
-            Some("1"),
-            None
-        ));
+    fn invalid_override_falls_back_to_no_color() {
+        assert!(!resolve_log_color_enabled(Some("invalid"), Some("1")));
     }
 }
