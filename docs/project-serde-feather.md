@@ -89,7 +89,7 @@ MVP derive target and attribute contract:
 - Attribute namespace: `serde(...)` only.
 - Unknown input fields during deserialization must be ignored.
 - Struct deserialization must support both map and sequence struct encodings.
-- Sequence decoding must preserve positional alignment when fields are `skip_deserializing`.
+- Sequence decoding must treat `skip_deserializing` fields as omitted positions (no placeholder element is consumed).
 - Overlapping `skip`, `skip_serializing`, and `skip_deserializing` combinations must be rejected deterministically.
 - Effective wire field names must be unique in both serialization and deserialization field sets.
 - Default wire field names must strip Rust raw identifier prefixes (for example `r#type` -> `type`).

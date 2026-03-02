@@ -156,15 +156,15 @@ fn deserializes_map_with_skipped_leading_field() {
 }
 
 #[test]
-fn deserializes_sequence_with_skip_deserializing_alignment() {
-    let values = vec![5_u8, 77_u8, 9_u8];
+fn deserializes_sequence_with_skip_deserializing_omission() {
+    let values = vec![5_u8, 9_u8];
     let deserializer = serde_feather::serde::de::value::SeqDeserializer::<
         _,
         serde_feather::serde::de::value::Error,
     >::new(values.into_iter());
 
     let decoded = SeqSkipAlignmentModel::deserialize(deserializer)
-        .expect("deserialize sequence with skip_deserializing alignment");
+        .expect("deserialize sequence with skip_deserializing omission");
     assert_eq!(
         decoded,
         SeqSkipAlignmentModel {
@@ -173,6 +173,18 @@ fn deserializes_sequence_with_skip_deserializing_alignment() {
             second: 9,
         }
     );
+}
+
+#[test]
+fn rejects_sequence_with_skip_deserializing_placeholder_value() {
+    let values = vec![5_u8, 77_u8, 9_u8];
+    let deserializer = serde_feather::serde::de::value::SeqDeserializer::<
+        _,
+        serde_feather::serde::de::value::Error,
+    >::new(values.into_iter());
+
+    let result = SeqSkipAlignmentModel::deserialize(deserializer);
+    assert!(result.is_err(), "placeholder value should not be consumed");
 }
 
 #[test]

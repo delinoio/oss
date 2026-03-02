@@ -229,25 +229,7 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let construct_fields_in_map = construct_fields.clone();
     let construct_fields_in_seq = construct_fields;
 
-    let seq_field_decode_steps = parsed.fields.iter().enumerate().map(|(seq_index, field)| {
-        if field.skip_deserializing {
-            if field.skip_serializing {
-                return quote! {};
-            }
-
-            return quote! {
-                if #crate_path::serde::de::SeqAccess::next_element::<#crate_path::serde::de::IgnoredAny>(&mut seq)?.is_none() {
-                    return ::core::result::Result::Err(
-                        #crate_path::serde::de::Error::invalid_length(#seq_index, &self),
-                    );
-                }
-            };
-        }
-
-        let binding = bindings
-            .iter()
-            .find(|binding| binding.field_index == seq_index)
-            .expect("binding for non-skipped field");
+    let seq_field_decode_steps = bindings.iter().enumerate().map(|(seq_index, binding)| {
         let binding_ident = &binding.binding_ident;
         let field_ty = &binding.field_ty;
         if binding.default {
