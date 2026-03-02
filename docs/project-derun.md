@@ -114,6 +114,7 @@ enum DerunMcpTool {
 Command contracts:
 - `derun run [--session-id <id>] [--retention <duration>] -- <command> [args...]`
 : Executes user command with terminal-fidelity proxying and side-channel transcript capture.
+- `derun run` requires the `--` separator before the target command; calls that omit the separator (for example `derun run echo hi`) must fail with exit code `2` and must not create or mutate session artifacts.
 - `derun run --retention` values must be positive and use whole-second precision (`duration % 1s == 0`); sub-second or fractional-second values (for example `500ms`, `1500ms`) are rejected with exit code `2`.
 - `derun run` must reject explicit `--session-id` values when persisted metadata already exists (`meta.json` or `final.json`), returning exit code `2` without mutating existing artifacts.
 - `derun run` must reject explicit invalid `--session-id` values (including path-segment alias `"."`), returning exit code `2` without mutating session artifacts.

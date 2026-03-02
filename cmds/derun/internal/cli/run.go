@@ -47,12 +47,13 @@ func ExecuteRun(args []string) int {
 	fs.StringVar(&sessionID, "session-id", "", "explicit session id")
 	fs.DurationVar(&retentionDuration, "retention", defaultRetention, "retention duration")
 
-	flagArgs, commandArgs := splitRunArgs(args)
-	if err := fs.Parse(flagArgs); err != nil {
+	flagArgs, commandArgs, hasSeparator := splitRunArgs(args)
+	if !hasSeparator {
+		fmt.Fprintln(os.Stderr, "run command requires '--' separator before target command")
 		return 2
 	}
-	if len(commandArgs) == 0 {
-		commandArgs = fs.Args()
+	if err := fs.Parse(flagArgs); err != nil {
+		return 2
 	}
 	if len(commandArgs) == 0 {
 		fmt.Fprintln(os.Stderr, "run command requires target command")
@@ -255,13 +256,13 @@ func ExecuteRun(args []string) int {
 	return 1
 }
 
-func splitRunArgs(args []string) ([]string, []string) {
+func splitRunArgs(args []string) ([]string, []string, bool) {
 	for i, arg := range args {
 		if arg == "--" {
-			return args[:i], args[i+1:]
+			return args[:i], args[i+1:], true
 		}
 	}
-	return args, nil
+	return nil, nil, false
 }
 
 func selectTransportMode(ttyAttached bool, goos string) contracts.DerunTransportMode {
