@@ -8,6 +8,7 @@
 
 ### Scope in This Domain
 
+- `apps/dexdex-app`: DexDex Tauri + React client app.
 - `apps/devkit`: Next.js 16 micro-app platform.
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/public-docs`: Mintlify public documentation app.

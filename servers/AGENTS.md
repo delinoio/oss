@@ -7,6 +7,8 @@
 
 ### Scope in This Domain
 
+- `servers/dexdex-main`: DexDex main control-plane API server.
+- `servers/dexdex-worker`: DexDex worker execution server.
 - `servers/thenv`: Backend for secure environment sharing.
 - `servers/commit-tracker`: Commit Tracker API server component.
 

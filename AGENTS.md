@@ -43,6 +43,7 @@
 - `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
 - `docs/project-devmon.md`: Go automation daemon with macOS menu bar-managed lifecycle controls.
 - `docs/project-public-docs.md`: Mintlify-based public documentation app.
+- `docs/project-dexdex.md`: Connect RPC-first engineering workflow platform (Client + Main Server + Worker Server).
 - `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation (default actor set includes `chatgpt-codex-connector[bot]`).
 
 ### Project Identifier Contract
@@ -59,6 +60,7 @@ enum ProjectId {
   Devkit = "devkit",
   DevkitCommitTracker = "devkit-commit-tracker",
   DevkitRemoteFilePicker = "devkit-remote-file-picker",
+  DexDex = "dexdex",
   Thenv = "thenv",
   PublicDocs = "public-docs",
 }
@@ -72,6 +74,7 @@ enum ProjectId {
 - `devmon` -> `cmds/devmon`
 - `mpapp` -> `apps/mpapp`
 - `devkit` -> `apps/devkit`
+- `dexdex` -> `apps/dexdex-app`, `servers/dexdex-main`, `servers/dexdex-worker`
 - `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`, `servers/commit-tracker`, `cmds/commit-tracker`
 - `devkit-remote-file-picker` -> `apps/devkit/src/apps/remote-file-picker`
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
