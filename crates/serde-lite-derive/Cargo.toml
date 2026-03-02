@@ -1,0 +1,16 @@
+[package]
+name = "serde-lite-derive"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Size-first serde integration scaffold with optional derive support"
+publish = false
+
+[features]
+default = ["std"]
+std = ["serde/std"]
+derive = ["dep:serde-lite-derive-macros"]
+
+[dependencies]
+serde = { version = "1.0.219", default-features = false }
+serde-lite-derive-macros = { version = "0.1.0", path = "../serde-lite-derive-macros", optional = true }

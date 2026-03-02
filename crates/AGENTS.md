@@ -9,12 +9,17 @@
 
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/nodeup`: Rust-based Node.js version manager.
+- `crates/serde-lite-derive`: Size-first serde runtime-facing core crate.
+- `crates/serde-lite-derive-macros`: Proc-macro companion crate for serde-lite-derive.
 
 ### Rust Workspace Rules
 
 - Add new crates as explicit workspace members in root `Cargo.toml`.
 - Keep crate naming aligned with project IDs when possible.
 - Document CLI behavior contracts in `docs/project-<id>.md` before large implementation changes.
+- For new package scaffolding, default `publish = false` until publish contracts are explicitly approved.
+- Prefer minimal default features and keep optional capabilities opt-in for size-sensitive crates.
+- Keep proc-macro crates and runtime crates separated by explicit crate boundaries.
 
 ### nodeup-Specific Rules
 
@@ -27,6 +32,12 @@
 - Keep command identifiers stable and documented in `docs/project-cargo-mono.md`.
 - Preserve `cargo mono` subcommand compatibility (`cargo-mono` binary naming contract).
 - Ensure release automation (`bump`, `publish`) logs include structured operational context.
+
+### serde-lite-derive-Specific Rules
+
+- Keep `serde-lite-derive` as the runtime-facing crate and `serde-lite-derive-macros` as the proc-macro crate.
+- Keep binary-size-first defaults: minimal default features and no convenience dependencies by default.
+- Do not stabilize public derive macro identifiers before they are documented in `docs/project-serde-lite-derive.md`.
 
 ### Testing and Validation
 
