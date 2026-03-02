@@ -249,6 +249,8 @@ Dispatch contract:
 Symlink contract:
 - Shims point to one nodeup binary.
 - Runtime behavior branches by `argv[0]`.
+- Local setup script `scripts/setup/nodeup-local.sh` must create or refresh `node`, `npm`, and
+  `npx` symlinks in the local install `bin/` directory with `ln -sfn` so reruns are idempotent.
 
 ## Storage
 - Install root: managed Node.js runtimes per version (`data/toolchains/<version>`).
@@ -304,8 +306,13 @@ Local development install and shell-session patch:
 - `eval "$(./scripts/setup/nodeup-local.sh)"`
 - Script contract:
 : Installs from `crates/nodeup` using `cargo install --path .`.
+: Verifies installed `nodeup` binary exists at `<install-root>/bin/nodeup` and is executable.
+: Creates managed alias shims `node`, `npm`, and `npx` in `<install-root>/bin`, each pointing to
+  the `nodeup` binary via symlink.
 : Uses install root `${NODEUP_LOCAL_INSTALL_ROOT:-<repo>/.local/nodeup}`.
 : Prints shell exports for `PATH` and `NODEUP_SELF_BIN_PATH` so the current shell session can apply them immediately.
+: Does not auto-select a default runtime; operators bootstrap runtime explicitly after install:
+  `nodeup default lts`, then verify with `node --version` and `npm --version`.
 
 Planned commands:
 - Build: `cargo build -p nodeup`
