@@ -204,6 +204,10 @@ vite.config.ts.timestamp-*
 # air tmp files
 tmp/
 
+# Local hidden work directories
+.local/
+.tmp/
+
 # Local derun/Codex integration artifacts
 .derun-state/
 .gomodcache/
