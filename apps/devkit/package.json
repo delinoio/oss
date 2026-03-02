@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "prepare:app": "echo \"devkit prepared\"",
-    "dev": "next dev",
+    "dev": "next dev --port 5990",
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
