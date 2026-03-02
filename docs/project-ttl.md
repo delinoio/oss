@@ -5,7 +5,7 @@
 The project focuses on incremental computing, persistent caching, and parallel task scheduling, while allowing v1 delivery by compiling `.ttl` sources to Go code.
 
 ## Path
-- Canonical compiler CLI path: `cmds/ttlc` (planned in v1 documentation phase)
+- Canonical compiler CLI path: `cmds/ttlc`
 - Canonical language contract path: `docs/project-ttl-language.md`
 
 ## Runtime and Language
@@ -22,15 +22,16 @@ The project focuses on incremental computing, persistent caching, and parallel t
 - `.ttl` parsing and syntax validation
 - Typed task signatures and type checking for v1 core types
 - Go source generation from `.ttl` modules
-- Incremental scheduler contract (dependency graph + invalidation)
-- Persistent cache contract backed by SQLite
-- Parallel task execution contract for independent tasks
+- Dependency graph extraction and cycle diagnostics
+- Persistent metadata cache contract backed by SQLite
+- Cache-key fingerprint derivation for future execution reuse
 - Structured logging contract for compile/runtime observability
 
 ## Out of Scope
 - Distributed cache and remote execution in v1
 - Full IDE language server feature set in v1
 - Multi-target backends beyond Go source in v1
+- Runtime task execution workers in phase 1
 - Non-deterministic or side-effectful task semantics by default
 
 ## Architecture
@@ -41,12 +42,12 @@ Primary boundaries:
 - Runtime: scheduler, cache adapter, invalidation evaluator, and execution workers.
 - CLI: user-facing commands for build/check/explain workflows.
 
-v1 flow:
+Phase 1 flow:
 1. Parse `.ttl` files and type-check task/module declarations.
 2. Build typed dependency graph and calculate task fingerprints.
-3. Query SQLite cache for reusable task outputs.
-4. Schedule cache misses on parallel workers.
-5. Emit generated Go source and persist fresh task results/metadata.
+3. Emit generated Go source into `.ttl/gen`.
+4. Persist task metadata rows in SQLite cache schema.
+5. Expose dependency and fingerprint details through `ttlc explain`.
 
 ## Interfaces
 Canonical project and runtime identifiers:
@@ -81,16 +82,22 @@ enum TtlCoreType {
 
 Canonical CLI command contracts:
 - `ttlc build [--entry <file.ttl>] [--out-dir <dir>]`
-: Compiles `.ttl` to Go source and materializes cache-aware execution outputs.
+: Compiles `.ttl` to Go source and writes metadata cache rows. Phase 1 does not execute tasks.
 - `ttlc check [--entry <file.ttl>]`
 : Parses and type-checks without writing generated runtime artifacts.
 - `ttlc explain [--entry <file.ttl>] [--task <task-name>]`
 : Shows dependency graph, cache-key inputs, and invalidation reasons.
 
+Default flag contract:
+- `--entry`: `./main.ttl`
+- `--out-dir`: `.ttl/gen`
+- Cache DB path: `.ttl/cache/cache.sqlite3`
+
 Cache-key contract (v1):
 - `cache_key = hash(input_content_hash + parameter_hash + environment_snapshot_hash)`
 - Cache hit requires exact key equality.
 - Cache mismatch triggers recomputation and cache overwrite.
+- Phase 1 uses `environment_snapshot_hash = hash("")` as an explicit baseline default.
 
 ## Storage
 Canonical local storage layout:
@@ -133,7 +140,7 @@ Logging baseline:
 - Cache layer emits read/write hit/miss/corruption events.
 
 ## Build and Test
-v1 implementation validation commands (to apply once `cmds/ttlc` is implemented):
+Phase 1 implementation validation commands:
 - Build: `go build ./cmds/ttlc/...`
 - Test: `go test ./cmds/ttlc/...`
 - Workspace sanity: `go test ./...`
@@ -145,8 +152,8 @@ Documentation acceptance scenarios:
 4. Go compile target and SQLite cache backend remain identical across all ttl documents.
 
 ## Roadmap
-- Phase 1: Documentation finalization and compiler scaffold (`cmds/ttlc`).
-- Phase 2: Incremental scheduler, hash invalidation engine, and SQLite cache integration.
+- Phase 1: Parser/type-checker/go-emitter/metadata-cache baseline in `cmds/ttlc`.
+- Phase 2: Incremental scheduler and runtime task execution with real cache reuse.
 - Phase 3: Performance tuning, advanced observability, and richer cache lifecycle controls.
 
 ## Open Questions

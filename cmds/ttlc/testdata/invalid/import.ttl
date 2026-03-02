@@ -1,0 +1,7 @@
+package build
+
+import "example.com/unsupported"
+
+task func Build() Vc[Artifact] {
+    return vc(Artifact{})
+}

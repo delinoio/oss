@@ -1,0 +1,5 @@
+package security
+
+task func Escape() Vc[Result] {
+    return vc(Result{})
+}
