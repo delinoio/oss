@@ -1,0 +1,5 @@
+error: FeatherSerialize only supports structs with named fields in this MVP
+ --> tests/ui/tuple_struct.rs:4:18
+  |
+4 | struct TupleModel(u8);
+  |                  ^^^^

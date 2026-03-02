@@ -1,8 +1,8 @@
 # Project: serde-feather
 
 ## Goal
-`serde-feather` provides a size-first serde integration scaffold split into runtime and proc-macro crates.
-The initial goal is to reduce final binary size even when it means giving up runtime performance optimizations.
+`serde-feather` provides a size-first serde integration stack split into runtime and proc-macro crates.
+The current goal is to provide stable MVP derive support while keeping default binary footprint small.
 
 ## Path
 - `crates/serde-feather`
@@ -18,26 +18,33 @@ The initial goal is to reduce final binary size even when it means giving up run
 - Release operators preparing a future publishable serde-feather stack
 
 ## In Scope
-- Two-crate project skeleton with explicit runtime/proc-macro boundaries.
-- Workspace membership and package metadata contracts.
+- Two-crate architecture with explicit runtime/proc-macro boundaries.
+- Stable MVP derive macros: `FeatherSerialize` and `FeatherDeserialize`.
 - Feature contracts for `std` and optional derive integration.
-- Documentation contracts for future derive API stabilization.
+- Named-struct-only derive support (non-generic).
+- Supported `serde(...)` attribute subset:
+  - Container: `rename`
+  - Field: `rename`, `default`, `skip`, `skip_serializing`, `skip_deserializing`
 
 ## Out of Scope
-- Actual serde derive implementation logic.
+- Enum, tuple struct, and unit struct derive support.
+- Generic type derive support.
+- Advanced serde attributes (for example `rename_all`, `skip_serializing_if`).
+- no-std derive support in this phase.
 - Runtime performance tuning and benchmark optimization.
-- Stable public derive macro identifiers in this phase.
 - crates.io publication in this phase (`publish = false` baseline).
 
 ## Architecture
 - `serde-feather` is the runtime-facing crate.
 : It exposes a minimal serde-compatible dependency surface with `serde` default features disabled.
-: It keeps default features minimal (`std`) and reserves `derive` as opt-in.
+: It keeps default features minimal (`std`) and exposes opt-in derive re-exports behind `derive`.
 - `serde-feather-macros` is the proc-macro crate.
-: It is isolated from runtime code and prepared for future derive expansion.
-: It exists as scaffolding only in the current phase and intentionally avoids stabilized macro contracts.
+: It is isolated from runtime code and implements MVP derive code generation.
+: It validates unsupported shapes and attributes with compile-time errors.
 - Cross-crate contract:
 : `serde-feather` references `serde-feather-macros` as an optional dependency through feature wiring.
+: `derive` implies `std` in the runtime crate for MVP behavior.
+: Runtime crate provides non-generic internal helpers used by derive output to reduce repeated monomorphized codegen.
 : Runtime and proc-macro concerns remain separated to preserve package boundaries.
 
 ## Interfaces
@@ -59,12 +66,34 @@ enum SerdeFeatherFeature {
 }
 ```
 
+Canonical derive macro identifiers:
+
+```ts
+enum SerdeFeatherDeriveMacro {
+  FeatherSerialize = "FeatherSerialize",
+  FeatherDeserialize = "FeatherDeserialize",
+}
+```
+
 Package and feature contract:
 - `serde-feather` default features: `["std"]`.
 - `serde-feather` feature `std` maps to `serde/std`.
-- `serde-feather` feature `derive` maps to optional dependency `serde-feather-macros`.
+- `serde-feather` feature `derive` maps to optional dependency `serde-feather-macros` and requires `std`.
 - `serde-feather-macros` is configured as `proc-macro = true`.
-- Public derive macro identifiers are intentionally not stabilized in this phase.
+- Stable public derive macro identifiers:
+  - `FeatherSerialize`
+  - `FeatherDeserialize`
+
+MVP derive target and attribute contract:
+- Derive target: non-generic structs with named fields only.
+- Attribute namespace: `serde(...)` only.
+- Unknown input fields during deserialization must be ignored.
+- Struct deserialization must support both map and sequence struct encodings.
+- Sequence decoding must treat `skip_deserializing` fields as omitted positions (no placeholder element is consumed).
+- Overlapping `skip`, `skip_serializing`, and `skip_deserializing` combinations must be rejected deterministically.
+- Effective wire field names must be unique in both serialization and deserialization field sets.
+- Default wire field names must strip Rust raw identifier prefixes (for example `r#type` -> `type`).
+- Unsupported shapes and unsupported `serde(...)` attributes must fail with compile-time errors at attribute/type span.
 
 ## Storage
 - No project-owned persistent storage.
@@ -72,30 +101,32 @@ Package and feature contract:
 
 ## Security
 - Keep proc-macro expansion boundaries explicit and isolated from runtime crate contracts.
-- Avoid introducing network access, secret handling, or implicit code generation side effects in scaffolding phase.
+- Avoid introducing network access, secret handling, or implicit code generation side effects.
 - Keep publish disabled until API and release contracts are documented and reviewed.
 
 ## Logging
-- This phase introduces no runtime logging surface because no runtime behavior is implemented.
+- Runtime crate behavior remains derive-focused and introduces no dedicated runtime logging API.
 - Future operational logging requirements for build tooling or commands must use structured logging (`tracing`) and be documented before implementation.
 
 ## Build and Test
-Planned validation commands for the scaffolding phase:
-- `cargo metadata`
+Validation commands for MVP derive phase:
 - `cargo check -p serde-feather`
 - `cargo check -p serde-feather-macros`
+- `cargo check -p serde-feather --features derive`
+- `cargo check -p serde-feather --no-default-features`
 - `cargo test`
 
 ## Roadmap
-- Phase 1: Document-first skeleton with workspace wiring and minimal feature contracts.
-- Phase 2: Introduce derive macro design and stabilization plan.
-- Phase 3: Implement derive behavior and compatibility tests.
-- Phase 4: Evaluate publish readiness and lift `publish = false` when contracts are stable.
+- Phase 1: Document-first skeleton with workspace wiring and minimal feature contracts. (completed)
+- Phase 2: Derive macro API design and stabilization plan. (completed)
+- Phase 3: MVP derive implementation for named structs with compatibility tests. (completed)
+- Phase 4: Expand type and attribute coverage (enums, generics, advanced serde attributes).
+- Phase 5: Evaluate publish readiness and lift `publish = false` when contracts are stable.
 
 ## Open Questions
-- Which public derive macro identifiers should be stabilized first.
-- Whether no-std + alloc support should be introduced after std-first baseline.
-- Which generated-code policies best balance binary size and developer ergonomics.
+- Which enum and tuple-struct derive semantics should be prioritized next.
+- Whether no-std + alloc derive support should be introduced after std-first MVP.
+- Which additional serde attributes should be added without bloating generated code size.
 
 ## References
 - `docs/project-template.md`

@@ -1,0 +1,5 @@
+error: FeatherSerialize only supports structs in this MVP
+ --> tests/ui/enum_type.rs:4:6
+  |
+4 | enum Shape {
+  |      ^^^^^

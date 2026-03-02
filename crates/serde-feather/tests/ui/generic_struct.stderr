@@ -1,0 +1,5 @@
+error: FeatherDeserialize only supports non-generic structs in this MVP
+ --> tests/ui/generic_struct.rs:4:20
+  |
+4 | struct GenericModel<T> {
+  |                    ^^^
