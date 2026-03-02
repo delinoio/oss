@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "prepare:app": "echo \"devkit prepared\"",
+    "prepare:app": "../../scripts/setup/env-vars.sh oss-devkit-app",
     "dev": "next dev --port 5990",
     "build": "next build",
     "start": "next start",
