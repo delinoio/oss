@@ -81,6 +81,9 @@ CLI entrypoint:
 - Log color override:
 : `CARGO_MONO_LOG_COLOR=always|auto|never` controls ANSI color (`always` default).
 : If `CARGO_MONO_LOG_COLOR` is unset or `auto`, `NO_COLOR` disables color; otherwise color remains enabled.
+- Publish prefetch concurrency override:
+: `CARGO_MONO_PUBLISH_PREFETCH_CONCURRENCY=<positive-int>` controls crates.io sparse index prefetch concurrency.
+: Default is `16`, maximum is `64`; invalid values fall back to default with a warning log.
 
 Target selection contract (`bump`, `publish`):
 - `--all` default when no target selector is provided.
@@ -123,6 +126,10 @@ Target selection contract (`bump`, `publish`):
 - Requires clean working tree unless `--allow-dirty` is provided.
 - Enforces clean-tree policy in preflight before workspace metadata loading to avoid false positives from metadata side effects (for example untracked `Cargo.lock` generation).
 - Default registry is crates.io; `--registry <name>` overrides.
+- For default crates.io (or `--registry crates-io`), the command prefetches selected crate versions from `https://index.crates.io/` before entering the publish loop.
+- Prefetch uses Cargo sparse-index path rules and marks matching `(crate, version)` pairs as already published.
+- Prefetch lookup failures are fail-open: failures are logged and affected crates continue through normal `cargo publish` execution.
+- For non-crates.io registry names, prefetch is skipped and publish behavior falls back to direct `cargo publish` attempts.
 - Skips non-publishable crates and already-published versions with explicit summary output.
 - Publishes in workspace dependency topological order.
 - Retries index-propagation-related failures with bounded backoff.
@@ -157,6 +164,7 @@ Operational expectations:
 - Log package selection decisions and skip reasons.
 - Log bump mutation summary (updated manifests, commit id, tags).
 - Log publish attempt lifecycle including retries and terminal outcome.
+- Log publish prefetch lifecycle (start/completion/lookup error) with package and error context.
 - Use Rust `tracing` for all operational logs.
 - Keep ANSI-colored human logs enabled by default with documented opt-out controls.
 
