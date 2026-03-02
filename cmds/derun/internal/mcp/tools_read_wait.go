@@ -3,7 +3,6 @@ package mcp
 import (
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
@@ -11,29 +10,19 @@ import (
 )
 
 func handleReadOutput(store *state.Store, args map[string]any) (map[string]any, error) {
-	sessionID, ok := args["session_id"].(string)
-	if !ok || sessionID == "" {
-		return nil, fmt.Errorf("session_id is required")
+	sessionID, err := parseRequiredSessionID(args)
+	if err != nil {
+		return nil, err
 	}
 
-	cursor := uint64(0)
-	if raw, ok := args["cursor"].(string); ok && raw != "" {
-		parsed, err := strconv.ParseUint(raw, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("parse cursor: %w", err)
-		}
-		cursor = parsed
+	cursor, err := parseCursor(args, false)
+	if err != nil {
+		return nil, err
 	}
 
-	maxBytes := DefaultMaxBytes
-	if raw, ok := args["max_bytes"]; ok {
-		parsed, err := anyToInt(raw)
-		if err != nil {
-			return nil, fmt.Errorf("parse max_bytes: %w", err)
-		}
-		if parsed > 0 {
-			maxBytes = parsed
-		}
+	maxBytes, err := parsePositiveIntDefault(args, "max_bytes", DefaultMaxBytes)
+	if err != nil {
+		return nil, err
 	}
 
 	chunks, nextCursor, eof, err := store.ReadOutput(sessionID, cursor, maxBytes)
@@ -41,53 +30,28 @@ func handleReadOutput(store *state.Store, args map[string]any) (map[string]any, 
 		return nil, wrapReadWaitError("read output", err)
 	}
 
-	return map[string]any{
-		"schema_version": SchemaVersion,
-		"session_id":     sessionID,
-		"chunks":         chunks,
-		"next_cursor":    strconv.FormatUint(nextCursor, 10),
-		"eof":            eof,
-	}, nil
+	return buildOutputPayload(sessionID, chunks, nextCursor, eof, outputPayloadOptions{}), nil
 }
 
 func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, error) {
-	sessionID, ok := args["session_id"].(string)
-	if !ok || sessionID == "" {
-		return nil, fmt.Errorf("session_id is required")
-	}
-
-	rawCursor, ok := args["cursor"].(string)
-	if !ok || rawCursor == "" {
-		return nil, fmt.Errorf("cursor is required")
-	}
-	cursor, err := strconv.ParseUint(rawCursor, 10, 64)
+	sessionID, err := parseRequiredSessionID(args)
 	if err != nil {
-		return nil, fmt.Errorf("parse cursor: %w", err)
+		return nil, err
 	}
 
-	maxBytes := DefaultMaxBytes
-	if raw, ok := args["max_bytes"]; ok {
-		parsed, err := anyToInt(raw)
-		if err != nil {
-			return nil, fmt.Errorf("parse max_bytes: %w", err)
-		}
-		if parsed > 0 {
-			maxBytes = parsed
-		}
+	cursor, err := parseCursor(args, true)
+	if err != nil {
+		return nil, err
 	}
 
-	timeout := DefaultWaitTimeout
-	if raw, ok := args["timeout_ms"]; ok {
-		parsed, err := anyToInt(raw)
-		if err != nil {
-			return nil, fmt.Errorf("parse timeout_ms: %w", err)
-		}
-		if parsed > 0 {
-			timeout = time.Duration(parsed) * time.Millisecond
-		}
+	maxBytes, err := parsePositiveIntDefault(args, "max_bytes", DefaultMaxBytes)
+	if err != nil {
+		return nil, err
 	}
-	if timeout > MaxWaitTimeout {
-		timeout = MaxWaitTimeout
+
+	timeout, err := parseWaitTimeout(args)
+	if err != nil {
+		return nil, err
 	}
 
 	started := time.Now()
@@ -97,15 +61,11 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 			return nil, wrapReadWaitError("wait read output", err)
 		}
 		if len(chunks) > 0 {
-			return map[string]any{
-				"schema_version": SchemaVersion,
-				"session_id":     sessionID,
-				"chunks":         chunks,
-				"next_cursor":    strconv.FormatUint(nextCursor, 10),
-				"eof":            eof,
-				"timed_out":      false,
-				"waited_ms":      time.Since(started).Milliseconds(),
-			}, nil
+			return buildOutputPayload(sessionID, chunks, nextCursor, eof, outputPayloadOptions{
+				includeWait: true,
+				timedOut:    false,
+				waitedMS:    time.Since(started).Milliseconds(),
+			}), nil
 		}
 		if eof {
 			detail, err := store.GetSession(sessionID)
@@ -113,36 +73,28 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 				return nil, wrapReadWaitError("get session detail", err)
 			}
 			if !isSessionActive(detail.State) {
-				return map[string]any{
-					"schema_version": SchemaVersion,
-					"session_id":     sessionID,
-					"chunks":         chunks,
-					"next_cursor":    strconv.FormatUint(nextCursor, 10),
-					"eof":            eof,
-					"timed_out":      false,
-					"waited_ms":      time.Since(started).Milliseconds(),
-				}, nil
+				return buildOutputPayload(sessionID, chunks, nextCursor, eof, outputPayloadOptions{
+					includeWait: true,
+					timedOut:    false,
+					waitedMS:    time.Since(started).Milliseconds(),
+				}), nil
 			}
 		}
 		if time.Since(started) >= timeout {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(waitPollInterval)
 	}
 
 	chunks, nextCursor, eof, err := store.ReadOutput(sessionID, cursor, maxBytes)
 	if err != nil {
 		return nil, wrapReadWaitError("read output after timeout", err)
 	}
-	return map[string]any{
-		"schema_version": SchemaVersion,
-		"session_id":     sessionID,
-		"chunks":         chunks,
-		"next_cursor":    strconv.FormatUint(nextCursor, 10),
-		"eof":            eof,
-		"timed_out":      true,
-		"waited_ms":      time.Since(started).Milliseconds(),
-	}, nil
+	return buildOutputPayload(sessionID, chunks, nextCursor, eof, outputPayloadOptions{
+		includeWait: true,
+		timedOut:    true,
+		waitedMS:    time.Since(started).Milliseconds(),
+	}), nil
 }
 
 func isSessionActive(sessionState contracts.DerunSessionState) bool {
