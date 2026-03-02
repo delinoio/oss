@@ -48,6 +48,23 @@ nodeup override set lts --path /path/to/project
 - Human mode uses pretty `tracing` logs by default.
 - JSON mode writes machine payloads to stdout and keeps logs off by default unless explicitly enabled.
 
+## Reliability and validation
+
+`nodeup` is validated with both unit tests and end-to-end CLI integration tests to keep command behavior predictable for operators and automation.
+
+Coverage highlights:
+
+- Command-family coverage for `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `self`, and `completions`.
+- Deterministic JSON failure envelopes on stderr (`kind`, `message`, `exit_code`) with stdout reserved for machine output.
+- Selector precedence checks across explicit selectors, directory overrides, and global defaults.
+- Alias dispatch checks for `node`, `npm`, and `npx` execution paths.
+
+To run project validation from repository root:
+
+```bash
+cargo test -p nodeup
+```
+
 ## Related pages
 
 - [Projects Overview](projects-overview)

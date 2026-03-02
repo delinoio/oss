@@ -2001,3 +2001,775 @@ fn install_lock_contention_is_reported() {
             "Another install is already running",
         ));
 }
+
+#[test]
+#[serial]
+fn which_resolves_command_path_from_default_selector() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-which-default");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho which-default\n").unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-default",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["default", "linked-which-default"])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args(["which", "node"])
+        .output()
+        .expect("which node using default linked runtime");
+
+    assert!(output.status.success());
+    let expected = fs::canonicalize(&runtime_dir)
+        .unwrap()
+        .join("bin")
+        .join("node");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim(), expected.to_string_lossy());
+}
+
+#[test]
+#[serial]
+fn which_explicit_runtime_takes_precedence_over_override_and_default() {
+    let env = TestEnv::new();
+    let default_runtime = env.root.join("linked-runtime-which-default-priority");
+    let explicit_runtime = env.root.join("linked-runtime-which-explicit-priority");
+
+    for (runtime_dir, marker) in [
+        (&default_runtime, "default-priority"),
+        (&explicit_runtime, "explicit-priority"),
+    ] {
+        let runtime_bin = runtime_dir.join("bin");
+        fs::create_dir_all(&runtime_bin).unwrap();
+        fs::write(
+            runtime_bin.join("node"),
+            format!("#!/bin/sh\necho {marker}\n").as_bytes(),
+        )
+        .unwrap();
+    }
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-default-priority",
+            default_runtime.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-explicit-priority",
+            explicit_runtime.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-default-priority"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-which-explicit-priority");
+    fs::create_dir_all(&project_dir).unwrap();
+    env.command()
+        .args([
+            "override",
+            "set",
+            "linked-which-default-priority",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args([
+            "which",
+            "--runtime",
+            "linked-which-explicit-priority",
+            "node",
+        ])
+        .output()
+        .expect("which --runtime should prefer explicit selector");
+    assert!(output.status.success());
+
+    let expected = fs::canonicalize(&explicit_runtime)
+        .unwrap()
+        .join("bin")
+        .join("node");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim(), expected.to_string_lossy());
+}
+
+#[test]
+#[serial]
+fn which_fails_when_runtime_is_not_installed() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["which", "--runtime", "22.1.0", "node"])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicates::str::contains(
+            "Runtime v22.1.0 is not installed",
+        ));
+}
+
+#[test]
+#[serial]
+fn which_fails_when_command_is_missing_for_runtime() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-which-missing-command");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho only-node\n").unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-missing-command",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-missing-command"])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["which", "npm"])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicates::str::contains(
+            "Command 'npm' does not exist for runtime linked-which-missing-command",
+        ));
+}
+
+#[test]
+#[serial]
+fn json_which_failure_emits_stderr_error_envelope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "which", "node"])
+        .output()
+        .expect("which --output json failure");
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+    assert_eq!(payload["exit_code"], 5);
+    assert_eq!(
+        payload["message"],
+        "No runtime selector resolved. Set a default runtime or directory override"
+    );
+}
+
+#[test]
+#[serial]
+fn override_list_json_includes_configured_entries() {
+    let env = TestEnv::new();
+    let project_a = env.root.join("project-override-list-a");
+    let project_b = env.root.join("project-override-list-b");
+    fs::create_dir_all(&project_a).unwrap();
+    fs::create_dir_all(&project_b).unwrap();
+
+    env.command()
+        .args([
+            "override",
+            "set",
+            "22.1.0",
+            "--path",
+            project_a.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args([
+            "override",
+            "set",
+            "lts",
+            "--path",
+            project_b.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "override", "list"])
+        .output()
+        .expect("override list --output json");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("override list JSON array");
+    assert_eq!(entries.len(), 2);
+
+    let canonical_a = fs::canonicalize(&project_a)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let canonical_b = fs::canonicalize(&project_b)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    assert!(entries
+        .iter()
+        .any(|entry| entry["path"] == canonical_a && entry["selector"] == "v22.1.0"));
+    assert!(entries
+        .iter()
+        .any(|entry| entry["path"] == canonical_b && entry["selector"] == "lts"));
+}
+
+#[test]
+#[serial]
+fn override_unset_path_removes_only_target_entry() {
+    let env = TestEnv::new();
+    let project_a = env.root.join("project-override-unset-path-a");
+    let project_b = env.root.join("project-override-unset-path-b");
+    fs::create_dir_all(&project_a).unwrap();
+    fs::create_dir_all(&project_b).unwrap();
+
+    env.command()
+        .args([
+            "override",
+            "set",
+            "22.1.0",
+            "--path",
+            project_a.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args([
+            "override",
+            "set",
+            "24.0.0",
+            "--path",
+            project_b.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["override", "unset", "--path", project_a.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Removed 1 override(s)"));
+
+    let output = env
+        .command()
+        .args(["--output", "json", "override", "list"])
+        .output()
+        .expect("override list after path-scoped unset");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("override list JSON array");
+    assert_eq!(entries.len(), 1);
+    let canonical_b = fs::canonicalize(&project_b)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    assert_eq!(entries[0]["path"], canonical_b);
+    assert_eq!(entries[0]["selector"], "v24.0.0");
+}
+
+#[test]
+#[serial]
+fn override_unset_without_path_uses_current_directory() {
+    let env = TestEnv::new();
+    let project_a = env.root.join("project-override-unset-cwd-a");
+    let project_b = env.root.join("project-override-unset-cwd-b");
+    fs::create_dir_all(&project_a).unwrap();
+    fs::create_dir_all(&project_b).unwrap();
+
+    env.command()
+        .args([
+            "override",
+            "set",
+            "22.1.0",
+            "--path",
+            project_a.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args([
+            "override",
+            "set",
+            "24.0.0",
+            "--path",
+            project_b.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .current_dir(&project_a)
+        .args(["override", "unset"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Removed 1 override(s)"));
+
+    let output = env
+        .command()
+        .args(["--output", "json", "override", "list"])
+        .output()
+        .expect("override list after cwd-scoped unset");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("override list JSON array");
+    assert_eq!(entries.len(), 1);
+    let canonical_b = fs::canonicalize(&project_b)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    assert_eq!(entries[0]["path"], canonical_b);
+    assert_eq!(entries[0]["selector"], "v24.0.0");
+}
+
+#[test]
+#[serial]
+fn override_unset_nonexistent_removes_only_stale_entries() {
+    let env = TestEnv::new();
+    let live_project = env.root.join("project-override-live");
+    let stale_project = env.root.join("project-override-stale");
+    fs::create_dir_all(&live_project).unwrap();
+    fs::create_dir_all(&stale_project).unwrap();
+
+    env.command()
+        .args([
+            "override",
+            "set",
+            "22.1.0",
+            "--path",
+            live_project.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args([
+            "override",
+            "set",
+            "24.0.0",
+            "--path",
+            stale_project.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    fs::remove_dir_all(&stale_project).unwrap();
+
+    env.command()
+        .args(["override", "unset", "--nonexistent"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Removed 1 override(s)"));
+
+    let output = env
+        .command()
+        .args(["--output", "json", "override", "list"])
+        .output()
+        .expect("override list after nonexistent cleanup");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("override list JSON array");
+    assert_eq!(entries.len(), 1);
+    let canonical_live = fs::canonicalize(&live_project)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    assert_eq!(entries[0]["path"], canonical_live);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+}
+
+#[test]
+#[serial]
+fn json_override_unset_output_is_machine_parseable() {
+    let env = TestEnv::new();
+    let project = env.root.join("project-override-unset-json");
+    fs::create_dir_all(&project).unwrap();
+
+    env.command()
+        .args([
+            "override",
+            "set",
+            "22.1.0",
+            "--path",
+            project.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "override",
+            "unset",
+            "--path",
+            project.to_str().unwrap(),
+        ])
+        .output()
+        .expect("override unset --output json");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("override unset JSON array");
+    assert_eq!(entries.len(), 1);
+    let canonical = fs::canonicalize(&project)
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    assert_eq!(entries[0]["path"], canonical);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+}
+
+#[test]
+#[serial]
+fn toolchain_install_requires_at_least_one_runtime_selector() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "install"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "nodeup toolchain install requires at least one runtime selector",
+        ));
+}
+
+#[test]
+#[serial]
+fn toolchain_install_rejects_linked_runtime_selector() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-install-reject");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n").unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-install-reject",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["toolchain", "install", "linked-install-reject"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "toolchain install only supports version/channel selectors",
+        ));
+}
+
+#[test]
+#[serial]
+fn toolchain_uninstall_requires_at_least_one_runtime_selector() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "uninstall"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "nodeup toolchain uninstall requires at least one runtime selector",
+        ));
+}
+
+#[test]
+#[serial]
+fn toolchain_link_missing_path_returns_not_found() {
+    let env = TestEnv::new();
+    let missing = env.root.join("missing-linked-runtime");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-missing-path",
+            missing.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicates::str::contains(
+            "Linked runtime path does not exist",
+        ));
+}
+
+#[test]
+#[serial]
+fn json_toolchain_link_missing_path_failure_emits_not_found_error_envelope() {
+    let env = TestEnv::new();
+    let missing = env.root.join("missing-linked-runtime-json");
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "link",
+            "linked-missing-path-json",
+            missing.to_str().unwrap(),
+        ])
+        .output()
+        .expect("toolchain link missing path --output json");
+
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+    assert_eq!(payload["exit_code"], 5);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Linked runtime path does not exist"));
+}
+
+#[test]
+#[serial]
+fn update_without_selectors_prefers_tracked_selectors_over_installed_versions() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    let settings_file = env.config_root.join("settings.toml");
+    fs::write(
+        &settings_file,
+        r#"schema_version = 1
+tracked_selectors = ["linked-update-priority"]
+
+[linked_runtimes]
+"linked-update-priority" = "/tmp/linked-update-priority"
+"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update without selectors should use tracked selectors");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "linked-update-priority");
+    assert_eq!(entries[0]["status"], "skipped-linked-runtime");
+}
+
+#[test]
+#[serial]
+fn update_linked_selector_reports_skipped_status() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update", "linked-update-explicit"])
+        .output()
+        .expect("update linked selector");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "linked-update-explicit");
+    assert_eq!(entries[0]["status"], "skipped-linked-runtime");
+    assert!(entries[0]["previous_runtime"].is_null());
+    assert!(entries[0]["updated_runtime"].is_null());
+}
+
+#[test]
+#[serial]
+fn update_channel_selector_reports_updated_status() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.2.0", Some("Jod")), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+    env.register_release(
+        "22.2.0",
+        make_archive("22.2.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.2\n")]),
+        None,
+    );
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update", "lts"])
+        .output()
+        .expect("update lts selector");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "lts");
+    assert_eq!(entries[0]["status"], "updated");
+    assert_eq!(entries[0]["updated_runtime"], "v22.2.0");
+}
+
+#[test]
+#[serial]
+fn check_with_no_installed_runtimes_returns_empty_payload() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "check"])
+        .output()
+        .expect("check --output json without installed runtimes");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("check JSON array");
+    assert!(entries.is_empty());
+}
+
+#[test]
+#[serial]
+fn check_reports_latest_available_null_when_runtime_is_current() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "check"])
+        .output()
+        .expect("check --output json with up-to-date runtime");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("check JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["runtime"], "v22.1.0");
+    assert_eq!(entries[0]["has_update"], false);
+    assert!(entries[0]["latest_available"].is_null());
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn shim_dispatch_supports_npm_alias() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho shim-node\n"),
+                ("npm", "#!/bin/sh\necho shim-npm\n"),
+            ],
+        ),
+        None,
+    );
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("npm");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .output()
+        .expect("run npm shim binary");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("shim-npm"));
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn shim_dispatch_supports_npx_alias() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho shim-node\n"),
+                ("npx", "#!/bin/sh\necho shim-npx\n"),
+            ],
+        ),
+        None,
+    );
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("npx");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .output()
+        .expect("run npx shim binary");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("shim-npx"));
+}

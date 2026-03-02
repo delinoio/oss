@@ -314,11 +314,18 @@ Local development install and shell-session patch:
 : Does not auto-select a default runtime; operators bootstrap runtime explicitly after install:
   `nodeup default lts`, then verify with `node --version` and `npm --version`.
 
-Planned commands:
+Validation commands:
 - Build: `cargo build -p nodeup`
 - Lint: `cargo clippy -p nodeup --all-targets -- -D warnings`
 - Test: `cargo test -p nodeup`
 - Workspace validation: `cargo test`
+
+Test coverage baseline:
+- Unit tests validate selector parsing, runtime resolution, release index cache behavior, logging context detection, and installer checksum helpers.
+- CLI integration tests validate contracts for `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `self`, and `completions`.
+- CLI integration tests validate deterministic JSON failure envelopes (`kind`, `message`, `exit_code`) and selector precedence (`explicit > override > default`).
+- CLI integration tests validate managed alias dispatch behavior for `node`, `npm`, and `npx`, including delegated process exit semantics.
+- Project-level operator documentation for workflows and validation lives in `crates/nodeup/README.md`.
 
 Release automation integration:
 - `.github/workflows/auto-publish.yml` runs workspace publish orchestration through `cargo run -p cargo-mono -- publish`.
@@ -340,3 +347,4 @@ Release automation integration:
 - `docs/project-template.md`
 - `AGENTS.md`
 - `crates/AGENTS.md`
+- `crates/nodeup/README.md`
