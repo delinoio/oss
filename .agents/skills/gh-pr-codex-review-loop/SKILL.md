@@ -1,6 +1,6 @@
 ---
 name: gh-pr-codex-review-loop
-description: Repeatedly address GitHub pull request feedback until Codex marks the pull request as accepted with a :+1: reaction. Use when a user asks to iteratively apply PR review comments, run validations, push follow-up commits, and continue until Codex auto review is satisfied.
+description: "Repeatedly address GitHub pull request feedback until Codex marks the pull request as accepted with a :+1: reaction. Use when a user asks to iteratively apply PR review comments, run validations, push follow-up commits, and continue until Codex auto review is satisfied."
 ---
 
 # GitHub PR Codex Review Loop
