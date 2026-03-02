@@ -1,0 +1,23 @@
+[package]
+name = "dexdex-desktop"
+version = "0.1.0"
+description = "DexDex desktop app"
+authors = ["Delino"]
+edition = "2021"
+publish = false
+
+[lib]
+name = "dexdex_desktop"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2", features = [] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2.5"
+
+[workspace]
