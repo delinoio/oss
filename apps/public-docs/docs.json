@@ -1,14 +1,19 @@
 {
   "name": "Delino Public Docs",
   "theme": "mint",
-  "navigation": [
-    {
-      "group": "Get Started",
-      "pages": ["index", "getting-started"]
-    },
-    {
-      "group": "Reference",
-      "pages": ["projects-overview", "documentation-lifecycle"]
-    }
-  ]
+  "colors": {
+    "primary": "#0F766E"
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": ["index", "getting-started"]
+      },
+      {
+        "group": "Reference",
+        "pages": ["projects-overview", "documentation-lifecycle"]
+      }
+    ]
+  }
 }

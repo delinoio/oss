@@ -28,6 +28,7 @@ It delivers curated onboarding and project overview content while keeping detail
 ## Architecture
 - Mintlify app content is authored as MDX pages under `apps/public-docs`.
 - Site navigation and page grouping are defined in `apps/public-docs/docs.json`.
+- `docs.json` must include `colors.primary` and a `navigation` object using the `navigation.groups` array contract.
 - Public docs summarize stable user-facing information from internal project contracts.
 - Internal contracts remain authoritative and must be updated before or alongside related public docs updates.
 
@@ -52,6 +53,8 @@ enum PublicDocsPageId {
 ```
 
 Navigation contract:
+- `navigation` must be an object, not an array.
+- `navigation.groups` is the canonical group list.
 - Group `Get Started` must include `index` and `getting-started`.
 - Group `Reference` must include `projects-overview` and `documentation-lifecycle`.
 
