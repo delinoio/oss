@@ -6,7 +6,10 @@ use std::{
     time::Duration,
 };
 
-use reqwest::StatusCode;
+use reqwest::{
+    header::{HeaderMap, RETRY_AFTER},
+    StatusCode,
+};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
@@ -31,6 +34,7 @@ const PREFETCH_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 enum PublishFailureKind {
     AlreadyPublished,
     IndexNotReady,
+    RateLimited,
     Other,
 }
 
@@ -262,6 +266,8 @@ pub fn execute(args: &PublishArgs, output: OutputFormat, app: &CargoMonoApp) -> 
                 .trim()
                 .to_string();
             let details = if stderr.is_empty() { stdout } else { stderr };
+            let retry_after_seconds =
+                parse_publish_retry_after_seconds(&publish_output.stdout, &publish_output.stderr);
 
             match failure_kind {
                 PublishFailureKind::AlreadyPublished => {
@@ -293,6 +299,22 @@ pub fn execute(args: &PublishArgs, output: OutputFormat, app: &CargoMonoApp) -> 
                         retry_attempt = attempts,
                         delay_seconds = delay.as_secs(),
                         "Retrying publish due to index propagation lag"
+                    );
+                    thread::sleep(delay);
+                }
+                PublishFailureKind::RateLimited if attempts < MAX_PUBLISH_ATTEMPTS => {
+                    let delay = resolve_retry_delay(attempts, retry_after_seconds);
+                    info!(
+                        command_path = "cargo-mono.publish",
+                        workspace_root = %app.workspace.root.display(),
+                        package = %package_name,
+                        action = "publish-package",
+                        outcome = "retry-rate-limited",
+                        retry_attempt = attempts,
+                        delay_seconds = delay.as_secs(),
+                        retry_after_seconds = retry_after_seconds.unwrap_or_default(),
+                        retry_after_present = retry_after_seconds.is_some(),
+                        "Retrying publish due to rate limiting"
                     );
                     thread::sleep(delay);
                 }
@@ -635,49 +657,118 @@ fn lookup_sparse_index_version(
     let path = sparse_index_path_for_crate(&candidate.name);
     let request_url = format!("{CRATES_IO_SPARSE_INDEX_BASE_URL}/{path}");
 
-    let response = match client.get(&request_url).send() {
-        Ok(response) => response,
-        Err(error) => {
+    for attempt in 1..=MAX_PUBLISH_ATTEMPTS {
+        let response = match client.get(&request_url).send() {
+            Ok(response) => response,
+            Err(error) => {
+                return PrefetchPackageLookupResult::unknown(
+                    candidate.name.clone(),
+                    None,
+                    format!("sparse index request failed: {error}"),
+                )
+            }
+        };
+
+        let status = response.status();
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            let retry_after_seconds = parse_retry_after_seconds_from_headers(response.headers());
+            if attempt < MAX_PUBLISH_ATTEMPTS {
+                let delay = resolve_retry_delay(attempt, retry_after_seconds);
+                info!(
+                    command_path = "cargo-mono.publish",
+                    package = %candidate.name,
+                    action = "prefetch-published-versions",
+                    outcome = "retry-rate-limited",
+                    retry_attempt = attempt,
+                    delay_seconds = delay.as_secs(),
+                    retry_after_seconds = retry_after_seconds.unwrap_or_default(),
+                    retry_after_present = retry_after_seconds.is_some(),
+                    "Retrying sparse index lookup due to rate limiting"
+                );
+                thread::sleep(delay);
+                continue;
+            }
+
             return PrefetchPackageLookupResult::unknown(
                 candidate.name.clone(),
-                None,
-                format!("sparse index request failed: {error}"),
-            )
+                Some(status.as_u16()),
+                "sparse index rate limiting persisted after retry attempts".to_string(),
+            );
         }
-    };
 
-    let status = response.status();
-    if status == StatusCode::NOT_FOUND {
-        return PrefetchPackageLookupResult::not_published(candidate.name.clone());
-    }
-    if !status.is_success() {
-        return PrefetchPackageLookupResult::unknown(
-            candidate.name.clone(),
-            Some(status.as_u16()),
-            format!("sparse index returned unexpected status {status}"),
-        );
-    }
-
-    let body = match response.text() {
-        Ok(body) => body,
-        Err(error) => {
+        if status == StatusCode::NOT_FOUND {
+            return PrefetchPackageLookupResult::not_published(candidate.name.clone());
+        }
+        if !status.is_success() {
             return PrefetchPackageLookupResult::unknown(
                 candidate.name.clone(),
-                None,
-                format!("failed to read sparse index response body: {error}"),
-            )
+                Some(status.as_u16()),
+                format!("sparse index returned unexpected status {status}"),
+            );
         }
-    };
 
-    match sparse_index_has_version(&body, &candidate.version) {
-        Ok(true) => PrefetchPackageLookupResult::already_published(candidate.name.clone()),
-        Ok(false) => PrefetchPackageLookupResult::not_published(candidate.name.clone()),
-        Err(error) => PrefetchPackageLookupResult::unknown(
-            candidate.name.clone(),
-            None,
-            format!("failed to parse sparse index record: {error}"),
-        ),
+        let body = match response.text() {
+            Ok(body) => body,
+            Err(error) => {
+                return PrefetchPackageLookupResult::unknown(
+                    candidate.name.clone(),
+                    None,
+                    format!("failed to read sparse index response body: {error}"),
+                )
+            }
+        };
+
+        return match sparse_index_has_version(&body, &candidate.version) {
+            Ok(true) => PrefetchPackageLookupResult::already_published(candidate.name.clone()),
+            Ok(false) => PrefetchPackageLookupResult::not_published(candidate.name.clone()),
+            Err(error) => PrefetchPackageLookupResult::unknown(
+                candidate.name.clone(),
+                None,
+                format!("failed to parse sparse index record: {error}"),
+            ),
+        };
     }
+
+    PrefetchPackageLookupResult::unknown(
+        candidate.name.clone(),
+        None,
+        "sparse index lookup exhausted retry attempts".to_string(),
+    )
+}
+
+fn parse_publish_retry_after_seconds(stdout: &[u8], stderr: &[u8]) -> Option<u64> {
+    let stdout_text = String::from_utf8_lossy(stdout);
+    parse_retry_after_seconds_from_text(stdout_text.as_ref()).or_else(|| {
+        let stderr_text = String::from_utf8_lossy(stderr);
+        parse_retry_after_seconds_from_text(stderr_text.as_ref())
+    })
+}
+
+fn parse_retry_after_seconds_from_headers(headers: &HeaderMap) -> Option<u64> {
+    headers
+        .get(RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_retry_after_seconds_value)
+}
+
+fn parse_retry_after_seconds_from_text(raw: &str) -> Option<u64> {
+    raw.lines().find_map(|line| {
+        let (header_name, header_value) = line.split_once(':')?;
+        if header_name.trim().eq_ignore_ascii_case("retry-after") {
+            parse_retry_after_seconds_value(header_value)
+        } else {
+            None
+        }
+    })
+}
+
+fn parse_retry_after_seconds_value(raw: &str) -> Option<u64> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || !trimmed.chars().all(|character| character.is_ascii_digit()) {
+        return None;
+    }
+
+    trimmed.parse::<u64>().ok()
 }
 
 fn sparse_index_has_version(
@@ -773,6 +864,12 @@ fn retry_delay(attempt: usize) -> Duration {
     }
 }
 
+fn resolve_retry_delay(attempt: usize, retry_after_seconds: Option<u64>) -> Duration {
+    retry_after_seconds
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| retry_delay(attempt))
+}
+
 fn classify_publish_failure(output: &Output) -> PublishFailureKind {
     let combined = format!(
         "{}\n{}",
@@ -793,6 +890,15 @@ fn classify_publish_failure(output: &Output) -> PublishFailureKind {
         || combined.contains("candidate versions found which didn't match")
     {
         return PublishFailureKind::IndexNotReady;
+    }
+
+    if combined.contains("too many requests")
+        || combined.contains("status code: 429")
+        || combined.contains("status code 429")
+        || combined.contains("http 429")
+        || combined.contains("429 too many requests")
+    {
+        return PublishFailureKind::RateLimited;
     }
 
     PublishFailureKind::Other
@@ -846,6 +952,16 @@ mod tests {
     }
 
     #[test]
+    fn classify_rate_limited_failure() {
+        let output = output_with_stderr("error: registry responded with 429 Too Many Requests");
+
+        assert!(matches!(
+            classify_publish_failure(&output),
+            PublishFailureKind::RateLimited
+        ));
+    }
+
+    #[test]
     fn sparse_index_path_matches_registry_rules() {
         assert_eq!(sparse_index_path_for_crate("a"), "1/a");
         assert_eq!(sparse_index_path_for_crate("ab"), "2/ab");
@@ -871,6 +987,55 @@ mod tests {
         assert_eq!(parse_prefetch_concurrency_value("0"), None);
         assert_eq!(parse_prefetch_concurrency_value("-1"), None);
         assert_eq!(parse_prefetch_concurrency_value("invalid"), None);
+    }
+
+    #[test]
+    fn parse_retry_after_seconds_from_text_accepts_delta_seconds() {
+        let raw = "warning: temporary error\nRetry-After: 30\n";
+        assert_eq!(parse_retry_after_seconds_from_text(raw), Some(30));
+    }
+
+    #[test]
+    fn parse_retry_after_seconds_from_text_rejects_non_numeric_values() {
+        let raw = "Retry-After: Wed, 21 Oct 2015 07:28:00 GMT";
+        assert_eq!(parse_retry_after_seconds_from_text(raw), None);
+    }
+
+    #[test]
+    fn parse_retry_after_seconds_from_headers_accepts_delta_seconds() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, "45".parse().expect("valid retry-after header"));
+        assert_eq!(parse_retry_after_seconds_from_headers(&headers), Some(45));
+    }
+
+    #[test]
+    fn parse_retry_after_seconds_from_headers_rejects_http_date_values() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            RETRY_AFTER,
+            "Wed, 21 Oct 2015 07:28:00 GMT"
+                .parse()
+                .expect("valid retry-after header"),
+        );
+        assert_eq!(parse_retry_after_seconds_from_headers(&headers), None);
+    }
+
+    #[test]
+    fn parse_publish_retry_after_seconds_prefers_stdout_then_stderr() {
+        assert_eq!(
+            parse_publish_retry_after_seconds(b"Retry-After: 7\n", b"Retry-After: 9\n"),
+            Some(7)
+        );
+        assert_eq!(
+            parse_publish_retry_after_seconds(b"no retry header", b"Retry-After: 11\n"),
+            Some(11)
+        );
+    }
+
+    #[test]
+    fn resolve_retry_delay_prefers_retry_after_seconds() {
+        assert_eq!(resolve_retry_delay(1, Some(30)), Duration::from_secs(30));
+        assert_eq!(resolve_retry_delay(2, None), Duration::from_secs(4));
     }
 
     #[test]

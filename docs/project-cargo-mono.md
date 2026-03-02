@@ -128,11 +128,13 @@ Target selection contract (`bump`, `publish`):
 - Default registry is crates.io; `--registry <name>` overrides.
 - For default crates.io (or `--registry crates-io`), the command prefetches selected crate versions from `https://index.crates.io/` before entering the publish loop.
 - Prefetch uses Cargo sparse-index path rules and marks matching `(crate, version)` pairs as already published.
+- Prefetch retries HTTP `429 Too Many Requests` with `Retry-After` delta-seconds when present and falls back to bounded exponential backoff (`2s`, `4s`, `8s`) when unavailable.
 - Prefetch lookup failures are fail-open: failures are logged and affected crates continue through normal `cargo publish` execution.
 - For non-crates.io registry names, prefetch is skipped and publish behavior falls back to direct `cargo publish` attempts.
 - Skips non-publishable crates and already-published versions with explicit summary output.
 - Publishes in workspace dependency topological order.
 - Retries index-propagation-related failures with bounded backoff.
+- Retries `cargo publish` failures classified as rate-limited (`429`/`Too Many Requests`) with `Retry-After` delta-seconds when present and falls back to bounded exponential backoff (`2s`, `4s`, `8s`) when unavailable.
 
 ## Storage
 - No project-owned persistent storage.
@@ -165,6 +167,7 @@ Operational expectations:
 - Log bump mutation summary (updated manifests, commit id, tags).
 - Log publish attempt lifecycle including retries and terminal outcome.
 - Log publish prefetch lifecycle (start/completion/lookup error) with package and error context.
+- Log rate-limit retry lifecycle with selected wait duration and `Retry-After` presence.
 - Use Rust `tracing` for all operational logs.
 - Keep ANSI-colored human logs enabled by default with documented opt-out controls.
 
