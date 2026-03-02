@@ -43,7 +43,7 @@
 - `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
 - `docs/project-devmon.md`: Go automation daemon with macOS menu bar-managed lifecycle controls.
 - `docs/project-public-docs.md`: Mintlify-based public documentation app.
-- `docs/project-serde-lite-derive.md`: Size-first serde derive scaffolding contracts (core + proc-macro split).
+- `docs/project-serde-feather.md`: Size-first serde derive scaffolding contracts (core + proc-macro split).
 - `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation (default actor set includes `chatgpt-codex-connector[bot]`).
 
 ### Project Identifier Contract
@@ -61,7 +61,7 @@ enum ProjectId {
   DevkitCommitTracker = "devkit-commit-tracker",
   DevkitRemoteFilePicker = "devkit-remote-file-picker",
   Thenv = "thenv",
-  SerdeLiteDerive = "serde-lite-derive",
+  SerdeFeather = "serde-feather",
   PublicDocs = "public-docs",
 }
 ```
@@ -77,7 +77,7 @@ enum ProjectId {
 - `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`, `servers/commit-tracker`, `cmds/commit-tracker`
 - `devkit-remote-file-picker` -> `apps/devkit/src/apps/remote-file-picker`
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
-- `serde-lite-derive` -> `crates/serde-lite-derive`, `crates/serde-lite-derive-macros`
+- `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `public-docs` -> `apps/public-docs`
 
 ### Devkit Mini-App Identifier Contract
@@ -132,19 +132,19 @@ enum ThenvComponent {
 - `Server` -> `servers/thenv`
 - `WebConsole` -> `apps/devkit/src/apps/thenv`
 
-### Serde Lite Derive Component Contract
+### Serde Feather Component Contract
 
-`serde-lite-derive` is a two-component project with fixed mapping:
+`serde-feather` is a two-component project with fixed mapping:
 
 ```ts
-enum SerdeLiteDeriveComponent {
+enum SerdeFeatherComponent {
   Core = "core",
   Macros = "macros",
 }
 ```
 
-- `Core` -> `crates/serde-lite-derive`
-- `Macros` -> `crates/serde-lite-derive-macros`
+- `Core` -> `crates/serde-feather`
+- `Macros` -> `crates/serde-feather-macros`
 
 ### Documentation-First Policy
 

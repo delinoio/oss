@@ -9,8 +9,8 @@
 
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/nodeup`: Rust-based Node.js version manager.
-- `crates/serde-lite-derive`: Size-first serde runtime-facing core crate.
-- `crates/serde-lite-derive-macros`: Proc-macro companion crate for serde-lite-derive.
+- `crates/serde-feather`: Size-first serde runtime-facing core crate.
+- `crates/serde-feather-macros`: Proc-macro companion crate for serde-feather.
 
 ### Rust Workspace Rules
 
@@ -33,11 +33,11 @@
 - Preserve `cargo mono` subcommand compatibility (`cargo-mono` binary naming contract).
 - Ensure release automation (`bump`, `publish`) logs include structured operational context.
 
-### serde-lite-derive-Specific Rules
+### serde-feather-Specific Rules
 
-- Keep `serde-lite-derive` as the runtime-facing crate and `serde-lite-derive-macros` as the proc-macro crate.
+- Keep `serde-feather` as the runtime-facing crate and `serde-feather-macros` as the proc-macro crate.
 - Keep binary-size-first defaults: minimal default features and no convenience dependencies by default.
-- Do not stabilize public derive macro identifiers before they are documented in `docs/project-serde-lite-derive.md`.
+- Do not stabilize public derive macro identifiers before they are documented in `docs/project-serde-feather.md`.
 
 ### Testing and Validation
 

@@ -1560,15 +1560,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde-lite-derive"
+name = "serde-feather"
 version = "0.1.0"
 dependencies = [
  "serde",
- "serde-lite-derive-macros",
+ "serde-feather-macros",
 ]
 
 [[package]]
-name = "serde-lite-derive-macros"
+name = "serde-feather-macros"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
