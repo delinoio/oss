@@ -32,3 +32,4 @@
 
 - If Rust code changes in this domain, run `cargo test` from repository root.
 - Keep logs sufficient for debugging install, dispatch, and runtime resolution flow.
+- Keep CLI logs colorized by default for human operators, with explicit opt-out controls.

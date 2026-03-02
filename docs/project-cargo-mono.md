@@ -78,6 +78,9 @@ CLI entrypoint:
 - When invoked through Cargo external-subcommand mode, a forwarded leading `mono` token is normalized before parsing so `cargo mono <args>` matches direct `cargo-mono <args>` behavior.
 - `bump` and `publish` run a clean-working-tree preflight immediately after CLI parsing and before workspace loading.
 - Workspace loading occurs after CLI parsing for executable subcommands; for `bump`/`publish`, it occurs only after clean-tree preflight passes.
+- Log color override:
+: `CARGO_MONO_LOG_COLOR=always|auto|never` controls ANSI color (`always` default).
+: If `CARGO_MONO_LOG_COLOR` is unset or `auto`, `CLICOLOR_FORCE` (non-`0`) forces color and `NO_COLOR` or `CLICOLOR=0` disables color.
 
 Target selection contract (`bump`, `publish`):
 - `--all` default when no target selector is provided.
@@ -155,6 +158,7 @@ Operational expectations:
 - Log bump mutation summary (updated manifests, commit id, tags).
 - Log publish attempt lifecycle including retries and terminal outcome.
 - Use Rust `tracing` for all operational logs.
+- Keep ANSI-colored human logs enabled by default with documented opt-out controls.
 
 ## Build and Test
 Planned commands:
