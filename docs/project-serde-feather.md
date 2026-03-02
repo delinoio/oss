@@ -1,21 +1,21 @@
-# Project: serde-lite-derive
+# Project: serde-feather
 
 ## Goal
-`serde-lite-derive` provides a size-first serde integration scaffold split into runtime and proc-macro crates.
+`serde-feather` provides a size-first serde integration scaffold split into runtime and proc-macro crates.
 The initial goal is to reduce final binary size even when it means giving up runtime performance optimizations.
 
 ## Path
-- `crates/serde-lite-derive`
-- `crates/serde-lite-derive-macros`
+- `crates/serde-feather`
+- `crates/serde-feather-macros`
 
 ## Runtime and Language
-- Rust library crate (`serde-lite-derive`)
-- Rust proc-macro crate (`serde-lite-derive-macros`)
+- Rust library crate (`serde-feather`)
+- Rust proc-macro crate (`serde-feather-macros`)
 
 ## Users
 - Rust library maintainers who prioritize binary-size footprint
 - Application developers who want opt-in derive support with minimal default surface area
-- Release operators preparing a future publishable serde-lite derive stack
+- Release operators preparing a future publishable serde-feather stack
 
 ## In Scope
 - Two-crate project skeleton with explicit runtime/proc-macro boundaries.
@@ -30,21 +30,21 @@ The initial goal is to reduce final binary size even when it means giving up run
 - crates.io publication in this phase (`publish = false` baseline).
 
 ## Architecture
-- `serde-lite-derive` is the runtime-facing crate.
+- `serde-feather` is the runtime-facing crate.
 : It exposes a minimal serde-compatible dependency surface with `serde` default features disabled.
 : It keeps default features minimal (`std`) and reserves `derive` as opt-in.
-- `serde-lite-derive-macros` is the proc-macro crate.
+- `serde-feather-macros` is the proc-macro crate.
 : It is isolated from runtime code and prepared for future derive expansion.
 : It exists as scaffolding only in the current phase and intentionally avoids stabilized macro contracts.
 - Cross-crate contract:
-: `serde-lite-derive` references `serde-lite-derive-macros` as an optional dependency through feature wiring.
+: `serde-feather` references `serde-feather-macros` as an optional dependency through feature wiring.
 : Runtime and proc-macro concerns remain separated to preserve package boundaries.
 
 ## Interfaces
 Canonical component identifiers:
 
 ```ts
-enum SerdeLiteDeriveComponent {
+enum SerdeFeatherComponent {
   Core = "core",
   Macros = "macros",
 }
@@ -53,17 +53,17 @@ enum SerdeLiteDeriveComponent {
 Canonical feature identifiers:
 
 ```ts
-enum SerdeLiteDeriveFeature {
+enum SerdeFeatherFeature {
   Std = "std",
   Derive = "derive",
 }
 ```
 
 Package and feature contract:
-- `serde-lite-derive` default features: `["std"]`.
-- `serde-lite-derive` feature `std` maps to `serde/std`.
-- `serde-lite-derive` feature `derive` maps to optional dependency `serde-lite-derive-macros`.
-- `serde-lite-derive-macros` is configured as `proc-macro = true`.
+- `serde-feather` default features: `["std"]`.
+- `serde-feather` feature `std` maps to `serde/std`.
+- `serde-feather` feature `derive` maps to optional dependency `serde-feather-macros`.
+- `serde-feather-macros` is configured as `proc-macro = true`.
 - Public derive macro identifiers are intentionally not stabilized in this phase.
 
 ## Storage
@@ -82,8 +82,8 @@ Package and feature contract:
 ## Build and Test
 Planned validation commands for the scaffolding phase:
 - `cargo metadata`
-- `cargo check -p serde-lite-derive`
-- `cargo check -p serde-lite-derive-macros`
+- `cargo check -p serde-feather`
+- `cargo check -p serde-feather-macros`
 - `cargo test`
 
 ## Roadmap

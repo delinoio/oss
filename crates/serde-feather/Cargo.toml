@@ -1,5 +1,5 @@
 [package]
-name = "serde-lite-derive"
+name = "serde-feather"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
@@ -9,8 +9,8 @@ publish = false
 [features]
 default = ["std"]
 std = ["serde/std"]
-derive = ["dep:serde-lite-derive-macros"]
+derive = ["dep:serde-feather-macros"]
 
 [dependencies]
 serde = { version = "1.0.219", default-features = false }
-serde-lite-derive-macros = { version = "0.1.0", path = "../serde-lite-derive-macros", optional = true }
+serde-feather-macros = { version = "0.1.0", path = "../serde-feather-macros", optional = true }
