@@ -8,6 +8,19 @@ const (
 	TtlCommandExplain TtlCommand = "explain"
 )
 
+type TtlSchemaVersion string
+
+const (
+	TtlSchemaVersionV1Alpha1 TtlSchemaVersion = "v1alpha1"
+)
+
+type TtlResponseStatus string
+
+const (
+	TtlResponseStatusOK     TtlResponseStatus = "ok"
+	TtlResponseStatusFailed TtlResponseStatus = "failed"
+)
+
 type TtlCompileTarget string
 
 const (
@@ -30,6 +43,17 @@ const (
 	TtlCoreTypeState          TtlCoreType = "state"
 )
 
+type TtlInvalidationReason string
+
+const (
+	TtlInvalidationReasonNone                TtlInvalidationReason = "none"
+	TtlInvalidationReasonCacheMiss           TtlInvalidationReason = "cache_miss"
+	TtlInvalidationReasonInputContentChanged TtlInvalidationReason = "input_content_changed"
+	TtlInvalidationReasonParameterChanged    TtlInvalidationReason = "parameter_changed"
+	TtlInvalidationReasonEnvironmentChanged  TtlInvalidationReason = "environment_changed"
+	TtlInvalidationReasonCacheCorruption     TtlInvalidationReason = "cache_corruption"
+)
+
 type DiagnosticKind string
 
 const (
@@ -39,6 +63,7 @@ const (
 	DiagnosticKindPathViolation     DiagnosticKind = "path_violation"
 	DiagnosticKindCycleError        DiagnosticKind = "cycle_error"
 	DiagnosticKindIOError           DiagnosticKind = "io_error"
+	DiagnosticKindCacheCorruption   DiagnosticKind = "cache_corruption"
 )
 
 type CompileStage string

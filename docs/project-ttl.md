@@ -71,6 +71,15 @@ enum TtlCommand {
   Explain = "explain",
 }
 
+enum TtlSchemaVersion {
+  V1Alpha1 = "v1alpha1",
+}
+
+enum TtlResponseStatus {
+  Ok = "ok",
+  Failed = "failed",
+}
+
 enum TtlCoreType {
   Vc = "vc",
   ResolvedVc = "resolved-vc",
@@ -78,20 +87,47 @@ enum TtlCoreType {
   TransientValue = "transient-value",
   State = "state",
 }
+
+enum TtlInvalidationReason {
+  None = "none",
+  CacheMiss = "cache_miss",
+  InputContentChanged = "input_content_changed",
+  ParameterChanged = "parameter_changed",
+  EnvironmentChanged = "environment_changed",
+  CacheCorruption = "cache_corruption",
+}
 ```
 
 Canonical CLI command contracts:
-- `ttlc build [--entry <file.ttl>] [--out-dir <dir>]`
+- `ttlc build [--entry <file.ttl>] [--out-dir <dir>] [--no-color]`
 : Compiles `.ttl` to Go source and writes metadata cache rows. Phase 1 does not execute tasks.
-- `ttlc check [--entry <file.ttl>]`
+- `ttlc check [--entry <file.ttl>] [--no-color]`
 : Parses and type-checks without writing generated runtime artifacts.
-- `ttlc explain [--entry <file.ttl>] [--task <task-name>]`
+- `ttlc explain [--entry <file.ttl>] [--task <task-name>] [--no-color]`
 : Shows dependency graph, cache-key inputs, and invalidation reasons.
 
 Default flag contract:
 - `--entry`: `./main.ttl`
 - `--out-dir`: `.ttl/gen`
+- `--no-color`: `false` (ANSI color enabled by default for logs)
 - Cache DB path: `.ttl/cache/cache.sqlite3`
+
+Canonical CLI JSON response envelope:
+
+```json
+{
+  "schema_version": "v1alpha1",
+  "command": "build|check|explain",
+  "status": "ok|failed",
+  "diagnostics": [],
+  "data": {}
+}
+```
+
+- `status=failed` when diagnostics are present.
+- Command-level runtime failures (for example path resolution or missing entry file errors) must still emit this envelope on stdout with `status=failed`.
+- `explain.data` includes per-task `cache_analysis` rows with `task_id`, `cache_key`, `cache_hit`, and `invalidation_reason`.
+- When cache initialization/read is unavailable during `explain`, the command still returns semantic explain output with `cache_analysis=[]`.
 
 Cache-key contract (v1):
 - `cache_key = hash(input_content_hash + parameter_hash + environment_snapshot_hash)`
@@ -107,6 +143,11 @@ Canonical local storage layout:
 
 Minimum persisted records:
 - `task_key`
+- `module`
+- `task_id`
+- `input_content_hash`
+- `parameter_hash`
+- `environment_snapshot_hash`
 - `input_fingerprint`
 - `output_blob_ref`
 - `deps`
@@ -116,6 +157,7 @@ Retention and persistence expectations:
 - Cache is persistent across process restarts.
 - Cache invalidation is key-based, not timestamp-only.
 - Schema migrations must be explicit and versioned.
+- Schema version mismatch resets cache tables and rebuilds schema metadata for safety.
 
 ## Security
 - Restrict cache directory permissions to current user (POSIX target: `0700` directory, `0600` files).
@@ -138,6 +180,7 @@ Logging baseline:
 - Compiler stages emit start/end events with duration.
 - Scheduler emits queue/dequeue/complete events.
 - Cache layer emits read/write hit/miss/corruption events.
+- CLI logs are ANSI-colorized by default and support `--no-color` opt-out.
 
 ## Build and Test
 Phase 1 implementation validation commands:

@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -9,17 +10,27 @@ import (
 	"strings"
 )
 
-func NewWithWriter(w io.Writer, level string) (*slog.Logger, error) {
+type Options struct {
+	Level   string
+	NoColor bool
+}
+
+func NewWithWriter(w io.Writer, options Options) (*slog.Logger, error) {
 	if w == nil {
 		w = os.Stderr
 	}
 
-	parsedLevel, err := parseLevel(level)
+	parsedLevel, err := parseLevel(options.Level)
 	if err != nil {
 		return nil, err
 	}
 
-	handler := slog.NewJSONHandler(w, &slog.HandlerOptions{
+	outputWriter := w
+	if !options.NoColor {
+		outputWriter = &ansiLevelWriter{next: w}
+	}
+
+	handler := slog.NewTextHandler(outputWriter, &slog.HandlerOptions{
 		Level: parsedLevel,
 		ReplaceAttr: func(_ []string, attribute slog.Attr) slog.Attr {
 			if attribute.Key == slog.TimeKey {
@@ -56,4 +67,45 @@ func parseLevel(level string) (slog.Level, error) {
 	default:
 		return slog.LevelInfo, fmt.Errorf("unsupported log level: %s", level)
 	}
+}
+
+func formatLevel(level string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(level))
+	switch normalized {
+	case "DEBUG":
+		return "\x1b[36mDEBUG\x1b[0m"
+	case "INFO":
+		return "\x1b[32mINFO\x1b[0m"
+	case "WARN":
+		return "\x1b[33mWARN\x1b[0m"
+	case "ERROR":
+		return "\x1b[31mERROR\x1b[0m"
+	default:
+		return normalized
+	}
+}
+
+type ansiLevelWriter struct {
+	next io.Writer
+}
+
+func (w *ansiLevelWriter) Write(payload []byte) (int, error) {
+	coloredPayload := colorizeLevelPayload(payload)
+	if len(payload) != len(coloredPayload) {
+		_, err := w.next.Write(coloredPayload)
+		if err != nil {
+			return 0, err
+		}
+		return len(payload), nil
+	}
+	return w.next.Write(coloredPayload)
+}
+
+func colorizeLevelPayload(payload []byte) []byte {
+	updated := append([]byte(nil), payload...)
+	updated = bytes.ReplaceAll(updated, []byte("level=DEBUG"), []byte("level="+formatLevel("DEBUG")))
+	updated = bytes.ReplaceAll(updated, []byte("level=INFO"), []byte("level="+formatLevel("INFO")))
+	updated = bytes.ReplaceAll(updated, []byte("level=WARN"), []byte("level="+formatLevel("WARN")))
+	updated = bytes.ReplaceAll(updated, []byte("level=ERROR"), []byte("level="+formatLevel("ERROR")))
+	return updated
 }

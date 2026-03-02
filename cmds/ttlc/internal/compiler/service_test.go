@@ -2,10 +2,17 @@ package compiler
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/delinoio/oss/cmds/ttlc/internal/cache"
+	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
+
+	_ "modernc.org/sqlite"
 )
 
 func TestCheckReportsUnsupportedImports(t *testing.T) {
@@ -77,6 +84,12 @@ task func Build(target string) Vc[Artifact] {
 		if _, err := os.Stat(result.CacheDBPath); err != nil {
 			t.Fatalf("cache db missing: %v", err)
 		}
+		if len(result.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", result.CacheAnalysis)
+		}
+		if result.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonCacheMiss {
+			t.Fatalf("unexpected invalidation reason: %s", result.CacheAnalysis[0].InvalidationReason)
+		}
 	})
 }
 
@@ -115,6 +128,180 @@ task func Resolve() Vc[Artifact] {
 		}
 		if strings.TrimSpace(result.FingerprintComponents.InputContentHash) == "" {
 			t.Fatal("expected fingerprint components")
+		}
+		if len(result.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", result.CacheAnalysis)
+		}
+		if result.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonCacheMiss {
+			t.Fatalf("expected first explain to miss cache, got=%s", result.CacheAnalysis[0].InvalidationReason)
+		}
+	})
+}
+
+func TestExplainReportsInputContentChangeAfterBuild(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	initialContent := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(initialContent), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	updatedContent := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target + "-updated"})
+}
+`
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		buildResult, err := service.Build(context.Background(), BuildOptions{Entry: "./main.ttl", OutDir: "./out"})
+		if err != nil {
+			t.Fatalf("build returned error: %v", err)
+		}
+		if len(buildResult.Diagnostics) > 0 {
+			t.Fatalf("unexpected build diagnostics: %+v", buildResult.Diagnostics)
+		}
+
+		explainResult, err := service.Explain(context.Background(), ExplainOptions{Entry: "./main.ttl", Task: "Build"})
+		if err != nil {
+			t.Fatalf("explain returned error: %v", err)
+		}
+		if len(explainResult.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", explainResult.CacheAnalysis)
+		}
+		if explainResult.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonNone {
+			t.Fatalf("expected explain after build to be cache hit, got=%s", explainResult.CacheAnalysis[0].InvalidationReason)
+		}
+		if !explainResult.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected cache hit after build, got=%+v", explainResult.CacheAnalysis[0])
+		}
+
+		if err := os.WriteFile(entryPath, []byte(updatedContent), 0o600); err != nil {
+			t.Fatalf("write updated ttl file: %v", err)
+		}
+
+		changedExplainResult, err := service.Explain(context.Background(), ExplainOptions{Entry: "./main.ttl", Task: "Build"})
+		if err != nil {
+			t.Fatalf("explain with changed source returned error: %v", err)
+		}
+		if len(changedExplainResult.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", changedExplainResult.CacheAnalysis)
+		}
+		if changedExplainResult.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonInputContentChanged {
+			t.Fatalf("expected input content change, got=%s", changedExplainResult.CacheAnalysis[0].InvalidationReason)
+		}
+		if changedExplainResult.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected cache miss when content changed, got=%+v", changedExplainResult.CacheAnalysis[0])
+		}
+	})
+}
+
+func TestBuildRecoversFromCacheCorruption(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		initialBuildResult, err := service.Build(context.Background(), BuildOptions{Entry: "./main.ttl", OutDir: "./out"})
+		if err != nil {
+			t.Fatalf("initial build returned error: %v", err)
+		}
+		if len(initialBuildResult.Diagnostics) > 0 {
+			t.Fatalf("unexpected diagnostics for initial build: %+v", initialBuildResult.Diagnostics)
+		}
+
+		db, err := sql.Open("sqlite", initialBuildResult.CacheDBPath)
+		if err != nil {
+			t.Fatalf("open cache sqlite db: %v", err)
+		}
+		defer db.Close()
+
+		if _, err := db.Exec(`UPDATE task_cache SET metadata = '{' WHERE module = 'build' AND task_id = 'Build'`); err != nil {
+			t.Fatalf("corrupt metadata json: %v", err)
+		}
+
+		rebuildResult, err := service.Build(context.Background(), BuildOptions{Entry: "./main.ttl", OutDir: "./out"})
+		if err != nil {
+			t.Fatalf("rebuild returned error: %v", err)
+		}
+		if len(rebuildResult.Diagnostics) > 0 {
+			t.Fatalf("unexpected diagnostics for rebuild: %+v", rebuildResult.Diagnostics)
+		}
+		if len(rebuildResult.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", rebuildResult.CacheAnalysis)
+		}
+		if rebuildResult.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonCacheCorruption {
+			t.Fatalf("expected cache corruption invalidation reason, got=%s", rebuildResult.CacheAnalysis[0].InvalidationReason)
+		}
+	})
+}
+
+func TestExplainDoesNotFailWhenCacheOpenFails(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	originalOpenCacheStore := openCacheStore
+	openCacheStore = func(_ string) (*cache.Store, error) {
+		return nil, errors.New("cache unavailable")
+	}
+	t.Cleanup(func() {
+		openCacheStore = originalOpenCacheStore
+	})
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Explain(context.Background(), ExplainOptions{Entry: "./main.ttl", Task: "Build"})
+		if err != nil {
+			t.Fatalf("explain should not fail when cache open fails: %v", err)
+		}
+		if len(result.Tasks) != 1 {
+			t.Fatalf("expected one explained task, got=%+v", result.Tasks)
+		}
+		if len(result.Diagnostics) != 0 {
+			t.Fatalf("expected diagnostics to remain unchanged, got=%+v", result.Diagnostics)
+		}
+		if len(result.CacheAnalysis) != 0 {
+			t.Fatalf("expected empty cache analysis when cache is unavailable, got=%+v", result.CacheAnalysis)
 		}
 	})
 }

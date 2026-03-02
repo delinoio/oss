@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -44,6 +45,13 @@ type Task struct {
 	CacheKey   string           `json:"cache_key"`
 }
 
+type CacheAnalysis struct {
+	TaskID             string                          `json:"task_id"`
+	CacheKey           string                          `json:"cache_key"`
+	CacheHit           bool                            `json:"cache_hit"`
+	InvalidationReason contracts.TtlInvalidationReason `json:"invalidation_reason"`
+}
+
 type Result struct {
 	Entry                 string                  `json:"entry"`
 	Module                string                  `json:"module"`
@@ -52,6 +60,7 @@ type Result struct {
 	FingerprintComponents fingerprint.Components  `json:"fingerprint_components"`
 	GeneratedFiles        []string                `json:"generated_files,omitempty"`
 	CacheDBPath           string                  `json:"cache_db_path,omitempty"`
+	CacheAnalysis         []CacheAnalysis         `json:"cache_analysis,omitempty"`
 }
 
 type Service struct {
@@ -73,6 +82,8 @@ type analysis struct {
 	sourceBytes      []byte
 	result           Result
 }
+
+var openCacheStore = cache.Open
 
 func New() *Service {
 	handler := slog.NewJSONHandler(io.Discard, nil)
@@ -99,7 +110,52 @@ func (s *Service) Explain(ctx context.Context, options ExplainOptions) (Result, 
 	if err != nil {
 		return Result{}, err
 	}
-	return analysisResult.result, nil
+	result := analysisResult.result
+	if len(result.Tasks) == 0 {
+		return result, nil
+	}
+
+	cacheStart := time.Now()
+	s.logStageStart(contracts.CompileStageCache)
+	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
+	if err != nil {
+		s.logStageFailure(contracts.CompileStageCache, time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
+		result.CacheAnalysis = make([]CacheAnalysis, 0)
+		return result, nil
+	}
+	defer store.Close()
+
+	fingerprintByTaskID := make(map[string]taskFingerprint, len(analysisResult.taskFingerprints))
+	for _, taskFingerprint := range analysisResult.taskFingerprints {
+		fingerprintByTaskID[taskFingerprint.Task.ID] = taskFingerprint
+	}
+
+	analysisRecords := make([]CacheAnalysis, 0, len(result.Tasks))
+	for _, task := range result.Tasks {
+		taskStart := time.Now()
+		taskFingerprint, ok := fingerprintByTaskID[task.ID]
+		if !ok {
+			continue
+		}
+
+		taskAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, analysisResult.moduleName, taskFingerprint, false)
+		if lookupErr != nil {
+			s.logTaskCacheEvent(task.ID, taskFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(taskStart))
+			analysisRecords = append(analysisRecords, CacheAnalysis{
+				TaskID:             taskFingerprint.Task.ID,
+				CacheKey:           taskFingerprint.CacheKey,
+				CacheHit:           false,
+				InvalidationReason: contracts.TtlInvalidationReasonCacheMiss,
+			})
+			continue
+		}
+		analysisRecords = append(analysisRecords, taskAnalysis)
+		s.logTaskCacheEvent(taskAnalysis.TaskID, taskAnalysis.CacheKey, taskAnalysis.CacheHit, taskAnalysis.InvalidationReason, errorKind, time.Since(taskStart))
+	}
+
+	result.CacheAnalysis = analysisRecords
+	s.logStageEnd(contracts.CompileStageCache, time.Since(cacheStart))
+	return result, nil
 }
 
 func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, error) {
@@ -129,30 +185,33 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 
 	cacheStart := time.Now()
 	s.logStageStart(contracts.CompileStageCache)
-	store, err := cache.Open(analysisResult.paths.CacheDBPath)
+	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
 	if err != nil {
 		s.logStageFailure(contracts.CompileStageCache, time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
 		return Result{}, fmt.Errorf("open cache store: %w", err)
 	}
 	defer store.Close()
 
+	analysisRecords := make([]CacheAnalysis, 0, len(analysisResult.taskFingerprints))
 	for _, fingerprintedTask := range analysisResult.taskFingerprints {
-		cacheHit, err := store.HasTask(fingerprintedTask.CacheKey)
-		if err != nil {
-			s.logTaskCacheEvent(fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, false, "cache_lookup_error", contracts.DiagnosticKindIOError, 0)
-			return Result{}, fmt.Errorf("lookup cache key %s: %w", fingerprintedTask.CacheKey, err)
-		}
+		taskStart := time.Now()
 
-		invalidationReason := "none"
-		if !cacheHit {
-			invalidationReason = "cache_miss"
+		cacheAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, analysisResult.moduleName, fingerprintedTask, true)
+		if lookupErr != nil {
+			s.logTaskCacheEvent(fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(taskStart))
+			return Result{}, fmt.Errorf("analyze task cache state for %s: %w", fingerprintedTask.Task.ID, lookupErr)
 		}
 
 		record := cache.TaskRecord{
-			TaskKey:          fingerprintedTask.CacheKey,
-			InputFingerprint: fingerprintedTask.Components.InputContentHash + ":" + fingerprintedTask.Components.ParameterHash + ":" + fingerprintedTask.Components.EnvironmentSnapshotHash,
-			OutputBlobRef:    "",
-			Deps:             append([]string{}, fingerprintedTask.Task.Deps...),
+			TaskKey:                 fingerprintedTask.CacheKey,
+			Module:                  analysisResult.moduleName,
+			TaskID:                  fingerprintedTask.Task.ID,
+			InputContentHash:        fingerprintedTask.Components.InputContentHash,
+			ParameterHash:           fingerprintedTask.Components.ParameterHash,
+			EnvironmentSnapshotHash: fingerprintedTask.Components.EnvironmentSnapshotHash,
+			InputFingerprint:        composeInputFingerprint(fingerprintedTask.Components),
+			OutputBlobRef:           "",
+			Deps:                    append([]string{}, fingerprintedTask.Task.Deps...),
 			Metadata: map[string]any{
 				"module":      analysisResult.moduleName,
 				"task_id":     fingerprintedTask.Task.ID,
@@ -161,15 +220,65 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 			UpdatedAt: time.Now().UTC(),
 		}
 		if err := store.UpsertTask(record); err != nil {
-			s.logTaskCacheEvent(fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheHit, "cache_write_error", contracts.DiagnosticKindIOError, 0)
+			s.logTaskCacheEvent(fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheAnalysis.CacheHit, cacheAnalysis.InvalidationReason, contracts.DiagnosticKindIOError, time.Since(taskStart))
 			return Result{}, fmt.Errorf("upsert cache row for %s: %w", fingerprintedTask.Task.ID, err)
 		}
-		s.logTaskCacheEvent(fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheHit, invalidationReason, "", 0)
+		s.logTaskCacheEvent(fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheAnalysis.CacheHit, cacheAnalysis.InvalidationReason, errorKind, time.Since(taskStart))
+		analysisRecords = append(analysisRecords, cacheAnalysis)
 	}
 
 	s.logStageEnd(contracts.CompileStageCache, time.Since(cacheStart))
 	result.CacheDBPath = analysisResult.paths.CacheDBPath
+	result.CacheAnalysis = analysisRecords
 	return result, nil
+}
+
+func (s *Service) analyzeTaskCacheState(store *cache.Store, moduleName string, fingerprintedTask taskFingerprint, repairCorruption bool) (CacheAnalysis, contracts.DiagnosticKind, error) {
+	analysisRecord := CacheAnalysis{
+		TaskID:             fingerprintedTask.Task.ID,
+		CacheKey:           fingerprintedTask.CacheKey,
+		CacheHit:           false,
+		InvalidationReason: contracts.TtlInvalidationReasonCacheMiss,
+	}
+
+	previousState, found, err := store.GetTaskState(moduleName, fingerprintedTask.Task.ID)
+	if err != nil {
+		var corruptionErr *cache.CorruptionError
+		if errors.As(err, &corruptionErr) {
+			analysisRecord.InvalidationReason = contracts.TtlInvalidationReasonCacheCorruption
+			if repairCorruption {
+				if deleteErr := store.DeleteTaskState(moduleName, fingerprintedTask.Task.ID); deleteErr != nil {
+					return CacheAnalysis{}, contracts.DiagnosticKindCacheCorruption, fmt.Errorf("delete corrupted cache state: %w", deleteErr)
+				}
+			}
+			return analysisRecord, contracts.DiagnosticKindCacheCorruption, nil
+		}
+		return CacheAnalysis{}, contracts.DiagnosticKindIOError, err
+	}
+
+	analysisRecord.InvalidationReason, analysisRecord.CacheHit = detectInvalidationReason(found, previousState, fingerprintedTask.Components)
+	return analysisRecord, "", nil
+}
+
+func detectInvalidationReason(found bool, previousState cache.TaskState, components fingerprint.Components) (contracts.TtlInvalidationReason, bool) {
+	if !found {
+		return contracts.TtlInvalidationReasonCacheMiss, false
+	}
+
+	if previousState.InputContentHash != components.InputContentHash {
+		return contracts.TtlInvalidationReasonInputContentChanged, false
+	}
+	if previousState.ParameterHash != components.ParameterHash {
+		return contracts.TtlInvalidationReasonParameterChanged, false
+	}
+	if previousState.EnvironmentSnapshotHash != components.EnvironmentSnapshotHash {
+		return contracts.TtlInvalidationReasonEnvironmentChanged, false
+	}
+	return contracts.TtlInvalidationReasonNone, true
+}
+
+func composeInputFingerprint(components fingerprint.Components) string {
+	return components.InputContentHash + ":" + components.ParameterHash + ":" + components.EnvironmentSnapshotHash
 }
 
 func (s *Service) analyze(_ context.Context, entry string, outDir string, taskFilter string) (analysis, error) {
@@ -384,7 +493,7 @@ func (s *Service) logStageFailure(stage contracts.CompileStage, duration time.Du
 	)
 }
 
-func (s *Service) logTaskCacheEvent(taskID string, cacheKey string, cacheHit bool, invalidationReason string, errorKind contracts.DiagnosticKind, duration time.Duration) {
+func (s *Service) logTaskCacheEvent(taskID string, cacheKey string, cacheHit bool, invalidationReason contracts.TtlInvalidationReason, errorKind contracts.DiagnosticKind, duration time.Duration) {
 	logging.Event(
 		s.logger,
 		slog.LevelInfo,
@@ -393,7 +502,7 @@ func (s *Service) logTaskCacheEvent(taskID string, cacheKey string, cacheHit boo
 		slog.String("task_id", taskID),
 		slog.String("cache_key", cacheKey),
 		slog.Bool("cache_hit", cacheHit),
-		slog.String("invalidation_reason", invalidationReason),
+		slog.String("invalidation_reason", string(invalidationReason)),
 		slog.Int("worker_id", 0),
 		slog.Int64("duration_ms", duration.Milliseconds()),
 		slog.String("error_kind", string(errorKind)),
