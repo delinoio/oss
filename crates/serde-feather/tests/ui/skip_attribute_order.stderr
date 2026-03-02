@@ -1,0 +1,5 @@
+error: serde field attribute `skip` conflicts with previously declared `skip`, `skip_serializing`, or `skip_deserializing`
+ --> tests/ui/skip_attribute_order.rs:5:31
+  |
+5 |     #[serde(skip_serializing, skip)]
+  |                               ^^^^

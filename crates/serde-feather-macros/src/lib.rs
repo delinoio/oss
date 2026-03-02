@@ -111,6 +111,7 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
         binding_ident: Ident,
         field_name: LitStr,
         field_ty: syn::Type,
+        default: bool,
     }
 
     let mut bindings = Vec::<DeserBinding>::new();
@@ -124,14 +125,20 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
             binding_ident: format_ident!("__feather_field_{index}"),
             field_name: field.serialized_name.clone(),
             field_ty: field.ty.clone(),
+            default: field.default,
         });
     }
 
-    let field_bindings = bindings.iter().map(|binding| {
-        let binding_ident = &binding.binding_ident;
-        let field_ty = &binding.field_ty;
-        quote! { let mut #binding_ident: ::core::option::Option<#field_ty> = ::core::option::Option::None; }
-    });
+    let field_bindings: Vec<TokenStream2> = bindings
+        .iter()
+        .map(|binding| {
+            let binding_ident = &binding.binding_ident;
+            let field_ty = &binding.field_ty;
+            quote! { let mut #binding_ident: ::core::option::Option<#field_ty> = ::core::option::Option::None; }
+        })
+        .collect();
+    let field_bindings_in_map = field_bindings.clone();
+    let field_bindings_in_seq = field_bindings;
 
     let field_setter_match_arms = bindings.iter().map(|binding| {
         let field_index = binding.field_index;
@@ -156,39 +163,74 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
         .collect();
     let known_fields_in_map = known_fields.clone();
 
-    let construct_fields = parsed.fields.iter().enumerate().map(|(index, field)| {
-        let field_ident = &field.ident;
-        let field_name = &field.serialized_name;
-        if field.skip_deserializing {
-            return quote! {
-                #field_ident: ::core::default::Default::default()
-            };
-        }
-
-        let binding_ident = bindings
-            .iter()
-            .find(|binding| binding.field_index == index)
-            .expect("binding for non-skipped field")
-            .binding_ident
-            .clone();
-
-        if field.default {
-            quote! {
-                #field_ident: #binding_ident.unwrap_or_default()
+    let construct_fields: Vec<TokenStream2> = parsed
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| {
+            let field_ident = &field.ident;
+            let field_name = &field.serialized_name;
+            if field.skip_deserializing {
+                return quote! {
+                    #field_ident: ::core::default::Default::default()
+                };
             }
-        } else {
-            quote! {
-                #field_ident: match #binding_ident {
-                    ::core::option::Option::Some(value) => value,
-                    ::core::option::Option::None => {
-                        return ::core::result::Result::Err(
-                            #crate_path::serde::de::Error::missing_field(#field_name),
-                        );
+
+            let binding_ident = bindings
+                .iter()
+                .find(|binding| binding.field_index == index)
+                .expect("binding for non-skipped field")
+                .binding_ident
+                .clone();
+
+            if field.default {
+                quote! {
+                    #field_ident: #binding_ident.unwrap_or_default()
+                }
+            } else {
+                quote! {
+                    #field_ident: match #binding_ident {
+                        ::core::option::Option::Some(value) => value,
+                        ::core::option::Option::None => {
+                            return ::core::result::Result::Err(
+                                #crate_path::serde::de::Error::missing_field(#field_name),
+                            );
+                        }
                     }
                 }
             }
+        })
+        .collect();
+    let construct_fields_in_map = construct_fields.clone();
+    let construct_fields_in_seq = construct_fields;
+
+    let seq_field_decode_steps = bindings.iter().enumerate().map(|(seq_index, binding)| {
+        let binding_ident = &binding.binding_ident;
+        let field_ty = &binding.field_ty;
+        if binding.default {
+            quote! {
+                if let ::core::option::Option::Some(value) =
+                    #crate_path::serde::de::SeqAccess::next_element::<#field_ty>(&mut seq)?
+                {
+                    #binding_ident = ::core::option::Option::Some(value);
+                }
+            }
+        } else {
+            quote! {
+                #binding_ident =
+                    match #crate_path::serde::de::SeqAccess::next_element::<#field_ty>(&mut seq)? {
+                        ::core::option::Option::Some(value) => ::core::option::Option::Some(value),
+                        ::core::option::Option::None => {
+                            return ::core::result::Result::Err(
+                                #crate_path::serde::de::Error::invalid_length(#seq_index, &self),
+                            );
+                        }
+                    };
+            }
         }
     });
+
+    let seq_expected_len = bindings.len();
 
     let struct_ident = &parsed.ident;
     let struct_name = &parsed.struct_name;
@@ -219,7 +261,7 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
                         V: #crate_path::serde::de::MapAccess<'de>,
                     {
                         const __FEATHER_FIELDS: &[&str] = &[#(#known_fields_in_map),*];
-                        #(#field_bindings)*
+                        #(#field_bindings_in_map)*
                         while let ::core::option::Option::Some(key) = #crate_path::serde::de::MapAccess::next_key::<#crate_path::__private::OwnedFieldName>(&mut map)?
                         {
                             match #crate_path::__private::select_field_index(key.as_str(), __FEATHER_FIELDS) {
@@ -238,7 +280,28 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
                         }
 
                         ::core::result::Result::Ok(#struct_ident {
-                            #(#construct_fields,)*
+                            #(#construct_fields_in_map,)*
+                        })
+                    }
+
+                    fn visit_seq<V>(
+                        self,
+                        mut seq: V,
+                    ) -> ::core::result::Result<Self::Value, V::Error>
+                    where
+                        V: #crate_path::serde::de::SeqAccess<'de>,
+                    {
+                        #(#field_bindings_in_seq)*
+                        #(#seq_field_decode_steps)*
+
+                        if #crate_path::serde::de::SeqAccess::next_element::<#crate_path::serde::de::IgnoredAny>(&mut seq)?.is_some() {
+                            return ::core::result::Result::Err(
+                                #crate_path::serde::de::Error::invalid_length(#seq_expected_len + 1, &self),
+                            );
+                        }
+
+                        ::core::result::Result::Ok(#struct_ident {
+                            #(#construct_fields_in_seq,)*
                         })
                     }
                 }
@@ -357,8 +420,11 @@ fn parse_field(field: &Field) -> syn::Result<ParsedField> {
 
             if meta.path.is_ident("skip") {
                 ensure_flag_meta_has_no_value(&meta, "skip")?;
-                if options.skip_serializing && options.skip_deserializing {
-                    return Err(meta.error("duplicate serde field attribute `skip`"));
+                if options.skip_serializing || options.skip_deserializing {
+                    return Err(meta.error(
+                        "serde field attribute `skip` conflicts with previously declared `skip`, \
+                         `skip_serializing`, or `skip_deserializing`",
+                    ));
                 }
                 options.skip_serializing = true;
                 options.skip_deserializing = true;
@@ -408,7 +474,7 @@ fn ensure_flag_meta_has_no_value(
     meta: &syn::meta::ParseNestedMeta<'_>,
     name: &str,
 ) -> syn::Result<()> {
-    if meta.input.is_empty() {
+    if !meta.input.peek(syn::Token![=]) && !meta.input.peek(syn::token::Paren) {
         return Ok(());
     }
 

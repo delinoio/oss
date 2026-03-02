@@ -1,6 +1,6 @@
 #![cfg(feature = "derive")]
 
-use serde_feather::{FeatherDeserialize, FeatherSerialize};
+use serde_feather::{serde::Deserialize as _, FeatherDeserialize, FeatherSerialize};
 use serde_test::{assert_tokens, Token};
 
 #[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
@@ -27,6 +27,14 @@ struct FieldBehaviorModel {
     skip_de: u8,
     #[serde(skip)]
     skip_both: u8,
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct SeqModel {
+    first: u8,
+    second: u8,
+    #[serde(default)]
+    third: u8,
 }
 
 #[test]
@@ -90,6 +98,25 @@ fn field_attributes_apply_consistently() {
             skip_ser: 59,
             skip_de: 0,
             skip_both: 0,
+        }
+    );
+}
+
+#[test]
+fn deserializes_from_sequence_representation() {
+    let values = vec![7_u8, 9_u8];
+    let deserializer = serde_feather::serde::de::value::SeqDeserializer::<
+        _,
+        serde_feather::serde::de::value::Error,
+    >::new(values.into_iter());
+
+    let decoded = SeqModel::deserialize(deserializer).expect("deserialize from sequence");
+    assert_eq!(
+        decoded,
+        SeqModel {
+            first: 7,
+            second: 9,
+            third: 0,
         }
     );
 }
