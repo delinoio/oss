@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/cargo-mono",
+    "crates/dexdex-main-server",
+    "crates/dexdex-worker-server",
     "crates/nodeup",
     "crates/serde-feather",
     "crates/serde-feather-macros",

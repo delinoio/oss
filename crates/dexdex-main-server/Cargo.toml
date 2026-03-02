@@ -1,0 +1,8 @@
+[package]
+name = "dexdex-main-server"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+tracing = "0.1"
