@@ -178,6 +178,7 @@ Operational expectations:
 ## Build and Test
 Planned commands:
 - Build: `cargo build -p cargo-mono`
+- Integration tests: `cargo test -p cargo-mono --test cli`
 - Test: `cargo test -p cargo-mono`
 - Workspace validation: `cargo test`
 

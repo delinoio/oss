@@ -42,6 +42,22 @@ Dry-run publish for selected changed crates:
 cargo mono publish --changed --dry-run
 ```
 
+## Quality and reliability
+
+`cargo-mono` is validated with command-level integration tests that run against temporary git workspaces.
+
+The suite verifies:
+- Stable `human` and `json` output behavior across commands.
+- Change detection contracts, including include/exclude path filters, direct-only mode, include-uncommitted mode, and global-impact file handling.
+- Release bump behavior, including internal dependency updates, workspace dependency updates, release commit creation, and crate tag creation.
+- Publish safety behavior, including non-publishable crate skipping and invalid package selection errors.
+
+Run from repository root:
+
+```bash
+cargo test -p cargo-mono --test cli
+```
+
 ## Related pages
 
 - [Projects Overview](projects-overview)
