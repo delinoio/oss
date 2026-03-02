@@ -104,4 +104,16 @@ describe("resolveWorkspaceConnection", () => {
       ),
     ).rejects.toThrow("remoteEndpointUrl must not be empty.");
   });
+
+  it("rejects REMOTE mode when endpoint scheme is not http or https", async () => {
+    await expect(
+      resolveWorkspaceConnection(
+        {
+          mode: WorkspaceMode.Remote,
+          remoteEndpointUrl: "ftp://dexdex.example/rpc",
+        },
+        { logger: createNoopLogger() },
+      ),
+    ).rejects.toThrow("remoteEndpointUrl must use http or https scheme.");
+  });
 });

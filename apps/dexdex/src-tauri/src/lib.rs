@@ -50,6 +50,19 @@ fn parse_and_normalize_url(raw_url: &str) -> Result<String, String> {
     }
 }
 
+fn redact_endpoint_url_for_logs(endpoint_url: &str) -> String {
+    let mut parsed = match Url::parse(endpoint_url) {
+        Ok(url) => url,
+        Err(_) => return "[invalid-endpoint-url]".to_owned(),
+    };
+
+    let _ = parsed.set_username("");
+    let _ = parsed.set_password(None);
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+    parsed.to_string()
+}
+
 fn resolve_local_workspace_endpoint_from<F>(
     mut get_env: F,
 ) -> Result<LocalWorkspaceEndpoint, String>
@@ -82,10 +95,11 @@ fn resolve_local_workspace_endpoint_command() -> Result<LocalWorkspaceEndpoint, 
 
     match result {
         Ok(endpoint) => {
+            let redacted_endpoint_url = redact_endpoint_url_for_logs(&endpoint.endpoint_url);
             info!(
                 workspace_mode = "LOCAL",
                 endpoint_source = endpoint.endpoint_source.as_str(),
-                endpoint_url = endpoint.endpoint_url,
+                endpoint_url = redacted_endpoint_url,
                 result = "success",
                 "resolved local workspace endpoint"
             );
@@ -144,8 +158,9 @@ mod tests {
     use std::collections::HashMap;
 
     use super::{
-        resolve_local_workspace_endpoint_from, WorkspaceEndpointSource, DEFAULT_LOCAL_REMOTE_URL,
-        LOCAL_REMOTE_TOKEN_ENV, LOCAL_REMOTE_URL_ENV,
+        redact_endpoint_url_for_logs, resolve_local_workspace_endpoint_from,
+        WorkspaceEndpointSource, DEFAULT_LOCAL_REMOTE_URL, LOCAL_REMOTE_TOKEN_ENV,
+        LOCAL_REMOTE_URL_ENV,
     };
 
     fn env_map(entries: &[(&str, &str)]) -> HashMap<String, String> {
@@ -210,5 +225,18 @@ mod tests {
             error,
             "DEXDEX_LOCAL_REMOTE_URL must use http or https scheme."
         );
+    }
+
+    #[test]
+    fn redacts_endpoint_credentials_and_query_for_logging() {
+        let redacted =
+            redact_endpoint_url_for_logs("https://user:pass@dexdex.example/rpc?token=abc#frag");
+        assert_eq!(redacted, "https://dexdex.example/rpc");
+    }
+
+    #[test]
+    fn redaction_marks_invalid_urls() {
+        let redacted = redact_endpoint_url_for_logs("not-a-url");
+        assert_eq!(redacted, "[invalid-endpoint-url]");
     }
 }

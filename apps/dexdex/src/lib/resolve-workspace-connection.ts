@@ -31,8 +31,16 @@ function normalizeEndpointUrl(
 
   try {
     const parsedUrl = new URL(trimmedUrl);
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      throw new Error(`${fieldName} must use http or https scheme.`);
+    }
+
     return parsedUrl.toString();
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("must use http or https scheme.")) {
+      throw error;
+    }
+
     throw new Error(`${fieldName} must be a valid absolute URL.`);
   }
 }
