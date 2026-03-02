@@ -233,6 +233,7 @@ Devkit environment variables (optional):
 ## Build and Test
 Current commands:
 - Proto generation prerequisite: `./scripts/generate-go-proto.sh`
+- Server local dev (auto proto generation): `cd servers/thenv && pnpm dev` (`predev` runs `./scripts/generate-go-proto.sh` before `air`)
 - CLI build/test: `go build ./cmds/thenv/...` and `go test ./cmds/thenv/...`
 - Server build/test: `go build ./servers/thenv/...` and `go test ./servers/thenv/...`
 - Web console tests: `cd apps/devkit && pnpm test`

@@ -2,6 +2,7 @@
     "name": "@servers/thenv",
     "private": true,
     "scripts": {
+        "predev": "cd ../.. && ./scripts/generate-go-proto.sh",
         "dev": "air"
     }
 }
