@@ -176,7 +176,7 @@ enum ThenvComponent {
 
 ### CI Baseline
 
-Repository-wide CI is defined in `.github/workflows/CI.yml`.
+Repository-wide quality CI is defined in `.github/workflows/CI.yml`.
 
 Coverage expectations:
 - `go-quality`: runs `go fmt ./...` (fails if formatting changes are applied) and `go vet ./...` on Ubuntu.
@@ -196,6 +196,13 @@ Change-scoped execution rules:
 - Changes to `.github/workflows/CI.yml` force all `go`, `node`, and `rust` domain jobs to run.
 - `workflow_dispatch` runs all domain jobs regardless of changed paths.
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
+
+Release automation baseline:
+- `auto-publish` is defined in `.github/workflows/auto-publish.yml`.
+- Trigger contract: runs on `push` to `main` and supports `workflow_dispatch`.
+- Branch guard contract: publish job runs only when `github.ref == 'refs/heads/main'`.
+- Publish command contract: `cargo run -p cargo-mono -- publish --no-verify`.
+- Required secret contract: `CARGO_REGISTRY_TOKEN`.
 
 ### Documentation Lifecycle Rules
 
