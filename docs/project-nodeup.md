@@ -117,7 +117,8 @@ CLI entrypoints:
 
 Global option contract:
 - `--output <human|json>` is available for all management commands and defaults to `human`.
-- In `--output human`, default logging uses `tracing` pretty formatting (`level=on`, `target=off`, `time=off`, `ansi=on`).
+- In `--output human` for management commands, default logging uses `tracing` pretty formatting (`level=on`, `target=off`, `time=off`, `ansi=on`) with `nodeup=info`.
+- In managed-alias dispatch mode (`node`, `npm`, `npx`), default logging uses the same `tracing` format but with `nodeup=warn` to keep normal delegated command execution quiet.
 - Log color override:
 : `NODEUP_LOG_COLOR=always|auto|never` controls ANSI color (`always` default).
 : If `NODEUP_LOG_COLOR` is unset or `auto`, `NO_COLOR` disables color; otherwise color remains enabled.
@@ -268,10 +269,12 @@ Symlink contract:
 - Log provenance metadata for each installed version.
 
 ## Logging
-Default human-mode logging uses `tracing` pretty formatting with `level=on`, `target=off`, `time=off`, and `ansi=off`.
+Default management-command human logging uses `tracing` pretty formatting with `level=on`, `target=off`, `time=off`, and `ansi=on` and a default filter of `nodeup=info`.
+Default managed-alias dispatch logging uses the same formatting and a default filter of `nodeup=warn`.
 In `--output json`, default logging remains disabled (`nodeup=off`) unless `RUST_LOG` is explicitly set.
 
 Required baseline logs:
+- Baseline structured events are emitted at `info` level and are guaranteed when `RUST_LOG` includes `nodeup=info` (or a more verbose level); alias default mode intentionally suppresses those `info` events unless explicitly enabled.
 - Command path (`nodeup.<group>.<subcommand>` or `nodeup.<command>`) and `arg_shape` JSON payload (single structured field, sanitized)
 - Runtime selector source (`explicit`, `override`, `default`) and resolved runtime
 - Override lookup result (`path`, `matched`, `fallback_reason`) with stable fallback codes:
