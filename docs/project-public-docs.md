@@ -17,6 +17,7 @@ It delivers curated onboarding and project overview content while keeping detail
 ## In Scope
 - Public-facing documentation pages and navigation
 - Curated project overview content derived from internal contracts
+- Tabbed practical guides for key tooling (`devmon`, `nodeup`, `derun`) in the `projects-overview` page
 - Documentation onboarding and contribution workflow for public docs
 - Broken-link validation for published pages
 
@@ -29,6 +30,7 @@ It delivers curated onboarding and project overview content while keeping detail
 - Mintlify app content is authored as MDX pages under `apps/public-docs`.
 - Site navigation and page grouping are defined in `apps/public-docs/docs.json`.
 - `docs.json` must include `colors.primary` and a `navigation` object using the `navigation.groups` array contract.
+- `projects-overview.mdx` must preserve the full active project catalog and include a `Tool Guides` section rendered with in-page tabs.
 - Public docs summarize stable user-facing information from internal project contracts.
 - Internal contracts remain authoritative and must be updated before or alongside related public docs updates.
 
@@ -52,11 +54,25 @@ enum PublicDocsPageId {
 }
 ```
 
+Canonical `projects-overview` tool guide tab identifiers:
+
+```ts
+enum PublicDocsToolGuideTabId {
+  Devmon = "devmon",
+  Nodeup = "nodeup",
+  Derun = "derun",
+}
+```
+
 Navigation contract:
 - `navigation` must be an object, not an array.
 - `navigation.groups` is the canonical group list.
 - Group `Get Started` must include `index` and `getting-started`.
 - Group `Reference` must include `projects-overview` and `documentation-lifecycle`.
+
+Projects overview content contract:
+- `projects-overview` must keep the canonical active project list.
+- `projects-overview` must include a `Tool Guides` section with in-page tabs for `devmon`, `nodeup`, and `derun`.
 
 Dev preview port contract:
 - `pnpm --filter public-docs dev` runs Mintlify with fixed port `46249`.

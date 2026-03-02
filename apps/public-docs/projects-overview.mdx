@@ -15,6 +15,145 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 - `thenv`: Secure `.env` sharing system across CLI, server, and web console.
 - `public-docs`: Mintlify public documentation app.
 
+## Tool Guides
+
+The following practical guides cover the most commonly used local automation and runtime tools.
+
+<Tabs>
+  <Tab title="devmon">
+    ### What It Is
+
+    `devmon` is a Go automation daemon for recurring folder jobs. It is designed for predictable local automation with config validation, concurrency guards, and macOS service/menu bar controls.
+
+    ### Core Commands
+
+    ```bash
+    devmon daemon --config ~/.config/devmon/devmon.toml
+    devmon validate --config ~/.config/devmon/devmon.toml
+    devmon service install
+    devmon service status
+    devmon menubar
+    ```
+
+    ### Key Configuration / Paths
+
+    - Config file: `~/.config/devmon/devmon.toml`
+    - Runtime state file: `~/.local/state/devmon/status.json`
+    - Daemon logs: `~/Library/Logs/devmon/daemon.log`
+    - LaunchAgent files: `~/Library/LaunchAgents/io.delino.devmon.{daemon|menubar}.plist`
+
+    Minimal config example:
+
+    ```toml
+    version = 1
+
+    [daemon]
+    max_concurrent_jobs = 2
+    startup_run = true
+    log_level = "info"
+
+    [[folder]]
+    id = "oss"
+    path = "/Users/you/projects/oss"
+
+    [[folder.job]]
+    id = "fetch-main"
+    type = "shell-command"
+    enabled = true
+    interval = "1m"
+    timeout = "30s"
+    shell = "/bin/zsh"
+    script = "git fetch --all -p"
+    ```
+
+    ### Typical Workflow
+
+    1. Start with `devmon validate --config ...` to verify config and job shape.
+    2. Run `devmon daemon --config ...` for foreground scheduling while testing.
+    3. Install service mode with `devmon service install` once the job set is stable.
+
+    ### Operational Notes
+
+    - `startup_run` triggers an immediate run on daemon start.
+    - If a previous run is still active, the next trigger is skipped as `skipped-overlap`.
+    - If global concurrency is full, new triggers are skipped as `skipped-capacity`.
+    - v1 does not queue skipped triggers for later replay.
+  </Tab>
+  <Tab title="nodeup">
+    ### What It Is
+
+    `nodeup` is a Rust-based Node.js version manager with rustup-style commands, selector-based runtime resolution, and shim dispatch for common Node executables.
+
+    ### Core Commands
+
+    ```bash
+    nodeup toolchain install lts
+    nodeup default lts
+    nodeup show active-runtime
+    nodeup run --install lts node -v
+    nodeup override set 24.0.0 --path .
+    nodeup which node
+    ```
+
+    ### Key Configuration / Paths
+
+    - Data root: `$XDG_DATA_HOME/nodeup` (fallback: `~/.local/share/nodeup`)
+    - Cache root: `$XDG_CACHE_HOME/nodeup` (fallback: `~/.cache/nodeup`)
+    - Config root: `$XDG_CONFIG_HOME/nodeup` (fallback: `~/.config/nodeup`)
+    - Root overrides: `NODEUP_DATA_HOME`, `NODEUP_CACHE_HOME`, `NODEUP_CONFIG_HOME`
+    - Release index control: `NODEUP_INDEX_URL`, `NODEUP_DOWNLOAD_BASE_URL`, `NODEUP_RELEASE_INDEX_TTL_SECONDS`
+
+    ### Typical Workflow
+
+    1. Install a selector (`lts`, `current`, or exact version) with `nodeup toolchain install ...`.
+    2. Set global default with `nodeup default ...`.
+    3. Pin project runtime using `nodeup override set ... --path <project>`.
+    4. Execute explicit runtime commands via `nodeup run ...` when reproducibility is required.
+
+    ### Operational Notes
+
+    - Invoking the binary as `node`, `npm`, or `npx` uses managed-alias dispatch automatically.
+    - `nodeup run` can auto-install missing runtimes when `--install` is provided.
+    - `--output json` enables machine-readable command payloads.
+    - `NODEUP_LOG_COLOR=always|auto|never` controls ANSI log color behavior.
+  </Tab>
+  <Tab title="derun">
+    ### What It Is
+
+    `derun` is a Go CLI for terminal-faithful command execution with side-channel transcript capture, plus an MCP server for AI-readable session output.
+
+    ### Core Commands
+
+    ```bash
+    derun run -- echo "hello"
+    derun run --retention 12h -- make test
+    derun run --session-id my-session -- npm run dev
+    derun mcp
+    ```
+
+    ### Key Configuration / Paths
+
+    - State root env override: `DERUN_STATE_ROOT`
+    - Default POSIX state root: `$XDG_STATE_HOME/derun` (fallback: `~/.local/state/derun`)
+    - Session artifacts: `meta.json`, `output.bin`, `index.jsonl`, `final.json`
+    - Default retention TTL: `24h`
+    - `--retention` must be a positive whole-second duration (for example `30s`, `5m`, `1h`)
+
+    ### Typical Workflow
+
+    1. Run commands via `derun run -- <command> ...` to keep normal terminal behavior while capturing session output.
+    2. Start `derun mcp` for AI tooling that needs session discovery and output retrieval.
+    3. Read sessions through MCP tools: `derun_list_sessions`, `derun_get_session`, `derun_read_output`, `derun_wait_output`.
+
+    ### Operational Notes
+
+    - User-visible stdout/stderr are forwarded without mutation.
+    - `derun_wait_output` is cursor-based and designed for live-tail polling.
+    - Exit code behavior follows child process exit semantics, including signal-mapped exit codes.
+    - Retention cleanup runs during `run` startup and periodically while `mcp` is serving.
+  </Tab>
+</Tabs>
+
 ## Canonical Internal Contracts
 
 Authoritative implementation contracts are maintained in repository documents under `docs/project-*.md`.
