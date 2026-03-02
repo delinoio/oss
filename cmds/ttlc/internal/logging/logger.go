@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -24,14 +25,16 @@ func NewWithWriter(w io.Writer, options Options) (*slog.Logger, error) {
 		return nil, err
 	}
 
-	handler := slog.NewTextHandler(w, &slog.HandlerOptions{
+	outputWriter := w
+	if !options.NoColor {
+		outputWriter = &ansiLevelWriter{next: w}
+	}
+
+	handler := slog.NewTextHandler(outputWriter, &slog.HandlerOptions{
 		Level: parsedLevel,
 		ReplaceAttr: func(_ []string, attribute slog.Attr) slog.Attr {
 			if attribute.Key == slog.TimeKey {
 				attribute.Key = "timestamp"
-			}
-			if attribute.Key == slog.LevelKey {
-				attribute.Value = slog.StringValue(formatLevel(attribute.Value.String(), options.NoColor))
 			}
 			return attribute
 		},
@@ -66,12 +69,8 @@ func parseLevel(level string) (slog.Level, error) {
 	}
 }
 
-func formatLevel(level string, noColor bool) string {
+func formatLevel(level string) string {
 	normalized := strings.ToUpper(strings.TrimSpace(level))
-	if noColor {
-		return normalized
-	}
-
 	switch normalized {
 	case "DEBUG":
 		return "\x1b[36mDEBUG\x1b[0m"
@@ -84,4 +83,29 @@ func formatLevel(level string, noColor bool) string {
 	default:
 		return normalized
 	}
+}
+
+type ansiLevelWriter struct {
+	next io.Writer
+}
+
+func (w *ansiLevelWriter) Write(payload []byte) (int, error) {
+	coloredPayload := colorizeLevelPayload(payload)
+	if len(payload) != len(coloredPayload) {
+		_, err := w.next.Write(coloredPayload)
+		if err != nil {
+			return 0, err
+		}
+		return len(payload), nil
+	}
+	return w.next.Write(coloredPayload)
+}
+
+func colorizeLevelPayload(payload []byte) []byte {
+	updated := append([]byte(nil), payload...)
+	updated = bytes.ReplaceAll(updated, []byte("level=DEBUG"), []byte("level="+formatLevel("DEBUG")))
+	updated = bytes.ReplaceAll(updated, []byte("level=INFO"), []byte("level="+formatLevel("INFO")))
+	updated = bytes.ReplaceAll(updated, []byte("level=WARN"), []byte("level="+formatLevel("WARN")))
+	updated = bytes.ReplaceAll(updated, []byte("level=ERROR"), []byte("level="+formatLevel("ERROR")))
+	return updated
 }

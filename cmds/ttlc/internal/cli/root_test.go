@@ -120,7 +120,7 @@ func TestCheckColorFlag(t *testing.T) {
 		if colorCode != 0 {
 			t.Fatalf("expected color run to succeed, got=%d stderr=%s", colorCode, colorStderr.String())
 		}
-		if !strings.Contains(colorStderr.String(), "\\x1b[") {
+		if !strings.Contains(colorStderr.String(), "\x1b[") {
 			t.Fatalf("expected ANSI color sequences in logs, got=%q", colorStderr.String())
 		}
 
