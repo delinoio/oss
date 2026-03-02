@@ -1,0 +1,5 @@
+error: serde field attributes `skip_serializing` and `skip_deserializing` cannot be combined
+ --> tests/ui/skip_directional_conflict.rs:5:31
+  |
+5 |     #[serde(skip_serializing, skip_deserializing)]
+  |                               ^^^^^^^^^^^^^^^^^^

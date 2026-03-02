@@ -510,6 +510,12 @@ fn parse_field(field: &Field) -> syn::Result<ParsedField> {
                 if options.skip_serializing {
                     return Err(meta.error("duplicate serde field attribute `skip_serializing`"));
                 }
+                if options.skip_deserializing {
+                    return Err(meta.error(
+                        "serde field attributes `skip_serializing` and `skip_deserializing` \
+                         cannot be combined",
+                    ));
+                }
                 options.skip_serializing = true;
                 return Ok(());
             }
@@ -518,6 +524,12 @@ fn parse_field(field: &Field) -> syn::Result<ParsedField> {
                 ensure_flag_meta_has_no_value(&meta, "skip_deserializing")?;
                 if options.skip_deserializing {
                     return Err(meta.error("duplicate serde field attribute `skip_deserializing`"));
+                }
+                if options.skip_serializing {
+                    return Err(meta.error(
+                        "serde field attributes `skip_serializing` and `skip_deserializing` \
+                         cannot be combined",
+                    ));
                 }
                 options.skip_deserializing = true;
                 return Ok(());
