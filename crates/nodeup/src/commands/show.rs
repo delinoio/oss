@@ -87,7 +87,10 @@ fn show_home(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
         cache_root: app.paths.cache_root.to_string_lossy().to_string(),
         config_root: app.paths.config_root.to_string_lossy().to_string(),
     };
-    let human = format!("nodeup home: {}", response.data_root);
+    let human = format!(
+        "nodeup home:\ndata_root: {}\ncache_root: {}\nconfig_root: {}",
+        response.data_root, response.cache_root, response.config_root
+    );
 
     print_output(output, &human, &response)?;
     Ok(0)
