@@ -46,6 +46,7 @@
 - `docs/project-devmon.md`: Go automation daemon with macOS menu bar-managed lifecycle controls.
 - `docs/project-public-docs.md`: Mintlify-based public documentation app.
 - `docs/project-serde-feather.md`: Size-first serde derive scaffolding contracts (core + proc-macro split).
+- `docs/project-dexdex.md`: Connect RPC-first orchestration platform contracts (Rust main server + worker server).
 - `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation (default actor set includes `chatgpt-codex-connector[bot]`).
 
 ### Project Identifier Contract
@@ -66,6 +67,7 @@ enum ProjectId {
   Thenv = "thenv",
   SerdeFeather = "serde-feather",
   PublicDocs = "public-docs",
+  DexDex = "dexdex",
 }
 ```
 
@@ -83,6 +85,7 @@ enum ProjectId {
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `public-docs` -> `apps/public-docs`
+- `dexdex` -> `crates/dexdex-main-server`, `crates/dexdex-worker-server`
 
 ### Devkit Mini-App Identifier Contract
 
@@ -149,6 +152,20 @@ enum SerdeFeatherComponent {
 
 - `Core` -> `crates/serde-feather`
 - `Macros` -> `crates/serde-feather-macros`
+
+### DexDex Component Contract
+
+`dexdex` is a two-component project with fixed mapping:
+
+```ts
+enum DexDexComponent {
+  MainServer = "main-server",
+  WorkerServer = "worker-server",
+}
+```
+
+- `MainServer` -> `crates/dexdex-main-server`
+- `WorkerServer` -> `crates/dexdex-worker-server`
 
 ### Documentation-First Policy
 
