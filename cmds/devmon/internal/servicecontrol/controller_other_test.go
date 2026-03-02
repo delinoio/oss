@@ -28,7 +28,11 @@ func TestUnsupportedManagerReturnsDeterministicErrors(t *testing.T) {
 		t.Fatalf("expected ErrUnsupportedPlatform for stop, got=%v", err)
 	}
 
-	if _, err := manager.Status(context.Background()); !errors.Is(err, ErrUnsupportedPlatform) {
+	summary, err := manager.Status(context.Background())
+	if !errors.Is(err, ErrUnsupportedPlatform) {
 		t.Fatalf("expected ErrUnsupportedPlatform for status, got=%v", err)
+	}
+	if summary.DaemonHealth != DaemonHealthError {
+		t.Fatalf("expected DaemonHealthError for unsupported status, got=%s", summary.DaemonHealth)
 	}
 }

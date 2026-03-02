@@ -261,6 +261,211 @@ script = "echo ok"
 	}
 }
 
+func TestLoadResolvesRelativeFolderPath(t *testing.T) {
+	configDirectory := t.TempDir()
+	folderPath := filepath.Join(configDirectory, "workspace")
+	if err := os.MkdirAll(folderPath, 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+
+	configPath := filepath.Join(configDirectory, "devmon.toml")
+	content := `version = 1
+
+[daemon]
+max_concurrent_jobs = 1
+startup_run = true
+log_level = "info"
+
+[[folder]]
+id = "workspace-a"
+path = "workspace"
+
+[[folder.job]]
+id = "git-sync"
+interval = "1m"
+timeout = "50s"
+script = "echo ok"
+`
+	writeConfigFile(t, configPath, content)
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if cfg.Folders[0].Path != folderPath {
+		t.Fatalf("expected resolved folder path=%s, got=%s", folderPath, cfg.Folders[0].Path)
+	}
+}
+
+func TestLoadParsesLiteralAndMultilineStrings(t *testing.T) {
+	folderPath := t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "devmon.toml")
+	content := fmt.Sprintf(`version = 1
+
+[daemon]
+max_concurrent_jobs = 1
+startup_run = true
+log_level = "info"
+
+[[folder]]
+id = "workspace-a"
+path = %q
+
+[[folder.job]]
+id = "script-runner"
+type = 'shell-command'
+interval = "1m"
+timeout = "30s"
+shell = 'bash'
+script = '''echo "line-1"
+echo 'line-2' ''' # trailing comment
+`, folderPath)
+	writeConfigFile(t, configPath, content)
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	job := cfg.Folders[0].Jobs[0]
+	if job.Type != "shell-command" {
+		t.Fatalf("expected shell-command type, got=%s", job.Type)
+	}
+	if job.Shell != "bash" {
+		t.Fatalf("expected shell=bash, got=%s", job.Shell)
+	}
+	if !strings.Contains(job.Script, `echo "line-1"`) || !strings.Contains(job.Script, "echo 'line-2'") {
+		t.Fatalf("unexpected parsed script: %q", job.Script)
+	}
+}
+
+func TestLoadRejectsUnsupportedKeys(t *testing.T) {
+	folderPath := t.TempDir()
+	testCases := []struct {
+		name          string
+		content       string
+		expectedError string
+	}{
+		{
+			name: "root",
+			content: `version = 1
+unexpected = 1`,
+			expectedError: "unsupported root key: unexpected",
+		},
+		{
+			name: "daemon",
+			content: fmt.Sprintf(`version = 1
+
+[daemon]
+max_concurrent_jobs = 1
+startup_run = true
+log_level = "info"
+extra = 1
+
+[[folder]]
+id = "workspace-a"
+path = %q
+
+[[folder.job]]
+id = "git-sync"
+interval = "1m"
+timeout = "30s"
+script = "echo ok"
+`, folderPath),
+			expectedError: "unsupported daemon key: extra",
+		},
+		{
+			name: "folder",
+			content: fmt.Sprintf(`version = 1
+
+[daemon]
+max_concurrent_jobs = 1
+startup_run = true
+log_level = "info"
+
+[[folder]]
+id = "workspace-a"
+path = %q
+extra = "nope"
+
+[[folder.job]]
+id = "git-sync"
+interval = "1m"
+timeout = "30s"
+script = "echo ok"
+`, folderPath),
+			expectedError: "unsupported folder key: extra",
+		},
+		{
+			name: "job",
+			content: fmt.Sprintf(`version = 1
+
+[daemon]
+max_concurrent_jobs = 1
+startup_run = true
+log_level = "info"
+
+[[folder]]
+id = "workspace-a"
+path = %q
+
+[[folder.job]]
+id = "git-sync"
+interval = "1m"
+timeout = "30s"
+script = "echo ok"
+extra = "nope"
+`, folderPath),
+			expectedError: "unsupported folder.job key: extra",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			configPath := filepath.Join(t.TempDir(), "devmon.toml")
+			writeConfigFile(t, configPath, tc.content)
+
+			_, err := Load(configPath)
+			if err == nil {
+				t.Fatalf("expected unsupported key error for %s", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.expectedError) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsEmptyConfigPath(t *testing.T) {
+	_, err := Load("  ")
+	if err == nil {
+		t.Fatal("expected error for empty config path")
+	}
+	if !strings.Contains(err.Error(), "config path is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadRejectsMalformedAssignment(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "devmon.toml")
+	content := `version = 1
+
+[daemon]
+max_concurrent_jobs 1
+`
+	writeConfigFile(t, configPath, content)
+
+	_, err := Load(configPath)
+	if err == nil {
+		t.Fatal("expected malformed assignment error")
+	}
+	if !strings.Contains(err.Error(), "invalid key/value assignment") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func writeConfigFile(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {

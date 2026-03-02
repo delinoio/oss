@@ -28,6 +28,7 @@ var runMenubar = menubar.Run
 var newSignalNotifyContext = signal.NotifyContext
 var newShellExecutor = executor.NewShellExecutor
 var newStateStore = state.NewStore
+var newLoggerWithWriter = logging.NewWithWriter
 
 type daemonRunner interface {
 	Run(ctx context.Context) error
@@ -86,7 +87,7 @@ func executeDaemon(args []string, stderr io.Writer) int {
 		return 2
 	}
 
-	logger, err := logging.NewWithWriter(stderr, cfg.Daemon.LogLevel)
+	logger, err := newLoggerWithWriter(stderr, cfg.Daemon.LogLevel)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
 		return 2
@@ -174,7 +175,7 @@ func executeService(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 
-	logger, err := logging.NewWithWriter(stderr, "info")
+	logger, err := newLoggerWithWriter(stderr, "info")
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
 		return 1
@@ -246,7 +247,7 @@ func executeMenubar(args []string, stderr io.Writer) int {
 		return 2
 	}
 
-	logger, err := logging.NewWithWriter(stderr, "info")
+	logger, err := newLoggerWithWriter(stderr, "info")
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
 		return 1

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -397,14 +398,132 @@ func TestExecuteMenubarRunFailure(t *testing.T) {
 	}
 }
 
+func TestExecuteDaemonConfigLoadFailure(t *testing.T) {
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	missingConfigPath := filepath.Join(t.TempDir(), "missing.toml")
+	code := execute([]string{"daemon", "--config", missingConfigPath}, stdout, stderr)
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "load config") {
+		t.Fatalf("expected load config failure message, got=%s", stderr.String())
+	}
+}
+
+func TestExecuteDaemonLoggerInitFailure(t *testing.T) {
+	originalNewLoggerWithWriter := newLoggerWithWriter
+	t.Cleanup(func() {
+		newLoggerWithWriter = originalNewLoggerWithWriter
+	})
+
+	configPath := filepath.Join(t.TempDir(), "devmon.toml")
+	writeValidDaemonConfig(t, configPath, t.TempDir())
+	newLoggerWithWriter = func(_ io.Writer, _ string) (*slog.Logger, error) {
+		return nil, errors.New("logger init failed")
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := execute([]string{"daemon", "--config", configPath}, stdout, stderr)
+	if code != 2 {
+		t.Fatalf("expected exit code 2, got=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "init logger: logger init failed") {
+		t.Fatalf("expected logger init failure, got=%s", stderr.String())
+	}
+}
+
+func TestExecuteDaemonStateStoreInitFailure(t *testing.T) {
+	originalNewStateStore := newStateStore
+	t.Cleanup(func() {
+		newStateStore = originalNewStateStore
+	})
+
+	configPath := filepath.Join(t.TempDir(), "devmon.toml")
+	writeValidDaemonConfig(t, configPath, t.TempDir())
+
+	newStateStore = func(_ string, _ *slog.Logger) (*state.Store, error) {
+		return nil, errors.New("state init failed")
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := execute([]string{"daemon", "--config", configPath}, stdout, stderr)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "init state store: state init failed") {
+		t.Fatalf("expected state store init failure, got=%s", stderr.String())
+	}
+}
+
+func TestExecuteDaemonRunnerFailure(t *testing.T) {
+	originalNewDaemonRunner := newDaemonRunner
+	originalNewStateStore := newStateStore
+	t.Cleanup(func() {
+		newDaemonRunner = originalNewDaemonRunner
+		newStateStore = originalNewStateStore
+	})
+
+	configPath := filepath.Join(t.TempDir(), "devmon.toml")
+	writeValidDaemonConfig(t, configPath, t.TempDir())
+	statePath := filepath.Join(t.TempDir(), "status.json")
+
+	newDaemonRunner = func(_ *config.Config, _ *slog.Logger, _ executor.Executor) daemonRunner {
+		return &failingDaemonRunner{}
+	}
+	newStateStore = func(_ string, logger *slog.Logger) (*state.Store, error) {
+		return state.NewStore(statePath, logger)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	code := execute([]string{"daemon", "--config", configPath}, stdout, stderr)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "run daemon: daemon run failed") {
+		t.Fatalf("expected daemon run failure, got=%s", stderr.String())
+	}
+}
+
+func TestExecuteServiceStatusEncodingFailure(t *testing.T) {
+	originalFactory := newServiceManager
+	t.Cleanup(func() {
+		newServiceManager = originalFactory
+	})
+
+	newServiceManager = func(_ *slog.Logger, _ ...servicecontrol.Option) (servicecontrol.Manager, error) {
+		return &fakeServiceManager{
+			statusSummary: servicecontrol.Summary{
+				Domain:       "gui/501",
+				DaemonHealth: servicecontrol.DaemonHealthRunning,
+			},
+		}, nil
+	}
+
+	stderr := &bytes.Buffer{}
+	code := executeService([]string{"status"}, failingWriter{}, stderr)
+	if code != 1 {
+		t.Fatalf("expected exit code 1, got=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "service status output") {
+		t.Fatalf("expected status output encoding failure, got=%s", stderr.String())
+	}
+}
+
 func TestExecuteDaemonGracefulShutdownWithInjectedSignalContext(t *testing.T) {
 	originalNewSignalNotifyContext := newSignalNotifyContext
 	originalNewDaemonRunner := newDaemonRunner
 	originalNewStateStore := newStateStore
+	originalNewLoggerWithWriter := newLoggerWithWriter
 	t.Cleanup(func() {
 		newSignalNotifyContext = originalNewSignalNotifyContext
 		newDaemonRunner = originalNewDaemonRunner
 		newStateStore = originalNewStateStore
+		newLoggerWithWriter = originalNewLoggerWithWriter
 	})
 
 	workspacePath := t.TempDir()
@@ -540,6 +659,24 @@ func (runner *fakeDaemonRunner) SetStateStore(stateStore *state.Store) {
 
 func (runner *fakeDaemonRunner) ActiveJobs() int {
 	return 0
+}
+
+type failingDaemonRunner struct{}
+
+func (runner *failingDaemonRunner) Run(_ context.Context) error {
+	return errors.New("daemon run failed")
+}
+
+func (runner *failingDaemonRunner) SetStateStore(_ *state.Store) {}
+
+func (runner *failingDaemonRunner) ActiveJobs() int {
+	return 0
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write(_ []byte) (int, error) {
+	return 0, errors.New("write failed")
 }
 
 func writeValidDaemonConfig(t *testing.T, configPath string, folderPath string) {

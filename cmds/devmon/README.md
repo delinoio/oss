@@ -90,3 +90,58 @@ echo "done"
 - Daemon LaunchAgent plist: `~/Library/LaunchAgents/io.delino.devmon.daemon.plist`
 - Menu bar LaunchAgent plist: `~/Library/LaunchAgents/io.delino.devmon.menubar.plist`
 
+## Testing Matrix
+
+Run the full devmon suite:
+
+```bash
+go test ./cmds/devmon/...
+```
+
+Run focused packages:
+
+```bash
+go test ./cmds/devmon/internal/config
+go test ./cmds/devmon/internal/cli
+go test ./cmds/devmon/internal/executor
+go test ./cmds/devmon/internal/scheduler
+go test ./cmds/devmon/internal/servicecontrol
+go test ./cmds/devmon/internal/state
+go test ./cmds/devmon/internal/logging
+go test ./cmds/devmon/internal/paths
+go test ./cmds/devmon/internal/menubar
+```
+
+### Required Scenario Coverage
+
+| Scenario | Primary tests |
+| --- | --- |
+| 1. Config validation success/failure | `config.TestLoadValidConfig`, `config.TestLoadRejectsInvalidInterval`, `config.TestLoadRejectsMalformedAssignment` |
+| 2. Startup + interval scheduling | `scheduler.TestRunnerStartupAndIntervalExecution` |
+| 3. Overlap skip behavior | `scheduler.TestRunnerOverlapSkip` |
+| 4. Global concurrency skip behavior | `scheduler.TestRunnerCapacitySkip` |
+| 5. Timeout outcome mapping | `executor.TestShellExecutorTimeout`, `scheduler.TestRunnerTimeoutOutcome` |
+| 6. Signal-driven graceful shutdown | `cli.TestExecuteDaemonGracefulShutdownWithInjectedSignalContext` |
+| 7. service install writes/validates/bootstrap | `servicecontrol.TestInstallWritesPlistsAndRunsLaunchctl` |
+| 8. service status consistency | `servicecontrol.TestStatusReportsRunningWhenHeartbeatIsFresh`, `servicecontrol.TestStatusReportsStoppedWhenAgentNotLoadedAndNotRunning` |
+| 9. service stop transition | `servicecontrol.TestStopBootoutsDaemonAgent` |
+| 10. service uninstall cleanup | `servicecontrol.TestUninstallBootoutsAndRemovesPlists` |
+| 11. state updates for run + skip | `state.TestStoreLifecycleAndRunUpdates`, `scheduler.TestRunnerPersistsStateUpdates` |
+| 12. stale heartbeat / missing PID health | `servicecontrol.TestStatusReportsErrorWhenHeartbeatIsStale`, `servicecontrol.TestStatusReportsErrorWhenPIDIsNotRunning` |
+| 13. non-darwin deterministic unsupported behavior | `servicecontrol.TestUnsupportedManagerReturnsDeterministicErrors`, `menubar.TestRunReturnsUnsupportedError` |
+| 14. service install preflight config failure | `servicecontrol.TestInstallFailsWhenConfigMissing`, `servicecontrol.TestInstallFailsWhenConfigInvalid` |
+
+### Contract and Gap Coverage
+
+- Parser edge cases: literal strings, multiline strings, unsupported keys, malformed assignments.
+- Daemon command failures: config load, logger init, state store init, runner failures, status JSON output failures.
+- Runner guardrails: nil config/executor and state persistence expectations.
+- State store resilience: `last_error` lifecycle, invalid status JSON handling, heartbeat parsing edge cases.
+- Service controller hardening: start success path, launchctl output propagation, plist render validation and XML escaping.
+- Utility package coverage: path resolution helpers and structured logging behavior.
+
+### Platform Notes
+
+- macOS-specific lifecycle tests (`controller_darwin_test.go`, `menubar_darwin_test.go`) validate LaunchAgent and menu bar behavior.
+- Non-darwin suites verify deterministic unsupported errors (`controller_other_test.go`, `menubar_other_test.go`).
+- Some executor timeout behavior can vary by platform shell behavior; tests include platform guards where needed.

@@ -224,6 +224,87 @@ func TestStartFailsWhenDaemonPlistMissing(t *testing.T) {
 	}
 }
 
+func TestStartBootstrapsAndKickstartsWhenDaemonPlistExists(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeValidConfig(t, home)
+
+	daemonPlistPath := filepath.Join(home, "Library", "LaunchAgents", paths.DaemonLaunchAgentLabel+".plist")
+	if err := os.MkdirAll(filepath.Dir(daemonPlistPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(daemonPlistPath, []byte("daemon"), 0o644); err != nil {
+		t.Fatalf("WriteFile daemon plist returned error: %v", err)
+	}
+
+	runner := &fakeCommandRunner{}
+	manager, err := NewManager(
+		slog.Default(),
+		WithCommandRunner(runner),
+		WithStateReader(staticStateReader{snapshot: state.Snapshot{SchemaVersion: state.SchemaVersionV1}}),
+	)
+	if err != nil {
+		t.Fatalf("NewManager returned error: %v", err)
+	}
+
+	if err := manager.Start(context.Background()); err != nil {
+		t.Fatalf("Start returned error: %v", err)
+	}
+
+	domain := fmt.Sprintf("gui/%d", os.Getuid())
+	if !runner.hasCommand("launchctl bootstrap " + domain + " " + daemonPlistPath) {
+		t.Fatalf("expected bootstrap command, calls=%v", runner.calls)
+	}
+	if !runner.hasCommand("launchctl enable " + domain + "/" + paths.DaemonLaunchAgentLabel) {
+		t.Fatalf("expected enable command, calls=%v", runner.calls)
+	}
+	if !runner.hasCommand("launchctl kickstart -k " + domain + "/" + paths.DaemonLaunchAgentLabel) {
+		t.Fatalf("expected kickstart command, calls=%v", runner.calls)
+	}
+}
+
+func TestStartReportsLaunchctlErrorOutput(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	writeValidConfig(t, home)
+
+	daemonPlistPath := filepath.Join(home, "Library", "LaunchAgents", paths.DaemonLaunchAgentLabel+".plist")
+	if err := os.MkdirAll(filepath.Dir(daemonPlistPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll returned error: %v", err)
+	}
+	if err := os.WriteFile(daemonPlistPath, []byte("daemon"), 0o644); err != nil {
+		t.Fatalf("WriteFile daemon plist returned error: %v", err)
+	}
+
+	domain := fmt.Sprintf("gui/%d", os.Getuid())
+	bootstrapCall := "launchctl bootstrap " + domain + " " + daemonPlistPath
+
+	runner := &fakeCommandRunner{
+		exactResponses: map[string]fakeCommandResponse{
+			bootstrapCall: {
+				output: []byte("bootstrap failed"),
+				err:    errors.New("exit status 5"),
+			},
+		},
+	}
+	manager, err := NewManager(
+		slog.Default(),
+		WithCommandRunner(runner),
+		WithStateReader(staticStateReader{snapshot: state.Snapshot{SchemaVersion: state.SchemaVersionV1}}),
+	)
+	if err != nil {
+		t.Fatalf("NewManager returned error: %v", err)
+	}
+
+	err = manager.Start(context.Background())
+	if err == nil {
+		t.Fatal("expected start to fail when launchctl bootstrap fails")
+	}
+	if !strings.Contains(err.Error(), "bootstrap failed") {
+		t.Fatalf("expected launchctl output in error, got=%v", err)
+	}
+}
+
 func TestStatusReportsRunningWhenHeartbeatIsFresh(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -257,6 +338,73 @@ func TestStatusReportsRunningWhenHeartbeatIsFresh(t *testing.T) {
 	}
 	if !summary.Daemon.Loaded {
 		t.Fatal("expected daemon launch agent to be loaded")
+	}
+}
+
+func TestRenderPlistValidationFailures(t *testing.T) {
+	testCases := []struct {
+		name          string
+		input         renderPlistInput
+		expectedError string
+	}{
+		{
+			name:          "missing label",
+			input:         renderPlistInput{Arguments: []string{"devmon"}, StdoutPath: "a.log", StderrPath: "b.log"},
+			expectedError: "label is required",
+		},
+		{
+			name:          "missing arguments",
+			input:         renderPlistInput{Label: "io.delino.devmon.daemon", StdoutPath: "a.log", StderrPath: "b.log"},
+			expectedError: "program arguments are required",
+		},
+		{
+			name: "missing log paths",
+			input: renderPlistInput{
+				Label:     "io.delino.devmon.daemon",
+				Arguments: []string{"devmon"},
+			},
+			expectedError: "log paths are required",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := renderPlist(tc.input)
+			if err == nil {
+				t.Fatalf("expected renderPlist failure for %s", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.expectedError) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestRenderPlistEscapesXMLContent(t *testing.T) {
+	content, err := renderPlist(renderPlistInput{
+		Label:      "io.delino.devmon.<daemon>&",
+		Arguments:  []string{"/tmp/devmon<bin>", `echo "&"`},
+		StdoutPath: "/tmp/out<log>.log",
+		StderrPath: "/tmp/err&log.log",
+		KeepAlive:  true,
+		RunAtLoad:  true,
+	})
+	if err != nil {
+		t.Fatalf("renderPlist returned error: %v", err)
+	}
+
+	if strings.Contains(content, "io.delino.devmon.<daemon>&") {
+		t.Fatalf("expected label to be escaped, content=%s", content)
+	}
+	if !strings.Contains(content, "io.delino.devmon.&lt;daemon&gt;&amp;") {
+		t.Fatalf("expected escaped label, content=%s", content)
+	}
+	if !strings.Contains(content, "/tmp/devmon&lt;bin&gt;") {
+		t.Fatalf("expected escaped argument, content=%s", content)
+	}
+	if !strings.Contains(content, "echo &#34;&amp;&#34;") {
+		t.Fatalf("expected escaped quoted argument, content=%s", content)
 	}
 }
 

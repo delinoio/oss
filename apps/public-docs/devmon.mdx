@@ -54,6 +54,46 @@ script = "go test ./..."
 - Daemon state is persisted to `~/.local/state/devmon/status.json`.
 - Service mode writes LaunchAgent definitions under `~/Library/LaunchAgents`.
 
+## Quality and Testing
+
+Run the full devmon suite:
+
+```bash
+go test ./cmds/devmon/...
+```
+
+Run focused suites while developing:
+
+```bash
+go test ./cmds/devmon/internal/config
+go test ./cmds/devmon/internal/cli
+go test ./cmds/devmon/internal/scheduler
+go test ./cmds/devmon/internal/servicecontrol
+go test ./cmds/devmon/internal/state
+go test ./cmds/devmon/internal/logging
+go test ./cmds/devmon/internal/paths
+go test ./cmds/devmon/internal/menubar
+```
+
+### Required scenario mapping
+
+| Contract scenario | Main coverage |
+| --- | --- |
+| Config validation and deterministic failures | `internal/config/config_test.go` |
+| Startup + interval scheduling | `internal/scheduler/runner_test.go` |
+| Overlap and capacity skips | `internal/scheduler/runner_test.go` |
+| Timeout cancellation outcome | `internal/executor/shell_test.go`, `internal/scheduler/runner_test.go` |
+| Graceful daemon shutdown | `internal/cli/root_test.go` |
+| Service install / status / stop / uninstall lifecycle | `internal/servicecontrol/controller_darwin_test.go` |
+| State persistence and heartbeat health rules | `internal/state/store_test.go`, `internal/servicecontrol/controller_darwin_test.go` |
+| Non-darwin deterministic unsupported behavior | `internal/servicecontrol/controller_other_test.go`, `internal/menubar/menubar_other_test.go` |
+
+### Contributor notes
+
+- macOS-only behavior (LaunchAgent + menu bar integration) is covered in `*_darwin_test.go`.
+- Non-darwin behavior must continue to return deterministic unsupported errors.
+- When extending command/config contracts, update tests and documentation in the same change.
+
 ## Related pages
 
 - [Projects Overview](projects-overview)
