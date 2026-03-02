@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Rustup-like Node.js version manager"
+readme = "README.md"
 
 [dependencies]
 clap = { version = "4.5.32", features = ["derive"] }
