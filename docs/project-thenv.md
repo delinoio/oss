@@ -9,7 +9,8 @@ Phase 1 MVP is implemented as a metadata-safe vertical slice at `workspace/proje
 - CLI: `cmds/thenv`
 - Server: `servers/thenv`
 - Connect proto contract: `servers/thenv/proto/thenv/v1/thenv.proto`
-- Generated Go RPC code (gitignored; regenerate via `./scripts/generate-go-proto.sh`): `servers/thenv/gen/proto/thenv/v1`
+- Server-local proto generation script: `servers/thenv/scripts/generate-go-proto.sh`
+- Generated Go RPC code (gitignored; regenerate via `go generate ./servers/thenv` or `./scripts/generate-go-proto.sh`): `servers/thenv/gen/proto/thenv/v1`
 - Web console mini app: `apps/devkit/src/apps/thenv`
 - Web console route: `apps/devkit/src/app/apps/thenv/page.tsx`
 - Devkit API proxy routes: `apps/devkit/src/app/api/thenv/*`
@@ -232,7 +233,8 @@ Devkit environment variables (optional):
 
 ## Build and Test
 Current commands:
-- Proto generation prerequisite: `./scripts/generate-go-proto.sh`
+- Proto generation (server-local): `go generate ./servers/thenv`
+- Proto generation (workspace): `./scripts/generate-go-proto.sh`
 - CLI build/test: `go build ./cmds/thenv/...` and `go test ./cmds/thenv/...`
 - Server build/test: `go build ./servers/thenv/...` and `go test ./servers/thenv/...`
 - Web console tests: `cd apps/devkit && pnpm test`
