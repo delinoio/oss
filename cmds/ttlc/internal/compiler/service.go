@@ -83,6 +83,8 @@ type analysis struct {
 	result           Result
 }
 
+var openCacheStore = cache.Open
+
 func New() *Service {
 	handler := slog.NewJSONHandler(io.Discard, nil)
 	return &Service{logger: slog.New(handler)}
@@ -115,10 +117,11 @@ func (s *Service) Explain(ctx context.Context, options ExplainOptions) (Result, 
 
 	cacheStart := time.Now()
 	s.logStageStart(contracts.CompileStageCache)
-	store, err := cache.Open(analysisResult.paths.CacheDBPath)
+	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
 	if err != nil {
 		s.logStageFailure(contracts.CompileStageCache, time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
-		return Result{}, fmt.Errorf("open cache store: %w", err)
+		result.CacheAnalysis = make([]CacheAnalysis, 0)
+		return result, nil
 	}
 	defer store.Close()
 
@@ -138,7 +141,13 @@ func (s *Service) Explain(ctx context.Context, options ExplainOptions) (Result, 
 		taskAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, analysisResult.moduleName, taskFingerprint, false)
 		if lookupErr != nil {
 			s.logTaskCacheEvent(task.ID, taskFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(taskStart))
-			return Result{}, fmt.Errorf("read cache state for %s: %w", task.ID, lookupErr)
+			analysisRecords = append(analysisRecords, CacheAnalysis{
+				TaskID:             taskFingerprint.Task.ID,
+				CacheKey:           taskFingerprint.CacheKey,
+				CacheHit:           false,
+				InvalidationReason: contracts.TtlInvalidationReasonCacheMiss,
+			})
+			continue
 		}
 		analysisRecords = append(analysisRecords, taskAnalysis)
 		s.logTaskCacheEvent(taskAnalysis.TaskID, taskAnalysis.CacheKey, taskAnalysis.CacheHit, taskAnalysis.InvalidationReason, errorKind, time.Since(taskStart))
@@ -176,7 +185,7 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 
 	cacheStart := time.Now()
 	s.logStageStart(contracts.CompileStageCache)
-	store, err := cache.Open(analysisResult.paths.CacheDBPath)
+	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
 	if err != nil {
 		s.logStageFailure(contracts.CompileStageCache, time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
 		return Result{}, fmt.Errorf("open cache store: %w", err)

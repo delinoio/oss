@@ -125,7 +125,9 @@ Canonical CLI JSON response envelope:
 ```
 
 - `status=failed` when diagnostics are present.
+- Command-level runtime failures (for example path resolution or missing entry file errors) must still emit this envelope on stdout with `status=failed`.
 - `explain.data` includes per-task `cache_analysis` rows with `task_id`, `cache_key`, `cache_hit`, and `invalidation_reason`.
+- When cache initialization/read is unavailable during `explain`, the command still returns semantic explain output with `cache_analysis=[]`.
 
 Cache-key contract (v1):
 - `cache_key = hash(input_content_hash + parameter_hash + environment_snapshot_hash)`

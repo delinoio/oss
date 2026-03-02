@@ -160,6 +160,8 @@ Explain output contract (Phase 1 default JSON envelope):
 - `data.tasks` (`id`, `params`, `return_type`, `deps`, `cache_key`)
 - `data.fingerprint_components` (`input_content_hash`, `parameter_hash`, `environment_snapshot_hash`)
 - `data.cache_analysis` (`task_id`, `cache_key`, `cache_hit`, `invalidation_reason`)
+- Runtime failures in command execution still return the same envelope shape with `status=failed` and diagnostics.
+- If cache store open/read fails during `explain`, semantic analysis output is still returned and `data.cache_analysis` is an empty array.
 
 ## Storage
 Cache backend is fixed to SQLite in v1.

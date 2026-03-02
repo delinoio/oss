@@ -3,11 +3,13 @@ package compiler
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/delinoio/oss/cmds/ttlc/internal/cache"
 	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
 
 	_ "modernc.org/sqlite"
@@ -257,6 +259,49 @@ task func Build(target string) Vc[Artifact] {
 		}
 		if rebuildResult.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonCacheCorruption {
 			t.Fatalf("expected cache corruption invalidation reason, got=%s", rebuildResult.CacheAnalysis[0].InvalidationReason)
+		}
+	})
+}
+
+func TestExplainDoesNotFailWhenCacheOpenFails(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	originalOpenCacheStore := openCacheStore
+	openCacheStore = func(_ string) (*cache.Store, error) {
+		return nil, errors.New("cache unavailable")
+	}
+	t.Cleanup(func() {
+		openCacheStore = originalOpenCacheStore
+	})
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Explain(context.Background(), ExplainOptions{Entry: "./main.ttl", Task: "Build"})
+		if err != nil {
+			t.Fatalf("explain should not fail when cache open fails: %v", err)
+		}
+		if len(result.Tasks) != 1 {
+			t.Fatalf("expected one explained task, got=%+v", result.Tasks)
+		}
+		if len(result.Diagnostics) != 0 {
+			t.Fatalf("expected diagnostics to remain unchanged, got=%+v", result.Diagnostics)
+		}
+		if len(result.CacheAnalysis) != 0 {
+			t.Fatalf("expected empty cache analysis when cache is unavailable, got=%+v", result.CacheAnalysis)
 		}
 	})
 }

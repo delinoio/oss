@@ -109,6 +109,69 @@ task func Build() Vc[Artifact] {
 	})
 }
 
+func TestCommandRuntimeFailureWritesEnvelope(t *testing.T) {
+	workspace := t.TempDir()
+
+	testCases := []struct {
+		name    string
+		args    []string
+		command contracts.TtlCommand
+	}{
+		{
+			name:    "check",
+			args:    []string{"check"},
+			command: contracts.TtlCommandCheck,
+		},
+		{
+			name:    "build",
+			args:    []string{"build"},
+			command: contracts.TtlCommandBuild,
+		},
+		{
+			name:    "explain",
+			args:    []string{"explain"},
+			command: contracts.TtlCommandExplain,
+		},
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		for _, testCase := range testCases {
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+			code := execute(testCase.args, stdout, stderr)
+			if code != 1 {
+				t.Fatalf("expected exit code 1 for %s, got=%d stderr=%s", testCase.name, code, stderr.String())
+			}
+
+			envelope := decodeEnvelope(t, stdout.Bytes())
+			if envelope.SchemaVersion != contracts.TtlSchemaVersionV1Alpha1 {
+				t.Fatalf("unexpected schema version for %s: %s", testCase.name, envelope.SchemaVersion)
+			}
+			if envelope.Command != testCase.command {
+				t.Fatalf("unexpected command for %s: got=%s want=%s", testCase.name, envelope.Command, testCase.command)
+			}
+			if envelope.Status != contracts.TtlResponseStatusFailed {
+				t.Fatalf("expected failed status for %s, got=%s", testCase.name, envelope.Status)
+			}
+			if len(envelope.Diagnostics) == 0 {
+				t.Fatalf("expected diagnostics for %s runtime failure", testCase.name)
+			}
+
+			data, ok := envelope.Data.(map[string]any)
+			if !ok {
+				t.Fatalf("expected object data payload for %s, got=%T", testCase.name, envelope.Data)
+			}
+			cacheAnalysis, ok := data["cache_analysis"].([]any)
+			if !ok {
+				t.Fatalf("expected cache_analysis array for %s, got=%T", testCase.name, data["cache_analysis"])
+			}
+			if len(cacheAnalysis) != 0 {
+				t.Fatalf("expected empty cache_analysis for %s runtime failure, got=%#v", testCase.name, cacheAnalysis)
+			}
+		}
+	})
+}
+
 func TestCheckColorFlag(t *testing.T) {
 	workspace := t.TempDir()
 	writeTTLFile(t, filepath.Join(workspace, "main.ttl"))

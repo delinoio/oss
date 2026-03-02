@@ -68,6 +68,12 @@ func executeCheck(args []string, stdout io.Writer, stderr io.Writer) int {
 	logger, err := logging.NewWithWriter(stderr, logging.Options{Level: "info", NoColor: noColor})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
+		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandCheck, map[string]any{
+			"entry":          entry,
+			"cache_analysis": make([]compiler.CacheAnalysis, 0),
+		}, err); envelopeErr != nil {
+			_, _ = fmt.Fprintf(stderr, "encode output: %v\n", envelopeErr)
+		}
 		return 1
 	}
 
@@ -75,6 +81,12 @@ func executeCheck(args []string, stdout io.Writer, stderr io.Writer) int {
 	result, err := service.Check(context.Background(), compiler.CheckOptions{Entry: entry})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "check failed: %v\n", err)
+		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandCheck, map[string]any{
+			"entry":          entry,
+			"cache_analysis": make([]compiler.CacheAnalysis, 0),
+		}, err); envelopeErr != nil {
+			_, _ = fmt.Fprintf(stderr, "encode output: %v\n", envelopeErr)
+		}
 		return 1
 	}
 
@@ -113,6 +125,13 @@ func executeBuild(args []string, stdout io.Writer, stderr io.Writer) int {
 	logger, err := logging.NewWithWriter(stderr, logging.Options{Level: "info", NoColor: noColor})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
+		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandBuild, map[string]any{
+			"entry":          entry,
+			"out_dir":        outDir,
+			"cache_analysis": make([]compiler.CacheAnalysis, 0),
+		}, err); envelopeErr != nil {
+			_, _ = fmt.Fprintf(stderr, "encode output: %v\n", envelopeErr)
+		}
 		return 1
 	}
 
@@ -120,6 +139,13 @@ func executeBuild(args []string, stdout io.Writer, stderr io.Writer) int {
 	result, err := service.Build(context.Background(), compiler.BuildOptions{Entry: entry, OutDir: outDir})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "build failed: %v\n", err)
+		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandBuild, map[string]any{
+			"entry":          entry,
+			"out_dir":        outDir,
+			"cache_analysis": make([]compiler.CacheAnalysis, 0),
+		}, err); envelopeErr != nil {
+			_, _ = fmt.Fprintf(stderr, "encode output: %v\n", envelopeErr)
+		}
 		return 1
 	}
 
@@ -160,6 +186,13 @@ func executeExplain(args []string, stdout io.Writer, stderr io.Writer) int {
 	logger, err := logging.NewWithWriter(stderr, logging.Options{Level: "info", NoColor: noColor})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
+		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandExplain, map[string]any{
+			"entry":          entry,
+			"task":           task,
+			"cache_analysis": make([]compiler.CacheAnalysis, 0),
+		}, err); envelopeErr != nil {
+			_, _ = fmt.Fprintf(stderr, "encode output: %v\n", envelopeErr)
+		}
 		return 1
 	}
 
@@ -167,6 +200,13 @@ func executeExplain(args []string, stdout io.Writer, stderr io.Writer) int {
 	result, err := service.Explain(context.Background(), compiler.ExplainOptions{Entry: entry, Task: task})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "explain failed: %v\n", err)
+		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandExplain, map[string]any{
+			"entry":          entry,
+			"task":           task,
+			"cache_analysis": make([]compiler.CacheAnalysis, 0),
+		}, err); envelopeErr != nil {
+			_, _ = fmt.Fprintf(stderr, "encode output: %v\n", envelopeErr)
+		}
 		return 1
 	}
 
@@ -208,6 +248,17 @@ func writeEnvelope(stdout io.Writer, command contracts.TtlCommand, status contra
 		Data:          data,
 	}
 	return json.NewEncoder(stdout).Encode(response)
+}
+
+func writeCommandFailureEnvelope(stdout io.Writer, command contracts.TtlCommand, data any, commandErr error) error {
+	return writeEnvelope(stdout, command, contracts.TtlResponseStatusFailed, []diagnostic.Diagnostic{
+		{
+			Kind:    contracts.DiagnosticKindIOError,
+			Message: commandErr.Error(),
+			Line:    1,
+			Column:  1,
+		},
+	}, data)
 }
 
 func normalizeCacheAnalysis(values []compiler.CacheAnalysis) []compiler.CacheAnalysis {
