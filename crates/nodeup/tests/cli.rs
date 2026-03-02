@@ -1203,6 +1203,29 @@ fn management_human_default_logging_emits_info_logs_without_rust_log_env() {
 
 #[test]
 #[serial]
+fn show_home_human_output_includes_all_roots() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["show", "home"])
+        .output()
+        .expect("show home");
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup home:"));
+    assert!(stdout.contains(&format!("data_root: {}", env.data_root.to_string_lossy())));
+    assert!(stdout.contains(&format!("cache_root: {}", env.cache_root.to_string_lossy())));
+    assert!(stdout.contains(&format!(
+        "config_root: {}",
+        env.config_root.to_string_lossy()
+    )));
+}
+
+#[test]
+#[serial]
 fn json_show_active_runtime_failure_emits_stderr_error_envelope() {
     let env = TestEnv::new();
 
