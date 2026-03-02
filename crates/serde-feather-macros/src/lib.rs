@@ -108,7 +108,6 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
     struct DeserBinding {
         field_index: usize,
-        variant_ident: Ident,
         binding_ident: Ident,
         field_name: LitStr,
         field_ty: syn::Type,
@@ -122,25 +121,11 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
         bindings.push(DeserBinding {
             field_index: index,
-            variant_ident: format_ident!("Field{index}"),
             binding_ident: format_ident!("__feather_field_{index}"),
             field_name: field.serialized_name.clone(),
             field_ty: field.ty.clone(),
         });
     }
-
-    let field_enum_variants = bindings.iter().map(|binding| {
-        let variant = &binding.variant_ident;
-        quote! { #variant }
-    });
-
-    let field_name_match_arms = bindings.iter().map(|binding| {
-        let field_name = &binding.field_name;
-        let variant = &binding.variant_ident;
-        quote! {
-            #field_name => ::core::result::Result::Ok(__FeatherField::#variant),
-        }
-    });
 
     let field_bindings = bindings.iter().map(|binding| {
         let binding_ident = &binding.binding_ident;
@@ -148,29 +133,28 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
         quote! { let mut #binding_ident: ::core::option::Option<#field_ty> = ::core::option::Option::None; }
     });
 
-    let duplicate_field_match_arms = bindings.iter().map(|binding| {
-        let variant = &binding.variant_ident;
+    let field_setter_match_arms = bindings.iter().map(|binding| {
+        let field_index = binding.field_index;
         let binding_ident = &binding.binding_ident;
         let field_name = &binding.field_name;
         let field_ty = &binding.field_ty;
         quote! {
-            __FeatherField::#variant => {
+            #field_index => {
                 if #binding_ident.is_some() {
                     return ::core::result::Result::Err(
                         #crate_path::serde::de::Error::duplicate_field(#field_name),
                     );
                 }
-                #binding_ident = ::core::option::Option::Some(
-                    #crate_path::serde::de::MapAccess::next_value::<#field_ty>(&mut map)?
-                );
+                #binding_ident = ::core::option::Option::Some(#crate_path::serde::de::MapAccess::next_value::<#field_ty>(&mut map)?);
             }
         }
     });
 
-    let known_fields = bindings.iter().map(|binding| {
-        let field_name = &binding.field_name;
-        quote! { #field_name }
-    });
+    let known_fields: Vec<LitStr> = bindings
+        .iter()
+        .map(|binding| binding.field_name.clone())
+        .collect();
+    let known_fields_in_map = known_fields.clone();
 
     let construct_fields = parsed.fields.iter().enumerate().map(|(index, field)| {
         let field_ident = &field.ident;
@@ -215,49 +199,6 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
             where
                 D: #crate_path::serde::de::Deserializer<'de>,
             {
-                enum __FeatherField {
-                    #(#field_enum_variants,)*
-                    Ignore,
-                }
-
-                struct __FeatherFieldVisitor;
-
-                impl<'de> #crate_path::serde::de::Visitor<'de> for __FeatherFieldVisitor {
-                    type Value = __FeatherField;
-
-                    fn expecting(
-                        &self,
-                        formatter: &mut ::core::fmt::Formatter<'_>,
-                    ) -> ::core::fmt::Result {
-                        formatter.write_str("a valid field name")
-                    }
-
-                    fn visit_str<E>(
-                        self,
-                        value: &str,
-                    ) -> ::core::result::Result<Self::Value, E>
-                    where
-                        E: #crate_path::serde::de::Error,
-                    {
-                        match value {
-                            #(#field_name_match_arms)*
-                            _ => ::core::result::Result::Ok(__FeatherField::Ignore),
-                        }
-                    }
-                }
-
-                impl<'de> #crate_path::serde::de::Deserialize<'de> for __FeatherField {
-                    fn deserialize<D>(deserializer: D) -> ::core::result::Result<Self, D::Error>
-                    where
-                        D: #crate_path::serde::de::Deserializer<'de>,
-                    {
-                        #crate_path::serde::de::Deserializer::deserialize_identifier(
-                            deserializer,
-                            __FeatherFieldVisitor,
-                        )
-                    }
-                }
-
                 struct __FeatherVisitor;
 
                 impl<'de> #crate_path::serde::de::Visitor<'de> for __FeatherVisitor {
@@ -277,13 +218,19 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
                     where
                         V: #crate_path::serde::de::MapAccess<'de>,
                     {
+                        const __FEATHER_FIELDS: &[&str] = &[#(#known_fields_in_map),*];
                         #(#field_bindings)*
-                        while let ::core::option::Option::Some(key) =
-                            #crate_path::serde::de::MapAccess::next_key::<__FeatherField>(&mut map)?
+                        while let ::core::option::Option::Some(key) = #crate_path::serde::de::MapAccess::next_key::<#crate_path::__private::OwnedFieldName>(&mut map)?
                         {
-                            match key {
-                                #(#duplicate_field_match_arms)*
-                                __FeatherField::Ignore => {
+                            match #crate_path::__private::select_field_index(key.as_str(), __FEATHER_FIELDS) {
+                                ::core::option::Option::Some(index) => match index {
+                                    #(#field_setter_match_arms)*
+                                    _ => {
+                                        let _: #crate_path::serde::de::IgnoredAny =
+                                            #crate_path::serde::de::MapAccess::next_value(&mut map)?;
+                                    }
+                                },
+                                ::core::option::Option::None => {
                                     let _: #crate_path::serde::de::IgnoredAny =
                                         #crate_path::serde::de::MapAccess::next_value(&mut map)?;
                                 }

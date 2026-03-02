@@ -44,6 +44,7 @@ The current goal is to provide stable MVP derive support while keeping default b
 - Cross-crate contract:
 : `serde-feather` references `serde-feather-macros` as an optional dependency through feature wiring.
 : `derive` implies `std` in the runtime crate for MVP behavior.
+: Runtime crate provides non-generic internal helpers used by derive output to reduce repeated monomorphized codegen.
 : Runtime and proc-macro concerns remain separated to preserve package boundaries.
 
 ## Interfaces
