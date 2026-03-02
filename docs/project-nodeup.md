@@ -117,7 +117,10 @@ CLI entrypoints:
 
 Global option contract:
 - `--output <human|json>` is available for all management commands and defaults to `human`.
-- In `--output human`, default logging uses `tracing` pretty formatting (`level=on`, `target=off`, `time=off`, `ansi=off`).
+- In `--output human`, default logging uses `tracing` pretty formatting (`level=on`, `target=off`, `time=off`, `ansi=on`).
+- Log color override:
+: `NODEUP_LOG_COLOR=always|auto|never` controls ANSI color (`always` default).
+: If `NODEUP_LOG_COLOR` is unset or `auto`, `NO_COLOR` disables color; otherwise color remains enabled.
 - In `--output json`, successful command payloads are written to stdout.
 - In `--output json`, handled command and startup failures emit a deterministic stderr JSON envelope with `kind`, `message`, and `exit_code`.
 - In `--output json`, default logging is disabled (`nodeup=off`) so JSON machine output stays parseable unless the operator explicitly sets `RUST_LOG`.
@@ -255,6 +258,7 @@ Symlink contract:
 : `NODEUP_DATA_HOME`, `NODEUP_CACHE_HOME`, `NODEUP_CONFIG_HOME`
 : `NODEUP_INDEX_URL`, `NODEUP_DOWNLOAD_BASE_URL`, `NODEUP_FORCE_PLATFORM`
 : `NODEUP_RELEASE_INDEX_TTL_SECONDS` (positive integer seconds; default `600`)
+: `NODEUP_LOG_COLOR` (`always|auto|never`; default `always`)
 : `NODEUP_SELF_UPDATE_SOURCE`, `NODEUP_SELF_BIN_PATH`
 
 ## Security

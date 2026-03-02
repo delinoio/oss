@@ -169,6 +169,7 @@ enum ThenvComponent {
 - Prefer structured logging over ad-hoc plain text logs for business and system events.
 - Go code should use `log/slog` (or a compatible structured logger built on it).
 - Rust code should use `tracing` (or a compatible structured logging facade).
+- CLI and operator-facing logs should enable ANSI color by default; allow opt-out with documented flags or environment variables.
 
 ### CI Baseline
 

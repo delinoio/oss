@@ -288,6 +288,7 @@ fn bump_dirty_tree_failure_still_logs_command_invocation() {
 
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("cargo-mono"));
     command.env("RUST_LOG", "cargo_mono=info");
+    command.env("CARGO_MONO_LOG_COLOR", "never");
 
     command
         .current_dir(temp_dir.path())
