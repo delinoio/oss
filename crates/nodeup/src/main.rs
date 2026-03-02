@@ -6,8 +6,9 @@ use nodeup::{
 };
 
 fn main() {
-    let json_error_output_requested = json_error_output_requested();
-    logging::init_logging(json_error_output_requested);
+    let logging_context = logging_context();
+    let json_error_output_requested = logging_context == logging::LoggingContext::ManagementJson;
+    logging::init_logging(logging_context);
 
     match run() {
         Ok(code) => std::process::exit(code),
@@ -40,23 +41,43 @@ fn run() -> Result<i32, NodeupError> {
     commands::execute(cli, &app)
 }
 
-fn json_error_output_requested() -> bool {
-    json_error_output_requested_from_args(std::env::args_os())
+fn logging_context() -> logging::LoggingContext {
+    logging_context_from_args(std::env::args_os())
 }
 
-fn json_error_output_requested_from_args<I>(args: I) -> bool
+fn logging_context_from_args<I>(args: I) -> logging::LoggingContext
 where
     I: IntoIterator<Item = OsString>,
 {
     let mut args = args.into_iter();
     let Some(argv0) = args.next() else {
-        return false;
+        return logging::LoggingContext::ManagementHuman;
     };
 
     if ManagedAlias::from_argv0(argv0.as_os_str()).is_some() {
-        return false;
+        return logging::LoggingContext::ManagedAlias;
     }
 
+    if json_error_output_requested_from_management_args(args) {
+        logging::LoggingContext::ManagementJson
+    } else {
+        logging::LoggingContext::ManagementHuman
+    }
+}
+
+#[cfg(test)]
+fn json_error_output_requested_from_args<I>(args: I) -> bool
+where
+    I: IntoIterator<Item = OsString>,
+{
+    logging_context_from_args(args) == logging::LoggingContext::ManagementJson
+}
+
+fn json_error_output_requested_from_management_args<I>(args: I) -> bool
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut args = args.into_iter();
     let mut json_output_requested = false;
     let mut command_scan_state = CommandScanState::BeforeSubcommand;
     let mut output_value_expected = false;
@@ -137,7 +158,9 @@ enum CommandScanState {
 
 #[cfg(test)]
 mod tests {
-    use super::json_error_output_requested_from_args;
+    use nodeup::logging::LoggingContext;
+
+    use super::{json_error_output_requested_from_args, logging_context_from_args};
 
     fn os_args(args: &[&str]) -> Vec<std::ffi::OsString> {
         args.iter()
@@ -167,6 +190,14 @@ mod tests {
         assert!(!json_error_output_requested_from_args(os_args(&[
             "node", "--output", "json",
         ])));
+    }
+
+    #[test]
+    fn managed_alias_invocation_selects_managed_alias_logging_context() {
+        assert_eq!(
+            logging_context_from_args(os_args(&["node"])),
+            LoggingContext::ManagedAlias
+        );
     }
 
     #[test]
@@ -211,5 +242,13 @@ mod tests {
             "--output",
             "json",
         ])));
+    }
+
+    #[test]
+    fn human_management_defaults_to_human_logging_context() {
+        assert_eq!(
+            logging_context_from_args(os_args(&["nodeup", "show", "home"])),
+            LoggingContext::ManagementHuman
+        );
     }
 }

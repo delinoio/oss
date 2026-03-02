@@ -1072,6 +1072,24 @@ fn override_resolution_logs_miss_without_default_selector() {
 
 #[test]
 #[serial]
+fn management_human_default_logging_emits_info_logs_without_rust_log_env() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env_remove("RUST_LOG")
+        .args(["show", "home"])
+        .output()
+        .expect("show home without rust log env");
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("command_path: \"nodeup.show.home\""));
+}
+
+#[test]
+#[serial]
 fn json_show_active_runtime_failure_emits_stderr_error_envelope() {
     let env = TestEnv::new();
 
@@ -1111,6 +1129,31 @@ fn json_show_active_runtime_failure_remains_parseable_without_rust_log_env() {
     let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(payload["kind"], "not-found");
     assert_eq!(payload["exit_code"], 5);
+}
+
+#[test]
+#[serial]
+fn json_show_home_remains_parseable_without_rust_log_env() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env_remove("RUST_LOG")
+        .args(["--output", "json", "show", "home"])
+        .output()
+        .expect("show home --output json without rust log env");
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stdout.contains("command_path:"));
+    assert!(!stderr.contains("command_path:"));
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["data_root"].as_str().is_some());
+    assert!(payload["cache_root"].as_str().is_some());
+    assert!(payload["config_root"].as_str().is_some());
 }
 
 #[test]
@@ -1585,6 +1628,42 @@ fn shim_dispatch_uses_argv0_alias() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("shim-ok"));
+}
+
+#[test]
+#[serial]
+fn shim_dispatch_default_logging_suppresses_info_logs_without_rust_log_env() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho shim-ok\n")],
+        ),
+        None,
+    );
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("node");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .env_remove("RUST_LOG")
+        .output()
+        .expect("run shim binary without rust log env");
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stdout.contains("shim-ok"));
+    assert!(!stdout.contains("command_path:"));
+    assert!(!stderr.contains("command_path:"));
 }
 
 #[cfg(unix)]

@@ -3,14 +3,26 @@ use tracing_subscriber::EnvFilter;
 const NODEUP_LOG_COLOR_ENV: &str = "NODEUP_LOG_COLOR";
 const NO_COLOR_ENV: &str = "NO_COLOR";
 
-pub fn init_logging(json_error_output_requested: bool) {
-    let default_filter = if json_error_output_requested {
-        "nodeup=off"
-    } else {
-        "nodeup=info"
-    };
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter));
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoggingContext {
+    ManagedAlias,
+    ManagementHuman,
+    ManagementJson,
+}
+
+impl LoggingContext {
+    fn default_filter(self) -> &'static str {
+        match self {
+            Self::ManagedAlias => "nodeup=warn",
+            Self::ManagementHuman => "nodeup=info",
+            Self::ManagementJson => "nodeup=off",
+        }
+    }
+}
+
+pub fn init_logging(context: LoggingContext) {
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(context.default_filter()));
     let _ = tracing_subscriber::fmt()
         .pretty()
         .with_env_filter(env_filter)
@@ -60,7 +72,28 @@ fn parse_log_color_mode(raw: &str) -> Option<LogColorMode> {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_log_color_enabled;
+    use super::{resolve_log_color_enabled, LoggingContext};
+
+    #[test]
+    fn managed_alias_default_filter_is_warn() {
+        assert_eq!(LoggingContext::ManagedAlias.default_filter(), "nodeup=warn");
+    }
+
+    #[test]
+    fn management_human_default_filter_is_info() {
+        assert_eq!(
+            LoggingContext::ManagementHuman.default_filter(),
+            "nodeup=info"
+        );
+    }
+
+    #[test]
+    fn management_json_default_filter_is_off() {
+        assert_eq!(
+            LoggingContext::ManagementJson.default_filter(),
+            "nodeup=off"
+        );
+    }
 
     #[test]
     fn default_enables_colored_logs() {
