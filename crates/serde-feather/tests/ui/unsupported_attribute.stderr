@@ -1,0 +1,5 @@
+error: unsupported serde field attribute; supported attributes: `rename`, `default`, `skip`, `skip_serializing`, `skip_deserializing`
+ --> tests/ui/unsupported_attribute.rs:5:13
+  |
+5 |     #[serde(skip_serializing_if = "Option::is_none")]
+  |             ^^^^^^^^^^^^^^^^^^^

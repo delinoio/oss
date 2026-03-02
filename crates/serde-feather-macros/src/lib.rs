@@ -1,4 +1,482 @@
 #![forbid(unsafe_code)]
 
-//! Proc-macro scaffolding crate for `serde-feather`.
-//! Public derive macro identifiers are intentionally not stabilized yet.
+//! Proc-macro derive implementation for `serde-feather`.
+
+use proc_macro::TokenStream;
+use proc_macro2::{Span, TokenStream as TokenStream2};
+use proc_macro_crate::{crate_name, FoundCrate};
+use quote::{format_ident, quote};
+use syn::{
+    parse_macro_input, spanned::Spanned, Attribute, Data, DeriveInput, Field, Fields, Ident, LitStr,
+};
+
+#[proc_macro_derive(FeatherSerialize, attributes(serde))]
+pub fn derive_feather_serialize(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    match expand_serialize(&input) {
+        Ok(output) => output.into(),
+        Err(error) => error.into_compile_error().into(),
+    }
+}
+
+#[proc_macro_derive(FeatherDeserialize, attributes(serde))]
+pub fn derive_feather_deserialize(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    match expand_deserialize(&input) {
+        Ok(output) => output.into(),
+        Err(error) => error.into_compile_error().into(),
+    }
+}
+
+struct ContainerAttrOptions {
+    rename: Option<LitStr>,
+}
+
+#[derive(Default)]
+struct FieldAttrOptions {
+    rename: Option<LitStr>,
+    default: bool,
+    skip_serializing: bool,
+    skip_deserializing: bool,
+}
+
+struct ParsedField {
+    ident: Ident,
+    ty: syn::Type,
+    serialized_name: LitStr,
+    default: bool,
+    skip_serializing: bool,
+    skip_deserializing: bool,
+}
+
+struct ParsedStruct {
+    ident: Ident,
+    struct_name: LitStr,
+    fields: Vec<ParsedField>,
+}
+
+fn expand_serialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
+    let parsed = parse_input(input, "FeatherSerialize")?;
+    let crate_path = serde_feather_path();
+
+    let included_fields: Vec<&ParsedField> = parsed
+        .fields
+        .iter()
+        .filter(|field| !field.skip_serializing)
+        .collect();
+
+    let field_count = included_fields.len();
+    let serialize_fields = included_fields.into_iter().map(|field| {
+        let field_ident = &field.ident;
+        let field_name = &field.serialized_name;
+        quote! {
+            #crate_path::serde::ser::SerializeStruct::serialize_field(
+                &mut state,
+                #field_name,
+                &self.#field_ident,
+            )?;
+        }
+    });
+
+    let struct_ident = &parsed.ident;
+    let struct_name = &parsed.struct_name;
+
+    Ok(quote! {
+        impl #crate_path::serde::ser::Serialize for #struct_ident {
+            fn serialize<S>(
+                &self,
+                serializer: S,
+            ) -> ::core::result::Result<S::Ok, S::Error>
+            where
+                S: #crate_path::serde::ser::Serializer,
+            {
+                let mut state = #crate_path::serde::ser::Serializer::serialize_struct(
+                    serializer,
+                    #struct_name,
+                    #field_count,
+                )?;
+                #(#serialize_fields)*
+                #crate_path::serde::ser::SerializeStruct::end(state)
+            }
+        }
+    })
+}
+
+fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
+    let parsed = parse_input(input, "FeatherDeserialize")?;
+    let crate_path = serde_feather_path();
+
+    struct DeserBinding {
+        field_index: usize,
+        variant_ident: Ident,
+        binding_ident: Ident,
+        field_name: LitStr,
+        field_ty: syn::Type,
+    }
+
+    let mut bindings = Vec::<DeserBinding>::new();
+    for (index, field) in parsed.fields.iter().enumerate() {
+        if field.skip_deserializing {
+            continue;
+        }
+
+        bindings.push(DeserBinding {
+            field_index: index,
+            variant_ident: format_ident!("Field{index}"),
+            binding_ident: format_ident!("__feather_field_{index}"),
+            field_name: field.serialized_name.clone(),
+            field_ty: field.ty.clone(),
+        });
+    }
+
+    let field_enum_variants = bindings.iter().map(|binding| {
+        let variant = &binding.variant_ident;
+        quote! { #variant }
+    });
+
+    let field_name_match_arms = bindings.iter().map(|binding| {
+        let field_name = &binding.field_name;
+        let variant = &binding.variant_ident;
+        quote! {
+            #field_name => ::core::result::Result::Ok(__FeatherField::#variant),
+        }
+    });
+
+    let field_bindings = bindings.iter().map(|binding| {
+        let binding_ident = &binding.binding_ident;
+        let field_ty = &binding.field_ty;
+        quote! { let mut #binding_ident: ::core::option::Option<#field_ty> = ::core::option::Option::None; }
+    });
+
+    let duplicate_field_match_arms = bindings.iter().map(|binding| {
+        let variant = &binding.variant_ident;
+        let binding_ident = &binding.binding_ident;
+        let field_name = &binding.field_name;
+        let field_ty = &binding.field_ty;
+        quote! {
+            __FeatherField::#variant => {
+                if #binding_ident.is_some() {
+                    return ::core::result::Result::Err(
+                        #crate_path::serde::de::Error::duplicate_field(#field_name),
+                    );
+                }
+                #binding_ident = ::core::option::Option::Some(
+                    #crate_path::serde::de::MapAccess::next_value::<#field_ty>(&mut map)?
+                );
+            }
+        }
+    });
+
+    let known_fields = bindings.iter().map(|binding| {
+        let field_name = &binding.field_name;
+        quote! { #field_name }
+    });
+
+    let construct_fields = parsed.fields.iter().enumerate().map(|(index, field)| {
+        let field_ident = &field.ident;
+        let field_name = &field.serialized_name;
+        if field.skip_deserializing {
+            return quote! {
+                #field_ident: ::core::default::Default::default()
+            };
+        }
+
+        let binding_ident = bindings
+            .iter()
+            .find(|binding| binding.field_index == index)
+            .expect("binding for non-skipped field")
+            .binding_ident
+            .clone();
+
+        if field.default {
+            quote! {
+                #field_ident: #binding_ident.unwrap_or_default()
+            }
+        } else {
+            quote! {
+                #field_ident: match #binding_ident {
+                    ::core::option::Option::Some(value) => value,
+                    ::core::option::Option::None => {
+                        return ::core::result::Result::Err(
+                            #crate_path::serde::de::Error::missing_field(#field_name),
+                        );
+                    }
+                }
+            }
+        }
+    });
+
+    let struct_ident = &parsed.ident;
+    let struct_name = &parsed.struct_name;
+
+    Ok(quote! {
+        impl<'de> #crate_path::serde::de::Deserialize<'de> for #struct_ident {
+            fn deserialize<D>(deserializer: D) -> ::core::result::Result<Self, D::Error>
+            where
+                D: #crate_path::serde::de::Deserializer<'de>,
+            {
+                enum __FeatherField {
+                    #(#field_enum_variants,)*
+                    Ignore,
+                }
+
+                struct __FeatherFieldVisitor;
+
+                impl<'de> #crate_path::serde::de::Visitor<'de> for __FeatherFieldVisitor {
+                    type Value = __FeatherField;
+
+                    fn expecting(
+                        &self,
+                        formatter: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        formatter.write_str("a valid field name")
+                    }
+
+                    fn visit_str<E>(
+                        self,
+                        value: &str,
+                    ) -> ::core::result::Result<Self::Value, E>
+                    where
+                        E: #crate_path::serde::de::Error,
+                    {
+                        match value {
+                            #(#field_name_match_arms)*
+                            _ => ::core::result::Result::Ok(__FeatherField::Ignore),
+                        }
+                    }
+                }
+
+                impl<'de> #crate_path::serde::de::Deserialize<'de> for __FeatherField {
+                    fn deserialize<D>(deserializer: D) -> ::core::result::Result<Self, D::Error>
+                    where
+                        D: #crate_path::serde::de::Deserializer<'de>,
+                    {
+                        #crate_path::serde::de::Deserializer::deserialize_identifier(
+                            deserializer,
+                            __FeatherFieldVisitor,
+                        )
+                    }
+                }
+
+                struct __FeatherVisitor;
+
+                impl<'de> #crate_path::serde::de::Visitor<'de> for __FeatherVisitor {
+                    type Value = #struct_ident;
+
+                    fn expecting(
+                        &self,
+                        formatter: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        ::core::write!(formatter, "struct {}", #struct_name)
+                    }
+
+                    fn visit_map<V>(
+                        self,
+                        mut map: V,
+                    ) -> ::core::result::Result<Self::Value, V::Error>
+                    where
+                        V: #crate_path::serde::de::MapAccess<'de>,
+                    {
+                        #(#field_bindings)*
+                        while let ::core::option::Option::Some(key) =
+                            #crate_path::serde::de::MapAccess::next_key::<__FeatherField>(&mut map)?
+                        {
+                            match key {
+                                #(#duplicate_field_match_arms)*
+                                __FeatherField::Ignore => {
+                                    let _: #crate_path::serde::de::IgnoredAny =
+                                        #crate_path::serde::de::MapAccess::next_value(&mut map)?;
+                                }
+                            }
+                        }
+
+                        ::core::result::Result::Ok(#struct_ident {
+                            #(#construct_fields,)*
+                        })
+                    }
+                }
+
+                const __FEATHER_FIELDS: &[&str] = &[#(#known_fields),*];
+                #crate_path::serde::de::Deserializer::deserialize_struct(
+                    deserializer,
+                    #struct_name,
+                    __FEATHER_FIELDS,
+                    __FeatherVisitor,
+                )
+            }
+        }
+    })
+}
+
+fn parse_input(input: &DeriveInput, macro_name: &str) -> syn::Result<ParsedStruct> {
+    if !input.generics.params.is_empty() || input.generics.where_clause.is_some() {
+        return Err(syn::Error::new_spanned(
+            &input.generics,
+            format!("{macro_name} only supports non-generic structs in this MVP"),
+        ));
+    }
+
+    let container_options = parse_container_attributes(&input.attrs)?;
+    let struct_name = container_options
+        .rename
+        .unwrap_or_else(|| LitStr::new(&input.ident.to_string(), input.ident.span()));
+
+    let named_fields = match &input.data {
+        Data::Struct(data_struct) => match &data_struct.fields {
+            Fields::Named(fields) => &fields.named,
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    &data_struct.fields,
+                    format!("{macro_name} only supports structs with named fields in this MVP"),
+                ))
+            }
+        },
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &input.ident,
+                format!("{macro_name} only supports structs in this MVP"),
+            ))
+        }
+    };
+
+    let mut parsed_fields = Vec::with_capacity(named_fields.len());
+    for field in named_fields {
+        parsed_fields.push(parse_field(field)?);
+    }
+
+    Ok(ParsedStruct {
+        ident: input.ident.clone(),
+        struct_name,
+        fields: parsed_fields,
+    })
+}
+
+fn parse_container_attributes(attrs: &[Attribute]) -> syn::Result<ContainerAttrOptions> {
+    let mut options = ContainerAttrOptions { rename: None };
+
+    for attr in attrs {
+        if !attr.path().is_ident("serde") {
+            continue;
+        }
+
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("rename") {
+                let rename_value: LitStr = meta.value()?.parse()?;
+                if options.rename.replace(rename_value).is_some() {
+                    return Err(meta.error("duplicate serde container attribute `rename`"));
+                }
+                return Ok(());
+            }
+
+            Err(meta.error("unsupported serde container attribute; supported attributes: `rename`"))
+        })?;
+    }
+
+    Ok(options)
+}
+
+fn parse_field(field: &Field) -> syn::Result<ParsedField> {
+    let field_ident = field.ident.clone().ok_or_else(|| {
+        syn::Error::new(
+            field.span(),
+            "Feather derives only support fields with identifiers",
+        )
+    })?;
+
+    let mut options = FieldAttrOptions::default();
+
+    for attr in &field.attrs {
+        if !attr.path().is_ident("serde") {
+            continue;
+        }
+
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("rename") {
+                let rename_value: LitStr = meta.value()?.parse()?;
+                if options.rename.replace(rename_value).is_some() {
+                    return Err(meta.error("duplicate serde field attribute `rename`"));
+                }
+                return Ok(());
+            }
+
+            if meta.path.is_ident("default") {
+                ensure_flag_meta_has_no_value(&meta, "default")?;
+                if options.default {
+                    return Err(meta.error("duplicate serde field attribute `default`"));
+                }
+                options.default = true;
+                return Ok(());
+            }
+
+            if meta.path.is_ident("skip") {
+                ensure_flag_meta_has_no_value(&meta, "skip")?;
+                if options.skip_serializing && options.skip_deserializing {
+                    return Err(meta.error("duplicate serde field attribute `skip`"));
+                }
+                options.skip_serializing = true;
+                options.skip_deserializing = true;
+                return Ok(());
+            }
+
+            if meta.path.is_ident("skip_serializing") {
+                ensure_flag_meta_has_no_value(&meta, "skip_serializing")?;
+                if options.skip_serializing {
+                    return Err(meta.error("duplicate serde field attribute `skip_serializing`"));
+                }
+                options.skip_serializing = true;
+                return Ok(());
+            }
+
+            if meta.path.is_ident("skip_deserializing") {
+                ensure_flag_meta_has_no_value(&meta, "skip_deserializing")?;
+                if options.skip_deserializing {
+                    return Err(meta.error("duplicate serde field attribute `skip_deserializing`"));
+                }
+                options.skip_deserializing = true;
+                return Ok(());
+            }
+
+            Err(meta.error(
+                "unsupported serde field attribute; supported attributes: `rename`, `default`, \
+                 `skip`, `skip_serializing`, `skip_deserializing`",
+            ))
+        })?;
+    }
+
+    let serialized_name = options
+        .rename
+        .unwrap_or_else(|| LitStr::new(&field_ident.to_string(), field_ident.span()));
+
+    Ok(ParsedField {
+        ident: field_ident,
+        ty: field.ty.clone(),
+        serialized_name,
+        default: options.default,
+        skip_serializing: options.skip_serializing,
+        skip_deserializing: options.skip_deserializing,
+    })
+}
+
+fn ensure_flag_meta_has_no_value(
+    meta: &syn::meta::ParseNestedMeta<'_>,
+    name: &str,
+) -> syn::Result<()> {
+    if meta.input.is_empty() {
+        return Ok(());
+    }
+
+    Err(meta.error(format!(
+        "serde field attribute `{name}` does not accept a value"
+    )))
+}
+
+fn serde_feather_path() -> TokenStream2 {
+    match crate_name("serde-feather") {
+        Ok(FoundCrate::Itself) => quote!(crate),
+        Ok(FoundCrate::Name(name)) => {
+            let ident = Ident::new(&name.replace('-', "_"), Span::call_site());
+            quote!(::#ident)
+        }
+        Err(_) => quote!(::serde_feather),
+    }
+}

@@ -1,0 +1,95 @@
+#![cfg(feature = "derive")]
+
+use serde_feather::{FeatherDeserialize, FeatherSerialize};
+use serde_test::{assert_tokens, Token};
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct BasicModel {
+    id: u32,
+    name: String,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+#[serde(rename = "renamed_container")]
+struct ContainerRenameModel {
+    value: u8,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct FieldBehaviorModel {
+    #[serde(rename = "identifier")]
+    id: u32,
+    #[serde(default)]
+    retries: u8,
+    #[serde(skip_serializing)]
+    skip_ser: u8,
+    #[serde(skip_deserializing)]
+    skip_de: u8,
+    #[serde(skip)]
+    skip_both: u8,
+}
+
+#[test]
+fn round_trip_without_attributes() {
+    let value = BasicModel {
+        id: 7,
+        name: "feather".to_owned(),
+    };
+
+    let encoded = serde_json::to_string(&value).expect("serialize basic model");
+    assert_eq!(encoded, r#"{"id":7,"name":"feather"}"#);
+
+    let decoded: BasicModel = serde_json::from_str(&encoded).expect("deserialize basic model");
+    assert_eq!(decoded, value);
+}
+
+#[test]
+fn container_rename_changes_struct_name_tokens() {
+    assert_tokens(
+        &ContainerRenameModel { value: 1 },
+        &[
+            Token::Struct {
+                name: "renamed_container",
+                len: 1,
+            },
+            Token::Str("value"),
+            Token::U8(1),
+            Token::StructEnd,
+        ],
+    );
+}
+
+#[test]
+fn field_attributes_apply_consistently() {
+    let value = FieldBehaviorModel {
+        id: 11,
+        retries: 3,
+        skip_ser: 19,
+        skip_de: 23,
+        skip_both: 29,
+    };
+
+    let encoded = serde_json::to_string(&value).expect("serialize field behavior model");
+    assert_eq!(encoded, r#"{"identifier":11,"retries":3,"skip_de":23}"#);
+
+    let decoded: FieldBehaviorModel = serde_json::from_str(
+        r#"{
+            "identifier": 41,
+            "skip_ser": 59,
+            "skip_de": 61,
+            "unknown": true
+        }"#,
+    )
+    .expect("deserialize field behavior model");
+
+    assert_eq!(
+        decoded,
+        FieldBehaviorModel {
+            id: 41,
+            retries: 0,
+            skip_ser: 59,
+            skip_de: 0,
+            skip_both: 0,
+        }
+    );
+}

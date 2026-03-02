@@ -37,7 +37,7 @@
 
 - Keep `serde-feather` as the runtime-facing crate and `serde-feather-macros` as the proc-macro crate.
 - Keep binary-size-first defaults: minimal default features and no convenience dependencies by default.
-- Do not stabilize public derive macro identifiers before they are documented in `docs/project-serde-feather.md`.
+- Keep stable derive macro identifiers (`FeatherSerialize`, `FeatherDeserialize`) aligned with `docs/project-serde-feather.md`.
 
 ### Testing and Validation
 
