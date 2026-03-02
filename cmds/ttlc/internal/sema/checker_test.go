@@ -251,6 +251,67 @@ task func Resolve() Vc[Artifact] {
 	}
 }
 
+func TestCheckRejectsDuplicateStructFields(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Path string
+    Path string
+}
+
+task func Build() Vc[Artifact] {
+    return vc(Artifact{})
+}
+`)
+	result := Check(module)
+	foundDuplicateFieldDiagnostic := false
+	for _, issue := range result.Diagnostics {
+		if issue.Message == "duplicate struct field declaration: Artifact.Path" {
+			foundDuplicateFieldDiagnostic = true
+			break
+		}
+	}
+	if !foundDuplicateFieldDiagnostic {
+		t.Fatalf("expected duplicate struct field diagnostic, got=%+v", result.Diagnostics)
+	}
+	if len(result.Types) != 1 {
+		t.Fatalf("expected one type declaration, got=%d", len(result.Types))
+	}
+	if len(result.Types[0].Fields) != 1 {
+		t.Fatalf("expected duplicate field to be emitted once, got=%d", len(result.Types[0].Fields))
+	}
+}
+
+func TestCheckRejectsDuplicateTaskParameters(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string, target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`)
+	result := Check(module)
+	foundDuplicateParameterDiagnostic := false
+	for _, issue := range result.Diagnostics {
+		if issue.Message == "duplicate task parameter name: Build.target" {
+			foundDuplicateParameterDiagnostic = true
+			break
+		}
+	}
+	if !foundDuplicateParameterDiagnostic {
+		t.Fatalf("expected duplicate task parameter diagnostic, got=%+v", result.Diagnostics)
+	}
+	if len(result.Tasks) != 1 {
+		t.Fatalf("expected one task declaration, got=%d", len(result.Tasks))
+	}
+	if len(result.Tasks[0].Params) != 1 {
+		t.Fatalf("expected duplicate parameter to be emitted once, got=%d", len(result.Tasks[0].Params))
+	}
+}
+
 func parseModuleForTest(t *testing.T, source string) *ast.Module {
 	t.Helper()
 	tokens, lexDiagnostics := lexer.Lex(source)

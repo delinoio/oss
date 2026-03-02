@@ -69,7 +69,18 @@ func Check(module *ast.Module) Result {
 		typeNames[typeDeclaration.Name] = struct{}{}
 
 		fields := make([]TypeField, 0, len(typeDeclaration.Fields))
+		fieldNames := make(map[string]struct{}, len(typeDeclaration.Fields))
 		for _, field := range typeDeclaration.Fields {
+			if _, exists := fieldNames[field.Name]; exists {
+				result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
+					Kind:    contracts.DiagnosticKindTypeError,
+					Message: fmt.Sprintf("duplicate struct field declaration: %s.%s", typeDeclaration.Name, field.Name),
+					Line:    field.Span.Start.Line,
+					Column:  field.Span.Start.Column,
+				})
+				continue
+			}
+			fieldNames[field.Name] = struct{}{}
 			fields = append(fields, TypeField{
 				Name: field.Name,
 				Type: typeExprString(field.Type),
@@ -118,6 +129,24 @@ func Check(module *ast.Module) Result {
 		}
 		emittedTaskNames[taskDeclaration.Name] = struct{}{}
 
+		parameterNames := make(map[string]struct{}, len(taskDeclaration.Parameters))
+		parameterDiagnostics := make([]diagnostic.Diagnostic, 0, len(taskDeclaration.Parameters))
+		uniqueParameters := make([]ast.Parameter, 0, len(taskDeclaration.Parameters))
+		for _, parameter := range taskDeclaration.Parameters {
+			if _, exists := parameterNames[parameter.Name]; exists {
+				parameterDiagnostics = append(parameterDiagnostics, diagnostic.Diagnostic{
+					Kind:    contracts.DiagnosticKindTypeError,
+					Message: fmt.Sprintf("duplicate task parameter name: %s.%s", taskDeclaration.Name, parameter.Name),
+					Line:    parameter.Span.Start.Line,
+					Column:  parameter.Span.Start.Column,
+				})
+				continue
+			}
+			parameterNames[parameter.Name] = struct{}{}
+			uniqueParameters = append(uniqueParameters, parameter)
+		}
+		result.Diagnostics = append(result.Diagnostics, parameterDiagnostics...)
+
 		if !isVcReturnType(taskDeclaration.ReturnType) {
 			result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindTypeError,
@@ -163,7 +192,7 @@ func Check(module *ast.Module) Result {
 
 		result.Tasks = append(result.Tasks, Task{
 			ID:         taskDeclaration.Name,
-			Params:     parametersToTaskParams(taskDeclaration.Parameters),
+			Params:     parametersToTaskParams(uniqueParameters),
 			ReturnType: typeExprString(taskDeclaration.ReturnType),
 			Deps:       orderedKeys(deps),
 		})
