@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "prepare": "lefthook install; ./scripts/prepare-apps.sh",
+    "predev": "./scripts/generate-go-proto.sh",
     "dev": "turbo dev",
     "build": "turbo build",
     "test": "turbo test",

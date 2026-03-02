@@ -14,7 +14,8 @@
 
 - Servers in this domain must be implemented in Go.
 - SQL queries and type-safe data access must use `sqlc`.
-- Protobuf definitions must live at `protos/${service_name}/v1.proto`.
+- Protobuf definitions must live at `proto/<service_name>/v1/*.proto`.
+- Each server project must provide a local protobuf generation script and a `go generate` entrypoint.
 - Keep API boundaries explicit and versionable.
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
 - Keep authorization and audit behavior documented and testable.
@@ -31,9 +32,11 @@ Each server project under `servers/<service_name>/` must follow this minimum str
 - `db/query/`
 - `db/migrations/`
 - `db/sqlc.yaml`
-- `protos/<service_name>/v1.proto`
+- `proto/<service_name>/v1/*.proto`
 - `buf.yaml`
 - `buf.gen.yaml`
+- `scripts/generate-go-proto.sh`
+- `generate.go` (with `go:generate` directive)
 
 ### Integration Rules
 
