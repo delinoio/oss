@@ -1,3 +1,3 @@
 package main
 
-//go:generate sh ./scripts/generate-go-proto.sh
+//go:generate bash ./scripts/generate-go-proto.sh
