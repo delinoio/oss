@@ -55,6 +55,9 @@ Navigation contract:
 - Group `Get Started` must include `index` and `getting-started`.
 - Group `Reference` must include `projects-overview` and `documentation-lifecycle`.
 
+Dev preview port contract:
+- `pnpm --filter public-docs dev` runs Mintlify with fixed port `46249`.
+
 ## Storage
 - Source pages and configuration are stored in git at `apps/public-docs`.
 - No runtime database or server-side persistent state is used by this project.

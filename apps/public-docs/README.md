@@ -11,6 +11,8 @@ pnpm --filter public-docs dev
 pnpm --filter public-docs test
 ```
 
+`pnpm --filter public-docs dev` runs Mintlify on fixed port `46249`.
+
 ## Files
 
 - `docs.json`: Mintlify site configuration and navigation.
