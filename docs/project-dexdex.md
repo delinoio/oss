@@ -1,16 +1,22 @@
 # Project: dexdex
 
 ## Goal
-`dexdex` is a Connect RPC-first task orchestration platform with a Rust control plane and Rust worker plane.
+`dexdex` is a Connect RPC-first task orchestration platform with a Rust control plane, Rust worker plane, and Tauri desktop client.
 It manages UnitTask/SubTask workflows, normalized AgentSession outputs, PR remediation lifecycle, and event-stream-driven updates.
+The desktop client provides workspace mode selection and orchestration control while preserving a single normalized downstream UX contract.
 
 ## Path
 - Main server: `crates/dexdex-main-server`
 - Worker server: `crates/dexdex-worker-server`
+- Desktop app: `apps/dexdex`
+- Desktop frontend: `apps/dexdex/src`
+- Desktop Tauri backend: `apps/dexdex/src-tauri`
 
 ## Runtime and Language
 - Main server: Rust binary crate
 - Worker server: Rust binary crate
+- Desktop app frontend: React + TypeScript (Vite)
+- Desktop app backend: Rust (Tauri)
 
 ## Users
 - Developers running AI-assisted implementation workflows
@@ -25,6 +31,8 @@ It manages UnitTask/SubTask workflows, normalized AgentSession outputs, PR remed
 - PR polling and remediation SubTask lifecycle (`PR_CREATE`, `PR_REVIEW_FIX`, `PR_CI_FIX`).
 - Workspace event streaming with replay/resume semantics.
 - Deployment mode contracts for `SINGLE_INSTANCE` and `SCALE`.
+- Desktop workspace mode resolution for `LOCAL` and `REMOTE` with a normalized Connect RPC connection shape.
+- Desktop UX parity contract where `LOCAL` and `REMOTE` share the exact same post-resolution business flow behavior.
 
 ## Out of Scope
 - Tauri-specific business contracts as the primary integration model.
@@ -32,6 +40,7 @@ It manages UnitTask/SubTask workflows, normalized AgentSession outputs, PR remed
 - Direct execution against arbitrary local folders without worktree isolation.
 - Provider-native raw session payload contracts in main server APIs and client-facing streams.
 - Monthly/yearly reporting and analytics product surfaces in this phase.
+- Persistent desktop token vault behavior in the initial scaffold phase.
 
 ## Architecture
 - Main server (`crates/dexdex-main-server`) is the control plane.
@@ -40,6 +49,10 @@ It manages UnitTask/SubTask workflows, normalized AgentSession outputs, PR remed
 - Worker server (`crates/dexdex-worker-server`) is the execution plane.
 : It prepares repository worktrees, launches agent sessions, and normalizes provider-native outputs into shared contracts.
 : It persists session artifacts and ordered real-commit metadata produced by SubTask execution.
+- Desktop app (`apps/dexdex`) is the orchestration client shell.
+: It resolves workspace mode into one normalized Connect RPC connection contract.
+: It routes all post-resolution task/session workflows through the same shared UI and business pipeline regardless of workspace mode.
+: `LOCAL` mode is a special connection mode, but user-visible behavior after endpoint resolution must remain 100% identical to connecting to a `REMOTE` endpoint running on the same machine.
 - Connect RPC-first boundary:
 : Business workflows traverse main server and worker server through Connect RPC contracts.
 : Platform-specific bindings are limited to integration concerns and are not business-data contracts.
@@ -62,6 +75,7 @@ Canonical component identifiers:
 enum DexDexComponent {
   MainServer = "main-server",
   WorkerServer = "worker-server",
+  DesktopApp = "desktop-app",
 }
 ```
 
@@ -73,6 +87,41 @@ enum DexDexDeploymentMode {
   Scale = "SCALE",
 }
 ```
+
+Workspace mode identifiers:
+
+```ts
+enum WorkspaceMode {
+  Local = "LOCAL",
+  Remote = "REMOTE",
+}
+```
+
+Desktop workspace endpoint source identifiers:
+
+```ts
+enum WorkspaceEndpointSource {
+  ManagedLoopback = "MANAGED_LOOPBACK",
+  UserRemote = "USER_REMOTE",
+}
+```
+
+Desktop normalized connection contract:
+
+```ts
+type ResolvedWorkspaceConnection = {
+  mode: WorkspaceMode;
+  endpointUrl: string;
+  endpointSource: WorkspaceEndpointSource;
+  token?: string;
+  transport: "CONNECT_RPC";
+};
+```
+
+Desktop Tauri command contract:
+- `resolve_local_workspace_endpoint()`
+: Returns `{ endpoint_url: string, token?: string, endpoint_source: "MANAGED_LOOPBACK" }`.
+: Resolves local-mode connection target without altering downstream workflow contracts.
 
 Primary Connect RPC service contracts:
 - `WorkspaceService`
@@ -89,10 +138,6 @@ Primary Connect RPC service contracts:
 Core enum contracts:
 
 ```txt
-WorkspaceType:
-- LOCAL_ENDPOINT
-- REMOTE_ENDPOINT
-
 UnitTaskStatus:
 - QUEUED
 - IN_PROGRESS
@@ -178,6 +223,7 @@ Execution and state contracts:
 - SubTask outputs that modify code must produce one or more real git commits and ordered commit-chain metadata.
 - Plan mode uses `TaskService.SubmitPlanDecision` with `APPROVE | REVISE | REJECT`.
 - `SESSION_OUTPUT` stream payloads must remain normalized and provider-agnostic.
+- Desktop downstream flows consume `ResolvedWorkspaceConnection` and must not branch behavior based on `LOCAL` vs `REMOTE` once connection is resolved.
 
 ## Storage
 Main server logical ownership:
@@ -194,6 +240,10 @@ Worker server logical ownership:
 - Ordered commit chain metadata (`sha`, parents, message, timestamps).
 - Optional patch artifacts derived from real commits.
 
+Desktop scaffold storage contract:
+- Workspace mode selection and resolved connection state are in-memory only in the initial scaffold.
+- No persistent desktop token storage contract is established in the scaffold phase.
+
 Deployment mode storage contract:
 - `SINGLE_INSTANCE`: SQLite + in-process event broker.
 - `SCALE`: PostgreSQL + Redis streams/pub-sub.
@@ -205,9 +255,12 @@ Deployment mode storage contract:
 - Keep provider-native raw payloads worker-local; never expose them in main-server APIs.
 - Never log secrets, tokens, or plaintext sensitive material.
 - Inject secrets only at runtime scope and clear ephemeral secret material after session termination.
+- Desktop `LOCAL` mode resolution must avoid logging token values and must expose only normalized Connect RPC metadata to the UI.
+- Tauri commands remain runtime adapters and must not become the primary business-data contract surface.
 
 ## Logging
 - Use `tracing`-compatible structured logs in both server crates.
+- Desktop Tauri backend must use `tracing` structured logs for mode resolution operations.
 - Required correlation fields:
 : `workspace_id`
 : `unit_task_id`
@@ -227,6 +280,11 @@ Deployment mode storage contract:
 : commit-chain generation summaries
 : plan-mode wait/resume checkpoints
 : cancellation checkpoints
+- Desktop baseline events:
+: workspace mode selection events
+: local endpoint resolution success/failure
+: normalized connection resolution success/failure
+: downstream flow start checkpoints using normalized connection metadata
 - Prohibited log content:
 : raw provider tokens
 : provider-native secret payloads
@@ -249,15 +307,18 @@ Acceptance-focused scenarios:
 8. SubTasks with code changes persist real commit-chain metadata.
 9. `SINGLE_INSTANCE` mode runs without Redis dependency.
 10. `SCALE` mode uses PostgreSQL + Redis-backed event propagation.
+11. Desktop `LOCAL` mode resolves to normalized connection metadata through Tauri command contract.
+12. Desktop `REMOTE` mode resolves to the same normalized connection contract shape.
+13. Desktop post-resolution UI and business flow behavior remains identical between `LOCAL` and `REMOTE` for the same endpoint.
 
 ## Roadmap
 - Phase 1: Finalize project contracts and Rust crate scaffolding for main and worker servers.
 - Phase 2: Add proto definitions and Connect RPC handler skeletons for all listed services.
 - Phase 3: Implement task orchestration, plan mode, PR polling, and stream replay.
-- Phase 4: Harden deployment mode behavior, operational metrics, and failure recovery.
+- Phase 4: Add DexDex desktop app scaffold with normalized workspace mode resolution (`LOCAL`, `REMOTE`) and Tauri integration boundary.
+- Phase 5: Add desktop CI coverage and packaging/signing automation without changing Connect RPC-first business contracts.
 
 ## Open Questions
 - Proto package and generated-code directory conventions for DexDex services.
-- Worker artifact retention policy defaults and cleanup schedule.
-- Final retry/backoff defaults for PR auto-remediation loops.
-- Whether patch artifact persistence should be optional by deployment profile.
+- Desktop CI onboarding scope and cadence (`test`, `tauri build`, platform matrix) for `apps/dexdex`.
+- Local runtime orchestration policy for managed loopback server lifecycle beyond scaffold mode.

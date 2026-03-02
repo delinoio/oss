@@ -11,6 +11,7 @@
 - `apps/devkit`: Next.js 16 micro-app platform.
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/public-docs`: Mintlify public documentation app.
+- `apps/dexdex`: Tauri desktop app (React + TypeScript frontend with Rust backend).
 
 ### Devkit Identifier Contract
 
@@ -42,6 +43,13 @@ enum DevkitMiniAppId {
 - `public-docs` must remain Mintlify-based unless a documented architecture decision changes it.
 - Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/project-public-docs.md`.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
+
+### dexdex Rules
+
+- `dexdex` app boundaries must keep business communication Connect RPC-first.
+- Tauri bindings are integration/runtime adapters and must not become the primary business contract surface.
+- `LOCAL` and `REMOTE` workspace modes must converge to the same post-resolution UX and business flow behavior.
+- Keep DexDex desktop app contracts synchronized with `docs/project-dexdex.md`.
 
 ### Testing and Validation
 
