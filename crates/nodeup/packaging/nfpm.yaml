@@ -1,0 +1,24 @@
+name: nodeup
+arch: "__NFPM_ARCH__"
+platform: linux
+version: "__NODEUP_VERSION__"
+section: default
+priority: optional
+maintainer: Delino OSS <oss@delino.io>
+description: Rustup-like Node.js version manager
+license: MIT
+homepage: https://github.com/delinoio/oss
+contents:
+  - src: "__NODEUP_BINARY_PATH__"
+    dst: /usr/bin/nodeup
+    file_info:
+      mode: 0755
+  - src: /usr/bin/nodeup
+    dst: /usr/bin/node
+    type: symlink
+  - src: /usr/bin/nodeup
+    dst: /usr/bin/npm
+    type: symlink
+  - src: /usr/bin/nodeup
+    dst: /usr/bin/npx
+    type: symlink

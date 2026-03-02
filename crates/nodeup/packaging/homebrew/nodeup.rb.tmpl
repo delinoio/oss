@@ -1,0 +1,27 @@
+class Nodeup < Formula
+  desc "Rustup-like Node.js version manager"
+  homepage "https://github.com/delinoio/oss"
+  version "__NODEUP_VERSION_NO_V__"
+  license "MIT"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "https://github.com/delinoio/oss/releases/download/nodeup-__NODEUP_VERSION__/nodeup-__NODEUP_VERSION__-darwin-arm64.tar.gz"
+      sha256 "__SHA_DARWIN_ARM64__"
+    else
+      url "https://github.com/delinoio/oss/releases/download/nodeup-__NODEUP_VERSION__/nodeup-__NODEUP_VERSION__-darwin-x64.tar.gz"
+      sha256 "__SHA_DARWIN_X64__"
+    end
+  end
+
+  def install
+    bin.install "nodeup"
+    bin.install_symlink "nodeup" => "node"
+    bin.install_symlink "nodeup" => "npm"
+    bin.install_symlink "nodeup" => "npx"
+  end
+
+  test do
+    assert_match "nodeup", shell_output("#{bin}/nodeup --help")
+  end
+end

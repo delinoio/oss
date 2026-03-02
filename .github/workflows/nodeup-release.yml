@@ -1,0 +1,299 @@
+name: nodeup-release
+
+on:
+  push:
+    tags:
+      - "nodeup-v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version in vX.Y.Z format"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Prepare Release Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      release_version: ${{ steps.meta.outputs.release_version }}
+    steps:
+      - name: Resolve release tag and version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            raw_version="${{ inputs.version }}"
+            case "$raw_version" in
+              v*)
+                release_version="$raw_version"
+                ;;
+              *)
+                release_version="v${raw_version}"
+                ;;
+            esac
+            release_tag="nodeup-${release_version}"
+          else
+            release_tag="${GITHUB_REF_NAME}"
+            case "$release_tag" in
+              nodeup-v*)
+                release_version="${release_tag#nodeup-}"
+                ;;
+              *)
+                echo "Unexpected release tag format: ${release_tag}" >&2
+                exit 1
+                ;;
+            esac
+          fi
+
+          echo "release_tag=${release_tag}" >>"${GITHUB_OUTPUT}"
+          echo "release_version=${release_version}" >>"${GITHUB_OUTPUT}"
+
+  build-binaries:
+    name: Build Binaries (${{ matrix.platform }}-${{ matrix.arch }})
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+            arch: x64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+            arch: arm64
+          - runner: macos-13
+            target: x86_64-apple-darwin
+            platform: darwin
+            arch: x64
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            platform: darwin
+            arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-01-01
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build nodeup release binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build -p nodeup --release --target "${{ matrix.target }}"
+
+      - name: Package tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_version="${{ needs.prepare.outputs.release_version }}"
+          artifact_name="nodeup-${release_version}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz"
+
+          work_dir="$(mktemp -d)"
+          trap 'rm -rf "${work_dir}"' EXIT
+
+          cp "target/${{ matrix.target }}/release/nodeup" "${work_dir}/nodeup"
+          chmod +x "${work_dir}/nodeup"
+
+          tar -C "${work_dir}" -czf "${artifact_name}" nodeup
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodeup-${{ matrix.platform }}-${{ matrix.arch }}
+          path: nodeup-${{ needs.prepare.outputs.release_version }}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+
+  build-packages:
+    name: Build Linux Package Artifacts
+    needs: [prepare, build-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Linux tarball artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nodeup-linux-*
+          merge-multiple: true
+          path: dist
+
+      - name: Setup Go for nfpm installation
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Install nfpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.2
+          echo "$(go env GOPATH)/bin" >>"${GITHUB_PATH}"
+
+      - name: Build package files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_version="${{ needs.prepare.outputs.release_version }}"
+          mkdir -p dist/packages
+
+          for arch in x64 arm64; do
+            tarball="dist/nodeup-${release_version}-linux-${arch}.tar.gz"
+            extract_dir="$(mktemp -d)"
+            trap 'rm -rf "${extract_dir}"' EXIT
+
+            tar -xzf "${tarball}" -C "${extract_dir}"
+
+            ./scripts/nodeup/build-packages.sh \
+              --version "${release_version}" \
+              --arch "${arch}" \
+              --binary "${extract_dir}/nodeup" \
+              --out-dir "dist/packages"
+
+            rm -rf "${extract_dir}"
+            trap - EXIT
+          done
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodeup-linux-packages
+          path: dist/packages/*
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [prepare, build-binaries, build-packages]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+
+      - name: Build checksum file
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_version="${{ needs.prepare.outputs.release_version }}"
+          checksum_file="dist/nodeup-${release_version}-checksums.txt"
+
+          : >"${checksum_file}"
+
+          while IFS= read -r file_path; do
+            sum="$(shasum -a 256 "${file_path}" | awk '{print $1}')"
+            file_name="$(basename "${file_path}")"
+            printf '%s  %s\n' "${sum}" "${file_name}" >>"${checksum_file}"
+          done < <(find dist -maxdepth 1 -type f -name "nodeup-${release_version}-*" | sort)
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          name: nodeup ${{ needs.prepare.outputs.release_version }}
+          files: |
+            dist/nodeup-${{ needs.prepare.outputs.release_version }}-*.tar.gz
+            dist/nodeup-${{ needs.prepare.outputs.release_version }}-*.deb
+            dist/nodeup-${{ needs.prepare.outputs.release_version }}-*.rpm
+            dist/nodeup-${{ needs.prepare.outputs.release_version }}-*.pkg.tar.zst
+            dist/nodeup-${{ needs.prepare.outputs.release_version }}-checksums.txt
+
+  sync-homebrew-tap:
+    name: Sync Homebrew Tap
+    needs: [prepare, publish-release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout OSS repository
+        uses: actions/checkout@v4
+
+      - name: Download release checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_tag="${{ needs.prepare.outputs.release_tag }}"
+          release_version="${{ needs.prepare.outputs.release_version }}"
+
+          mkdir -p dist
+          gh release download "${release_tag}" \
+            --repo delinoio/oss \
+            --pattern "nodeup-${release_version}-checksums.txt" \
+            --dir dist
+
+      - name: Resolve macOS checksum values
+        id: checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_version="${{ needs.prepare.outputs.release_version }}"
+          checksum_file="dist/nodeup-${release_version}-checksums.txt"
+
+          sha_x64="$(awk '$2 == "nodeup-'"${release_version}"'-darwin-x64.tar.gz" { print $1 }' "${checksum_file}")"
+          sha_arm64="$(awk '$2 == "nodeup-'"${release_version}"'-darwin-arm64.tar.gz" { print $1 }' "${checksum_file}")"
+
+          if [ -z "${sha_x64}" ] || [ -z "${sha_arm64}" ]; then
+            echo "Missing darwin checksums in ${checksum_file}" >&2
+            exit 1
+          fi
+
+          echo "sha_x64=${sha_x64}" >>"${GITHUB_OUTPUT}"
+          echo "sha_arm64=${sha_arm64}" >>"${GITHUB_OUTPUT}"
+
+      - name: Checkout Homebrew tap repository
+        uses: actions/checkout@v4
+        with:
+          repository: delinoio/homebrew-tap
+          path: homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Render nodeup formula
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./scripts/nodeup/render-homebrew-formula.sh \
+            --version "${{ needs.prepare.outputs.release_version }}" \
+            --sha-darwin-x64 "${{ steps.checksums.outputs.sha_x64 }}" \
+            --sha-darwin-arm64 "${{ steps.checksums.outputs.sha_arm64 }}" \
+            --output "homebrew-tap/Formula/nodeup.rb"
+
+      - name: Commit and push formula update
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd homebrew-tap
+
+          if git diff --quiet -- Formula/nodeup.rb; then
+            echo "No Homebrew formula changes to commit"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add Formula/nodeup.rb
+          git commit -m "chore(nodeup): update formula for ${{ needs.prepare.outputs.release_version }}"
+          git push
