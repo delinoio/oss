@@ -175,7 +175,11 @@ Subcommand contracts:
 : Status field (`--output json`): `linked`.
 - `nodeup default [runtime]`
 : With `runtime`: resolves selector, installs if it resolves to a version and is missing, saves selector as global default, and tracks selector.
-: Without `runtime`: returns current default selector and resolved runtime (if configured).
+: Without `runtime`: returns current default selector and resolved runtime when resolution succeeds.
+: Without `runtime`: when selector resolution fails, command still succeeds and returns persisted selector state with `resolved_runtime: null`.
+: JSON output includes `resolution_error`:
+: `null` when resolution succeeds or no default selector is configured.
+: object with `kind` and `message` when resolution fails during introspection.
 - `nodeup show active-runtime`
 : Output: resolved runtime (`runtime`), selection source (`explicit|override|default`), and canonical selector.
 : Failure: returns deterministic not-found error when neither override nor default selector exists.

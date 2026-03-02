@@ -929,6 +929,119 @@ fn default_override_show_precedence() {
 
 #[test]
 #[serial]
+fn default_json_returns_selector_when_channel_resolution_is_offline() {
+    let env = TestEnv::new();
+    let settings_file = env.config_root.join("settings.toml");
+    fs::write(
+        &settings_file,
+        r#"schema_version = 1
+default_selector = "lts"
+tracked_selectors = ["lts"]
+
+[linked_runtimes]
+"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .env("NODEUP_INDEX_URL", "http://127.0.0.1:9/index.json")
+        .args(["--output", "json", "default"])
+        .output()
+        .expect("default --output json with offline channel selector");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["default_selector"], "lts");
+    assert!(payload["resolved_runtime"].is_null());
+    assert_eq!(payload["resolution_error"]["kind"], "network");
+}
+
+#[test]
+#[serial]
+fn default_json_returns_selector_when_default_selector_is_invalid() {
+    let env = TestEnv::new();
+    let settings_file = env.config_root.join("settings.toml");
+    fs::write(
+        &settings_file,
+        r#"schema_version = 1
+default_selector = "invalid selector"
+tracked_selectors = ["invalid selector"]
+
+[linked_runtimes]
+"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "default"])
+        .output()
+        .expect("default --output json with invalid selector");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["default_selector"], "invalid selector");
+    assert!(payload["resolved_runtime"].is_null());
+    assert_eq!(payload["resolution_error"]["kind"], "invalid-input");
+}
+
+#[test]
+#[serial]
+fn default_json_resolved_path_keeps_resolution_error_null() {
+    let env = TestEnv::new();
+    let settings_file = env.config_root.join("settings.toml");
+    fs::write(
+        &settings_file,
+        r#"schema_version = 1
+default_selector = "22.1.0"
+tracked_selectors = ["22.1.0"]
+
+[linked_runtimes]
+"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "default"])
+        .output()
+        .expect("default --output json with resolvable selector");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["default_selector"], "22.1.0");
+    assert_eq!(payload["resolved_runtime"], "v22.1.0");
+    assert!(payload["resolution_error"].is_null());
+}
+
+#[test]
+#[serial]
+fn default_human_unresolved_still_prints_selector() {
+    let env = TestEnv::new();
+    let settings_file = env.config_root.join("settings.toml");
+    fs::write(
+        &settings_file,
+        r#"schema_version = 1
+default_selector = "lts"
+tracked_selectors = ["lts"]
+
+[linked_runtimes]
+"#,
+    )
+    .unwrap();
+
+    env.command()
+        .env("NODEUP_INDEX_URL", "http://127.0.0.1:9/index.json")
+        .arg("default")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Default runtime: lts"))
+        .stdout(predicates::str::contains("resolution unavailable"));
+}
+
+#[test]
+#[serial]
 fn show_active_runtime_fails_when_linked_runtime_path_is_deleted() {
     let env = TestEnv::new();
     let runtime_dir = env.root.join("linked-runtime-deleted");
