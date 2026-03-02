@@ -254,11 +254,12 @@ func anyToInt(value any) (int, error) {
 		if typed != math.Trunc(typed) {
 			return 0, fmt.Errorf("number must be an integer")
 		}
-		parsed, err := strconv.ParseInt(strconv.FormatFloat(typed, 'f', -1, 64), 10, 64)
-		if err != nil {
+		const maxInt64PlusOne = float64(uint64(1) << 63)
+		const minInt64 = -maxInt64PlusOne
+		if typed < minInt64 || typed >= maxInt64PlusOne {
 			return 0, fmt.Errorf("number out of int64 range")
 		}
-		return int64ToInt(parsed)
+		return int64ToInt(int64(typed))
 	case json.Number:
 		parsed, err := typed.Int64()
 		if err != nil {

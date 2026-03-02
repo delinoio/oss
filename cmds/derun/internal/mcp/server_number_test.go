@@ -101,3 +101,18 @@ func TestAnyToIntRejectsInt64OutsidePlatformRange(t *testing.T) {
 		})
 	}
 }
+
+func TestAnyToIntPreservesLargeWholeFloatWithoutCoercion(t *testing.T) {
+	if strconv.IntSize != 64 {
+		t.Skip("platform int is 32-bit; this test requires 64-bit int")
+	}
+
+	const raw float64 = 9223372036854773760
+	got, err := anyToInt(raw)
+	if err != nil {
+		t.Fatalf("anyToInt returned error: %v", err)
+	}
+	if int64(got) != int64(9223372036854773760) {
+		t.Fatalf("unexpected converted value: got=%d want=%d", int64(got), int64(9223372036854773760))
+	}
+}
