@@ -1,9 +1,9 @@
 [package]
-name = "serde-lite-derive-macros"
+name = "serde-feather-macros"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Proc-macro scaffold crate for serde-lite-derive"
+description = "Proc-macro scaffold crate for serde-feather"
 publish = false
 
 [lib]
