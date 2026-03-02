@@ -64,12 +64,30 @@ enum TtlCommand {
   Explain = "explain",
 }
 
+enum TtlSchemaVersion {
+  V1Alpha1 = "v1alpha1",
+}
+
+enum TtlResponseStatus {
+  Ok = "ok",
+  Failed = "failed",
+}
+
 enum TtlCoreType {
   Vc = "vc",
   ResolvedVc = "resolved-vc",
   OperationVc = "operation-vc",
   TransientValue = "transient-value",
   State = "state",
+}
+
+enum TtlInvalidationReason {
+  None = "none",
+  CacheMiss = "cache_miss",
+  InputContentChanged = "input_content_changed",
+  ParameterChanged = "parameter_changed",
+  EnvironmentChanged = "environment_changed",
+  CacheCorruption = "cache_corruption",
 }
 ```
 
@@ -132,24 +150,33 @@ Parallel execution contract:
 - Execution order is deterministic with respect to dependency constraints, not submission order.
 - Phase 1 status: runtime scheduler is not yet active; only dependency graph diagnostics and metadata persistence are implemented.
 
-Explain output contract (Phase 1 default JSON):
-- `entry`
-- `module`
-- `tasks` (`id`, `params`, `return_type`, `deps`, `cache_key`)
-- `diagnostics`
-- `fingerprint_components` (`input_content_hash`, `parameter_hash`, `environment_snapshot_hash`)
+Explain output contract (Phase 1 default JSON envelope):
+- Top-level envelope fields: `schema_version`, `command`, `status`, `diagnostics`, `data`
+- `schema_version` is `v1alpha1`
+- `command` is `explain`
+- `status` is `ok|failed`
+- `data.entry`
+- `data.module`
+- `data.tasks` (`id`, `params`, `return_type`, `deps`, `cache_key`)
+- `data.fingerprint_components` (`input_content_hash`, `parameter_hash`, `environment_snapshot_hash`)
+- `data.cache_analysis` (`task_id`, `cache_key`, `cache_hit`, `invalidation_reason`)
 
 ## Storage
 Cache backend is fixed to SQLite in v1.
 Minimum conceptual schema (field names are stable contract names):
 - `task_key`
+- `module`
+- `task_id`
+- `input_content_hash`
+- `parameter_hash`
+- `environment_snapshot_hash`
 - `input_fingerprint`
 - `output_blob_ref`
 - `deps`
 - `metadata`
 
 Recommended conceptual tables:
-- `task_cache(task_key PRIMARY KEY, input_fingerprint, output_blob_ref, metadata_json, updated_at)`
+- `task_cache(task_key PRIMARY KEY, module, task_id, input_content_hash, parameter_hash, environment_snapshot_hash, input_fingerprint, output_blob_ref, metadata_json, updated_at, UNIQUE(module, task_id))`
 - `task_deps(task_key, dep_task_key)`
 - `cache_blobs(blob_ref PRIMARY KEY, codec, bytes, size_bytes)`
 
@@ -169,6 +196,10 @@ Required fields:
 - `worker_id`
 - `duration_ms`
 - `error_kind`
+
+CLI logging contract:
+- ANSI color is enabled by default for operator-facing logs.
+- `--no-color` disables ANSI color output.
 
 Runtime task event baseline:
 - `task_scheduled`
@@ -195,6 +226,7 @@ Failure mode contracts:
 - Cache corruption: emit `error_kind=cache_corruption`, invalidate row, recompute.
 - Type mismatch: fail during type-check or decode boundary with typed diagnostics.
 - Non-deterministic task warning: emit warning diagnostics when unstable outputs are detected.
+- Cache schema version mismatch: reset cache tables and recreate schema metadata.
 
 ## Roadmap
 - Phase 1: Lock syntax + type contracts and ship Go emitter skeleton.

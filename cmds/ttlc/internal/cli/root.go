@@ -10,6 +10,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/ttlc/internal/compiler"
 	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
+	"github.com/delinoio/oss/cmds/ttlc/internal/diagnostic"
 	"github.com/delinoio/oss/cmds/ttlc/internal/logging"
 )
 
@@ -19,6 +20,14 @@ const (
 )
 
 var newCompilerService = compiler.NewWithLogger
+
+type responseEnvelope struct {
+	SchemaVersion contracts.TtlSchemaVersion  `json:"schema_version"`
+	Command       contracts.TtlCommand        `json:"command"`
+	Status        contracts.TtlResponseStatus `json:"status"`
+	Diagnostics   []diagnostic.Diagnostic     `json:"diagnostics"`
+	Data          any                         `json:"data"`
+}
 
 func Execute(args []string) int {
 	return execute(args, os.Stdout, os.Stderr)
@@ -49,12 +58,14 @@ func executeCheck(args []string, stdout io.Writer, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 
 	entry := defaultEntryPath
+	noColor := false
 	fs.StringVar(&entry, "entry", defaultEntryPath, "entry .ttl file path")
+	fs.BoolVar(&noColor, "no-color", false, "disable ANSI color output for logs")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	logger, err := logging.NewWithWriter(stderr, "info")
+	logger, err := logging.NewWithWriter(stderr, logging.Options{Level: "info", NoColor: noColor})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
 		return 1
@@ -67,11 +78,19 @@ func executeCheck(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 
-	if err := json.NewEncoder(stdout).Encode(result); err != nil {
+	payload := map[string]any{
+		"entry":                  result.Entry,
+		"module":                 result.Module,
+		"tasks":                  result.Tasks,
+		"fingerprint_components": result.FingerprintComponents,
+		"cache_analysis":         normalizeCacheAnalysis(result.CacheAnalysis),
+	}
+	status := statusFromDiagnostics(result.Diagnostics)
+	if err := writeEnvelope(stdout, contracts.TtlCommandCheck, status, result.Diagnostics, payload); err != nil {
 		_, _ = fmt.Fprintf(stderr, "encode output: %v\n", err)
 		return 1
 	}
-	if len(result.Diagnostics) > 0 {
+	if status == contracts.TtlResponseStatusFailed {
 		return 1
 	}
 	return 0
@@ -83,13 +102,15 @@ func executeBuild(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	entry := defaultEntryPath
 	outDir := defaultOutDir
+	noColor := false
 	fs.StringVar(&entry, "entry", defaultEntryPath, "entry .ttl file path")
 	fs.StringVar(&outDir, "out-dir", defaultOutDir, "generated go output directory")
+	fs.BoolVar(&noColor, "no-color", false, "disable ANSI color output for logs")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	logger, err := logging.NewWithWriter(stderr, "info")
+	logger, err := logging.NewWithWriter(stderr, logging.Options{Level: "info", NoColor: noColor})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
 		return 1
@@ -102,11 +123,21 @@ func executeBuild(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 
-	if err := json.NewEncoder(stdout).Encode(result); err != nil {
+	payload := map[string]any{
+		"entry":                  result.Entry,
+		"module":                 result.Module,
+		"tasks":                  result.Tasks,
+		"fingerprint_components": result.FingerprintComponents,
+		"generated_files":        result.GeneratedFiles,
+		"cache_db_path":          result.CacheDBPath,
+		"cache_analysis":         normalizeCacheAnalysis(result.CacheAnalysis),
+	}
+	status := statusFromDiagnostics(result.Diagnostics)
+	if err := writeEnvelope(stdout, contracts.TtlCommandBuild, status, result.Diagnostics, payload); err != nil {
 		_, _ = fmt.Fprintf(stderr, "encode output: %v\n", err)
 		return 1
 	}
-	if len(result.Diagnostics) > 0 {
+	if status == contracts.TtlResponseStatusFailed {
 		return 1
 	}
 	return 0
@@ -118,13 +149,15 @@ func executeExplain(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	entry := defaultEntryPath
 	task := ""
+	noColor := false
 	fs.StringVar(&entry, "entry", defaultEntryPath, "entry .ttl file path")
 	fs.StringVar(&task, "task", "", "task name to explain")
+	fs.BoolVar(&noColor, "no-color", false, "disable ANSI color output for logs")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 
-	logger, err := logging.NewWithWriter(stderr, "info")
+	logger, err := logging.NewWithWriter(stderr, logging.Options{Level: "info", NoColor: noColor})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
 		return 1
@@ -141,22 +174,52 @@ func executeExplain(args []string, stdout io.Writer, stderr io.Writer) int {
 		"entry":                  result.Entry,
 		"module":                 result.Module,
 		"tasks":                  result.Tasks,
-		"diagnostics":            result.Diagnostics,
 		"fingerprint_components": result.FingerprintComponents,
+		"cache_analysis":         normalizeCacheAnalysis(result.CacheAnalysis),
 	}
-	if err := json.NewEncoder(stdout).Encode(payload); err != nil {
+	status := statusFromDiagnostics(result.Diagnostics)
+	if err := writeEnvelope(stdout, contracts.TtlCommandExplain, status, result.Diagnostics, payload); err != nil {
 		_, _ = fmt.Fprintf(stderr, "encode output: %v\n", err)
 		return 1
 	}
-	if len(result.Diagnostics) > 0 {
+	if status == contracts.TtlResponseStatusFailed {
 		return 1
 	}
 	return 0
 }
 
+func statusFromDiagnostics(diagnostics []diagnostic.Diagnostic) contracts.TtlResponseStatus {
+	if len(diagnostics) > 0 {
+		return contracts.TtlResponseStatusFailed
+	}
+	return contracts.TtlResponseStatusOK
+}
+
+func writeEnvelope(stdout io.Writer, command contracts.TtlCommand, status contracts.TtlResponseStatus, diagnostics []diagnostic.Diagnostic, data any) error {
+	responseDiagnostics := diagnostics
+	if responseDiagnostics == nil {
+		responseDiagnostics = make([]diagnostic.Diagnostic, 0)
+	}
+	response := responseEnvelope{
+		SchemaVersion: contracts.TtlSchemaVersionV1Alpha1,
+		Command:       command,
+		Status:        status,
+		Diagnostics:   responseDiagnostics,
+		Data:          data,
+	}
+	return json.NewEncoder(stdout).Encode(response)
+}
+
+func normalizeCacheAnalysis(values []compiler.CacheAnalysis) []compiler.CacheAnalysis {
+	if values == nil {
+		return make([]compiler.CacheAnalysis, 0)
+	}
+	return values
+}
+
 func printUsage(stderr io.Writer) {
 	_, _ = fmt.Fprintln(stderr, "usage:")
-	_, _ = fmt.Fprintln(stderr, "  ttlc build [--entry <file.ttl>] [--out-dir <dir>]")
-	_, _ = fmt.Fprintln(stderr, "  ttlc check [--entry <file.ttl>]")
-	_, _ = fmt.Fprintln(stderr, "  ttlc explain [--entry <file.ttl>] [--task <task-name>]")
+	_, _ = fmt.Fprintln(stderr, "  ttlc build [--entry <file.ttl>] [--out-dir <dir>] [--no-color]")
+	_, _ = fmt.Fprintln(stderr, "  ttlc check [--entry <file.ttl>] [--no-color]")
+	_, _ = fmt.Fprintln(stderr, "  ttlc explain [--entry <file.ttl>] [--task <task-name>] [--no-color]")
 }

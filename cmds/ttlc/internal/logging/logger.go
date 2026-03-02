@@ -9,21 +9,29 @@ import (
 	"strings"
 )
 
-func NewWithWriter(w io.Writer, level string) (*slog.Logger, error) {
+type Options struct {
+	Level   string
+	NoColor bool
+}
+
+func NewWithWriter(w io.Writer, options Options) (*slog.Logger, error) {
 	if w == nil {
 		w = os.Stderr
 	}
 
-	parsedLevel, err := parseLevel(level)
+	parsedLevel, err := parseLevel(options.Level)
 	if err != nil {
 		return nil, err
 	}
 
-	handler := slog.NewJSONHandler(w, &slog.HandlerOptions{
+	handler := slog.NewTextHandler(w, &slog.HandlerOptions{
 		Level: parsedLevel,
 		ReplaceAttr: func(_ []string, attribute slog.Attr) slog.Attr {
 			if attribute.Key == slog.TimeKey {
 				attribute.Key = "timestamp"
+			}
+			if attribute.Key == slog.LevelKey {
+				attribute.Value = slog.StringValue(formatLevel(attribute.Value.String(), options.NoColor))
 			}
 			return attribute
 		},
@@ -55,5 +63,25 @@ func parseLevel(level string) (slog.Level, error) {
 		return slog.LevelError, nil
 	default:
 		return slog.LevelInfo, fmt.Errorf("unsupported log level: %s", level)
+	}
+}
+
+func formatLevel(level string, noColor bool) string {
+	normalized := strings.ToUpper(strings.TrimSpace(level))
+	if noColor {
+		return normalized
+	}
+
+	switch normalized {
+	case "DEBUG":
+		return "\x1b[36mDEBUG\x1b[0m"
+	case "INFO":
+		return "\x1b[32mINFO\x1b[0m"
+	case "WARN":
+		return "\x1b[33mWARN\x1b[0m"
+	case "ERROR":
+		return "\x1b[31mERROR\x1b[0m"
+	default:
+		return normalized
 	}
 }

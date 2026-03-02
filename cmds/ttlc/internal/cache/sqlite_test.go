@@ -2,6 +2,7 @@ package cache
 
 import (
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,9 +23,14 @@ func TestOpenCreatesSchemaAndPersistsTask(t *testing.T) {
 	})
 
 	if err := store.UpsertTask(TaskRecord{
-		TaskKey:          "task-key-1",
-		InputFingerprint: "input-hash",
-		Deps:             []string{"dep-a", "dep-b"},
+		TaskKey:                 "task-key-1",
+		Module:                  "build",
+		TaskID:                  "Build",
+		InputContentHash:        "input-content-hash",
+		ParameterHash:           "parameter-hash",
+		EnvironmentSnapshotHash: "environment-hash",
+		InputFingerprint:        "input-hash",
+		Deps:                    []string{"dep-a", "dep-b"},
 		Metadata: map[string]any{
 			"module": "build",
 		},
@@ -58,6 +64,20 @@ func TestOpenCreatesSchemaAndPersistsTask(t *testing.T) {
 			t.Fatalf("expected table %s to exist", tableName)
 		}
 	}
+
+	state, found, err := store.GetTaskState("build", "Build")
+	if err != nil {
+		t.Fatalf("get task state: %v", err)
+	}
+	if !found {
+		t.Fatal("expected task state to be found")
+	}
+	if state.TaskKey != "task-key-1" {
+		t.Fatalf("unexpected task key: %s", state.TaskKey)
+	}
+	if state.InputContentHash != "input-content-hash" {
+		t.Fatalf("unexpected input content hash: %s", state.InputContentHash)
+	}
 }
 
 func TestOpenAppliesPermissionsOnPosix(t *testing.T) {
@@ -88,5 +108,105 @@ func TestOpenAppliesPermissionsOnPosix(t *testing.T) {
 	}
 	if got := fileInfo.Mode().Perm(); got != 0o600 {
 		t.Fatalf("unexpected cache db mode: got=%o want=%o", got, 0o600)
+	}
+}
+
+func TestOpenResetsCacheOnSchemaVersionMismatch(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "cache", "cache.sqlite3")
+	store, err := Open(databasePath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+
+	if err := store.UpsertTask(TaskRecord{
+		TaskKey:                 "task-key-1",
+		Module:                  "build",
+		TaskID:                  "Build",
+		InputContentHash:        "input-content-hash",
+		ParameterHash:           "parameter-hash",
+		EnvironmentSnapshotHash: "environment-hash",
+		InputFingerprint:        "input-hash",
+		Deps:                    []string{"dep-a"},
+		Metadata:                map[string]any{"module": "build"},
+		UpdatedAt:               time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert task: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	db, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatalf("open sqlite directly: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE schema_meta SET version = 1`); err != nil {
+		t.Fatalf("set old schema version: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite db: %v", err)
+	}
+
+	reopenedStore, err := Open(databasePath)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	defer reopenedStore.Close()
+
+	hasTask, err := reopenedStore.HasTask("task-key-1")
+	if err != nil {
+		t.Fatalf("check task presence after reopen: %v", err)
+	}
+	if hasTask {
+		t.Fatal("expected stale task row to be removed after schema reset")
+	}
+
+	versionRow := reopenedStore.db.QueryRow(`SELECT version FROM schema_meta LIMIT 1`)
+	var version int
+	if err := versionRow.Scan(&version); err != nil {
+		t.Fatalf("read schema version: %v", err)
+	}
+	if version != schemaVersion {
+		t.Fatalf("unexpected schema version: got=%d want=%d", version, schemaVersion)
+	}
+}
+
+func TestGetTaskStateDetectsCorruption(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "cache", "cache.sqlite3")
+	store, err := Open(databasePath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.UpsertTask(TaskRecord{
+		TaskKey:                 "task-key-1",
+		Module:                  "build",
+		TaskID:                  "Build",
+		InputContentHash:        "input-content-hash",
+		ParameterHash:           "parameter-hash",
+		EnvironmentSnapshotHash: "environment-hash",
+		InputFingerprint:        "input-hash",
+		Deps:                    []string{"dep-a"},
+		Metadata:                map[string]any{"module": "build"},
+		UpdatedAt:               time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert task: %v", err)
+	}
+
+	if _, err := store.db.Exec(`UPDATE task_cache SET metadata = '{' WHERE module = 'build' AND task_id = 'Build'`); err != nil {
+		t.Fatalf("corrupt metadata json: %v", err)
+	}
+
+	_, found, err := store.GetTaskState("build", "Build")
+	if !found {
+		t.Fatal("expected corrupted state row to exist")
+	}
+	if err == nil {
+		t.Fatal("expected corruption error")
+	}
+	var corruptionErr *CorruptionError
+	if !errors.As(err, &corruptionErr) {
+		t.Fatalf("expected CorruptionError, got=%T err=%v", err, err)
 	}
 }

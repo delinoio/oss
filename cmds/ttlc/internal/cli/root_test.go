@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
 )
 
 func TestExecuteRequiresCommand(t *testing.T) {
@@ -48,16 +50,88 @@ func TestCheckUsesDefaultEntry(t *testing.T) {
 			t.Fatalf("expected exit code 0, got=%d stderr=%s", code, stderr.String())
 		}
 
-		var payload map[string]any
-		if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
-			t.Fatalf("json unmarshal: %v", err)
+		envelope := decodeEnvelope(t, stdout.Bytes())
+		if envelope.SchemaVersion != contracts.TtlSchemaVersionV1Alpha1 {
+			t.Fatalf("unexpected schema version: %s", envelope.SchemaVersion)
 		}
-		entry, ok := payload["entry"].(string)
+		if envelope.Command != contracts.TtlCommandCheck {
+			t.Fatalf("unexpected command: %s", envelope.Command)
+		}
+		if envelope.Status != contracts.TtlResponseStatusOK {
+			t.Fatalf("unexpected status: %s diagnostics=%+v", envelope.Status, envelope.Diagnostics)
+		}
+
+		data, ok := envelope.Data.(map[string]any)
 		if !ok {
-			t.Fatalf("missing entry field in output: %v", payload)
+			t.Fatalf("expected object data payload, got=%T", envelope.Data)
+		}
+		entry, ok := data["entry"].(string)
+		if !ok {
+			t.Fatalf("missing entry field in output data: %v", data)
 		}
 		if !strings.HasSuffix(entry, filepath.FromSlash("main.ttl")) {
 			t.Fatalf("unexpected entry path: %s", entry)
+		}
+	})
+}
+
+func TestCheckReportsFailedEnvelopeWhenDiagnosticsExist(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+import "example.com/x"
+
+task func Build() Vc[Artifact] {
+    return vc(Artifact{})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		stdout := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+
+		code := execute([]string{"check"}, stdout, stderr)
+		if code != 1 {
+			t.Fatalf("expected exit code 1, got=%d stderr=%s", code, stderr.String())
+		}
+
+		envelope := decodeEnvelope(t, stdout.Bytes())
+		if envelope.Status != contracts.TtlResponseStatusFailed {
+			t.Fatalf("expected failed status, got=%s", envelope.Status)
+		}
+		if len(envelope.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+	})
+}
+
+func TestCheckColorFlag(t *testing.T) {
+	workspace := t.TempDir()
+	writeTTLFile(t, filepath.Join(workspace, "main.ttl"))
+
+	withWorkingDirectory(t, workspace, func() {
+		colorStdout := &bytes.Buffer{}
+		colorStderr := &bytes.Buffer{}
+		colorCode := execute([]string{"check"}, colorStdout, colorStderr)
+		if colorCode != 0 {
+			t.Fatalf("expected color run to succeed, got=%d stderr=%s", colorCode, colorStderr.String())
+		}
+		if !strings.Contains(colorStderr.String(), "\\x1b[") {
+			t.Fatalf("expected ANSI color sequences in logs, got=%q", colorStderr.String())
+		}
+
+		noColorStdout := &bytes.Buffer{}
+		noColorStderr := &bytes.Buffer{}
+		noColorCode := execute([]string{"check", "--no-color"}, noColorStdout, noColorStderr)
+		if noColorCode != 0 {
+			t.Fatalf("expected no-color run to succeed, got=%d stderr=%s", noColorCode, noColorStderr.String())
+		}
+		if strings.Contains(noColorStderr.String(), "\x1b[") {
+			t.Fatalf("did not expect ANSI color sequences when --no-color is set, got=%q", noColorStderr.String())
 		}
 	})
 }
@@ -76,17 +150,29 @@ func TestBuildUsesConfiguredFlags(t *testing.T) {
 			t.Fatalf("expected exit code 0, got=%d stderr=%s", code, stderr.String())
 		}
 
-		var payload map[string]any
-		if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
-			t.Fatalf("json unmarshal: %v", err)
+		envelope := decodeEnvelope(t, stdout.Bytes())
+		if envelope.Command != contracts.TtlCommandBuild {
+			t.Fatalf("unexpected command: %s", envelope.Command)
 		}
-		generatedFiles, ok := payload["generated_files"].([]any)
+		if envelope.Status != contracts.TtlResponseStatusOK {
+			t.Fatalf("unexpected status: %s diagnostics=%+v", envelope.Status, envelope.Diagnostics)
+		}
+		data, ok := envelope.Data.(map[string]any)
+		if !ok {
+			t.Fatalf("expected object data payload, got=%T", envelope.Data)
+		}
+		generatedFiles, ok := data["generated_files"].([]any)
 		if !ok || len(generatedFiles) != 1 {
-			t.Fatalf("unexpected generated_files payload: %#v", payload["generated_files"])
+			t.Fatalf("unexpected generated_files payload: %#v", data["generated_files"])
 		}
 		generatedFile, _ := generatedFiles[0].(string)
 		if !strings.HasSuffix(generatedFile, filepath.FromSlash("out/build_ttl_gen.go")) {
 			t.Fatalf("unexpected generated file path: %s", generatedFile)
+		}
+
+		cacheAnalysis, ok := data["cache_analysis"].([]any)
+		if !ok || len(cacheAnalysis) == 0 {
+			t.Fatalf("expected cache_analysis entries, got=%#v", data["cache_analysis"])
 		}
 	})
 }
@@ -104,15 +190,52 @@ func TestExplainSupportsTaskFilter(t *testing.T) {
 			t.Fatalf("expected exit code 0, got=%d stderr=%s", code, stderr.String())
 		}
 
-		var payload map[string]any
-		if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
-			t.Fatalf("json unmarshal: %v", err)
+		envelope := decodeEnvelope(t, stdout.Bytes())
+		if envelope.Command != contracts.TtlCommandExplain {
+			t.Fatalf("unexpected command: %s", envelope.Command)
 		}
-		tasks, ok := payload["tasks"].([]any)
+		if envelope.Status != contracts.TtlResponseStatusOK {
+			t.Fatalf("unexpected status: %s diagnostics=%+v", envelope.Status, envelope.Diagnostics)
+		}
+
+		data, ok := envelope.Data.(map[string]any)
+		if !ok {
+			t.Fatalf("expected object data payload, got=%T", envelope.Data)
+		}
+		tasks, ok := data["tasks"].([]any)
 		if !ok || len(tasks) != 1 {
-			t.Fatalf("unexpected tasks payload: %#v", payload["tasks"])
+			t.Fatalf("unexpected tasks payload: %#v", data["tasks"])
+		}
+
+		cacheAnalysis, ok := data["cache_analysis"].([]any)
+		if !ok || len(cacheAnalysis) != 1 {
+			t.Fatalf("unexpected cache_analysis payload: %#v", data["cache_analysis"])
+		}
+		analysisRow, ok := cacheAnalysis[0].(map[string]any)
+		if !ok {
+			t.Fatalf("expected object cache analysis row, got=%T", cacheAnalysis[0])
+		}
+		if analysisRow["invalidation_reason"] != string(contracts.TtlInvalidationReasonCacheMiss) {
+			t.Fatalf("unexpected invalidation reason: %#v", analysisRow["invalidation_reason"])
 		}
 	})
+}
+
+type envelopePayload struct {
+	SchemaVersion contracts.TtlSchemaVersion  `json:"schema_version"`
+	Command       contracts.TtlCommand        `json:"command"`
+	Status        contracts.TtlResponseStatus `json:"status"`
+	Diagnostics   []map[string]any            `json:"diagnostics"`
+	Data          any                         `json:"data"`
+}
+
+func decodeEnvelope(t *testing.T, payload []byte) envelopePayload {
+	t.Helper()
+	envelope := envelopePayload{}
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		t.Fatalf("json unmarshal: %v", err)
+	}
+	return envelope
 }
 
 func writeTTLFile(t *testing.T, path string) {
