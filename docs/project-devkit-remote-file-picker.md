@@ -174,5 +174,6 @@ Current commands:
 
 ## References
 - `docs/project-template.md`
-- `docs/monorepo.md`
+- `AGENTS.md`
+- `apps/AGENTS.md`
 - `docs/project-devkit.md`

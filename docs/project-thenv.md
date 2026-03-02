@@ -271,5 +271,8 @@ Acceptance-focused scenarios:
 
 ## References
 - `docs/project-template.md`
-- `docs/monorepo.md`
+- `AGENTS.md`
+- `apps/AGENTS.md`
+- `cmds/AGENTS.md`
+- `servers/AGENTS.md`
 - `docs/project-devkit.md`

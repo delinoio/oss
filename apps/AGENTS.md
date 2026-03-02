@@ -1,7 +1,8 @@
 ### Instructions for `apps/`
 
-- Follow `docs/monorepo.md` and project-specific docs before adding or changing app code.
+- Follow root `AGENTS.md` and project-specific docs before adding or changing app code.
 - Keep app-specific contracts synchronized in `docs/project-*.md` in the same change.
+- Keep repository and domain rules in the appropriate `AGENTS.md` files.
 - Write all source and comments in English.
 - Follow Toss Design Guidelines for frontend UX/UI decisions across web and mobile apps.
 
@@ -9,6 +10,18 @@
 
 - `apps/devkit`: Next.js 16 micro-app platform.
 - `apps/mpapp`: Expo React Native mobile app.
+
+### Devkit Identifier Contract
+
+Treat Devkit mini app IDs as stable enum-style values:
+
+```ts
+enum DevkitMiniAppId {
+  CommitTracker = "commit-tracker",
+  RemoteFilePicker = "remote-file-picker",
+  Thenv = "thenv",
+}
+```
 
 ### Devkit Rules
 

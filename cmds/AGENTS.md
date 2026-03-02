@@ -1,6 +1,7 @@
 ### Instructions for `cmds/`
 
-- Follow `docs/monorepo.md` and command-specific docs in `docs/project-*.md`.
+- Follow root `AGENTS.md` and command-specific docs in `docs/project-*.md`.
+- Keep repository and domain rules in the appropriate `AGENTS.md` files.
 - Write all source and comments in English.
 - Prefer enums or typed constants over free-form string values.
 
@@ -9,6 +10,12 @@
 - `cmds/derun`: Go tool for AI coding-agent workflow orchestration.
 - `cmds/devmon`: Go daemon CLI for recurring folder command automation.
 - `cmds/thenv`: Secure `.env` sharing CLI.
+- `cmds/commit-tracker`: Commit Tracker collector component.
+
+### Command Component Contract
+
+- `cmds/commit-tracker` is the `Collector` component for `devkit-commit-tracker`.
+- `cmds/thenv` is the `Cli` component for `thenv`.
 
 ### Go Command Rules
 
@@ -28,3 +35,4 @@
 - Update `docs/project-devmon.md` whenever devmon command shape or config contracts change.
 - Update `docs/project-derun.md` whenever command shape or config contracts change.
 - Update `docs/project-thenv.md` whenever thenv CLI operations or trust boundaries change.
+- Update `docs/project-devkit-commit-tracker.md` whenever commit-tracker collector contracts change.

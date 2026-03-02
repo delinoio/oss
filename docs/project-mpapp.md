@@ -387,7 +387,8 @@ MVP acceptance criteria scenarios:
 
 ## References
 - `docs/project-template.md`
-- `docs/monorepo.md`
+- `AGENTS.md`
+- `apps/AGENTS.md`
 - [Expo SDK modules](https://docs.expo.dev/versions/latest/)
 - [Expo custom native code workflow](https://docs.expo.dev/workflow/customizing/)
 - [Android BluetoothHidDevice API](https://developer.android.com/reference/android/bluetooth/BluetoothHidDevice)

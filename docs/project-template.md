@@ -65,5 +65,5 @@ Track unresolved items that require explicit product or engineering decisions.
 - All required sections are present.
 - Paths in the doc exist or are explicitly marked as planned.
 - Interfaces use stable enum-style identifiers where possible.
-- Integration points reference canonical monorepo rules in `docs/monorepo.md`.
+- Integration points reference canonical repository and domain rules in `AGENTS.md` and the relevant domain `AGENTS.md`.
 - The document is updated with every structural project change.

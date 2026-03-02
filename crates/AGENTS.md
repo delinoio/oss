@@ -1,6 +1,7 @@
 ### Instructions for `crates/`
 
-- Follow `docs/monorepo.md` and each crate-specific project document.
+- Follow root `AGENTS.md` and each crate-specific project document.
+- Keep repository and domain rules in the appropriate `AGENTS.md` files.
 - Write all source and comments in English.
 - Prefer enums over free-form strings for stable internal and external contracts.
 
