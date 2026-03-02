@@ -174,6 +174,71 @@ func TestHandleWaitOutputMissingSessionReturnsError(t *testing.T) {
 	}
 }
 
+func TestHandleListSessionsRejectsFractionalLimit(t *testing.T) {
+	root := testutil.TempStateRoot(t)
+	store, err := state.New(root)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+
+	payload, err := handleListSessions(store, map[string]any{"limit": 0.5})
+	if err == nil {
+		t.Fatalf("expected parse error for fractional limit")
+	}
+	if !strings.Contains(err.Error(), "parse limit") {
+		t.Fatalf("expected parse limit error, got: %v", err)
+	}
+	if payload != nil {
+		t.Fatalf("expected nil payload on error")
+	}
+}
+
+func TestHandleReadOutputRejectsFractionalMaxBytes(t *testing.T) {
+	root := testutil.TempStateRoot(t)
+	store, err := state.New(root)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+
+	payload, err := handleReadOutput(store, map[string]any{
+		"session_id": "01J0S777777777777777777777",
+		"cursor":     "0",
+		"max_bytes":  0.5,
+	})
+	if err == nil {
+		t.Fatalf("expected parse error for fractional max_bytes")
+	}
+	if !strings.Contains(err.Error(), "parse max_bytes") {
+		t.Fatalf("expected parse max_bytes error, got: %v", err)
+	}
+	if payload != nil {
+		t.Fatalf("expected nil payload on error")
+	}
+}
+
+func TestHandleWaitOutputRejectsFractionalTimeout(t *testing.T) {
+	root := testutil.TempStateRoot(t)
+	store, err := state.New(root)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+
+	payload, err := handleWaitOutput(store, map[string]any{
+		"session_id": "01J0S888888888888888888888",
+		"cursor":     "0",
+		"timeout_ms": 0.5,
+	})
+	if err == nil {
+		t.Fatalf("expected parse error for fractional timeout_ms")
+	}
+	if !strings.Contains(err.Error(), "parse timeout_ms") {
+		t.Fatalf("expected parse timeout_ms error, got: %v", err)
+	}
+	if payload != nil {
+		t.Fatalf("expected nil payload on error")
+	}
+}
+
 func intPtr(v int) *int {
 	return &v
 }

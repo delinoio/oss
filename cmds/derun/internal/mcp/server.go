@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -245,16 +246,35 @@ func anyToInt(value any) (int, error) {
 	case int32:
 		return int(typed), nil
 	case int64:
-		return int(typed), nil
+		return int64ToInt(typed)
 	case float64:
-		return int(typed), nil
+		if math.IsNaN(typed) || math.IsInf(typed, 0) {
+			return 0, fmt.Errorf("invalid number %v", typed)
+		}
+		if typed != math.Trunc(typed) {
+			return 0, fmt.Errorf("number must be an integer")
+		}
+		parsed, err := strconv.ParseInt(strconv.FormatFloat(typed, 'f', -1, 64), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("number out of int64 range")
+		}
+		return int64ToInt(parsed)
 	case json.Number:
 		parsed, err := typed.Int64()
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("invalid integer %q: %w", typed.String(), err)
 		}
-		return int(parsed), nil
+		return int64ToInt(parsed)
 	default:
 		return 0, fmt.Errorf("unsupported number type %T", value)
 	}
+}
+
+func int64ToInt(value int64) (int, error) {
+	maxInt := int64(^uint(0) >> 1)
+	minInt := -maxInt - 1
+	if value < minInt || value > maxInt {
+		return 0, fmt.Errorf("number out of int range")
+	}
+	return int(value), nil
 }

@@ -143,6 +143,40 @@ func TestServerContractLiveTailThroughWaitOutput(t *testing.T) {
 	}
 }
 
+func TestServerContractRejectsFractionalTimeoutArgument(t *testing.T) {
+	root := testutil.TempStateRoot(t)
+	store, err := state.New(root)
+	if err != nil {
+		t.Fatalf("state.New returned error: %v", err)
+	}
+	logger, err := logging.New(root)
+	if err != nil {
+		t.Fatalf("logging.New returned error: %v", err)
+	}
+	defer logger.Close()
+
+	server := NewServer(store, logger, 0, 24*time.Hour)
+	client := newFramedRPCClient(t, server)
+
+	response := client.call(t, "tools/call", toolCallParams{
+		Name: contracts.DerunMCPToolWaitOutput,
+		Arguments: map[string]any{
+			"session_id": "01J1E333333333333333333333",
+			"cursor":     "0",
+			"timeout_ms": 0.5,
+		},
+	})
+	if response.Error == nil {
+		t.Fatalf("expected tools/call to return rpc error")
+	}
+	if response.Error.Code != -32000 {
+		t.Fatalf("unexpected rpc error code: got=%d want=-32000", response.Error.Code)
+	}
+	if !strings.Contains(response.Error.Message, "parse timeout_ms") {
+		t.Fatalf("expected parse timeout_ms error, got=%q", response.Error.Message)
+	}
+}
+
 type framedRPCClient struct {
 	reader *bufio.Reader
 	writer *io.PipeWriter

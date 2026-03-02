@@ -132,6 +132,7 @@ MCP I/O contracts:
 : Returns raw output chunks, `next_cursor`, and `eof` flag.
 - `derun_wait_output(session_id, cursor, timeout_ms)`
 : Long-polls for live output and returns chunk delta with new cursor.
+- Integer-schema MCP numeric arguments (`limit`, `max_bytes`, `timeout_ms`) must be whole integers; fractional numeric values are rejected with validation errors and are never truncated/coerced.
 - `derun_wait_output` must wait until new output bytes arrive or timeout when the session is still active and the cursor is at the current output tail.
 - `derun_read_output` and `derun_wait_output` must both return a deterministic `session not found` tool error for unknown `session_id` values.
 
