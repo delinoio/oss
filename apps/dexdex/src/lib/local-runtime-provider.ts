@@ -33,6 +33,19 @@ function normalizeEndpointUrl(endpointUrl: string): string {
   return parsedUrl.toString();
 }
 
+export function redactEndpointUrlForLogs(endpointUrl: string): string {
+  try {
+    const parsedUrl = new URL(endpointUrl);
+    parsedUrl.username = "";
+    parsedUrl.password = "";
+    parsedUrl.search = "";
+    parsedUrl.hash = "";
+    return parsedUrl.toString();
+  } catch {
+    return "[invalid-endpoint-url]";
+  }
+}
+
 function isTauriRuntimeAvailable(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -56,7 +69,7 @@ export function createStubLocalRuntimeProvider(options?: {
 
       logger.info("local_runtime.resolve.stub", {
         endpoint_source: WorkspaceEndpointSource.ManagedLoopback,
-        endpoint_url: endpointUrl,
+        endpoint_url: redactEndpointUrlForLogs(endpointUrl),
       });
 
       return {
@@ -105,7 +118,7 @@ export function createTauriLocalRuntimeProvider(options?: {
 
         logger.info("local_runtime.resolve.success", {
           endpoint_source: WorkspaceEndpointSource.ManagedLoopback,
-          endpoint_url: endpointUrl,
+          endpoint_url: redactEndpointUrlForLogs(endpointUrl),
           result: "success",
         });
 
