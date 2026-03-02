@@ -482,7 +482,7 @@ fn bump_updates_manifests_and_creates_commit_and_tag() {
             "source": "selected"
         }])
     );
-    assert_eq!(result["commit"].as_str().is_some(), true);
+    assert!(result["commit"].as_str().is_some());
     assert!(contains_json_string(&result["tags"], "alpha-v0.1.1"));
 
     let alpha_manifest = temp_dir.path().join("crates/alpha/Cargo.toml");
@@ -657,6 +657,8 @@ fn init_library_workspace() -> tempfile::TempDir {
     .expect("failed to write crate source");
 
     run_git(root, &["init", "-q"]);
+    run_git(root, &["config", "user.name", "test"]);
+    run_git(root, &["config", "user.email", "test@example.com"]);
     run_git(root, &["add", "."]);
     run_git(
         root,
@@ -750,6 +752,8 @@ alpha = { path = "../alpha", version = "0.1.0" }
     .expect("failed to write gamma source");
 
     run_git(root, &["init", "-q"]);
+    run_git(root, &["config", "user.name", "test"]);
+    run_git(root, &["config", "user.email", "test@example.com"]);
     run_git(root, &["add", "."]);
     run_git(
         root,
