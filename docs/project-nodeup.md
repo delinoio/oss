@@ -24,6 +24,7 @@ The primary goal is deterministic multi-version Node.js execution with automatic
 - Dispatch behavior based on executable name (`argv[0]`) for runtime shims.
 - Automatic Node.js binary download and activation when a requested runtime is missing.
 - Human and JSON output modes (`--output human|json`) for machine-parseable command output.
+- Participation in workspace-wide release automation via `cargo-mono publish` when nodeup versions are publishable.
 
 ## Out of Scope
 - JavaScript package manager features (`npm`, `pnpm`, `yarn`) beyond runtime delegation
@@ -311,6 +312,11 @@ Planned commands:
 - Lint: `cargo clippy -p nodeup --all-targets -- -D warnings`
 - Test: `cargo test -p nodeup`
 - Workspace validation: `cargo test`
+
+Release automation integration:
+- `.github/workflows/auto-publish.yml` runs workspace publish orchestration through `cargo run -p cargo-mono -- publish`.
+- The workflow triggers on `push` to `main` and `workflow_dispatch`, with a `main`-branch runtime guard.
+- Nodeup is included automatically when selected by `cargo-mono publish` as a publishable crate version.
 
 ## Roadmap
 - Phase 1: Rustup-style command skeleton (`toolchain`, `default`, `show`, `override`, `run`, `which`).
