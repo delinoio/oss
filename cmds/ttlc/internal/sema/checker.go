@@ -14,6 +14,16 @@ type TaskParam struct {
 	Type string `json:"type"`
 }
 
+type TypeField struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+type TypeDecl struct {
+	Name   string      `json:"name"`
+	Fields []TypeField `json:"fields"`
+}
+
 type Task struct {
 	ID         string      `json:"id"`
 	Params     []TaskParam `json:"params"`
@@ -23,6 +33,7 @@ type Task struct {
 
 type Result struct {
 	Tasks        []Task
+	Types        []TypeDecl
 	Diagnostics  []diagnostic.Diagnostic
 	ModuleName   string
 	HasTaskFuncs bool
@@ -40,21 +51,60 @@ func Check(module *ast.Module) Result {
 		})
 	}
 
+	for _, declaration := range module.Decls {
+		typeDeclaration, ok := declaration.(*ast.TypeDecl)
+		if !ok {
+			continue
+		}
+		fields := make([]TypeField, 0, len(typeDeclaration.Fields))
+		for _, field := range typeDeclaration.Fields {
+			fields = append(fields, TypeField{
+				Name: field.Name,
+				Type: typeExprString(field.Type),
+			})
+		}
+		result.Types = append(result.Types, TypeDecl{
+			Name:   typeDeclaration.Name,
+			Fields: fields,
+		})
+	}
+
 	taskNames := make(map[string]struct{})
+	duplicateTaskNames := make(map[string]struct{})
 	for _, declaration := range module.Decls {
 		taskDeclaration, ok := declaration.(*ast.TaskDecl)
 		if !ok {
 			continue
 		}
 		result.HasTaskFuncs = true
+		if _, exists := taskNames[taskDeclaration.Name]; exists {
+			duplicateTaskNames[taskDeclaration.Name] = struct{}{}
+			result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
+				Kind:    contracts.DiagnosticKindTypeError,
+				Message: fmt.Sprintf("duplicate task declaration: %s", taskDeclaration.Name),
+				Line:    taskDeclaration.Span.Start.Line,
+				Column:  taskDeclaration.Span.Start.Column,
+			})
+			continue
+		}
 		taskNames[taskDeclaration.Name] = struct{}{}
 	}
 
+	emittedTaskNames := make(map[string]struct{})
 	for _, declaration := range module.Decls {
 		taskDeclaration, ok := declaration.(*ast.TaskDecl)
 		if !ok {
 			continue
 		}
+		if _, isDuplicate := duplicateTaskNames[taskDeclaration.Name]; isDuplicate {
+			if _, alreadyEmitted := emittedTaskNames[taskDeclaration.Name]; alreadyEmitted {
+				continue
+			}
+		}
+		if _, alreadyEmitted := emittedTaskNames[taskDeclaration.Name]; alreadyEmitted {
+			continue
+		}
+		emittedTaskNames[taskDeclaration.Name] = struct{}{}
 
 		if !isVcReturnType(taskDeclaration.ReturnType) {
 			result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
@@ -109,6 +159,9 @@ func Check(module *ast.Module) Result {
 
 	sort.Slice(result.Tasks, func(left int, right int) bool {
 		return result.Tasks[left].ID < result.Tasks[right].ID
+	})
+	sort.Slice(result.Types, func(left int, right int) bool {
+		return result.Types[left].Name < result.Types[right].Name
 	})
 
 	return result

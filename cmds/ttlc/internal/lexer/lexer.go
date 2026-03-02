@@ -224,15 +224,27 @@ func (l *Lexer) skipWhitespaceAndComments() {
 				continue
 			}
 			if next == '*' {
+				commentStart := l.position()
 				l.advance(2)
+				terminated := false
 				for l.offset < len(l.source) {
 					current := l.peekRune()
 					if current == '*' && l.peekNthRune(1) == '/' {
 						l.advance(2)
+						terminated = true
 						break
 					}
 					_, lineSize := utf8.DecodeRuneInString(l.source[l.offset:])
 					l.advance(lineSize)
+				}
+				if !terminated {
+					l.diagnostics = append(l.diagnostics, diagnostic.Diagnostic{
+						Kind:    contracts.DiagnosticKindSyntaxError,
+						Message: "unterminated block comment",
+						Line:    commentStart.Line,
+						Column:  commentStart.Column,
+					})
+					return
 				}
 				continue
 			}

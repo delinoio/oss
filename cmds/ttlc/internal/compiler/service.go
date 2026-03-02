@@ -67,6 +67,7 @@ type taskFingerprint struct {
 type analysis struct {
 	paths            source.Paths
 	moduleName       string
+	typeDeclarations []sema.TypeDecl
 	diagnostics      []diagnostic.Diagnostic
 	taskFingerprints []taskFingerprint
 	sourceBytes      []byte
@@ -113,7 +114,12 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 
 	emitStart := time.Now()
 	s.logStageStart(contracts.CompileStageEmit)
-	emitResult, err := emitter.EmitGo(analysisResult.moduleName, toSemaTasks(analysisResult.taskFingerprints), analysisResult.paths.OutDir)
+	emitResult, err := emitter.EmitGo(
+		analysisResult.moduleName,
+		analysisResult.typeDeclarations,
+		toSemaTasks(analysisResult.taskFingerprints),
+		analysisResult.paths.OutDir,
+	)
 	if err != nil {
 		s.logStageFailure(contracts.CompileStageEmit, time.Since(emitStart), contracts.DiagnosticKindIOError, err)
 		return Result{}, fmt.Errorf("emit go source: %w", err)
@@ -277,6 +283,7 @@ func (s *Service) analyze(_ context.Context, entry string, outDir string, taskFi
 	result = analysis{
 		paths:            paths,
 		moduleName:       module.PackageName,
+		typeDeclarations: append([]sema.TypeDecl{}, semaResult.Types...),
 		diagnostics:      mergeDiagnostics(lexDiagnostics, parseDiagnostics, semaResult.Diagnostics),
 		taskFingerprints: fingerprintedTasks,
 		sourceBytes:      sourceBytes,

@@ -67,6 +67,13 @@ task func Build(target string) Vc[Artifact] {
 		if _, err := os.Stat(result.GeneratedFiles[0]); err != nil {
 			t.Fatalf("generated file missing: %v", err)
 		}
+		generatedPayload, err := os.ReadFile(result.GeneratedFiles[0])
+		if err != nil {
+			t.Fatalf("read generated file: %v", err)
+		}
+		if !strings.Contains(string(generatedPayload), "type Artifact struct") {
+			t.Fatalf("expected emitted type declaration, got=%s", string(generatedPayload))
+		}
 		if _, err := os.Stat(result.CacheDBPath); err != nil {
 			t.Fatalf("cache db missing: %v", err)
 		}

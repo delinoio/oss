@@ -37,3 +37,21 @@ func TestLexReportsUnsupportedToken(t *testing.T) {
 		t.Fatalf("expected line 2 diagnostic, got=%d", diagnostics[0].Line)
 	}
 }
+
+func TestLexReportsUnterminatedBlockComment(t *testing.T) {
+	_, diagnostics := Lex("package x\n/* unclosed")
+	if len(diagnostics) == 0 {
+		t.Fatal("expected diagnostics for unterminated block comment")
+	}
+
+	found := false
+	for _, issue := range diagnostics {
+		if issue.Message == "unterminated block comment" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected unterminated block comment diagnostic, got=%+v", diagnostics)
+	}
+}

@@ -134,6 +134,57 @@ task func ResolveB() Vc[Artifact] {
 	}
 }
 
+func TestCheckCollectsTypeDeclarations(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Path string
+    Digest string
+}
+
+task func Build() Vc[Artifact] {
+    return vc(Artifact{})
+}
+`)
+	result := Check(module)
+	if len(result.Types) != 1 {
+		t.Fatalf("expected one type declaration, got=%d", len(result.Types))
+	}
+	if result.Types[0].Name != "Artifact" {
+		t.Fatalf("unexpected type name: %s", result.Types[0].Name)
+	}
+	if len(result.Types[0].Fields) != 2 {
+		t.Fatalf("unexpected field count: %d", len(result.Types[0].Fields))
+	}
+}
+
+func TestCheckRejectsDuplicateTaskDeclarations(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+task func Build() Vc[Artifact] {
+    return vc(Artifact{})
+}
+
+task func Build() Vc[Artifact] {
+    return vc(Artifact{})
+}
+`)
+	result := Check(module)
+	foundDuplicateDiagnostic := false
+	for _, issue := range result.Diagnostics {
+		if issue.Message == "duplicate task declaration: Build" {
+			foundDuplicateDiagnostic = true
+			break
+		}
+	}
+	if !foundDuplicateDiagnostic {
+		t.Fatalf("expected duplicate task diagnostic, got=%+v", result.Diagnostics)
+	}
+	if len(result.Tasks) != 1 {
+		t.Fatalf("expected duplicate task to be emitted once, got=%d", len(result.Tasks))
+	}
+}
+
 func parseModuleForTest(t *testing.T, source string) *ast.Module {
 	t.Helper()
 	tokens, lexDiagnostics := lexer.Lex(source)
