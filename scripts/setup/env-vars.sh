@@ -13,4 +13,4 @@ if [ -n "${VERCEL_TOKEN:-}" ]; then
 fi
 
 vercel link --scope delino --yes $TOKEN_ARG -p $app_name > /dev/null || true
-vercel env pull .env --yes $TOKEN_ARG > /dev/null
+vercel env pull .env --yes $TOKEN_ARG > /dev/null || true
