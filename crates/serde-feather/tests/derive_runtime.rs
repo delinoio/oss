@@ -37,6 +37,13 @@ struct SeqModel {
     third: u8,
 }
 
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct SkippedLeadingFieldModel {
+    #[serde(skip_deserializing)]
+    skipped: u8,
+    required: u8,
+}
+
 #[test]
 fn round_trip_without_attributes() {
     let value = BasicModel {
@@ -117,6 +124,20 @@ fn deserializes_from_sequence_representation() {
             first: 7,
             second: 9,
             third: 0,
+        }
+    );
+}
+
+#[test]
+fn deserializes_map_with_skipped_leading_field() {
+    let decoded: SkippedLeadingFieldModel = serde_json::from_str(r#"{"required": 33}"#)
+        .expect("deserialize with skipped leading field");
+
+    assert_eq!(
+        decoded,
+        SkippedLeadingFieldModel {
+            skipped: 0,
+            required: 33,
         }
     );
 }

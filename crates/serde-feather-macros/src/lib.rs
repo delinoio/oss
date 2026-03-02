@@ -164,8 +164,8 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let field_bindings_in_map = field_bindings.clone();
     let field_bindings_in_seq = field_bindings;
 
-    let field_setter_match_arms = bindings.iter().map(|binding| {
-        let field_index = binding.field_index;
+    let field_setter_match_arms = bindings.iter().enumerate().map(|(binding_index, binding)| {
+        let field_index = binding_index;
         let binding_ident = &binding.binding_ident;
         let field_name = &binding.field_name;
         let field_ty = &binding.field_ty;
