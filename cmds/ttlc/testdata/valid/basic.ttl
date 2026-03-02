@@ -1,0 +1,16 @@
+package build
+
+type Artifact struct {
+    Path string
+    Digest string
+}
+
+task func Build(target string) Vc[Artifact] {
+    src := read(ResolveSource(target))
+    digest := hash(src.Path, src.Digest)
+    return vc(Artifact{Path: src.Path, Digest: digest})
+}
+
+task func ResolveSource(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target, Digest: "seed"})
+}

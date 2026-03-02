@@ -10,6 +10,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/ttlc/internal/compiler"
 	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
+	"github.com/delinoio/oss/cmds/ttlc/internal/logging"
 )
 
 const (
@@ -17,7 +18,7 @@ const (
 	defaultOutDir    = ".ttl/gen"
 )
 
-var newCompilerService = compiler.New
+var newCompilerService = compiler.NewWithLogger
 
 func Execute(args []string) int {
 	return execute(args, os.Stdout, os.Stderr)
@@ -53,18 +54,26 @@ func executeCheck(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 
-	service := newCompilerService()
+	logger, err := logging.NewWithWriter(stderr, "info")
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
+		return 1
+	}
+
+	service := newCompilerService(logger)
 	result, err := service.Check(context.Background(), compiler.CheckOptions{Entry: entry})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "check failed: %v\n", err)
 		return 1
 	}
 
-	_ = json.NewEncoder(stdout).Encode(map[string]any{
-		"entry":       result.Entry,
-		"module":      result.Module,
-		"diagnostics": result.Diagnostics,
-	})
+	if err := json.NewEncoder(stdout).Encode(result); err != nil {
+		_, _ = fmt.Fprintf(stderr, "encode output: %v\n", err)
+		return 1
+	}
+	if len(result.Diagnostics) > 0 {
+		return 1
+	}
 	return 0
 }
 
@@ -80,19 +89,26 @@ func executeBuild(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 
-	service := newCompilerService()
+	logger, err := logging.NewWithWriter(stderr, "info")
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
+		return 1
+	}
+
+	service := newCompilerService(logger)
 	result, err := service.Build(context.Background(), compiler.BuildOptions{Entry: entry, OutDir: outDir})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "build failed: %v\n", err)
 		return 1
 	}
 
-	_ = json.NewEncoder(stdout).Encode(map[string]any{
-		"entry":       result.Entry,
-		"module":      result.Module,
-		"outDir":      outDir,
-		"diagnostics": result.Diagnostics,
-	})
+	if err := json.NewEncoder(stdout).Encode(result); err != nil {
+		_, _ = fmt.Fprintf(stderr, "encode output: %v\n", err)
+		return 1
+	}
+	if len(result.Diagnostics) > 0 {
+		return 1
+	}
 	return 0
 }
 
@@ -108,18 +124,33 @@ func executeExplain(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 2
 	}
 
-	service := newCompilerService()
+	logger, err := logging.NewWithWriter(stderr, "info")
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
+		return 1
+	}
+
+	service := newCompilerService(logger)
 	result, err := service.Explain(context.Background(), compiler.ExplainOptions{Entry: entry, Task: task})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "explain failed: %v\n", err)
 		return 1
 	}
 
-	_ = json.NewEncoder(stdout).Encode(map[string]any{
-		"entry":       result.Entry,
-		"module":      result.Module,
-		"diagnostics": result.Diagnostics,
-	})
+	payload := map[string]any{
+		"entry":                  result.Entry,
+		"module":                 result.Module,
+		"tasks":                  result.Tasks,
+		"diagnostics":            result.Diagnostics,
+		"fingerprint_components": result.FingerprintComponents,
+	}
+	if err := json.NewEncoder(stdout).Encode(payload); err != nil {
+		_, _ = fmt.Fprintf(stderr, "encode output: %v\n", err)
+		return 1
+	}
+	if len(result.Diagnostics) > 0 {
+		return 1
+	}
 	return 0
 }
 

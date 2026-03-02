@@ -1,0 +1,15 @@
+package build
+
+type Artifact struct {
+    Path string
+}
+
+task func A() Vc[Artifact] {
+    b := read(B())
+    return vc(b)
+}
+
+task func B() Vc[Artifact] {
+    a := read(A())
+    return vc(a)
+}

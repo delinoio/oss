@@ -6,12 +6,12 @@ The design target is Go-like syntax plus ergonomic TurboTasks-style core types (
 
 ## Path
 - Language spec document: `docs/project-ttl-language.md`
-- Compiler implementation target: `cmds/ttlc` (planned in v1 documentation phase)
+- Compiler implementation target: `cmds/ttlc`
 
 ## Runtime and Language
 - Language surface: TTL (`.ttl`)
 - v1 compiler backend: generated Go source
-- v1 execution/caching backend: runtime APIs + SQLite cache
+- v1 execution/caching backend: metadata-only SQLite cache (runtime execution is deferred)
 
 ## Users
 - Engineers authoring build/task pipelines in `.ttl`
@@ -79,6 +79,7 @@ Core language contracts:
 - Base syntax intentionally tracks Go style (blocks, signatures, package/import model).
 - Every `task func` must return `Vc[T]`.
 - `read(vc)` establishes dependency tracking from current task to the referenced task/cell.
+- Phase 1 parser accepts `import` syntax, but semantic validation emits `unsupported_imports` diagnostics.
 
 v1 syntax examples:
 
@@ -124,10 +125,19 @@ Invalidation contract:
 3. Environment snapshot hash
 - Reuse occurs only when full fingerprint matches.
 - Any component mismatch triggers recomputation.
+- Phase 1 default: `environment_snapshot_hash = hash("")`.
 
 Parallel execution contract:
 - Scheduler may execute tasks concurrently when no unresolved dependency edge exists.
 - Execution order is deterministic with respect to dependency constraints, not submission order.
+- Phase 1 status: runtime scheduler is not yet active; only dependency graph diagnostics and metadata persistence are implemented.
+
+Explain output contract (Phase 1 default JSON):
+- `entry`
+- `module`
+- `tasks` (`id`, `params`, `return_type`, `deps`, `cache_key`)
+- `diagnostics`
+- `fingerprint_components` (`input_content_hash`, `parameter_hash`, `environment_snapshot_hash`)
 
 ## Storage
 Cache backend is fixed to SQLite in v1.
