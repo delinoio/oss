@@ -36,6 +36,8 @@
 - `docs/project-cargo-mono.md`: Cargo subcommand for Rust monorepo management.
 - `docs/project-nodeup.md`: Rust-based Node.js version manager.
 - `docs/project-derun.md`: Go CLI for terminal-fidelity run execution and MCP output bridge access for AI.
+- `docs/project-ttl.md`: TTL language/compiler project contracts for incremental task execution on Go runtime foundations.
+- `docs/project-ttl-language.md`: TTL language syntax, type, invalidation, and Go code-generation contracts.
 - `docs/project-mpapp.md`: Expo React Native mobile app.
 - `docs/project-devkit.md`: Next.js 16 web micro-app platform.
 - `docs/project-devkit-commit-tracker.md`: Commit Tracker contracts (Web UI + API server + collector).
@@ -54,6 +56,7 @@ enum ProjectId {
   CargoMono = "cargo-mono",
   Nodeup = "nodeup",
   Derun = "derun",
+  Ttl = "ttl",
   Devmon = "devmon",
   Mpapp = "mpapp",
   Devkit = "devkit",
@@ -69,6 +72,7 @@ enum ProjectId {
 - `nodeup` -> `crates/nodeup`
 - `cargo-mono` -> `crates/cargo-mono`
 - `derun` -> `cmds/derun`
+- `ttl` -> `cmds/ttlc`
 - `devmon` -> `cmds/devmon`
 - `mpapp` -> `apps/mpapp`
 - `devkit` -> `apps/devkit`
@@ -141,6 +145,7 @@ enum ThenvComponent {
 - Reserve a unique `project-id`.
 - Create project path skeleton and add `.gitkeep` if implementation is not started.
 - Add `docs/project-<project-id>.md` using `docs/project-template.md`.
+- Documentation-only phase may mark canonical paths as `planned` before creating path skeletons; create the skeleton in the same change where runtime implementation begins.
 - Update root and domain `AGENTS.md` files when project ownership or contracts change.
 - Ensure path and naming contracts are consistent across docs and AGENTS rules.
 
@@ -208,6 +213,7 @@ Release automation baseline:
 
 - Every structural repository change must update relevant `docs/project-*.md` files in the same change set.
 - New project creation is blocked until its project document exists.
+- Documentation-only project onboarding may use `planned` paths, but runtime implementation must not begin before canonical paths are created and documented.
 - Repository-wide and domain rules must be maintained in the appropriate `AGENTS.md`.
 - When user-facing documentation content changes, update relevant pages in `apps/public-docs` in the same change set as needed.
 - Run `git commit` only after `git add`; once files are staged, create the commit without unnecessary delay.
