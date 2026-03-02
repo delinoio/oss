@@ -1,0 +1,20 @@
+# Documentation Lifecycle
+
+This page defines how documentation changes should be coordinated between internal contracts and public docs.
+
+## Source Layers
+
+- `docs/`: Internal source of truth for project contracts and implementation details.
+- `apps/public-docs`: Public-facing documentation surface for curated guidance.
+
+## Update Rules
+
+1. Structural repository changes must update relevant `docs/project-*.md` files in the same change set.
+2. When user-facing behavior, project positioning, or onboarding guidance changes, update `apps/public-docs` pages in the same change set as needed.
+3. Repository policy changes must be reflected in the appropriate `AGENTS.md` files and any affected public docs pages.
+
+## Quality Gates
+
+- Run `pnpm --filter public-docs test` to verify broken links.
+- Keep `apps/public-docs/docs.json` navigation aligned with actual page IDs.
+- Use pull requests to review both internal and public documentation impacts together.

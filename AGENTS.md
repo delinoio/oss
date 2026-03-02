@@ -42,6 +42,7 @@
 - `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app.
 - `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
 - `docs/project-devmon.md`: Go automation daemon with macOS menu bar-managed lifecycle controls.
+- `docs/project-public-docs.md`: Mintlify-based public documentation app.
 - `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation (default actor set includes `chatgpt-codex-connector[bot]`).
 
 ### Project Identifier Contract
@@ -59,6 +60,7 @@ enum ProjectId {
   DevkitCommitTracker = "devkit-commit-tracker",
   DevkitRemoteFilePicker = "devkit-remote-file-picker",
   Thenv = "thenv",
+  PublicDocs = "public-docs",
 }
 ```
 
@@ -73,6 +75,7 @@ enum ProjectId {
 - `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`, `servers/commit-tracker`, `cmds/commit-tracker`
 - `devkit-remote-file-picker` -> `apps/devkit/src/apps/remote-file-picker`
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
+- `public-docs` -> `apps/public-docs`
 
 ### Devkit Mini-App Identifier Contract
 
@@ -185,6 +188,7 @@ Coverage expectations:
 - `node-devkit-build`: runs `pnpm install --frozen-lockfile` and `pnpm --filter devkit... build`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
+- `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 
 Change-scoped execution rules:
@@ -198,6 +202,7 @@ Change-scoped execution rules:
 - Every structural repository change must update relevant `docs/project-*.md` files in the same change set.
 - New project creation is blocked until its project document exists.
 - Repository-wide and domain rules must be maintained in the appropriate `AGENTS.md`.
+- When user-facing documentation content changes, update relevant pages in `apps/public-docs` in the same change set as needed.
 - Run `git commit` only after `git add`; once files are staged, create the commit without unnecessary delay.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - After addressing pull request review comments and pushing updates, resolve the corresponding review threads.
