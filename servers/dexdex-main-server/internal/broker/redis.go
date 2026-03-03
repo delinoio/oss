@@ -64,23 +64,15 @@ func (b *RedisBroker) Replay(ctx context.Context, workspaceID string, fromSequen
 }
 
 func (b *RedisBroker) Stream(ctx context.Context, workspaceID string, fromSequence uint64, limit int, send func(*v1.StreamWorkspaceEventsResponse) error) error {
-	replayed, _, err := b.Replay(ctx, workspaceID, fromSequence, limit)
-	if err != nil {
-		return err
-	}
-
-	latest := fromSequence
-	for _, event := range replayed {
-		if err := send(event); err != nil {
-			return err
-		}
-		latest = event.Sequence
-	}
-
 	streamKey := b.streamKey(workspaceID)
 	startID := "$"
+	latest := fromSequence
 
 	for {
+		if err := b.replayUntilCaughtUp(ctx, workspaceID, &latest, limit, send); err != nil {
+			return err
+		}
+
 		select {
 		case <-ctx.Done():
 			return nil
@@ -124,4 +116,30 @@ func (b *RedisBroker) Stream(ctx context.Context, workspaceID string, fromSequen
 
 func (b *RedisBroker) streamKey(workspaceID string) string {
 	return fmt.Sprintf("%s:%s", b.streamPrefix, workspaceID)
+}
+
+func (b *RedisBroker) replayUntilCaughtUp(
+	ctx context.Context,
+	workspaceID string,
+	latest *uint64,
+	limit int,
+	send func(*v1.StreamWorkspaceEventsResponse) error,
+) error {
+	for {
+		replayed, _, err := b.Replay(ctx, workspaceID, *latest, limit)
+		if err != nil {
+			return err
+		}
+
+		for _, event := range replayed {
+			if err := send(event); err != nil {
+				return err
+			}
+			*latest = event.Sequence
+		}
+
+		if len(replayed) < limit {
+			return nil
+		}
+	}
 }

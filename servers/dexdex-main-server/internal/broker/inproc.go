@@ -46,22 +46,14 @@ func (b *InProcBroker) Replay(ctx context.Context, workspaceID string, fromSeque
 }
 
 func (b *InProcBroker) Stream(ctx context.Context, workspaceID string, fromSequence uint64, limit int, send func(*v1.StreamWorkspaceEventsResponse) error) error {
-	replayed, _, err := b.Replay(ctx, workspaceID, fromSequence, limit)
-	if err != nil {
-		return err
-	}
-
-	latest := fromSequence
-	for _, event := range replayed {
-		if err := send(event); err != nil {
-			return err
-		}
-		latest = event.Sequence
-	}
-
 	ch := make(chan *v1.StreamWorkspaceEventsResponse, 32)
 	b.subscribe(workspaceID, ch)
 	defer b.unsubscribe(workspaceID, ch)
+
+	latest := fromSequence
+	if err := b.replayUntilCaughtUp(ctx, workspaceID, &latest, limit, send); err != nil {
+		return err
+	}
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -82,7 +74,36 @@ func (b *InProcBroker) Stream(ctx context.Context, workspaceID string, fromSeque
 			}
 			latest = event.Sequence
 		case <-ticker.C:
-			// keep stream loop responsive even when no events are published.
+			// Backfill persisted events so we recover from channel drops/overflows.
+			if err := b.replayUntilCaughtUp(ctx, workspaceID, &latest, limit, send); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func (b *InProcBroker) replayUntilCaughtUp(
+	ctx context.Context,
+	workspaceID string,
+	latest *uint64,
+	limit int,
+	send func(*v1.StreamWorkspaceEventsResponse) error,
+) error {
+	for {
+		replayed, _, err := b.Replay(ctx, workspaceID, *latest, limit)
+		if err != nil {
+			return err
+		}
+
+		for _, event := range replayed {
+			if err := send(event); err != nil {
+				return err
+			}
+			*latest = event.Sequence
+		}
+
+		if len(replayed) < limit {
+			return nil
 		}
 	}
 }

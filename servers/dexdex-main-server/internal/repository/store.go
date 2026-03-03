@@ -8,18 +8,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	v1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	_ "modernc.org/sqlite"
 )
 
 var (
 	ErrNotFound = errors.New("not found")
+	ErrNoPRLink = errors.New("no pr tracking id linked to unit task")
 )
 
 type Store struct {
@@ -344,8 +347,9 @@ func (s *Store) SubmitPlanDecision(ctx context.Context, workspaceID string, subT
 	if err != nil {
 		return nil, nil, v1.PlanDecisionValidationErrorCode_PLAN_DECISION_VALIDATION_ERROR_CODE_INTERNAL, fmt.Errorf("begin tx: %w", err)
 	}
+	committed := false
 	defer func() {
-		if err != nil {
+		if !committed {
 			_ = tx.Rollback()
 		}
 	}()
@@ -416,8 +420,23 @@ func (s *Store) SubmitPlanDecision(ctx context.Context, workspaceID string, subT
 	if err = tx.Commit(); err != nil {
 		return nil, nil, v1.PlanDecisionValidationErrorCode_PLAN_DECISION_VALIDATION_ERROR_CODE_INTERNAL, fmt.Errorf("commit tx: %w", err)
 	}
+	committed = true
 
 	return updated, created, v1.PlanDecisionValidationErrorCode_PLAN_DECISION_VALIDATION_ERROR_CODE_UNSPECIFIED, nil
+}
+
+func (s *Store) ResolveUnitTaskPRTrackingID(ctx context.Context, workspaceID string, unitTaskID string) (string, error) {
+	unitTask, err := s.GetUnitTask(ctx, workspaceID, unitTaskID)
+	if err != nil {
+		return "", err
+	}
+
+	prTrackingID := extractPRTrackingID(unitTask.Title)
+	if prTrackingID == "" {
+		return "", ErrNoPRLink
+	}
+
+	return prTrackingID, nil
 }
 
 func (s *Store) AppendWorkspaceEvent(ctx context.Context, workspaceID string, event *v1.StreamWorkspaceEventsResponse) (*v1.StreamWorkspaceEventsResponse, error) {
@@ -437,7 +456,7 @@ func (s *Store) AppendWorkspaceEvent(ctx context.Context, workspaceID string, ev
 		event.OccurredAt = timestampFromUnixMilli(time.Now().UTC().UnixMilli())
 	}
 
-	payloadBytes, err := json.Marshal(event)
+	payloadBytes, err := protojson.MarshalOptions{UseProtoNames: true}.Marshal(event)
 	if err != nil {
 		return nil, fmt.Errorf("marshal event: %w", err)
 	}
@@ -523,7 +542,7 @@ func (s *Store) ListWorkspaceEvents(ctx context.Context, workspaceID string, fro
 			return nil, earliest, fmt.Errorf("scan workspace event: %w", err)
 		}
 		event := &v1.StreamWorkspaceEventsResponse{}
-		if err := json.Unmarshal([]byte(payloadJSON), event); err != nil {
+		if err := protojson.Unmarshal([]byte(payloadJSON), event); err != nil {
 			return nil, earliest, fmt.Errorf("decode workspace event: %w", err)
 		}
 		events = append(events, event)
@@ -879,6 +898,16 @@ func cloneSubTask(subTask *v1.SubTask) *v1.SubTask {
 	cloned := &v1.SubTask{}
 	_ = json.Unmarshal(payload, cloned)
 	return cloned
+}
+
+var prTrackingIDPattern = regexp.MustCompile(`([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)`)
+
+func extractPRTrackingID(value string) string {
+	matches := prTrackingIDPattern.FindStringSubmatch(strings.TrimSpace(value))
+	if len(matches) < 2 {
+		return ""
+	}
+	return matches[1]
 }
 
 var sqliteSchemaStatements = []string{

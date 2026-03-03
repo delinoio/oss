@@ -319,15 +319,29 @@ func (s *Server) GetPullRequest(ctx context.Context, request *connect.Request[v1
 }
 
 func (s *Server) ListReviewAssistItems(ctx context.Context, request *connect.Request[v1.ListReviewAssistItemsRequest]) (*connect.Response[v1.ListReviewAssistItemsResponse], error) {
-	if strings.TrimSpace(request.Msg.UnitTaskId) == "" {
-		return connect.NewResponse(&v1.ListReviewAssistItemsResponse{}), nil
+	workspaceID := strings.TrimSpace(request.Msg.WorkspaceId)
+	if workspaceID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("workspace_id is required"))
+	}
+	unitTaskID := strings.TrimSpace(request.Msg.UnitTaskId)
+	if unitTaskID == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("unit_task_id is required"))
 	}
 
-	prTrackingID := request.Msg.UnitTaskId
+	prTrackingID, err := s.store.ResolveUnitTaskPRTrackingID(ctx, workspaceID, unitTaskID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, errors.New("unit task not found"))
+		}
+		if errors.Is(err, repository.ErrNoPRLink) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("unit task is not linked to a pull request tracking id"))
+		}
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
 	items, err := s.github.ListReviewAssistItems(ctx, prTrackingID)
 	if err != nil {
-		s.logger.Warn("review_assist.list.fallback", "reason", err.Error())
-		return connect.NewResponse(&v1.ListReviewAssistItemsResponse{}), nil
+		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}
 	return connect.NewResponse(&v1.ListReviewAssistItemsResponse{Items: items}), nil
 }

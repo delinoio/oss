@@ -134,6 +134,11 @@ Typed detail contracts:
 - `PlanDecisionValidationDetail` for plan-decision validation failures
 - `EventStreamCursorOutOfRangeDetail` for replay cursor out-of-range responses
 
+Review-assist lookup contract:
+- `ListReviewAssistItemsRequest.unit_task_id` is resolved to a PR tracking ID from UnitTask metadata.
+- Current resolution source is UnitTask title token format `<owner>/<repo>#<number>`.
+- When no PR tracking ID token is linked, the service returns `FailedPrecondition` instead of silently returning empty fallback data.
+
 Plan decision semantics:
 - Decision target is identified by `sub_task_id`.
 - `APPROVE`: resumes same SubTask (`WAITING_FOR_PLAN_APPROVAL` -> `IN_PROGRESS`).
