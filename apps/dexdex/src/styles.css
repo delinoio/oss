@@ -23,7 +23,7 @@ body {
 }
 
 .app-shell {
-  max-width: 960px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: 2.5rem 1.25rem 3rem;
 }
@@ -58,6 +58,12 @@ body {
   margin-top: 1rem;
 }
 
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
 label {
   font-size: 0.94rem;
   font-weight: 600;
@@ -87,6 +93,13 @@ input:disabled {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.action-grid {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
 }
 
 button {
@@ -133,10 +146,25 @@ button:disabled {
   word-break: break-word;
 }
 
-.note {
-  margin-top: 0.9rem;
-  color: #475569;
-  font-size: 0.92rem;
+.result {
+  margin-top: 1rem;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 0.85rem;
+  font-size: 0.84rem;
+  overflow-x: auto;
+}
+
+@media (max-width: 900px) {
+  .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 700px) {
@@ -145,6 +173,10 @@ button:disabled {
   }
 
   .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-grid {
     grid-template-columns: 1fr;
   }
 }
