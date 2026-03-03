@@ -9,12 +9,15 @@
 
 - `servers/thenv`: Backend for secure environment sharing.
 - `servers/commit-tracker`: Commit Tracker API server component.
+- `servers/dexdex-main-server`: DexDex control-plane Go server scaffold.
+- `servers/dexdex-worker-server`: DexDex execution-plane Go server scaffold.
 
 ### Server Language and Data Rules
 
 - Servers in this domain must be implemented in Go.
 - SQL queries and type-safe data access must use `sqlc`.
-- Protobuf definitions must live at `proto/<service_name>/v1/*.proto`.
+- Protobuf definitions should live at `proto/<service_name>/v1/*.proto` unless a project contract explicitly uses a shared cross-runtime proto root.
+- DexDex server contracts use shared proto definitions at `protos/dexdex/v1/*.proto`.
 - Each server project must provide a local protobuf generation script and a `go generate` entrypoint.
 - Keep API boundaries explicit and versionable.
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
@@ -23,7 +26,7 @@
 
 ### Fixed Server Project Structure
 
-Each server project under `servers/<service_name>/` must follow this minimum structure:
+Stateful server projects under `servers/<service_name>/` should follow this minimum structure:
 
 - `cmd/<service_name>/main.go`
 - `internal/service/`
@@ -38,11 +41,14 @@ Each server project under `servers/<service_name>/` must follow this minimum str
 - `scripts/generate-go-proto.sh`
 - `generate.go` (with `go:generate` directive)
 
+Scaffold-only service projects may start with a smaller structure (`main.go` + `internal/service`) when documented in `docs/project-<id>.md`, but must adopt explicit contract/data/logging subdirectories before persistence and public API rollout.
+
 ### Integration Rules
 
 - Changes to server interfaces must be synchronized with related CLI and app contracts.
 - Update `docs/project-thenv.md` for every thenv interface or trust model update.
 - Update `docs/project-devkit-commit-tracker.md` for every commit-tracker API contract update.
+- Update `docs/project-dexdex.md` for every DexDex server interface or ownership contract update.
 
 ### Testing and Validation
 

@@ -11,8 +11,6 @@
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.
 - `crates/serde-feather-macros`: Proc-macro companion crate for serde-feather.
-- `crates/dexdex-main-server`: Rust Connect RPC control-plane server for DexDex.
-- `crates/dexdex-worker-server`: Rust execution-plane worker server for DexDex.
 
 ### Rust Workspace Rules
 
@@ -22,8 +20,6 @@
 - For new package scaffolding, default `publish = false` until publish contracts are explicitly approved.
 - Prefer minimal default features and keep optional capabilities opt-in for size-sensitive crates.
 - Keep proc-macro crates and runtime crates separated by explicit crate boundaries.
-- Keep DexDex server crates aligned with `docs/project-dexdex.md` contracts for Connect RPC-first flows and normalized worker output boundaries.
-- Use `tracing` structured logs for DexDex server operational and business events.
 
 ### nodeup-Specific Rules
 
@@ -42,15 +38,6 @@
 - Keep `serde-feather` as the runtime-facing crate and `serde-feather-macros` as the proc-macro crate.
 - Keep binary-size-first defaults: minimal default features and no convenience dependencies by default.
 - Keep stable derive macro identifiers (`FeatherSerialize`, `FeatherDeserialize`) aligned with `docs/project-serde-feather.md`.
-
-### dexdex-Specific Rules
-
-- Keep `dexdex-main-server` as the control-plane crate and `dexdex-worker-server` as the execution-plane crate.
-- Prioritize Connect RPC contracts for DexDex business flows over platform-specific bindings.
-- Use `protos/dexdex/v1` as the shared Connect RPC contract source and keep Rust-side models aligned with those proto enums/messages.
-- Rust crates may add local generation/adapter layers, but they must not diverge from shared proto service and enum semantics.
-- Keep provider-native agent payload handling inside worker boundaries and expose only normalized session outputs upstream.
-- Preserve ordered real commit-chain metadata for SubTask outputs that modify code.
 
 ### Testing and Validation
 
