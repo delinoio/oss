@@ -49,7 +49,7 @@
 - `docs/project-public-docs.md`: Mintlify-based public documentation app.
 - `docs/project-serde-feather.md`: Size-first serde derive scaffolding contracts (core + proc-macro split).
 - `docs/project-dexdex.md`: Connect RPC-first orchestration platform contracts (Rust main server + worker server + Tauri desktop app).
-- `protos/dexdex/v1/dexdex.proto`: Shared DexDex Connect RPC service and enum/message contracts (`dexdex.v1`).
+- `protos/dexdex/v1/*.proto`: Shared DexDex Connect RPC service and enum/message contracts (`dexdex.v1`), with `dexdex.proto` as compatibility shim.
 - `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation (default actor set includes `chatgpt-codex-connector[bot]`).
 
 ### Project Identifier Contract

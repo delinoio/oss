@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+import "v1/notification.proto";
+import "v1/pr.proto";
+import "v1/review.proto";
+import "v1/session.proto";
+import "v1/task.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message StreamWorkspaceEventsRequest {
+  string workspace_id = 1;
+  uint64 from_sequence = 2;
+}
+
+message EventStreamCursorOutOfRangeDetail {
+  uint64 earliest_available_sequence = 1;
+  uint64 requested_from_sequence = 2;
+}
+
+message StreamWorkspaceEventsResponse {
+  uint64 sequence = 1;
+  string workspace_id = 2;
+  StreamEventType event_type = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+
+  oneof payload {
+    UnitTask task = 10;
+    SubTask sub_task = 11;
+    SessionOutputEvent session_output = 12;
+    AgentSession session = 13;
+    PullRequestRecord pull_request = 14;
+    ReviewAssistItem review_assist_item = 15;
+    ReviewComment review_comment = 16;
+    NotificationRecord notification = 17;
+  }
+}
+
+service EventStreamService {
+  // from_sequence is exclusive. The first emitted event always satisfies sequence > from_sequence.
+  // If from_sequence is older than retention, the server returns OutOfRange and
+  // includes EventStreamCursorOutOfRangeDetail with earliest_available_sequence.
+  rpc StreamWorkspaceEvents(StreamWorkspaceEventsRequest) returns (stream StreamWorkspaceEventsResponse);
+}

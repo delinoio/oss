@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message UnitTask {
+  string unit_task_id = 1;
+  UnitTaskStatus status = 2;
+  ActionType action_required = 3;
+  string workspace_id = 4;
+  string repository_group_id = 5;
+  string title = 6;
+  string prompt = 7;
+  string current_sub_task_id = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message SubTask {
+  string sub_task_id = 1;
+  string unit_task_id = 2;
+  SubTaskType type = 3;
+  SubTaskStatus status = 4;
+  SubTaskCompletionReason completion_reason = 5;
+  repeated CommitMetadata commit_chain = 6;
+  string workspace_id = 7;
+  string session_id = 8;
+  string revision_note = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp started_at = 11;
+  google.protobuf.Timestamp completed_at = 12;
+  google.protobuf.Timestamp updated_at = 13;
+  uint32 retry_count = 14;
+  string failure_summary = 15;
+}
+
+message SubmitPlanDecisionRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  string sub_task_id = 3;
+  PlanDecision decision = 4;
+  string revision_note = 5;
+  string request_id = 6;
+}
+
+message SubmitPlanDecisionResponse {
+  SubTask updated_sub_task = 1;
+  SubTask created_sub_task = 2;
+}
+
+message CreateUnitTaskRequest {
+  string workspace_id = 1;
+  string repository_group_id = 2;
+  string title = 3;
+  string prompt = 4;
+  string request_id = 5;
+}
+
+message CreateUnitTaskResponse {
+  UnitTask unit_task = 1;
+  SubTask initial_sub_task = 2;
+}
+
+message GetUnitTaskRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+}
+
+message GetUnitTaskResponse {
+  UnitTask unit_task = 1;
+}
+
+message ListUnitTasksRequest {
+  string workspace_id = 1;
+  UnitTaskStatus status_filter = 2;
+  ActionType action_required_filter = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListUnitTasksResponse {
+  repeated UnitTask unit_tasks = 1;
+  string next_page_token = 2;
+}
+
+message GetSubTaskRequest {
+  string workspace_id = 1;
+  string sub_task_id = 2;
+}
+
+message GetSubTaskResponse {
+  SubTask sub_task = 1;
+}
+
+message ListSubTasksRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  SubTaskStatus status_filter = 3;
+  SubTaskType type_filter = 4;
+  uint32 page_size = 5;
+  string page_token = 6;
+}
+
+message ListSubTasksResponse {
+  repeated SubTask sub_tasks = 1;
+  string next_page_token = 2;
+}
+
+message CancelSubTaskRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  string sub_task_id = 3;
+  string reason = 4;
+  string request_id = 5;
+}
+
+message CancelSubTaskResponse {
+  SubTask updated_sub_task = 1;
+}
+
+service TaskService {
+  rpc SubmitPlanDecision(SubmitPlanDecisionRequest) returns (SubmitPlanDecisionResponse);
+  rpc CreateUnitTask(CreateUnitTaskRequest) returns (CreateUnitTaskResponse);
+  rpc GetUnitTask(GetUnitTaskRequest) returns (GetUnitTaskResponse);
+  rpc ListUnitTasks(ListUnitTasksRequest) returns (ListUnitTasksResponse);
+  rpc GetSubTask(GetSubTaskRequest) returns (GetSubTaskResponse);
+  rpc ListSubTasks(ListSubTasksRequest) returns (ListSubTasksResponse);
+  rpc CancelSubTask(CancelSubTaskRequest) returns (CancelSubTaskResponse);
+}

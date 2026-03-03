@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message AgentSession {
+  string session_id = 1;
+  string workspace_id = 2;
+  string unit_task_id = 3;
+  string sub_task_id = 4;
+  AgentSessionStatus status = 5;
+  string provider_name = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp started_at = 8;
+  google.protobuf.Timestamp completed_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  string failure_summary = 11;
+}
+
+message SessionOutputTextPayload {
+  string text = 1;
+}
+
+message SessionOutputPlanUpdatePayload {
+  string markdown = 1;
+  bool is_final = 2;
+}
+
+message SessionOutputToolCallPayload {
+  string tool_name = 1;
+  string arguments_json = 2;
+  string call_id = 3;
+}
+
+message SessionOutputToolResultPayload {
+  string call_id = 1;
+  string result_json = 2;
+  bool is_error = 3;
+}
+
+message SessionOutputProgressPayload {
+  string message = 1;
+  uint32 percent = 2;
+}
+
+message SessionOutputWarningPayload {
+  string message = 1;
+  string code = 2;
+}
+
+message SessionOutputErrorPayload {
+  string message = 1;
+  string code = 2;
+  bool retryable = 3;
+}
+
+message SessionOutputEvent {
+  string session_id = 1;
+  SessionOutputKind kind = 2;
+  string body = 3 [deprecated = true];
+  string output_event_id = 4;
+  string workspace_id = 5;
+  string unit_task_id = 6;
+  string sub_task_id = 7;
+  google.protobuf.Timestamp occurred_at = 8;
+
+  oneof payload {
+    SessionOutputTextPayload text = 10;
+    SessionOutputPlanUpdatePayload plan_update = 11;
+    SessionOutputToolCallPayload tool_call = 12;
+    SessionOutputToolResultPayload tool_result = 13;
+    SessionOutputProgressPayload progress = 14;
+    SessionOutputWarningPayload warning = 15;
+    SessionOutputErrorPayload error = 16;
+  }
+}
+
+message GetSessionOutputRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+
+message GetSessionOutputResponse {
+  repeated SessionOutputEvent events = 1;
+  string next_page_token = 2;
+}
+
+message GetSessionRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+}
+
+message GetSessionResponse {
+  AgentSession session = 1;
+}
+
+message ListSessionsRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  string sub_task_id = 3;
+  AgentSessionStatus status_filter = 4;
+  uint32 page_size = 5;
+  string page_token = 6;
+}
+
+message ListSessionsResponse {
+  repeated AgentSession sessions = 1;
+  string next_page_token = 2;
+}
+
+message SubmitSessionInputRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+  string body = 3;
+  string request_id = 4;
+}
+
+message SubmitSessionInputResponse {
+  AgentSession session = 1;
+}
+
+service SessionService {
+  rpc GetSessionOutput(GetSessionOutputRequest) returns (GetSessionOutputResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc SubmitSessionInput(SubmitSessionInputRequest) returns (SubmitSessionInputResponse);
+}

@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message RepositoryRef {
+  string repository_id = 1;
+  string repository_url = 2;
+  string branch_ref = 3;
+  string display_name = 4;
+  string head_sha = 5;
+}
+
+message RepositoryGroup {
+  string repository_group_id = 1;
+  repeated RepositoryRef repositories = 2;
+  string workspace_id = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message GetRepositoryGroupRequest {
+  string workspace_id = 1;
+  string repository_group_id = 2;
+}
+
+message GetRepositoryGroupResponse {
+  RepositoryGroup repository_group = 1;
+}
+
+message ListRepositoryGroupsRequest {
+  string workspace_id = 1;
+  uint32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListRepositoryGroupsResponse {
+  repeated RepositoryGroup repository_groups = 1;
+  string next_page_token = 2;
+}
+
+service RepositoryService {
+  rpc GetRepositoryGroup(GetRepositoryGroupRequest) returns (GetRepositoryGroupResponse);
+  rpc ListRepositoryGroups(ListRepositoryGroupsRequest) returns (ListRepositoryGroupsResponse);
+}

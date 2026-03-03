@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message Workspace {
+  string workspace_id = 1;
+  string display_name = 2;
+  DexDexDeploymentMode deployment_mode = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message GetWorkspaceRequest {
+  string workspace_id = 1;
+}
+
+message GetWorkspaceResponse {
+  Workspace workspace = 1;
+}
+
+message ListWorkspacesRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListWorkspacesResponse {
+  repeated Workspace workspaces = 1;
+  string next_page_token = 2;
+}
+
+service WorkspaceService {
+  rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
+  rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
+}

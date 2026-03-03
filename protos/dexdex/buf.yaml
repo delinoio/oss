@@ -6,4 +6,4 @@ lint:
     - PACKAGE_DIRECTORY_MATCH
 breaking:
   use:
-    - FILE
+    - PACKAGE

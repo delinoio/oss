@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message ListNotificationsRequest {
+  string workspace_id = 1;
+  repeated NotificationType types_filter = 2;
+  bool include_read = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+}
+
+message NotificationRecord {
+  string notification_id = 1;
+  NotificationType type = 2;
+  string workspace_id = 3;
+  string unit_task_id = 4;
+  string sub_task_id = 5;
+  string session_id = 6;
+  string pr_tracking_id = 7;
+  string title = 8;
+  string body = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp read_at = 11;
+}
+
+message ListNotificationsResponse {
+  repeated NotificationRecord notifications = 1;
+  string next_page_token = 2;
+}
+
+message AckNotificationRequest {
+  string workspace_id = 1;
+  string notification_id = 2;
+  string request_id = 3;
+}
+
+message AckNotificationResponse {
+  NotificationRecord notification = 1;
+}
+
+service NotificationService {
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse);
+  rpc AckNotification(AckNotificationRequest) returns (AckNotificationResponse);
+}

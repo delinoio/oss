@@ -1,0 +1,82 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message ListReviewAssistItemsRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+  string sub_task_id = 5;
+}
+
+message ReviewAssistItem {
+  string review_assist_id = 1;
+  string body = 2;
+  string workspace_id = 3;
+  string unit_task_id = 4;
+  string sub_task_id = 5;
+  string pr_tracking_id = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message ListReviewAssistItemsResponse {
+  repeated ReviewAssistItem items = 1;
+  string next_page_token = 2;
+}
+
+message ListReviewCommentsRequest {
+  string workspace_id = 1;
+  string pr_tracking_id = 2;
+  uint32 page_size = 3;
+  string page_token = 4;
+}
+
+message ReviewComment {
+  string review_comment_id = 1;
+  string body = 2;
+  string workspace_id = 3;
+  string pr_tracking_id = 4;
+  string file_path = 5;
+  uint32 line = 6;
+  ReviewCommentSide side = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message ListReviewCommentsResponse {
+  repeated ReviewComment comments = 1;
+  string next_page_token = 2;
+}
+
+message GetBadgeThemeRequest {
+  string workspace_id = 1;
+}
+
+message BadgeTheme {
+  string badge_theme_id = 1;
+  string theme_name = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message GetBadgeThemeResponse {
+  BadgeTheme theme = 1;
+}
+
+service ReviewAssistService {
+  rpc ListReviewAssistItems(ListReviewAssistItemsRequest) returns (ListReviewAssistItemsResponse);
+}
+
+service ReviewCommentService {
+  rpc ListReviewComments(ListReviewCommentsRequest) returns (ListReviewCommentsResponse);
+}
+
+service BadgeThemeService {
+  rpc GetBadgeTheme(GetBadgeThemeRequest) returns (GetBadgeThemeResponse);
+}

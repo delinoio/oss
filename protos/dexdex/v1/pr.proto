@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message GetPullRequestRequest {
+  string workspace_id = 1;
+  string pr_tracking_id = 2;
+}
+
+message PullRequestRecord {
+  string pr_tracking_id = 1;
+  PrStatus status = 2;
+  string workspace_id = 3;
+  string unit_task_id = 4;
+  string sub_task_id = 5;
+  string url = 6;
+  string title = 7;
+  string head_sha = 8;
+  string base_ref = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message GetPullRequestResponse {
+  PullRequestRecord pull_request = 1;
+}
+
+message ListPullRequestsRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  PrStatus status_filter = 3;
+  uint32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListPullRequestsResponse {
+  repeated PullRequestRecord pull_requests = 1;
+  string next_page_token = 2;
+}
+
+service PrManagementService {
+  rpc GetPullRequest(GetPullRequestRequest) returns (GetPullRequestResponse);
+  rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
+}
