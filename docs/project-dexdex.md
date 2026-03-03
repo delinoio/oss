@@ -1,21 +1,21 @@
 # Project: dexdex
 
 ## Goal
-`dexdex` is a Connect RPC-first task orchestration platform with a Rust control plane, Rust worker plane, and Tauri desktop client.
+`dexdex` is a Connect RPC-first task orchestration platform with a Go command control plane, Go command worker plane, and Tauri desktop client.
 It manages UnitTask/SubTask workflows, normalized AgentSession outputs, PR remediation lifecycle, and event-stream-driven updates.
 The desktop client provides workspace mode selection and orchestration control while preserving a single normalized downstream UX contract.
 
 ## Path
-- Main server: `crates/dexdex-main-server`
-- Worker server: `crates/dexdex-worker-server`
+- Main server: `cmds/dexdex-main-server` (planned)
+- Worker server: `cmds/dexdex-worker-server` (planned)
 - Desktop app: `apps/dexdex`
 - Desktop frontend: `apps/dexdex/src`
 - Desktop Tauri backend: `apps/dexdex/src-tauri`
 - Shared proto contracts: `protos/dexdex/v1/dexdex.proto`
 
 ## Runtime and Language
-- Main server: Rust binary crate
-- Worker server: Rust binary crate
+- Main server: Go command
+- Worker server: Go command
 - Desktop app frontend: React + TypeScript (Vite)
 - Desktop app backend: Rust (Tauri)
 
@@ -44,10 +44,10 @@ The desktop client provides workspace mode selection and orchestration control w
 - Persistent desktop token vault behavior in the initial scaffold phase.
 
 ## Architecture
-- Main server (`crates/dexdex-main-server`) is the control plane.
+- Main server (`cmds/dexdex-main-server`) is the control plane.
 : It exposes Connect RPC services and owns orchestration state, PR polling, event brokering, and authorization boundaries.
 : It persists normalized UnitTask/SubTask/AgentSession/PR/review/notification data and emits workspace stream envelopes.
-- Worker server (`crates/dexdex-worker-server`) is the execution plane.
+- Worker server (`cmds/dexdex-worker-server`) is the execution plane.
 : It prepares repository worktrees, launches agent sessions, and normalizes provider-native outputs into shared contracts.
 : It persists session artifacts and ordered real-commit metadata produced by SubTask execution.
 - Desktop app (`apps/dexdex`) is the orchestration client shell.
@@ -294,7 +294,7 @@ Deployment mode storage contract:
 - Tauri commands remain runtime adapters and must not become the primary business-data contract surface.
 
 ## Logging
-- Use `tracing`-compatible structured logs in both server crates.
+- Use `log/slog` structured logs in both server commands.
 - Desktop Tauri backend must use `tracing` structured logs for mode resolution operations.
 - Required correlation fields:
 : `workspace_id`
@@ -330,9 +330,8 @@ Current local validation commands:
 - `cd protos/dexdex && buf lint`
 - `cd protos/dexdex && buf build`
 - `cd protos/dexdex && buf generate` (reproducible artifact output under `protos/dexdex/gen`)
-- `cargo check -p dexdex-main-server`
-- `cargo check -p dexdex-worker-server`
-- `cargo test`
+- `go test ./cmds/dexdex-main-server/...`
+- `go test ./cmds/dexdex-worker-server/...`
 - `pnpm --filter dexdex test`
 
 Acceptance-focused scenarios:
@@ -363,7 +362,7 @@ CI workflow contracts:
 : executes `pnpm --filter dexdex tauri:build` across `ubuntu-latest`, `macos-latest`, `windows-latest`.
 
 ## Roadmap
-- Phase 1: Finalize project contracts and Rust crate scaffolding for main and worker servers.
+- Phase 1: Finalize project contracts and Go command scaffolding for main and worker servers.
 - Phase 2: Add proto definitions and Connect RPC handler skeletons for all listed services.
 - Phase 3: Implement task orchestration, plan mode, PR polling, and stream replay.
 - Phase 4: Add DexDex desktop app scaffold with normalized workspace mode resolution (`LOCAL`, `REMOTE`) and Tauri integration boundary.

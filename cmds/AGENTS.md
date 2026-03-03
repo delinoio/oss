@@ -12,11 +12,15 @@
 - `cmds/thenv`: Secure `.env` sharing CLI.
 - `cmds/commit-tracker`: Commit Tracker collector component.
 - `cmds/ttlc`: TTL compiler CLI for `.ttl` parsing/type-checking, Go code generation, and cache-aware task execution contracts.
+- `cmds/dexdex-main-server`: DexDex Connect RPC control-plane server command.
+- `cmds/dexdex-worker-server`: DexDex execution-plane worker server command.
 
 ### Command Component Contract
 
 - `cmds/commit-tracker` is the `Collector` component for `devkit-commit-tracker`.
 - `cmds/thenv` is the `Cli` component for `thenv`.
+- `cmds/dexdex-main-server` is the `MainServer` component for `dexdex`.
+- `cmds/dexdex-worker-server` is the `WorkerServer` component for `dexdex`.
 
 ### Go Command Rules
 
@@ -30,6 +34,15 @@
 - Keep integration boundaries with `apps/`, `servers/`, and other domains explicit in docs.
 - Avoid undocumented cross-domain coupling.
 
+### dexdex-Specific Rules
+
+- Keep `dexdex-main-server` as the control-plane command and `dexdex-worker-server` as the execution-plane command.
+- Prioritize Connect RPC contracts for DexDex business flows over platform-specific bindings.
+- Use `protos/dexdex/v1` as the shared Connect RPC contract source and keep Go-side models aligned with shared proto enums/messages.
+- Use `log/slog` structured logs for DexDex server operational and business events.
+- Keep provider-native agent payload handling inside worker boundaries and expose only normalized session outputs upstream.
+- Preserve ordered real commit-chain metadata for SubTask outputs that modify code.
+
 ### Testing and Validation
 
 - Run relevant Go tests (`go test`) when code in this domain changes.
@@ -39,3 +52,4 @@
 - Update `docs/project-devkit-commit-tracker.md` whenever commit-tracker collector contracts change.
 - Update `docs/project-ttl.md` whenever TTL compiler command shape, cache backend, or runtime boundaries change.
 - Update `docs/project-ttl-language.md` whenever TTL syntax/type/invalidation/code-generation contracts change.
+- Update `docs/project-dexdex.md` whenever DexDex main/worker command boundaries, runtime contracts, or integration contracts change.
