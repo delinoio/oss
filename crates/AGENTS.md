@@ -47,6 +47,8 @@
 
 - Keep `dexdex-main-server` as the control-plane crate and `dexdex-worker-server` as the execution-plane crate.
 - Prioritize Connect RPC contracts for DexDex business flows over platform-specific bindings.
+- Use `protos/dexdex/v1` as the shared Connect RPC contract source and keep Rust-side models aligned with those proto enums/messages.
+- Rust crates may add local generation/adapter layers, but they must not diverge from shared proto service and enum semantics.
 - Keep provider-native agent payload handling inside worker boundaries and expose only normalized session outputs upstream.
 - Preserve ordered real commit-chain metadata for SubTask outputs that modify code.
 

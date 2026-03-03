@@ -49,6 +49,7 @@ enum DevkitMiniAppId {
 - `dexdex` app boundaries must keep business communication Connect RPC-first.
 - Tauri bindings are integration/runtime adapters and must not become the primary business contract surface.
 - `LOCAL` and `REMOTE` workspace modes must converge to the same post-resolution UX and business flow behavior.
+- DexDex desktop contract consumption must use shared proto definitions from `protos/dexdex/v1` as the source of truth.
 - Keep DexDex desktop app contracts synchronized with `docs/project-dexdex.md`.
 
 ### Testing and Validation

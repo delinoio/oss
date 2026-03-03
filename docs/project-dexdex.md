@@ -11,6 +11,7 @@ The desktop client provides workspace mode selection and orchestration control w
 - Desktop app: `apps/dexdex`
 - Desktop frontend: `apps/dexdex/src`
 - Desktop Tauri backend: `apps/dexdex/src-tauri`
+- Shared proto contracts: `protos/dexdex/v1/dexdex.proto`
 
 ## Runtime and Language
 - Main server: Rust binary crate
@@ -102,6 +103,7 @@ Desktop workspace endpoint source identifiers:
 ```ts
 enum WorkspaceEndpointSource {
   ManagedLoopback = "MANAGED_LOOPBACK",
+  LocalOverride = "LOCAL_OVERRIDE",
   UserRemote = "USER_REMOTE",
 }
 ```
@@ -120,8 +122,26 @@ type ResolvedWorkspaceConnection = {
 
 Desktop Tauri command contract:
 - `resolve_local_workspace_endpoint()`
-: Returns `{ endpoint_url: string, token?: string, endpoint_source: "MANAGED_LOOPBACK" }`.
+: Returns `{ endpoint_url: string, token?: string, endpoint_source: "MANAGED_LOOPBACK" | "LOCAL_OVERRIDE" }`.
+: Hybrid local policy:
+: default managed loopback resolution uses `MANAGED_LOOPBACK`.
+: explicit local override URL (`DEXDEX_LOCAL_REMOTE_OVERRIDE_URL` or legacy `DEXDEX_LOCAL_REMOTE_URL`) resolves with `LOCAL_OVERRIDE`.
 : Resolves local-mode connection target without altering downstream workflow contracts.
+
+Proto source-of-truth contract:
+- Package: `dexdex.v1`
+- Proto root path: `protos/dexdex/v1/*.proto`
+- Shared proto is the canonical contract surface for:
+: `WorkspaceService`
+: `RepositoryService`
+: `TaskService`
+: `SessionService`
+: `PrManagementService`
+: `ReviewAssistService`
+: `ReviewCommentService`
+: `BadgeThemeService`
+: `NotificationService`
+: `EventStreamService`
 
 Primary Connect RPC service contracts:
 - `WorkspaceService`
@@ -163,6 +183,13 @@ SubTaskStatus:
 - COMPLETED
 - FAILED
 - CANCELLED
+
+SubTaskCompletionReason:
+- SUCCEEDED
+- REVISED
+- PLAN_REJECTED
+- FAILED
+- CANCELLED_BY_USER
 
 AgentSessionStatus:
 - STARTING
@@ -222,7 +249,15 @@ Execution and state contracts:
 : remaining repositories are attached as additional directories in preserved order.
 - SubTask outputs that modify code must produce one or more real git commits and ordered commit-chain metadata.
 - Plan mode uses `TaskService.SubmitPlanDecision` with `APPROVE | REVISE | REJECT`.
+- `TaskService.SubmitPlanDecision` semantics are fixed:
+: `APPROVE` resumes the same SubTask (`WAITING_FOR_PLAN_APPROVAL` -> `IN_PROGRESS`).
+: `REVISE` requires non-empty `revision_note`, completes current SubTask with `completion_reason=REVISED`, and creates new `REQUEST_CHANGES` SubTask in `QUEUED`.
+: `REJECT` cancels current SubTask with `completion_reason=PLAN_REJECTED` and creates no follow-up SubTask.
 - `SESSION_OUTPUT` stream payloads must remain normalized and provider-agnostic.
+- `EventStreamService.StreamWorkspaceEvents` replay semantics are fixed:
+: `from_sequence` is exclusive (`sequence > from_sequence`).
+: event sequence is workspace-scoped, monotonic, and starts at `1`.
+: if `from_sequence` is older than retention, return `OutOfRange` and include `earliest_available_sequence`.
 - Desktop downstream flows consume `ResolvedWorkspaceConnection` and must not branch behavior based on `LOCAL` vs `REMOTE` once connection is resolved.
 
 ## Storage
@@ -292,9 +327,13 @@ Deployment mode storage contract:
 
 ## Build and Test
 Current local validation commands:
+- `cd protos/dexdex && buf lint`
+- `cd protos/dexdex && buf build`
+- `cd protos/dexdex && buf generate` (reproducible artifact output under `protos/dexdex/gen`)
 - `cargo check -p dexdex-main-server`
 - `cargo check -p dexdex-worker-server`
 - `cargo test`
+- `pnpm --filter dexdex test`
 
 Acceptance-focused scenarios:
 1. Main server accepts and validates Connect RPC task lifecycle requests.
@@ -302,14 +341,26 @@ Acceptance-focused scenarios:
 3. Plan mode waits at decision boundary and resumes on `APPROVE`/`REVISE`.
 4. Plan mode reject path finalizes SubTask without further execution.
 5. PR remediation subtasks (`PR_REVIEW_FIX`, `PR_CI_FIX`) use the same normalized event contract.
-6. Workspace stream replay resumes correctly from `from_sequence`.
-7. `SESSION_OUTPUT` payloads remain provider-agnostic at main server boundary.
-8. SubTasks with code changes persist real commit-chain metadata.
+6. Workspace stream replay resumes with exclusive cursor semantics (`sequence > from_sequence`).
+7. Retention-expired replay cursor returns `OutOfRange` with `earliest_available_sequence`.
+8. `SESSION_OUTPUT` payloads remain provider-agnostic at main server boundary.
 9. `SINGLE_INSTANCE` mode runs without Redis dependency.
 10. `SCALE` mode uses PostgreSQL + Redis-backed event propagation.
 11. Desktop `LOCAL` mode resolves to normalized connection metadata through Tauri command contract.
-12. Desktop `REMOTE` mode resolves to the same normalized connection contract shape.
-13. Desktop post-resolution UI and business flow behavior remains identical between `LOCAL` and `REMOTE` for the same endpoint.
+12. Desktop `LOCAL` explicit override URL resolves `endpoint_source=LOCAL_OVERRIDE` without secret leakage in logs.
+13. Desktop `REMOTE` mode resolves to the same normalized connection contract shape.
+14. Desktop post-resolution UI and business flow behavior remains identical between `LOCAL` and `REMOTE` for the same endpoint.
+15. SubTasks with code changes persist non-empty, ordered commit-chain metadata.
+16. `SubmitPlanDecision(REVISE)` creates follow-up `REQUEST_CHANGES` SubTask.
+17. `SubmitPlanDecision(REJECT)` creates no follow-up SubTask.
+18. PR CI runs `pnpm --filter dexdex test` when Node-app scope changes.
+
+CI workflow contracts:
+- `.github/workflows/CI.yml`
+: includes `node-dexdex-test` on PR/push node-scope changes.
+- `.github/workflows/dexdex-desktop-build.yml`
+: runs on `workflow_dispatch` and weekly schedule.
+: executes `pnpm --filter dexdex tauri:build` across `ubuntu-latest`, `macos-latest`, `windows-latest`.
 
 ## Roadmap
 - Phase 1: Finalize project contracts and Rust crate scaffolding for main and worker servers.
@@ -319,6 +370,8 @@ Acceptance-focused scenarios:
 - Phase 5: Add desktop CI coverage and packaging/signing automation without changing Connect RPC-first business contracts.
 
 ## Open Questions
-- Proto package and generated-code directory conventions for DexDex services.
-- Desktop CI onboarding scope and cadence (`test`, `tauri build`, platform matrix) for `apps/dexdex`.
-- Local runtime orchestration policy for managed loopback server lifecycle beyond scaffold mode.
+- None in the current scaffold scope.
+- Resolved in this phase:
+: proto source of truth fixed at `protos/dexdex/v1/*.proto` with package `dexdex.v1`.
+: desktop CI fixed to staged rollout (`CI.yml` quality checks + `dexdex-desktop-build.yml` scheduled/dispatch matrix).
+: local runtime policy fixed to hybrid mode (`MANAGED_LOOPBACK` default, `LOCAL_OVERRIDE` with explicit override URL).

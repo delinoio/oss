@@ -27,6 +27,7 @@
 - `docs/`: Source of truth for project contracts and repository documentation.
 - `apps/`: User-facing apps (Next.js and React Native).
 - `crates/`: Rust crates and Rust-based tooling.
+- `protos/`: Shared Connect RPC proto contracts used by multi-runtime projects.
 - `cmds/`: Go command tools for workflow orchestration.
 - `servers/`: Backend services and APIs.
 - `.agents/skills/`: Workspace-local Codex skills and reusable agent workflows.
@@ -48,6 +49,7 @@
 - `docs/project-public-docs.md`: Mintlify-based public documentation app.
 - `docs/project-serde-feather.md`: Size-first serde derive scaffolding contracts (core + proc-macro split).
 - `docs/project-dexdex.md`: Connect RPC-first orchestration platform contracts (Rust main server + worker server + Tauri desktop app).
+- `protos/dexdex/v1/dexdex.proto`: Shared DexDex Connect RPC service and enum/message contracts (`dexdex.v1`).
 - `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation (default actor set includes `chatgpt-codex-connector[bot]`).
 
 ### Project Identifier Contract
@@ -86,7 +88,7 @@ enum ProjectId {
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `public-docs` -> `apps/public-docs`
-- `dexdex` -> `crates/dexdex-main-server`, `crates/dexdex-worker-server`, `apps/dexdex`
+- `dexdex` -> `crates/dexdex-main-server`, `crates/dexdex-worker-server`, `apps/dexdex`, `protos/dexdex`
 
 ### Devkit Mini-App Identifier Contract
 
@@ -231,7 +233,13 @@ Coverage expectations:
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
+- `node-dexdex-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter dexdex test`.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
+
+DexDex desktop packaging CI baseline:
+- `.github/workflows/dexdex-desktop-build.yml` runs on `workflow_dispatch` and weekly schedule.
+- Matrix contract: `ubuntu-latest`, `macos-latest`, `windows-latest`.
+- Build command contract: `pnpm --filter dexdex tauri:build`.
 
 Change-scoped execution rules:
 - CI uses path-based change detection to skip unaffected domain jobs by default.
