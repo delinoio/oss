@@ -1,8 +1,7 @@
 # Project: dexdex
 
 ## Goal
-`dexdex` is a Connect RPC-first task orchestration platform that coordinates UnitTask/SubTask execution, plan approval decisions, commit-chain outputs, and workspace event streaming.
-The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime integrations while keeping desktop behavior normalized across local and remote endpoint resolution.
+`dexdex` is a Connect RPC-first task orchestration platform that coordinates UnitTask/SubTask lifecycle decisions, worker execution, PR/review synchronization, and workspace event streaming for desktop operations.
 
 ## Path
 - Main server: `servers/dexdex-main-server`
@@ -25,31 +24,35 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 - Operators monitoring task/session execution and event delivery health
 
 ## In Scope
-- Connect RPC-first business contracts for workspace, repository, task, session, PR, review, notification, and stream flows
-- Main server control-plane ownership of task/subtask lifecycle decision logic
-- Worker server execution-plane ownership of ordered real commit-chain validation
-- Plan-mode decision transitions (`APPROVE`, `REVISE`, `REJECT`) at SubTask scope
-- Workspace event streaming with replay/resume semantics (`from_sequence` exclusive)
-- Desktop workspace mode resolution (`LOCAL`, `REMOTE`) with normalized connection metadata
+- Connect RPC contract ownership for workspace/repository/task/session/pr/review/notification/stream/worker execution
+- Main server control-plane task/subtask orchestration and plan-decision transitions
+- Worker server execution-plane codex session execution and commit-chain validation
+- Deployment-mode-specific runtime behavior:
+  - `SINGLE_INSTANCE`: SQLite + in-process broker
+  - `SCALE`: PostgreSQL + Redis Streams broker
+- Desktop operator console actions for orchestration APIs after workspace connection resolution
 
 ## Out of Scope
-- Tauri-specific bindings as primary business-data contracts
-- Patch-only authoritative change outputs without real git commit metadata
-- Provider-native raw session payload contracts in main server APIs and client-facing streams
-- Full production persistence, distributed orchestration, and complete Connect handler implementations in this scaffold phase
-- Persistent desktop token vault behavior in this phase
+- Full production-grade distributed scheduler (current implementation is service-local with retries)
+- Persistent desktop credential vault behavior
+- Multi-provider PR integrations beyond GitHub CLI adapter in current implementation
 
 ## Architecture
-- Main server (`servers/dexdex-main-server`) is the control-plane Go service scaffold
-: It provides domain logic for plan-decision state transitions and stream replay validation.
-: It uses structured logs via `log/slog`.
-- Worker server (`servers/dexdex-worker-server`) is the execution-plane Go service scaffold
-: It validates ordered real commit-chain metadata emitted by SubTask execution.
-: It uses structured logs via `log/slog`.
-- Desktop app (`apps/dexdex`) is the orchestration client shell
-: It resolves workspace mode into one normalized Connect RPC connection contract.
-: Post-resolution behavior stays identical between `LOCAL` and `REMOTE` modes.
-- Shared proto (`protos/dexdex/v1/dexdex.proto`) is the canonical contract surface for cross-runtime integrations.
+- Main server (`servers/dexdex-main-server`)
+  - Connect handlers for Workspace/Repository/Task/Session/PR/Review/Notification/EventStream services
+  - SQL-backed task/session/event persistence
+  - Broker abstraction with in-process and Redis implementations
+  - `log/slog` structured logging and bearer auth middleware
+- Worker server (`servers/dexdex-worker-server`)
+  - Connect `ExecutionService` handlers
+  - `codex exec --json` runner with retry/backoff session execution
+  - Commit-chain validation using typed validation errors
+  - `log/slog` structured logging and bearer auth middleware
+- Desktop app (`apps/dexdex`)
+  - Local/remote workspace connection normalization
+  - Operator console for task/subtask/decision/pr/session/notification API operations
+- Shared proto (`protos/dexdex/v1/dexdex.proto`)
+  - Canonical contract surface for all server/client integrations
 
 ## Interfaces
 Canonical project identifier:
@@ -88,225 +91,149 @@ enum WorkspaceMode {
 }
 ```
 
-Desktop workspace endpoint source identifiers:
-
-```ts
-enum WorkspaceEndpointSource {
-  ManagedLoopback = "MANAGED_LOOPBACK",
-  LocalOverride = "LOCAL_OVERRIDE",
-  UserRemote = "USER_REMOTE",
-}
-```
-
 Desktop normalized connection contract:
 
 ```ts
 type ResolvedWorkspaceConnection = {
   mode: WorkspaceMode;
   endpointUrl: string;
-  endpointSource: WorkspaceEndpointSource;
+  endpointSource: "MANAGED_LOOPBACK" | "LOCAL_OVERRIDE" | "USER_REMOTE";
   token?: string;
   transport: "CONNECT_RPC";
 };
 ```
 
-Proto source-of-truth contract:
-- Package: `dexdex.v1`
-- Proto root path: `protos/dexdex/v1/*.proto`
-- Shared proto is the canonical contract surface for:
-: `WorkspaceService`
-: `RepositoryService`
-: `TaskService`
-: `SessionService`
-: `PrManagementService`
-: `ReviewAssistService`
-: `ReviewCommentService`
-: `BadgeThemeService`
-: `NotificationService`
-: `EventStreamService`
-
-Primary Connect RPC service contracts:
+### Proto Contract Surface (`dexdex.v1`)
+Primary services:
 - `WorkspaceService.GetWorkspace`
 - `RepositoryService.GetRepositoryGroup`
+- `TaskService.CreateUnitTask`
+- `TaskService.StartSubTask`
+- `TaskService.RetrySubTask`
 - `TaskService.GetUnitTask`
+- `TaskService.ListUnitTasks`
 - `TaskService.GetSubTask`
+- `TaskService.ListSubTasks`
 - `TaskService.SubmitPlanDecision`
 - `SessionService.GetSessionOutput`
+- `SessionService.StreamSessionOutput`
 - `PrManagementService.GetPullRequest`
 - `ReviewAssistService.ListReviewAssistItems`
 - `ReviewCommentService.ListReviewComments`
 - `BadgeThemeService.GetBadgeTheme`
 - `NotificationService.ListNotifications`
-- `EventStreamService.StreamWorkspaceEvents` (server-streaming)
+- `EventStreamService.StreamWorkspaceEvents`
+- `ExecutionService.ExecuteSubTask`
+- `ExecutionService.ValidateCommitChain`
 
-Core enum contracts:
+Pagination contract:
+- `ListUnitTasksRequest.page_size/page_token` and `ListUnitTasksResponse.next_page_token`
+- `ListSubTasksRequest.page_size/page_token` and `ListSubTasksResponse.next_page_token`
 
-```txt
-UnitTaskStatus:
-- QUEUED
-- IN_PROGRESS
-- ACTION_REQUIRED
-- BLOCKED
-- COMPLETED
-- FAILED
-- CANCELLED
+Typed detail contracts:
+- `PlanDecisionValidationDetail` for plan-decision validation failures
+- `EventStreamCursorOutOfRangeDetail` for replay cursor out-of-range responses
 
-SubTaskType:
-- INITIAL_IMPLEMENTATION
-- REQUEST_CHANGES
-- PR_CREATE
-- PR_REVIEW_FIX
-- PR_CI_FIX
-- MANUAL_RETRY
-
-SubTaskStatus:
-- QUEUED
-- IN_PROGRESS
-- WAITING_FOR_PLAN_APPROVAL
-- WAITING_FOR_USER_INPUT
-- COMPLETED
-- FAILED
-- CANCELLED
-
-SubTaskCompletionReason:
-- SUCCEEDED
-- REVISED
-- PLAN_REJECTED
-- FAILED
-- CANCELLED_BY_USER
-
-AgentSessionStatus:
-- STARTING
-- RUNNING
-- WAITING_FOR_INPUT
-- COMPLETED
-- FAILED
-- CANCELLED
-
-SessionOutputKind:
-- TEXT
-- PLAN_UPDATE
-- TOOL_CALL
-- TOOL_RESULT
-- PROGRESS
-- WARNING
-- ERROR
-
-ActionType:
-- REVIEW_REQUESTED
-- PR_CREATION_READY
-- PLAN_APPROVAL_REQUIRED
-- CI_FAILED
-- MERGE_CONFLICT
-- SECURITY_ALERT
-- USER_INPUT_REQUIRED
-
-PrStatus:
-- OPEN
-- APPROVED
-- CHANGES_REQUESTED
-- MERGED
-- CLOSED
-- CI_FAILED
-
-NotificationType:
-- TASK_ACTION_REQUIRED
-- PLAN_ACTION_REQUIRED
-- PR_REVIEW_ACTIVITY
-- PR_CI_FAILURE
-- AGENT_SESSION_FAILED
-
-StreamEventType:
-- TASK_UPDATED
-- SUBTASK_UPDATED
-- SESSION_OUTPUT
-- SESSION_STATE_CHANGED
-- PR_UPDATED
-- REVIEW_ASSIST_UPDATED
-- INLINE_COMMENT_UPDATED
-- NOTIFICATION_CREATED
-```
-
-Task decision contract:
-- `SubmitPlanDecisionRequest` identifies target by `sub_task_id` (no `unit_task_id` field).
+Plan decision semantics:
+- Decision target is identified by `sub_task_id`.
 - `APPROVE`: resumes same SubTask (`WAITING_FOR_PLAN_APPROVAL` -> `IN_PROGRESS`).
-- `REVISE`: requires non-empty `revision_note`, completes current SubTask with `completion_reason=REVISED`, and creates queued `REQUEST_CHANGES` SubTask.
-- `REJECT`: cancels current SubTask with `completion_reason=PLAN_REJECTED` and creates no follow-up SubTask.
+- `REVISE`: requires non-empty `revision_note`, marks current SubTask `REVISED`, creates queued `REQUEST_CHANGES` SubTask.
+- `REJECT`: marks current SubTask `PLAN_REJECTED`, creates no follow-up SubTask.
 
-Workspace stream contract:
+Workspace stream semantics:
 - `from_sequence` is exclusive (`sequence > from_sequence`).
-- Event sequence is workspace-scoped, monotonic, and starts at `1`.
-- If `from_sequence` is older than retention, return `OutOfRange` and include `EventStreamCursorOutOfRangeDetail.earliest_available_sequence`.
-- `StreamWorkspaceEventsResponse.oneof payload` has explicit event payload variants for all `StreamEventType` values.
+- Sequence is workspace-scoped, monotonic, and starts at `1`.
+- Out-of-retention cursor returns `OutOfRange` with `earliest_available_sequence`.
 
 ## Storage
-Main server scaffold ownership:
-- In-memory/task-domain validation logic for plan decisions and stream replay sequencing
+Main server:
+- `SINGLE_INSTANCE`: SQLite (`DEXDEX_SQLITE_PATH`)
+- `SCALE`: PostgreSQL (`DEXDEX_POSTGRES_DSN`)
+- Persisted tables:
+  - `unit_tasks`
+  - `sub_tasks`
+  - `workspace_events`
+  - `session_outputs`
 
-Worker server scaffold ownership:
-- In-memory commit-chain validation logic (`sha`, parent links, message, timestamp ordering)
+Broker:
+- `SINGLE_INSTANCE`: in-process subscriber fan-out + persisted replay from `workspace_events`
+- `SCALE`: Redis Streams publish/subscription (`DEXDEX_REDIS_ADDR`, `DEXDEX_REDIS_STREAM_PREFIX`) + persisted replay from `workspace_events`
 
-Desktop scaffold storage contract:
-- Workspace mode selection and resolved connection state are in-memory only in this phase
+Worker:
+- Session execution state is in-memory for current runtime process.
 
-Future deployment mode storage contract (reserved):
-- `SINGLE_INSTANCE`: SQLite + in-process event broker
-- `SCALE`: PostgreSQL + Redis streams/pub-sub
+Desktop:
+- Workspace mode and resolved connection state are in-memory.
+
+## Runtime Configuration
+Main server:
+- `DEXDEX_DEPLOYMENT_MODE` (`SINGLE_INSTANCE` | `SCALE`)
+- `DEXDEX_MAIN_ADDR` (default `127.0.0.1:7878`)
+- `DEXDEX_WORKER_ADDR` (default `http://127.0.0.1:7879`)
+- `DEXDEX_SQLITE_PATH` (single mode)
+- `DEXDEX_POSTGRES_DSN` (required in scale mode)
+- `DEXDEX_REDIS_ADDR` (required in scale mode)
+- `DEXDEX_REDIS_STREAM_PREFIX` (default `dexdex:events`)
+- `DEXDEX_AUTH_TOKEN` (optional bearer token)
+
+Worker server:
+- `DEXDEX_WORKER_ADDR` (default `127.0.0.1:7879`)
+- `DEXDEX_CODEX_BIN` (default `codex`)
+- `DEXDEX_CODEX_PROFILE` (optional)
+- `DEXDEX_WORKER_MAX_RETRY` (default `3`)
+- `DEXDEX_WORKER_RETRY_BACKOFF_MS` (default `600`)
+- `DEXDEX_AUTH_TOKEN` (optional bearer token)
+
+Desktop frontend:
+- `VITE_DEXDEX_MAIN_ADDR` (optional default remote endpoint)
 
 ## Security
-- Use TLS for non-localhost Connect RPC endpoints.
-- Enforce bearer token authentication and workspace-scoped authorization in full server implementations.
-- Validate repository URLs, branch refs, prompts, and review payloads before execution.
-- Keep provider-native raw payloads worker-local; never expose them in main-server APIs.
-- Never log secrets, tokens, or plaintext sensitive material.
-- Desktop `LOCAL` mode resolution must avoid token value logging and expose normalized Connect metadata only.
+- Main and worker servers support bearer authentication via `Authorization: Bearer <token>` when `DEXDEX_AUTH_TOKEN` is configured.
+- Never log raw tokens or secret payloads.
+- Desktop endpoint/token resolution keeps token visibility minimized in UI summaries and logs.
 
 ## Logging
-- Main and worker Go server scaffolds use `log/slog` structured logging.
-- Required correlation fields for full runtime implementations:
-: `workspace_id`
-: `unit_task_id`
-: `sub_task_id`
-: `session_id`
-: `pr_tracking_id`
-: `request_id`
-- Baseline scaffold events:
-: server scaffold start (`component`, `result`)
-: plan decision/replay validation failures with typed error codes
-: commit-chain validation failures with typed error codes
-- Prohibited log content:
-: raw provider tokens
-: provider-native secret payloads
-: plaintext secret material
+Main and worker server logs use `log/slog` structured events.
+Required correlation fields in operation logs:
+- `workspace_id`
+- `unit_task_id`
+- `sub_task_id`
+- `session_id`
+- `pr_tracking_id`
+- `request_id`
+
+Current baseline events:
+- server start/stop
+- auth denied reasons
+- execution retry attempts
+- commit-chain validation failures
+- broker stream errors
 
 ## Build and Test
-Current local validation commands:
+Validation commands:
 - `cd protos/dexdex && buf lint`
 - `cd protos/dexdex && buf build`
 - `./scripts/generate-go-proto.sh`
 - `go test ./servers/dexdex-main-server/...`
 - `go test ./servers/dexdex-worker-server/...`
 - `go test ./...`
-- `cargo test`
+- `pnpm install --frozen-lockfile`
 - `pnpm --filter dexdex test`
 
-Acceptance-focused scenarios:
-1. Approve decision resumes current SubTask from waiting-plan state.
-2. Revise decision requires non-empty revision note and creates queued request-changes SubTask.
-3. Reject decision cancels current SubTask and creates no follow-up SubTask.
-4. Replay uses exclusive cursor semantics (`sequence > from_sequence`).
-5. Replay rejects non-monotonic sequence streams.
-6. Replay reports cursor-out-of-range with earliest available sequence details.
-7. Worker accepts ordered real commit chains with valid parent linkage.
-8. Worker rejects empty chains, missing parent links, and non-monotonic commit time.
-9. Desktop workspace resolution continues to return normalized `CONNECT_RPC` connection metadata.
+## Acceptance Scenarios
+1. `CreateUnitTask` stores and lists tasks with pagination token handling.
+2. `StartSubTask` produces `WAITING_FOR_PLAN_APPROVAL` subtasks.
+3. `SubmitPlanDecision` enforces APPROVE/REVISE/REJECT transition contracts and typed validation details.
+4. `StreamWorkspaceEvents` enforces exclusive replay and out-of-range typed detail behavior.
+5. `ExecutionService.ExecuteSubTask` runs `codex exec --json` with retry/backoff and returns final session status.
+6. `ExecutionService.ValidateCommitChain` accepts ordered chains and rejects malformed chains.
+7. Desktop operator console can create/list tasks, start/list subtasks, submit plan decisions, and call PR/review/session endpoints after connection resolution.
 
 ## Roadmap
-- Phase 1: Shared proto contract scaffold (`dexdex.v1`) and desktop connection normalization.
-- Phase 2: Go main/worker server domain-logic scaffolds with parity to prior Rust task/commit validation behavior.
-- Phase 3: Connect handler implementations for task/session/stream APIs with persistence.
-- Phase 4: Orchestration runtime integrations (worktree lifecycle, session adapters, PR polling).
-- Phase 5: Scale-mode deployment support with production storage/event-broker backends.
+- Phase 3: Connect handlers + dual-mode persistence + broker abstraction (implemented baseline)
+- Phase 4: orchestration runtime integration hardening (worktree lifecycle/session adapters/reporting enrichment)
+- Phase 5: scale-mode production hardening (multi-node coordination, stronger durability and observability)
 
 ## Open Questions
-- None in the current scaffold scope.
+- Worker-to-main session output synchronization is currently API-level and can be extended to broker-driven push replication for higher throughput.
+- Redis stream retention and dead-letter policy are not yet configurable at per-workspace granularity.

@@ -6,6 +6,12 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
 
+enum DeploymentMode {
+  DEPLOYMENT_MODE_UNSPECIFIED = 0;
+  DEPLOYMENT_MODE_SINGLE_INSTANCE = 1;
+  DEPLOYMENT_MODE_SCALE = 2;
+}
+
 enum UnitTaskStatus {
   UNIT_TASK_STATUS_UNSPECIFIED = 0;
   UNIT_TASK_STATUS_QUEUED = 1;
@@ -117,8 +123,18 @@ enum PlanDecision {
   PLAN_DECISION_REJECT = 3;
 }
 
+enum PlanDecisionValidationErrorCode {
+  PLAN_DECISION_VALIDATION_ERROR_CODE_UNSPECIFIED = 0;
+  PLAN_DECISION_VALIDATION_ERROR_CODE_INVALID_SUB_TASK_STATUS = 1;
+  PLAN_DECISION_VALIDATION_ERROR_CODE_REVISION_NOTE_REQUIRED = 2;
+  PLAN_DECISION_VALIDATION_ERROR_CODE_SUB_TASK_NOT_FOUND = 3;
+  PLAN_DECISION_VALIDATION_ERROR_CODE_INTERNAL = 4;
+}
+
 message Workspace {
   string workspace_id = 1;
+  string display_name = 2;
+  DeploymentMode deployment_mode = 3;
 }
 
 message RepositoryRef {
@@ -142,17 +158,85 @@ message CommitMetadata {
 
 message UnitTask {
   string unit_task_id = 1;
-  UnitTaskStatus status = 2;
-  ActionType action_required = 3;
+  string workspace_id = 2;
+  string title = 3;
+  UnitTaskStatus status = 4;
+  ActionType action_required = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
 }
 
 message SubTask {
   string sub_task_id = 1;
   string unit_task_id = 2;
-  SubTaskType type = 3;
-  SubTaskStatus status = 4;
-  SubTaskCompletionReason completion_reason = 5;
-  repeated CommitMetadata commit_chain = 6;
+  string workspace_id = 3;
+  SubTaskType type = 4;
+  SubTaskStatus status = 5;
+  SubTaskCompletionReason completion_reason = 6;
+  string prompt = 7;
+  string revision_note = 8;
+  repeated CommitMetadata commit_chain = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+message SessionRecord {
+  string session_id = 1;
+  string workspace_id = 2;
+  string sub_task_id = 3;
+  AgentSessionStatus status = 4;
+  google.protobuf.Timestamp started_at = 5;
+  google.protobuf.Timestamp ended_at = 6;
+}
+
+message SessionOutputEvent {
+  string session_id = 1;
+  SessionOutputKind kind = 2;
+  string body = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+}
+
+message SessionStateChangedEvent {
+  string session_id = 1;
+  AgentSessionStatus status = 2;
+}
+
+message PullRequestRecord {
+  string pr_tracking_id = 1;
+  PrStatus status = 2;
+  string repository = 3;
+  int64 number = 4;
+}
+
+message ReviewAssistItem {
+  string review_assist_id = 1;
+  string body = 2;
+}
+
+message ReviewComment {
+  string review_comment_id = 1;
+  string body = 2;
+}
+
+message BadgeTheme {
+  string badge_theme_id = 1;
+  string theme_name = 2;
+}
+
+message NotificationRecord {
+  string notification_id = 1;
+  NotificationType type = 2;
+  string body = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message Pagination {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message PaginationResult {
+  string next_page_token = 1;
 }
 
 message StreamWorkspaceEventsRequest {
@@ -166,15 +250,10 @@ message EventStreamCursorOutOfRangeDetail {
   uint64 requested_from_sequence = 2;
 }
 
-message SessionOutputEvent {
-  string session_id = 1;
-  SessionOutputKind kind = 2;
-  string body = 3;
-}
-
-message SessionStateChangedEvent {
-  string session_id = 1;
-  AgentSessionStatus status = 2;
+message PlanDecisionValidationDetail {
+  PlanDecisionValidationErrorCode code = 1;
+  string message = 2;
+  string sub_task_id = 3;
 }
 
 message PrUpdatedEvent {
@@ -219,19 +298,47 @@ message StreamWorkspaceEventsResponse {
   }
 }
 
+message CreateUnitTaskRequest {
+  string workspace_id = 1;
+  string title = 2;
+}
+
+message CreateUnitTaskResponse {
+  UnitTask unit_task = 1;
+}
+
+message StartSubTaskRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  SubTaskType type = 3;
+  string prompt = 4;
+}
+
+message StartSubTaskResponse {
+  SubTask sub_task = 1;
+}
+
+message RetrySubTaskRequest {
+  string workspace_id = 1;
+  string sub_task_id = 2;
+  string reason = 3;
+}
+
+message RetrySubTaskResponse {
+  SubTask sub_task = 1;
+}
+
 message SubmitPlanDecisionRequest {
   string workspace_id = 1;
-  reserved 2;
-  reserved "unit_task_id";
   // Decision target is identified by sub_task_id.
-  string sub_task_id = 3;
+  string sub_task_id = 2;
   // APPROVE: resume current subtask (WAITING_FOR_PLAN_APPROVAL -> IN_PROGRESS).
   // REVISE: requires non-empty revision_note, completes current subtask as REVISED,
   // and creates a queued REQUEST_CHANGES subtask.
   // REJECT: cancels current subtask as PLAN_REJECTED and creates no follow-up.
-  PlanDecision decision = 4;
+  PlanDecision decision = 3;
   // Required when decision is REVISE.
-  string revision_note = 5;
+  string revision_note = 4;
 }
 
 message SubmitPlanDecisionResponse {
@@ -248,6 +355,17 @@ message GetUnitTaskResponse {
   UnitTask unit_task = 1;
 }
 
+message ListUnitTasksRequest {
+  string workspace_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListUnitTasksResponse {
+  repeated UnitTask unit_tasks = 1;
+  string next_page_token = 2;
+}
+
 message GetSubTaskRequest {
   string workspace_id = 1;
   string sub_task_id = 2;
@@ -255,6 +373,18 @@ message GetSubTaskRequest {
 
 message GetSubTaskResponse {
   SubTask sub_task = 1;
+}
+
+message ListSubTasksRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListSubTasksResponse {
+  repeated SubTask sub_tasks = 1;
+  string next_page_token = 2;
 }
 
 message GetWorkspaceRequest {
@@ -283,14 +413,20 @@ message GetSessionOutputResponse {
   repeated SessionOutputEvent events = 1;
 }
 
+message StreamSessionOutputRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+  uint64 from_offset = 3;
+}
+
+message StreamSessionOutputResponse {
+  SessionOutputEvent event = 1;
+  uint64 next_offset = 2;
+}
+
 message GetPullRequestRequest {
   string workspace_id = 1;
   string pr_tracking_id = 2;
-}
-
-message PullRequestRecord {
-  string pr_tracking_id = 1;
-  PrStatus status = 2;
 }
 
 message GetPullRequestResponse {
@@ -302,11 +438,6 @@ message ListReviewAssistItemsRequest {
   string unit_task_id = 2;
 }
 
-message ReviewAssistItem {
-  string review_assist_id = 1;
-  string body = 2;
-}
-
 message ListReviewAssistItemsResponse {
   repeated ReviewAssistItem items = 1;
 }
@@ -314,11 +445,6 @@ message ListReviewAssistItemsResponse {
 message ListReviewCommentsRequest {
   string workspace_id = 1;
   string pr_tracking_id = 2;
-}
-
-message ReviewComment {
-  string review_comment_id = 1;
-  string body = 2;
 }
 
 message ListReviewCommentsResponse {
@@ -329,11 +455,6 @@ message GetBadgeThemeRequest {
   string workspace_id = 1;
 }
 
-message BadgeTheme {
-  string badge_theme_id = 1;
-  string theme_name = 2;
-}
-
 message GetBadgeThemeResponse {
   BadgeTheme theme = 1;
 }
@@ -342,13 +463,28 @@ message ListNotificationsRequest {
   string workspace_id = 1;
 }
 
-message NotificationRecord {
-  string notification_id = 1;
-  NotificationType type = 2;
-}
-
 message ListNotificationsResponse {
   repeated NotificationRecord notifications = 1;
+}
+
+message ExecuteSubTaskRequest {
+  string workspace_id = 1;
+  string sub_task_id = 2;
+}
+
+message ExecuteSubTaskResponse {
+  SessionRecord session = 1;
+}
+
+message ValidateCommitChainRequest {
+  string workspace_id = 1;
+  string sub_task_id = 2;
+  repeated CommitMetadata commit_chain = 3;
+}
+
+message ValidateCommitChainResponse {
+  bool valid = 1;
+  string validation_error = 2;
 }
 
 service WorkspaceService {
@@ -360,13 +496,19 @@ service RepositoryService {
 }
 
 service TaskService {
+  rpc CreateUnitTask(CreateUnitTaskRequest) returns (CreateUnitTaskResponse);
+  rpc StartSubTask(StartSubTaskRequest) returns (StartSubTaskResponse);
+  rpc RetrySubTask(RetrySubTaskRequest) returns (RetrySubTaskResponse);
   rpc GetUnitTask(GetUnitTaskRequest) returns (GetUnitTaskResponse);
+  rpc ListUnitTasks(ListUnitTasksRequest) returns (ListUnitTasksResponse);
   rpc GetSubTask(GetSubTaskRequest) returns (GetSubTaskResponse);
+  rpc ListSubTasks(ListSubTasksRequest) returns (ListSubTasksResponse);
   rpc SubmitPlanDecision(SubmitPlanDecisionRequest) returns (SubmitPlanDecisionResponse);
 }
 
 service SessionService {
   rpc GetSessionOutput(GetSessionOutputRequest) returns (GetSessionOutputResponse);
+  rpc StreamSessionOutput(StreamSessionOutputRequest) returns (stream StreamSessionOutputResponse);
 }
 
 service PrManagementService {
@@ -394,4 +536,9 @@ service EventStreamService {
   // If from_sequence is older than retention, the server returns OutOfRange and
   // includes EventStreamCursorOutOfRangeDetail with earliest_available_sequence.
   rpc StreamWorkspaceEvents(StreamWorkspaceEventsRequest) returns (stream StreamWorkspaceEventsResponse);
+}
+
+service ExecutionService {
+  rpc ExecuteSubTask(ExecuteSubTaskRequest) returns (ExecuteSubTaskResponse);
+  rpc ValidateCommitChain(ValidateCommitChainRequest) returns (ValidateCommitChainResponse);
 }
