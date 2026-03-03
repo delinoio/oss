@@ -27,6 +27,8 @@ go.work.sum
 # Generated protobuf Go code
 servers/**/gen/proto/**/*.pb.go
 servers/**/gen/proto/**/*.connect.go
+protos/dexdex/gen/**/*.pb.go
+protos/dexdex/gen/**/*.connect.go
 
 # env file
 .env

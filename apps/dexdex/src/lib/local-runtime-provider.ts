@@ -6,13 +6,15 @@ const DEFAULT_LOCAL_REMOTE_URL = "http://127.0.0.1:7878";
 type ResolveLocalWorkspaceEndpointPayload = {
   endpoint_url: string;
   token?: string | null;
-  endpoint_source: "MANAGED_LOOPBACK";
+  endpoint_source: "MANAGED_LOOPBACK" | "LOCAL_OVERRIDE";
 };
 
 export type LocalWorkspaceEndpoint = {
   endpointUrl: string;
   token?: string;
-  endpointSource: WorkspaceEndpointSource.ManagedLoopback;
+  endpointSource:
+    | WorkspaceEndpointSource.ManagedLoopback
+    | WorkspaceEndpointSource.LocalOverride;
 };
 
 export interface LocalRuntimeProvider {
@@ -56,9 +58,12 @@ function isTauriRuntimeAvailable(): boolean {
 export function createStubLocalRuntimeProvider(options?: {
   defaultEndpointUrl?: string;
   defaultToken?: string;
+  defaultEndpointSource?: LocalWorkspaceEndpoint["endpointSource"];
   logger?: DexDexLogger;
 }): LocalRuntimeProvider {
   const logger = options?.logger ?? defaultLogger;
+  const endpointSource =
+    options?.defaultEndpointSource ?? WorkspaceEndpointSource.ManagedLoopback;
 
   return {
     async resolveLocalWorkspaceEndpoint(): Promise<LocalWorkspaceEndpoint> {
@@ -68,14 +73,14 @@ export function createStubLocalRuntimeProvider(options?: {
       const token = normalizeOptionalToken(options?.defaultToken);
 
       logger.info("local_runtime.resolve.stub", {
-        endpoint_source: WorkspaceEndpointSource.ManagedLoopback,
+        endpoint_source: endpointSource,
         endpoint_url: redactEndpointUrlForLogs(endpointUrl),
       });
 
       return {
         endpointUrl,
         token,
-        endpointSource: WorkspaceEndpointSource.ManagedLoopback,
+        endpointSource,
       };
     },
   };
@@ -108,16 +113,13 @@ export function createTauriLocalRuntimeProvider(options?: {
         const payload = await invoke<ResolveLocalWorkspaceEndpointPayload>(
           "resolve_local_workspace_endpoint",
         );
-
-        if (payload.endpoint_source !== "MANAGED_LOOPBACK") {
-          throw new Error("Unsupported local workspace endpoint source.");
-        }
+        const endpointSource = mapEndpointSource(payload.endpoint_source);
 
         const endpointUrl = normalizeEndpointUrl(payload.endpoint_url);
         const token = normalizeOptionalToken(payload.token);
 
         logger.info("local_runtime.resolve.success", {
-          endpoint_source: WorkspaceEndpointSource.ManagedLoopback,
+          endpoint_source: endpointSource,
           endpoint_url: redactEndpointUrlForLogs(endpointUrl),
           result: "success",
         });
@@ -125,7 +127,7 @@ export function createTauriLocalRuntimeProvider(options?: {
         return {
           endpointUrl,
           token,
-          endpointSource: WorkspaceEndpointSource.ManagedLoopback,
+          endpointSource,
         };
       } catch (error) {
         const reason =
@@ -144,4 +146,17 @@ export function createTauriLocalRuntimeProvider(options?: {
       }
     },
   };
+}
+
+function mapEndpointSource(
+  endpointSource: ResolveLocalWorkspaceEndpointPayload["endpoint_source"],
+): LocalWorkspaceEndpoint["endpointSource"] {
+  if (endpointSource === "MANAGED_LOOPBACK") {
+    return WorkspaceEndpointSource.ManagedLoopback;
+  }
+  if (endpointSource === "LOCAL_OVERRIDE") {
+    return WorkspaceEndpointSource.LocalOverride;
+  }
+
+  throw new Error("Unsupported local workspace endpoint source.");
 }

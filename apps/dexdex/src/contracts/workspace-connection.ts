@@ -2,6 +2,7 @@ import { WorkspaceMode } from "./workspace-mode";
 
 export enum WorkspaceEndpointSource {
   ManagedLoopback = "MANAGED_LOOPBACK",
+  LocalOverride = "LOCAL_OVERRIDE",
   UserRemote = "USER_REMOTE",
 }
 
