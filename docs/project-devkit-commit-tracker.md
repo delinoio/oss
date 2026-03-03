@@ -292,6 +292,10 @@ Acceptance-focused scenarios:
 - Report CLI applies `--fail-on` thresholds deterministically (`never|warn|fail`)
 
 ## Environment Variables
+Environment template files:
+- Server: `servers/commit-tracker/.env.example`
+- Devkit proxy: `apps/devkit/.env.example`
+
 Server:
 - `COMMIT_TRACKER_DATABASE_URL` (required)
 - `COMMIT_TRACKER_AUTH_TOKEN` (required)

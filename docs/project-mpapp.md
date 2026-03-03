@@ -60,6 +60,7 @@ The core user flow is:
   - `EXPO_PUBLIC_MPAPP_HID_TARGET_HOST_ADDRESS` env override
   - `expo.extra.mpapp.hidTargetHostAddress` in app config
   - `null` (which is an explicit connect-time error in native mode)
+- Optional env overrides are documented in `apps/mpapp/.env.example`.
 - Diagnostics module records structured events, failures, and latency observations in local storage.
 
 ## Interfaces

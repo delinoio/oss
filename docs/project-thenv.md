@@ -215,6 +215,10 @@ Prohibited log content:
 - Raw authentication tokens
 
 ## Runtime Defaults
+Environment template files:
+- Server: `servers/thenv/.env.example`
+- Devkit web console proxy: `apps/devkit/.env.example`
+
 Server environment variables:
 - `THENV_ADDR` (default: `127.0.0.1:8087`)
 - `THENV_DB_PATH` (default: `${XDG_CONFIG_HOME or OS config dir}/thenv/thenv.sqlite3`)
