@@ -533,6 +533,10 @@ func (s *workspaceStore) unsubscribe(subscription *streamSubscription) {
 	}
 	delete(workspace.subscribers, subscription.subscriberID)
 	close(events)
+
+	if workspaceHasNoState(workspace) {
+		delete(s.workspaces, subscription.workspaceID)
+	}
 }
 
 func (s *workspaceStore) ensureWorkspaceLocked(workspaceID string) *workspaceState {
@@ -646,6 +650,13 @@ func (s *workspaceStore) listEvents(workspaceID string) []*dexdexv1.StreamWorksp
 	}
 
 	return events
+}
+
+func workspaceHasNoState(workspace *workspaceState) bool {
+	return len(workspace.unitTasks) == 0 &&
+		len(workspace.subTasks) == 0 &&
+		len(workspace.events) == 0 &&
+		len(workspace.subscribers) == 0
 }
 
 func protoSubTaskToDomain(subTask *dexdexv1.SubTask) SubTask {

@@ -358,6 +358,13 @@ func TestStreamWorkspaceEventsCancelCleansUpSubscriber(t *testing.T) {
 	waitForCondition(t, 2*time.Second, func() bool {
 		return service.store.subscriberCount("workspace-1") == 0
 	})
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		service.store.mu.RLock()
+		defer service.store.mu.RUnlock()
+		_, exists := service.store.workspaces["workspace-1"]
+		return !exists
+	})
 }
 
 func TestSubmitPlanDecisionEventsPropagateToLiveStreamInOrder(t *testing.T) {

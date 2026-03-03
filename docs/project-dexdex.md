@@ -285,6 +285,7 @@ Main server scaffold ownership:
 - In-memory workspace event ring buffer with configurable retention
 - In-memory live subscriber registry per workspace
 - Non-blocking subscriber fan-out with explicit drop policy when subscriber buffers are full
+- Empty workspace entries created for stream-only sessions are garbage-collected when the last subscriber disconnects
 
 Worker server scaffold ownership:
 - In-memory commit-chain validation logic (`sha`, parent links, message, timestamp ordering)
