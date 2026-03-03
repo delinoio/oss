@@ -28,9 +28,11 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 - Connect RPC-first business contracts for workspace, repository, task, session, PR, review, notification, and stream flows
 - Main server control-plane ownership of task/subtask lifecycle decision logic
 - Worker server execution-plane ownership of ordered real commit-chain validation
+- Worker server event-level normalization of Codex CLI, Claude Code, and OpenCode session outputs
 - Plan-mode decision transitions (`APPROVE`, `REVISE`, `REJECT`) at SubTask scope
 - Workspace event streaming with replay/resume semantics (`from_sequence` exclusive)
 - Desktop workspace mode resolution (`LOCAL`, `REMOTE`) with normalized connection metadata
+- DexDex desktop v1 support for Codex CLI, Claude Code, and OpenCode integrations
 
 ## Out of Scope
 - Tauri-specific bindings as primary business-data contracts
@@ -45,9 +47,11 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 : It uses structured logs via `log/slog`.
 - Worker server (`servers/dexdex-worker-server`) is the execution-plane Go service scaffold
 : It validates ordered real commit-chain metadata emitted by SubTask execution.
+: It normalizes provider-native CLI output streams into one session-output contract.
 : It uses structured logs via `log/slog`.
 - Desktop app (`apps/dexdex`) is the orchestration client shell
 : It resolves workspace mode into one normalized Connect RPC connection contract.
+: It provides a shared React Query + Connect Query transport scaffold for RPC data flows.
 : Post-resolution behavior stays identical between `LOCAL` and `REMOTE` modes.
 - Shared proto (`protos/dexdex/v1/dexdex.proto`) is the canonical contract surface for cross-runtime integrations.
 
@@ -107,6 +111,16 @@ type ResolvedWorkspaceConnection = {
   endpointSource: WorkspaceEndpointSource;
   token?: string;
   transport: "CONNECT_RPC";
+};
+```
+
+Desktop Connect Query scaffold contract:
+
+```ts
+type DexDexConnectQueryRuntime = {
+  queryClient: "SINGLETON_REACT_QUERY_CLIENT";
+  transportProvider: "@connectrpc/connect-query";
+  transportFactory: "(endpointUrl: string) => ConnectTransport";
 };
 ```
 
@@ -192,6 +206,22 @@ SessionOutputKind:
 - WARNING
 - ERROR
 
+AgentCliType:
+- CODEX_CLI
+- CLAUDE_CODE
+- OPENCODE
+
+SessionOutputSourceEventType:
+- RUN_STARTED
+- TURN_STARTED
+- TEXT_DELTA
+- TEXT_FINAL
+- STEP_STARTED
+- STEP_FINISHED
+- RESULT
+- ERROR
+- SYSTEM
+
 ActionType:
 - REVIEW_REQUESTED
 - PR_CREATION_READY
@@ -239,12 +269,19 @@ Workspace stream contract:
 - If `from_sequence` is older than retention, return `OutOfRange` and include `EventStreamCursorOutOfRangeDetail.earliest_available_sequence`.
 - `StreamWorkspaceEventsResponse.oneof payload` has explicit event payload variants for all `StreamEventType` values.
 
+Session output normalization contract:
+- `SessionOutputEvent.source` is worker-normalized metadata for provider-native CLI events.
+- `SessionOutputEvent.is_terminal` indicates whether the normalized source event closed a turn/run boundary.
+- `SessionOutputSourceMetadata.source_sequence` is strictly monotonic per source stream (`1..N`).
+- Raw provider event identifiers are preserved in `SessionOutputSourceMetadata.raw_event_type`.
+
 ## Storage
 Main server scaffold ownership:
 - In-memory/task-domain validation logic for plan decisions and stream replay sequencing
 
 Worker server scaffold ownership:
 - In-memory commit-chain validation logic (`sha`, parent links, message, timestamp ordering)
+- In-memory session-output normalization logic and fixture-backed parser validation
 
 Desktop scaffold storage contract:
 - Workspace mode selection and resolved connection state are in-memory only in this phase
@@ -289,6 +326,7 @@ Current local validation commands:
 - `go test ./...`
 - `cargo test`
 - `pnpm --filter dexdex test`
+- `cd apps/dexdex && pnpm test`
 
 Acceptance-focused scenarios:
 1. Approve decision resumes current SubTask from waiting-plan state.
@@ -300,6 +338,10 @@ Acceptance-focused scenarios:
 7. Worker accepts ordered real commit chains with valid parent linkage.
 8. Worker rejects empty chains, missing parent links, and non-monotonic commit time.
 9. Desktop workspace resolution continues to return normalized `CONNECT_RPC` connection metadata.
+10. Worker normalizes Codex CLI `turn.failed` events as terminal session output errors.
+11. Worker normalizes Claude Code stream deltas and final assistant text into distinct event types.
+12. Worker preserves OpenCode `step_start` -> `text` -> `step_finish` event ordering.
+13. Worker converts malformed JSON source lines into non-terminal parse-error output events.
 
 ## Roadmap
 - Phase 1: Shared proto contract scaffold (`dexdex.v1`) and desktop connection normalization.
