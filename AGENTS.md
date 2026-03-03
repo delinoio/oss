@@ -19,6 +19,7 @@
 - Prefer structured logging libraries for business and system logs (Go: `log/slog`, Rust: `tracing`).
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
 - When accessing `github.com`, use the GitHub CLI (`gh`) instead of browser-based workflows when possible.
+- Run GitHub CLI (`gh`) commands outside sandbox restrictions by default; use the required approval flow when escalation is needed.
 - When writing shell commands or scripts, treat backticks and command substitution carefully, prefer `$(...)` over legacy backticks, and apply strict escaping for all dynamic values.
 - If an operation is blocked by sandbox restrictions, retry it without sandbox restrictions using the required approval flow.
 
@@ -208,6 +209,7 @@ enum DexDexComponent {
 
 - Use `$(...)` for command substitution; do not use legacy backticks in new scripts.
 - Apply strict quoting and escaping for all dynamic shell values to prevent command injection and parsing bugs.
+- Run GitHub CLI (`gh`) commands outside sandbox restrictions by default; use the required approval flow when escalation is needed.
 - If an operation is blocked by sandbox restrictions, retry it without sandbox restrictions using the required approval flow.
 
 ### Logging Rules
