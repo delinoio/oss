@@ -223,3 +223,53 @@ func TestNormalizeSessionOutputLinesOpenCodePreservesTextDeltaWhitespace(t *test
 		t.Fatalf("unexpected delta body: got=%q want=%q", event.Body, "  open code chunk  ")
 	}
 }
+
+func TestNormalizeSessionOutputLinesClaudeToolOnlyAssistantDoesNotInventText(t *testing.T) {
+	rawLines := []string{
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"noop"}]}}`,
+	}
+
+	events, err := NormalizeSessionOutputLines(AgentCliTypeClaudeCode, "session-claude-tool", rawLines)
+	if err != nil {
+		t.Fatalf("NormalizeSessionOutputLines returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("unexpected event count: got=%d want=1", len(events))
+	}
+
+	event := events[0]
+	if event.SourceEventType != SessionOutputSourceEventTypeTextFinal {
+		t.Fatalf("unexpected source event type: got=%v want=%v", event.SourceEventType, SessionOutputSourceEventTypeTextFinal)
+	}
+	if event.Body != "" {
+		t.Fatalf("expected empty body for tool-only assistant content, got=%q", event.Body)
+	}
+}
+
+func TestNormalizeSessionOutputLinesIgnoresBlankLines(t *testing.T) {
+	rawLines := []string{
+		"",
+		" ",
+		`{"type":"step_start","part":{"type":"step-start"}}`,
+		"",
+		`{"type":"text","part":{"text":"HELLO"}}`,
+		"   ",
+	}
+
+	events, err := NormalizeSessionOutputLines(AgentCliTypeOpenCode, "session-opencode-blank", rawLines)
+	if err != nil {
+		t.Fatalf("NormalizeSessionOutputLines returned error: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("unexpected event count: got=%d want=2", len(events))
+	}
+	if events[0].SourceSequence != 1 {
+		t.Fatalf("unexpected first source sequence: got=%d want=1", events[0].SourceSequence)
+	}
+	if events[1].SourceSequence != 2 {
+		t.Fatalf("unexpected second source sequence: got=%d want=2", events[1].SourceSequence)
+	}
+	if events[0].Kind == SessionOutputKindError || events[1].Kind == SessionOutputKindError {
+		t.Fatal("blank lines should not emit parse error events")
+	}
+}

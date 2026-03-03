@@ -80,25 +80,24 @@ func NormalizeSessionOutputLines(
 	}
 
 	events := make([]NormalizedSessionOutputEvent, 0, len(rawLines))
-	for index, rawLine := range rawLines {
-		sequence := uint64(index + 1)
+	var sourceSequence uint64
+	for _, rawLine := range rawLines {
 		trimmed := strings.TrimSpace(rawLine)
 		if trimmed == "" {
-			parseEvent := parseFailureEvent(cli, sessionID, sequence, errors.New("empty line"))
-			events = append(events, parseEvent)
 			continue
 		}
+		sourceSequence++
 
 		var payload map[string]any
 		if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
-			parseEvent := parseFailureEvent(cli, sessionID, sequence, err)
+			parseEvent := parseFailureEvent(cli, sessionID, sourceSequence, err)
 			events = append(events, parseEvent)
 			continue
 		}
 
-		normalized, known := normalizeKnownEvent(cli, sessionID, sequence, payload)
+		normalized, known := normalizeKnownEvent(cli, sessionID, sourceSequence, payload)
 		if !known {
-			normalized = unknownEvent(cli, sessionID, sequence, payload)
+			normalized = unknownEvent(cli, sessionID, sourceSequence, payload)
 			slog.Warn(
 				"session_output.normalize.unknown_event",
 				"cli_type", normalized.CliType.String(),
@@ -246,9 +245,6 @@ func normalizeClaudeEvent(
 		base.Kind = SessionOutputKindText
 		base.SourceEventType = SessionOutputSourceEventTypeTextFinal
 		base.Body = concatClaudeAssistantText(payload)
-		if base.Body == "" {
-			base.Body = "assistant message"
-		}
 		return base, true
 	case "result":
 		base.Kind = SessionOutputKindText
