@@ -18,6 +18,8 @@
 - Write sufficient logs for debugging and operational troubleshooting.
 - Prefer structured logging libraries for business and system logs (Go: `log/slog`, Rust: `tracing`).
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
+- Prefer React Query for frontend server-state management when it is available.
+- When using React Query with Connect RPC, use `@connectrpc/connect-query` from `https://github.com/connectrpc/connect-query-es`.
 - When accessing `github.com`, use the GitHub CLI (`gh`) instead of browser-based workflows when possible.
 - Run GitHub CLI (`gh`) commands outside sandbox restrictions by default; use the required approval flow when escalation is needed.
 - When writing shell commands or scripts, treat backticks and command substitution carefully, prefer `$(...)` over legacy backticks, and apply strict escaping for all dynamic values.
