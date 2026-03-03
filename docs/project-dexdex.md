@@ -38,12 +38,14 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 - Tauri-specific bindings as primary business-data contracts
 - Patch-only authoritative change outputs without real git commit metadata
 - Provider-native raw session payload contracts in main server APIs and client-facing streams
-- Full production persistence, distributed orchestration, and complete Connect handler implementations in this scaffold phase
+- Full production persistence, distributed orchestration, and non-task/non-stream Connect handler implementations in this phase
 - Persistent desktop token vault behavior in this phase
 
 ## Architecture
 - Main server (`servers/dexdex-main-server`) is the control-plane Go service scaffold
-: It provides domain logic for plan-decision state transitions and stream replay validation.
+: It serves `TaskService` (`GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`) and `EventStreamService.StreamWorkspaceEvents` over Connect RPC.
+: It keeps workspace task/subtask/event state in memory and starts with an empty workspace set.
+: It provides replay + live-tail stream delivery with retention validation and keepalive heartbeat frames.
 : It uses structured logs via `log/slog`.
 - Worker server (`servers/dexdex-worker-server`) is the execution-plane Go service scaffold
 : It validates ordered real commit-chain metadata emitted by SubTask execution.
@@ -268,6 +270,8 @@ Workspace stream contract:
 - Event sequence is workspace-scoped, monotonic, and starts at `1`.
 - If `from_sequence` is older than retention, return `OutOfRange` and include `EventStreamCursorOutOfRangeDetail.earliest_available_sequence`.
 - `StreamWorkspaceEventsResponse.oneof payload` has explicit event payload variants for all `StreamEventType` values.
+- Live-tail mode remains open after replay and delivers new events as they are published.
+- Keepalive frames use `sequence=0` and `event_type=STREAM_EVENT_TYPE_UNSPECIFIED` (clients should ignore them for replay cursors/state materialization).
 
 Session output normalization contract:
 - `SessionOutputEvent.source` is worker-normalized metadata for provider-native CLI events.
@@ -277,7 +281,10 @@ Session output normalization contract:
 
 ## Storage
 Main server scaffold ownership:
-- In-memory/task-domain validation logic for plan decisions and stream replay sequencing
+- In-memory task/subtask maps per workspace with empty-on-boot default state
+- In-memory workspace event ring buffer with configurable retention
+- In-memory live subscriber registry per workspace
+- Non-blocking subscriber fan-out with explicit drop policy when subscriber buffers are full
 
 Worker server scaffold ownership:
 - In-memory commit-chain validation logic (`sha`, parent links, message, timestamp ordering)
@@ -310,6 +317,8 @@ Future deployment mode storage contract (reserved):
 - Baseline scaffold events:
 : server scaffold start (`component`, `result`)
 : plan decision/replay validation failures with typed error codes
+: stream open/close transitions and heartbeat send failures
+: subscriber backpressure drops with fixed `policy=drop`
 : commit-chain validation failures with typed error codes
 - Prohibited log content:
 : raw provider tokens
@@ -328,25 +337,34 @@ Current local validation commands:
 - `pnpm --filter dexdex test`
 - `cd apps/dexdex && pnpm test`
 
+Main server runtime configuration:
+- `DEXDEX_MAIN_SERVER_ADDR` (default: `127.0.0.1:7878`)
+- `DEXDEX_MAIN_STREAM_RETENTION` (default: `256`)
+- `DEXDEX_MAIN_STREAM_HEARTBEAT_INTERVAL` (default: `15s`, Go duration format)
+
 Acceptance-focused scenarios:
 1. Approve decision resumes current SubTask from waiting-plan state.
 2. Revise decision requires non-empty revision note and creates queued request-changes SubTask.
-3. Reject decision cancels current SubTask and creates no follow-up SubTask.
-4. Replay uses exclusive cursor semantics (`sequence > from_sequence`).
-5. Replay rejects non-monotonic sequence streams.
-6. Replay reports cursor-out-of-range with earliest available sequence details.
-7. Worker accepts ordered real commit chains with valid parent linkage.
-8. Worker rejects empty chains, missing parent links, and non-monotonic commit time.
-9. Desktop workspace resolution continues to return normalized `CONNECT_RPC` connection metadata.
-10. Worker normalizes Codex CLI `turn.failed` events as terminal session output errors.
-11. Worker normalizes Claude Code stream deltas and final assistant text into distinct event types.
-12. Worker preserves OpenCode `step_start` -> `text` -> `step_finish` event ordering.
-13. Worker converts malformed JSON source lines into non-terminal parse-error output events.
+3. Revise decision server-generates a new SubTask ID with deterministic prefix `<workspace_id>-subtask-`.
+4. Reject decision cancels current SubTask and creates no follow-up SubTask.
+5. Replay uses exclusive cursor semantics (`sequence > from_sequence`).
+6. Replay rejects non-monotonic sequence streams.
+7. Replay reports cursor-out-of-range with earliest available sequence details.
+8. Live tail receives newly published SubTask update events after replay completion.
+9. Stream subscriber lifecycle is cleaned up on client-side cancellation.
+10. Backpressure policy drops events for saturated subscriber buffers without blocking publishers.
+11. Worker accepts ordered real commit chains with valid parent linkage.
+12. Worker rejects empty chains, missing parent links, and non-monotonic commit time.
+13. Desktop workspace resolution continues to return normalized `CONNECT_RPC` connection metadata.
+14. Worker normalizes Codex CLI `turn.failed` events as terminal session output errors.
+15. Worker normalizes Claude Code stream deltas and final assistant text into distinct event types.
+16. Worker preserves OpenCode `step_start` -> `text` -> `step_finish` event ordering.
+17. Worker converts malformed JSON source lines into non-terminal parse-error output events.
 
 ## Roadmap
 - Phase 1: Shared proto contract scaffold (`dexdex.v1`) and desktop connection normalization.
 - Phase 2: Go main/worker server domain-logic scaffolds with parity to prior Rust task/commit validation behavior.
-- Phase 3: Connect handler implementations for task/session/stream APIs with persistence.
+- Phase 3: Task/stream Connect handler implementation (current) and remaining service handlers with persistence.
 - Phase 4: Orchestration runtime integrations (worktree lifecycle, session adapters, PR polling).
 - Phase 5: Scale-mode deployment support with production storage/event-broker backends.
 
