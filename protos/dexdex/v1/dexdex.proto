@@ -68,6 +68,26 @@ enum SessionOutputKind {
   SESSION_OUTPUT_KIND_ERROR = 7;
 }
 
+enum AgentCliType {
+  AGENT_CLI_TYPE_UNSPECIFIED = 0;
+  AGENT_CLI_TYPE_CODEX_CLI = 1;
+  AGENT_CLI_TYPE_CLAUDE_CODE = 2;
+  AGENT_CLI_TYPE_OPENCODE = 3;
+}
+
+enum SessionOutputSourceEventType {
+  SESSION_OUTPUT_SOURCE_EVENT_TYPE_UNSPECIFIED = 0;
+  SESSION_OUTPUT_SOURCE_EVENT_TYPE_RUN_STARTED = 1;
+  SESSION_OUTPUT_SOURCE_EVENT_TYPE_TURN_STARTED = 2;
+  SESSION_OUTPUT_SOURCE_EVENT_TYPE_TEXT_DELTA = 3;
+  SESSION_OUTPUT_SOURCE_EVENT_TYPE_TEXT_FINAL = 4;
+  SESSION_OUTPUT_SOURCE_EVENT_TYPE_STEP_STARTED = 5;
+  SESSION_OUTPUT_SOURCE_EVENT_TYPE_STEP_FINISHED = 6;
+  SESSION_OUTPUT_SOURCE_EVENT_TYPE_RESULT = 7;
+  SESSION_OUTPUT_SOURCE_EVENT_TYPE_ERROR = 8;
+  SESSION_OUTPUT_SOURCE_EVENT_TYPE_SYSTEM = 9;
+}
+
 enum ActionType {
   ACTION_TYPE_UNSPECIFIED = 0;
   ACTION_TYPE_REVIEW_REQUESTED = 1;
@@ -166,10 +186,20 @@ message EventStreamCursorOutOfRangeDetail {
   uint64 requested_from_sequence = 2;
 }
 
+// worker-normalized event contract for provider-native CLI output.
+message SessionOutputSourceMetadata {
+  AgentCliType cli_type = 1;
+  SessionOutputSourceEventType source_event_type = 2;
+  uint64 source_sequence = 3;
+  string raw_event_type = 4;
+}
+
 message SessionOutputEvent {
   string session_id = 1;
   SessionOutputKind kind = 2;
   string body = 3;
+  SessionOutputSourceMetadata source = 4;
+  bool is_terminal = 5;
 }
 
 message SessionStateChangedEvent {
