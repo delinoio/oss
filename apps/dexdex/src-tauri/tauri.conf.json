@@ -4,7 +4,6 @@
   "version": "0.1.0",
   "identifier": "io.delino.dexdex",
   "build": {
-    "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build",
     "devUrl": "http://localhost:5991",
     "frontendDist": "../dist"
