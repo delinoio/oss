@@ -195,6 +195,23 @@ enum DexDexComponent {
 - Use `project-` prefix for all project docs.
 - Use enum-like canonical identifiers in documents where values must remain stable.
 
+### GitHub Issue Style Contract
+
+- Apply this contract to all open/new GitHub issues except titles that start with `Idea:`.
+- Use issue titles in the format `<domain>: <description>`.
+- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`, `devkit/thenv`).
+- `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
+- Do not use bracket-style project prefixes like `[serde-feather]` in non-`Idea:` issues.
+- Use the following Markdown section order for issue bodies:
+  - `## Summary`
+  - `## Evidence`
+  - `## Current Gap`
+  - `## Proposed Scope`
+  - `## Acceptance Criteria`
+  - `## Test Scenarios`
+  - `## Out of Scope`
+- Optional `## Additional Notes` may be appended only when needed.
+
 ### Node Runtime Baseline
 
 - Root `.nvmrc` is the canonical Node.js runtime selector for local development workflows.
