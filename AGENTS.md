@@ -12,6 +12,7 @@
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
+- When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
 - Do not guess; rather search for the web.
 - Debug by logging. You should write enough logging code.
 - Write sufficient logs for debugging and operational troubleshooting.
