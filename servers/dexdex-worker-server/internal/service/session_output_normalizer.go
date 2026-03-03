@@ -299,7 +299,7 @@ func normalizeOpenCodeEvent(
 	case "text":
 		base.Kind = SessionOutputKindText
 		base.SourceEventType = SessionOutputSourceEventTypeTextDelta
-		base.Body = nestedString(payload, "part", "text")
+		base.Body = nestedStringRaw(payload, "part", "text")
 		return base, true
 	case "step_finish":
 		base.Kind = SessionOutputKindProgress

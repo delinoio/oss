@@ -201,3 +201,25 @@ func TestNormalizeSessionOutputLinesClaudeConcatenatesAllAssistantTextBlocks(t *
 		t.Fatalf("unexpected final body: got=%q want=%q", event.Body, "Hello world!")
 	}
 }
+
+func TestNormalizeSessionOutputLinesOpenCodePreservesTextDeltaWhitespace(t *testing.T) {
+	rawLines := []string{
+		`{"type":"text","part":{"text":"  open code chunk  "}}`,
+	}
+
+	events, err := NormalizeSessionOutputLines(AgentCliTypeOpenCode, "session-opencode-space", rawLines)
+	if err != nil {
+		t.Fatalf("NormalizeSessionOutputLines returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("unexpected event count: got=%d want=1", len(events))
+	}
+
+	event := events[0]
+	if event.SourceEventType != SessionOutputSourceEventTypeTextDelta {
+		t.Fatalf("unexpected source event type: got=%v want=%v", event.SourceEventType, SessionOutputSourceEventTypeTextDelta)
+	}
+	if event.Body != "  open code chunk  " {
+		t.Fatalf("unexpected delta body: got=%q want=%q", event.Body, "  open code chunk  ")
+	}
+}
