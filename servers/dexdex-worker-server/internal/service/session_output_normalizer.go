@@ -245,7 +245,7 @@ func normalizeClaudeEvent(
 	case "assistant":
 		base.Kind = SessionOutputKindText
 		base.SourceEventType = SessionOutputSourceEventTypeTextFinal
-		base.Body = firstClaudeAssistantText(payload)
+		base.Body = concatClaudeAssistantText(payload)
 		if base.Body == "" {
 			base.Body = "assistant message"
 		}
@@ -269,7 +269,7 @@ func normalizeClaudeEvent(
 		if eventType == "content_block_delta" && nestedString(payload, "event", "delta", "type") == "text_delta" {
 			base.Kind = SessionOutputKindText
 			base.SourceEventType = SessionOutputSourceEventTypeTextDelta
-			base.Body = nestedString(payload, "event", "delta", "text")
+			base.Body = nestedStringRaw(payload, "event", "delta", "text")
 			return base, true
 		}
 
@@ -362,12 +362,13 @@ func newBaseEvent(
 	}
 }
 
-func firstClaudeAssistantText(payload map[string]any) string {
+func concatClaudeAssistantText(payload map[string]any) string {
 	contentArray, ok := nestedArray(payload, "message", "content")
 	if !ok {
 		return ""
 	}
 
+	var builder strings.Builder
 	for _, item := range contentArray {
 		itemMap, ok := item.(map[string]any)
 		if !ok {
@@ -376,12 +377,10 @@ func firstClaudeAssistantText(payload map[string]any) string {
 		if getString(itemMap, "type") != "text" {
 			continue
 		}
-		if text := getString(itemMap, "text"); text != "" {
-			return text
-		}
+		builder.WriteString(getStringRaw(itemMap, "text"))
 	}
 
-	return ""
+	return builder.String()
 }
 
 func nestedArray(payload map[string]any, keys ...string) ([]any, bool) {
@@ -422,6 +421,27 @@ func nestedString(payload map[string]any, keys ...string) string {
 	return strings.TrimSpace(stringValue)
 }
 
+func nestedStringRaw(payload map[string]any, keys ...string) string {
+	current := any(payload)
+	for _, key := range keys {
+		typedMap, ok := current.(map[string]any)
+		if !ok {
+			return ""
+		}
+		current, ok = typedMap[key]
+		if !ok {
+			return ""
+		}
+	}
+
+	stringValue, ok := current.(string)
+	if !ok {
+		return ""
+	}
+
+	return stringValue
+}
+
 func getString(payload map[string]any, key string) string {
 	value, ok := payload[key]
 	if !ok {
@@ -434,4 +454,18 @@ func getString(payload map[string]any, key string) string {
 	}
 
 	return strings.TrimSpace(stringValue)
+}
+
+func getStringRaw(payload map[string]any, key string) string {
+	value, ok := payload[key]
+	if !ok {
+		return ""
+	}
+
+	stringValue, ok := value.(string)
+	if !ok {
+		return ""
+	}
+
+	return stringValue
 }

@@ -157,3 +157,47 @@ func TestNormalizeSessionOutputLinesAssignsMonotonicSourceSequence(t *testing.T)
 		}
 	}
 }
+
+func TestNormalizeSessionOutputLinesClaudePreservesTextDeltaWhitespace(t *testing.T) {
+	rawLines := []string{
+		`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"  padded chunk  "}}}`,
+	}
+
+	events, err := NormalizeSessionOutputLines(AgentCliTypeClaudeCode, "session-claude-space", rawLines)
+	if err != nil {
+		t.Fatalf("NormalizeSessionOutputLines returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("unexpected event count: got=%d want=1", len(events))
+	}
+
+	event := events[0]
+	if event.SourceEventType != SessionOutputSourceEventTypeTextDelta {
+		t.Fatalf("unexpected source event type: got=%v want=%v", event.SourceEventType, SessionOutputSourceEventTypeTextDelta)
+	}
+	if event.Body != "  padded chunk  " {
+		t.Fatalf("unexpected delta body: got=%q want=%q", event.Body, "  padded chunk  ")
+	}
+}
+
+func TestNormalizeSessionOutputLinesClaudeConcatenatesAllAssistantTextBlocks(t *testing.T) {
+	rawLines := []string{
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"},{"type":"text","text":" world"},{"type":"tool_use","name":"noop"},{"type":"text","text":"!"}]}}`,
+	}
+
+	events, err := NormalizeSessionOutputLines(AgentCliTypeClaudeCode, "session-claude-final", rawLines)
+	if err != nil {
+		t.Fatalf("NormalizeSessionOutputLines returned error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("unexpected event count: got=%d want=1", len(events))
+	}
+
+	event := events[0]
+	if event.SourceEventType != SessionOutputSourceEventTypeTextFinal {
+		t.Fatalf("unexpected source event type: got=%v want=%v", event.SourceEventType, SessionOutputSourceEventTypeTextFinal)
+	}
+	if event.Body != "Hello world!" {
+		t.Fatalf("unexpected final body: got=%q want=%q", event.Body, "Hello world!")
+	}
+}
