@@ -43,6 +43,8 @@ The shell visual baseline follows Toss Design System-inspired foundations (color
 - Current route maturity mix: `commit-tracker`, `remote-file-picker`, and `thenv` are live.
 - Home route platform status messaging reflects live mini-app maturity and must not describe shell-only bootstrap state.
 - Backend-coupled mini apps consume backend APIs while preserving shell-owned auth/session/navigation behavior.
+- When available, mini apps use React Query for frontend server-state management.
+- Connect RPC + React Query integrations use `@connectrpc/connect-query` ([connect-query-es](https://github.com/connectrpc/connect-query-es)).
 
 ## Interfaces
 Canonical mini app IDs:
