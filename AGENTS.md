@@ -197,11 +197,11 @@ enum DexDexComponent {
 
 ### GitHub Issue Style Contract
 
-- Apply this contract to all open/new GitHub issues except titles that start with `Idea:`.
+- Apply this contract to all open/new GitHub issues.
 - Use issue titles in the format `<domain>: <description>`.
 - `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`, `devkit/thenv`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
-- Do not use bracket-style project prefixes like `[serde-feather]` in non-`Idea:` issues.
+- Do not use bracket-style project prefixes like `[serde-feather]`.
 - Use the following Markdown section order for issue bodies:
   - `## Summary`
   - `## Evidence`
