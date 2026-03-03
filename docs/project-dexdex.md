@@ -11,7 +11,7 @@ The desktop client provides workspace mode selection and orchestration control w
 - Desktop app: `apps/dexdex`
 - Desktop frontend: `apps/dexdex/src`
 - Desktop Tauri backend: `apps/dexdex/src-tauri`
-- Shared proto contracts: `protos/dexdex/v1/dexdex.proto`
+- Shared proto contracts: `protos/dexdex/v1/*.proto`
 
 ## Runtime and Language
 - Main server: Rust binary crate
@@ -131,6 +131,19 @@ Desktop Tauri command contract:
 Proto source-of-truth contract:
 - Package: `dexdex.v1`
 - Proto root path: `protos/dexdex/v1/*.proto`
+- Proto file layout:
+: `common.proto`
+: `error_details.proto`
+: `workspace.proto`
+: `repository.proto`
+: `task.proto`
+: `session.proto`
+: `pr_management.proto`
+: `review_assist.proto`
+: `review_comment.proto`
+: `badge_theme.proto`
+: `notification.proto`
+: `event_stream.proto`
 - Shared proto is the canonical contract surface for:
 : `WorkspaceService`
 : `RepositoryService`
@@ -145,15 +158,42 @@ Proto source-of-truth contract:
 
 Primary Connect RPC service contracts:
 - `WorkspaceService`
+: `GetWorkspace`
+: `GetWorkspaceHealth`
 - `RepositoryService`
+: `GetRepositoryGroup`
+: `ListRepositoryGroups`
 - `TaskService`
+: `GetUnitTask`
+: `ListUnitTasks`
+: `GetSubTask`
+: `ListSubTasks`
+: `SubmitPlanDecision`
+: `RetrySubTask`
 - `SessionService`
+: `GetAgentSession`
+: `ListAgentSessions`
+: `GetSessionOutput`
+: `SubmitSessionInput`
 - `PrManagementService`
+: `GetPullRequest`
+: `ListPullRequests`
 - `ReviewAssistService`
+: `ListReviewAssistItems`
+: `UpdateReviewAssistDisposition`
 - `ReviewCommentService`
+: `ListReviewComments`
+: `UpdateReviewCommentState`
 - `BadgeThemeService`
+: `GetBadgeTheme`
+: `ListBadgeThemes`
 - `NotificationService`
+: `ListNotifications`
+: `MarkNotificationRead`
+: `MarkAllNotificationsRead`
 - `EventStreamService` (server-streaming)
+: `StreamWorkspaceEvents`
+: `GetWorkspaceEventStreamState`
 
 Core enum contracts:
 
@@ -247,17 +287,33 @@ Execution and state contracts:
 - RepositoryGroup ordering is authoritative for worker launch context:
 : first repository is the primary execution directory.
 : remaining repositories are attached as additional directories in preserved order.
+- List RPC contract:
+: all `List*` methods use cursor pagination (`page_size`, `page_token`, `next_page_token`).
+: default `page_size` is `50`; maximum `page_size` is `200`.
+- Mutation RPC contract:
+: all mutating methods include `request_id` and `idempotency_key`.
 - SubTask outputs that modify code must produce one or more real git commits and ordered commit-chain metadata.
 - Plan mode uses `TaskService.SubmitPlanDecision` with `APPROVE | REVISE | REJECT`.
 - `TaskService.SubmitPlanDecision` semantics are fixed:
 : `APPROVE` resumes the same SubTask (`WAITING_FOR_PLAN_APPROVAL` -> `IN_PROGRESS`).
 : `REVISE` requires non-empty `revision_note`, completes current SubTask with `completion_reason=REVISED`, and creates new `REQUEST_CHANGES` SubTask in `QUEUED`.
 : `REJECT` cancels current SubTask with `completion_reason=PLAN_REJECTED` and creates no follow-up SubTask.
+- Session output normalization contract:
+: `SessionOutputEvent` uses `kind + oneof payload`.
+: `SessionOutputEvent` must not expose provider-native payload fields.
 - `SESSION_OUTPUT` stream payloads must remain normalized and provider-agnostic.
 - `EventStreamService.StreamWorkspaceEvents` replay semantics are fixed:
 : `from_sequence` is exclusive (`sequence > from_sequence`).
 : event sequence is workspace-scoped, monotonic, and starts at `1`.
 : if `from_sequence` is older than retention, return `OutOfRange` and include `earliest_available_sequence`.
+- Stream envelope payload contract:
+: `WorkspaceEventEnvelope.event_type` and `payload` must match 1:1.
+- Error detail contract:
+: `INVALID_ARGUMENT` -> `ValidationErrorDetail`
+: `FAILED_PRECONDITION` -> `StateMismatchDetail`
+: `OUT_OF_RANGE` -> `EventStreamCursorOutOfRangeDetail`
+: `PERMISSION_DENIED` -> `AuthorizationDeniedDetail`
+: `NOT_FOUND` -> `ResourceNotFoundDetail`
 - Desktop downstream flows consume `ResolvedWorkspaceConnection` and must not branch behavior based on `LOCAL` vs `REMOTE` once connection is resolved.
 
 ## Storage

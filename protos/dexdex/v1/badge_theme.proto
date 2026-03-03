@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message BadgeTheme {
+  string badge_theme_id = 1;
+  string theme_name = 2;
+  string display_name = 3;
+  bool is_default = 4;
+  ResourceMetadata metadata = 10;
+}
+
+message GetBadgeThemeRequest {
+  string workspace_id = 1;
+}
+
+message GetBadgeThemeResponse {
+  BadgeTheme theme = 1;
+}
+
+message ListBadgeThemesRequest {
+  string workspace_id = 1;
+  CursorPaginationRequest pagination = 2;
+}
+
+message ListBadgeThemesResponse {
+  repeated BadgeTheme themes = 1;
+  CursorPaginationResponse pagination = 2;
+}
+
+service BadgeThemeService {
+  // Error mapping:
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc GetBadgeTheme(GetBadgeThemeRequest) returns (GetBadgeThemeResponse);
+
+  // Error mapping:
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc ListBadgeThemes(ListBadgeThemesRequest) returns (ListBadgeThemesResponse);
+}

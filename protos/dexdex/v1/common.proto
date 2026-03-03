@@ -1,0 +1,153 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+enum UnitTaskStatus {
+  UNIT_TASK_STATUS_UNSPECIFIED = 0;
+  UNIT_TASK_STATUS_QUEUED = 1;
+  UNIT_TASK_STATUS_IN_PROGRESS = 2;
+  UNIT_TASK_STATUS_ACTION_REQUIRED = 3;
+  UNIT_TASK_STATUS_BLOCKED = 4;
+  UNIT_TASK_STATUS_COMPLETED = 5;
+  UNIT_TASK_STATUS_FAILED = 6;
+  UNIT_TASK_STATUS_CANCELLED = 7;
+}
+
+enum SubTaskType {
+  SUB_TASK_TYPE_UNSPECIFIED = 0;
+  SUB_TASK_TYPE_INITIAL_IMPLEMENTATION = 1;
+  SUB_TASK_TYPE_REQUEST_CHANGES = 2;
+  SUB_TASK_TYPE_PR_CREATE = 3;
+  SUB_TASK_TYPE_PR_REVIEW_FIX = 4;
+  SUB_TASK_TYPE_PR_CI_FIX = 5;
+  SUB_TASK_TYPE_MANUAL_RETRY = 6;
+}
+
+enum SubTaskStatus {
+  SUB_TASK_STATUS_UNSPECIFIED = 0;
+  SUB_TASK_STATUS_QUEUED = 1;
+  SUB_TASK_STATUS_IN_PROGRESS = 2;
+  SUB_TASK_STATUS_WAITING_FOR_PLAN_APPROVAL = 3;
+  SUB_TASK_STATUS_WAITING_FOR_USER_INPUT = 4;
+  SUB_TASK_STATUS_COMPLETED = 5;
+  SUB_TASK_STATUS_FAILED = 6;
+  SUB_TASK_STATUS_CANCELLED = 7;
+}
+
+enum SubTaskCompletionReason {
+  SUB_TASK_COMPLETION_REASON_UNSPECIFIED = 0;
+  SUB_TASK_COMPLETION_REASON_SUCCEEDED = 1;
+  SUB_TASK_COMPLETION_REASON_REVISED = 2;
+  SUB_TASK_COMPLETION_REASON_PLAN_REJECTED = 3;
+  SUB_TASK_COMPLETION_REASON_FAILED = 4;
+  SUB_TASK_COMPLETION_REASON_CANCELLED_BY_USER = 5;
+}
+
+enum AgentSessionStatus {
+  AGENT_SESSION_STATUS_UNSPECIFIED = 0;
+  AGENT_SESSION_STATUS_STARTING = 1;
+  AGENT_SESSION_STATUS_RUNNING = 2;
+  AGENT_SESSION_STATUS_WAITING_FOR_INPUT = 3;
+  AGENT_SESSION_STATUS_COMPLETED = 4;
+  AGENT_SESSION_STATUS_FAILED = 5;
+  AGENT_SESSION_STATUS_CANCELLED = 6;
+}
+
+enum SessionOutputKind {
+  SESSION_OUTPUT_KIND_UNSPECIFIED = 0;
+  SESSION_OUTPUT_KIND_TEXT = 1;
+  SESSION_OUTPUT_KIND_PLAN_UPDATE = 2;
+  SESSION_OUTPUT_KIND_TOOL_CALL = 3;
+  SESSION_OUTPUT_KIND_TOOL_RESULT = 4;
+  SESSION_OUTPUT_KIND_PROGRESS = 5;
+  SESSION_OUTPUT_KIND_WARNING = 6;
+  SESSION_OUTPUT_KIND_ERROR = 7;
+}
+
+enum ActionType {
+  ACTION_TYPE_UNSPECIFIED = 0;
+  ACTION_TYPE_REVIEW_REQUESTED = 1;
+  ACTION_TYPE_PR_CREATION_READY = 2;
+  ACTION_TYPE_PLAN_APPROVAL_REQUIRED = 3;
+  ACTION_TYPE_CI_FAILED = 4;
+  ACTION_TYPE_MERGE_CONFLICT = 5;
+  ACTION_TYPE_SECURITY_ALERT = 6;
+  ACTION_TYPE_USER_INPUT_REQUIRED = 7;
+}
+
+enum PrStatus {
+  PR_STATUS_UNSPECIFIED = 0;
+  PR_STATUS_OPEN = 1;
+  PR_STATUS_APPROVED = 2;
+  PR_STATUS_CHANGES_REQUESTED = 3;
+  PR_STATUS_MERGED = 4;
+  PR_STATUS_CLOSED = 5;
+  PR_STATUS_CI_FAILED = 6;
+}
+
+enum NotificationType {
+  NOTIFICATION_TYPE_UNSPECIFIED = 0;
+  NOTIFICATION_TYPE_TASK_ACTION_REQUIRED = 1;
+  NOTIFICATION_TYPE_PLAN_ACTION_REQUIRED = 2;
+  NOTIFICATION_TYPE_PR_REVIEW_ACTIVITY = 3;
+  NOTIFICATION_TYPE_PR_CI_FAILURE = 4;
+  NOTIFICATION_TYPE_AGENT_SESSION_FAILED = 5;
+}
+
+enum StreamEventType {
+  STREAM_EVENT_TYPE_UNSPECIFIED = 0;
+  STREAM_EVENT_TYPE_TASK_UPDATED = 1;
+  STREAM_EVENT_TYPE_SUBTASK_UPDATED = 2;
+  STREAM_EVENT_TYPE_SESSION_OUTPUT = 3;
+  STREAM_EVENT_TYPE_SESSION_STATE_CHANGED = 4;
+  STREAM_EVENT_TYPE_PR_UPDATED = 5;
+  STREAM_EVENT_TYPE_REVIEW_ASSIST_UPDATED = 6;
+  STREAM_EVENT_TYPE_INLINE_COMMENT_UPDATED = 7;
+  STREAM_EVENT_TYPE_NOTIFICATION_CREATED = 8;
+}
+
+enum PlanDecision {
+  PLAN_DECISION_UNSPECIFIED = 0;
+  PLAN_DECISION_APPROVE = 1;
+  PLAN_DECISION_REVISE = 2;
+  PLAN_DECISION_REJECT = 3;
+}
+
+message ResourceMetadata {
+  google.protobuf.Timestamp created_at = 1;
+  google.protobuf.Timestamp updated_at = 2;
+}
+
+message ActorRef {
+  string actor_id = 1;
+  string display_name = 2;
+}
+
+message CursorPaginationRequest {
+  // Server default is 50 when not provided or non-positive.
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message CursorPaginationResponse {
+  string next_page_token = 1;
+}
+
+message MutationContext {
+  // request_id is required for request tracing and idempotency logs.
+  string request_id = 1;
+  // idempotency_key is required for mutating RPCs.
+  string idempotency_key = 2;
+}
+
+message CommitMetadata {
+  string sha = 1;
+  repeated string parents = 2;
+  string message = 3;
+  google.protobuf.Timestamp authored_at = 4;
+  google.protobuf.Timestamp committed_at = 5;
+}

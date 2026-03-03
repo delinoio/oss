@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message FieldViolation {
+  string field = 1;
+  string description = 2;
+}
+
+message ValidationErrorDetail {
+  repeated FieldViolation field_violations = 1;
+}
+
+message StateMismatchDetail {
+  string resource_type = 1;
+  string resource_id = 2;
+  string expected_state = 3;
+  string actual_state = 4;
+}
+
+message EventStreamCursorOutOfRangeDetail {
+  uint64 earliest_available_sequence = 1;
+  uint64 requested_from_sequence = 2;
+}
+
+message AuthorizationDeniedDetail {
+  string workspace_id = 1;
+  string required_permission = 2;
+}
+
+message ResourceNotFoundDetail {
+  string resource_type = 1;
+  string resource_id = 2;
+}

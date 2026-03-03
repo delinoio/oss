@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+enum ReviewCommentState {
+  REVIEW_COMMENT_STATE_UNSPECIFIED = 0;
+  REVIEW_COMMENT_STATE_OPEN = 1;
+  REVIEW_COMMENT_STATE_RESOLVED = 2;
+  REVIEW_COMMENT_STATE_DISMISSED = 3;
+}
+
+message ReviewComment {
+  string review_comment_id = 1;
+  string workspace_id = 2;
+  string pr_tracking_id = 3;
+  string file_path = 4;
+  int32 start_line = 5;
+  int32 end_line = 6;
+  string body = 7;
+  ReviewCommentState state = 8;
+  ResourceMetadata metadata = 10;
+}
+
+message ListReviewCommentsRequest {
+  string workspace_id = 1;
+  string pr_tracking_id = 2;
+  CursorPaginationRequest pagination = 3;
+}
+
+message ListReviewCommentsResponse {
+  repeated ReviewComment comments = 1;
+  CursorPaginationResponse pagination = 2;
+}
+
+message UpdateReviewCommentStateRequest {
+  string workspace_id = 1;
+  string review_comment_id = 2;
+  ReviewCommentState state = 3;
+  MutationContext mutation = 4;
+}
+
+message UpdateReviewCommentStateResponse {
+  ReviewComment comment = 1;
+}
+
+service ReviewCommentService {
+  // Error mapping:
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc ListReviewComments(ListReviewCommentsRequest) returns (ListReviewCommentsResponse);
+
+  // Error mapping:
+  // - INVALID_ARGUMENT + ValidationErrorDetail
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc UpdateReviewCommentState(UpdateReviewCommentStateRequest) returns (UpdateReviewCommentStateResponse);
+}

@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message PullRequestRecord {
+  string pr_tracking_id = 1;
+  string workspace_id = 2;
+  string unit_task_id = 3;
+  string repository_id = 4;
+  int64 pr_number = 5;
+  string pr_url = 6;
+  string head_sha = 7;
+  string base_branch = 8;
+  PrStatus status = 9;
+  ResourceMetadata metadata = 10;
+}
+
+message PullRequestFilter {
+  repeated PrStatus statuses = 1;
+}
+
+message GetPullRequestRequest {
+  string workspace_id = 1;
+  string pr_tracking_id = 2;
+}
+
+message GetPullRequestResponse {
+  PullRequestRecord pull_request = 1;
+}
+
+message ListPullRequestsRequest {
+  string workspace_id = 1;
+  PullRequestFilter filter = 2;
+  CursorPaginationRequest pagination = 3;
+}
+
+message ListPullRequestsResponse {
+  repeated PullRequestRecord pull_requests = 1;
+  CursorPaginationResponse pagination = 2;
+}
+
+service PrManagementService {
+  // Error mapping:
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc GetPullRequest(GetPullRequestRequest) returns (GetPullRequestResponse);
+
+  // Error mapping:
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
+}

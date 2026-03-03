@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "google/protobuf/timestamp.proto";
+import "v1/common.proto";
+import "v1/notification.proto";
+import "v1/pr_management.proto";
+import "v1/review_assist.proto";
+import "v1/review_comment.proto";
+import "v1/session.proto";
+import "v1/task.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message StreamWorkspaceEventsRequest {
+  string workspace_id = 1;
+  // from_sequence is exclusive; emitted events satisfy sequence > from_sequence.
+  uint64 from_sequence = 2;
+  // Heartbeat transport hint in seconds.
+  uint32 heartbeat_interval_sec = 3;
+}
+
+message WorkspaceEventEnvelope {
+  uint64 sequence = 1;
+  string workspace_id = 2;
+  StreamEventType event_type = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+
+  // payload must match event_type exactly.
+  oneof payload {
+    UnitTask task_updated = 10;
+    SubTask sub_task_updated = 11;
+    SessionOutputEvent session_output = 12;
+    AgentSession session_state_changed = 13;
+    PullRequestRecord pr_updated = 14;
+    ReviewAssistItem review_assist_updated = 15;
+    ReviewComment inline_comment_updated = 16;
+    NotificationRecord notification_created = 17;
+  }
+}
+
+message StreamWorkspaceEventsResponse {
+  WorkspaceEventEnvelope event = 1;
+}
+
+message GetWorkspaceEventStreamStateRequest {
+  string workspace_id = 1;
+}
+
+message GetWorkspaceEventStreamStateResponse {
+  uint64 earliest_available_sequence = 1;
+  uint64 latest_sequence = 2;
+}
+
+service EventStreamService {
+  // Error mapping:
+  // - OUT_OF_RANGE + EventStreamCursorOutOfRangeDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc StreamWorkspaceEvents(StreamWorkspaceEventsRequest) returns (stream StreamWorkspaceEventsResponse);
+
+  // Error mapping:
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc GetWorkspaceEventStreamState(GetWorkspaceEventStreamStateRequest) returns (GetWorkspaceEventStreamStateResponse);
+}

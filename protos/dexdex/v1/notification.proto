@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "google/protobuf/timestamp.proto";
+import "v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+enum NotificationReadFilter {
+  NOTIFICATION_READ_FILTER_UNSPECIFIED = 0;
+  NOTIFICATION_READ_FILTER_ALL = 1;
+  NOTIFICATION_READ_FILTER_UNREAD = 2;
+  NOTIFICATION_READ_FILTER_READ = 3;
+}
+
+message NotificationRecord {
+  string notification_id = 1;
+  string workspace_id = 2;
+  NotificationType type = 3;
+  string title = 4;
+  string body = 5;
+  bool is_read = 6;
+  ResourceMetadata metadata = 10;
+}
+
+message ListNotificationsRequest {
+  string workspace_id = 1;
+  repeated NotificationType types = 2;
+  NotificationReadFilter read_filter = 3;
+  CursorPaginationRequest pagination = 4;
+}
+
+message ListNotificationsResponse {
+  repeated NotificationRecord notifications = 1;
+  CursorPaginationResponse pagination = 2;
+}
+
+message MarkNotificationReadRequest {
+  string workspace_id = 1;
+  string notification_id = 2;
+  MutationContext mutation = 3;
+}
+
+message MarkNotificationReadResponse {
+  NotificationRecord notification = 1;
+}
+
+message MarkAllNotificationsReadRequest {
+  string workspace_id = 1;
+  MutationContext mutation = 2;
+}
+
+message MarkAllNotificationsReadResponse {
+  uint64 updated_count = 1;
+  google.protobuf.Timestamp updated_at = 2;
+}
+
+service NotificationService {
+  // Error mapping:
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse);
+
+  // Error mapping:
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc MarkNotificationRead(MarkNotificationReadRequest) returns (MarkNotificationReadResponse);
+
+  // Error mapping:
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc MarkAllNotificationsRead(MarkAllNotificationsReadRequest) returns (MarkAllNotificationsReadResponse);
+}

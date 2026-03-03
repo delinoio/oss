@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message UnitTask {
+  string unit_task_id = 1;
+  string workspace_id = 2;
+  string repository_group_id = 3;
+  string title = 4;
+  UnitTaskStatus status = 5;
+  ActionType action_required = 6;
+  ResourceMetadata metadata = 10;
+}
+
+message SubTask {
+  string sub_task_id = 1;
+  string workspace_id = 2;
+  string unit_task_id = 3;
+  SubTaskType type = 4;
+  SubTaskStatus status = 5;
+  SubTaskCompletionReason completion_reason = 6;
+  string summary = 7;
+  string revision_note = 8;
+  repeated CommitMetadata commit_chain = 9;
+  ResourceMetadata metadata = 10;
+}
+
+message UnitTaskFilter {
+  repeated UnitTaskStatus statuses = 1;
+  repeated ActionType action_types = 2;
+}
+
+message SubTaskFilter {
+  repeated SubTaskType types = 1;
+  repeated SubTaskStatus statuses = 2;
+}
+
+message GetUnitTaskRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+}
+
+message GetUnitTaskResponse {
+  UnitTask unit_task = 1;
+}
+
+message ListUnitTasksRequest {
+  string workspace_id = 1;
+  UnitTaskFilter filter = 2;
+  CursorPaginationRequest pagination = 3;
+}
+
+message ListUnitTasksResponse {
+  repeated UnitTask unit_tasks = 1;
+  CursorPaginationResponse pagination = 2;
+}
+
+message GetSubTaskRequest {
+  string workspace_id = 1;
+  string sub_task_id = 2;
+}
+
+message GetSubTaskResponse {
+  SubTask sub_task = 1;
+}
+
+message ListSubTasksRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  SubTaskFilter filter = 3;
+  CursorPaginationRequest pagination = 4;
+}
+
+message ListSubTasksResponse {
+  repeated SubTask sub_tasks = 1;
+  CursorPaginationResponse pagination = 2;
+}
+
+message SubmitPlanDecisionRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  string sub_task_id = 3;
+  PlanDecision decision = 4;
+  string revision_note = 5;
+  MutationContext mutation = 6;
+}
+
+message SubmitPlanDecisionApproved {
+  SubTask updated_sub_task = 1;
+}
+
+message SubmitPlanDecisionRevised {
+  SubTask updated_sub_task = 1;
+  SubTask created_sub_task = 2;
+  string revision_note = 3;
+}
+
+message SubmitPlanDecisionRejected {
+  SubTask updated_sub_task = 1;
+}
+
+message SubmitPlanDecisionResponse {
+  oneof outcome {
+    SubmitPlanDecisionApproved approved = 1;
+    SubmitPlanDecisionRevised revised = 2;
+    SubmitPlanDecisionRejected rejected = 3;
+  }
+}
+
+message RetrySubTaskRequest {
+  string workspace_id = 1;
+  string sub_task_id = 2;
+  string reason = 3;
+  MutationContext mutation = 4;
+}
+
+message RetrySubTaskResponse {
+  SubTask updated_sub_task = 1;
+  SubTask created_sub_task = 2;
+}
+
+service TaskService {
+  // Error mapping:
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc GetUnitTask(GetUnitTaskRequest) returns (GetUnitTaskResponse);
+
+  // Error mapping:
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc ListUnitTasks(ListUnitTasksRequest) returns (ListUnitTasksResponse);
+
+  // Error mapping:
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc GetSubTask(GetSubTaskRequest) returns (GetSubTaskResponse);
+
+  // Error mapping:
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc ListSubTasks(ListSubTasksRequest) returns (ListSubTasksResponse);
+
+  // Error mapping:
+  // - INVALID_ARGUMENT + ValidationErrorDetail
+  // - FAILED_PRECONDITION + StateMismatchDetail
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc SubmitPlanDecision(SubmitPlanDecisionRequest) returns (SubmitPlanDecisionResponse);
+
+  // Error mapping:
+  // - INVALID_ARGUMENT + ValidationErrorDetail
+  // - FAILED_PRECONDITION + StateMismatchDetail
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc RetrySubTask(RetrySubTaskRequest) returns (RetrySubTaskResponse);
+}

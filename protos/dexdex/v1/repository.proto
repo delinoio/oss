@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message RepositoryRef {
+  string repository_id = 1;
+  string repository_url = 2;
+  string branch_ref = 3;
+  bool is_primary = 4;
+}
+
+message RepositoryGroup {
+  string repository_group_id = 1;
+  repeated RepositoryRef repositories = 2;
+  ResourceMetadata metadata = 10;
+}
+
+message GetRepositoryGroupRequest {
+  string workspace_id = 1;
+  string repository_group_id = 2;
+}
+
+message GetRepositoryGroupResponse {
+  RepositoryGroup repository_group = 1;
+}
+
+message ListRepositoryGroupsRequest {
+  string workspace_id = 1;
+  CursorPaginationRequest pagination = 2;
+}
+
+message ListRepositoryGroupsResponse {
+  repeated RepositoryGroup repository_groups = 1;
+  CursorPaginationResponse pagination = 2;
+}
+
+service RepositoryService {
+  // Error mapping:
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc GetRepositoryGroup(GetRepositoryGroupRequest) returns (GetRepositoryGroupResponse);
+
+  // Error mapping:
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc ListRepositoryGroups(ListRepositoryGroupsRequest) returns (ListRepositoryGroupsResponse);
+}

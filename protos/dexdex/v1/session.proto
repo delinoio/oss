@@ -1,0 +1,141 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "google/protobuf/timestamp.proto";
+import "v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+message AgentSession {
+  string session_id = 1;
+  string workspace_id = 2;
+  string unit_task_id = 3;
+  string sub_task_id = 4;
+  AgentSessionStatus status = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp ended_at = 7;
+  ResourceMetadata metadata = 10;
+}
+
+message SessionOutputTextPayload {
+  string text = 1;
+}
+
+message SessionOutputPlanUpdatePayload {
+  string markdown = 1;
+}
+
+message SessionOutputToolCallPayload {
+  string tool_name = 1;
+  string arguments_json = 2;
+}
+
+message SessionOutputToolResultPayload {
+  string tool_name = 1;
+  string result_json = 2;
+  bool is_error = 3;
+}
+
+message SessionOutputProgressPayload {
+  string stage = 1;
+  int32 percent = 2;
+  string message = 3;
+}
+
+message SessionOutputWarningPayload {
+  string code = 1;
+  string message = 2;
+}
+
+message SessionOutputErrorPayload {
+  string code = 1;
+  string message = 2;
+  bool retryable = 3;
+}
+
+message SessionOutputEvent {
+  string session_output_id = 1;
+  string session_id = 2;
+  SessionOutputKind kind = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+
+  oneof payload {
+    SessionOutputTextPayload text_payload = 10;
+    SessionOutputPlanUpdatePayload plan_update_payload = 11;
+    SessionOutputToolCallPayload tool_call_payload = 12;
+    SessionOutputToolResultPayload tool_result_payload = 13;
+    SessionOutputProgressPayload progress_payload = 14;
+    SessionOutputWarningPayload warning_payload = 15;
+    SessionOutputErrorPayload error_payload = 16;
+  }
+}
+
+message GetAgentSessionRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+}
+
+message GetAgentSessionResponse {
+  AgentSession session = 1;
+}
+
+message ListAgentSessionsRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  string sub_task_id = 3;
+  repeated AgentSessionStatus statuses = 4;
+  CursorPaginationRequest pagination = 5;
+}
+
+message ListAgentSessionsResponse {
+  repeated AgentSession sessions = 1;
+  CursorPaginationResponse pagination = 2;
+}
+
+message GetSessionOutputRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+  CursorPaginationRequest pagination = 3;
+}
+
+message GetSessionOutputResponse {
+  repeated SessionOutputEvent events = 1;
+  CursorPaginationResponse pagination = 2;
+}
+
+message SubmitSessionInputRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+  string input_text = 3;
+  MutationContext mutation = 4;
+}
+
+message SubmitSessionInputResponse {
+  bool accepted = 1;
+  AgentSessionStatus session_status = 2;
+  google.protobuf.Timestamp accepted_at = 3;
+}
+
+service SessionService {
+  // Error mapping:
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc GetAgentSession(GetAgentSessionRequest) returns (GetAgentSessionResponse);
+
+  // Error mapping:
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc ListAgentSessions(ListAgentSessionsRequest) returns (ListAgentSessionsResponse);
+
+  // Error mapping:
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc GetSessionOutput(GetSessionOutputRequest) returns (GetSessionOutputResponse);
+
+  // Error mapping:
+  // - INVALID_ARGUMENT + ValidationErrorDetail
+  // - FAILED_PRECONDITION + StateMismatchDetail
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc SubmitSessionInput(SubmitSessionInputRequest) returns (SubmitSessionInputResponse);
+}

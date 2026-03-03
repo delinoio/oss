@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+enum ReviewAssistDisposition {
+  REVIEW_ASSIST_DISPOSITION_UNSPECIFIED = 0;
+  REVIEW_ASSIST_DISPOSITION_OPEN = 1;
+  REVIEW_ASSIST_DISPOSITION_ACCEPTED = 2;
+  REVIEW_ASSIST_DISPOSITION_DISMISSED = 3;
+}
+
+message ReviewAssistItem {
+  string review_assist_id = 1;
+  string workspace_id = 2;
+  string unit_task_id = 3;
+  string body = 4;
+  ReviewAssistDisposition disposition = 5;
+  ResourceMetadata metadata = 10;
+}
+
+message ListReviewAssistItemsRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  CursorPaginationRequest pagination = 3;
+}
+
+message ListReviewAssistItemsResponse {
+  repeated ReviewAssistItem items = 1;
+  CursorPaginationResponse pagination = 2;
+}
+
+message UpdateReviewAssistDispositionRequest {
+  string workspace_id = 1;
+  string review_assist_id = 2;
+  ReviewAssistDisposition disposition = 3;
+  MutationContext mutation = 4;
+}
+
+message UpdateReviewAssistDispositionResponse {
+  ReviewAssistItem item = 1;
+}
+
+service ReviewAssistService {
+  // Error mapping:
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc ListReviewAssistItems(ListReviewAssistItemsRequest) returns (ListReviewAssistItemsResponse);
+
+  // Error mapping:
+  // - INVALID_ARGUMENT + ValidationErrorDetail
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc UpdateReviewAssistDisposition(UpdateReviewAssistDispositionRequest) returns (UpdateReviewAssistDispositionResponse);
+}

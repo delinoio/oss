@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package dexdex.v1;
+
+import "google/protobuf/timestamp.proto";
+import "v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1;dexdexv1";
+
+enum DexdexDeploymentMode {
+  DEXDEX_DEPLOYMENT_MODE_UNSPECIFIED = 0;
+  DEXDEX_DEPLOYMENT_MODE_SINGLE_INSTANCE = 1;
+  DEXDEX_DEPLOYMENT_MODE_SCALE = 2;
+}
+
+enum WorkspaceHealthStatus {
+  WORKSPACE_HEALTH_STATUS_UNSPECIFIED = 0;
+  WORKSPACE_HEALTH_STATUS_HEALTHY = 1;
+  WORKSPACE_HEALTH_STATUS_DEGRADED = 2;
+  WORKSPACE_HEALTH_STATUS_UNAVAILABLE = 3;
+}
+
+message Workspace {
+  string workspace_id = 1;
+  string display_name = 2;
+  DexdexDeploymentMode deployment_mode = 3;
+  ResourceMetadata metadata = 10;
+}
+
+message WorkspaceHealth {
+  string workspace_id = 1;
+  WorkspaceHealthStatus status = 2;
+  string summary = 3;
+  google.protobuf.Timestamp last_checked_at = 4;
+}
+
+message GetWorkspaceRequest {
+  string workspace_id = 1;
+}
+
+message GetWorkspaceResponse {
+  Workspace workspace = 1;
+}
+
+message GetWorkspaceHealthRequest {
+  string workspace_id = 1;
+}
+
+message GetWorkspaceHealthResponse {
+  WorkspaceHealth health = 1;
+}
+
+service WorkspaceService {
+  // Error mapping:
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
+
+  // Error mapping:
+  // - NOT_FOUND + ResourceNotFoundDetail
+  // - PERMISSION_DENIED + AuthorizationDeniedDetail
+  rpc GetWorkspaceHealth(GetWorkspaceHealthRequest) returns (GetWorkspaceHealthResponse);
+}
