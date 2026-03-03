@@ -63,6 +63,32 @@ describe("resolveWorkspaceConnection", () => {
     });
   });
 
+  it("resolves LOCAL override endpoint with the same normalized connection shape", async () => {
+    const localRuntimeProvider = {
+      resolveLocalWorkspaceEndpoint: vi.fn().mockResolvedValue({
+        endpointUrl: "https://dexdex.example/rpc",
+        token: "override-token",
+        endpointSource: WorkspaceEndpointSource.LocalOverride,
+      }),
+    };
+
+    const connection = await resolveWorkspaceConnection(
+      { mode: WorkspaceMode.Local },
+      {
+        localRuntimeProvider,
+        logger: createNoopLogger(),
+      },
+    );
+
+    expect(connection).toEqual<ResolvedWorkspaceConnection>({
+      mode: WorkspaceMode.Local,
+      endpointUrl: "https://dexdex.example/rpc",
+      endpointSource: WorkspaceEndpointSource.LocalOverride,
+      token: "override-token",
+      transport: "CONNECT_RPC",
+    });
+  });
+
   it("keeps LOCAL and REMOTE normalized payload shape identical", async () => {
     const localRuntimeProvider = {
       resolveLocalWorkspaceEndpoint: vi.fn().mockResolvedValue({

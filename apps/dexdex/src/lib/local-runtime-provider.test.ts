@@ -46,4 +46,22 @@ describe("createStubLocalRuntimeProvider", () => {
       endpoint_url: "https://dexdex.example/rpc",
     });
   });
+
+  it("supports explicit LOCAL override source in stub mode", async () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    const provider = createStubLocalRuntimeProvider({
+      defaultEndpointUrl: "https://dexdex.example/rpc",
+      defaultEndpointSource: WorkspaceEndpointSource.LocalOverride,
+      logger,
+    });
+
+    const endpoint = await provider.resolveLocalWorkspaceEndpoint();
+
+    expect(endpoint.endpointSource).toBe(WorkspaceEndpointSource.LocalOverride);
+  });
 });

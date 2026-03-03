@@ -5,19 +5,22 @@ use tracing::{info, warn};
 use url::Url;
 
 const DEFAULT_LOCAL_REMOTE_URL: &str = "http://127.0.0.1:7878";
-const LOCAL_REMOTE_URL_ENV: &str = "DEXDEX_LOCAL_REMOTE_URL";
+const LOCAL_REMOTE_OVERRIDE_URL_ENV: &str = "DEXDEX_LOCAL_REMOTE_OVERRIDE_URL";
+const LEGACY_LOCAL_REMOTE_URL_ENV: &str = "DEXDEX_LOCAL_REMOTE_URL";
 const LOCAL_REMOTE_TOKEN_ENV: &str = "DEXDEX_LOCAL_REMOTE_TOKEN";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum WorkspaceEndpointSource {
     ManagedLoopback,
+    LocalOverride,
 }
 
 impl WorkspaceEndpointSource {
     fn as_str(&self) -> &'static str {
         match self {
             Self::ManagedLoopback => "MANAGED_LOOPBACK",
+            Self::LocalOverride => "LOCAL_OVERRIDE",
         }
     }
 }
@@ -41,13 +44,31 @@ fn normalize_optional_token(token: Option<String>) -> Option<String> {
 }
 
 fn parse_and_normalize_url(raw_url: &str) -> Result<String, String> {
-    let parsed = Url::parse(raw_url)
-        .map_err(|_| "DEXDEX_LOCAL_REMOTE_URL must be a valid absolute URL.".to_owned())?;
+    let parsed = Url::parse(raw_url).map_err(|_| {
+        "DEXDEX_LOCAL_REMOTE_OVERRIDE_URL (or legacy DEXDEX_LOCAL_REMOTE_URL) must be a valid absolute URL."
+            .to_owned()
+    })?;
 
     match parsed.scheme() {
         "http" | "https" => Ok(parsed.to_string()),
-        _ => Err("DEXDEX_LOCAL_REMOTE_URL must use http or https scheme.".to_owned()),
+        _ => Err(
+            "DEXDEX_LOCAL_REMOTE_OVERRIDE_URL (or legacy DEXDEX_LOCAL_REMOTE_URL) must use http or https scheme."
+                .to_owned(),
+        ),
     }
+}
+
+fn normalize_optional_env_value(raw: Option<String>) -> Option<String> {
+    raw.map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+fn resolve_override_url_from<F>(get_env: &mut F) -> Option<String>
+where
+    F: FnMut(&str) -> Option<String>,
+{
+    normalize_optional_env_value(get_env(LOCAL_REMOTE_OVERRIDE_URL_ENV))
+        .or_else(|| normalize_optional_env_value(get_env(LEGACY_LOCAL_REMOTE_URL_ENV)))
 }
 
 fn redact_endpoint_url_for_logs(endpoint_url: &str) -> String {
@@ -69,10 +90,13 @@ fn resolve_local_workspace_endpoint_from<F>(
 where
     F: FnMut(&str) -> Option<String>,
 {
-    let endpoint_url = get_env(LOCAL_REMOTE_URL_ENV)
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_LOCAL_REMOTE_URL.to_owned());
+    let override_url = resolve_override_url_from(&mut get_env);
+    let endpoint_source = if override_url.is_some() {
+        WorkspaceEndpointSource::LocalOverride
+    } else {
+        WorkspaceEndpointSource::ManagedLoopback
+    };
+    let endpoint_url = override_url.unwrap_or_else(|| DEFAULT_LOCAL_REMOTE_URL.to_owned());
 
     let token = normalize_optional_token(get_env(LOCAL_REMOTE_TOKEN_ENV));
     let endpoint_url = parse_and_normalize_url(&endpoint_url)?;
@@ -80,7 +104,7 @@ where
     Ok(LocalWorkspaceEndpoint {
         endpoint_url,
         token,
-        endpoint_source: WorkspaceEndpointSource::ManagedLoopback,
+        endpoint_source,
     })
 }
 
@@ -159,8 +183,8 @@ mod tests {
 
     use super::{
         redact_endpoint_url_for_logs, resolve_local_workspace_endpoint_from,
-        WorkspaceEndpointSource, DEFAULT_LOCAL_REMOTE_URL, LOCAL_REMOTE_TOKEN_ENV,
-        LOCAL_REMOTE_URL_ENV,
+        WorkspaceEndpointSource, DEFAULT_LOCAL_REMOTE_URL, LEGACY_LOCAL_REMOTE_URL_ENV,
+        LOCAL_REMOTE_OVERRIDE_URL_ENV, LOCAL_REMOTE_TOKEN_ENV,
     };
 
     fn env_map(entries: &[(&str, &str)]) -> HashMap<String, String> {
@@ -188,9 +212,9 @@ mod tests {
     }
 
     #[test]
-    fn uses_env_url_and_trims_token() {
+    fn uses_override_url_and_trims_token() {
         let values = env_map(&[
-            (LOCAL_REMOTE_URL_ENV, "https://dexdex.example/rpc"),
+            (LOCAL_REMOTE_OVERRIDE_URL_ENV, "https://dexdex.example/rpc"),
             (LOCAL_REMOTE_TOKEN_ENV, "  local-token  "),
         ]);
 
@@ -199,31 +223,66 @@ mod tests {
 
         assert_eq!(resolved.endpoint_url, "https://dexdex.example/rpc");
         assert_eq!(resolved.token.as_deref(), Some("local-token"));
+        assert_eq!(
+            resolved.endpoint_source,
+            WorkspaceEndpointSource::LocalOverride
+        );
+    }
+
+    #[test]
+    fn uses_legacy_override_url_env_for_compatibility() {
+        let values = env_map(&[(LEGACY_LOCAL_REMOTE_URL_ENV, "https://dexdex.example/rpc")]);
+
+        let resolved =
+            resolve_local_workspace_endpoint_from(|key| values.get(key).cloned()).unwrap();
+
+        assert_eq!(resolved.endpoint_url, "https://dexdex.example/rpc");
+        assert_eq!(
+            resolved.endpoint_source,
+            WorkspaceEndpointSource::LocalOverride
+        );
+    }
+
+    #[test]
+    fn prefers_new_override_env_over_legacy_value() {
+        let values = env_map(&[
+            (LOCAL_REMOTE_OVERRIDE_URL_ENV, "https://primary.dexdex.example/rpc"),
+            (LEGACY_LOCAL_REMOTE_URL_ENV, "https://legacy.dexdex.example/rpc"),
+        ]);
+
+        let resolved =
+            resolve_local_workspace_endpoint_from(|key| values.get(key).cloned()).unwrap();
+
+        assert_eq!(resolved.endpoint_url, "https://primary.dexdex.example/rpc");
+        assert_eq!(
+            resolved.endpoint_source,
+            WorkspaceEndpointSource::LocalOverride
+        );
     }
 
     #[test]
     fn rejects_invalid_url() {
-        let values = env_map(&[(LOCAL_REMOTE_URL_ENV, "not-a-url")]);
+        let values = env_map(&[(LOCAL_REMOTE_OVERRIDE_URL_ENV, "not-a-url")]);
 
         let error =
             resolve_local_workspace_endpoint_from(|key| values.get(key).cloned()).unwrap_err();
 
         assert_eq!(
             error,
-            "DEXDEX_LOCAL_REMOTE_URL must be a valid absolute URL."
+            "DEXDEX_LOCAL_REMOTE_OVERRIDE_URL (or legacy DEXDEX_LOCAL_REMOTE_URL) must be a valid absolute URL."
         );
     }
 
     #[test]
     fn rejects_non_http_scheme() {
-        let values = env_map(&[(LOCAL_REMOTE_URL_ENV, "ftp://localhost:7878")]);
+        let values = env_map(&[(LOCAL_REMOTE_OVERRIDE_URL_ENV, "ftp://localhost:7878")]);
 
         let error =
             resolve_local_workspace_endpoint_from(|key| values.get(key).cloned()).unwrap_err();
 
         assert_eq!(
             error,
-            "DEXDEX_LOCAL_REMOTE_URL must use http or https scheme."
+            "DEXDEX_LOCAL_REMOTE_OVERRIDE_URL (or legacy DEXDEX_LOCAL_REMOTE_URL) must use http or https scheme."
         );
     }
 
