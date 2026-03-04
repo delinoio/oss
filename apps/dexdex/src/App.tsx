@@ -8,6 +8,8 @@ import {
   resolveWorkspaceConnection,
   type ResolveWorkspaceConnection,
 } from "./lib/resolve-workspace-connection";
+import { ConnectQueryProvider } from "./lib/connect-query-provider";
+import { RpcDashboard } from "./components/rpc-dashboard";
 
 type AppStatus = "idle" | "resolving" | "resolved" | "error";
 
@@ -168,6 +170,15 @@ export function App({ resolver = resolveWorkspaceConnection }: AppProps) {
             regardless of workspace mode.
           </p>
         </section>
+      ) : null}
+
+      {resolvedConnection ? (
+        <ConnectQueryProvider
+          endpointUrl={resolvedConnection.endpointUrl}
+          bearerToken={resolvedConnection.token}
+        >
+          <RpcDashboard connection={resolvedConnection} />
+        </ConnectQueryProvider>
       ) : null}
     </main>
   );
