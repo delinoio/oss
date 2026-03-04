@@ -24,9 +24,12 @@ const (
 )
 
 var (
-	errWorkspaceNotFound = errors.New("workspace not found")
-	errUnitTaskNotFound  = errors.New("unit task not found")
-	errSubTaskNotFound   = errors.New("sub task not found")
+	errWorkspaceNotFound       = errors.New("workspace not found")
+	errUnitTaskNotFound        = errors.New("unit task not found")
+	errSubTaskNotFound         = errors.New("sub task not found")
+	errRepositoryGroupNotFound = errors.New("repository group not found")
+	errPullRequestNotFound     = errors.New("pull request not found")
+	errBadgeThemeNotFound      = errors.New("badge theme not found")
 )
 
 type ConnectServerConfig struct {
@@ -45,6 +48,14 @@ type ConnectServer struct {
 
 var _ dexdexv1connect.TaskServiceHandler = (*ConnectServer)(nil)
 var _ dexdexv1connect.EventStreamServiceHandler = (*ConnectServer)(nil)
+var _ dexdexv1connect.WorkspaceServiceHandler = (*ConnectServer)(nil)
+var _ dexdexv1connect.RepositoryServiceHandler = (*ConnectServer)(nil)
+var _ dexdexv1connect.SessionServiceHandler = (*ConnectServer)(nil)
+var _ dexdexv1connect.PrManagementServiceHandler = (*ConnectServer)(nil)
+var _ dexdexv1connect.ReviewAssistServiceHandler = (*ConnectServer)(nil)
+var _ dexdexv1connect.ReviewCommentServiceHandler = (*ConnectServer)(nil)
+var _ dexdexv1connect.BadgeThemeServiceHandler = (*ConnectServer)(nil)
+var _ dexdexv1connect.NotificationServiceHandler = (*ConnectServer)(nil)
 
 func NewConnectServer(config ConnectServerConfig) *ConnectServer {
 	logger := config.Logger
@@ -72,6 +83,260 @@ func NewConnectServer(config ConnectServerConfig) *ConnectServer {
 		store:     newWorkspaceStore(logger, retention, subscriberBuffer),
 		heartbeat: heartbeat,
 	}
+}
+
+func (s *ConnectServer) GetWorkspace(
+	_ context.Context,
+	request *connect.Request[dexdexv1.GetWorkspaceRequest],
+) (*connect.Response[dexdexv1.GetWorkspaceResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+
+	workspace, getErr := s.store.getWorkspace(workspaceID)
+	if getErr != nil {
+		if errors.Is(getErr, errWorkspaceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, getErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, getErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.workspace.get_workspace.success",
+		"workspace_id", workspaceID,
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.GetWorkspaceResponse{
+		Workspace: workspace,
+	}), nil
+}
+
+func (s *ConnectServer) GetRepositoryGroup(
+	_ context.Context,
+	request *connect.Request[dexdexv1.GetRepositoryGroupRequest],
+) (*connect.Response[dexdexv1.GetRepositoryGroupResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	repositoryGroupID, err := normalizeRequiredValue(request.Msg.GetRepositoryGroupId(), "repository_group_id")
+	if err != nil {
+		return nil, err
+	}
+
+	repositoryGroup, getErr := s.store.getRepositoryGroup(workspaceID, repositoryGroupID)
+	if getErr != nil {
+		if errors.Is(getErr, errWorkspaceNotFound) || errors.Is(getErr, errRepositoryGroupNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, getErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, getErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.repository.get_repository_group.success",
+		"workspace_id", workspaceID,
+		"repository_group_id", repositoryGroupID,
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.GetRepositoryGroupResponse{
+		RepositoryGroup: repositoryGroup,
+	}), nil
+}
+
+func (s *ConnectServer) GetSessionOutput(
+	_ context.Context,
+	request *connect.Request[dexdexv1.GetSessionOutputRequest],
+) (*connect.Response[dexdexv1.GetSessionOutputResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	sessionID, err := normalizeRequiredValue(request.Msg.GetSessionId(), "session_id")
+	if err != nil {
+		return nil, err
+	}
+
+	events, getErr := s.store.listSessionOutput(workspaceID, sessionID)
+	if getErr != nil {
+		if errors.Is(getErr, errWorkspaceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, getErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, getErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.session.get_session_output.success",
+		"workspace_id", workspaceID,
+		"session_id", sessionID,
+		"event_count", len(events),
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.GetSessionOutputResponse{
+		Events: events,
+	}), nil
+}
+
+func (s *ConnectServer) GetPullRequest(
+	_ context.Context,
+	request *connect.Request[dexdexv1.GetPullRequestRequest],
+) (*connect.Response[dexdexv1.GetPullRequestResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	prTrackingID, err := normalizeRequiredValue(request.Msg.GetPrTrackingId(), "pr_tracking_id")
+	if err != nil {
+		return nil, err
+	}
+
+	pullRequest, getErr := s.store.getPullRequest(workspaceID, prTrackingID)
+	if getErr != nil {
+		if errors.Is(getErr, errWorkspaceNotFound) || errors.Is(getErr, errPullRequestNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, getErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, getErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.pr.get_pull_request.success",
+		"workspace_id", workspaceID,
+		"pr_tracking_id", prTrackingID,
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.GetPullRequestResponse{
+		PullRequest: pullRequest,
+	}), nil
+}
+
+func (s *ConnectServer) ListReviewAssistItems(
+	_ context.Context,
+	request *connect.Request[dexdexv1.ListReviewAssistItemsRequest],
+) (*connect.Response[dexdexv1.ListReviewAssistItemsResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	unitTaskID, err := normalizeRequiredValue(request.Msg.GetUnitTaskId(), "unit_task_id")
+	if err != nil {
+		return nil, err
+	}
+
+	items, getErr := s.store.listReviewAssistItems(workspaceID, unitTaskID)
+	if getErr != nil {
+		if errors.Is(getErr, errWorkspaceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, getErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, getErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.review_assist.list_items.success",
+		"workspace_id", workspaceID,
+		"unit_task_id", unitTaskID,
+		"item_count", len(items),
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.ListReviewAssistItemsResponse{
+		Items: items,
+	}), nil
+}
+
+func (s *ConnectServer) ListReviewComments(
+	_ context.Context,
+	request *connect.Request[dexdexv1.ListReviewCommentsRequest],
+) (*connect.Response[dexdexv1.ListReviewCommentsResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	prTrackingID, err := normalizeRequiredValue(request.Msg.GetPrTrackingId(), "pr_tracking_id")
+	if err != nil {
+		return nil, err
+	}
+
+	comments, getErr := s.store.listReviewComments(workspaceID, prTrackingID)
+	if getErr != nil {
+		if errors.Is(getErr, errWorkspaceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, getErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, getErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.review_comment.list_comments.success",
+		"workspace_id", workspaceID,
+		"pr_tracking_id", prTrackingID,
+		"comment_count", len(comments),
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.ListReviewCommentsResponse{
+		Comments: comments,
+	}), nil
+}
+
+func (s *ConnectServer) GetBadgeTheme(
+	_ context.Context,
+	request *connect.Request[dexdexv1.GetBadgeThemeRequest],
+) (*connect.Response[dexdexv1.GetBadgeThemeResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+
+	theme, getErr := s.store.getBadgeTheme(workspaceID)
+	if getErr != nil {
+		if errors.Is(getErr, errWorkspaceNotFound) || errors.Is(getErr, errBadgeThemeNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, getErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, getErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.badge_theme.get_badge_theme.success",
+		"workspace_id", workspaceID,
+		"badge_theme_id", theme.GetBadgeThemeId(),
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.GetBadgeThemeResponse{
+		Theme: theme,
+	}), nil
+}
+
+func (s *ConnectServer) ListNotifications(
+	_ context.Context,
+	request *connect.Request[dexdexv1.ListNotificationsRequest],
+) (*connect.Response[dexdexv1.ListNotificationsResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+
+	notifications, getErr := s.store.listNotifications(workspaceID)
+	if getErr != nil {
+		if errors.Is(getErr, errWorkspaceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, getErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, getErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.notification.list_notifications.success",
+		"workspace_id", workspaceID,
+		"notification_count", len(notifications),
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.ListNotificationsResponse{
+		Notifications: notifications,
+	}), nil
 }
 
 func (s *ConnectServer) GetUnitTask(
@@ -360,12 +625,19 @@ type workspaceStore struct {
 }
 
 type workspaceState struct {
-	unitTasks        map[string]*dexdexv1.UnitTask
-	subTasks         map[string]*dexdexv1.SubTask
-	events           []*dexdexv1.StreamWorkspaceEventsResponse
-	subscribers      map[uint64]chan *dexdexv1.StreamWorkspaceEventsResponse
-	nextSequence     uint64
-	nextSubscriberID uint64
+	unitTasks         map[string]*dexdexv1.UnitTask
+	subTasks          map[string]*dexdexv1.SubTask
+	repositoryGroups  map[string]*dexdexv1.RepositoryGroup
+	sessionOutputs    map[string][]*dexdexv1.SessionOutputEvent
+	pullRequests      map[string]*dexdexv1.PullRequestRecord
+	reviewAssistItems map[string][]*dexdexv1.ReviewAssistItem
+	reviewComments    map[string][]*dexdexv1.ReviewComment
+	badgeTheme        *dexdexv1.BadgeTheme
+	notifications     []*dexdexv1.NotificationRecord
+	events            []*dexdexv1.StreamWorkspaceEventsResponse
+	subscribers       map[uint64]chan *dexdexv1.StreamWorkspaceEventsResponse
+	nextSequence      uint64
+	nextSubscriberID  uint64
 }
 
 func newWorkspaceStore(logger *slog.Logger, retention int, subscriberBuffer int) *workspaceStore {
@@ -419,6 +691,165 @@ func (s *workspaceStore) getSubTask(workspaceID string, subTaskID string) (*dexd
 	}
 
 	return cloneSubTask(subTask), nil
+}
+
+func (s *workspaceStore) getWorkspace(workspaceID string) (*dexdexv1.Workspace, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if _, exists := s.workspaces[workspaceID]; !exists {
+		return nil, errWorkspaceNotFound
+	}
+
+	return &dexdexv1.Workspace{WorkspaceId: workspaceID}, nil
+}
+
+func (s *workspaceStore) getRepositoryGroup(
+	workspaceID string,
+	repositoryGroupID string,
+) (*dexdexv1.RepositoryGroup, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, errWorkspaceNotFound
+	}
+
+	group, exists := workspace.repositoryGroups[repositoryGroupID]
+	if !exists {
+		return nil, errRepositoryGroupNotFound
+	}
+
+	return cloneRepositoryGroup(group), nil
+}
+
+func (s *workspaceStore) listSessionOutput(
+	workspaceID string,
+	sessionID string,
+) ([]*dexdexv1.SessionOutputEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, errWorkspaceNotFound
+	}
+
+	events := workspace.sessionOutputs[sessionID]
+	if len(events) == 0 {
+		return make([]*dexdexv1.SessionOutputEvent, 0), nil
+	}
+
+	cloned := make([]*dexdexv1.SessionOutputEvent, 0, len(events))
+	for _, event := range events {
+		cloned = append(cloned, cloneSessionOutputEvent(event))
+	}
+	return cloned, nil
+}
+
+func (s *workspaceStore) getPullRequest(
+	workspaceID string,
+	prTrackingID string,
+) (*dexdexv1.PullRequestRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, errWorkspaceNotFound
+	}
+
+	pullRequest, exists := workspace.pullRequests[prTrackingID]
+	if !exists {
+		return nil, errPullRequestNotFound
+	}
+
+	return clonePullRequestRecord(pullRequest), nil
+}
+
+func (s *workspaceStore) listReviewAssistItems(
+	workspaceID string,
+	unitTaskID string,
+) ([]*dexdexv1.ReviewAssistItem, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, errWorkspaceNotFound
+	}
+
+	items := workspace.reviewAssistItems[unitTaskID]
+	if len(items) == 0 {
+		return make([]*dexdexv1.ReviewAssistItem, 0), nil
+	}
+
+	cloned := make([]*dexdexv1.ReviewAssistItem, 0, len(items))
+	for _, item := range items {
+		cloned = append(cloned, cloneReviewAssistItem(item))
+	}
+	return cloned, nil
+}
+
+func (s *workspaceStore) listReviewComments(
+	workspaceID string,
+	prTrackingID string,
+) ([]*dexdexv1.ReviewComment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, errWorkspaceNotFound
+	}
+
+	comments := workspace.reviewComments[prTrackingID]
+	if len(comments) == 0 {
+		return make([]*dexdexv1.ReviewComment, 0), nil
+	}
+
+	cloned := make([]*dexdexv1.ReviewComment, 0, len(comments))
+	for _, comment := range comments {
+		cloned = append(cloned, cloneReviewComment(comment))
+	}
+	return cloned, nil
+}
+
+func (s *workspaceStore) getBadgeTheme(workspaceID string) (*dexdexv1.BadgeTheme, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, errWorkspaceNotFound
+	}
+
+	if workspace.badgeTheme == nil {
+		return nil, errBadgeThemeNotFound
+	}
+
+	return cloneBadgeTheme(workspace.badgeTheme), nil
+}
+
+func (s *workspaceStore) listNotifications(workspaceID string) ([]*dexdexv1.NotificationRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, errWorkspaceNotFound
+	}
+
+	if len(workspace.notifications) == 0 {
+		return make([]*dexdexv1.NotificationRecord, 0), nil
+	}
+
+	notifications := make([]*dexdexv1.NotificationRecord, 0, len(workspace.notifications))
+	for _, notification := range workspace.notifications {
+		notifications = append(notifications, cloneNotificationRecord(notification))
+	}
+	return notifications, nil
 }
 
 func (s *workspaceStore) submitPlanDecision(
@@ -546,11 +977,17 @@ func (s *workspaceStore) ensureWorkspaceLocked(workspaceID string) *workspaceSta
 	}
 
 	workspace = &workspaceState{
-		unitTasks:    map[string]*dexdexv1.UnitTask{},
-		subTasks:     map[string]*dexdexv1.SubTask{},
-		events:       make([]*dexdexv1.StreamWorkspaceEventsResponse, 0, s.retention),
-		subscribers:  map[uint64]chan *dexdexv1.StreamWorkspaceEventsResponse{},
-		nextSequence: 1,
+		unitTasks:         map[string]*dexdexv1.UnitTask{},
+		subTasks:          map[string]*dexdexv1.SubTask{},
+		repositoryGroups:  map[string]*dexdexv1.RepositoryGroup{},
+		sessionOutputs:    map[string][]*dexdexv1.SessionOutputEvent{},
+		pullRequests:      map[string]*dexdexv1.PullRequestRecord{},
+		reviewAssistItems: map[string][]*dexdexv1.ReviewAssistItem{},
+		reviewComments:    map[string][]*dexdexv1.ReviewComment{},
+		notifications:     make([]*dexdexv1.NotificationRecord, 0),
+		events:            make([]*dexdexv1.StreamWorkspaceEventsResponse, 0, s.retention),
+		subscribers:       map[uint64]chan *dexdexv1.StreamWorkspaceEventsResponse{},
+		nextSequence:      1,
 	}
 	s.workspaces[workspaceID] = workspace
 	return workspace
@@ -623,6 +1060,100 @@ func (s *workspaceStore) upsertSubTask(workspaceID string, subTask *dexdexv1.Sub
 	}
 }
 
+func (s *workspaceStore) ensureWorkspace(workspaceID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.ensureWorkspaceLocked(workspaceID)
+}
+
+func (s *workspaceStore) upsertRepositoryGroup(workspaceID string, repositoryGroup *dexdexv1.RepositoryGroup) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	workspace := s.ensureWorkspaceLocked(workspaceID)
+	workspace.repositoryGroups[repositoryGroup.GetRepositoryGroupId()] = cloneRepositoryGroup(repositoryGroup)
+}
+
+func (s *workspaceStore) replaceSessionOutput(
+	workspaceID string,
+	sessionID string,
+	events []*dexdexv1.SessionOutputEvent,
+) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	workspace := s.ensureWorkspaceLocked(workspaceID)
+	cloned := make([]*dexdexv1.SessionOutputEvent, 0, len(events))
+	for _, event := range events {
+		cloned = append(cloned, cloneSessionOutputEvent(event))
+	}
+	workspace.sessionOutputs[sessionID] = cloned
+}
+
+func (s *workspaceStore) upsertPullRequest(workspaceID string, pullRequest *dexdexv1.PullRequestRecord) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	workspace := s.ensureWorkspaceLocked(workspaceID)
+	workspace.pullRequests[pullRequest.GetPrTrackingId()] = clonePullRequestRecord(pullRequest)
+}
+
+func (s *workspaceStore) replaceReviewAssistItems(
+	workspaceID string,
+	unitTaskID string,
+	items []*dexdexv1.ReviewAssistItem,
+) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	workspace := s.ensureWorkspaceLocked(workspaceID)
+	cloned := make([]*dexdexv1.ReviewAssistItem, 0, len(items))
+	for _, item := range items {
+		cloned = append(cloned, cloneReviewAssistItem(item))
+	}
+	workspace.reviewAssistItems[unitTaskID] = cloned
+}
+
+func (s *workspaceStore) replaceReviewComments(
+	workspaceID string,
+	prTrackingID string,
+	comments []*dexdexv1.ReviewComment,
+) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	workspace := s.ensureWorkspaceLocked(workspaceID)
+	cloned := make([]*dexdexv1.ReviewComment, 0, len(comments))
+	for _, comment := range comments {
+		cloned = append(cloned, cloneReviewComment(comment))
+	}
+	workspace.reviewComments[prTrackingID] = cloned
+}
+
+func (s *workspaceStore) setBadgeTheme(workspaceID string, badgeTheme *dexdexv1.BadgeTheme) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	workspace := s.ensureWorkspaceLocked(workspaceID)
+	workspace.badgeTheme = cloneBadgeTheme(badgeTheme)
+}
+
+func (s *workspaceStore) replaceNotifications(
+	workspaceID string,
+	notifications []*dexdexv1.NotificationRecord,
+) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	workspace := s.ensureWorkspaceLocked(workspaceID)
+	cloned := make([]*dexdexv1.NotificationRecord, 0, len(notifications))
+	for _, notification := range notifications {
+		cloned = append(cloned, cloneNotificationRecord(notification))
+	}
+	workspace.notifications = cloned
+}
+
 func (s *workspaceStore) subscriberCount(workspaceID string) int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -655,6 +1186,13 @@ func (s *workspaceStore) listEvents(workspaceID string) []*dexdexv1.StreamWorksp
 func workspaceHasNoState(workspace *workspaceState) bool {
 	return len(workspace.unitTasks) == 0 &&
 		len(workspace.subTasks) == 0 &&
+		len(workspace.repositoryGroups) == 0 &&
+		len(workspace.sessionOutputs) == 0 &&
+		len(workspace.pullRequests) == 0 &&
+		len(workspace.reviewAssistItems) == 0 &&
+		len(workspace.reviewComments) == 0 &&
+		workspace.badgeTheme == nil &&
+		len(workspace.notifications) == 0 &&
 		len(workspace.events) == 0 &&
 		len(workspace.subscribers) == 0
 }
@@ -846,6 +1384,55 @@ func cloneSubTask(subTask *dexdexv1.SubTask) *dexdexv1.SubTask {
 		return nil
 	}
 	return proto.Clone(subTask).(*dexdexv1.SubTask)
+}
+
+func cloneRepositoryGroup(repositoryGroup *dexdexv1.RepositoryGroup) *dexdexv1.RepositoryGroup {
+	if repositoryGroup == nil {
+		return nil
+	}
+	return proto.Clone(repositoryGroup).(*dexdexv1.RepositoryGroup)
+}
+
+func cloneSessionOutputEvent(event *dexdexv1.SessionOutputEvent) *dexdexv1.SessionOutputEvent {
+	if event == nil {
+		return nil
+	}
+	return proto.Clone(event).(*dexdexv1.SessionOutputEvent)
+}
+
+func clonePullRequestRecord(record *dexdexv1.PullRequestRecord) *dexdexv1.PullRequestRecord {
+	if record == nil {
+		return nil
+	}
+	return proto.Clone(record).(*dexdexv1.PullRequestRecord)
+}
+
+func cloneReviewAssistItem(item *dexdexv1.ReviewAssistItem) *dexdexv1.ReviewAssistItem {
+	if item == nil {
+		return nil
+	}
+	return proto.Clone(item).(*dexdexv1.ReviewAssistItem)
+}
+
+func cloneReviewComment(comment *dexdexv1.ReviewComment) *dexdexv1.ReviewComment {
+	if comment == nil {
+		return nil
+	}
+	return proto.Clone(comment).(*dexdexv1.ReviewComment)
+}
+
+func cloneBadgeTheme(theme *dexdexv1.BadgeTheme) *dexdexv1.BadgeTheme {
+	if theme == nil {
+		return nil
+	}
+	return proto.Clone(theme).(*dexdexv1.BadgeTheme)
+}
+
+func cloneNotificationRecord(notification *dexdexv1.NotificationRecord) *dexdexv1.NotificationRecord {
+	if notification == nil {
+		return nil
+	}
+	return proto.Clone(notification).(*dexdexv1.NotificationRecord)
 }
 
 func cloneStreamEvent(event *dexdexv1.StreamWorkspaceEventsResponse) *dexdexv1.StreamWorkspaceEventsResponse {
