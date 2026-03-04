@@ -7,6 +7,7 @@
     "prepare:app": "echo \"dexdex prepared\"",
     "dev": "vite --port 5991 --strictPort",
     "build": "tsc && vite build",
+    "gen:proto": "buf generate ../../protos/dexdex --template ../../protos/dexdex/buf.gen.web.yaml",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
