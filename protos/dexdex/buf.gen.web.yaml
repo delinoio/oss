@@ -1,0 +1,10 @@
+version: v1
+plugins:
+  - plugin: es
+    out: ../../apps/dexdex/src/gen
+    opt:
+      - target=ts
+  - plugin: connect-query
+    out: ../../apps/dexdex/src/gen
+    opt:
+      - target=ts

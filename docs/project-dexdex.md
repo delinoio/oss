@@ -38,12 +38,12 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 - Tauri-specific bindings as primary business-data contracts
 - Patch-only authoritative change outputs without real git commit metadata
 - Provider-native raw session payload contracts in main server APIs and client-facing streams
-- Full production persistence, distributed orchestration, and non-task/non-stream Connect handler implementations in this phase
+- Full production persistence and distributed orchestration in this phase
 - Persistent desktop token vault behavior in this phase
 
 ## Architecture
 - Main server (`servers/dexdex-main-server`) is the control-plane Go service scaffold
-: It serves `TaskService` (`GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`) and `EventStreamService.StreamWorkspaceEvents` over Connect RPC.
+: It serves `WorkspaceService.GetWorkspace`, `RepositoryService.GetRepositoryGroup`, `TaskService` (`GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`), `SessionService.GetSessionOutput`, `PrManagementService.GetPullRequest`, `ReviewAssistService.ListReviewAssistItems`, `ReviewCommentService.ListReviewComments`, `BadgeThemeService.GetBadgeTheme`, `NotificationService.ListNotifications`, and `EventStreamService.StreamWorkspaceEvents` over Connect RPC.
 : It keeps workspace task/subtask/event state in memory and starts with an empty workspace set.
 : It provides replay + live-tail stream delivery with retention validation and keepalive heartbeat frames.
 : It uses structured logs via `log/slog`.
@@ -54,6 +54,8 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 - Desktop app (`apps/dexdex`) is the orchestration client shell
 : It resolves workspace mode into one normalized Connect RPC connection contract.
 : It provides a shared React Query + Connect Query transport scaffold for RPC data flows.
+: It renders a read-only Connect RPC dashboard that exercises all unary service contracts with lookup forms and in-memory recent lookup history.
+: It applies resolved workspace token values as `Authorization: Bearer <token>` request headers when token is present.
 : Post-resolution behavior stays identical between `LOCAL` and `REMOTE` modes.
 - Shared proto (`protos/dexdex/v1/dexdex.proto`) is the canonical contract surface for cross-runtime integrations.
 
@@ -123,8 +125,14 @@ type DexDexConnectQueryRuntime = {
   queryClient: "SINGLETON_REACT_QUERY_CLIENT";
   transportProvider: "@connectrpc/connect-query";
   transportFactory: "(endpointUrl: string) => ConnectTransport";
+  authInterceptor: "(token?: string) => AuthorizationBearerHeader";
 };
 ```
+
+Desktop generated TypeScript contract outputs:
+- Generated message/service descriptors: `apps/dexdex/src/gen/v1/dexdex_pb.ts`
+- Generated Connect Query method descriptors: `apps/dexdex/src/gen/v1/*_connectquery.ts`
+- Regeneration command: `pnpm --filter dexdex run gen:proto`
 
 Proto source-of-truth contract:
 - Package: `dexdex.v1`
@@ -282,6 +290,7 @@ Session output normalization contract:
 ## Storage
 Main server scaffold ownership:
 - In-memory task/subtask maps per workspace with empty-on-boot default state
+- In-memory workspace/repository/session/pr/review/badge/notification read-model maps per workspace
 - In-memory workspace event ring buffer with configurable retention
 - In-memory live subscriber registry per workspace
 - Non-blocking subscriber fan-out with explicit drop policy when subscriber buffers are full
@@ -331,6 +340,7 @@ Current local validation commands:
 - `cd protos/dexdex && buf lint`
 - `cd protos/dexdex && buf build`
 - `./scripts/generate-go-proto.sh`
+- `pnpm --filter dexdex run gen:proto`
 - `go test ./servers/dexdex-main-server/...`
 - `go test ./servers/dexdex-worker-server/...`
 - `go test ./...`
@@ -361,11 +371,16 @@ Acceptance-focused scenarios:
 15. Worker normalizes Claude Code stream deltas and final assistant text into distinct event types.
 16. Worker preserves OpenCode `step_start` -> `text` -> `step_finish` event ordering.
 17. Worker converts malformed JSON source lines into non-terminal parse-error output events.
+18. Main server unary handlers return `NotFound` for unknown workspace/resource IDs and `InvalidArgument` for missing required fields.
+19. `GetSessionOutput`, `ListReviewAssistItems`, `ListReviewComments`, and `ListNotifications` return empty arrays when workspace exists but no records are present.
+20. Desktop dashboard can query all unary RPC methods after connection resolution without changing workspace mode-specific UX flow.
+21. Desktop lookup histories are in-memory, deduped, recency-ordered, and capped at five entries per lookup key.
+22. Desktop Connect transport sets `Authorization: Bearer <token>` only when a resolved token exists.
 
 ## Roadmap
 - Phase 1: Shared proto contract scaffold (`dexdex.v1`) and desktop connection normalization.
 - Phase 2: Go main/worker server domain-logic scaffolds with parity to prior Rust task/commit validation behavior.
-- Phase 3: Task/stream Connect handler implementation (current) and remaining service handlers with persistence.
+- Phase 3: Task/stream and unary read Connect handler implementation (current), with persistence still pending.
 - Phase 4: Orchestration runtime integrations (worktree lifecycle, session adapters, PR polling).
 - Phase 5: Scale-mode deployment support with production storage/event-broker backends.
 

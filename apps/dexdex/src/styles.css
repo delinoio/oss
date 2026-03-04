@@ -139,6 +139,81 @@ button:disabled {
   font-size: 0.92rem;
 }
 
+.dashboard-grid {
+  margin-top: 1rem;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.query-card {
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 0.95rem;
+  background: rgba(248, 250, 252, 0.85);
+}
+
+.query-card h3 {
+  margin: 0 0 0.55rem;
+  font-size: 1rem;
+}
+
+.query-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.history-row {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.history-row span {
+  color: #475569;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.history-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.history-chip {
+  border: 1px solid #94a3b8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 600;
+  padding: 0.22rem 0.62rem;
+}
+
+.history-chip:hover {
+  background: #e2e8f0;
+}
+
+.query-status {
+  margin-top: 0.75rem;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+.query-result {
+  margin-top: 0.75rem;
+  max-height: 210px;
+  overflow: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 0.65rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
 @media (max-width: 700px) {
   .app-shell {
     padding: 1.25rem 0.85rem 2.2rem;

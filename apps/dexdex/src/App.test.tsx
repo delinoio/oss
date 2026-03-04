@@ -29,6 +29,7 @@ describe("App", () => {
     expect(screen.getByTestId("connection-summary").textContent).toContain(
       "MANAGED_LOOPBACK",
     );
+    expect(screen.getByTestId("rpc-dashboard")).toBeTruthy();
   });
 
   it("resolves REMOTE mode through the same summary flow", async () => {
@@ -75,6 +76,7 @@ describe("App", () => {
     expect(screen.getByTestId("connection-summary").textContent).toContain(
       "CONNECT_RPC",
     );
+    expect(screen.getByTestId("rpc-dashboard")).toBeTruthy();
   });
 
   it("shows actionable error state on resolve failure", async () => {
