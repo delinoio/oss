@@ -251,6 +251,101 @@ describe("RpcDashboard", () => {
     );
   });
 
+  it("resets session adapter result panel when connection changes", async () => {
+    const user = userEvent.setup();
+
+    const { rerender } = render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Run Unit Task ID"), "unit-1");
+    await user.type(screen.getByLabelText("Run Sub Task ID"), "sub-1");
+    await user.type(screen.getByLabelText("Run Session ID"), "session-1");
+    await user.click(screen.getByRole("button", { name: "Run Session Adapter" }));
+
+    expect(await screen.findByTestId("session-adapter-result")).toBeTruthy();
+
+    rerender(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex-other.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-2",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("session-adapter-result")).toBeNull();
+      expect(
+        screen.getByText(
+          "Run session adapter to execute fixture normalization.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
+  it("resets session adapter error panel when connection changes", async () => {
+    const user = userEvent.setup();
+    runSubTaskSessionAdapterMock.mockRejectedValueOnce(
+      new ConnectError("session adapter failed", Code.Internal),
+    );
+
+    const { rerender } = render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Run Unit Task ID"), "unit-1");
+    await user.type(screen.getByLabelText("Run Sub Task ID"), "sub-1");
+    await user.type(screen.getByLabelText("Run Session ID"), "session-1");
+    await user.click(screen.getByRole("button", { name: "Run Session Adapter" }));
+
+    expect(await screen.findByText("session adapter failed")).toBeTruthy();
+
+    rerender(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex-other.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-2",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("session adapter failed")).toBeNull();
+      expect(
+        screen.getByText(
+          "Run session adapter to execute fixture normalization.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
   it("starts live stream and renders non-heartbeat events only", async () => {
     const user = userEvent.setup();
 

@@ -366,6 +366,8 @@ export function RpcDashboard({
     setStreamStatus("idle");
     setStreamError(null);
     setStreamEvents([]);
+    setSessionAdapterError(null);
+    setSessionAdapterResult(null);
   }, [
     connection.endpointSource,
     connection.endpointUrl,
