@@ -358,12 +358,11 @@ export function RpcDashboard({
   }, []);
 
   useEffect(() => {
-    if (!streamAbortControllerRef.current) {
-      return;
+    if (streamAbortControllerRef.current) {
+      streamAbortControllerRef.current.abort();
+      streamAbortControllerRef.current = null;
     }
 
-    streamAbortControllerRef.current.abort();
-    streamAbortControllerRef.current = null;
     setStreamStatus("idle");
     setStreamError(null);
     setStreamEvents([]);

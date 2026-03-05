@@ -354,4 +354,47 @@ describe("RpcDashboard", () => {
       expect(firstSignal.aborted).toBe(true);
     });
   });
+
+  it("resets stream panel state on connection change even after stream stops", async () => {
+    const user = userEvent.setup();
+
+    const { rerender } = render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.clear(screen.getByLabelText("From Sequence"));
+    await user.type(screen.getByLabelText("From Sequence"), "0");
+    await user.click(screen.getByRole("button", { name: "Start Live Stream" }));
+
+    expect(await screen.findByText("#1")).toBeTruthy();
+    expect(screen.getByText("Stream status:")).toBeTruthy();
+    expect(screen.getByText("STOPPED")).toBeTruthy();
+
+    rerender(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex-other.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-2",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("#1")).toBeNull();
+      expect(screen.getByText("IDLE")).toBeTruthy();
+    });
+  });
 });
