@@ -357,6 +357,23 @@ export function RpcDashboard({
     };
   }, []);
 
+  useEffect(() => {
+    if (!streamAbortControllerRef.current) {
+      return;
+    }
+
+    streamAbortControllerRef.current.abort();
+    streamAbortControllerRef.current = null;
+    setStreamStatus("idle");
+    setStreamError(null);
+    setStreamEvents([]);
+  }, [
+    connection.endpointSource,
+    connection.endpointUrl,
+    connection.mode,
+    connection.token,
+  ]);
+
   function remember(key: keyof LookupHistory, value: string) {
     setHistory((previous) => ({
       ...previous,

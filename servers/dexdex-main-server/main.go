@@ -18,6 +18,7 @@ import (
 const (
 	defaultServerAddress    = "127.0.0.1:7878"
 	defaultWorkerServerURL  = "http://127.0.0.1:7879"
+	defaultWorkerRPCTimeout = 30 * time.Second
 	defaultStreamRetention  = 256
 	defaultStreamHeartbeat  = 15 * time.Second
 	defaultReadHeaderTimout = 10 * time.Second
@@ -49,7 +50,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	workerSessionAdapterClient := dexdexv1connect.NewWorkerSessionAdapterServiceClient(http.DefaultClient, workerServerURL)
+	workerHTTPClient := &http.Client{
+		Timeout: defaultWorkerRPCTimeout,
+	}
+	workerSessionAdapterClient := dexdexv1connect.NewWorkerSessionAdapterServiceClient(workerHTTPClient, workerServerURL)
 
 	connectServer := service.NewConnectServer(service.ConnectServerConfig{
 		Logger:               logger,
@@ -95,6 +99,7 @@ func main() {
 		"component", "main-server",
 		"address", address,
 		"worker_server_url", workerServerURL,
+		"worker_rpc_timeout", defaultWorkerRPCTimeout.String(),
 		"stream_retention", retention,
 		"stream_heartbeat_interval", heartbeat.String(),
 		"result", "success",

@@ -287,4 +287,71 @@ describe("RpcDashboard", () => {
     expect(screen.queryByText("#0")).toBeNull();
     expect(screen.getByText("#1")).toBeTruthy();
   });
+
+  it("aborts running stream when connection changes", async () => {
+    const user = userEvent.setup();
+
+    streamWorkspaceEventsMock.mockImplementation(
+      (_request: unknown, options?: { signal?: AbortSignal }) =>
+        (async function* () {
+          const signal = options?.signal;
+          await new Promise<void>((resolve) => {
+            if (!signal) {
+              resolve();
+              return;
+            }
+            if (signal.aborted) {
+              resolve();
+              return;
+            }
+            signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+        })(),
+    );
+
+    const { rerender } = render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.clear(screen.getByLabelText("From Sequence"));
+    await user.type(screen.getByLabelText("From Sequence"), "0");
+    await user.click(screen.getByRole("button", { name: "Start Live Stream" }));
+
+    await waitFor(() => {
+      expect(streamWorkspaceEventsMock).toHaveBeenCalled();
+    });
+
+    const firstCall = streamWorkspaceEventsMock.mock.calls[0];
+    const firstSignal = (firstCall?.[1] as { signal?: AbortSignal } | undefined)
+      ?.signal;
+    if (!firstSignal) {
+      throw new Error("expected stream call with abort signal");
+    }
+
+    rerender(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex-next.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-2",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(firstSignal.aborted).toBe(true);
+    });
+  });
 });
