@@ -766,6 +766,44 @@ func TestRunSubTaskSessionAdapterFailsWhenSubTaskUnitTaskMismatch(t *testing.T) 
 	}
 }
 
+func TestRunSubTaskSessionAdapterWorkerFailureDoesNotMutateSubTaskState(t *testing.T) {
+	fakeWorker := &fakeWorkerSessionAdapterClient{
+		err: connect.NewError(connect.CodeUnavailable, errors.New("worker unavailable")),
+	}
+	service, taskClient, _, _ := newDexDexMainTestServer(t, ConnectServerConfig{
+		WorkerSessionAdapter: fakeWorker,
+	})
+	seedSubTask(service, "workspace-1", "unit-1", "sub-1", dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED)
+
+	_, err := taskClient.RunSubTaskSessionAdapter(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.RunSubTaskSessionAdapterRequest{
+			WorkspaceId: "workspace-1",
+			UnitTaskId:  "unit-1",
+			SubTaskId:   "sub-1",
+			SessionId:   "session-1",
+			CliType:     dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+			Input: &dexdexv1.RunSubTaskSessionAdapterRequest_FixturePreset{
+				FixturePreset: dexdexv1.SessionAdapterFixturePreset_SESSION_ADAPTER_FIXTURE_PRESET_CODEX_CLI_FAILURE,
+			},
+		}),
+	)
+	requireConnectErrorCode(t, err, connect.CodeUnavailable)
+
+	subTask, getErr := service.store.getSubTask("workspace-1", "sub-1")
+	if getErr != nil {
+		t.Fatalf("failed to load sub task: %v", getErr)
+	}
+	if subTask.GetStatus() != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED {
+		t.Fatalf("unexpected sub task status: got=%v want=%v", subTask.GetStatus(), dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED)
+	}
+
+	events := service.store.listEvents("workspace-1")
+	if len(events) != 0 {
+		t.Fatalf("expected no stream events on worker failure, got=%d", len(events))
+	}
+}
+
 func TestRunSubTaskSessionAdapterPersistsSessionOutputAndStreamsOrderedEvents(t *testing.T) {
 	fakeWorker := &fakeWorkerSessionAdapterClient{
 		response: &dexdexv1.NormalizeSessionOutputFixtureResponse{

@@ -513,19 +513,19 @@ func (s *ConnectServer) RunSubTaskSessionAdapter(
 		return nil, err
 	}
 
-	startedSubTask, startEventCount, startErr := s.store.markSubTaskSessionAdapterStarted(
+	validationErr := s.store.validateSessionAdapterTarget(
 		workspaceID,
 		unitTaskID,
 		subTaskID,
 	)
-	if startErr != nil {
-		if errors.Is(startErr, errWorkspaceNotFound) || errors.Is(startErr, errSubTaskNotFound) {
-			return nil, connect.NewError(connect.CodeNotFound, startErr)
+	if validationErr != nil {
+		if errors.Is(validationErr, errWorkspaceNotFound) || errors.Is(validationErr, errSubTaskNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, validationErr)
 		}
-		if errors.Is(startErr, errSubTaskUnitTaskMismatch) {
-			return nil, connect.NewError(connect.CodeFailedPrecondition, startErr)
+		if errors.Is(validationErr, errSubTaskUnitTaskMismatch) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, validationErr)
 		}
-		return nil, connect.NewError(connect.CodeInternal, startErr)
+		return nil, connect.NewError(connect.CodeInternal, validationErr)
 	}
 
 	workerResponse, workerErr := s.workerSessionAdapter.NormalizeSessionOutputFixture(
@@ -545,7 +545,7 @@ func (s *ConnectServer) RunSubTaskSessionAdapter(
 		return nil, workerErr
 	}
 
-	updatedSubTask, resultEventCount, applyErr := s.store.applySessionAdapterResult(
+	updatedSubTask, emittedEventCount, applyErr := s.store.applySessionAdapterRun(
 		workspaceID,
 		unitTaskID,
 		subTaskID,
@@ -563,11 +563,6 @@ func (s *ConnectServer) RunSubTaskSessionAdapter(
 		return nil, connect.NewError(connect.CodeInternal, applyErr)
 	}
 
-	totalEventCount := startEventCount + resultEventCount
-	if updatedSubTask == nil {
-		updatedSubTask = startedSubTask
-	}
-
 	s.logger.Info(
 		"dexdex.main.task.run_subtask_session_adapter.success",
 		"workspace_id", workspaceID,
@@ -575,13 +570,13 @@ func (s *ConnectServer) RunSubTaskSessionAdapter(
 		"sub_task_id", subTaskID,
 		"session_id", sessionID,
 		"session_status", workerResponse.Msg.GetSessionStatus().String(),
-		"event_count", totalEventCount,
+		"event_count", emittedEventCount,
 		"result", "success",
 	)
 
 	return connect.NewResponse(&dexdexv1.RunSubTaskSessionAdapterResponse{
 		UpdatedSubTask:    updatedSubTask,
-		EmittedEventCount: totalEventCount,
+		EmittedEventCount: emittedEventCount,
 		SessionStatus:     workerResponse.Msg.GetSessionStatus(),
 		SessionId:         sessionID,
 	}), nil
@@ -1035,34 +1030,31 @@ func (s *workspaceStore) submitPlanDecision(
 	return cloneSubTask(updatedSubTask), cloneSubTask(createdSubTask), nil
 }
 
-func (s *workspaceStore) markSubTaskSessionAdapterStarted(
+func (s *workspaceStore) validateSessionAdapterTarget(
 	workspaceID string,
 	unitTaskID string,
 	subTaskID string,
-) (*dexdexv1.SubTask, uint64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	workspace, exists := s.workspaces[workspaceID]
 	if !exists {
-		return nil, 0, errWorkspaceNotFound
+		return errWorkspaceNotFound
 	}
 
 	subTask, exists := workspace.subTasks[subTaskID]
 	if !exists {
-		return nil, 0, errSubTaskNotFound
+		return errSubTaskNotFound
 	}
 	if subTask.GetUnitTaskId() != unitTaskID {
-		return nil, 0, errSubTaskUnitTaskMismatch
+		return errSubTaskUnitTaskMismatch
 	}
 
-	subTask.Status = dexdexv1.SubTaskStatus_SUB_TASK_STATUS_IN_PROGRESS
-	subTask.CompletionReason = dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_UNSPECIFIED
-	eventCount := s.appendSubTaskUpdatedEventLocked(workspaceID, workspace, subTask)
-	return cloneSubTask(subTask), eventCount, nil
+	return nil
 }
 
-func (s *workspaceStore) applySessionAdapterResult(
+func (s *workspaceStore) applySessionAdapterRun(
 	workspaceID string,
 	unitTaskID string,
 	subTaskID string,
@@ -1086,8 +1078,13 @@ func (s *workspaceStore) applySessionAdapterResult(
 		return nil, 0, errSubTaskUnitTaskMismatch
 	}
 
-	clonedOutputs := make([]*dexdexv1.SessionOutputEvent, 0, len(events))
+	subTask.Status = dexdexv1.SubTaskStatus_SUB_TASK_STATUS_IN_PROGRESS
+	subTask.CompletionReason = dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_UNSPECIFIED
+
 	var emitted uint64
+	emitted += s.appendSubTaskUpdatedEventLocked(workspaceID, workspace, subTask)
+
+	clonedOutputs := make([]*dexdexv1.SessionOutputEvent, 0, len(events))
 	for _, event := range events {
 		clonedEvent := cloneSessionOutputEvent(event)
 		clonedOutputs = append(clonedOutputs, clonedEvent)
