@@ -12,7 +12,7 @@
     "format": "turbo format"
   },
   "devDependencies": {
-    "lefthook": "^2.1.1",
+    "lefthook": "^2.1.2",
     "turbo": "^2.8.9"
   }
 }
