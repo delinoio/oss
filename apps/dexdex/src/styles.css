@@ -65,17 +65,24 @@ label {
 
 input,
 select,
+textarea,
 button {
   font: inherit;
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid #94a3b8;
   border-radius: 10px;
   padding: 0.62rem 0.7rem;
   background: #ffffff;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 6rem;
 }
 
 input:disabled {
@@ -102,6 +109,16 @@ button {
 button:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+.secondary-button {
+  border: 1px solid #94a3b8;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.secondary-button:hover {
+  background: #e2e8f0;
 }
 
 .status {
@@ -212,6 +229,35 @@ button:disabled {
   padding: 0.65rem;
   font-size: 0.8rem;
   line-height: 1.35;
+}
+
+.stream-events {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.stream-event-item {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.5rem;
+  background: #ffffff;
+}
+
+.stream-event-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.stream-event-body {
+  margin-top: 0.5rem;
+  max-height: 160px;
 }
 
 @media (max-width: 700px) {

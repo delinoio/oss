@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 
 const (
 	defaultServerAddress    = "127.0.0.1:7878"
+	defaultWorkerServerURL  = "http://127.0.0.1:7879"
 	defaultStreamRetention  = 256
 	defaultStreamHeartbeat  = 15 * time.Second
 	defaultReadHeaderTimout = 10 * time.Second
@@ -41,10 +43,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	workerServerURL, err := absoluteHTTPURLFromEnv("DEXDEX_WORKER_SERVER_URL", defaultWorkerServerURL)
+	if err != nil {
+		logger.Error("dexdex.main.config.invalid", "env", "DEXDEX_WORKER_SERVER_URL", "error", err.Error())
+		os.Exit(1)
+	}
+
+	workerSessionAdapterClient := dexdexv1connect.NewWorkerSessionAdapterServiceClient(http.DefaultClient, workerServerURL)
+
 	connectServer := service.NewConnectServer(service.ConnectServerConfig{
-		Logger:          logger,
-		StreamRetention: retention,
-		StreamHeartbeat: heartbeat,
+		Logger:               logger,
+		StreamRetention:      retention,
+		StreamHeartbeat:      heartbeat,
+		WorkerSessionAdapter: workerSessionAdapterClient,
 	})
 
 	mux := http.NewServeMux()
@@ -83,6 +94,7 @@ func main() {
 		"dexdex main server started",
 		"component", "main-server",
 		"address", address,
+		"worker_server_url", workerServerURL,
 		"stream_retention", retention,
 		"stream_heartbeat_interval", heartbeat.String(),
 		"result", "success",
@@ -126,4 +138,24 @@ func durationFromEnv(envKey string, defaultValue time.Duration) (time.Duration, 
 	}
 
 	return parsedValue, nil
+}
+
+func absoluteHTTPURLFromEnv(envKey string, defaultValue string) (string, error) {
+	rawValue := strings.TrimSpace(os.Getenv(envKey))
+	if rawValue == "" {
+		rawValue = defaultValue
+	}
+
+	parsedValue, err := url.Parse(rawValue)
+	if err != nil || parsedValue == nil {
+		return "", fmt.Errorf("%s must be a valid absolute URL", envKey)
+	}
+	if parsedValue.Scheme != "http" && parsedValue.Scheme != "https" {
+		return "", fmt.Errorf("%s must use http or https scheme", envKey)
+	}
+	if parsedValue.Host == "" {
+		return "", fmt.Errorf("%s must include host", envKey)
+	}
+
+	return parsedValue.String(), nil
 }

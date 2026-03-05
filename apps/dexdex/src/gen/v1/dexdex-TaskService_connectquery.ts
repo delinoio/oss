@@ -18,3 +18,8 @@ export const getSubTask = TaskService.method.getSubTask;
  * @generated from rpc dexdex.v1.TaskService.SubmitPlanDecision
  */
 export const submitPlanDecision = TaskService.method.submitPlanDecision;
+
+/**
+ * @generated from rpc dexdex.v1.TaskService.RunSubTaskSessionAdapter
+ */
+export const runSubTaskSessionAdapter = TaskService.method.runSubTaskSessionAdapter;

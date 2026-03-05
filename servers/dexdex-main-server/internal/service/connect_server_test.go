@@ -14,6 +14,7 @@ import (
 	connect "connectrpc.com/connect"
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	dexdexv1connect "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestGetUnitTaskValidatesRequiredFields(t *testing.T) {
@@ -708,6 +709,189 @@ func TestSubmitPlanDecisionFailsWithPreconditionForNonWaitingSubTask(t *testing.
 	requireConnectErrorCode(t, err, connect.CodeFailedPrecondition)
 }
 
+func TestRunSubTaskSessionAdapterValidatesInputOneof(t *testing.T) {
+	fakeWorker := &fakeWorkerSessionAdapterClient{
+		response: &dexdexv1.NormalizeSessionOutputFixtureResponse{
+			SessionStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+		},
+	}
+	service, taskClient, _, _ := newDexDexMainTestServer(t, ConnectServerConfig{
+		WorkerSessionAdapter: fakeWorker,
+	})
+	seedSubTask(service, "workspace-1", "unit-1", "sub-1", dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED)
+
+	_, err := taskClient.RunSubTaskSessionAdapter(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.RunSubTaskSessionAdapterRequest{
+			WorkspaceId: "workspace-1",
+			UnitTaskId:  "unit-1",
+			SubTaskId:   "sub-1",
+			SessionId:   "session-1",
+			CliType:     dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+		}),
+	)
+	requireConnectErrorCode(t, err, connect.CodeInvalidArgument)
+	if fakeWorker.calls != 0 {
+		t.Fatalf("expected worker not to be called, got calls=%d", fakeWorker.calls)
+	}
+}
+
+func TestRunSubTaskSessionAdapterFailsWhenSubTaskUnitTaskMismatch(t *testing.T) {
+	fakeWorker := &fakeWorkerSessionAdapterClient{
+		response: &dexdexv1.NormalizeSessionOutputFixtureResponse{
+			SessionStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+		},
+	}
+	service, taskClient, _, _ := newDexDexMainTestServer(t, ConnectServerConfig{
+		WorkerSessionAdapter: fakeWorker,
+	})
+	seedSubTask(service, "workspace-1", "unit-2", "sub-1", dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED)
+
+	_, err := taskClient.RunSubTaskSessionAdapter(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.RunSubTaskSessionAdapterRequest{
+			WorkspaceId: "workspace-1",
+			UnitTaskId:  "unit-1",
+			SubTaskId:   "sub-1",
+			SessionId:   "session-1",
+			CliType:     dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+			Input: &dexdexv1.RunSubTaskSessionAdapterRequest_FixturePreset{
+				FixturePreset: dexdexv1.SessionAdapterFixturePreset_SESSION_ADAPTER_FIXTURE_PRESET_CODEX_CLI_FAILURE,
+			},
+		}),
+	)
+	requireConnectErrorCode(t, err, connect.CodeFailedPrecondition)
+	if fakeWorker.calls != 0 {
+		t.Fatalf("expected worker not to be called, got calls=%d", fakeWorker.calls)
+	}
+}
+
+func TestRunSubTaskSessionAdapterPersistsSessionOutputAndStreamsOrderedEvents(t *testing.T) {
+	fakeWorker := &fakeWorkerSessionAdapterClient{
+		response: &dexdexv1.NormalizeSessionOutputFixtureResponse{
+			Events: []*dexdexv1.SessionOutputEvent{
+				{
+					SessionId: "session-1",
+					Kind:      dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_TEXT,
+					Body:      "hello",
+					Source: &dexdexv1.SessionOutputSourceMetadata{
+						CliType:         dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+						SourceEventType: dexdexv1.SessionOutputSourceEventType_SESSION_OUTPUT_SOURCE_EVENT_TYPE_TEXT_FINAL,
+						SourceSequence:  1,
+						RawEventType:    "result",
+					},
+					IsTerminal: true,
+				},
+			},
+			SessionStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED,
+		},
+	}
+	service, taskClient, eventClient, _ := newDexDexMainTestServer(t, ConnectServerConfig{
+		StreamHeartbeat:      10 * time.Millisecond,
+		WorkerSessionAdapter: fakeWorker,
+	})
+	seedSubTask(service, "workspace-1", "unit-1", "sub-1", dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED)
+
+	streamContext, cancelStream := context.WithCancel(context.Background())
+	defer cancelStream()
+	stream, err := eventClient.StreamWorkspaceEvents(
+		streamContext,
+		connect.NewRequest(&dexdexv1.StreamWorkspaceEventsRequest{
+			WorkspaceId:  "workspace-1",
+			FromSequence: 0,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("StreamWorkspaceEvents returned error: %v", err)
+	}
+
+	response, err := taskClient.RunSubTaskSessionAdapter(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.RunSubTaskSessionAdapterRequest{
+			WorkspaceId: "workspace-1",
+			UnitTaskId:  "unit-1",
+			SubTaskId:   "sub-1",
+			SessionId:   "session-1",
+			CliType:     dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+			Input: &dexdexv1.RunSubTaskSessionAdapterRequest_FixturePreset{
+				FixturePreset: dexdexv1.SessionAdapterFixturePreset_SESSION_ADAPTER_FIXTURE_PRESET_CODEX_CLI_FAILURE,
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("RunSubTaskSessionAdapter returned error: %v", err)
+	}
+
+	if response.Msg.GetUpdatedSubTask().GetStatus() != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_COMPLETED {
+		t.Fatalf(
+			"unexpected sub task status: got=%v want=%v",
+			response.Msg.GetUpdatedSubTask().GetStatus(),
+			dexdexv1.SubTaskStatus_SUB_TASK_STATUS_COMPLETED,
+		)
+	}
+	if response.Msg.GetUpdatedSubTask().GetCompletionReason() != dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_SUCCEEDED {
+		t.Fatalf(
+			"unexpected completion reason: got=%v want=%v",
+			response.Msg.GetUpdatedSubTask().GetCompletionReason(),
+			dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_SUCCEEDED,
+		)
+	}
+	if response.Msg.GetSessionStatus() != dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED {
+		t.Fatalf(
+			"unexpected session status: got=%v want=%v",
+			response.Msg.GetSessionStatus(),
+			dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED,
+		)
+	}
+	if response.Msg.GetEmittedEventCount() != 4 {
+		t.Fatalf("unexpected emitted event count: got=%d want=4", response.Msg.GetEmittedEventCount())
+	}
+
+	persistedEvents, persistedErr := service.store.listSessionOutput("workspace-1", "session-1")
+	if persistedErr != nil {
+		t.Fatalf("failed to load session output: %v", persistedErr)
+	}
+	if len(persistedEvents) != 1 {
+		t.Fatalf("unexpected persisted event count: got=%d want=1", len(persistedEvents))
+	}
+
+	firstEvent := receiveNextNonHeartbeatEvent(t, stream)
+	if firstEvent.GetEventType() != dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED {
+		t.Fatalf("unexpected first event type: got=%v", firstEvent.GetEventType())
+	}
+	if firstEvent.GetSubTask().GetStatus() != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_IN_PROGRESS {
+		t.Fatalf("unexpected first sub task status: got=%v", firstEvent.GetSubTask().GetStatus())
+	}
+
+	secondEvent := receiveNextNonHeartbeatEvent(t, stream)
+	if secondEvent.GetEventType() != dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_OUTPUT {
+		t.Fatalf("unexpected second event type: got=%v", secondEvent.GetEventType())
+	}
+	if secondEvent.GetSessionOutput().GetBody() != "hello" {
+		t.Fatalf("unexpected session output body: got=%q", secondEvent.GetSessionOutput().GetBody())
+	}
+
+	thirdEvent := receiveNextNonHeartbeatEvent(t, stream)
+	if thirdEvent.GetEventType() != dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_STATE_CHANGED {
+		t.Fatalf("unexpected third event type: got=%v", thirdEvent.GetEventType())
+	}
+	if thirdEvent.GetSessionStateChanged().GetStatus() != dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED {
+		t.Fatalf(
+			"unexpected session state status: got=%v want=%v",
+			thirdEvent.GetSessionStateChanged().GetStatus(),
+			dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED,
+		)
+	}
+
+	fourthEvent := receiveNextNonHeartbeatEvent(t, stream)
+	if fourthEvent.GetEventType() != dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED {
+		t.Fatalf("unexpected fourth event type: got=%v", fourthEvent.GetEventType())
+	}
+	if fourthEvent.GetSubTask().GetStatus() != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_COMPLETED {
+		t.Fatalf("unexpected final sub task status: got=%v", fourthEvent.GetSubTask().GetStatus())
+	}
+}
+
 func TestStreamWorkspaceEventsReplayIsExclusive(t *testing.T) {
 	service, _, eventClient, _ := newDexDexMainTestServer(t, ConnectServerConfig{})
 	service.store.upsertSubTask("workspace-1", &dexdexv1.SubTask{
@@ -1016,12 +1200,51 @@ func newDexDexMainTestServer(
 }
 
 func seedWaitingPlanSubTask(service *ConnectServer, workspaceID string, unitTaskID string, subTaskID string) {
+	seedSubTask(
+		service,
+		workspaceID,
+		unitTaskID,
+		subTaskID,
+		dexdexv1.SubTaskStatus_SUB_TASK_STATUS_WAITING_FOR_PLAN_APPROVAL,
+	)
+}
+
+func seedSubTask(
+	service *ConnectServer,
+	workspaceID string,
+	unitTaskID string,
+	subTaskID string,
+	status dexdexv1.SubTaskStatus,
+) {
 	service.store.upsertSubTask(workspaceID, &dexdexv1.SubTask{
 		SubTaskId:  subTaskID,
 		UnitTaskId: unitTaskID,
 		Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_INITIAL_IMPLEMENTATION,
-		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_WAITING_FOR_PLAN_APPROVAL,
+		Status:     status,
 	}, false)
+}
+
+type fakeWorkerSessionAdapterClient struct {
+	response *dexdexv1.NormalizeSessionOutputFixtureResponse
+	err      error
+	calls    int
+	requests []*dexdexv1.NormalizeSessionOutputFixtureRequest
+}
+
+func (f *fakeWorkerSessionAdapterClient) NormalizeSessionOutputFixture(
+	_ context.Context,
+	request *connect.Request[dexdexv1.NormalizeSessionOutputFixtureRequest],
+) (*connect.Response[dexdexv1.NormalizeSessionOutputFixtureResponse], error) {
+	f.calls++
+	f.requests = append(f.requests, proto.Clone(request.Msg).(*dexdexv1.NormalizeSessionOutputFixtureRequest))
+	if f.err != nil {
+		return nil, f.err
+	}
+
+	if f.response == nil {
+		return connect.NewResponse(&dexdexv1.NormalizeSessionOutputFixtureResponse{}), nil
+	}
+	return connect.NewResponse(proto.Clone(f.response).(*dexdexv1.NormalizeSessionOutputFixtureResponse)), nil
 }
 
 func requireConnectErrorCode(t *testing.T, err error, wantCode connect.Code) *connect.Error {

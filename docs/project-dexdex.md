@@ -43,18 +43,21 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 
 ## Architecture
 - Main server (`servers/dexdex-main-server`) is the control-plane Go service scaffold
-: It serves `WorkspaceService.GetWorkspace`, `RepositoryService.GetRepositoryGroup`, `TaskService` (`GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`), `SessionService.GetSessionOutput`, `PrManagementService.GetPullRequest`, `ReviewAssistService.ListReviewAssistItems`, `ReviewCommentService.ListReviewComments`, `BadgeThemeService.GetBadgeTheme`, `NotificationService.ListNotifications`, and `EventStreamService.StreamWorkspaceEvents` over Connect RPC.
+: It serves `WorkspaceService.GetWorkspace`, `RepositoryService.GetRepositoryGroup`, `TaskService` (`GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`, `RunSubTaskSessionAdapter`), `SessionService.GetSessionOutput`, `PrManagementService.GetPullRequest`, `ReviewAssistService.ListReviewAssistItems`, `ReviewCommentService.ListReviewComments`, `BadgeThemeService.GetBadgeTheme`, `NotificationService.ListNotifications`, and `EventStreamService.StreamWorkspaceEvents` over Connect RPC.
 : It keeps workspace task/subtask/event state in memory and starts with an empty workspace set.
 : It provides replay + live-tail stream delivery with retention validation and keepalive heartbeat frames.
+: It orchestrates worker-driven session adapter normalization and materializes session/subtask stream events in order.
 : It uses structured logs via `log/slog`.
 - Worker server (`servers/dexdex-worker-server`) is the execution-plane Go service scaffold
+: It serves `WorkerSessionAdapterService.NormalizeSessionOutputFixture` over Connect RPC.
 : It validates ordered real commit-chain metadata emitted by SubTask execution.
 : It normalizes provider-native CLI output streams into one session-output contract.
+: It supports fixture presets and raw JSONL input for deterministic session adapter execution.
 : It uses structured logs via `log/slog`.
 - Desktop app (`apps/dexdex`) is the orchestration client shell
 : It resolves workspace mode into one normalized Connect RPC connection contract.
 : It provides a shared React Query + Connect Query transport scaffold for RPC data flows.
-: It renders a read-only Connect RPC dashboard that exercises all unary service contracts with lookup forms and in-memory recent lookup history.
+: It renders a Connect RPC dashboard with unary lookups, session-adapter execution controls, and live workspace stream monitoring.
 : It applies resolved workspace token values as `Authorization: Bearer <token>` request headers when token is present.
 : Post-resolution behavior stays identical between `LOCAL` and `REMOTE` modes.
 - Shared proto (`protos/dexdex/v1/dexdex.proto`) is the canonical contract surface for cross-runtime integrations.
@@ -148,6 +151,7 @@ Proto source-of-truth contract:
 : `BadgeThemeService`
 : `NotificationService`
 : `EventStreamService`
+: `WorkerSessionAdapterService`
 
 Primary Connect RPC service contracts:
 - `WorkspaceService.GetWorkspace`
@@ -155,6 +159,7 @@ Primary Connect RPC service contracts:
 - `TaskService.GetUnitTask`
 - `TaskService.GetSubTask`
 - `TaskService.SubmitPlanDecision`
+- `TaskService.RunSubTaskSessionAdapter`
 - `SessionService.GetSessionOutput`
 - `PrManagementService.GetPullRequest`
 - `ReviewAssistService.ListReviewAssistItems`
@@ -162,6 +167,7 @@ Primary Connect RPC service contracts:
 - `BadgeThemeService.GetBadgeTheme`
 - `NotificationService.ListNotifications`
 - `EventStreamService.StreamWorkspaceEvents` (server-streaming)
+- `WorkerSessionAdapterService.NormalizeSessionOutputFixture`
 
 Core enum contracts:
 
@@ -221,6 +227,11 @@ AgentCliType:
 - CLAUDE_CODE
 - OPENCODE
 
+SessionAdapterFixturePreset:
+- CODEX_CLI_FAILURE
+- CLAUDE_CODE_STREAM
+- OPENCODE_RUN
+
 SessionOutputSourceEventType:
 - RUN_STARTED
 - TURN_STARTED
@@ -272,6 +283,13 @@ Task decision contract:
 - `APPROVE`: resumes same SubTask (`WAITING_FOR_PLAN_APPROVAL` -> `IN_PROGRESS`).
 - `REVISE`: requires non-empty `revision_note`, completes current SubTask with `completion_reason=REVISED`, and creates queued `REQUEST_CHANGES` SubTask.
 - `REJECT`: cancels current SubTask with `completion_reason=PLAN_REJECTED` and creates no follow-up SubTask.
+
+Session adapter orchestration contract:
+- `RunSubTaskSessionAdapterRequest` requires `workspace_id`, `unit_task_id`, `sub_task_id`, `session_id`, `cli_type`, and exactly one input (`fixture_preset` or `raw_jsonl`).
+- Main server validates SubTask ownership (`sub_task_id` belongs to `unit_task_id`) before invoking worker normalization.
+- Main server publishes stream events in this order per successful call:
+: `SUBTASK_UPDATED` (`IN_PROGRESS`) -> `SESSION_OUTPUT` (`0..N`) -> `SESSION_STATE_CHANGED` -> optional final `SUBTASK_UPDATED` (`COMPLETED` or `FAILED`).
+- Worker terminal-error output maps to `session_status=FAILED`; terminal non-error output maps to `COMPLETED`; no terminal output maps to `RUNNING`.
 
 Workspace stream contract:
 - `from_sequence` is exclusive (`sequence > from_sequence`).
@@ -352,6 +370,10 @@ Main server runtime configuration:
 - `DEXDEX_MAIN_SERVER_ADDR` (default: `127.0.0.1:7878`)
 - `DEXDEX_MAIN_STREAM_RETENTION` (default: `256`)
 - `DEXDEX_MAIN_STREAM_HEARTBEAT_INTERVAL` (default: `15s`, Go duration format)
+- `DEXDEX_WORKER_SERVER_URL` (default: `http://127.0.0.1:7879`)
+
+Worker server runtime configuration:
+- `DEXDEX_WORKER_SERVER_ADDR` (default: `127.0.0.1:7879`)
 
 Acceptance-focused scenarios:
 1. Approve decision resumes current SubTask from waiting-plan state.
@@ -376,12 +398,17 @@ Acceptance-focused scenarios:
 20. Desktop dashboard can query all unary RPC methods after connection resolution without changing workspace mode-specific UX flow.
 21. Desktop lookup histories are in-memory, deduped, recency-ordered, and capped at five entries per lookup key.
 22. Desktop Connect transport sets `Authorization: Bearer <token>` only when a resolved token exists.
+23. Worker `NormalizeSessionOutputFixture` accepts fixture presets and raw JSONL, then returns normalized `SessionOutputEvent[]` with a derived `session_status`.
+24. Main `RunSubTaskSessionAdapter` rejects missing input oneof and `unit_task_id`/`sub_task_id` ownership mismatches with typed Connect errors.
+25. Main `RunSubTaskSessionAdapter` persists session output under `session_id` and returns the updated SubTask state.
+26. Main stream emits session adapter events in ordered sequence (`SUBTASK_UPDATED` -> `SESSION_OUTPUT` -> `SESSION_STATE_CHANGED` -> final `SUBTASK_UPDATED` when status terminal).
+27. Desktop dashboard can run session adapter requests with preset/raw input and render live stream events while ignoring heartbeat frames.
 
 ## Roadmap
 - Phase 1: Shared proto contract scaffold (`dexdex.v1`) and desktop connection normalization.
 - Phase 2: Go main/worker server domain-logic scaffolds with parity to prior Rust task/commit validation behavior.
 - Phase 3: Task/stream and unary read Connect handler implementation (current), with persistence still pending.
-- Phase 4: Orchestration runtime integrations (worktree lifecycle, session adapters, PR polling).
+- Phase 4: Orchestration runtime integrations (worktree lifecycle, session adapters, PR polling); session adapter vertical slice is implemented in the current scaffold.
 - Phase 5: Scale-mode deployment support with production storage/event-broker backends.
 
 ## Open Questions
