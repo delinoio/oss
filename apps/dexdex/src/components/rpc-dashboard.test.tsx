@@ -62,6 +62,16 @@ function createIdleResult() {
   };
 }
 
+function createDeferredPromise<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("RpcDashboard", () => {
   beforeEach(() => {
     runSubTaskSessionAdapterMock.mockReset();
@@ -338,6 +348,125 @@ describe("RpcDashboard", () => {
 
     await waitFor(() => {
       expect(screen.queryByText("session adapter failed")).toBeNull();
+      expect(
+        screen.getByText(
+          "Run session adapter to execute fixture normalization.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
+  it("resets session adapter pending flag on connection changes", async () => {
+    const user = userEvent.setup();
+    const deferred = createDeferredPromise<{
+      updatedSubTask: { subTaskId: string; status: number };
+      emittedEventCount: bigint;
+      sessionStatus: AgentSessionStatus;
+      sessionId: string;
+    }>();
+
+    runSubTaskSessionAdapterMock.mockReturnValueOnce(deferred.promise);
+
+    const { rerender } = render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Run Unit Task ID"), "unit-1");
+    await user.type(screen.getByLabelText("Run Sub Task ID"), "sub-1");
+    await user.type(screen.getByLabelText("Run Session ID"), "session-1");
+    await user.click(screen.getByRole("button", { name: "Run Session Adapter" }));
+
+    expect(
+      screen.getByRole("button", { name: "Running..." }).hasAttribute("disabled"),
+    ).toBe(true);
+
+    rerender(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex-other.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-2",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Run Session Adapter" }),
+      ).toHaveProperty("disabled", false);
+    });
+
+    deferred.resolve({
+      updatedSubTask: { subTaskId: "sub-1", status: 5 },
+      emittedEventCount: 4n,
+      sessionStatus: AgentSessionStatus.COMPLETED,
+      sessionId: "session-1",
+    });
+  });
+
+  it("ignores stale session adapter responses after connection changes", async () => {
+    const user = userEvent.setup();
+    const deferred = createDeferredPromise<{
+      updatedSubTask: { subTaskId: string; status: number };
+      emittedEventCount: bigint;
+      sessionStatus: AgentSessionStatus;
+      sessionId: string;
+    }>();
+
+    runSubTaskSessionAdapterMock.mockReturnValueOnce(deferred.promise);
+
+    const { rerender } = render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Run Unit Task ID"), "unit-1");
+    await user.type(screen.getByLabelText("Run Sub Task ID"), "sub-1");
+    await user.type(screen.getByLabelText("Run Session ID"), "session-1");
+    await user.click(screen.getByRole("button", { name: "Run Session Adapter" }));
+
+    rerender(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex-other.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-2",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    deferred.resolve({
+      updatedSubTask: { subTaskId: "sub-1", status: 5 },
+      emittedEventCount: 4n,
+      sessionStatus: AgentSessionStatus.COMPLETED,
+      sessionId: "session-1",
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("session-adapter-result")).toBeNull();
       expect(
         screen.getByText(
           "Run session adapter to execute fixture normalization.",

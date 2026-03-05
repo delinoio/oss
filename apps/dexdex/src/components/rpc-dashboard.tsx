@@ -246,6 +246,7 @@ export function RpcDashboard({
     [],
   );
   const streamAbortControllerRef = useRef<AbortController | null>(null);
+  const sessionAdapterRequestIDRef = useRef(0);
   const [history, setHistory] = useState<LookupHistory>({
     workspaceId: [],
     repositoryGroupId: [],
@@ -358,11 +359,14 @@ export function RpcDashboard({
   }, []);
 
   useEffect(() => {
+    sessionAdapterRequestIDRef.current += 1;
+
     if (streamAbortControllerRef.current) {
       streamAbortControllerRef.current.abort();
       streamAbortControllerRef.current = null;
     }
 
+    setSessionAdapterPending(false);
     setStreamStatus("idle");
     setStreamError(null);
     setStreamEvents([]);
@@ -646,6 +650,8 @@ export function RpcDashboard({
 
     setSessionAdapterPending(true);
     setSessionAdapterError(null);
+    const requestID = sessionAdapterRequestIDRef.current + 1;
+    sessionAdapterRequestIDRef.current = requestID;
     try {
       const response = await taskClient.runSubTaskSessionAdapter({
         workspaceId,
@@ -655,13 +661,22 @@ export function RpcDashboard({
         cliType: runCliTypeInput,
         input,
       });
+      if (requestID !== sessionAdapterRequestIDRef.current) {
+        return;
+      }
       setSessionAdapterResult(response);
     } catch (error) {
+      if (requestID !== sessionAdapterRequestIDRef.current) {
+        return;
+      }
       setSessionAdapterError(
         describeQueryError(error, "Session adapter target was not found."),
       );
       setSessionAdapterResult(null);
     } finally {
+      if (requestID !== sessionAdapterRequestIDRef.current) {
+        return;
+      }
       setSessionAdapterPending(false);
     }
   }
