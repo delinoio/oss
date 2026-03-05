@@ -27,23 +27,33 @@ var (
 	errWorkspaceNotFound       = errors.New("workspace not found")
 	errUnitTaskNotFound        = errors.New("unit task not found")
 	errSubTaskNotFound         = errors.New("sub task not found")
+	errSubTaskUnitTaskMismatch = errors.New("sub task does not belong to unit task")
 	errRepositoryGroupNotFound = errors.New("repository group not found")
 	errPullRequestNotFound     = errors.New("pull request not found")
 	errBadgeThemeNotFound      = errors.New("badge theme not found")
 )
+
+type WorkerSessionAdapterClient interface {
+	NormalizeSessionOutputFixture(
+		context.Context,
+		*connect.Request[dexdexv1.NormalizeSessionOutputFixtureRequest],
+	) (*connect.Response[dexdexv1.NormalizeSessionOutputFixtureResponse], error)
+}
 
 type ConnectServerConfig struct {
 	Logger                 *slog.Logger
 	StreamRetention        int
 	StreamHeartbeat        time.Duration
 	StreamSubscriberBuffer int
+	WorkerSessionAdapter   WorkerSessionAdapterClient
 }
 
 type ConnectServer struct {
-	logger          *slog.Logger
-	store           *workspaceStore
-	heartbeat       time.Duration
-	nextGeneratedID atomic.Uint64
+	logger               *slog.Logger
+	store                *workspaceStore
+	heartbeat            time.Duration
+	workerSessionAdapter WorkerSessionAdapterClient
+	nextGeneratedID      atomic.Uint64
 }
 
 var _ dexdexv1connect.TaskServiceHandler = (*ConnectServer)(nil)
@@ -79,9 +89,10 @@ func NewConnectServer(config ConnectServerConfig) *ConnectServer {
 	}
 
 	return &ConnectServer{
-		logger:    logger,
-		store:     newWorkspaceStore(logger, retention, subscriberBuffer),
-		heartbeat: heartbeat,
+		logger:               logger,
+		store:                newWorkspaceStore(logger, retention, subscriberBuffer),
+		heartbeat:            heartbeat,
+		workerSessionAdapter: config.WorkerSessionAdapter,
 	}
 }
 
@@ -469,6 +480,108 @@ func (s *ConnectServer) SubmitPlanDecision(
 	return connect.NewResponse(response), nil
 }
 
+func (s *ConnectServer) RunSubTaskSessionAdapter(
+	context context.Context,
+	request *connect.Request[dexdexv1.RunSubTaskSessionAdapterRequest],
+) (*connect.Response[dexdexv1.RunSubTaskSessionAdapterResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	unitTaskID, err := normalizeRequiredValue(request.Msg.GetUnitTaskId(), "unit_task_id")
+	if err != nil {
+		return nil, err
+	}
+	subTaskID, err := normalizeRequiredValue(request.Msg.GetSubTaskId(), "sub_task_id")
+	if err != nil {
+		return nil, err
+	}
+	sessionID, err := normalizeRequiredValue(request.Msg.GetSessionId(), "session_id")
+	if err != nil {
+		return nil, err
+	}
+	if request.Msg.GetCliType() == dexdexv1.AgentCliType_AGENT_CLI_TYPE_UNSPECIFIED {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("cli_type is required"))
+	}
+
+	if s.workerSessionAdapter == nil {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("worker session adapter client is not configured"))
+	}
+
+	workerRequest, err := normalizeWorkerSessionAdapterRequest(request.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	validationErr := s.store.validateSessionAdapterTarget(
+		workspaceID,
+		unitTaskID,
+		subTaskID,
+	)
+	if validationErr != nil {
+		if errors.Is(validationErr, errWorkspaceNotFound) || errors.Is(validationErr, errSubTaskNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, validationErr)
+		}
+		if errors.Is(validationErr, errSubTaskUnitTaskMismatch) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, validationErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, validationErr)
+	}
+
+	workerResponse, workerErr := s.workerSessionAdapter.NormalizeSessionOutputFixture(
+		context,
+		connect.NewRequest(workerRequest),
+	)
+	if workerErr != nil {
+		s.logger.Error(
+			"dexdex.main.task.run_subtask_session_adapter.worker_failed",
+			"workspace_id", workspaceID,
+			"unit_task_id", unitTaskID,
+			"sub_task_id", subTaskID,
+			"session_id", sessionID,
+			"error", workerErr.Error(),
+			"result", "failure",
+		)
+		return nil, workerErr
+	}
+
+	updatedSubTask, emittedEventCount, applyErr := s.store.applySessionAdapterRun(
+		workspaceID,
+		unitTaskID,
+		subTaskID,
+		sessionID,
+		workerResponse.Msg.GetEvents(),
+		workerResponse.Msg.GetSessionStatus(),
+	)
+	if applyErr != nil {
+		if errors.Is(applyErr, errWorkspaceNotFound) || errors.Is(applyErr, errSubTaskNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, applyErr)
+		}
+		if errors.Is(applyErr, errSubTaskUnitTaskMismatch) {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, applyErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, applyErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.task.run_subtask_session_adapter.success",
+		"workspace_id", workspaceID,
+		"unit_task_id", unitTaskID,
+		"sub_task_id", subTaskID,
+		"session_id", sessionID,
+		"session_status", workerResponse.Msg.GetSessionStatus().String(),
+		"event_count", emittedEventCount,
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.RunSubTaskSessionAdapterResponse{
+		UpdatedSubTask:    updatedSubTask,
+		EmittedEventCount: emittedEventCount,
+		SessionStatus:     workerResponse.Msg.GetSessionStatus(),
+		SessionId:         sessionID,
+	}), nil
+}
+
 func (s *ConnectServer) StreamWorkspaceEvents(
 	context context.Context,
 	request *connect.Request[dexdexv1.StreamWorkspaceEventsRequest],
@@ -608,6 +721,33 @@ func planDecisionFromProto(protoDecision dexdexv1.PlanDecision) (PlanDecision, e
 	default:
 		return 0, connect.NewError(connect.CodeInvalidArgument, errors.New("decision must be one of APPROVE, REVISE, or REJECT"))
 	}
+}
+
+func normalizeWorkerSessionAdapterRequest(
+	request *dexdexv1.RunSubTaskSessionAdapterRequest,
+) (*dexdexv1.NormalizeSessionOutputFixtureRequest, error) {
+	normalized := &dexdexv1.NormalizeSessionOutputFixtureRequest{
+		WorkspaceId: request.GetWorkspaceId(),
+		UnitTaskId:  request.GetUnitTaskId(),
+		SubTaskId:   request.GetSubTaskId(),
+		SessionId:   request.GetSessionId(),
+		CliType:     request.GetCliType(),
+	}
+
+	switch input := request.GetInput().(type) {
+	case *dexdexv1.RunSubTaskSessionAdapterRequest_FixturePreset:
+		normalized.Input = &dexdexv1.NormalizeSessionOutputFixtureRequest_FixturePreset{
+			FixturePreset: input.FixturePreset,
+		}
+	case *dexdexv1.RunSubTaskSessionAdapterRequest_RawJsonl:
+		normalized.Input = &dexdexv1.NormalizeSessionOutputFixtureRequest_RawJsonl{
+			RawJsonl: input.RawJsonl,
+		}
+	default:
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("exactly one input must be provided"))
+	}
+
+	return normalized, nil
 }
 
 type streamSubscription struct {
@@ -890,6 +1030,85 @@ func (s *workspaceStore) submitPlanDecision(
 	return cloneSubTask(updatedSubTask), cloneSubTask(createdSubTask), nil
 }
 
+func (s *workspaceStore) validateSessionAdapterTarget(
+	workspaceID string,
+	unitTaskID string,
+	subTaskID string,
+) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return errWorkspaceNotFound
+	}
+
+	subTask, exists := workspace.subTasks[subTaskID]
+	if !exists {
+		return errSubTaskNotFound
+	}
+	if subTask.GetUnitTaskId() != unitTaskID {
+		return errSubTaskUnitTaskMismatch
+	}
+
+	return nil
+}
+
+func (s *workspaceStore) applySessionAdapterRun(
+	workspaceID string,
+	unitTaskID string,
+	subTaskID string,
+	sessionID string,
+	events []*dexdexv1.SessionOutputEvent,
+	sessionStatus dexdexv1.AgentSessionStatus,
+) (*dexdexv1.SubTask, uint64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, 0, errWorkspaceNotFound
+	}
+
+	subTask, exists := workspace.subTasks[subTaskID]
+	if !exists {
+		return nil, 0, errSubTaskNotFound
+	}
+	if subTask.GetUnitTaskId() != unitTaskID {
+		return nil, 0, errSubTaskUnitTaskMismatch
+	}
+
+	subTask.Status = dexdexv1.SubTaskStatus_SUB_TASK_STATUS_IN_PROGRESS
+	subTask.CompletionReason = dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_UNSPECIFIED
+
+	var emitted uint64
+	emitted += s.appendSubTaskUpdatedEventLocked(workspaceID, workspace, subTask)
+
+	clonedOutputs := make([]*dexdexv1.SessionOutputEvent, 0, len(events))
+	for _, event := range events {
+		clonedEvent := cloneSessionOutputEvent(event)
+		clonedOutputs = append(clonedOutputs, clonedEvent)
+		emitted += s.appendSessionOutputEventLocked(workspaceID, workspace, clonedEvent)
+	}
+	workspace.sessionOutputs[sessionID] = clonedOutputs
+
+	emitted += s.appendSessionStateChangedEventLocked(
+		workspaceID,
+		workspace,
+		&dexdexv1.SessionStateChangedEvent{
+			SessionId: sessionID,
+			Status:    sessionStatus,
+		},
+	)
+
+	changed := applySessionStatusToSubTask(subTask, sessionStatus)
+	if changed {
+		emitted += s.appendSubTaskUpdatedEventLocked(workspaceID, workspace, subTask)
+	}
+
+	return cloneSubTask(subTask), emitted, nil
+}
+
 func (s *workspaceStore) replayAndSubscribe(
 	workspaceID string,
 	fromSequence uint64,
@@ -1008,16 +1227,66 @@ func (s *workspaceStore) appendSubTaskUpdatedEventLocked(
 	workspaceID string,
 	workspace *workspaceState,
 	subTask *dexdexv1.SubTask,
-) {
-	event := &dexdexv1.StreamWorkspaceEventsResponse{
-		Sequence:    workspace.nextSequence,
-		WorkspaceId: workspaceID,
-		EventType:   dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED,
-		OccurredAt:  timestamppb.Now(),
-		Payload: &dexdexv1.StreamWorkspaceEventsResponse_SubTask{
-			SubTask: cloneSubTask(subTask),
+) uint64 {
+	return s.appendWorkspaceEventLocked(
+		workspaceID,
+		workspace,
+		&dexdexv1.StreamWorkspaceEventsResponse{
+			EventType:  dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED,
+			OccurredAt: timestamppb.Now(),
+			Payload: &dexdexv1.StreamWorkspaceEventsResponse_SubTask{
+				SubTask: cloneSubTask(subTask),
+			},
 		},
+	)
+}
+
+func (s *workspaceStore) appendSessionOutputEventLocked(
+	workspaceID string,
+	workspace *workspaceState,
+	event *dexdexv1.SessionOutputEvent,
+) uint64 {
+	return s.appendWorkspaceEventLocked(
+		workspaceID,
+		workspace,
+		&dexdexv1.StreamWorkspaceEventsResponse{
+			EventType:  dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_OUTPUT,
+			OccurredAt: timestamppb.Now(),
+			Payload: &dexdexv1.StreamWorkspaceEventsResponse_SessionOutput{
+				SessionOutput: cloneSessionOutputEvent(event),
+			},
+		},
+	)
+}
+
+func (s *workspaceStore) appendSessionStateChangedEventLocked(
+	workspaceID string,
+	workspace *workspaceState,
+	event *dexdexv1.SessionStateChangedEvent,
+) uint64 {
+	return s.appendWorkspaceEventLocked(
+		workspaceID,
+		workspace,
+		&dexdexv1.StreamWorkspaceEventsResponse{
+			EventType:  dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_STATE_CHANGED,
+			OccurredAt: timestamppb.Now(),
+			Payload: &dexdexv1.StreamWorkspaceEventsResponse_SessionStateChanged{
+				SessionStateChanged: cloneSessionStateChangedEvent(event),
+			},
+		},
+	)
+}
+
+func (s *workspaceStore) appendWorkspaceEventLocked(
+	workspaceID string,
+	workspace *workspaceState,
+	event *dexdexv1.StreamWorkspaceEventsResponse,
+) uint64 {
+	if event.GetOccurredAt() == nil {
+		event.OccurredAt = timestamppb.Now()
 	}
+	event.WorkspaceId = workspaceID
+	event.Sequence = workspace.nextSequence
 	workspace.nextSequence++
 
 	workspace.events = append(workspace.events, cloneStreamEvent(event))
@@ -1039,6 +1308,8 @@ func (s *workspaceStore) appendSubTaskUpdatedEventLocked(
 			)
 		}
 	}
+
+	return 1
 }
 
 func (s *workspaceStore) upsertUnitTask(workspaceID string, unitTask *dexdexv1.UnitTask) {
@@ -1400,6 +1671,13 @@ func cloneSessionOutputEvent(event *dexdexv1.SessionOutputEvent) *dexdexv1.Sessi
 	return proto.Clone(event).(*dexdexv1.SessionOutputEvent)
 }
 
+func cloneSessionStateChangedEvent(event *dexdexv1.SessionStateChangedEvent) *dexdexv1.SessionStateChangedEvent {
+	if event == nil {
+		return nil
+	}
+	return proto.Clone(event).(*dexdexv1.SessionStateChangedEvent)
+}
+
 func clonePullRequestRecord(record *dexdexv1.PullRequestRecord) *dexdexv1.PullRequestRecord {
 	if record == nil {
 		return nil
@@ -1449,4 +1727,33 @@ func newHeartbeatEvent(workspaceID string) *dexdexv1.StreamWorkspaceEventsRespon
 		EventType:   dexdexv1.StreamEventType_STREAM_EVENT_TYPE_UNSPECIFIED,
 		OccurredAt:  timestamppb.Now(),
 	}
+}
+
+func applySessionStatusToSubTask(subTask *dexdexv1.SubTask, sessionStatus dexdexv1.AgentSessionStatus) bool {
+	if subTask == nil {
+		return false
+	}
+
+	nextStatus := subTask.GetStatus()
+	nextReason := dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_UNSPECIFIED
+
+	switch sessionStatus {
+	case dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED:
+		nextStatus = dexdexv1.SubTaskStatus_SUB_TASK_STATUS_COMPLETED
+		nextReason = dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_SUCCEEDED
+	case dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_FAILED:
+		nextStatus = dexdexv1.SubTaskStatus_SUB_TASK_STATUS_FAILED
+		nextReason = dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_FAILED
+	default:
+		nextStatus = dexdexv1.SubTaskStatus_SUB_TASK_STATUS_IN_PROGRESS
+		nextReason = dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_UNSPECIFIED
+	}
+
+	if subTask.GetStatus() == nextStatus && subTask.GetCompletionReason() == nextReason {
+		return false
+	}
+
+	subTask.Status = nextStatus
+	subTask.CompletionReason = nextReason
+	return true
 }

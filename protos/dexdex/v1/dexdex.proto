@@ -75,6 +75,13 @@ enum AgentCliType {
   AGENT_CLI_TYPE_OPENCODE = 3;
 }
 
+enum SessionAdapterFixturePreset {
+  SESSION_ADAPTER_FIXTURE_PRESET_UNSPECIFIED = 0;
+  SESSION_ADAPTER_FIXTURE_PRESET_CODEX_CLI_FAILURE = 1;
+  SESSION_ADAPTER_FIXTURE_PRESET_CLAUDE_CODE_STREAM = 2;
+  SESSION_ADAPTER_FIXTURE_PRESET_OPENCODE_RUN = 3;
+}
+
 enum SessionOutputSourceEventType {
   SESSION_OUTPUT_SOURCE_EVENT_TYPE_UNSPECIFIED = 0;
   SESSION_OUTPUT_SOURCE_EVENT_TYPE_RUN_STARTED = 1;
@@ -269,6 +276,44 @@ message SubmitPlanDecisionResponse {
   SubTask created_sub_task = 2;
 }
 
+message RunSubTaskSessionAdapterRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  string sub_task_id = 3;
+  string session_id = 4;
+  AgentCliType cli_type = 5;
+
+  oneof input {
+    SessionAdapterFixturePreset fixture_preset = 6;
+    string raw_jsonl = 7;
+  }
+}
+
+message RunSubTaskSessionAdapterResponse {
+  SubTask updated_sub_task = 1;
+  uint64 emitted_event_count = 2;
+  AgentSessionStatus session_status = 3;
+  string session_id = 4;
+}
+
+message NormalizeSessionOutputFixtureRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  string sub_task_id = 3;
+  string session_id = 4;
+  AgentCliType cli_type = 5;
+
+  oneof input {
+    SessionAdapterFixturePreset fixture_preset = 6;
+    string raw_jsonl = 7;
+  }
+}
+
+message NormalizeSessionOutputFixtureResponse {
+  repeated SessionOutputEvent events = 1;
+  AgentSessionStatus session_status = 2;
+}
+
 message GetUnitTaskRequest {
   string workspace_id = 1;
   string unit_task_id = 2;
@@ -393,6 +438,7 @@ service TaskService {
   rpc GetUnitTask(GetUnitTaskRequest) returns (GetUnitTaskResponse);
   rpc GetSubTask(GetSubTaskRequest) returns (GetSubTaskResponse);
   rpc SubmitPlanDecision(SubmitPlanDecisionRequest) returns (SubmitPlanDecisionResponse);
+  rpc RunSubTaskSessionAdapter(RunSubTaskSessionAdapterRequest) returns (RunSubTaskSessionAdapterResponse);
 }
 
 service SessionService {
@@ -424,4 +470,8 @@ service EventStreamService {
   // If from_sequence is older than retention, the server returns OutOfRange and
   // includes EventStreamCursorOutOfRangeDetail with earliest_available_sequence.
   rpc StreamWorkspaceEvents(StreamWorkspaceEventsRequest) returns (stream StreamWorkspaceEventsResponse);
+}
+
+service WorkerSessionAdapterService {
+  rpc NormalizeSessionOutputFixture(NormalizeSessionOutputFixtureRequest) returns (NormalizeSessionOutputFixtureResponse);
 }

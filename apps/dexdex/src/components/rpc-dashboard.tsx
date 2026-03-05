@@ -1,6 +1,6 @@
-import { Code, ConnectError } from "@connectrpc/connect";
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery } from "@connectrpc/connect-query";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ResolvedWorkspaceConnection } from "../contracts/workspace-connection";
 import { getBadgeTheme } from "../gen/v1/dexdex-BadgeThemeService_connectquery";
 import { listNotifications } from "../gen/v1/dexdex-NotificationService_connectquery";
@@ -8,14 +8,27 @@ import { getPullRequest } from "../gen/v1/dexdex-PrManagementService_connectquer
 import { getRepositoryGroup } from "../gen/v1/dexdex-RepositoryService_connectquery";
 import { listReviewAssistItems } from "../gen/v1/dexdex-ReviewAssistService_connectquery";
 import { listReviewComments } from "../gen/v1/dexdex-ReviewCommentService_connectquery";
+import {
+  AgentCliType,
+  EventStreamService,
+  SessionAdapterFixturePreset,
+  StreamEventType,
+  TaskService,
+  type StreamWorkspaceEventsResponse,
+} from "../gen/v1/dexdex_pb";
 import { getSessionOutput } from "../gen/v1/dexdex-SessionService_connectquery";
 import {
   getSubTask,
   getUnitTask,
 } from "../gen/v1/dexdex-TaskService_connectquery";
 import { getWorkspace } from "../gen/v1/dexdex-WorkspaceService_connectquery";
+import { createDexDexTransport } from "../lib/connect-query-provider";
 
 const HISTORY_LIMIT = 5;
+const STREAM_EVENT_HISTORY_LIMIT = 100;
+
+type StreamStatus = "idle" | "running" | "stopped" | "error";
+type SessionAdapterInputMode = "preset" | "raw";
 
 type LookupHistory = {
   workspaceId: string[];
@@ -73,6 +86,54 @@ function describeQueryError(error: unknown, notFoundMessage: string): string {
   }
 
   return "Unknown query error.";
+}
+
+function cliTypeOptions(): Array<{ value: AgentCliType; label: string }> {
+  return [
+    { value: AgentCliType.CODEX_CLI, label: "CODEX_CLI" },
+    { value: AgentCliType.CLAUDE_CODE, label: "CLAUDE_CODE" },
+    { value: AgentCliType.OPENCODE, label: "OPENCODE" },
+  ];
+}
+
+function fixturePresetOptions(): Array<{
+  value: SessionAdapterFixturePreset;
+  label: string;
+}> {
+  return [
+    {
+      value: SessionAdapterFixturePreset.CODEX_CLI_FAILURE,
+      label: "CODEX_CLI_FAILURE",
+    },
+    {
+      value: SessionAdapterFixturePreset.CLAUDE_CODE_STREAM,
+      label: "CLAUDE_CODE_STREAM",
+    },
+    {
+      value: SessionAdapterFixturePreset.OPENCODE_RUN,
+      label: "OPENCODE_RUN",
+    },
+  ];
+}
+
+function parseFromSequence(rawValue: string): bigint | null {
+  const normalized = rawValue.trim();
+  if (normalized.length === 0) {
+    return null;
+  }
+  if (!/^\d+$/.test(normalized)) {
+    return null;
+  }
+
+  try {
+    return BigInt(normalized);
+  } catch {
+    return null;
+  }
+}
+
+function describeStreamEventType(eventType: StreamEventType): string {
+  return StreamEventType[eventType] ?? "STREAM_EVENT_TYPE_UNSPECIFIED";
 }
 
 function QueryResultPanel({
@@ -155,7 +216,37 @@ export function RpcDashboard({
   const [pullRequestInput, setPullRequestInput] = useState("");
   const [reviewAssistInput, setReviewAssistInput] = useState("");
   const [reviewCommentInput, setReviewCommentInput] = useState("");
+  const [runUnitTaskInput, setRunUnitTaskInput] = useState("");
+  const [runSubTaskInput, setRunSubTaskInput] = useState("");
+  const [runSessionInput, setRunSessionInput] = useState("");
+  const [runCliTypeInput, setRunCliTypeInput] = useState<AgentCliType>(
+    AgentCliType.CODEX_CLI,
+  );
+  const [runInputMode, setRunInputMode] =
+    useState<SessionAdapterInputMode>("preset");
+  const [runPresetInput, setRunPresetInput] =
+    useState<SessionAdapterFixturePreset>(
+      SessionAdapterFixturePreset.CODEX_CLI_FAILURE,
+    );
+  const [runRawJsonlInput, setRunRawJsonlInput] = useState(
+    `{"type":"step_start","part":{"type":"step-start"}}
+{"type":"text","part":{"text":"HELLO"}}
+{"type":"step_finish","part":{"reason":"stop"}}`,
+  );
+  const [streamFromSequenceInput, setStreamFromSequenceInput] = useState("0");
   const [localError, setLocalError] = useState<string | null>(null);
+  const [sessionAdapterPending, setSessionAdapterPending] = useState(false);
+  const [sessionAdapterError, setSessionAdapterError] = useState<string | null>(
+    null,
+  );
+  const [sessionAdapterResult, setSessionAdapterResult] = useState<unknown>(null);
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>("idle");
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const [streamEvents, setStreamEvents] = useState<StreamWorkspaceEventsResponse[]>(
+    [],
+  );
+  const streamAbortControllerRef = useRef<AbortController | null>(null);
+  const sessionAdapterRequestIDRef = useRef(0);
   const [history, setHistory] = useState<LookupHistory>({
     workspaceId: [],
     repositoryGroupId: [],
@@ -196,6 +287,16 @@ export function RpcDashboard({
   } | null>(null);
   const [badgeThemeLookup, setBadgeThemeLookup] = useState<{ workspaceId: string } | null>(null);
   const [notificationLookup, setNotificationLookup] = useState<{ workspaceId: string } | null>(null);
+
+  const transport = useMemo(
+    () => createDexDexTransport(connection.endpointUrl, connection.token),
+    [connection.endpointUrl, connection.token],
+  );
+  const taskClient = useMemo(() => createClient(TaskService, transport), [transport]);
+  const eventStreamClient = useMemo(
+    () => createClient(EventStreamService, transport),
+    [transport],
+  );
 
   const workspaceQuery = useQuery(getWorkspace, workspaceLookup ?? undefined, {
     enabled: workspaceLookup !== null,
@@ -247,6 +348,36 @@ export function RpcDashboard({
       enabled: notificationLookup !== null,
     },
   );
+
+  useEffect(() => {
+    return () => {
+      if (streamAbortControllerRef.current) {
+        streamAbortControllerRef.current.abort();
+        streamAbortControllerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    sessionAdapterRequestIDRef.current += 1;
+
+    if (streamAbortControllerRef.current) {
+      streamAbortControllerRef.current.abort();
+      streamAbortControllerRef.current = null;
+    }
+
+    setSessionAdapterPending(false);
+    setStreamStatus("idle");
+    setStreamError(null);
+    setStreamEvents([]);
+    setSessionAdapterError(null);
+    setSessionAdapterResult(null);
+  }, [
+    connection.endpointSource,
+    connection.endpointUrl,
+    connection.mode,
+    connection.token,
+  ]);
 
   function remember(key: keyof LookupHistory, value: string) {
     setHistory((previous) => ({
@@ -462,6 +593,164 @@ export function RpcDashboard({
       return;
     }
     setNotificationLookup({ workspaceId });
+  }
+
+  async function handleRunSessionAdapter(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const workspaceId = requireWorkspaceInput("Run Session Adapter");
+    if (!workspaceId) {
+      return;
+    }
+    const unitTaskId = requireLookupInput(
+      runUnitTaskInput,
+      "unit task id",
+      "Run Session Adapter",
+    );
+    if (!unitTaskId) {
+      return;
+    }
+    const subTaskId = requireLookupInput(
+      runSubTaskInput,
+      "sub task id",
+      "Run Session Adapter",
+    );
+    if (!subTaskId) {
+      return;
+    }
+    const sessionId = requireLookupInput(
+      runSessionInput,
+      "session id",
+      "Run Session Adapter",
+    );
+    if (!sessionId) {
+      return;
+    }
+
+    let input: { case: "fixturePreset"; value: SessionAdapterFixturePreset } | {
+      case: "rawJsonl";
+      value: string;
+    };
+    if (runInputMode === "preset") {
+      input = { case: "fixturePreset", value: runPresetInput };
+    } else {
+      const rawJsonl = requireLookupInput(
+        runRawJsonlInput,
+        "raw jsonl",
+        "Run Session Adapter",
+      );
+      if (!rawJsonl) {
+        return;
+      }
+      input = { case: "rawJsonl", value: rawJsonl };
+    }
+
+    remember("unitTaskId", unitTaskId);
+    remember("subTaskId", subTaskId);
+    remember("sessionId", sessionId);
+
+    setSessionAdapterPending(true);
+    setSessionAdapterError(null);
+    const requestID = sessionAdapterRequestIDRef.current + 1;
+    sessionAdapterRequestIDRef.current = requestID;
+    try {
+      const response = await taskClient.runSubTaskSessionAdapter({
+        workspaceId,
+        unitTaskId,
+        subTaskId,
+        sessionId,
+        cliType: runCliTypeInput,
+        input,
+      });
+      if (requestID !== sessionAdapterRequestIDRef.current) {
+        return;
+      }
+      setSessionAdapterResult(response);
+    } catch (error) {
+      if (requestID !== sessionAdapterRequestIDRef.current) {
+        return;
+      }
+      setSessionAdapterError(
+        describeQueryError(error, "Session adapter target was not found."),
+      );
+      setSessionAdapterResult(null);
+    } finally {
+      if (requestID !== sessionAdapterRequestIDRef.current) {
+        return;
+      }
+      setSessionAdapterPending(false);
+    }
+  }
+
+  function stopLiveWorkspaceStream() {
+    if (!streamAbortControllerRef.current) {
+      return;
+    }
+
+    streamAbortControllerRef.current.abort();
+    streamAbortControllerRef.current = null;
+    setStreamStatus("stopped");
+  }
+
+  async function startLiveWorkspaceStream() {
+    const workspaceId = requireWorkspaceInput("Start Live Stream");
+    if (!workspaceId) {
+      return;
+    }
+
+    const fromSequence = parseFromSequence(streamFromSequenceInput);
+    if (fromSequence === null) {
+      setLocalError("Start Live Stream: from sequence must be a non-negative integer.");
+      return;
+    }
+
+    setLocalError(null);
+    stopLiveWorkspaceStream();
+
+    const abortController = new AbortController();
+    streamAbortControllerRef.current = abortController;
+    setStreamStatus("running");
+    setStreamError(null);
+    setStreamEvents([]);
+
+    try {
+      for await (const event of eventStreamClient.streamWorkspaceEvents(
+        {
+          workspaceId,
+          fromSequence,
+        },
+        {
+          signal: abortController.signal,
+        },
+      )) {
+        if (event.sequence === 0n) {
+          continue;
+        }
+
+        setStreamEvents((previous) =>
+          [event, ...previous].slice(0, STREAM_EVENT_HISTORY_LIMIT),
+        );
+      }
+
+      if (!abortController.signal.aborted) {
+        setStreamStatus("stopped");
+      }
+    } catch (error) {
+      if (abortController.signal.aborted) {
+        return;
+      }
+
+      setStreamStatus("error");
+      setStreamError(
+        describeQueryError(
+          error,
+          "No workspace found for this stream subscription.",
+        ),
+      );
+    } finally {
+      if (streamAbortControllerRef.current === abortController) {
+        streamAbortControllerRef.current = null;
+      }
+    }
   }
 
   return (
@@ -765,6 +1054,201 @@ export function RpcDashboard({
             notFoundMessage="No workspace found for this notification lookup."
             emptyMessage="No notifications available for this workspace id."
           />
+        </article>
+
+        <article className="query-card">
+          <h3>TaskService.RunSubTaskSessionAdapter</h3>
+          <form onSubmit={handleRunSessionAdapter}>
+            <div className="field">
+              <label htmlFor="run-unit-task-id">Run Unit Task ID</label>
+              <input
+                id="run-unit-task-id"
+                name="run-unit-task-id"
+                value={runUnitTaskInput}
+                onChange={(event) => setRunUnitTaskInput(event.target.value)}
+                placeholder="unit-1"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="run-sub-task-id">Run Sub Task ID</label>
+              <input
+                id="run-sub-task-id"
+                name="run-sub-task-id"
+                value={runSubTaskInput}
+                onChange={(event) => setRunSubTaskInput(event.target.value)}
+                placeholder="sub-1"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="run-session-id">Run Session ID</label>
+              <input
+                id="run-session-id"
+                name="run-session-id"
+                value={runSessionInput}
+                onChange={(event) => setRunSessionInput(event.target.value)}
+                placeholder="session-1"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="run-cli-type">CLI Type</label>
+              <select
+                id="run-cli-type"
+                name="run-cli-type"
+                value={runCliTypeInput}
+                onChange={(event) =>
+                  setRunCliTypeInput(Number(event.target.value) as AgentCliType)
+                }
+              >
+                {cliTypeOptions().map((option) => (
+                  <option key={option.label} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="run-input-mode">Input Mode</label>
+              <select
+                id="run-input-mode"
+                name="run-input-mode"
+                value={runInputMode}
+                onChange={(event) =>
+                  setRunInputMode(event.target.value as SessionAdapterInputMode)
+                }
+              >
+                <option value="preset">Preset Fixture</option>
+                <option value="raw">Raw JSONL</option>
+              </select>
+            </div>
+
+            {runInputMode === "preset" ? (
+              <div className="field">
+                <label htmlFor="run-fixture-preset">Fixture Preset</label>
+                <select
+                  id="run-fixture-preset"
+                  name="run-fixture-preset"
+                  value={runPresetInput}
+                  onChange={(event) =>
+                    setRunPresetInput(
+                      Number(event.target.value) as SessionAdapterFixturePreset,
+                    )
+                  }
+                >
+                  {fixturePresetOptions().map((option) => (
+                    <option key={option.label} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="field">
+                <label htmlFor="run-raw-jsonl">Raw JSONL</label>
+                <textarea
+                  id="run-raw-jsonl"
+                  name="run-raw-jsonl"
+                  value={runRawJsonlInput}
+                  onChange={(event) => setRunRawJsonlInput(event.target.value)}
+                  rows={6}
+                />
+              </div>
+            )}
+            <button type="submit" disabled={sessionAdapterPending}>
+              {sessionAdapterPending ? "Running..." : "Run Session Adapter"}
+            </button>
+          </form>
+          <HistoryRow
+            title="Recent unit tasks"
+            values={history.unitTaskId}
+            onSelect={setRunUnitTaskInput}
+          />
+          <HistoryRow
+            title="Recent sub tasks"
+            values={history.subTaskId}
+            onSelect={setRunSubTaskInput}
+          />
+          <HistoryRow
+            title="Recent sessions"
+            values={history.sessionId}
+            onSelect={setRunSessionInput}
+          />
+          {sessionAdapterError ? (
+            <p className="error" role="alert">
+              {sessionAdapterError}
+            </p>
+          ) : null}
+          {sessionAdapterResult ? (
+            <pre className="query-result" data-testid="session-adapter-result">
+              {formatForDisplay(sessionAdapterResult)}
+            </pre>
+          ) : (
+            <p className="query-status">
+              Run session adapter to execute fixture normalization.
+            </p>
+          )}
+        </article>
+
+        <article className="query-card">
+          <h3>EventStreamService.StreamWorkspaceEvents</h3>
+          <div className="field">
+            <label htmlFor="stream-from-sequence">From Sequence</label>
+            <input
+              id="stream-from-sequence"
+              name="stream-from-sequence"
+              value={streamFromSequenceInput}
+              onChange={(event) => setStreamFromSequenceInput(event.target.value)}
+              placeholder="0"
+            />
+          </div>
+          <div className="actions">
+            <button
+              type="button"
+              onClick={() => {
+                void startLiveWorkspaceStream();
+              }}
+              disabled={streamStatus === "running"}
+            >
+              Start Live Stream
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={stopLiveWorkspaceStream}
+              disabled={streamStatus !== "running"}
+            >
+              Stop Live Stream
+            </button>
+          </div>
+          <p className="query-status">
+            Stream status: <code>{streamStatus.toUpperCase()}</code>
+          </p>
+          {streamError ? (
+            <p className="error" role="alert">
+              {streamError}
+            </p>
+          ) : null}
+          {streamEvents.length > 0 ? (
+            <div className="stream-events">
+              {streamEvents.map((event) => (
+                <article
+                  key={`${event.sequence.toString()}-${event.eventType}`}
+                  className="stream-event-item"
+                >
+                  <header className="stream-event-header">
+                    <span>#{event.sequence.toString()}</span>
+                    <span>{describeStreamEventType(event.eventType)}</span>
+                  </header>
+                  <pre className="query-result stream-event-body">
+                    {formatForDisplay(event)}
+                  </pre>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="query-status">
+              No live stream events yet (heartbeats are filtered out).
+            </p>
+          )}
         </article>
       </div>
     </section>
