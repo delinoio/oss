@@ -56,8 +56,10 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 : It uses structured logs via `log/slog`.
 - Desktop app (`apps/dexdex`) is the orchestration client shell
 : It resolves workspace mode into one normalized Connect RPC connection contract.
+: It renders a three-panel desktop information architecture (left navigation, center RPC workspace, right inspector) with dark-first styling.
 : It provides a shared React Query + Connect Query transport scaffold for RPC data flows.
-: It renders a Connect RPC dashboard with unary lookups, plan-decision controls, session-adapter execution controls, and live workspace stream monitoring.
+: It renders section-scoped Connect RPC dashboard workflows with unary lookups, plan-decision controls, session-adapter execution controls, and live workspace stream monitoring.
+: It surfaces right-panel inspector diagnostics for lookup history, last action status, and stream state.
 : It applies resolved workspace token values as `Authorization: Bearer <token>` request headers when token is present.
 : Post-resolution behavior stays identical between `LOCAL` and `REMOTE` modes.
 - Shared proto (`protos/dexdex/v1/dexdex.proto`) is the canonical contract surface for cross-runtime integrations.
@@ -129,6 +131,42 @@ type DexDexConnectQueryRuntime = {
   transportProvider: "@connectrpc/connect-query";
   transportFactory: "(endpointUrl: string) => ConnectTransport";
   authInterceptor: "(token?: string) => AuthorizationBearerHeader";
+};
+```
+
+Desktop dashboard section identifiers:
+
+```ts
+enum DashboardSectionId {
+  Workspace = "workspace",
+  Repository = "repository",
+  Tasks = "tasks",
+  Sessions = "sessions",
+  Review = "review",
+  BadgeTheme = "badge-theme",
+  Notifications = "notifications",
+  SessionAdapter = "session-adapter",
+  EventStream = "event-stream",
+}
+```
+
+Desktop inspector state contract:
+
+```ts
+type DashboardInspectorState = {
+  history: {
+    workspaceId: string[];
+    repositoryGroupId: string[];
+    unitTaskId: string[];
+    subTaskId: string[];
+    sessionId: string[];
+    prTrackingId: string[];
+  };
+  lastActionLabel: string;
+  lastActionStatus: "idle" | "pending" | "success" | "error";
+  lastActionMessage: string;
+  streamStatus: "idle" | "running" | "stopped" | "error";
+  streamEventCount: number;
 };
 ```
 

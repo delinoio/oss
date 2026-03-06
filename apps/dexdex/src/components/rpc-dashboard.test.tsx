@@ -12,7 +12,7 @@ import {
   SessionAdapterFixturePreset,
 } from "../gen/v1/dexdex_pb";
 import { createDexDexTransport } from "../lib/connect-query-provider";
-import { RpcDashboard } from "./rpc-dashboard";
+import { DashboardSectionId, RpcDashboard } from "./rpc-dashboard";
 
 vi.mock("@connectrpc/connect-query", async () => {
   const actual = await vi.importActual<typeof import("@connectrpc/connect-query")>(
@@ -228,6 +228,27 @@ describe("RpcDashboard", () => {
     }
     expect(screen.queryByRole("button", { name: "b" })).toBeNull();
     expect(screen.getAllByRole("button", { name: "a" })).toHaveLength(1);
+  });
+
+  it("renders the selected section only when activeSection is provided", () => {
+    render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+        activeSection={DashboardSectionId.Repository}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Fetch Repository Group" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Fetch Workspace" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Submit Plan Decision" })).toBeNull();
   });
 
   it("submits approve plan decision and renders mutation result", async () => {
