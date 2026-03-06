@@ -11,6 +11,7 @@ import { listReviewComments } from "../gen/v1/dexdex-ReviewCommentService_connec
 import {
   AgentCliType,
   EventStreamService,
+  PlanDecision,
   SessionAdapterFixturePreset,
   StreamEventType,
   TaskService,
@@ -116,6 +117,17 @@ function fixturePresetOptions(): Array<{
   ];
 }
 
+function planDecisionOptions(): Array<{
+  value: PlanDecision;
+  label: string;
+}> {
+  return [
+    { value: PlanDecision.APPROVE, label: "APPROVE" },
+    { value: PlanDecision.REVISE, label: "REVISE" },
+    { value: PlanDecision.REJECT, label: "REJECT" },
+  ];
+}
+
 function parseFromSequence(rawValue: string): bigint | null {
   const normalized = rawValue.trim();
   if (normalized.length === 0) {
@@ -216,6 +228,11 @@ export function RpcDashboard({
   const [pullRequestInput, setPullRequestInput] = useState("");
   const [reviewAssistInput, setReviewAssistInput] = useState("");
   const [reviewCommentInput, setReviewCommentInput] = useState("");
+  const [planSubTaskInput, setPlanSubTaskInput] = useState("");
+  const [planDecisionInput, setPlanDecisionInput] = useState<PlanDecision>(
+    PlanDecision.APPROVE,
+  );
+  const [planRevisionNoteInput, setPlanRevisionNoteInput] = useState("");
   const [runUnitTaskInput, setRunUnitTaskInput] = useState("");
   const [runSubTaskInput, setRunSubTaskInput] = useState("");
   const [runSessionInput, setRunSessionInput] = useState("");
@@ -227,7 +244,7 @@ export function RpcDashboard({
   const [runPresetInput, setRunPresetInput] =
     useState<SessionAdapterFixturePreset>(
       SessionAdapterFixturePreset.CODEX_CLI_FAILURE,
-    );
+  );
   const [runRawJsonlInput, setRunRawJsonlInput] = useState(
     `{"type":"step_start","part":{"type":"step-start"}}
 {"type":"text","part":{"text":"HELLO"}}
@@ -235,6 +252,11 @@ export function RpcDashboard({
   );
   const [streamFromSequenceInput, setStreamFromSequenceInput] = useState("0");
   const [localError, setLocalError] = useState<string | null>(null);
+  const [planDecisionPending, setPlanDecisionPending] = useState(false);
+  const [planDecisionError, setPlanDecisionError] = useState<string | null>(
+    null,
+  );
+  const [planDecisionResult, setPlanDecisionResult] = useState<unknown>(null);
   const [sessionAdapterPending, setSessionAdapterPending] = useState(false);
   const [sessionAdapterError, setSessionAdapterError] = useState<string | null>(
     null,
@@ -246,6 +268,7 @@ export function RpcDashboard({
     [],
   );
   const streamAbortControllerRef = useRef<AbortController | null>(null);
+  const planDecisionRequestIDRef = useRef(0);
   const sessionAdapterRequestIDRef = useRef(0);
   const [history, setHistory] = useState<LookupHistory>({
     workspaceId: [],
@@ -359,6 +382,7 @@ export function RpcDashboard({
   }, []);
 
   useEffect(() => {
+    planDecisionRequestIDRef.current += 1;
     sessionAdapterRequestIDRef.current += 1;
 
     if (streamAbortControllerRef.current) {
@@ -366,6 +390,9 @@ export function RpcDashboard({
       streamAbortControllerRef.current = null;
     }
 
+    setPlanDecisionPending(false);
+    setPlanDecisionError(null);
+    setPlanDecisionResult(null);
     setSessionAdapterPending(false);
     setStreamStatus("idle");
     setStreamError(null);
@@ -593,6 +620,73 @@ export function RpcDashboard({
       return;
     }
     setNotificationLookup({ workspaceId });
+  }
+
+  async function handleSubmitPlanDecision(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const workspaceId = requireWorkspaceInput("Submit Plan Decision");
+    if (!workspaceId) {
+      return;
+    }
+    const subTaskId = requireLookupInput(
+      planSubTaskInput,
+      "sub task id",
+      "Submit Plan Decision",
+    );
+    if (!subTaskId) {
+      return;
+    }
+
+    const request: {
+      workspaceId: string;
+      subTaskId: string;
+      decision: PlanDecision;
+      revisionNote?: string;
+    } = {
+      workspaceId,
+      subTaskId,
+      decision: planDecisionInput,
+    };
+
+    if (planDecisionInput === PlanDecision.REVISE) {
+      const revisionNote = requireLookupInput(
+        planRevisionNoteInput,
+        "revision note",
+        "Submit Plan Decision",
+      );
+      if (!revisionNote) {
+        return;
+      }
+      request.revisionNote = revisionNote;
+    }
+
+    remember("subTaskId", subTaskId);
+
+    setPlanDecisionPending(true);
+    setPlanDecisionError(null);
+    const requestID = planDecisionRequestIDRef.current + 1;
+    planDecisionRequestIDRef.current = requestID;
+
+    try {
+      const response = await taskClient.submitPlanDecision(request);
+      if (requestID !== planDecisionRequestIDRef.current) {
+        return;
+      }
+      setPlanDecisionResult(response);
+    } catch (error) {
+      if (requestID !== planDecisionRequestIDRef.current) {
+        return;
+      }
+      setPlanDecisionError(
+        describeQueryError(error, "Plan decision target was not found."),
+      );
+      setPlanDecisionResult(null);
+    } finally {
+      if (requestID !== planDecisionRequestIDRef.current) {
+        return;
+      }
+      setPlanDecisionPending(false);
+    }
   }
 
   async function handleRunSessionAdapter(event: FormEvent<HTMLFormElement>) {
@@ -892,6 +986,73 @@ export function RpcDashboard({
             idleMessage="Run lookup to load sub task data."
             notFoundMessage="No sub task found for this workspace and id."
           />
+        </article>
+
+        <article className="query-card">
+          <h3>TaskService.SubmitPlanDecision</h3>
+          <form onSubmit={handleSubmitPlanDecision}>
+            <div className="field">
+              <label htmlFor="plan-sub-task-id">Plan Sub Task ID</label>
+              <input
+                id="plan-sub-task-id"
+                name="plan-sub-task-id"
+                value={planSubTaskInput}
+                onChange={(event) => setPlanSubTaskInput(event.target.value)}
+                placeholder="sub-1"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="plan-decision">Plan Decision</label>
+              <select
+                id="plan-decision"
+                name="plan-decision"
+                value={planDecisionInput}
+                onChange={(event) =>
+                  setPlanDecisionInput(Number(event.target.value) as PlanDecision)
+                }
+              >
+                {planDecisionOptions().map((option) => (
+                  <option key={option.label} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {planDecisionInput === PlanDecision.REVISE ? (
+              <div className="field">
+                <label htmlFor="plan-revision-note">Revision Note</label>
+                <textarea
+                  id="plan-revision-note"
+                  name="plan-revision-note"
+                  value={planRevisionNoteInput}
+                  onChange={(event) => setPlanRevisionNoteInput(event.target.value)}
+                  rows={4}
+                />
+              </div>
+            ) : null}
+            <button type="submit" disabled={planDecisionPending}>
+              {planDecisionPending ? "Submitting..." : "Submit Plan Decision"}
+            </button>
+          </form>
+          <HistoryRow
+            title="Recent sub tasks"
+            values={history.subTaskId}
+            onSelect={setPlanSubTaskInput}
+          />
+          {planDecisionError ? (
+            <p className="error" role="alert">
+              {planDecisionError}
+            </p>
+          ) : null}
+          {planDecisionResult ? (
+            <pre className="query-result" data-testid="plan-decision-result">
+              {formatForDisplay(planDecisionResult)}
+            </pre>
+          ) : (
+            <p className="query-status">
+              Submit plan decision to update the current sub task state.
+            </p>
+          )}
         </article>
 
         <article className="query-card">

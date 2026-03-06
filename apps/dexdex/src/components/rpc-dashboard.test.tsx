@@ -1,5 +1,5 @@
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useQuery } from "@connectrpc/connect-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,7 @@ import { getWorkspace } from "../gen/v1/dexdex-WorkspaceService_connectquery";
 import {
   AgentCliType,
   AgentSessionStatus,
+  PlanDecision,
   SessionAdapterFixturePreset,
 } from "../gen/v1/dexdex_pb";
 import { createDexDexTransport } from "../lib/connect-query-provider";
@@ -50,6 +51,7 @@ vi.mock("../lib/connect-query-provider", async () => {
 const useQueryMock = vi.mocked(useQuery);
 const createClientMock = vi.mocked(createClient);
 const createDexDexTransportMock = vi.mocked(createDexDexTransport);
+const submitPlanDecisionMock = vi.fn();
 const runSubTaskSessionAdapterMock = vi.fn();
 const streamWorkspaceEventsMock = vi.fn();
 
@@ -74,11 +76,18 @@ function createDeferredPromise<T>() {
 
 describe("RpcDashboard", () => {
   beforeEach(() => {
+    submitPlanDecisionMock.mockReset();
     runSubTaskSessionAdapterMock.mockReset();
     streamWorkspaceEventsMock.mockReset();
     createDexDexTransportMock.mockReset();
     createDexDexTransportMock.mockReturnValue({} as never);
 
+    submitPlanDecisionMock.mockResolvedValue({
+      updatedSubTask: {
+        subTaskId: "sub-1",
+        status: 2,
+      },
+    });
     runSubTaskSessionAdapterMock.mockResolvedValue({
       updatedSubTask: {
         subTaskId: "sub-1",
@@ -102,6 +111,7 @@ describe("RpcDashboard", () => {
     createClientMock.mockImplementation(
       () =>
         ({
+          submitPlanDecision: submitPlanDecisionMock,
           runSubTaskSessionAdapter: runSubTaskSessionAdapterMock,
           streamWorkspaceEvents: streamWorkspaceEventsMock,
         }) as never,
@@ -218,6 +228,354 @@ describe("RpcDashboard", () => {
     }
     expect(screen.queryByRole("button", { name: "b" })).toBeNull();
     expect(screen.getAllByRole("button", { name: "a" })).toHaveLength(1);
+  });
+
+  it("submits approve plan decision and renders mutation result", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
+    await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
+
+    await waitFor(() => {
+      expect(submitPlanDecisionMock).toHaveBeenCalledWith({
+        workspaceId: "workspace-1",
+        subTaskId: "sub-1",
+        decision: PlanDecision.APPROVE,
+      });
+    });
+
+    expect(screen.getByTestId("plan-decision-result").textContent).toContain(
+      '"status": 2',
+    );
+  });
+
+  it("submits revise plan decision with revision note and renders created sub task", async () => {
+    const user = userEvent.setup();
+    submitPlanDecisionMock.mockResolvedValueOnce({
+      updatedSubTask: {
+        subTaskId: "sub-1",
+        status: 5,
+      },
+      createdSubTask: {
+        subTaskId: "workspace-1-subtask-2",
+        status: 1,
+        type: 2,
+      },
+    });
+
+    render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
+    await user.selectOptions(
+      screen.getByLabelText("Plan Decision"),
+      screen.getByRole("option", { name: "REVISE" }),
+    );
+    await user.type(
+      screen.getByLabelText("Revision Note"),
+      "Need clearer failure handling",
+    );
+    await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
+
+    await waitFor(() => {
+      expect(submitPlanDecisionMock).toHaveBeenCalledWith({
+        workspaceId: "workspace-1",
+        subTaskId: "sub-1",
+        decision: PlanDecision.REVISE,
+        revisionNote: "Need clearer failure handling",
+      });
+    });
+
+    expect(screen.getByTestId("plan-decision-result").textContent).toContain(
+      "workspace-1-subtask-2",
+    );
+  });
+
+  it("blocks revise plan decision without revision note", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
+    await user.selectOptions(
+      screen.getByLabelText("Plan Decision"),
+      screen.getByRole("option", { name: "REVISE" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
+
+    expect(submitPlanDecisionMock).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Submit Plan Decision: revision note is required."),
+    ).toBeTruthy();
+  });
+
+  it("resets plan decision result panel when connection changes", async () => {
+    const user = userEvent.setup();
+
+    const { rerender } = render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
+    await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
+
+    expect(await screen.findByTestId("plan-decision-result")).toBeTruthy();
+
+    rerender(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex-other.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-2",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("plan-decision-result")).toBeNull();
+      expect(
+        screen.getByText(
+          "Submit plan decision to update the current sub task state.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
+  it("resets plan decision error panel when connection changes", async () => {
+    const user = userEvent.setup();
+    submitPlanDecisionMock.mockRejectedValueOnce(
+      new ConnectError("plan decision failed", Code.Internal),
+    );
+
+    const { rerender } = render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
+    await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
+
+    expect(await screen.findByText("plan decision failed")).toBeTruthy();
+
+    rerender(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex-other.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-2",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText("plan decision failed")).toBeNull();
+      expect(
+        screen.getByText(
+          "Submit plan decision to update the current sub task state.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
+  it("resets plan decision pending flag on connection changes", async () => {
+    const user = userEvent.setup();
+    const deferred = createDeferredPromise<{
+      updatedSubTask: { subTaskId: string; status: number };
+      createdSubTask?: { subTaskId: string; status: number; type?: number };
+    }>();
+
+    submitPlanDecisionMock.mockReturnValueOnce(deferred.promise);
+
+    const { rerender } = render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
+    await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
+
+    expect(
+      screen.getByRole("button", { name: "Submitting..." }).hasAttribute("disabled"),
+    ).toBe(true);
+
+    rerender(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex-other.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-2",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Submit Plan Decision" }),
+      ).toHaveProperty("disabled", false);
+    });
+
+    deferred.resolve({
+      updatedSubTask: { subTaskId: "sub-1", status: 2 },
+    });
+  });
+
+  it("ignores stale plan decision responses after connection changes", async () => {
+    const user = userEvent.setup();
+    const deferred = createDeferredPromise<{
+      updatedSubTask: { subTaskId: string; status: number };
+      createdSubTask?: { subTaskId: string; status: number; type?: number };
+    }>();
+
+    submitPlanDecisionMock.mockReturnValueOnce(deferred.promise);
+
+    const { rerender } = render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
+    await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
+
+    rerender(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex-other.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-2",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    deferred.resolve({
+      updatedSubTask: { subTaskId: "sub-1", status: 2 },
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("plan-decision-result")).toBeNull();
+      expect(
+        screen.getByText(
+          "Submit plan decision to update the current sub task state.",
+        ),
+      ).toBeTruthy();
+    });
+  });
+
+  it("reuses recent sub task history in the plan decision form", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <RpcDashboard
+        connection={{
+          mode: "REMOTE",
+          endpointUrl: "https://dexdex.example/rpc",
+          endpointSource: WorkspaceEndpointSource.UserRemote,
+          token: "token-1",
+          transport: "CONNECT_RPC",
+        }}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Workspace ID"));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.type(screen.getByLabelText("Sub Task ID"), "sub-history-1");
+    await user.click(screen.getByRole("button", { name: "Fetch Sub Task" }));
+
+    const planDecisionCard = screen
+      .getByRole("heading", { name: "TaskService.SubmitPlanDecision" })
+      .closest("article");
+    if (!planDecisionCard) {
+      throw new Error("expected plan decision card");
+    }
+
+    await user.click(
+      within(planDecisionCard).getByRole("button", { name: "sub-history-1" }),
+    );
+
+    expect(
+      (screen.getByLabelText("Plan Sub Task ID") as HTMLInputElement).value,
+    ).toBe("sub-history-1");
   });
 
   it("runs session adapter with fixture preset input and renders mutation result", async () => {

@@ -57,7 +57,7 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 - Desktop app (`apps/dexdex`) is the orchestration client shell
 : It resolves workspace mode into one normalized Connect RPC connection contract.
 : It provides a shared React Query + Connect Query transport scaffold for RPC data flows.
-: It renders a Connect RPC dashboard with unary lookups, session-adapter execution controls, and live workspace stream monitoring.
+: It renders a Connect RPC dashboard with unary lookups, plan-decision controls, session-adapter execution controls, and live workspace stream monitoring.
 : It applies resolved workspace token values as `Authorization: Bearer <token>` request headers when token is present.
 : Post-resolution behavior stays identical between `LOCAL` and `REMOTE` modes.
 - Shared proto (`protos/dexdex/v1/dexdex.proto`) is the canonical contract surface for cross-runtime integrations.
@@ -403,6 +403,7 @@ Acceptance-focused scenarios:
 25. Main `RunSubTaskSessionAdapter` persists session output under `session_id` and returns the updated SubTask state.
 26. Main stream emits session adapter events in ordered sequence (`SUBTASK_UPDATED` -> `SESSION_OUTPUT` -> `SESSION_STATE_CHANGED` -> final `SUBTASK_UPDATED` when status terminal).
 27. Desktop dashboard can run session adapter requests with preset/raw input and render live stream events while ignoring heartbeat frames.
+28. Desktop dashboard can submit `APPROVE`, `REVISE`, and `REJECT` plan decisions, requiring `revision_note` only for `REVISE`, while preserving the same post-resolution UX flow across workspace modes.
 
 ## Roadmap
 - Phase 1: Shared proto contract scaffold (`dexdex.v1`) and desktop connection normalization.
