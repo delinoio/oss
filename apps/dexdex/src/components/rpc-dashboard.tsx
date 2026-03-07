@@ -1,6 +1,7 @@
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useQuery } from "@connectrpc/connect-query";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { DexDexPageId } from "../contracts/dexdex-page";
 import type { ResolvedWorkspaceConnection } from "../contracts/workspace-connection";
 import { getBadgeTheme } from "../gen/v1/dexdex-BadgeThemeService_connectquery";
 import { listNotifications } from "../gen/v1/dexdex-NotificationService_connectquery";
@@ -24,12 +25,12 @@ import {
 } from "../gen/v1/dexdex-TaskService_connectquery";
 import { getWorkspace } from "../gen/v1/dexdex-WorkspaceService_connectquery";
 import { createDexDexTransport } from "../lib/connect-query-provider";
+import { defaultLogger, type DexDexLogger } from "../lib/logger";
 
 const HISTORY_LIMIT = 5;
 const STREAM_EVENT_HISTORY_LIMIT = 100;
 
 export enum DashboardSectionId {
-  All = "all",
   Workspace = "workspace",
   Repository = "repository",
   Tasks = "tasks",
@@ -41,60 +42,75 @@ export enum DashboardSectionId {
   EventStream = "event-stream",
 }
 
-type DashboardSectionDefinition = {
-  id: DashboardSectionId;
+type DashboardPageDefinition = {
+  pageId: RpcDashboardPageId | "ALL";
   label: string;
-  description: string;
+  sections: ReadonlySet<DashboardSectionId>;
 };
 
-export const dashboardSectionDefinitions: ReadonlyArray<DashboardSectionDefinition> =
-  [
-    {
-      id: DashboardSectionId.Workspace,
-      label: "Workspace",
-      description: "Workspace contract and root metadata",
-    },
-    {
-      id: DashboardSectionId.Repository,
-      label: "Repository",
-      description: "Repository group lookups",
-    },
-    {
-      id: DashboardSectionId.Tasks,
-      label: "Tasks",
-      description: "Unit/sub-task reads and plan decisions",
-    },
-    {
-      id: DashboardSectionId.Sessions,
-      label: "Sessions",
-      description: "Session output inspection",
-    },
-    {
-      id: DashboardSectionId.Review,
-      label: "Review",
-      description: "PR, assist items, and review comments",
-    },
-    {
-      id: DashboardSectionId.BadgeTheme,
-      label: "Theme",
-      description: "Badge theme lookup",
-    },
-    {
-      id: DashboardSectionId.Notifications,
-      label: "Notifications",
-      description: "Workspace notifications",
-    },
-    {
-      id: DashboardSectionId.SessionAdapter,
-      label: "Session Adapter",
-      description: "Fixture normalization execution",
-    },
-    {
-      id: DashboardSectionId.EventStream,
-      label: "Event Stream",
-      description: "Live workspace stream monitor",
-    },
-  ];
+export type RpcDashboardPageId =
+  | DexDexPageId.Projects
+  | DexDexPageId.Threads
+  | DexDexPageId.Review
+  | DexDexPageId.Worktrees;
+
+const dashboardPageDefinitions: ReadonlyArray<DashboardPageDefinition> = [
+  {
+    pageId: DexDexPageId.Projects,
+    label: "Projects",
+    sections: new Set([DashboardSectionId.Workspace, DashboardSectionId.Repository]),
+  },
+  {
+    pageId: DexDexPageId.Threads,
+    label: "Threads",
+    sections: new Set([
+      DashboardSectionId.Tasks,
+      DashboardSectionId.Sessions,
+      DashboardSectionId.BadgeTheme,
+      DashboardSectionId.Notifications,
+    ]),
+  },
+  {
+    pageId: DexDexPageId.Review,
+    label: "Review",
+    sections: new Set([DashboardSectionId.Review]),
+  },
+  {
+    pageId: DexDexPageId.Worktrees,
+    label: "Worktrees",
+    sections: new Set([
+      DashboardSectionId.SessionAdapter,
+      DashboardSectionId.EventStream,
+    ]),
+  },
+];
+
+function resolveDashboardPageDefinition(
+  pageId?: RpcDashboardPageId,
+): DashboardPageDefinition {
+  if (!pageId) {
+    return {
+      pageId: "ALL",
+      label: "All RPC",
+      sections: new Set([
+        DashboardSectionId.Workspace,
+        DashboardSectionId.Repository,
+        DashboardSectionId.Tasks,
+        DashboardSectionId.Sessions,
+        DashboardSectionId.Review,
+        DashboardSectionId.BadgeTheme,
+        DashboardSectionId.Notifications,
+        DashboardSectionId.SessionAdapter,
+        DashboardSectionId.EventStream,
+      ]),
+    };
+  }
+
+  return (
+    dashboardPageDefinitions.find((definition) => definition.pageId === pageId) ??
+    dashboardPageDefinitions[0]
+  );
+}
 
 type StreamStatus = "idle" | "running" | "stopped" | "error";
 type SessionAdapterInputMode = "preset" | "raw";
@@ -323,12 +339,14 @@ function HistoryRow({ title, values, onSelect }: HistoryRowProps) {
 
 export function RpcDashboard({
   connection,
-  activeSection = DashboardSectionId.All,
+  activePage,
   onInspectorChange,
+  logger = defaultLogger,
 }: {
   connection: ResolvedWorkspaceConnection;
-  activeSection?: DashboardSectionId;
+  activePage?: RpcDashboardPageId;
   onInspectorChange?: (next: DashboardInspectorState) => void;
+  logger?: DexDexLogger;
 }) {
   const [workspaceInput, setWorkspaceInput] = useState("workspace-1");
   const [repositoryGroupInput, setRepositoryGroupInput] = useState("");
@@ -480,12 +498,11 @@ export function RpcDashboard({
     },
   );
 
-  const selectedSection = useMemo(
-    () =>
-      dashboardSectionDefinitions.find((section) => section.id === activeSection) ??
-      dashboardSectionDefinitions[0],
-    [activeSection],
+  const selectedPageDefinition = useMemo(
+    () => resolveDashboardPageDefinition(activePage),
+    [activePage],
   );
+  const pageLogId = activePage ?? "ALL";
 
   const inspectorState = useMemo<DashboardInspectorState>(
     () => ({
@@ -531,11 +548,18 @@ export function RpcDashboard({
       status: "idle",
       message: "Waiting for the next dashboard action.",
     });
+    logger.info("dashboard.connection.reset", {
+      page_id: pageLogId,
+      action: "connection-reset",
+      result: "success",
+    });
   }, [
     connection.endpointSource,
     connection.endpointUrl,
     connection.mode,
     connection.token,
+    logger,
+    pageLogId,
   ]);
 
   useEffect(() => {
@@ -545,11 +569,32 @@ export function RpcDashboard({
     onInspectorChange(inspectorState);
   }, [inspectorState, onInspectorChange]);
 
+  useEffect(() => {
+    logger.info("dashboard.page.render", {
+      page_id: pageLogId,
+      action: "render",
+      result: "success",
+    });
+  }, [logger, pageLogId]);
+
   function setAction(
     label: string,
     status: DashboardActionStatus,
     message: string,
   ) {
+    const eventFields = {
+      page_id: pageLogId,
+      action: label,
+      result: status,
+    };
+    if (status === "error") {
+      logger.error("dashboard.action", eventFields);
+    } else if (status === "pending") {
+      logger.info("dashboard.action.pending", eventFields);
+    } else {
+      logger.info("dashboard.action", eventFields);
+    }
+
     setLastAction({
       label,
       status,
@@ -558,9 +603,7 @@ export function RpcDashboard({
   }
 
   function showSection(section: DashboardSectionId): boolean {
-    return (
-      activeSection === DashboardSectionId.All || activeSection === section
-    );
+    return selectedPageDefinition.sections.has(section);
   }
 
   function remember(key: keyof LookupHistory, value: string) {
@@ -1075,7 +1118,7 @@ export function RpcDashboard({
         </div>
         <div className="dashboard-active-pill">
           <span>Active View</span>
-          <strong>{selectedSection.label}</strong>
+          <strong>{selectedPageDefinition.label}</strong>
         </div>
       </header>
 

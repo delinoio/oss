@@ -126,6 +126,11 @@ body {
     background-color 0.16s ease;
 }
 
+.nav-link {
+  text-decoration: none;
+  color: var(--text-main);
+}
+
 .nav-tab small {
   color: var(--text-subtle);
   font-size: 0.75rem;
@@ -190,6 +195,18 @@ body {
 
 .dashboard-panel {
   padding: 0.95rem;
+}
+
+.page-panel {
+  padding: 0.95rem;
+}
+
+.page-header {
+  margin-bottom: 0.8rem;
+}
+
+.page-header h2 {
+  margin: 0;
 }
 
 .dashboard-header {
@@ -497,6 +514,39 @@ button:disabled {
 .stream-event-body {
   margin-top: 0.45rem;
   max-height: 160px;
+}
+
+.placeholder-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.placeholder-list {
+  margin: 0.7rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.placeholder-list li {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.52rem;
+  background: #0a121d;
+}
+
+.placeholder-list p {
+  margin: 0.35rem 0;
+  color: var(--text-muted);
+  font-size: 0.83rem;
+}
+
+.placeholder-list small {
+  color: var(--text-subtle);
+  font-size: 0.75rem;
 }
 
 @media (max-width: 1280px) {

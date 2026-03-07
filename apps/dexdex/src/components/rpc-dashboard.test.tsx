@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useQuery } from "@connectrpc/connect-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DexDexPageId } from "../contracts/dexdex-page";
 import { WorkspaceEndpointSource } from "../contracts/workspace-connection";
 import { getWorkspace } from "../gen/v1/dexdex-WorkspaceService_connectquery";
 import {
@@ -12,7 +13,7 @@ import {
   SessionAdapterFixturePreset,
 } from "../gen/v1/dexdex_pb";
 import { createDexDexTransport } from "../lib/connect-query-provider";
-import { DashboardSectionId, RpcDashboard } from "./rpc-dashboard";
+import { RpcDashboard } from "./rpc-dashboard";
 
 vi.mock("@connectrpc/connect-query", async () => {
   const actual = await vi.importActual<typeof import("@connectrpc/connect-query")>(
@@ -230,7 +231,7 @@ describe("RpcDashboard", () => {
     expect(screen.getAllByRole("button", { name: "a" })).toHaveLength(1);
   });
 
-  it("renders the selected section only when activeSection is provided", () => {
+  it("renders only cards mapped to the selected page", () => {
     render(
       <RpcDashboard
         connection={{
@@ -240,12 +241,12 @@ describe("RpcDashboard", () => {
           token: "token-1",
           transport: "CONNECT_RPC",
         }}
-        activeSection={DashboardSectionId.Repository}
+        activePage={DexDexPageId.Review}
       />,
     );
 
     expect(
-      screen.getByRole("button", { name: "Fetch Repository Group" }),
+      screen.getByRole("button", { name: "Fetch Pull Request" }),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Fetch Workspace" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Submit Plan Decision" })).toBeNull();
