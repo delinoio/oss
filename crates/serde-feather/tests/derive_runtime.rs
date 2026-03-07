@@ -10,6 +10,50 @@ use serde_feather::{
 };
 use serde_test::{assert_tokens, Token};
 
+fn is_zero(value: &u8) -> bool {
+    *value == 0
+}
+
+mod hex_u8 {
+    use serde_feather::serde::{self, Deserialize as _};
+
+    pub fn serialize<S>(value: &u8, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        let encoded = format!("{value:02x}");
+        serializer.serialize_str(&encoded)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u8, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        let encoded = String::deserialize(deserializer)?;
+        u8::from_str_radix(&encoded, 16).map_err(serde::de::Error::custom)
+    }
+}
+
+mod passthrough_with {
+    use serde_feather::serde;
+
+    pub fn serialize<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+        T: serde::ser::Serialize,
+    {
+        serde::ser::Serialize::serialize(value, serializer)
+    }
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+        T: serde::de::Deserialize<'de>,
+    {
+        serde::de::Deserialize::deserialize(deserializer)
+    }
+}
+
 #[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
 struct BasicModel {
     id: u32,
@@ -76,6 +120,150 @@ enum EnumModel {
 enum RenamedEnumModel {
     Unit,
     Newtype(u16),
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct UnitStructModel;
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct TupleStructModel(u8, #[serde(default)] u8, #[serde(skip_deserializing)] u8);
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct NewtypeTupleStructModel(u8);
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+enum ExtendedEnumModel {
+    Tuple(u8, #[serde(default)] u8),
+    #[serde(rename_all = "camelCase")]
+    Named {
+        first_field: u8,
+        #[serde(rename = "forced_name")]
+        second_field: u8,
+    },
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct RuntimeHookModel {
+    #[serde(with = "hex_u8", skip_serializing_if = "is_zero", default)]
+    hex: u8,
+    #[serde(skip_deserializing, default)]
+    server_only: u8,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+enum RuntimeHookEnum {
+    Named {
+        #[serde(with = "hex_u8")]
+        code: u8,
+        #[serde(skip_serializing_if = "is_zero", default)]
+        count: u8,
+    },
+    Tuple(#[serde(with = "hex_u8")] u8, #[serde(default)] u8),
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+enum NewtypeSkipIfEnumModel {
+    Value(#[serde(skip_serializing_if = "is_zero", default)] u8),
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+#[allow(clippy::enum_variant_names)]
+enum NewtypeSkipDirectionalEnumModel {
+    SerializeSkipped(#[serde(skip_serializing, default)] u8),
+    DeserializeSkipped(#[serde(skip_deserializing, default)] u8),
+    BothSkipped(#[serde(skip, default)] u8),
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct GenericEnvelope<'a, T, const N: usize> {
+    #[serde(skip_deserializing, default)]
+    marker: &'a str,
+    value: T,
+    payload: Vec<u8>,
+    #[serde(skip, default)]
+    phantom: std::marker::PhantomData<[u8; N]>,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct GenericConstEnvelope<const FLAG: bool, const TAG: u8> {
+    value: u8,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct BoundedEnvelope<T>
+where
+    T: Copy,
+{
+    value: T,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct GenericWithStruct<T>
+where
+    T: Copy + serde::ser::Serialize + for<'de> serde::de::Deserialize<'de>,
+{
+    #[serde(with = "passthrough_with")]
+    value: T,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+enum GenericWithEnum<T>
+where
+    T: Copy + serde::ser::Serialize + for<'de> serde::de::Deserialize<'de>,
+{
+    Value(#[serde(with = "passthrough_with")] T),
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct BorrowedLifetimeModel<'a> {
+    value: &'a str,
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct GenericSkipDeserializeModel<T> {
+    #[serde(skip_deserializing)]
+    value: T,
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct GenericDefaultFieldModel<T> {
+    #[serde(default)]
+    value: T,
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct GenericDefaultVecFieldModel<T> {
+    #[serde(default)]
+    values: Vec<T>,
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct NoDefaultModel {
+    value: u8,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+#[serde(rename_all = "snake_case")]
+enum AliasRenameEnum {
+    FirstCase,
+    #[serde(alias = "legacy_second_case")]
+    SecondCase,
+    #[serde(rename = "manual_case")]
+    ThirdCase,
+    #[serde(rename_all = "camelCase")]
+    NamedPayload {
+        first_field: u8,
+        #[serde(rename = "forced_name")]
+        second_field: u8,
+    },
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+enum AliasNumericEnum {
+    #[serde(alias = "zero_alias")]
+    Zero,
+    #[serde(alias = "one_alias")]
+    One(u8),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -421,4 +609,292 @@ fn rejects_unknown_enum_variant() {
         message.contains("unknown variant"),
         "unexpected error for unknown variant: {message}"
     );
+}
+
+#[test]
+fn supports_unit_and_tuple_struct_derives() {
+    let unit_encoded = serde_json::to_string(&UnitStructModel).expect("serialize unit struct");
+    assert_eq!(unit_encoded, "null");
+    let unit_decoded: UnitStructModel =
+        serde_json::from_str("null").expect("deserialize unit struct");
+    assert_eq!(unit_decoded, UnitStructModel);
+
+    let tuple = TupleStructModel(5, 7, 9);
+    let tuple_encoded = serde_json::to_string(&tuple).expect("serialize tuple struct");
+    assert_eq!(tuple_encoded, "[5,7,9]");
+
+    let tuple_decoded: TupleStructModel =
+        serde_json::from_str("[11,13]").expect("deserialize tuple struct");
+    assert_eq!(tuple_decoded, TupleStructModel(11, 13, 0));
+}
+
+#[test]
+fn serializes_newtype_tuple_struct_as_scalar() {
+    let encoded =
+        serde_json::to_string(&NewtypeTupleStructModel(7)).expect("serialize newtype tuple struct");
+    assert_eq!(encoded, "7");
+
+    let decoded: NewtypeTupleStructModel =
+        serde_json::from_str("11").expect("deserialize newtype tuple struct");
+    assert_eq!(decoded, NewtypeTupleStructModel(11));
+}
+
+#[test]
+fn supports_tuple_and_named_enum_variants() {
+    let tuple_value = ExtendedEnumModel::Tuple(7, 9);
+    let tuple_encoded = serde_json::to_string(&tuple_value).expect("serialize tuple enum variant");
+    assert_eq!(tuple_encoded, r#"{"Tuple":[7,9]}"#);
+    let tuple_decoded: ExtendedEnumModel =
+        serde_json::from_str(r#"{"Tuple":[7]}"#).expect("deserialize tuple enum variant");
+    assert_eq!(tuple_decoded, ExtendedEnumModel::Tuple(7, 0));
+
+    let named_value = ExtendedEnumModel::Named {
+        first_field: 1,
+        second_field: 2,
+    };
+    let named_encoded = serde_json::to_string(&named_value).expect("serialize named enum variant");
+    assert_eq!(
+        named_encoded,
+        r#"{"Named":{"firstField":1,"forced_name":2}}"#
+    );
+    let named_decoded: ExtendedEnumModel =
+        serde_json::from_str(r#"{"Named":{"firstField":4,"forced_name":8,"unknown":true}}"#)
+            .expect("deserialize named enum variant");
+    assert_eq!(
+        named_decoded,
+        ExtendedEnumModel::Named {
+            first_field: 4,
+            second_field: 8,
+        }
+    );
+}
+
+#[test]
+fn supports_runtime_field_hooks() {
+    let value = RuntimeHookModel {
+        hex: 0,
+        server_only: 99,
+    };
+    let encoded = serde_json::to_string(&value).expect("serialize runtime hook model");
+    assert_eq!(encoded, r#"{"server_only":99}"#);
+
+    let decoded: RuntimeHookModel = serde_json::from_str(r#"{"hex":"0f","server_only":55}"#)
+        .expect("deserialize runtime hook model");
+    assert_eq!(
+        decoded,
+        RuntimeHookModel {
+            hex: 15,
+            server_only: 0,
+        }
+    );
+}
+
+#[test]
+fn supports_variant_field_hooks() {
+    let named = RuntimeHookEnum::Named { code: 10, count: 0 };
+    let named_encoded = serde_json::to_string(&named).expect("serialize named hook variant");
+    assert_eq!(named_encoded, r#"{"Named":{"code":"0a"}}"#);
+
+    let named_decoded: RuntimeHookEnum =
+        serde_json::from_str(r#"{"Named":{"code":"10","count":3}}"#)
+            .expect("deserialize named hook variant");
+    assert_eq!(named_decoded, RuntimeHookEnum::Named { code: 16, count: 3 });
+
+    let tuple = RuntimeHookEnum::Tuple(31, 7);
+    let tuple_encoded = serde_json::to_string(&tuple).expect("serialize tuple hook variant");
+    assert_eq!(tuple_encoded, r#"{"Tuple":["1f",7]}"#);
+
+    let tuple_decoded: RuntimeHookEnum =
+        serde_json::from_str(r#"{"Tuple":["2a"]}"#).expect("deserialize tuple hook variant");
+    assert_eq!(tuple_decoded, RuntimeHookEnum::Tuple(42, 0));
+}
+
+#[test]
+fn preserves_newtype_encoding_for_skip_serializing_if_variant_fields() {
+    let encoded_non_zero =
+        serde_json::to_string(&NewtypeSkipIfEnumModel::Value(5)).expect("serialize non-zero");
+    assert_eq!(encoded_non_zero, r#"{"Value":5}"#);
+
+    let encoded_zero =
+        serde_json::to_string(&NewtypeSkipIfEnumModel::Value(0)).expect("serialize zero");
+    assert_eq!(encoded_zero, r#"{"Value":0}"#);
+
+    let decoded: NewtypeSkipIfEnumModel =
+        serde_json::from_str(r#"{"Value":9}"#).expect("deserialize newtype skip-if variant");
+    assert_eq!(decoded, NewtypeSkipIfEnumModel::Value(9));
+}
+
+#[test]
+fn preserves_unit_encoding_for_skipped_newtype_variant_payloads() {
+    let skip_ser_encoded =
+        serde_json::to_string(&NewtypeSkipDirectionalEnumModel::SerializeSkipped(5))
+            .expect("serialize skip-serializing newtype variant");
+    assert_eq!(skip_ser_encoded, r#""SerializeSkipped""#);
+
+    let skip_both_encoded = serde_json::to_string(&NewtypeSkipDirectionalEnumModel::BothSkipped(8))
+        .expect("serialize skip-both newtype variant");
+    assert_eq!(skip_both_encoded, r#""BothSkipped""#);
+
+    let skip_ser_decoded: NewtypeSkipDirectionalEnumModel =
+        serde_json::from_str(r#"{"SerializeSkipped":7}"#)
+            .expect("deserialize skip-serializing newtype variant from payload");
+    assert_eq!(
+        skip_ser_decoded,
+        NewtypeSkipDirectionalEnumModel::SerializeSkipped(7)
+    );
+
+    let skip_de_decoded: NewtypeSkipDirectionalEnumModel =
+        serde_json::from_str(r#""DeserializeSkipped""#)
+            .expect("deserialize skip-deserializing newtype variant from unit");
+    assert_eq!(
+        skip_de_decoded,
+        NewtypeSkipDirectionalEnumModel::DeserializeSkipped(0)
+    );
+
+    let skip_both_decoded: NewtypeSkipDirectionalEnumModel =
+        serde_json::from_str(r#""BothSkipped""#)
+            .expect("deserialize skip-both newtype variant from unit");
+    assert_eq!(
+        skip_both_decoded,
+        NewtypeSkipDirectionalEnumModel::BothSkipped(0)
+    );
+}
+
+#[test]
+fn supports_generic_type_lifetime_and_const_derives() {
+    let value = GenericEnvelope::<u16, 3> {
+        marker: "marker",
+        value: 7,
+        payload: vec![1, 2, 3],
+        phantom: std::marker::PhantomData,
+    };
+    let encoded = serde_json::to_string(&value).expect("serialize generic envelope");
+    assert_eq!(
+        encoded,
+        r#"{"marker":"marker","value":7,"payload":[1,2,3]}"#
+    );
+
+    let decoded: GenericEnvelope<'static, u16, 3> =
+        serde_json::from_str(r#"{"marker":"ignored","value":11,"payload":[4,5,6]}"#)
+            .expect("deserialize generic envelope");
+    assert_eq!(
+        decoded,
+        GenericEnvelope {
+            marker: "",
+            value: 11,
+            payload: vec![4, 5, 6],
+            phantom: std::marker::PhantomData,
+        }
+    );
+}
+
+#[test]
+fn supports_non_usize_const_generic_derives() {
+    let value = GenericConstEnvelope::<true, 7> { value: 3 };
+    let encoded =
+        serde_json::to_string(&value).expect("serialize non-usize const generic envelope");
+    assert_eq!(encoded, r#"{"value":3}"#);
+
+    let decoded: GenericConstEnvelope<false, 9> = serde_json::from_str(r#"{"value":11}"#)
+        .expect("deserialize non-usize const generic envelope");
+    assert_eq!(decoded, GenericConstEnvelope { value: 11 });
+}
+
+#[test]
+fn preserves_declared_generic_bounds_for_deserialize_helpers() {
+    let value = BoundedEnvelope::<u16> { value: 17 };
+    let encoded = serde_json::to_string(&value).expect("serialize bounded envelope");
+    assert_eq!(encoded, r#"{"value":17}"#);
+
+    let decoded: BoundedEnvelope<u16> =
+        serde_json::from_str(r#"{"value":21}"#).expect("deserialize bounded envelope");
+    assert_eq!(decoded, BoundedEnvelope { value: 21 });
+}
+
+#[test]
+fn supports_with_wrappers_on_generic_structs_and_enums() {
+    let struct_value = GenericWithStruct::<u8> { value: 9 };
+    let struct_encoded =
+        serde_json::to_string(&struct_value).expect("serialize generic with struct");
+    assert_eq!(struct_encoded, r#"{"value":9}"#);
+
+    let struct_decoded: GenericWithStruct<u8> =
+        serde_json::from_str(r#"{"value":14}"#).expect("deserialize generic with struct");
+    assert_eq!(struct_decoded, GenericWithStruct { value: 14 });
+
+    let enum_value = GenericWithEnum::<u8>::Value(31);
+    let enum_encoded = serde_json::to_string(&enum_value).expect("serialize generic with enum");
+    assert_eq!(enum_encoded, r#"{"Value":31}"#);
+
+    let enum_decoded: GenericWithEnum<u8> =
+        serde_json::from_str(r#"{"Value":42}"#).expect("deserialize generic with enum");
+    assert_eq!(enum_decoded, GenericWithEnum::Value(42));
+}
+
+#[test]
+fn supports_borrowed_lifetime_deserialization() {
+    let decoded: BorrowedLifetimeModel<'_> =
+        serde_json::from_str(r#"{"value":"borrowed"}"#).expect("deserialize borrowed model");
+    assert_eq!(decoded, BorrowedLifetimeModel { value: "borrowed" });
+}
+
+#[test]
+fn infers_default_bounds_for_generic_fallback_paths() {
+    let skip_decoded: GenericSkipDeserializeModel<u8> =
+        serde_json::from_str(r#"{"value":9}"#).expect("deserialize generic skip_deserializing");
+    assert_eq!(skip_decoded, GenericSkipDeserializeModel { value: 0 });
+
+    let default_decoded: GenericDefaultFieldModel<u8> =
+        serde_json::from_str(r#"{}"#).expect("deserialize generic default field");
+    assert_eq!(default_decoded, GenericDefaultFieldModel { value: 0 });
+}
+
+#[test]
+fn does_not_overconstrain_default_bounds_for_nested_generic_types() {
+    let decoded: GenericDefaultVecFieldModel<NoDefaultModel> =
+        serde_json::from_str(r#"{}"#).expect("deserialize generic default vec field");
+    assert_eq!(
+        decoded,
+        GenericDefaultVecFieldModel::<NoDefaultModel> { values: Vec::new() }
+    );
+}
+
+#[test]
+fn applies_rename_all_rename_override_and_alias() {
+    let first_encoded =
+        serde_json::to_string(&AliasRenameEnum::FirstCase).expect("serialize first case");
+    assert_eq!(first_encoded, r#""first_case""#);
+
+    let alias_decoded: AliasRenameEnum =
+        serde_json::from_str(r#""legacy_second_case""#).expect("deserialize alias variant");
+    assert_eq!(alias_decoded, AliasRenameEnum::SecondCase);
+
+    let renamed_encoded =
+        serde_json::to_string(&AliasRenameEnum::ThirdCase).expect("serialize renamed variant");
+    assert_eq!(renamed_encoded, r#""manual_case""#);
+
+    let named_encoded = serde_json::to_string(&AliasRenameEnum::NamedPayload {
+        first_field: 9,
+        second_field: 2,
+    })
+    .expect("serialize named payload variant");
+    assert_eq!(
+        named_encoded,
+        r#"{"named_payload":{"firstField":9,"forced_name":2}}"#
+    );
+}
+
+#[test]
+fn supports_alias_with_numeric_discriminants() {
+    let alias_decoded: AliasNumericEnum =
+        serde_json::from_str(r#""zero_alias""#).expect("deserialize alias variant name");
+    assert_eq!(alias_decoded, AliasNumericEnum::Zero);
+
+    let numeric_unit = AliasNumericEnum::deserialize(NumericEnumDeserializer::unit(0))
+        .expect("deserialize numeric unit variant");
+    assert_eq!(numeric_unit, AliasNumericEnum::Zero);
+
+    let numeric_newtype = AliasNumericEnum::deserialize(NumericEnumDeserializer::newtype_u8(1, 12))
+        .expect("deserialize numeric newtype variant");
+    assert_eq!(numeric_newtype, AliasNumericEnum::One(12));
 }

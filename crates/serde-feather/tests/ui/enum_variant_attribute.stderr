@@ -1,5 +1,5 @@
-error: unsupported serde enum variant attribute; supported attributes: `rename`
+error: unsupported serde enum variant attribute; supported attributes: `rename`, `alias`, `rename_all`
  --> tests/ui/enum_variant_attribute.rs:5:13
   |
-5 |     #[serde(alias = "circle")]
-  |             ^^^^^
+5 |     #[serde(skip_serializing)]
+  |             ^^^^^^^^^^^^^^^^

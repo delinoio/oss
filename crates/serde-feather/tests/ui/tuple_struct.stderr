@@ -1,5 +1,5 @@
-error: FeatherSerialize only supports structs with named fields in this MVP
- --> tests/ui/tuple_struct.rs:4:18
+error: duplicate wire enum variant name `dup` in deserialization; conflicts with variant `Circle`
+ --> tests/ui/tuple_struct.rs:7:22
   |
-4 | struct TupleModel(u8);
-  |                  ^^^^
+7 |     #[serde(rename = "dup")]
+  |                      ^^^^^

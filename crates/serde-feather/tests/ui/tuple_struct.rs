@@ -1,6 +1,11 @@
-use serde_feather::FeatherSerialize;
+use serde_feather::FeatherDeserialize;
 
-#[derive(FeatherSerialize)]
-struct TupleModel(u8);
+#[derive(FeatherDeserialize)]
+enum Shape {
+    #[serde(alias = "dup")]
+    Circle,
+    #[serde(rename = "dup")]
+    Square,
+}
 
 fn main() {}

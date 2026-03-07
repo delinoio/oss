@@ -1,8 +1,9 @@
-use serde_feather::{FeatherDeserialize, FeatherSerialize};
+use serde_feather::FeatherSerialize;
 
-#[derive(FeatherSerialize, FeatherDeserialize)]
+#[derive(FeatherSerialize)]
+#[serde(tag = "type")]
 enum Shape {
-    Circle { radius: u8 },
+    Circle,
 }
 
 fn main() {}

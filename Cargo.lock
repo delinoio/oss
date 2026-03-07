@@ -1589,6 +1589,7 @@ dependencies = [
 name = "serde-feather-macros"
 version = "0.1.0"
 dependencies = [
+ "heck",
  "proc-macro-crate",
  "proc-macro2",
  "quote",

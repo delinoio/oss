@@ -1,5 +1,5 @@
-error: unsupported serde field attribute on enum variant payload; field attributes are not supported for enum payloads
- --> tests/ui/enum_variant_field_attribute.rs:5:12
+error: serde field attribute `rename` is not supported on tuple fields
+ --> tests/ui/enum_variant_field_attribute.rs:5:27
   |
-5 |     Circle(#[serde(default)] u8),
-  |            ^^^^^^^^^^^^^^^^^
+5 |     Pair(#[serde(rename = "left")] u8, u8),
+  |                           ^^^^^^

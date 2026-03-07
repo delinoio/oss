@@ -1,0 +1,11 @@
+error: serde tuple fields with `default` must form a suffix for deserialization; field index `1` follows defaulted field index `0`
+ --> tests/ui/tuple_default_prefix.rs:4:51
+  |
+4 | struct AmbiguousTupleStruct(#[serde(default)] u8, u8);
+  |                                                   ^^
+
+error: serde tuple fields with `default` must form a suffix for deserialization; field index `1` follows defaulted field index `0`
+ --> tests/ui/tuple_default_prefix.rs:8:33
+  |
+8 |     Value(#[serde(default)] u8, u8),
+  |                                 ^^
