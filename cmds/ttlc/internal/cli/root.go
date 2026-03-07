@@ -403,9 +403,13 @@ func parseRunArgsJSON(raw string) (map[string]any, error) {
 	decoder := json.NewDecoder(strings.NewReader(raw))
 	decoder.UseNumber()
 
-	parsed := make(map[string]any)
-	if err := decoder.Decode(&parsed); err != nil {
+	var decoded any
+	if err := decoder.Decode(&decoded); err != nil {
 		return nil, fmt.Errorf("parse --args JSON object: %w", err)
+	}
+	parsed, ok := decoded.(map[string]any)
+	if !ok || parsed == nil {
+		return nil, fmt.Errorf("parse --args JSON object: expected JSON object")
 	}
 	trailing := struct{}{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
