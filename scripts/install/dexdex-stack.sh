@@ -159,6 +159,11 @@ install_direct() {
       ;;
   esac
 
+  if [ "$os" = "linux" ] && [ "$arch" = "arm64" ]; then
+    echo "[install.dexdex] linux arm64 direct artifacts are not published yet" >&2
+    exit 1
+  fi
+
   local base_url="https://github.com/${repo}/releases/download/${tag}"
   local tmp_dir
   tmp_dir="$(mktemp -d)"

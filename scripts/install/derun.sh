@@ -144,6 +144,11 @@ install_direct() {
       ;;
   esac
 
+  if [ "$os" = "linux" ] && [ "$arch" = "arm64" ]; then
+    echo "[install.derun] linux arm64 direct artifacts are not published yet" >&2
+    exit 1
+  fi
+
   local ext="tar.gz"
   local asset_name="derun-${os}-${arch}.${ext}"
   local base_url="https://github.com/${repo}/releases/download/${tag}"
