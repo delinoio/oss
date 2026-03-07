@@ -1,5 +1,5 @@
-import { Code, ConnectError, createClient } from "@connectrpc/connect";
-import { useQuery } from "@connectrpc/connect-query";
+import { Code, ConnectError, createClient, type Transport } from "@connectrpc/connect";
+import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { createQueryOptions } from "@connectrpc/connect-query-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -217,11 +217,9 @@ function updateSelectionState(
 function applyStreamEventToCaches(
   event: StreamWorkspaceEventsResponse,
   workspaceId: string,
-  connection: ResolvedWorkspaceConnection,
+  transport: Transport,
   queryClient: ReturnType<typeof useQueryClient>,
 ): void {
-  const transport = createDexDexTransport(connection.endpointUrl, connection.token);
-
   const listSessionsInput = {
     workspaceId,
     status: AgentSessionStatus.UNSPECIFIED,
@@ -916,20 +914,15 @@ function WorktreesPage({
   workspaceId,
   selection,
   onSelectionChange,
-  connection,
   logger,
 }: {
   workspaceId: string;
   selection: SharedSelectionState;
   onSelectionChange: (patch: Partial<SharedSelectionState>) => void;
-  connection: ResolvedWorkspaceConnection;
   logger: DexDexLogger;
 }) {
   const queryClient = useQueryClient();
-  const transport = useMemo(
-    () => createDexDexTransport(connection.endpointUrl, connection.token),
-    [connection.endpointUrl, connection.token],
-  );
+  const transport = useTransport();
   const eventStreamClient = useMemo(
     () => createClient(EventStreamService, transport),
     [transport],
@@ -1017,7 +1010,7 @@ function WorktreesPage({
         }
 
         setStreamEvents((previous) => [event, ...previous].slice(0, maxStreamEvents));
-        applyStreamEventToCaches(event, workspaceId, connection, queryClient);
+        applyStreamEventToCaches(event, workspaceId, transport, queryClient);
       }
 
       if (!abortController.signal.aborted) {
@@ -2235,7 +2228,6 @@ function DexDexShell({
             onSelectionChange={(patch) =>
               setSelectionState((previous) => updateSelectionState(previous, patch))
             }
-            connection={activeWorkspaceSession.connection}
             logger={logger}
           />
         );
