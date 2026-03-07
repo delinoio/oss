@@ -167,10 +167,11 @@ enum NewtypeSkipIfEnumModel {
 }
 
 #[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+#[allow(clippy::enum_variant_names)]
 enum NewtypeSkipDirectionalEnumModel {
-    SkipSer(#[serde(skip_serializing, default)] u8),
-    SkipDe(#[serde(skip_deserializing, default)] u8),
-    SkipBoth(#[serde(skip, default)] u8),
+    SerializeSkipped(#[serde(skip_serializing, default)] u8),
+    DeserializeSkipped(#[serde(skip_deserializing, default)] u8),
+    BothSkipped(#[serde(skip, default)] u8),
 }
 
 #[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
@@ -692,31 +693,37 @@ fn preserves_newtype_encoding_for_skip_serializing_if_variant_fields() {
 
 #[test]
 fn preserves_unit_encoding_for_skipped_newtype_variant_payloads() {
-    let skip_ser_encoded = serde_json::to_string(&NewtypeSkipDirectionalEnumModel::SkipSer(5))
-        .expect("serialize skip-serializing newtype variant");
-    assert_eq!(skip_ser_encoded, r#""SkipSer""#);
+    let skip_ser_encoded =
+        serde_json::to_string(&NewtypeSkipDirectionalEnumModel::SerializeSkipped(5))
+            .expect("serialize skip-serializing newtype variant");
+    assert_eq!(skip_ser_encoded, r#""SerializeSkipped""#);
 
-    let skip_both_encoded = serde_json::to_string(&NewtypeSkipDirectionalEnumModel::SkipBoth(8))
+    let skip_both_encoded = serde_json::to_string(&NewtypeSkipDirectionalEnumModel::BothSkipped(8))
         .expect("serialize skip-both newtype variant");
-    assert_eq!(skip_both_encoded, r#""SkipBoth""#);
+    assert_eq!(skip_both_encoded, r#""BothSkipped""#);
 
     let skip_ser_decoded: NewtypeSkipDirectionalEnumModel =
-        serde_json::from_str(r#"{"SkipSer":7}"#)
+        serde_json::from_str(r#"{"SerializeSkipped":7}"#)
             .expect("deserialize skip-serializing newtype variant from payload");
     assert_eq!(
         skip_ser_decoded,
-        NewtypeSkipDirectionalEnumModel::SkipSer(7)
+        NewtypeSkipDirectionalEnumModel::SerializeSkipped(7)
     );
 
-    let skip_de_decoded: NewtypeSkipDirectionalEnumModel = serde_json::from_str(r#""SkipDe""#)
-        .expect("deserialize skip-deserializing newtype variant from unit");
-    assert_eq!(skip_de_decoded, NewtypeSkipDirectionalEnumModel::SkipDe(0));
+    let skip_de_decoded: NewtypeSkipDirectionalEnumModel =
+        serde_json::from_str(r#""DeserializeSkipped""#)
+            .expect("deserialize skip-deserializing newtype variant from unit");
+    assert_eq!(
+        skip_de_decoded,
+        NewtypeSkipDirectionalEnumModel::DeserializeSkipped(0)
+    );
 
-    let skip_both_decoded: NewtypeSkipDirectionalEnumModel = serde_json::from_str(r#""SkipBoth""#)
-        .expect("deserialize skip-both newtype variant from unit");
+    let skip_both_decoded: NewtypeSkipDirectionalEnumModel =
+        serde_json::from_str(r#""BothSkipped""#)
+            .expect("deserialize skip-both newtype variant from unit");
     assert_eq!(
         skip_both_decoded,
-        NewtypeSkipDirectionalEnumModel::SkipBoth(0)
+        NewtypeSkipDirectionalEnumModel::BothSkipped(0)
     );
 }
 
