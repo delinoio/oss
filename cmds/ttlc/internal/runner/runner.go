@@ -450,25 +450,60 @@ func (e *evaluator) evalCall(scope map[string]any, expression expression) (any, 
 
 func stableValueString(value any) string {
 	switch typed := value.(type) {
+	case nil:
+		return "null"
+	case string:
+		return "str:"+fmt.Sprintf("%%q", typed)
+	case bool:
+		if typed {
+			return "bool:true"
+		}
+		return "bool:false"
+	case json.Number:
+		return "num:"+typed.String()
+	case int, int8, int16, int32, int64:
+		return fmt.Sprintf("num:%%v", typed)
+	case uint, uint8, uint16, uint32, uint64, uintptr:
+		return fmt.Sprintf("num:%%v", typed)
+	case float32, float64:
+		return fmt.Sprintf("num:%%v", typed)
 	case map[string]any:
 		keys := make([]string, 0, len(typed))
 		for key := range typed {
 			keys = append(keys, key)
 		}
 		sort.Strings(keys)
-		parts := make([]string, 0, len(keys))
+		builder := strings.Builder{}
+		builder.WriteString("obj{")
 		for _, key := range keys {
-			parts = append(parts, key+"="+stableValueString(typed[key]))
+			encodedKey := fmt.Sprintf("%%q", key)
+			encodedValue := stableValueString(typed[key])
+			builder.WriteString(fmt.Sprintf("%%d:", len(encodedKey)))
+			builder.WriteString(encodedKey)
+			builder.WriteString("=")
+			builder.WriteString(fmt.Sprintf("%%d:", len(encodedValue)))
+			builder.WriteString(encodedValue)
+			builder.WriteString(";")
 		}
-		return "{"+strings.Join(parts, ",")+"}"
+		builder.WriteString("}")
+		return builder.String()
 	case []any:
-		parts := make([]string, 0, len(typed))
+		builder := strings.Builder{}
+		builder.WriteString("arr[")
 		for _, item := range typed {
-			parts = append(parts, stableValueString(item))
+			encodedItem := stableValueString(item)
+			builder.WriteString(fmt.Sprintf("%%d:", len(encodedItem)))
+			builder.WriteString(encodedItem)
+			builder.WriteString(";")
 		}
-		return "["+strings.Join(parts, ",")+"]"
+		builder.WriteString("]")
+		return builder.String()
 	default:
-		return fmt.Sprintf("%%v", typed)
+		payload, err := json.Marshal(typed)
+		if err == nil {
+			return "json:"+string(payload)
+		}
+		return fmt.Sprintf("unknown:%%T:%%v", typed, typed)
 	}
 }
 

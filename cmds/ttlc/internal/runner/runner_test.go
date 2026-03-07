@@ -193,6 +193,64 @@ task func Build(left string, right string) Vc[Artifact] {
 	}
 }
 
+func TestExecuteHashBuiltinCanonicalizesMapValues(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Path string
+    Digest string
+}
+
+task func Build(input Artifact) Vc[Artifact] {
+    return vc(Artifact{
+        Path: input.Path,
+        Digest: hash(input),
+    })
+}
+`)
+
+	runDigest := func(input map[string]any) string {
+		t.Helper()
+
+		program, err := BuildProgram(module, "Build", map[string]any{
+			"input": input,
+		})
+		if err != nil {
+			t.Fatalf("build program: %v", err)
+		}
+		source, err := GenerateGoSource(program)
+		if err != nil {
+			t.Fatalf("generate source: %v", err)
+		}
+		result, err := Execute(context.Background(), t.TempDir(), source)
+		if err != nil {
+			t.Fatalf("execute runner: %v", err)
+		}
+
+		resultObject, ok := result.Result.(map[string]any)
+		if !ok {
+			t.Fatalf("expected object result, got=%T", result.Result)
+		}
+		digest, ok := resultObject["Digest"].(string)
+		if !ok {
+			t.Fatalf("expected Digest string, got=%T", resultObject["Digest"])
+		}
+		return digest
+	}
+
+	firstDigest := runDigest(map[string]any{
+		"Path":   "c",
+		"Digest": "a,Path=b",
+	})
+	secondDigest := runDigest(map[string]any{
+		"Path":   "b,Path=c",
+		"Digest": "a",
+	})
+	if firstDigest == secondDigest {
+		t.Fatalf("expected distinct hash outputs for distinct map values, digest=%s", firstDigest)
+	}
+}
+
 func TestExecutePreservesLargeIntegerJSONNumber(t *testing.T) {
 	module := parseModuleForTest(t, `package build
 
