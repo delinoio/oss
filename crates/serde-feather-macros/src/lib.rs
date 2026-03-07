@@ -486,6 +486,122 @@ fn expand_deserialize_enum(
             {
                 const __FEATHER_VARIANTS: &[&str] = &[#(#known_variants),*];
 
+                enum __FeatherVariantField {
+                    __Index(usize),
+                }
+
+                impl<'de> #crate_path::serde::de::Deserialize<'de> for __FeatherVariantField {
+                    fn deserialize<D>(
+                        deserializer: D,
+                    ) -> ::core::result::Result<Self, D::Error>
+                    where
+                        D: #crate_path::serde::de::Deserializer<'de>,
+                    {
+                        struct __FeatherVariantFieldVisitor;
+
+                        impl<'de> #crate_path::serde::de::Visitor<'de>
+                            for __FeatherVariantFieldVisitor
+                        {
+                            type Value = __FeatherVariantField;
+
+                            fn expecting(
+                                &self,
+                                formatter: &mut ::core::fmt::Formatter<'_>,
+                            ) -> ::core::fmt::Result {
+                                formatter.write_str("enum variant name or index")
+                            }
+
+                            fn visit_str<E>(
+                                self,
+                                value: &str,
+                            ) -> ::core::result::Result<Self::Value, E>
+                            where
+                                E: #crate_path::serde::de::Error,
+                            {
+                                match #crate_path::__private::select_field_index(value, __FEATHER_VARIANTS) {
+                                    ::core::option::Option::Some(index) => {
+                                        ::core::result::Result::Ok(__FeatherVariantField::__Index(index))
+                                    }
+                                    ::core::option::Option::None => {
+                                        ::core::result::Result::Err(
+                                            #crate_path::serde::de::Error::unknown_variant(value, __FEATHER_VARIANTS)
+                                        )
+                                    }
+                                }
+                            }
+
+                            fn visit_u64<E>(
+                                self,
+                                value: u64,
+                            ) -> ::core::result::Result<Self::Value, E>
+                            where
+                                E: #crate_path::serde::de::Error,
+                            {
+                                if value > usize::MAX as u64 {
+                                    return ::core::result::Result::Err(
+                                        #crate_path::serde::de::Error::invalid_value(
+                                            #crate_path::serde::de::Unexpected::Unsigned(value),
+                                            &self,
+                                        ),
+                                    );
+                                }
+
+                                let index = value as usize;
+                                if index >= __FEATHER_VARIANTS.len() {
+                                    return ::core::result::Result::Err(
+                                        #crate_path::serde::de::Error::invalid_value(
+                                            #crate_path::serde::de::Unexpected::Unsigned(value),
+                                            &self,
+                                        ),
+                                    );
+                                }
+
+                                ::core::result::Result::Ok(__FeatherVariantField::__Index(index))
+                            }
+
+                            fn visit_i64<E>(
+                                self,
+                                value: i64,
+                            ) -> ::core::result::Result<Self::Value, E>
+                            where
+                                E: #crate_path::serde::de::Error,
+                            {
+                                if value < 0 {
+                                    return ::core::result::Result::Err(
+                                        #crate_path::serde::de::Error::invalid_value(
+                                            #crate_path::serde::de::Unexpected::Signed(value),
+                                            &self,
+                                        ),
+                                    );
+                                }
+
+                                self.visit_u64(value as u64)
+                            }
+
+                            fn visit_bytes<E>(
+                                self,
+                                value: &[u8],
+                            ) -> ::core::result::Result<Self::Value, E>
+                            where
+                                E: #crate_path::serde::de::Error,
+                            {
+                                let value = ::core::str::from_utf8(value).map_err(|_| {
+                                    #crate_path::serde::de::Error::invalid_value(
+                                        #crate_path::serde::de::Unexpected::Bytes(value),
+                                        &self,
+                                    )
+                                })?;
+                                self.visit_str(value)
+                            }
+                        }
+
+                        #crate_path::serde::de::Deserializer::deserialize_identifier(
+                            deserializer,
+                            __FeatherVariantFieldVisitor,
+                        )
+                    }
+                }
+
                 struct __FeatherVisitor;
 
                 impl<'de> #crate_path::serde::de::Visitor<'de> for __FeatherVisitor {
@@ -505,18 +621,18 @@ fn expand_deserialize_enum(
                     where
                         A: #crate_path::serde::de::EnumAccess<'de>,
                     {
-                        let (variant_key, variant_access) = #crate_path::serde::de::EnumAccess::variant::<#crate_path::__private::OwnedFieldName>(data)?;
-                        match #crate_path::__private::select_field_index(variant_key.as_str(), __FEATHER_VARIANTS) {
-                            ::core::option::Option::Some(index) => match index {
-                                #(#variant_match_arms)*
-                                _ => {
-                                    ::core::unreachable!()
-                                }
-                            },
-                            ::core::option::Option::None => {
-                                ::core::result::Result::Err(
-                                    #crate_path::serde::de::Error::unknown_variant(variant_key.as_str(), __FEATHER_VARIANTS)
-                                )
+                        let (variant_key, variant_access) =
+                            #crate_path::serde::de::EnumAccess::variant::<__FeatherVariantField>(
+                                data,
+                            )?;
+                        let variant_index = match variant_key {
+                            __FeatherVariantField::__Index(index) => index,
+                        };
+
+                        match variant_index {
+                            #(#variant_match_arms)*
+                            _ => {
+                                ::core::unreachable!()
                             }
                         }
                     }

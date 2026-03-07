@@ -95,6 +95,7 @@ MVP derive target and attribute contract:
   - Non-generic enums with unit and newtype variants.
 - Attribute namespace: `serde(...)` only.
 - Enum encoding/decoding uses serde default externally tagged representation.
+- Enum deserialization must accept both string variant names and numeric variant discriminants.
 - Unknown input fields during deserialization must be ignored.
 - Struct deserialization must support both map and sequence struct encodings.
 - Sequence decoding must treat `skip_deserializing` fields as omitted positions (no placeholder element is consumed).
