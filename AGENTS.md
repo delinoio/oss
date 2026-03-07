@@ -93,6 +93,12 @@ enum ProjectId {
 - `public-docs` -> `apps/public-docs`
 - `dexdex` -> `servers/dexdex-main-server`, `servers/dexdex-worker-server`, `apps/dexdex`, `protos/dexdex`
 
+### TTL Command Contract
+
+- `cmds/ttlc` command identifiers are `build`, `check`, `explain`, and `run`.
+- `ttlc run` requires `--task` and accepts optional `--args <json>` with default `{}`.
+- `ttlc run` response payload includes `result`, `run_trace`, and root-task `cache_analysis`.
+
 ### Devkit Mini-App Identifier Contract
 
 ```ts

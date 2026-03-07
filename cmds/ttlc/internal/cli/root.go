@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/ttlc/internal/compiler"
 	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
@@ -17,6 +18,7 @@ import (
 const (
 	defaultEntryPath = "./main.ttl"
 	defaultOutDir    = ".ttl/gen"
+	defaultRunArgs   = "{}"
 )
 
 var newCompilerService = compiler.NewWithLogger
@@ -46,6 +48,8 @@ func execute(args []string, stdout io.Writer, stderr io.Writer) int {
 		return executeCheck(args[1:], stdout, stderr)
 	case contracts.TtlCommandExplain:
 		return executeExplain(args[1:], stdout, stderr)
+	case contracts.TtlCommandRun:
+		return executeRun(args[1:], stdout, stderr)
 	default:
 		_, _ = fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
 		printUsage(stderr)
@@ -228,6 +232,126 @@ func executeExplain(args []string, stdout io.Writer, stderr io.Writer) int {
 	return 0
 }
 
+func executeRun(args []string, stdout io.Writer, stderr io.Writer) int {
+	fs := flag.NewFlagSet(string(contracts.TtlCommandRun), flag.ContinueOnError)
+	fs.SetOutput(stderr)
+
+	entry := defaultEntryPath
+	task := ""
+	rawArgs := defaultRunArgs
+	noColor := false
+	fs.StringVar(&entry, "entry", defaultEntryPath, "entry .ttl file path")
+	fs.StringVar(&task, "task", "", "task name to run")
+	fs.StringVar(&rawArgs, "args", defaultRunArgs, "json object arguments for the selected task")
+	fs.BoolVar(&noColor, "no-color", false, "disable ANSI color output for logs")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	parsedArgs, parseErr := parseRunArgsJSON(rawArgs)
+	if parseErr != nil {
+		diagnostics := []diagnostic.Diagnostic{
+			{
+				Kind:    contracts.DiagnosticKindTypeError,
+				Message: parseErr.Error(),
+				Line:    1,
+				Column:  1,
+			},
+		}
+		payload := map[string]any{
+			"entry":          entry,
+			"task":           task,
+			"args":           rawArgs,
+			"result":         nil,
+			"run_trace":      make([]string, 0),
+			"cache_analysis": make([]compiler.CacheAnalysis, 0),
+		}
+		if err := writeEnvelope(stdout, contracts.TtlCommandRun, contracts.TtlResponseStatusFailed, diagnostics, payload); err != nil {
+			_, _ = fmt.Fprintf(stderr, "encode output: %v\n", err)
+		}
+		return 1
+	}
+
+	if strings.TrimSpace(task) == "" {
+		diagnostics := []diagnostic.Diagnostic{
+			{
+				Kind:    contracts.DiagnosticKindTypeError,
+				Message: "--task is required for run command",
+				Line:    1,
+				Column:  1,
+			},
+		}
+		payload := map[string]any{
+			"entry":          entry,
+			"task":           task,
+			"args":           parsedArgs,
+			"result":         nil,
+			"run_trace":      make([]string, 0),
+			"cache_analysis": make([]compiler.CacheAnalysis, 0),
+		}
+		if err := writeEnvelope(stdout, contracts.TtlCommandRun, contracts.TtlResponseStatusFailed, diagnostics, payload); err != nil {
+			_, _ = fmt.Fprintf(stderr, "encode output: %v\n", err)
+		}
+		return 1
+	}
+
+	logger, err := logging.NewWithWriter(stderr, logging.Options{Level: "info", NoColor: noColor})
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
+		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandRun, map[string]any{
+			"entry":          entry,
+			"task":           task,
+			"args":           parsedArgs,
+			"result":         nil,
+			"run_trace":      make([]string, 0),
+			"cache_analysis": make([]compiler.CacheAnalysis, 0),
+		}, err); envelopeErr != nil {
+			_, _ = fmt.Fprintf(stderr, "encode output: %v\n", envelopeErr)
+		}
+		return 1
+	}
+
+	service := newCompilerService(logger)
+	result, err := service.Run(context.Background(), compiler.RunOptions{
+		Entry: entry,
+		Task:  task,
+		Args:  parsedArgs,
+	})
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "run failed: %v\n", err)
+		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandRun, map[string]any{
+			"entry":          entry,
+			"task":           task,
+			"args":           parsedArgs,
+			"result":         nil,
+			"run_trace":      make([]string, 0),
+			"cache_analysis": make([]compiler.CacheAnalysis, 0),
+		}, err); envelopeErr != nil {
+			_, _ = fmt.Fprintf(stderr, "encode output: %v\n", envelopeErr)
+		}
+		return 1
+	}
+
+	payload := map[string]any{
+		"entry":          result.Entry,
+		"module":         result.Module,
+		"task":           result.Task,
+		"args":           result.Args,
+		"result":         result.RunResult,
+		"run_trace":      normalizeRunTrace(result.RunTrace),
+		"cache_analysis": normalizeCacheAnalysis(result.CacheAnalysis),
+	}
+	status := statusFromDiagnostics(result.Diagnostics)
+	if err := writeEnvelope(stdout, contracts.TtlCommandRun, status, result.Diagnostics, payload); err != nil {
+		_, _ = fmt.Fprintf(stderr, "encode output: %v\n", err)
+		return 1
+	}
+	if status == contracts.TtlResponseStatusFailed {
+		return 1
+	}
+	return 0
+}
+
 func statusFromDiagnostics(diagnostics []diagnostic.Diagnostic) contracts.TtlResponseStatus {
 	if len(diagnostics) > 0 {
 		return contracts.TtlResponseStatusFailed
@@ -268,9 +392,32 @@ func normalizeCacheAnalysis(values []compiler.CacheAnalysis) []compiler.CacheAna
 	return values
 }
 
+func normalizeRunTrace(values []string) []string {
+	if values == nil {
+		return make([]string, 0)
+	}
+	return values
+}
+
+func parseRunArgsJSON(raw string) (map[string]any, error) {
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+
+	parsed := make(map[string]any)
+	if err := decoder.Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("parse --args JSON object: %w", err)
+	}
+	trailing := struct{}{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, fmt.Errorf("parse --args JSON object: unexpected trailing tokens")
+	}
+	return parsed, nil
+}
+
 func printUsage(stderr io.Writer) {
 	_, _ = fmt.Fprintln(stderr, "usage:")
 	_, _ = fmt.Fprintln(stderr, "  ttlc build [--entry <file.ttl>] [--out-dir <dir>] [--no-color]")
 	_, _ = fmt.Fprintln(stderr, "  ttlc check [--entry <file.ttl>] [--no-color]")
 	_, _ = fmt.Fprintln(stderr, "  ttlc explain [--entry <file.ttl>] [--task <task-name>] [--no-color]")
+	_, _ = fmt.Fprintln(stderr, "  ttlc run [--entry <file.ttl>] --task <task-name> [--args <json>] [--no-color]")
 }

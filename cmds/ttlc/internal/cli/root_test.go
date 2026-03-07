@@ -132,6 +132,11 @@ func TestCommandRuntimeFailureWritesEnvelope(t *testing.T) {
 			args:    []string{"explain"},
 			command: contracts.TtlCommandExplain,
 		},
+		{
+			name:    "run",
+			args:    []string{"run", "--task", "Build"},
+			command: contracts.TtlCommandRun,
+		},
 	}
 
 	withWorkingDirectory(t, workspace, func() {
@@ -280,6 +285,123 @@ func TestExplainSupportsTaskFilter(t *testing.T) {
 		}
 		if analysisRow["invalidation_reason"] != string(contracts.TtlInvalidationReasonCacheMiss) {
 			t.Fatalf("unexpected invalidation reason: %#v", analysisRow["invalidation_reason"])
+		}
+	})
+}
+
+func TestRunSupportsTaskAndArgs(t *testing.T) {
+	workspace := t.TempDir()
+	writeTTLFile(t, filepath.Join(workspace, "main.ttl"))
+
+	withWorkingDirectory(t, workspace, func() {
+		stdout := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+
+		code := execute([]string{"run", "--task", "Build", "--args", `{"target":"web"}`}, stdout, stderr)
+		if code != 0 {
+			t.Fatalf("expected exit code 0, got=%d stderr=%s", code, stderr.String())
+		}
+
+		envelope := decodeEnvelope(t, stdout.Bytes())
+		if envelope.Command != contracts.TtlCommandRun {
+			t.Fatalf("unexpected command: %s", envelope.Command)
+		}
+		if envelope.Status != contracts.TtlResponseStatusOK {
+			t.Fatalf("unexpected status: %s diagnostics=%+v", envelope.Status, envelope.Diagnostics)
+		}
+
+		data, ok := envelope.Data.(map[string]any)
+		if !ok {
+			t.Fatalf("expected object data payload, got=%T", envelope.Data)
+		}
+		if data["task"] != "Build" {
+			t.Fatalf("unexpected task payload: %#v", data["task"])
+		}
+		argsObject, ok := data["args"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected args object payload, got=%T", data["args"])
+		}
+		if argsObject["target"] != "web" {
+			t.Fatalf("unexpected args payload: %#v", argsObject)
+		}
+
+		resultObject, ok := data["result"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected result object payload, got=%T", data["result"])
+		}
+		if resultObject["Path"] != "web" {
+			t.Fatalf("unexpected run result payload: %#v", resultObject)
+		}
+
+		runTrace, ok := data["run_trace"].([]any)
+		if !ok || len(runTrace) != 1 {
+			t.Fatalf("unexpected run trace payload: %#v", data["run_trace"])
+		}
+		if runTrace[0] != "Build" {
+			t.Fatalf("unexpected run trace entry: %#v", runTrace[0])
+		}
+
+		cacheAnalysis, ok := data["cache_analysis"].([]any)
+		if !ok || len(cacheAnalysis) != 1 {
+			t.Fatalf("unexpected cache_analysis payload: %#v", data["cache_analysis"])
+		}
+	})
+}
+
+func TestRunRequiresTaskFlag(t *testing.T) {
+	workspace := t.TempDir()
+	writeTTLFile(t, filepath.Join(workspace, "main.ttl"))
+
+	withWorkingDirectory(t, workspace, func() {
+		stdout := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+
+		code := execute([]string{"run"}, stdout, stderr)
+		if code != 1 {
+			t.Fatalf("expected exit code 1, got=%d stderr=%s", code, stderr.String())
+		}
+
+		envelope := decodeEnvelope(t, stdout.Bytes())
+		if envelope.Command != contracts.TtlCommandRun {
+			t.Fatalf("unexpected command: %s", envelope.Command)
+		}
+		if envelope.Status != contracts.TtlResponseStatusFailed {
+			t.Fatalf("expected failed status, got=%s", envelope.Status)
+		}
+		if len(envelope.Diagnostics) != 1 {
+			t.Fatalf("expected one diagnostic, got=%+v", envelope.Diagnostics)
+		}
+		if envelope.Diagnostics[0]["kind"] != string(contracts.DiagnosticKindTypeError) {
+			t.Fatalf("unexpected diagnostic kind: %+v", envelope.Diagnostics[0])
+		}
+	})
+}
+
+func TestRunReportsInvalidJSONArgs(t *testing.T) {
+	workspace := t.TempDir()
+	writeTTLFile(t, filepath.Join(workspace, "main.ttl"))
+
+	withWorkingDirectory(t, workspace, func() {
+		stdout := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+
+		code := execute([]string{"run", "--task", "Build", "--args", `{"target"`}, stdout, stderr)
+		if code != 1 {
+			t.Fatalf("expected exit code 1, got=%d stderr=%s", code, stderr.String())
+		}
+
+		envelope := decodeEnvelope(t, stdout.Bytes())
+		if envelope.Command != contracts.TtlCommandRun {
+			t.Fatalf("unexpected command: %s", envelope.Command)
+		}
+		if envelope.Status != contracts.TtlResponseStatusFailed {
+			t.Fatalf("expected failed status, got=%s", envelope.Status)
+		}
+		if len(envelope.Diagnostics) != 1 {
+			t.Fatalf("expected one diagnostic, got=%+v", envelope.Diagnostics)
+		}
+		if envelope.Diagnostics[0]["kind"] != string(contracts.DiagnosticKindTypeError) {
+			t.Fatalf("unexpected diagnostic kind: %+v", envelope.Diagnostics[0])
 		}
 	})
 }

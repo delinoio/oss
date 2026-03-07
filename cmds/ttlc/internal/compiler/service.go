@@ -2,14 +2,17 @@ package compiler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/delinoio/oss/cmds/ttlc/internal/ast"
 	"github.com/delinoio/oss/cmds/ttlc/internal/cache"
 	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
 	"github.com/delinoio/oss/cmds/ttlc/internal/diagnostic"
@@ -19,6 +22,7 @@ import (
 	"github.com/delinoio/oss/cmds/ttlc/internal/lexer"
 	"github.com/delinoio/oss/cmds/ttlc/internal/logging"
 	"github.com/delinoio/oss/cmds/ttlc/internal/parser"
+	"github.com/delinoio/oss/cmds/ttlc/internal/runner"
 	"github.com/delinoio/oss/cmds/ttlc/internal/sema"
 	"github.com/delinoio/oss/cmds/ttlc/internal/source"
 )
@@ -35,6 +39,12 @@ type BuildOptions struct {
 type ExplainOptions struct {
 	Entry string
 	Task  string
+}
+
+type RunOptions struct {
+	Entry string
+	Task  string
+	Args  map[string]any
 }
 
 type Task struct {
@@ -55,7 +65,11 @@ type CacheAnalysis struct {
 type Result struct {
 	Entry                 string                  `json:"entry"`
 	Module                string                  `json:"module"`
+	Task                  string                  `json:"task,omitempty"`
+	Args                  map[string]any          `json:"args,omitempty"`
 	Tasks                 []Task                  `json:"tasks,omitempty"`
+	RunResult             any                     `json:"result,omitempty"`
+	RunTrace              []string                `json:"run_trace,omitempty"`
 	Diagnostics           []diagnostic.Diagnostic `json:"diagnostics"`
 	FingerprintComponents fingerprint.Components  `json:"fingerprint_components"`
 	GeneratedFiles        []string                `json:"generated_files,omitempty"`
@@ -75,6 +89,7 @@ type taskFingerprint struct {
 
 type analysis struct {
 	paths            source.Paths
+	module           *ast.Module
 	moduleName       string
 	typeDeclarations []sema.TypeDecl
 	diagnostics      []diagnostic.Diagnostic
@@ -155,6 +170,133 @@ func (s *Service) Explain(ctx context.Context, options ExplainOptions) (Result, 
 
 	result.CacheAnalysis = analysisRecords
 	s.logStageEnd(contracts.CompileStageCache, time.Since(cacheStart))
+	return result, nil
+}
+
+func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
+	analysisResult, err := s.analyze(ctx, options.Entry, ".ttl/gen", options.Task)
+	if err != nil {
+		return Result{}, err
+	}
+
+	result := analysisResult.result
+	result.Task = options.Task
+	result.Args = cloneArgs(options.Args)
+
+	if strings.TrimSpace(options.Task) == "" {
+		result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
+			Kind:    contracts.DiagnosticKindTypeError,
+			Message: "--task is required for run command",
+			Line:    1,
+			Column:  1,
+		})
+		return result, nil
+	}
+	if hasErrorDiagnostics(result.Diagnostics) {
+		return result, nil
+	}
+	if len(result.Tasks) != 1 {
+		return result, nil
+	}
+
+	rootTask := result.Tasks[0]
+	result.Diagnostics = append(result.Diagnostics, validateRunArgs(rootTask.Params, options.Args)...)
+	if hasErrorDiagnostics(result.Diagnostics) {
+		return result, nil
+	}
+
+	rootFingerprint, found := findTaskFingerprintByID(analysisResult.taskFingerprints, rootTask.ID)
+	if !found {
+		return Result{}, fmt.Errorf("resolve root task fingerprint: %s", rootTask.ID)
+	}
+
+	cacheStart := time.Now()
+	s.logStageStart(contracts.CompileStageCache)
+	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
+	if err != nil {
+		s.logStageFailure(contracts.CompileStageCache, time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
+		return Result{}, fmt.Errorf("open cache store: %w", err)
+	}
+	defer store.Close()
+
+	cacheAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, analysisResult.moduleName, rootFingerprint, true)
+	if lookupErr != nil {
+		s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
+		return Result{}, fmt.Errorf("analyze task cache state for %s: %w", rootFingerprint.Task.ID, lookupErr)
+	}
+
+	if cacheAnalysis.CacheHit {
+		cachedState, stateFound, stateErr := store.GetTaskState(analysisResult.moduleName, rootFingerprint.Task.ID)
+		if stateErr != nil {
+			s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
+			return Result{}, fmt.Errorf("read cache state for %s: %w", rootFingerprint.Task.ID, stateErr)
+		}
+		if stateFound {
+			cachedResult, cachedRunTrace, ok := decodeRunMetadata(cachedState.Metadata)
+			if ok {
+				result.RunResult = cachedResult
+				result.RunTrace = cachedRunTrace
+				result.CacheDBPath = analysisResult.paths.CacheDBPath
+				result.CacheAnalysis = []CacheAnalysis{cacheAnalysis}
+				s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, true, cacheAnalysis.InvalidationReason, errorKind, time.Since(cacheStart))
+				s.logStageEnd(contracts.CompileStageCache, time.Since(cacheStart))
+				return result, nil
+			}
+		}
+		cacheAnalysis.CacheHit = false
+		cacheAnalysis.InvalidationReason = contracts.TtlInvalidationReasonCacheMiss
+	}
+
+	runStart := time.Now()
+	s.logStageStart(contracts.CompileStageRun)
+	runProgram, err := runner.BuildProgram(analysisResult.module, rootTask.ID, options.Args)
+	if err != nil {
+		s.logStageFailure(contracts.CompileStageRun, time.Since(runStart), contracts.DiagnosticKindTypeError, err)
+		return Result{}, fmt.Errorf("build run program: %w", err)
+	}
+	runnerSource, err := runner.GenerateGoSource(runProgram)
+	if err != nil {
+		s.logStageFailure(contracts.CompileStageRun, time.Since(runStart), contracts.DiagnosticKindIOError, err)
+		return Result{}, fmt.Errorf("generate runner source: %w", err)
+	}
+	runExecutionResult, err := runner.Execute(ctx, analysisResult.paths.OutDir, runnerSource)
+	if err != nil {
+		s.logStageFailure(contracts.CompileStageRun, time.Since(runStart), contracts.DiagnosticKindIOError, err)
+		return Result{}, fmt.Errorf("execute generated runner: %w", err)
+	}
+	s.logStageEnd(contracts.CompileStageRun, time.Since(runStart))
+
+	record := cache.TaskRecord{
+		TaskKey:                 rootFingerprint.CacheKey,
+		Module:                  analysisResult.moduleName,
+		TaskID:                  rootTask.ID,
+		InputContentHash:        rootFingerprint.Components.InputContentHash,
+		ParameterHash:           rootFingerprint.Components.ParameterHash,
+		EnvironmentSnapshotHash: rootFingerprint.Components.EnvironmentSnapshotHash,
+		InputFingerprint:        composeInputFingerprint(rootFingerprint.Components),
+		OutputBlobRef:           "",
+		Deps:                    append([]string{}, rootTask.Deps...),
+		Metadata: map[string]any{
+			"module":      analysisResult.moduleName,
+			"task_id":     rootTask.ID,
+			"return_type": rootTask.ReturnType,
+			"run_result":  runExecutionResult.Result,
+			"run_trace":   runExecutionResult.ExecutedTasks,
+		},
+		UpdatedAt: time.Now().UTC(),
+	}
+	if err := store.UpsertTask(record); err != nil {
+		s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
+		return Result{}, fmt.Errorf("upsert run cache row for %s: %w", rootTask.ID, err)
+	}
+
+	s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, cacheAnalysis.InvalidationReason, errorKind, time.Since(cacheStart))
+	s.logStageEnd(contracts.CompileStageCache, time.Since(cacheStart))
+
+	result.RunResult = runExecutionResult.Result
+	result.RunTrace = runExecutionResult.ExecutedTasks
+	result.CacheDBPath = analysisResult.paths.CacheDBPath
+	result.CacheAnalysis = []CacheAnalysis{cacheAnalysis}
 	return result, nil
 }
 
@@ -391,6 +533,7 @@ func (s *Service) analyze(_ context.Context, entry string, outDir string, taskFi
 
 	result = analysis{
 		paths:            paths,
+		module:           module,
 		moduleName:       module.PackageName,
 		typeDeclarations: append([]sema.TypeDecl{}, semaResult.Types...),
 		diagnostics:      mergeDiagnostics(lexDiagnostics, parseDiagnostics, semaResult.Diagnostics),
@@ -442,6 +585,150 @@ func mergeDiagnostics(groups ...[]diagnostic.Diagnostic) []diagnostic.Diagnostic
 
 func hasErrorDiagnostics(diagnostics []diagnostic.Diagnostic) bool {
 	return len(diagnostics) > 0
+}
+
+func findTaskFingerprintByID(tasks []taskFingerprint, taskID string) (taskFingerprint, bool) {
+	for _, fingerprintedTask := range tasks {
+		if fingerprintedTask.Task.ID == taskID {
+			return fingerprintedTask, true
+		}
+	}
+	return taskFingerprint{}, false
+}
+
+func decodeRunMetadata(metadata map[string]any) (any, []string, bool) {
+	if metadata == nil {
+		return nil, nil, false
+	}
+
+	runResult, exists := metadata["run_result"]
+	if !exists {
+		return nil, nil, false
+	}
+	runTraceRaw, exists := metadata["run_trace"]
+	if !exists {
+		return nil, nil, false
+	}
+	runTrace, ok := toStringSlice(runTraceRaw)
+	if !ok {
+		return nil, nil, false
+	}
+	return runResult, runTrace, true
+}
+
+func toStringSlice(value any) ([]string, bool) {
+	switch typed := value.(type) {
+	case []string:
+		return append([]string{}, typed...), true
+	case []any:
+		values := make([]string, 0, len(typed))
+		for _, item := range typed {
+			stringValue, ok := item.(string)
+			if !ok {
+				return nil, false
+			}
+			values = append(values, stringValue)
+		}
+		return values, true
+	default:
+		return nil, false
+	}
+}
+
+func validateRunArgs(parameters []sema.TaskParam, args map[string]any) []diagnostic.Diagnostic {
+	diagnostics := make([]diagnostic.Diagnostic, 0)
+	if args == nil {
+		args = map[string]any{}
+	}
+
+	parameterByName := make(map[string]sema.TaskParam, len(parameters))
+	for _, parameter := range parameters {
+		parameterByName[parameter.Name] = parameter
+
+		value, exists := args[parameter.Name]
+		if !exists {
+			diagnostics = append(diagnostics, diagnostic.Diagnostic{
+				Kind:    contracts.DiagnosticKindTypeError,
+				Message: fmt.Sprintf("missing run argument: %s", parameter.Name),
+				Line:    1,
+				Column:  1,
+			})
+			continue
+		}
+		if !runArgumentTypeMatches(parameter.Type, value) {
+			diagnostics = append(diagnostics, diagnostic.Diagnostic{
+				Kind:    contracts.DiagnosticKindTypeError,
+				Message: fmt.Sprintf("invalid run argument type: %s expects %s", parameter.Name, parameter.Type),
+				Line:    1,
+				Column:  1,
+			})
+		}
+	}
+
+	argumentNames := make([]string, 0, len(args))
+	for name := range args {
+		argumentNames = append(argumentNames, name)
+	}
+	sort.Strings(argumentNames)
+	for _, name := range argumentNames {
+		if _, exists := parameterByName[name]; exists {
+			continue
+		}
+		diagnostics = append(diagnostics, diagnostic.Diagnostic{
+			Kind:    contracts.DiagnosticKindTypeError,
+			Message: fmt.Sprintf("unknown run argument: %s", name),
+			Line:    1,
+			Column:  1,
+		})
+	}
+	return diagnostics
+}
+
+func runArgumentTypeMatches(expectedType string, value any) bool {
+	normalizedType := strings.TrimSpace(expectedType)
+	switch normalizedType {
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "bool":
+		_, ok := value.(bool)
+		return ok
+	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr":
+		switch value.(type) {
+		case int, int8, int16, int32, int64:
+			return true
+		case uint, uint8, uint16, uint32, uint64, uintptr:
+			return true
+		case float64, float32:
+			return true
+		case json.Number:
+			return true
+		default:
+			return false
+		}
+	case "float32", "float64":
+		switch value.(type) {
+		case float32, float64:
+			return true
+		case json.Number:
+			return true
+		default:
+			return false
+		}
+	default:
+		return true
+	}
+}
+
+func cloneArgs(args map[string]any) map[string]any {
+	if args == nil {
+		return map[string]any{}
+	}
+	clone := make(map[string]any, len(args))
+	for key, value := range args {
+		clone[key] = value
+	}
+	return clone
 }
 
 func (s *Service) logStageStart(stage contracts.CompileStage) {
