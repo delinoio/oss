@@ -339,16 +339,17 @@ function HistoryRow({ title, values, onSelect }: HistoryRowProps) {
 
 export function RpcDashboard({
   connection,
+  workspaceId,
   activePage,
   onInspectorChange,
   logger = defaultLogger,
 }: {
   connection: ResolvedWorkspaceConnection;
+  workspaceId: string;
   activePage?: RpcDashboardPageId;
   onInspectorChange?: (next: DashboardInspectorState) => void;
   logger?: DexDexLogger;
 }) {
-  const [workspaceInput, setWorkspaceInput] = useState("workspace-1");
   const [repositoryGroupInput, setRepositoryGroupInput] = useState("");
   const [unitTaskInput, setUnitTaskInput] = useState("");
   const [subTaskInput, setSubTaskInput] = useState("");
@@ -405,7 +406,9 @@ export function RpcDashboard({
   const sessionAdapterRequestIDRef = useRef(0);
   const [history, setHistory] = useState<LookupHistory>(createEmptyLookupHistory);
 
-  const [workspaceLookup, setWorkspaceLookup] = useState<{ workspaceId: string } | null>(null);
+  const [workspaceLookup, setWorkspaceLookup] = useState<{ workspaceId: string } | null>({
+    workspaceId,
+  });
   const [repositoryLookup, setRepositoryLookup] = useState<{
     workspaceId: string;
     repositoryGroupId: string;
@@ -563,6 +566,14 @@ export function RpcDashboard({
   ]);
 
   useEffect(() => {
+    setHistory((previous) => ({
+      ...previous,
+      workspaceId: pushHistory(previous.workspaceId, workspaceId),
+    }));
+    setWorkspaceLookup({ workspaceId });
+  }, [workspaceId]);
+
+  useEffect(() => {
     if (!onInspectorChange) {
       return;
     }
@@ -613,20 +624,6 @@ export function RpcDashboard({
     }));
   }
 
-  function requireWorkspaceInput(actionLabel: string): string | null {
-    const workspaceId = workspaceInput.trim();
-    if (workspaceId.length === 0) {
-      const message = `${actionLabel}: workspace id is required.`;
-      setLocalError(message);
-      setAction(actionLabel, "error", message);
-      return null;
-    }
-
-    setLocalError(null);
-    remember("workspaceId", workspaceId);
-    return workspaceId;
-  }
-
   function requireLookupInput(
     rawValue: string,
     fieldName: string,
@@ -646,21 +643,13 @@ export function RpcDashboard({
 
   function handleWorkspaceLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Fetch Workspace");
-    if (!workspaceId) {
-      return;
-    }
-
+    setLocalError(null);
     setWorkspaceLookup({ workspaceId });
     setAction("Fetch Workspace", "success", "Workspace query submitted.");
   }
 
   function handleRepositoryLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Fetch Repository Group");
-    if (!workspaceId) {
-      return;
-    }
     const repositoryGroupId = requireLookupInput(
       repositoryGroupInput,
       "repository group id",
@@ -684,10 +673,6 @@ export function RpcDashboard({
 
   function handleUnitTaskLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Fetch Unit Task");
-    if (!workspaceId) {
-      return;
-    }
     const unitTaskId = requireLookupInput(
       unitTaskInput,
       "unit task id",
@@ -707,10 +692,6 @@ export function RpcDashboard({
 
   function handleSubTaskLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Fetch Sub Task");
-    if (!workspaceId) {
-      return;
-    }
     const subTaskId = requireLookupInput(
       subTaskInput,
       "sub task id",
@@ -730,10 +711,6 @@ export function RpcDashboard({
 
   function handleSessionLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Fetch Session Output");
-    if (!workspaceId) {
-      return;
-    }
     const sessionId = requireLookupInput(
       sessionInput,
       "session id",
@@ -753,10 +730,6 @@ export function RpcDashboard({
 
   function handlePullRequestLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Fetch Pull Request");
-    if (!workspaceId) {
-      return;
-    }
     const prTrackingId = requireLookupInput(
       pullRequestInput,
       "pr tracking id",
@@ -776,10 +749,6 @@ export function RpcDashboard({
 
   function handleReviewAssistLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Fetch Review Assist");
-    if (!workspaceId) {
-      return;
-    }
     const unitTaskId = requireLookupInput(
       reviewAssistInput,
       "unit task id",
@@ -803,10 +772,6 @@ export function RpcDashboard({
 
   function handleReviewCommentLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Fetch Review Comments");
-    if (!workspaceId) {
-      return;
-    }
     const prTrackingId = requireLookupInput(
       reviewCommentInput,
       "pr tracking id",
@@ -830,30 +795,20 @@ export function RpcDashboard({
 
   function handleBadgeThemeLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Fetch Badge Theme");
-    if (!workspaceId) {
-      return;
-    }
+    setLocalError(null);
     setBadgeThemeLookup({ workspaceId });
     setAction("Fetch Badge Theme", "success", "Badge theme query submitted.");
   }
 
   function handleNotificationLookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Fetch Notifications");
-    if (!workspaceId) {
-      return;
-    }
+    setLocalError(null);
     setNotificationLookup({ workspaceId });
     setAction("Fetch Notifications", "success", "Notification query submitted.");
   }
 
   async function handleSubmitPlanDecision(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Submit Plan Decision");
-    if (!workspaceId) {
-      return;
-    }
     const subTaskId = requireLookupInput(
       planSubTaskInput,
       "sub task id",
@@ -930,10 +885,6 @@ export function RpcDashboard({
 
   async function handleRunSessionAdapter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const workspaceId = requireWorkspaceInput("Run Session Adapter");
-    if (!workspaceId) {
-      return;
-    }
     const unitTaskId = requireLookupInput(
       runUnitTaskInput,
       "unit task id",
@@ -1039,11 +990,6 @@ export function RpcDashboard({
   }
 
   async function startLiveWorkspaceStream() {
-    const workspaceId = requireWorkspaceInput("Start Live Stream");
-    if (!workspaceId) {
-      return;
-    }
-
     const fromSequence = parseFromSequence(streamFromSequenceInput);
     if (fromSequence === null) {
       const message =
@@ -1111,7 +1057,8 @@ export function RpcDashboard({
         <div>
           <h2>RPC Dashboard</h2>
           <p className="note">
-            Endpoint: <code>{connection.endpointUrl}</code> · Source:{" "}
+            Workspace: <code>{workspaceId}</code> · Endpoint:{" "}
+            <code>{connection.endpointUrl}</code> · Source:{" "}
             <code>{connection.endpointSource}</code> · Token:{" "}
             <code>{connection.token ? "present" : "absent"}</code>
           </p>
@@ -1121,22 +1068,6 @@ export function RpcDashboard({
           <strong>{selectedPageDefinition.label}</strong>
         </div>
       </header>
-
-      <div className="field">
-        <label htmlFor="lookup-workspace-id">Workspace ID</label>
-        <input
-          id="lookup-workspace-id"
-          name="lookup-workspace-id"
-          value={workspaceInput}
-          onChange={(event) => setWorkspaceInput(event.target.value)}
-          placeholder="workspace-1"
-        />
-      </div>
-      <HistoryRow
-        title="Recent workspace IDs"
-        values={history.workspaceId}
-        onSelect={setWorkspaceInput}
-      />
 
       {localError ? (
         <p className="error" role="alert">
@@ -1158,7 +1089,7 @@ export function RpcDashboard({
               error={workspaceQuery.error}
               data={workspaceQuery.data?.workspace}
               idleMessage="Run lookup to load workspace data."
-              notFoundMessage="No workspace found for this workspace id."
+              notFoundMessage="No workspace found for the selected workspace id."
             />
           </article>
         ) : null}

@@ -10,6 +10,7 @@ import {
   dexdexPageDefinitions,
   type DexDexPageDefinition,
 } from "./contracts/dexdex-page";
+import type { SavedWorkspaceProfile } from "./contracts/workspace-profile";
 import {
   type ResolveWorkspaceConnectionInput,
   type ResolvedWorkspaceConnection,
@@ -27,6 +28,11 @@ import {
   type RpcDashboardPageId,
 } from "./components/rpc-dashboard";
 import { defaultLogger, type DexDexLogger } from "./lib/logger";
+import {
+  deleteWorkspaceProfile,
+  listSavedWorkspaceProfiles,
+  upsertWorkspaceProfile,
+} from "./lib/workspace-profiles-store";
 
 enum AppStatus {
   Idle = "idle",
@@ -45,6 +51,11 @@ type AppProps = {
   logger?: DexDexLogger;
 };
 
+type ActiveWorkspaceSession = {
+  workspaceId: string;
+  connection: ResolvedWorkspaceConnection;
+};
+
 type PlaceholderItem = {
   title: string;
   description: string;
@@ -52,6 +63,7 @@ type PlaceholderItem = {
 };
 
 const defaultPagePath = "/projects";
+const defaultRemoteEndpointUrl = "http://127.0.0.1:7878";
 
 const automationsItems: ReadonlyArray<PlaceholderItem> = [
   {
@@ -115,6 +127,20 @@ function isRpcDashboardPage(pageId: DexDexPageId): pageId is RpcDashboardPageId 
     pageId === DexDexPageId.Review ||
     pageId === DexDexPageId.Worktrees
   );
+}
+
+function normalizeRemoteEndpointUrl(remoteEndpointUrl: string): string {
+  const trimmedUrl = remoteEndpointUrl.trim();
+  if (trimmedUrl.length === 0) {
+    throw new Error("remoteEndpointUrl must not be empty.");
+  }
+
+  const parsedUrl = new URL(trimmedUrl);
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    throw new Error("remoteEndpointUrl must use http or https scheme.");
+  }
+
+  return parsedUrl.toString();
 }
 
 function PlaceholderSurface({
@@ -188,12 +214,16 @@ function DexDexShell({
   const navigate = useNavigate();
 
   const [mode, setMode] = useState<WorkspaceMode>(WorkspaceMode.Local);
-  const [remoteEndpointUrl, setRemoteEndpointUrl] = useState("http://127.0.0.1:7878");
+  const [workspaceIdInput, setWorkspaceIdInput] = useState("");
+  const [remoteEndpointUrl, setRemoteEndpointUrl] = useState(defaultRemoteEndpointUrl);
   const [remoteToken, setRemoteToken] = useState("");
   const [status, setStatus] = useState<AppStatus>(AppStatus.Idle);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [resolvedConnection, setResolvedConnection] = useState<ResolvedWorkspaceConnection | null>(
-    null,
+  const [pickerMessage, setPickerMessage] = useState<string | null>(null);
+  const [activeWorkspaceSession, setActiveWorkspaceSession] =
+    useState<ActiveWorkspaceSession | null>(null);
+  const [savedProfiles, setSavedProfiles] = useState<SavedWorkspaceProfile[]>(() =>
+    listSavedWorkspaceProfiles(),
   );
   const [panelMode, setPanelMode] = useState<PanelMode>(detectPanelMode());
   const [dashboardInspector, setDashboardInspector] =
@@ -217,7 +247,7 @@ function DexDexShell({
       return "Resolution failed. Review the error and retry.";
     }
 
-    return "Awaiting workspace mode resolution.";
+    return "Select a workspace to enter the desktop surface.";
   }, [status]);
 
   useEffect(() => {
@@ -227,13 +257,20 @@ function DexDexShell({
   }, []);
 
   useEffect(() => {
+    if (!activeWorkspaceSession) {
+      if (location.pathname !== "/") {
+        navigate("/", { replace: true });
+      }
+      return;
+    }
+
     if (location.pathname === "/" || activePage === null) {
       navigate(defaultPagePath, { replace: true });
     }
-  }, [activePage, location.pathname, navigate]);
+  }, [activePage, activeWorkspaceSession, location.pathname, navigate]);
 
   useEffect(() => {
-    if (!activePage) {
+    if (!activeWorkspaceSession || !activePage) {
       return;
     }
 
@@ -241,50 +278,174 @@ function DexDexShell({
       page_id: activePage.id,
       action: "page-view",
       result: "success",
+      workspace_id: activeWorkspaceSession.workspaceId,
     });
-  }, [activePage, logger]);
+  }, [activePage, activeWorkspaceSession, logger]);
 
-  async function handleResolve(event: FormEvent<HTMLFormElement>) {
+  function resolveProfileInputFromForm(actionLabel: string): {
+    workspaceId: string;
+    mode: WorkspaceMode;
+    remoteEndpointUrl?: string;
+  } | null {
+    const workspaceId = workspaceIdInput.trim();
+    if (workspaceId.length === 0) {
+      const message = `${actionLabel}: workspace id is required.`;
+      setErrorMessage(message);
+      setPickerMessage(null);
+      setStatus(AppStatus.Error);
+      return null;
+    }
+
+    try {
+      const nextRemoteEndpointUrl =
+        mode === WorkspaceMode.Remote
+          ? normalizeRemoteEndpointUrl(remoteEndpointUrl)
+          : undefined;
+
+      setErrorMessage(null);
+      setPickerMessage(null);
+      setStatus(AppStatus.Idle);
+
+      return {
+        workspaceId,
+        mode,
+        remoteEndpointUrl: nextRemoteEndpointUrl,
+      };
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : `${actionLabel}: invalid remote endpoint.`;
+      setErrorMessage(`${actionLabel}: ${message}`);
+      setPickerMessage(null);
+      setStatus(AppStatus.Error);
+      return null;
+    }
+  }
+
+  function handleSaveProfile() {
+    const profileInput = resolveProfileInputFromForm("Save Profile");
+    if (!profileInput) {
+      return;
+    }
+
+    const profiles = upsertWorkspaceProfile(profileInput);
+    setSavedProfiles(profiles);
+    setPickerMessage("Workspace profile saved.");
+    setStatus(AppStatus.Idle);
+    logger.info("desktop.workspace.profile.save", {
+      action: "save-profile",
+      result: "success",
+      workspace_id: profileInput.workspaceId,
+      mode: profileInput.mode,
+    });
+  }
+
+  function handleEditProfile(profile: SavedWorkspaceProfile) {
+    setWorkspaceIdInput(profile.workspaceId);
+    setMode(profile.mode);
+    setRemoteEndpointUrl(profile.remoteEndpointUrl ?? defaultRemoteEndpointUrl);
+    setRemoteToken("");
+    setErrorMessage(null);
+    setPickerMessage(`Loaded profile ${profile.workspaceId}.`);
+    setStatus(AppStatus.Idle);
+  }
+
+  function handleDeleteProfile(profile: SavedWorkspaceProfile) {
+    const profiles = deleteWorkspaceProfile(profile.workspaceId);
+    setSavedProfiles(profiles);
+    setPickerMessage(`Deleted profile ${profile.workspaceId}.`);
+    setErrorMessage(null);
+    setStatus(AppStatus.Idle);
+
+    logger.info("desktop.workspace.profile.delete", {
+      action: "delete-profile",
+      result: "success",
+      workspace_id: profile.workspaceId,
+      mode: profile.mode,
+    });
+  }
+
+  async function handleOpenWorkspace(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const input: ResolveWorkspaceConnectionInput = {
-      mode,
-      remoteEndpointUrl,
-      remoteToken,
+    const profileInput = resolveProfileInputFromForm("Open Workspace");
+    if (!profileInput) {
+      return;
+    }
+
+    const resolveInput: ResolveWorkspaceConnectionInput = {
+      mode: profileInput.mode,
+      remoteEndpointUrl: profileInput.remoteEndpointUrl,
+      remoteToken:
+        profileInput.mode === WorkspaceMode.Remote ? remoteToken : undefined,
     };
 
-    logger.info("desktop.workspace.resolve", {
-      page_id: DexDexPageId.LocalEnvironments,
-      action: "resolve-workspace",
+    logger.info("desktop.workspace.open", {
+      action: "open-workspace",
       result: "pending",
+      workspace_id: profileInput.workspaceId,
+      mode: profileInput.mode,
     });
 
     setStatus(AppStatus.Resolving);
     setErrorMessage(null);
+    setPickerMessage(null);
 
     try {
-      const connection = await resolver(input);
-      setResolvedConnection(connection);
+      const connection = await resolver(resolveInput);
+      const saved = upsertWorkspaceProfile(profileInput);
+
+      setSavedProfiles(saved);
+      setActiveWorkspaceSession({
+        workspaceId: profileInput.workspaceId,
+        connection,
+      });
+      setRemoteToken("");
       setDashboardInspector(createEmptyDashboardInspectorState());
       setStatus(AppStatus.Resolved);
-      logger.info("desktop.workspace.resolve", {
-        page_id: DexDexPageId.LocalEnvironments,
-        action: "resolve-workspace",
+      setPickerMessage(null);
+      navigate(defaultPagePath, { replace: true });
+
+      logger.info("desktop.workspace.open", {
+        action: "open-workspace",
         result: "success",
+        workspace_id: profileInput.workspaceId,
+        mode: profileInput.mode,
       });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unknown resolution error.";
       setErrorMessage(message);
-      setResolvedConnection(null);
-      setDashboardInspector(createEmptyDashboardInspectorState());
       setStatus(AppStatus.Error);
-      logger.error("desktop.workspace.resolve", {
-        page_id: DexDexPageId.LocalEnvironments,
-        action: "resolve-workspace",
+      logger.error("desktop.workspace.open", {
+        action: "open-workspace",
         result: "error",
+        workspace_id: profileInput.workspaceId,
+        mode: profileInput.mode,
       });
     }
+  }
+
+  function handleSwitchWorkspace() {
+    if (!activeWorkspaceSession) {
+      return;
+    }
+
+    setWorkspaceIdInput(activeWorkspaceSession.workspaceId);
+    setMode(activeWorkspaceSession.connection.mode);
+    setRemoteEndpointUrl(activeWorkspaceSession.connection.endpointUrl);
+    setRemoteToken("");
+    setActiveWorkspaceSession(null);
+    setDashboardInspector(createEmptyDashboardInspectorState());
+    setStatus(AppStatus.Idle);
+    setErrorMessage(null);
+    setPickerMessage("Choose a workspace profile or open one manually.");
+    navigate("/", { replace: true });
+
+    logger.info("desktop.workspace.switch", {
+      action: "switch-workspace",
+      result: "success",
+      workspace_id: activeWorkspaceSession.workspaceId,
+    });
   }
 
   function renderRecentIds(title: string, values: string[]) {
@@ -300,143 +461,209 @@ function DexDexShell({
     );
   }
 
-  function renderRpcPage(pageId: RpcDashboardPageId) {
-    if (!resolvedConnection) {
-      return (
-        <section className="panel page-panel empty-state" aria-label="Resolve workspace">
-          <h2>Resolve Workspace to Open {activePage?.label}</h2>
-          <p className="note">
-            This page is contract-ready. Complete workspace resolution in Local Environments
-            before running RPC workflows.
-          </p>
-          <div className="actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => navigate("/local-environments")}
-            >
-              Open Local Environments
-            </button>
-          </div>
-        </section>
-      );
-    }
+  function renderWorkspacePicker() {
+    const isRemoteMode = mode === WorkspaceMode.Remote;
 
     return (
-      <ConnectQueryProvider
-        endpointUrl={resolvedConnection.endpointUrl}
-        bearerToken={resolvedConnection.token}
-      >
-        <RpcDashboard
-          connection={resolvedConnection}
-          activePage={pageId}
-          onInspectorChange={setDashboardInspector}
-          logger={logger}
-        />
-      </ConnectQueryProvider>
-    );
-  }
-
-  function renderWorkspaceSurface() {
-    if (!activePage) {
-      return null;
-    }
-
-    if (isRpcDashboardPage(activePage.id)) {
-      return renderRpcPage(activePage.id);
-    }
-
-    if (activePage.id === DexDexPageId.LocalEnvironments) {
-      const isRemoteMode = mode === WorkspaceMode.Remote;
-
-      return (
-        <section className="panel page-panel" aria-label="Local environments page">
-          <header className="page-header">
-            <h2>Local Environments</h2>
+      <main className="app-shell workspace-picker-shell">
+        <header className="app-topbar">
+          <div>
+            <p className="app-eyebrow">DEXDEX DESKTOP</p>
+            <h1>Workspace Picker</h1>
             <p className="note">
-              Resolve LOCAL or REMOTE mode into one normalized Connect RPC contract.
+              Select a workspace first, then continue with the Codex-style desktop UI.
             </p>
+          </div>
+          <div className={`status-pill status-pill-${status}`}>
+            <span>Workspace</span>
+            <strong>{status.toUpperCase()}</strong>
+          </div>
+        </header>
+
+        <section className="panel page-panel" aria-label="Workspace picker">
+          <header className="page-header">
+            <h2>Open Workspace</h2>
+            <p className="note">Recent profiles are stored locally without token persistence.</p>
           </header>
 
-          <form onSubmit={handleResolve}>
-            <div className="field">
-              <label htmlFor="workspace-mode">Workspace Mode</label>
-              <select
-                id="workspace-mode"
-                name="workspace-mode"
-                value={mode}
-                onChange={(event) => setMode(event.target.value as WorkspaceMode)}
-              >
-                {modeOptions().map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="workspace-picker-grid">
+            <article className="query-card">
+              <h3>Recent Profiles</h3>
+              {savedProfiles.length > 0 ? (
+                <ul className="workspace-profile-list">
+                  {savedProfiles.map((profile) => (
+                    <li key={profile.workspaceId} className="workspace-profile-item">
+                      <div>
+                        <p className="workspace-profile-title">{profile.workspaceId}</p>
+                        <p className="note">
+                          Mode: <strong>{profile.mode}</strong>
+                        </p>
+                        <p className="note">
+                          Endpoint: <strong>{profile.remoteEndpointUrl ?? "managed-local"}</strong>
+                        </p>
+                        <p className="note">Last used: {profile.lastUsedAt}</p>
+                      </div>
+                      <div className="actions workspace-profile-actions">
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => handleEditProfile(profile)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => handleDeleteProfile(profile)}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="query-status">No saved workspace profiles yet.</p>
+              )}
+            </article>
 
-            <div className="field">
-              <label htmlFor="remote-endpoint-url">Remote Endpoint URL</label>
-              <input
-                id="remote-endpoint-url"
-                name="remote-endpoint-url"
-                type="url"
-                value={remoteEndpointUrl}
-                disabled={!isRemoteMode}
-                onChange={(event) => setRemoteEndpointUrl(event.target.value)}
-                placeholder="https://dexdex.example/rpc"
-              />
-            </div>
+            <article className="query-card">
+              <h3>Workspace Form</h3>
+              <form onSubmit={handleOpenWorkspace}>
+                <div className="field">
+                  <label htmlFor="workspace-id">Workspace ID</label>
+                  <input
+                    id="workspace-id"
+                    name="workspace-id"
+                    value={workspaceIdInput}
+                    onChange={(event) => setWorkspaceIdInput(event.target.value)}
+                    placeholder="workspace-1"
+                  />
+                </div>
 
-            <div className="field">
-              <label htmlFor="remote-token">Remote Token (optional)</label>
-              <input
-                id="remote-token"
-                name="remote-token"
-                type="password"
-                value={remoteToken}
-                disabled={!isRemoteMode}
-                onChange={(event) => setRemoteToken(event.target.value)}
-              />
-            </div>
+                <div className="field">
+                  <label htmlFor="workspace-mode">Workspace Mode</label>
+                  <select
+                    id="workspace-mode"
+                    name="workspace-mode"
+                    value={mode}
+                    onChange={(event) => setMode(event.target.value as WorkspaceMode)}
+                  >
+                    {modeOptions().map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <div className="actions">
-              <button type="submit" disabled={status === AppStatus.Resolving}>
-                Resolve Workspace
-              </button>
-            </div>
-          </form>
+                <div className="field">
+                  <label htmlFor="remote-endpoint-url">Remote Endpoint URL</label>
+                  <input
+                    id="remote-endpoint-url"
+                    name="remote-endpoint-url"
+                    type="url"
+                    value={remoteEndpointUrl}
+                    disabled={!isRemoteMode}
+                    onChange={(event) => setRemoteEndpointUrl(event.target.value)}
+                    placeholder="https://dexdex.example/rpc"
+                  />
+                </div>
 
-          <section className="inspector-block" data-testid="connection-summary">
-            <h3>Resolved Connection</h3>
-            {resolvedConnection ? (
-              <>
-                <dl className="summary-grid">
-                  <dt>Mode</dt>
-                  <dd>{resolvedConnection.mode}</dd>
-                  <dt>Endpoint URL</dt>
-                  <dd>{resolvedConnection.endpointUrl}</dd>
-                  <dt>Endpoint Source</dt>
-                  <dd>{resolvedConnection.endpointSource}</dd>
-                  <dt>Transport</dt>
-                  <dd>{resolvedConnection.transport}</dd>
-                  <dt>Token</dt>
-                  <dd>{resolvedConnection.token ? "present" : "absent"}</dd>
-                </dl>
-                <p className="note">
-                  Post-resolution task/session flows consume this normalized contract
-                  regardless of workspace mode.
-                </p>
-              </>
-            ) : (
-              <p className="note">No active connection.</p>
-            )}
-          </section>
+                <div className="field">
+                  <label htmlFor="remote-token">Remote Token (optional, not persisted)</label>
+                  <input
+                    id="remote-token"
+                    name="remote-token"
+                    type="password"
+                    value={remoteToken}
+                    disabled={!isRemoteMode}
+                    onChange={(event) => setRemoteToken(event.target.value)}
+                  />
+                </div>
+
+                <div className="actions">
+                  <button type="submit" disabled={status === AppStatus.Resolving}>
+                    {status === AppStatus.Resolving ? "Opening..." : "Open Workspace"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={handleSaveProfile}
+                  >
+                    Save Profile
+                  </button>
+                </div>
+              </form>
+            </article>
+          </div>
+
+          {pickerMessage ? <p className="note picker-feedback">{pickerMessage}</p> : null}
           {errorMessage ? (
             <p className="error" role="alert">
               {errorMessage}
             </p>
           ) : null}
+        </section>
+      </main>
+    );
+  }
+
+  function renderWorkspaceSurface() {
+    if (!activePage || !activeWorkspaceSession) {
+      return null;
+    }
+
+    if (isRpcDashboardPage(activePage.id)) {
+      return (
+        <ConnectQueryProvider
+          endpointUrl={activeWorkspaceSession.connection.endpointUrl}
+          bearerToken={activeWorkspaceSession.connection.token}
+        >
+          <RpcDashboard
+            connection={activeWorkspaceSession.connection}
+            workspaceId={activeWorkspaceSession.workspaceId}
+            activePage={activePage.id}
+            onInspectorChange={setDashboardInspector}
+            logger={logger}
+          />
+        </ConnectQueryProvider>
+      );
+    }
+
+    if (activePage.id === DexDexPageId.LocalEnvironments) {
+      return (
+        <section className="panel page-panel" aria-label="Local environments page">
+          <header className="page-header">
+            <h2>Local Environments</h2>
+            <p className="note">
+              Active workspace session is resolved. Use switch to return to the startup picker.
+            </p>
+          </header>
+
+          <section className="inspector-block" data-testid="connection-summary">
+            <h3>Resolved Connection</h3>
+            <dl className="summary-grid">
+              <dt>Workspace ID</dt>
+              <dd>{activeWorkspaceSession.workspaceId}</dd>
+              <dt>Mode</dt>
+              <dd>{activeWorkspaceSession.connection.mode}</dd>
+              <dt>Endpoint URL</dt>
+              <dd>{activeWorkspaceSession.connection.endpointUrl}</dd>
+              <dt>Endpoint Source</dt>
+              <dd>{activeWorkspaceSession.connection.endpointSource}</dd>
+              <dt>Transport</dt>
+              <dd>{activeWorkspaceSession.connection.transport}</dd>
+              <dt>Token</dt>
+              <dd>{activeWorkspaceSession.connection.token ? "present" : "absent"}</dd>
+            </dl>
+          </section>
+
+          <div className="actions">
+            <button type="button" className="secondary-button" onClick={handleSwitchWorkspace}>
+              Switch Workspace
+            </button>
+          </div>
         </section>
       );
     }
@@ -460,6 +687,10 @@ function DexDexShell({
     );
   }
 
+  if (!activeWorkspaceSession) {
+    return renderWorkspacePicker();
+  }
+
   return (
     <main className={`app-shell panel-mode-${panelMode}`}>
       <header className="app-topbar">
@@ -469,10 +700,18 @@ function DexDexShell({
           <p className="note">
             Active page: <strong>{activePage?.label ?? "Redirecting"}</strong>
           </p>
+          <p className="note">
+            Workspace ID: <strong>{activeWorkspaceSession.workspaceId}</strong>
+          </p>
         </div>
-        <div className={`status-pill status-pill-${status}`}>
-          <span>Workspace</span>
-          <strong>{status.toUpperCase()}</strong>
+        <div className="app-topbar-actions">
+          <button type="button" className="secondary-button" onClick={handleSwitchWorkspace}>
+            Switch Workspace
+          </button>
+          <div className={`status-pill status-pill-${status}`}>
+            <span>Workspace</span>
+            <strong>{status.toUpperCase()}</strong>
+          </div>
         </div>
       </header>
 
@@ -493,6 +732,7 @@ function DexDexShell({
                       page_id: page.id,
                       action: "navigate",
                       result: "pending",
+                      workspace_id: activeWorkspaceSession.workspaceId,
                     });
                   }}
                 >
@@ -507,10 +747,13 @@ function DexDexShell({
             <h2>Connection Snapshot</h2>
             <p className="note">{statusLabel}</p>
             <p className="note">
-              Mode: <strong>{resolvedConnection?.mode ?? "UNRESOLVED"}</strong>
+              Mode: <strong>{activeWorkspaceSession.connection.mode}</strong>
             </p>
             <p className="note">
-              Endpoint: <strong>{resolvedConnection?.endpointUrl ?? "N/A"}</strong>
+              Endpoint: <strong>{activeWorkspaceSession.connection.endpointUrl}</strong>
+            </p>
+            <p className="note">
+              Workspace: <strong>{activeWorkspaceSession.workspaceId}</strong>
             </p>
           </section>
         </aside>
@@ -530,22 +773,20 @@ function DexDexShell({
 
           <section className="inspector-block" data-testid="global-connection-summary">
             <h3>Global Connection</h3>
-            {resolvedConnection ? (
-              <dl className="summary-grid">
-                <dt>Mode</dt>
-                <dd>{resolvedConnection.mode}</dd>
-                <dt>Endpoint URL</dt>
-                <dd>{resolvedConnection.endpointUrl}</dd>
-                <dt>Endpoint Source</dt>
-                <dd>{resolvedConnection.endpointSource}</dd>
-                <dt>Transport</dt>
-                <dd>{resolvedConnection.transport}</dd>
-                <dt>Token</dt>
-                <dd>{resolvedConnection.token ? "present" : "absent"}</dd>
-              </dl>
-            ) : (
-              <p className="note">No active connection.</p>
-            )}
+            <dl className="summary-grid">
+              <dt>Workspace ID</dt>
+              <dd>{activeWorkspaceSession.workspaceId}</dd>
+              <dt>Mode</dt>
+              <dd>{activeWorkspaceSession.connection.mode}</dd>
+              <dt>Endpoint URL</dt>
+              <dd>{activeWorkspaceSession.connection.endpointUrl}</dd>
+              <dt>Endpoint Source</dt>
+              <dd>{activeWorkspaceSession.connection.endpointSource}</dd>
+              <dt>Transport</dt>
+              <dd>{activeWorkspaceSession.connection.transport}</dd>
+              <dt>Token</dt>
+              <dd>{activeWorkspaceSession.connection.token ? "present" : "absent"}</dd>
+            </dl>
           </section>
 
           <section className="inspector-block">

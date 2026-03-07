@@ -55,14 +55,18 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 : It supports fixture presets and raw JSONL input for deterministic session adapter execution.
 : It uses structured logs via `log/slog`.
 - Desktop app (`apps/dexdex`) is the orchestration client shell
-: It resolves workspace mode into one normalized Connect RPC connection contract.
+: It starts at a workspace picker (`/`) and requires workspace selection before entering desktop role routes.
+: It resolves workspace mode into one normalized Connect RPC connection contract during picker open.
 : It renders a three-panel desktop information architecture (left navigation, center RPC workspace, right inspector) with dark-first styling.
 : It exposes route-scoped multi-page workflows aligned with Codex desktop roles (`/projects`, `/threads`, `/review`, `/automations`, `/worktrees`, `/local-environments`, `/settings`).
+: It guards desktop role routes when no active workspace session is selected and redirects to startup picker.
 : It provides a shared React Query + Connect Query transport scaffold for RPC data flows.
 : It renders page-scoped Connect RPC workflows for project/thread/review/worktree roles, with `DashboardSectionId` retained as internal card grouping.
 : It provides skeleton-only role pages for `Automations` and `Settings` until dedicated service contracts are introduced.
 : It surfaces right-panel inspector diagnostics for lookup history, last action status, and stream state.
 : It applies resolved workspace token values as `Authorization: Bearer <token>` request headers when token is present.
+: It binds selected `workspace_id` globally across RPC dashboard actions (no per-action workspace input field).
+: It stores workspace profile metadata locally (without token persistence) and keeps active session state in memory.
 : Post-resolution behavior stays identical between `LOCAL` and `REMOTE` modes.
 - Shared proto (`protos/dexdex/v1/dexdex.proto`) is the canonical contract surface for cross-runtime integrations.
 
@@ -125,6 +129,17 @@ type ResolvedWorkspaceConnection = {
 };
 ```
 
+Desktop saved workspace profile contract:
+
+```ts
+type SavedWorkspaceProfile = {
+  workspaceId: string;
+  mode: WorkspaceMode;
+  remoteEndpointUrl?: string;
+  lastUsedAt: string;
+};
+```
+
 Desktop Connect Query scaffold contract:
 
 ```ts
@@ -151,6 +166,7 @@ enum DexDexPageId {
 ```
 
 Desktop page route contract:
+- `/` (startup workspace picker)
 - `/projects`
 - `/threads`
 - `/review`
@@ -401,7 +417,9 @@ Worker server scaffold ownership:
 - In-memory session-output normalization logic and fixture-backed parser validation
 
 Desktop scaffold storage contract:
-- Workspace mode selection and resolved connection state are in-memory only in this phase
+- Saved workspace profile metadata is persisted in local storage (`workspaceId`, `mode`, optional `remoteEndpointUrl`, `lastUsedAt`)
+- Active workspace session (`workspaceId` + `ResolvedWorkspaceConnection`) remains in-memory only
+- Remote token values are never persisted and are entered per open action
 
 Future deployment mode storage contract (reserved):
 - `SINGLE_INSTANCE`: SQLite + in-process event broker
@@ -477,8 +495,8 @@ Acceptance-focused scenarios:
 17. Worker converts malformed JSON source lines into non-terminal parse-error output events.
 18. Main server unary handlers return `NotFound` for unknown workspace/resource IDs and `InvalidArgument` for missing required fields.
 19. `GetSessionOutput`, `ListReviewAssistItems`, `ListReviewComments`, and `ListNotifications` return empty arrays when workspace exists but no records are present.
-20. Desktop dashboard can query all unary RPC methods after connection resolution without changing workspace mode-specific UX flow.
-21. Desktop lookup histories are in-memory, deduped, recency-ordered, and capped at five entries per lookup key.
+20. Desktop dashboard can query all unary RPC methods after workspace selection and connection resolution without changing workspace mode-specific UX flow.
+21. Desktop lookup histories are in-memory, deduped, recency-ordered, and capped at five entries per lookup key; workspace history is seeded from selected workspace context.
 22. Desktop Connect transport sets `Authorization: Bearer <token>` only when a resolved token exists.
 23. Worker `NormalizeSessionOutputFixture` accepts fixture presets and raw JSONL, then returns normalized `SessionOutputEvent[]` with a derived `session_status`.
 24. Main `RunSubTaskSessionAdapter` rejects missing input oneof and `unit_task_id`/`sub_task_id` ownership mismatches with typed Connect errors.
@@ -486,10 +504,12 @@ Acceptance-focused scenarios:
 26. Main stream emits session adapter events in ordered sequence (`SUBTASK_UPDATED` -> `SESSION_OUTPUT` -> `SESSION_STATE_CHANGED` -> final `SUBTASK_UPDATED` when status terminal).
 27. Desktop dashboard can run session adapter requests with preset/raw input and render live stream events while ignoring heartbeat frames.
 28. Desktop dashboard can submit `APPROVE`, `REVISE`, and `REJECT` plan decisions, requiring `revision_note` only for `REVISE`, while preserving the same post-resolution UX flow across workspace modes.
-29. Desktop navigation exposes seven Codex-role pages and updates browser URL paths for each route.
+29. Desktop startup always renders workspace picker at `/`, and desktop navigation exposes seven Codex-role pages after workspace selection.
 30. Desktop `Projects`, `Threads`, `Review`, and `Worktrees` routes preserve existing RPC behavior using page-scoped section mapping.
 31. Desktop `Automations` and `Settings` routes render skeleton queue/detail/action surfaces without issuing RPC requests.
-32. Desktop `Local Environments` route owns workspace mode resolution UI and updates global inspector connection state after successful resolve.
+32. Desktop route guard redirects `/projects`, `/threads`, `/review`, `/automations`, `/worktrees`, `/local-environments`, and `/settings` to `/` when no active workspace session exists.
+33. Desktop `Local Environments` route shows the active resolved connection and provides switch-back-to-picker entry.
+34. Desktop workspace profile persistence excludes remote token values from local storage payloads.
 
 ## Roadmap
 - Phase 1: Shared proto contract scaffold (`dexdex.v1`) and desktop connection normalization.

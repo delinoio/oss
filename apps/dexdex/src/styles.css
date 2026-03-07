@@ -70,6 +70,12 @@ body {
   letter-spacing: -0.03em;
 }
 
+.app-topbar-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
 .panel {
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -440,6 +446,46 @@ button:disabled {
   gap: 0.62rem;
 }
 
+.workspace-picker-shell {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.workspace-picker-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.workspace-profile-list {
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.workspace-profile-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0a121d;
+  padding: 0.62rem;
+}
+
+.workspace-profile-title {
+  margin: 0;
+  font-weight: 700;
+}
+
+.workspace-profile-actions {
+  margin-top: 0.55rem;
+}
+
+.picker-feedback {
+  margin-top: 0.85rem;
+}
+
 .history-row {
   margin-top: 0.65rem;
   display: flex;
@@ -567,6 +613,11 @@ button:disabled {
   .app-topbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .app-topbar-actions {
+    justify-content: space-between;
+    align-items: center;
   }
 
   .desktop-layout {
