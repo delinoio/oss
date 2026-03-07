@@ -187,6 +187,23 @@ enum FieldShape {
     Tuple,
 }
 
+struct SerializeWrapperGenerics<'a> {
+    params: &'a [TokenStream2],
+    args: &'a [TokenStream2],
+    phantom_types: &'a [TokenStream2],
+    where_clause: &'a TokenStream2,
+    value_ref_lifetime: &'a syn::Lifetime,
+}
+
+struct DeserializeWrapperGenerics<'a> {
+    params: &'a [TokenStream2],
+    impl_params: &'a [TokenStream2],
+    args: &'a [TokenStream2],
+    phantom_types: &'a [TokenStream2],
+    where_clause: &'a TokenStream2,
+    de_lifetime: &'a syn::Lifetime,
+}
+
 fn expand_serialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let parsed = parse_input(input)?;
     let crate_path = serde_feather_path();
@@ -201,12 +218,18 @@ fn expand_serialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let ident = &parsed.ident;
 
     let serialize_body = match &parsed.data {
-        ParsedData::Struct(parsed_struct) => {
-            expand_serialize_struct(parsed_struct, &parsed.container_name, &crate_path)?
-        }
-        ParsedData::Enum(parsed_enum) => {
-            expand_serialize_enum(parsed_enum, &parsed.container_name, &crate_path)?
-        }
+        ParsedData::Struct(parsed_struct) => expand_serialize_struct(
+            parsed_struct,
+            &parsed.generics,
+            &parsed.container_name,
+            &crate_path,
+        )?,
+        ParsedData::Enum(parsed_enum) => expand_serialize_enum(
+            parsed_enum,
+            &parsed.generics,
+            &parsed.container_name,
+            &crate_path,
+        )?,
     };
 
     Ok(quote! {
@@ -226,9 +249,23 @@ fn expand_serialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
 fn expand_serialize_struct(
     parsed: &ParsedStruct,
+    container_generics: &Generics,
     struct_name: &LitStr,
     crate_path: &TokenStream2,
 ) -> syn::Result<TokenStream2> {
+    let helper_params = helper_generic_param_decls(container_generics);
+    let helper_args = helper_generic_args(container_generics);
+    let helper_phantom_types = helper_generic_phantom_types(container_generics);
+    let helper_where_clause = helper_where_clause(container_generics);
+    let value_ref_lifetime = next_helper_lifetime(container_generics, "__feather_ser");
+    let wrapper_generics = SerializeWrapperGenerics {
+        params: &helper_params,
+        args: &helper_args,
+        phantom_types: &helper_phantom_types,
+        where_clause: &helper_where_clause,
+        value_ref_lifetime: &value_ref_lifetime,
+    };
+
     match &parsed.kind {
         ParsedStructKind::Unit => Ok(quote! {
             #crate_path::serde::ser::Serializer::serialize_unit_struct(serializer, #struct_name)
@@ -265,6 +302,7 @@ fn expand_serialize_struct(
                         field,
                         quote!(&self.#access),
                         &wrapper_ident,
+                        &wrapper_generics,
                         crate_path,
                     );
 
@@ -329,6 +367,7 @@ fn expand_serialize_struct(
                         field_name,
                         quote!(&self.#access),
                         &wrapper_ident,
+                        &wrapper_generics,
                         crate_path,
                     );
 
@@ -361,9 +400,23 @@ fn expand_serialize_struct(
 
 fn expand_serialize_enum(
     parsed: &ParsedEnum,
+    container_generics: &Generics,
     enum_name: &LitStr,
     crate_path: &TokenStream2,
 ) -> syn::Result<TokenStream2> {
+    let helper_params = helper_generic_param_decls(container_generics);
+    let helper_args = helper_generic_args(container_generics);
+    let helper_phantom_types = helper_generic_phantom_types(container_generics);
+    let helper_where_clause = helper_where_clause(container_generics);
+    let value_ref_lifetime = next_helper_lifetime(container_generics, "__feather_ser");
+    let wrapper_generics = SerializeWrapperGenerics {
+        params: &helper_params,
+        args: &helper_args,
+        phantom_types: &helper_phantom_types,
+        where_clause: &helper_where_clause,
+        value_ref_lifetime: &value_ref_lifetime,
+    };
+
     let variant_arms = parsed
         .variants
         .iter()
@@ -412,6 +465,7 @@ fn expand_serialize_enum(
                             field,
                             quote!(#binding),
                             &wrapper_ident,
+                            &wrapper_generics,
                             crate_path,
                         );
 
@@ -453,6 +507,7 @@ fn expand_serialize_enum(
                                     field,
                                     quote!(#binding),
                                     &wrapper_ident,
+                                    &wrapper_generics,
                                     crate_path,
                                 );
 
@@ -539,6 +594,7 @@ fn expand_serialize_enum(
                                 field_name,
                                 quote!(#binding),
                                 &wrapper_ident,
+                                &wrapper_generics,
                                 crate_path,
                             );
 
@@ -660,6 +716,7 @@ fn expand_deserialize_struct(
     );
     let helper_args = helper_generic_args(container_generics);
     let helper_phantom_types = helper_generic_phantom_types(container_generics);
+    let helper_where_clause = helper_where_clause(container_generics);
     let visitor_decl = if helper_params.is_empty() {
         quote! { struct __FeatherVisitor; }
     } else {
@@ -689,7 +746,9 @@ fn expand_deserialize_struct(
         ParsedStructKind::Unit => Ok(quote! {
             #visitor_decl
 
-            impl<#visitor_impl_generics> #crate_path::serde::de::Visitor<#de_lifetime> for #visitor_ty {
+            impl<#visitor_impl_generics> #crate_path::serde::de::Visitor<#de_lifetime>
+                for #visitor_ty #helper_where_clause
+            {
                 type Value = #struct_ident #ty_generics;
 
                 fn expecting(
@@ -756,6 +815,15 @@ fn expand_deserialize_tuple_struct(
     );
     let helper_args = helper_generic_args(container_generics);
     let helper_phantom_types = helper_generic_phantom_types(container_generics);
+    let helper_where_clause = helper_where_clause(container_generics);
+    let wrapper_generics = DeserializeWrapperGenerics {
+        params: &helper_params,
+        impl_params: &helper_impl_params,
+        args: &helper_args,
+        phantom_types: &helper_phantom_types,
+        where_clause: &helper_where_clause,
+        de_lifetime,
+    };
     let visitor_decl = if helper_params.is_empty() {
         quote! { struct __FeatherVisitor; }
     } else {
@@ -785,7 +853,7 @@ fn expand_deserialize_tuple_struct(
         fields,
         "TupleStruct",
         crate_path,
-        de_lifetime,
+        &wrapper_generics,
         WireDirection::Deserialize,
     );
 
@@ -875,7 +943,9 @@ fn expand_deserialize_tuple_struct(
 
         #visitor_decl
 
-        impl<#visitor_impl_generics> #crate_path::serde::de::Visitor<#de_lifetime> for #visitor_ty {
+        impl<#visitor_impl_generics> #crate_path::serde::de::Visitor<#de_lifetime>
+            for #visitor_ty #helper_where_clause
+        {
             type Value = #struct_ident #ty_generics;
 
             fn expecting(
@@ -936,6 +1006,15 @@ fn expand_deserialize_named_struct(
     );
     let helper_args = helper_generic_args(container_generics);
     let helper_phantom_types = helper_generic_phantom_types(container_generics);
+    let helper_where_clause = helper_where_clause(container_generics);
+    let wrapper_generics = DeserializeWrapperGenerics {
+        params: &helper_params,
+        impl_params: &helper_impl_params,
+        args: &helper_args,
+        phantom_types: &helper_phantom_types,
+        where_clause: &helper_where_clause,
+        de_lifetime,
+    };
     let visitor_decl = if helper_params.is_empty() {
         quote! { struct __FeatherVisitor; }
     } else {
@@ -965,7 +1044,7 @@ fn expand_deserialize_named_struct(
         fields,
         "NamedStruct",
         crate_path,
-        de_lifetime,
+        &wrapper_generics,
         WireDirection::Deserialize,
     );
 
@@ -1110,7 +1189,9 @@ fn expand_deserialize_named_struct(
 
         #visitor_decl
 
-        impl<#visitor_impl_generics> #crate_path::serde::de::Visitor<#de_lifetime> for #visitor_ty {
+        impl<#visitor_impl_generics> #crate_path::serde::de::Visitor<#de_lifetime>
+            for #visitor_ty #helper_where_clause
+        {
             type Value = #struct_ident #ty_generics;
 
             fn expecting(
@@ -1205,6 +1286,15 @@ fn expand_deserialize_enum(
     );
     let helper_args = helper_generic_args(container_generics);
     let helper_phantom_types = helper_generic_phantom_types(container_generics);
+    let helper_where_clause = helper_where_clause(container_generics);
+    let wrapper_generics = DeserializeWrapperGenerics {
+        params: &helper_params,
+        impl_params: &helper_impl_params,
+        args: &helper_args,
+        phantom_types: &helper_phantom_types,
+        where_clause: &helper_where_clause,
+        de_lifetime,
+    };
     let visitor_decl = if helper_params.is_empty() {
         quote! { struct __FeatherVisitor; }
     } else {
@@ -1293,7 +1383,7 @@ fn expand_deserialize_enum(
                                     struct #wrapper_ident<#(#helper_params),*>(
                                         #ty,
                                         ::core::marker::PhantomData<(#(#helper_phantom_types),*)>,
-                                    );
+                                    ) #helper_where_clause;
                                 }
                             };
                             let wrapper_ty = if helper_args.is_empty() {
@@ -1316,7 +1406,7 @@ fn expand_deserialize_enum(
                                     #wrapper_decl
 
                                     impl<#wrapper_impl_generics> #crate_path::serde::de::Deserialize<#de_lifetime>
-                                        for #wrapper_ty
+                                        for #wrapper_ty #helper_where_clause
                                     {
                                         fn deserialize<D>(
                                             deserializer: D,
@@ -1348,7 +1438,7 @@ fn expand_deserialize_enum(
                             fields,
                             &format!("TupleVariant{variant_index}"),
                             crate_path,
-                            de_lifetime,
+                            &wrapper_generics,
                             WireDirection::Deserialize,
                         );
 
@@ -1464,7 +1554,7 @@ fn expand_deserialize_enum(
                                 #variant_visitor_decl
 
                                 impl<#variant_visitor_impl_generics> #crate_path::serde::de::Visitor<#de_lifetime>
-                                    for #variant_visitor_ty
+                                    for #variant_visitor_ty #helper_where_clause
                                 {
                                     type Value = #enum_ident #ty_generics;
 
@@ -1516,7 +1606,7 @@ fn expand_deserialize_enum(
                         fields,
                         &format!("NamedVariant{variant_index}"),
                         crate_path,
-                        de_lifetime,
+                        &wrapper_generics,
                         WireDirection::Deserialize,
                     );
 
@@ -1694,7 +1784,7 @@ fn expand_deserialize_enum(
                             #variant_visitor_decl
 
                             impl<#variant_visitor_impl_generics> #crate_path::serde::de::Visitor<#de_lifetime>
-                                for #variant_visitor_ty
+                                for #variant_visitor_ty #helper_where_clause
                             {
                                 type Value = #enum_ident #ty_generics;
 
@@ -1897,7 +1987,9 @@ fn expand_deserialize_enum(
 
         #visitor_decl
 
-        impl<#visitor_impl_generics> #crate_path::serde::de::Visitor<#de_lifetime> for #visitor_ty {
+        impl<#visitor_impl_generics> #crate_path::serde::de::Visitor<#de_lifetime>
+            for #visitor_ty #helper_where_clause
+        {
             type Value = #enum_ident #ty_generics;
 
             fn expecting(
@@ -1940,9 +2032,16 @@ fn tuple_serialize_stmt(
     field: &ParsedField,
     value_ref: TokenStream2,
     wrapper_ident: &Ident,
+    wrapper_generics: &SerializeWrapperGenerics<'_>,
     crate_path: &TokenStream2,
 ) -> TokenStream2 {
-    let value_expr = serialize_value_expression(field, value_ref, wrapper_ident, crate_path);
+    let value_expr = serialize_value_expression(
+        field,
+        value_ref,
+        wrapper_ident,
+        wrapper_generics,
+        crate_path,
+    );
 
     quote! {
         #crate_path::serde::ser::SerializeTupleStruct::serialize_field(
@@ -1956,9 +2055,16 @@ fn tuple_variant_serialize_stmt(
     field: &ParsedField,
     value_ref: TokenStream2,
     wrapper_ident: &Ident,
+    wrapper_generics: &SerializeWrapperGenerics<'_>,
     crate_path: &TokenStream2,
 ) -> TokenStream2 {
-    let value_expr = serialize_value_expression(field, value_ref, wrapper_ident, crate_path);
+    let value_expr = serialize_value_expression(
+        field,
+        value_ref,
+        wrapper_ident,
+        wrapper_generics,
+        crate_path,
+    );
 
     quote! {
         #crate_path::serde::ser::SerializeTupleVariant::serialize_field(
@@ -1973,9 +2079,16 @@ fn named_serialize_stmt(
     field_name: &LitStr,
     value_ref: TokenStream2,
     wrapper_ident: &Ident,
+    wrapper_generics: &SerializeWrapperGenerics<'_>,
     crate_path: &TokenStream2,
 ) -> TokenStream2 {
-    let value_expr = serialize_value_expression(field, value_ref, wrapper_ident, crate_path);
+    let value_expr = serialize_value_expression(
+        field,
+        value_ref,
+        wrapper_ident,
+        wrapper_generics,
+        crate_path,
+    );
 
     quote! {
         #crate_path::serde::ser::SerializeStruct::serialize_field(
@@ -1991,9 +2104,16 @@ fn named_variant_serialize_stmt(
     field_name: &LitStr,
     value_ref: TokenStream2,
     wrapper_ident: &Ident,
+    wrapper_generics: &SerializeWrapperGenerics<'_>,
     crate_path: &TokenStream2,
 ) -> TokenStream2 {
-    let value_expr = serialize_value_expression(field, value_ref, wrapper_ident, crate_path);
+    let value_expr = serialize_value_expression(
+        field,
+        value_ref,
+        wrapper_ident,
+        wrapper_generics,
+        crate_path,
+    );
 
     quote! {
         #crate_path::serde::ser::SerializeStructVariant::serialize_field(
@@ -2008,27 +2128,65 @@ fn serialize_value_expression(
     field: &ParsedField,
     value_ref: TokenStream2,
     wrapper_ident: &Ident,
+    wrapper_generics: &SerializeWrapperGenerics<'_>,
     crate_path: &TokenStream2,
 ) -> TokenStream2 {
     if let Some(with_path) = &field.with {
         let ty = &field.ty;
-        quote! {{
-            struct #wrapper_ident<'a>(&'a #ty);
+        let helper_params = wrapper_generics.params;
+        let helper_args = wrapper_generics.args;
+        let helper_phantom_types = wrapper_generics.phantom_types;
+        let helper_where_clause = wrapper_generics.where_clause;
+        let value_ref_lifetime = wrapper_generics.value_ref_lifetime;
 
-            impl<'a> #crate_path::serde::ser::Serialize for #wrapper_ident<'a> {
-                fn serialize<S>(
-                    &self,
-                    serializer: S,
-                ) -> ::core::result::Result<S::Ok, S::Error>
-                where
-                    S: #crate_path::serde::ser::Serializer,
+        if helper_params.is_empty() {
+            quote! {{
+                struct #wrapper_ident<#value_ref_lifetime>(&#value_ref_lifetime #ty);
+
+                impl<#value_ref_lifetime> #crate_path::serde::ser::Serialize
+                    for #wrapper_ident<#value_ref_lifetime>
                 {
-                    #with_path::serialize(self.0, serializer)
+                    fn serialize<S>(
+                        &self,
+                        serializer: S,
+                    ) -> ::core::result::Result<S::Ok, S::Error>
+                    where
+                        S: #crate_path::serde::ser::Serializer,
+                    {
+                        #with_path::serialize(self.0, serializer)
+                    }
                 }
-            }
 
-            &#wrapper_ident(#value_ref)
-        }}
+                &#wrapper_ident(#value_ref)
+            }}
+        } else {
+            quote! {{
+                struct #wrapper_ident<#value_ref_lifetime, #(#helper_params),*>(
+                    &#value_ref_lifetime #ty,
+                    ::core::marker::PhantomData<(#(#helper_phantom_types),*)>,
+                ) #helper_where_clause;
+
+                impl<#value_ref_lifetime, #(#helper_params),*>
+                    #crate_path::serde::ser::Serialize
+                    for #wrapper_ident<#value_ref_lifetime, #(#helper_args),*> #helper_where_clause
+                {
+                    fn serialize<S>(
+                        &self,
+                        serializer: S,
+                    ) -> ::core::result::Result<S::Ok, S::Error>
+                    where
+                        S: #crate_path::serde::ser::Serializer,
+                    {
+                        #with_path::serialize(self.0, serializer)
+                    }
+                }
+
+                &#wrapper_ident::<'_, #(#helper_args),*>(
+                    #value_ref,
+                    ::core::marker::PhantomData,
+                )
+            }}
+        }
     } else {
         quote! { #value_ref }
     }
@@ -2038,9 +2196,9 @@ fn deserialize_wrapper_definitions(
     fields: &[ParsedField],
     prefix: &str,
     crate_path: &TokenStream2,
-    de_lifetime: &syn::Lifetime,
+    wrapper_generics: &DeserializeWrapperGenerics<'_>,
     direction: WireDirection,
-) -> (Vec<TokenStream2>, HashMap<usize, Ident>) {
+) -> (Vec<TokenStream2>, HashMap<usize, TokenStream2>) {
     let mut defs = Vec::new();
     let mut wrappers = HashMap::new();
 
@@ -2055,21 +2213,56 @@ fn deserialize_wrapper_definitions(
 
         let wrapper_ident = format_ident!("__FeatherDeserializeWith{prefix}Field{index}");
         let ty = &field.ty;
+        let helper_params = wrapper_generics.params;
+        let helper_impl_params = wrapper_generics.impl_params;
+        let helper_args = wrapper_generics.args;
+        let helper_phantom_types = wrapper_generics.phantom_types;
+        let helper_where_clause = wrapper_generics.where_clause;
+        let de_lifetime = wrapper_generics.de_lifetime;
+        let wrapper_decl = if helper_params.is_empty() {
+            quote! { struct #wrapper_ident(#ty); }
+        } else {
+            quote! {
+                struct #wrapper_ident<#(#helper_params),*>(
+                    #ty,
+                    ::core::marker::PhantomData<(#(#helper_phantom_types),*)>,
+                ) #helper_where_clause;
+            }
+        };
+        let wrapper_impl_generics = if helper_impl_params.is_empty() {
+            quote! { #de_lifetime }
+        } else {
+            quote! { #de_lifetime, #(#helper_impl_params),* }
+        };
+        let wrapper_ty = if helper_args.is_empty() {
+            quote! { #wrapper_ident }
+        } else {
+            quote! { #wrapper_ident<#(#helper_args),*> }
+        };
+        let wrapper_ctor = if helper_args.is_empty() {
+            quote! { #wrapper_ident(value) }
+        } else {
+            quote! { #wrapper_ident::<#(#helper_args),*>(value, ::core::marker::PhantomData) }
+        };
         defs.push(quote! {
-            struct #wrapper_ident(#ty);
+            #wrapper_decl
 
-            impl<#de_lifetime> #crate_path::serde::de::Deserialize<#de_lifetime> for #wrapper_ident {
+            impl<#wrapper_impl_generics> #crate_path::serde::de::Deserialize<#de_lifetime>
+                for #wrapper_ty #helper_where_clause
+            {
                 fn deserialize<D>(
                     deserializer: D,
                 ) -> ::core::result::Result<Self, D::Error>
                 where
                     D: #crate_path::serde::de::Deserializer<#de_lifetime>,
                 {
-                    #with_path::deserialize(deserializer).map(Self)
+                    #with_path::deserialize(deserializer).map(|value| {
+                        #wrapper_ctor
+                    })
                 }
             }
         });
-        wrappers.insert(index, wrapper_ident);
+        wrappers.insert(index, wrapper_ty);
     }
 
     (defs, wrappers)
@@ -2078,10 +2271,10 @@ fn deserialize_wrapper_definitions(
 fn decode_type_for_field(
     field_index: usize,
     field: &ParsedField,
-    wrappers: &HashMap<usize, Ident>,
+    wrappers: &HashMap<usize, TokenStream2>,
 ) -> TokenStream2 {
-    if let Some(wrapper_ident) = wrappers.get(&field_index) {
-        quote! { #wrapper_ident }
+    if let Some(wrapper_ty) = wrappers.get(&field_index) {
+        wrapper_ty.clone()
     } else {
         let ty = &field.ty;
         quote! { #ty }
@@ -2091,7 +2284,7 @@ fn decode_type_for_field(
 fn unwrap_decoded_value(
     field_index: usize,
     decoded_ident: &Ident,
-    wrappers: &HashMap<usize, Ident>,
+    wrappers: &HashMap<usize, TokenStream2>,
 ) -> TokenStream2 {
     if wrappers.contains_key(&field_index) {
         quote! { #decoded_ident.0 }
@@ -2689,6 +2882,10 @@ fn add_deserialize_bounds(
 }
 
 fn next_deserialize_lifetime(generics: &Generics) -> syn::Lifetime {
+    next_helper_lifetime(generics, "__feather_de")
+}
+
+fn next_helper_lifetime(generics: &Generics, base: &str) -> syn::Lifetime {
     let existing = generics
         .lifetimes()
         .map(|lt| lt.lifetime.ident.to_string())
@@ -2697,9 +2894,9 @@ fn next_deserialize_lifetime(generics: &Generics) -> syn::Lifetime {
     let mut suffix: usize = 0;
     loop {
         let candidate = if suffix == 0 {
-            "__feather_de".to_owned()
+            base.to_owned()
         } else {
-            format!("__feather_de_{suffix}")
+            format!("{base}_{suffix}")
         };
 
         if !existing.contains(&candidate) {
@@ -2724,20 +2921,10 @@ fn helper_generic_param_decls(generics: &Generics) -> Vec<TokenStream2> {
     generics
         .params
         .iter()
-        .map(|param| match param {
-            GenericParam::Lifetime(lifetime) => {
-                let lifetime = &lifetime.lifetime;
-                quote!(#lifetime)
-            }
-            GenericParam::Type(ty) => {
-                let ident = &ty.ident;
-                quote!(#ident)
-            }
-            GenericParam::Const(const_param) => {
-                let ident = &const_param.ident;
-                let ty = &const_param.ty;
-                quote!(const #ident: #ty)
-            }
+        .map(|param| {
+            let mut param = param.clone();
+            strip_generic_param_defaults(&mut param);
+            quote!(#param)
         })
         .collect()
 }
@@ -2751,26 +2938,38 @@ fn helper_generic_param_decls_for_deserialize(
     generics
         .params
         .iter()
-        .map(|param| match param {
-            GenericParam::Lifetime(lifetime) => {
-                let lifetime = &lifetime.lifetime;
-                quote!(#lifetime)
-            }
-            GenericParam::Type(ty) => {
+        .map(|param| {
+            let mut param = param.clone();
+            if let GenericParam::Type(ty) = &mut param {
                 let ident = &ty.ident;
                 if used_type_params.contains(&ident.to_string()) {
-                    quote!(#ident: #crate_path::serde::de::Deserialize<#de_lifetime>)
-                } else {
-                    quote!(#ident)
+                    ty.bounds
+                        .push(parse_quote!(#crate_path::serde::de::Deserialize<#de_lifetime>));
                 }
             }
-            GenericParam::Const(const_param) => {
-                let ident = &const_param.ident;
-                let ty = &const_param.ty;
-                quote!(const #ident: #ty)
-            }
+            strip_generic_param_defaults(&mut param);
+            quote!(#param)
         })
         .collect()
+}
+
+fn strip_generic_param_defaults(param: &mut GenericParam) {
+    match param {
+        GenericParam::Lifetime(_) => {}
+        GenericParam::Type(ty) => {
+            ty.default = None;
+        }
+        GenericParam::Const(const_param) => {
+            const_param.default = None;
+        }
+    }
+}
+
+fn helper_where_clause(generics: &Generics) -> TokenStream2 {
+    generics
+        .where_clause
+        .as_ref()
+        .map_or_else(TokenStream2::new, |where_clause| quote!(#where_clause))
 }
 
 fn helper_generic_args(generics: &Generics) -> Vec<TokenStream2> {

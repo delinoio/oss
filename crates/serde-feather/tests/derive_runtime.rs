@@ -34,6 +34,26 @@ mod hex_u8 {
     }
 }
 
+mod passthrough_with {
+    use serde_feather::serde;
+
+    pub fn serialize<S, T>(value: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+        T: serde::ser::Serialize,
+    {
+        serde::ser::Serialize::serialize(value, serializer)
+    }
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+        T: serde::de::Deserialize<'de>,
+    {
+        serde::de::Deserialize::deserialize(deserializer)
+    }
+}
+
 #[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
 struct BasicModel {
     id: u32,
@@ -146,6 +166,31 @@ struct GenericEnvelope<'a, T, const N: usize> {
     payload: Vec<u8>,
     #[serde(skip, default)]
     phantom: std::marker::PhantomData<[u8; N]>,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct BoundedEnvelope<T>
+where
+    T: Copy,
+{
+    value: T,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct GenericWithStruct<T>
+where
+    T: Copy + serde::ser::Serialize + for<'de> serde::de::Deserialize<'de>,
+{
+    #[serde(with = "passthrough_with")]
+    value: T,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+enum GenericWithEnum<T>
+where
+    T: Copy + serde::ser::Serialize + for<'de> serde::de::Deserialize<'de>,
+{
+    Value(#[serde(with = "passthrough_with")] T),
 }
 
 #[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
@@ -630,6 +675,37 @@ fn supports_generic_type_lifetime_and_const_derives() {
             phantom: std::marker::PhantomData,
         }
     );
+}
+
+#[test]
+fn preserves_declared_generic_bounds_for_deserialize_helpers() {
+    let value = BoundedEnvelope::<u16> { value: 17 };
+    let encoded = serde_json::to_string(&value).expect("serialize bounded envelope");
+    assert_eq!(encoded, r#"{"value":17}"#);
+
+    let decoded: BoundedEnvelope<u16> =
+        serde_json::from_str(r#"{"value":21}"#).expect("deserialize bounded envelope");
+    assert_eq!(decoded, BoundedEnvelope { value: 21 });
+}
+
+#[test]
+fn supports_with_wrappers_on_generic_structs_and_enums() {
+    let struct_value = GenericWithStruct::<u8> { value: 9 };
+    let struct_encoded =
+        serde_json::to_string(&struct_value).expect("serialize generic with struct");
+    assert_eq!(struct_encoded, r#"{"value":9}"#);
+
+    let struct_decoded: GenericWithStruct<u8> =
+        serde_json::from_str(r#"{"value":14}"#).expect("deserialize generic with struct");
+    assert_eq!(struct_decoded, GenericWithStruct { value: 14 });
+
+    let enum_value = GenericWithEnum::<u8>::Value(31);
+    let enum_encoded = serde_json::to_string(&enum_value).expect("serialize generic with enum");
+    assert_eq!(enum_encoded, r#"{"Value":31}"#);
+
+    let enum_decoded: GenericWithEnum<u8> =
+        serde_json::from_str(r#"{"Value":42}"#).expect("deserialize generic with enum");
+    assert_eq!(enum_decoded, GenericWithEnum::Value(42));
 }
 
 #[test]
