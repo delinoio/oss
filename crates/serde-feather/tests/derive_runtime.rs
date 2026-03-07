@@ -167,6 +167,13 @@ enum NewtypeSkipIfEnumModel {
 }
 
 #[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+enum NewtypeSkipDirectionalEnumModel {
+    SkipSer(#[serde(skip_serializing, default)] u8),
+    SkipDe(#[serde(skip_deserializing, default)] u8),
+    SkipBoth(#[serde(skip, default)] u8),
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
 struct GenericEnvelope<'a, T, const N: usize> {
     #[serde(skip_deserializing, default)]
     marker: &'a str,
@@ -681,6 +688,36 @@ fn preserves_newtype_encoding_for_skip_serializing_if_variant_fields() {
     let decoded: NewtypeSkipIfEnumModel =
         serde_json::from_str(r#"{"Value":9}"#).expect("deserialize newtype skip-if variant");
     assert_eq!(decoded, NewtypeSkipIfEnumModel::Value(9));
+}
+
+#[test]
+fn preserves_unit_encoding_for_skipped_newtype_variant_payloads() {
+    let skip_ser_encoded = serde_json::to_string(&NewtypeSkipDirectionalEnumModel::SkipSer(5))
+        .expect("serialize skip-serializing newtype variant");
+    assert_eq!(skip_ser_encoded, r#""SkipSer""#);
+
+    let skip_both_encoded = serde_json::to_string(&NewtypeSkipDirectionalEnumModel::SkipBoth(8))
+        .expect("serialize skip-both newtype variant");
+    assert_eq!(skip_both_encoded, r#""SkipBoth""#);
+
+    let skip_ser_decoded: NewtypeSkipDirectionalEnumModel =
+        serde_json::from_str(r#"{"SkipSer":7}"#)
+            .expect("deserialize skip-serializing newtype variant from payload");
+    assert_eq!(
+        skip_ser_decoded,
+        NewtypeSkipDirectionalEnumModel::SkipSer(7)
+    );
+
+    let skip_de_decoded: NewtypeSkipDirectionalEnumModel = serde_json::from_str(r#""SkipDe""#)
+        .expect("deserialize skip-deserializing newtype variant from unit");
+    assert_eq!(skip_de_decoded, NewtypeSkipDirectionalEnumModel::SkipDe(0));
+
+    let skip_both_decoded: NewtypeSkipDirectionalEnumModel = serde_json::from_str(r#""SkipBoth""#)
+        .expect("deserialize skip-both newtype variant from unit");
+    assert_eq!(
+        skip_both_decoded,
+        NewtypeSkipDirectionalEnumModel::SkipBoth(0)
+    );
 }
 
 #[test]

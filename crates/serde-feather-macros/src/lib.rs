@@ -468,38 +468,50 @@ fn expand_serialize_enum(
                         Self::#variant_ident(#(#bindings),*)
                     };
 
+                    if fields.len() == 1 {
+                        let field = &fields[0];
+                        let binding = &bindings[0];
+
+                        if field.skip_serializing {
+                            quote! {
+                                #pattern => {
+                                    #crate_path::serde::ser::Serializer::serialize_unit_variant(
+                                        serializer,
+                                        #enum_name,
+                                        #variant_index,
+                                        #variant_name,
+                                    )
+                                }
+                            }
+                        } else {
+                            let wrapper_ident =
+                                format_ident!("__FeatherSerializeWithNewtypeVariant{variant_index}");
+                            let serialize_value = serialize_value_expression(
+                                field,
+                                quote!(#binding),
+                                &wrapper_ident,
+                                &wrapper_generics,
+                                crate_path,
+                            );
+
+                            quote! {
+                                #pattern => {
+                                    #crate_path::serde::ser::Serializer::serialize_newtype_variant(
+                                        serializer,
+                                        #enum_name,
+                                        #variant_index,
+                                        #variant_name,
+                                        #serialize_value,
+                                    )
+                                }
+                            }
+                        }
+                    } else {
                     let included_fields: Vec<(usize, &ParsedField)> = fields
                         .iter()
                         .enumerate()
                         .filter(|(_, field)| !field.skip_serializing)
                         .collect();
-
-                    let is_newtype = fields.len() == 1 && included_fields.len() == 1;
-
-                    if is_newtype {
-                        let field = included_fields[0].1;
-                        let binding = &bindings[0];
-                        let wrapper_ident = format_ident!("__FeatherSerializeWithNewtypeVariant{variant_index}");
-                        let serialize_value = serialize_value_expression(
-                            field,
-                            quote!(#binding),
-                            &wrapper_ident,
-                            &wrapper_generics,
-                            crate_path,
-                        );
-
-                        quote! {
-                            #pattern => {
-                                #crate_path::serde::ser::Serializer::serialize_newtype_variant(
-                                    serializer,
-                                    #enum_name,
-                                    #variant_index,
-                                    #variant_name,
-                                    #serialize_value,
-                                )
-                            }
-                        }
-                    } else {
                         let base_len = included_fields.len();
 
                         let len_adjustments = included_fields
@@ -1487,8 +1499,7 @@ fn expand_deserialize_enum(
                         if field.skip_deserializing {
                             quote! {
                                 #variant_index => {
-                                    let _: #crate_path::serde::de::IgnoredAny =
-                                        #crate_path::serde::de::VariantAccess::newtype_variant(variant_access)?;
+                                    #crate_path::serde::de::VariantAccess::unit_variant(variant_access)?;
                                     ::core::result::Result::Ok(#enum_ident::#variant_ident(
                                         ::core::default::Default::default(),
                                     ))
