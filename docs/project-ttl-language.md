@@ -143,6 +143,7 @@ Invalidation contract:
 1. Input content hash
 2. Parameter hash
 3. Environment snapshot hash
+- For `run`, parameter hash includes task signature and canonicalized `--args` JSON object payload.
 - Reuse occurs only when full fingerprint matches.
 - Any component mismatch triggers recomputation.
 - Phase 1 default: `environment_snapshot_hash = hash("")`.

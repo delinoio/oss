@@ -419,7 +419,7 @@ func (e *evaluator) evalCall(scope map[string]any, expression expression) (any, 
 			}
 			values = append(values, value)
 		}
-		fmt.Println(values...)
+		_, _ = fmt.Fprintln(os.Stderr, values...)
 		return nil, nil
 	default:
 		task, exists := e.tasks[name]

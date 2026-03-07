@@ -144,6 +144,7 @@ Canonical CLI JSON response envelope:
 
 Cache-key contract (v1):
 - `cache_key = hash(input_content_hash + parameter_hash + environment_snapshot_hash)`
+- For `run`, `parameter_hash` includes task signature and canonicalized `--args` payload.
 - Cache hit requires exact key equality.
 - Cache mismatch triggers recomputation and cache overwrite.
 - Phase 1 uses `environment_snapshot_hash = hash("")` as an explicit baseline default.

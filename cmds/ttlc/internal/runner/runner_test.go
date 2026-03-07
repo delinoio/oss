@@ -106,6 +106,43 @@ task func Build(target string) Vc[Artifact] {
 	}
 }
 
+func TestExecuteSupportsPrintBuiltin(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    print(target)
+    return vc(Artifact{Path: target})
+}
+`)
+
+	program, err := BuildProgram(module, "Build", map[string]any{"target": "mobile"})
+	if err != nil {
+		t.Fatalf("build program: %v", err)
+	}
+
+	source, err := GenerateGoSource(program)
+	if err != nil {
+		t.Fatalf("generate source: %v", err)
+	}
+
+	result, err := Execute(context.Background(), t.TempDir(), source)
+	if err != nil {
+		t.Fatalf("execute runner with print builtin: %v", err)
+	}
+
+	resultObject, ok := result.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected object result, got=%T", result.Result)
+	}
+	if resultObject["Path"] != "mobile" {
+		t.Fatalf("unexpected run result payload: %#v", resultObject["Path"])
+	}
+}
+
 func parseModuleForTest(t *testing.T, source string) *ast.Module {
 	t.Helper()
 	tokens, lexDiagnostics := lexer.Lex(source)

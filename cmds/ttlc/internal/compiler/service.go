@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -209,6 +210,13 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	if !found {
 		return Result{}, fmt.Errorf("resolve root task fingerprint: %s", rootTask.ID)
 	}
+	runParameterHash, err := buildRunParameterHash(rootFingerprint.Task, options.Args)
+	if err != nil {
+		return Result{}, fmt.Errorf("build run parameter hash: %w", err)
+	}
+	rootFingerprint.Components.ParameterHash = runParameterHash
+	rootFingerprint.CacheKey = fingerprint.CacheKey(rootFingerprint.Components)
+	result.FingerprintComponents = rootFingerprint.Components
 
 	cacheStart := time.Now()
 	s.logStageStart(contracts.CompileStageCache)
@@ -632,6 +640,76 @@ func toStringSlice(value any) ([]string, bool) {
 		return values, true
 	default:
 		return nil, false
+	}
+}
+
+func buildRunParameterHash(task sema.Task, args map[string]any) (string, error) {
+	parameterTypes := make([]string, 0, len(task.Params))
+	for _, parameter := range task.Params {
+		parameterTypes = append(parameterTypes, parameter.Type)
+	}
+	signature := fingerprint.CanonicalSignature(task.ID, parameterTypes, task.ReturnType)
+
+	if args == nil {
+		args = map[string]any{}
+	}
+	argsSignature, err := stableRunValueString(args)
+	if err != nil {
+		return "", err
+	}
+	return fingerprint.HashString(signature + "|" + argsSignature), nil
+}
+
+func stableRunValueString(value any) (string, error) {
+	switch typed := value.(type) {
+	case nil:
+		return "null", nil
+	case string:
+		return "str:" + strconv.Quote(typed), nil
+	case bool:
+		if typed {
+			return "bool:true", nil
+		}
+		return "bool:false", nil
+	case json.Number:
+		return "num:" + typed.String(), nil
+	case int, int8, int16, int32, int64:
+		return fmt.Sprintf("num:%v", typed), nil
+	case uint, uint8, uint16, uint32, uint64, uintptr:
+		return fmt.Sprintf("num:%v", typed), nil
+	case float32, float64:
+		return fmt.Sprintf("num:%v", typed), nil
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			itemSignature, err := stableRunValueString(typed[key])
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, key+"="+itemSignature)
+		}
+		return "obj:{" + strings.Join(parts, ",") + "}", nil
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			itemSignature, err := stableRunValueString(item)
+			if err != nil {
+				return "", err
+			}
+			parts = append(parts, itemSignature)
+		}
+		return "arr:[" + strings.Join(parts, ",") + "]", nil
+	default:
+		payload, err := json.Marshal(typed)
+		if err != nil {
+			return "", fmt.Errorf("unsupported run argument type: %T", value)
+		}
+		return "json:" + string(payload), nil
 	}
 }
 

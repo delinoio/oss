@@ -489,6 +489,79 @@ task func Build(target string) Vc[Artifact] {
 	})
 }
 
+func TestRunInvalidatesCacheWhenArgsChange(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+
+		firstRun, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"target": "web",
+			},
+		})
+		if err != nil {
+			t.Fatalf("first run returned error: %v", err)
+		}
+		if len(firstRun.Diagnostics) != 0 {
+			t.Fatalf("unexpected diagnostics for first run: %+v", firstRun.Diagnostics)
+		}
+		if len(firstRun.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", firstRun.CacheAnalysis)
+		}
+		if firstRun.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonCacheMiss {
+			t.Fatalf("expected first run cache miss, got=%s", firstRun.CacheAnalysis[0].InvalidationReason)
+		}
+
+		secondRun, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"target": "mobile",
+			},
+		})
+		if err != nil {
+			t.Fatalf("second run returned error: %v", err)
+		}
+		if len(secondRun.Diagnostics) != 0 {
+			t.Fatalf("unexpected diagnostics for second run: %+v", secondRun.Diagnostics)
+		}
+		if len(secondRun.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", secondRun.CacheAnalysis)
+		}
+		if secondRun.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonParameterChanged {
+			t.Fatalf("expected parameter_changed on second run, got=%s", secondRun.CacheAnalysis[0].InvalidationReason)
+		}
+		if secondRun.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected cache miss on changed args, got=%+v", secondRun.CacheAnalysis[0])
+		}
+
+		resultObject, ok := secondRun.RunResult.(map[string]any)
+		if !ok {
+			t.Fatalf("expected second run result object, got=%T", secondRun.RunResult)
+		}
+		if resultObject["Path"] != "mobile" {
+			t.Fatalf("expected updated run result for changed args, got=%#v", resultObject["Path"])
+		}
+	})
+}
+
 func withWorkingDirectory(t *testing.T, directory string, run func()) {
 	t.Helper()
 	currentDirectory, err := os.Getwd()
