@@ -577,6 +577,9 @@ func Execute(ctx context.Context, outDir string, source []byte) (ExecutionResult
 		}
 		return ExecutionResult{}, fmt.Errorf("execute generated runner: %w", err)
 	}
+	if stderrBuffer.Len() > 0 {
+		_, _ = os.Stderr.Write(stderrBuffer.Bytes())
+	}
 
 	decodedResult := ExecutionResult{}
 	decoder := json.NewDecoder(bytes.NewReader(stdoutBuffer.Bytes()))

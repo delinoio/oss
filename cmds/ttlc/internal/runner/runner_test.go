@@ -1,8 +1,11 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -133,6 +136,69 @@ task func Build(target string) Vc[Artifact] {
 	result, err := Execute(context.Background(), t.TempDir(), source)
 	if err != nil {
 		t.Fatalf("execute runner with print builtin: %v", err)
+	}
+
+	resultObject, ok := result.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected object result, got=%T", result.Result)
+	}
+	if resultObject["Path"] != "mobile" {
+		t.Fatalf("unexpected run result payload: %#v", resultObject["Path"])
+	}
+}
+
+func TestExecuteForwardsPrintBuiltinOutputToStderr(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    print("trace:", target)
+    return vc(Artifact{Path: target})
+}
+`)
+
+	program, err := BuildProgram(module, "Build", map[string]any{"target": "mobile"})
+	if err != nil {
+		t.Fatalf("build program: %v", err)
+	}
+
+	source, err := GenerateGoSource(program)
+	if err != nil {
+		t.Fatalf("generate source: %v", err)
+	}
+
+	originalStderr := os.Stderr
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stderr pipe: %v", err)
+	}
+	os.Stderr = writePipe
+	t.Cleanup(func() {
+		os.Stderr = originalStderr
+		_ = writePipe.Close()
+		_ = readPipe.Close()
+	})
+
+	result, err := Execute(context.Background(), t.TempDir(), source)
+	if err != nil {
+		t.Fatalf("execute runner with print builtin: %v", err)
+	}
+
+	if err := writePipe.Close(); err != nil {
+		t.Fatalf("close stderr write pipe: %v", err)
+	}
+	os.Stderr = originalStderr
+
+	stderrPayload, err := io.ReadAll(readPipe)
+	if err != nil {
+		t.Fatalf("read stderr payload: %v", err)
+	}
+
+	if !bytes.Contains(stderrPayload, []byte("trace: mobile")) {
+		t.Fatalf("expected print output on stderr, got=%q", string(stderrPayload))
 	}
 
 	resultObject, ok := result.Result.(map[string]any)
