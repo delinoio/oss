@@ -185,6 +185,11 @@ struct GenericEnvelope<'a, T, const N: usize> {
 }
 
 #[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct GenericConstEnvelope<const FLAG: bool, const TAG: u8> {
+    value: u8,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
 struct BoundedEnvelope<T>
 where
     T: Copy,
@@ -781,6 +786,18 @@ fn supports_generic_type_lifetime_and_const_derives() {
             phantom: std::marker::PhantomData,
         }
     );
+}
+
+#[test]
+fn supports_non_usize_const_generic_derives() {
+    let value = GenericConstEnvelope::<true, 7> { value: 3 };
+    let encoded =
+        serde_json::to_string(&value).expect("serialize non-usize const generic envelope");
+    assert_eq!(encoded, r#"{"value":3}"#);
+
+    let decoded: GenericConstEnvelope<false, 9> = serde_json::from_str(r#"{"value":11}"#)
+        .expect("deserialize non-usize const generic envelope");
+    assert_eq!(decoded, GenericConstEnvelope { value: 11 });
 }
 
 #[test]

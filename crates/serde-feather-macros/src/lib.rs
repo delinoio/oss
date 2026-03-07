@@ -3251,10 +3251,9 @@ fn helper_generic_phantom_types(generics: &Generics) -> Vec<TokenStream2> {
                 let ident = &ty.ident;
                 quote!(#ident)
             }
-            GenericParam::Const(const_param) => {
-                let ident = &const_param.ident;
-                quote!([(); #ident])
-            }
+            // Const params can be declared with non-usize types (e.g. bool, u8), so
+            // avoid array-length encodings that require usize.
+            GenericParam::Const(_) => quote!(()),
         })
         .collect()
 }
