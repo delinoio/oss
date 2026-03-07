@@ -1052,6 +1052,7 @@ type workspaceState struct {
 	subTasks          map[string]*dexdexv1.SubTask
 	repositoryGroups  map[string]*dexdexv1.RepositoryGroup
 	sessionOutputs    map[string][]*dexdexv1.SessionOutputEvent
+	sessionStates     map[string]sessionStateSnapshot
 	pullRequests      map[string]*dexdexv1.PullRequestRecord
 	reviewAssistItems map[string][]*dexdexv1.ReviewAssistItem
 	reviewComments    map[string][]*dexdexv1.ReviewComment
@@ -1061,6 +1062,11 @@ type workspaceState struct {
 	subscribers       map[uint64]chan *dexdexv1.StreamWorkspaceEventsResponse
 	nextSequence      uint64
 	nextSubscriberID  uint64
+}
+
+type sessionStateSnapshot struct {
+	status    dexdexv1.AgentSessionStatus
+	updatedAt *timestamppb.Timestamp
 }
 
 func newWorkspaceStore(logger *slog.Logger, retention int, subscriberBuffer int) *workspaceStore {
@@ -1697,6 +1703,7 @@ func (s *workspaceStore) ensureWorkspaceLocked(workspaceID string) *workspaceSta
 		subTasks:          map[string]*dexdexv1.SubTask{},
 		repositoryGroups:  map[string]*dexdexv1.RepositoryGroup{},
 		sessionOutputs:    map[string][]*dexdexv1.SessionOutputEvent{},
+		sessionStates:     map[string]sessionStateSnapshot{},
 		pullRequests:      map[string]*dexdexv1.PullRequestRecord{},
 		reviewAssistItems: map[string][]*dexdexv1.ReviewAssistItem{},
 		reviewComments:    map[string][]*dexdexv1.ReviewComment{},
@@ -1761,17 +1768,39 @@ func (s *workspaceStore) appendSessionStateChangedEventLocked(
 	workspace *workspaceState,
 	event *dexdexv1.SessionStateChangedEvent,
 ) uint64 {
+	occurredAt := timestamppb.Now()
+	s.upsertSessionStateLocked(workspace, event.GetSessionId(), event.GetStatus(), occurredAt)
+
 	return s.appendWorkspaceEventLocked(
 		workspaceID,
 		workspace,
 		&dexdexv1.StreamWorkspaceEventsResponse{
 			EventType:  dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_STATE_CHANGED,
-			OccurredAt: timestamppb.Now(),
+			OccurredAt: occurredAt,
 			Payload: &dexdexv1.StreamWorkspaceEventsResponse_SessionStateChanged{
 				SessionStateChanged: cloneSessionStateChangedEvent(event),
 			},
 		},
 	)
+}
+
+func (s *workspaceStore) upsertSessionStateLocked(
+	workspace *workspaceState,
+	sessionID string,
+	status dexdexv1.AgentSessionStatus,
+	updatedAt *timestamppb.Timestamp,
+) {
+	if sessionID == "" {
+		return
+	}
+	if updatedAt == nil {
+		updatedAt = timestamppb.Now()
+	}
+
+	workspace.sessionStates[sessionID] = sessionStateSnapshot{
+		status:    status,
+		updatedAt: updatedAt,
+	}
 }
 
 func (s *workspaceStore) appendWorkspaceEventLocked(
@@ -1956,6 +1985,7 @@ func workspaceHasNoState(workspace *workspaceState) bool {
 		len(workspace.subTasks) == 0 &&
 		len(workspace.repositoryGroups) == 0 &&
 		len(workspace.sessionOutputs) == 0 &&
+		len(workspace.sessionStates) == 0 &&
 		len(workspace.pullRequests) == 0 &&
 		len(workspace.reviewAssistItems) == 0 &&
 		len(workspace.reviewComments) == 0 &&
@@ -2003,20 +2033,18 @@ func buildSessionSummariesLocked(workspace *workspaceState) []*dexdexv1.SessionS
 			if isNewerTimestamp(summary.GetUpdatedAt(), event.GetOccurredAt()) {
 				summary.UpdatedAt = event.GetOccurredAt()
 			}
-		case *dexdexv1.StreamWorkspaceEventsResponse_SessionStateChanged:
-			sessionID := payload.SessionStateChanged.GetSessionId()
-			if sessionID == "" {
-				continue
-			}
-			summary := summariesByID[sessionID]
-			if summary == nil {
-				summary = &dexdexv1.SessionSummary{SessionId: sessionID}
-				summariesByID[sessionID] = summary
-			}
-			summary.Status = payload.SessionStateChanged.GetStatus()
-			if isNewerTimestamp(summary.GetUpdatedAt(), event.GetOccurredAt()) {
-				summary.UpdatedAt = event.GetOccurredAt()
-			}
+		}
+	}
+
+	for sessionID, snapshot := range workspace.sessionStates {
+		summary := summariesByID[sessionID]
+		if summary == nil {
+			summary = &dexdexv1.SessionSummary{SessionId: sessionID}
+			summariesByID[sessionID] = summary
+		}
+		summary.Status = snapshot.status
+		if isNewerTimestamp(summary.GetUpdatedAt(), snapshot.updatedAt) {
+			summary.UpdatedAt = snapshot.updatedAt
 		}
 	}
 

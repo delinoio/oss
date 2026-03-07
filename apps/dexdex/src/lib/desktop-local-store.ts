@@ -104,11 +104,13 @@ function normalizeState(candidate: unknown): DesktopLocalStoreState {
           : defaultState.settings.autoStartStream,
     },
     lastSelectedAutomationId:
-      typeof source.lastSelectedAutomationId === "string"
+      typeof source.lastSelectedAutomationId === "string" ||
+      source.lastSelectedAutomationId === null
         ? source.lastSelectedAutomationId
         : defaultState.lastSelectedAutomationId,
     lastSelectedEnvironmentId:
-      typeof source.lastSelectedEnvironmentId === "string"
+      typeof source.lastSelectedEnvironmentId === "string" ||
+      source.lastSelectedEnvironmentId === null
         ? source.lastSelectedEnvironmentId
         : defaultState.lastSelectedEnvironmentId,
   };

@@ -521,6 +521,85 @@ func TestListSessionsSupportsFilters(t *testing.T) {
 	}
 }
 
+func TestListSessionsPreservesStateAfterStreamRetentionTrim(t *testing.T) {
+	service, _, _, httpServer := newDexDexMainTestServer(t, ConnectServerConfig{
+		StreamRetention: 2,
+	})
+	sessionClient := dexdexv1connect.NewSessionServiceClient(httpServer.Client(), httpServer.URL)
+	workspaceClient := dexdexv1connect.NewWorkspaceServiceClient(httpServer.Client(), httpServer.URL)
+
+	seedSubTask(
+		service,
+		"workspace-1",
+		"unit-1",
+		"sub-1",
+		dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+	)
+
+	_, _, runErr := service.store.applySessionAdapterRun(
+		"workspace-1",
+		"unit-1",
+		"sub-1",
+		"session-running",
+		[]*dexdexv1.SessionOutputEvent{
+			{
+				SessionId: "session-running",
+				Kind:      dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_TEXT,
+				Source: &dexdexv1.SessionOutputSourceMetadata{
+					CliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+				},
+				Body: "still running",
+			},
+		},
+		dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+	)
+	if runErr != nil {
+		t.Fatalf("applySessionAdapterRun returned error: %v", runErr)
+	}
+
+	for i := 0; i < 5; i++ {
+		service.store.upsertSubTask("workspace-1", &dexdexv1.SubTask{
+			SubTaskId:  "sub-1",
+			UnitTaskId: "unit-1",
+			Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_INITIAL_IMPLEMENTATION,
+			Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+		}, true)
+	}
+
+	response, err := sessionClient.ListSessions(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListSessionsRequest{
+			WorkspaceId: "workspace-1",
+			Status:      dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ListSessions returned error: %v", err)
+	}
+	if len(response.Msg.GetItems()) != 1 {
+		t.Fatalf("expected one running session after retention trim, got=%d", len(response.Msg.GetItems()))
+	}
+	if response.Msg.GetItems()[0].GetSessionId() != "session-running" {
+		t.Fatalf("unexpected running session id: got=%q", response.Msg.GetItems()[0].GetSessionId())
+	}
+
+	overviewResponse, err := workspaceClient.GetWorkspaceOverview(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.GetWorkspaceOverviewRequest{
+			WorkspaceId: "workspace-1",
+		}),
+	)
+	if err != nil {
+		t.Fatalf("GetWorkspaceOverview returned error: %v", err)
+	}
+	if overviewResponse.Msg.GetOverview().GetActiveSessionCount() != 1 {
+		t.Fatalf(
+			"unexpected active_session_count after retention trim: got=%d want=1",
+			overviewResponse.Msg.GetOverview().GetActiveSessionCount(),
+		)
+	}
+}
+
 func TestGetPullRequestReturnsStoredPullRequest(t *testing.T) {
 	service, _, _, httpServer := newDexDexMainTestServer(t, ConnectServerConfig{})
 	prClient := dexdexv1connect.NewPrManagementServiceClient(httpServer.Client(), httpServer.URL)

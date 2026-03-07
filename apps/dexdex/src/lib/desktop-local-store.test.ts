@@ -64,6 +64,21 @@ describe("desktop-local-store", () => {
     expect(reloaded.lastSelectedEnvironmentId).toBe("env-staging");
   });
 
+  it("preserves null last selected ids", () => {
+    const saved = saveDesktopLocalStoreState({
+      ...loadDesktopLocalStoreState(),
+      lastSelectedAutomationId: null,
+      lastSelectedEnvironmentId: null,
+    });
+
+    expect(saved.lastSelectedAutomationId).toBeNull();
+    expect(saved.lastSelectedEnvironmentId).toBeNull();
+
+    const reloaded = loadDesktopLocalStoreState();
+    expect(reloaded.lastSelectedAutomationId).toBeNull();
+    expect(reloaded.lastSelectedEnvironmentId).toBeNull();
+  });
+
   it("updates connection diagnostics and persists the change", () => {
     updateDesktopLocalStoreState((current) => ({
       ...current,
