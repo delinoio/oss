@@ -1,0 +1,5 @@
+error: duplicate serde container attribute `rename`
+ --> tests/ui/container_duplicate_rename.rs:4:27
+  |
+4 | #[serde(rename = "first", rename = "second")]
+  |                           ^^^^^^^^^^^^^^^^^

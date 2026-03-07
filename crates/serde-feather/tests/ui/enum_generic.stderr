@@ -1,0 +1,5 @@
+error: FeatherDeserialize only supports non-generic enums in this MVP
+ --> tests/ui/enum_generic.rs:4:17
+  |
+4 | enum GenericEnum<T> {
+  |                 ^^^

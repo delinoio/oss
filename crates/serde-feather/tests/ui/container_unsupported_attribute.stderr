@@ -1,0 +1,5 @@
+error: unsupported serde container attribute; supported attributes: `rename`
+ --> tests/ui/container_unsupported_attribute.rs:4:9
+  |
+4 | #[serde(rename_all = "snake_case")]
+  |         ^^^^^^^^^^

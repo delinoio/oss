@@ -1,0 +1,5 @@
+error: duplicate serde field attribute `default`
+ --> tests/ui/field_duplicate_default.rs:5:22
+  |
+5 |     #[serde(default, default)]
+  |                      ^^^^^^^

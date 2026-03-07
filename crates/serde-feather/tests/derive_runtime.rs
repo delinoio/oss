@@ -78,6 +78,32 @@ enum RenamedEnumModel {
     Newtype(u16),
 }
 
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct RequiredMapModel {
+    required: u8,
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct RequiredSeqModel {
+    first: u8,
+    second: u8,
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct OnlySkippedModel {
+    #[serde(skip_deserializing)]
+    skipped_number: u8,
+    #[serde(skip_deserializing)]
+    skipped_flag: bool,
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+#[allow(non_camel_case_types)]
+enum RawIdentifierEnumModel {
+    r#type,
+    r#yield(u8),
+}
+
 #[derive(Debug, Clone, Copy)]
 struct NumericEnumDeserializer {
     variant_index: u32,
@@ -421,4 +447,200 @@ fn rejects_unknown_enum_variant() {
         message.contains("unknown variant"),
         "unexpected error for unknown variant: {message}"
     );
+}
+
+#[test]
+fn map_deserialization_ignores_unknown_fields() {
+    let decoded: BasicModel = serde_json::from_str(
+        r#"{
+            "id": 9,
+            "name": "known",
+            "unknown_a": true,
+            "unknown_b": "ignored"
+        }"#,
+    )
+    .expect("deserialize map with unknown fields");
+    assert_eq!(
+        decoded,
+        BasicModel {
+            id: 9,
+            name: "known".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn map_deserialization_rejects_duplicate_fields() {
+    let error = serde_json::from_str::<RequiredMapModel>(r#"{"required": 1, "required": 2}"#)
+        .expect_err("duplicate map fields should fail");
+    let message = error.to_string();
+    assert!(
+        message.contains("duplicate field"),
+        "unexpected error for duplicate field input: {message}"
+    );
+}
+
+#[test]
+fn map_deserialization_reports_missing_required_field() {
+    let error = serde_json::from_str::<RequiredMapModel>(r#"{}"#)
+        .expect_err("missing required field should fail");
+    let message = error.to_string();
+    assert!(
+        message.contains("missing field"),
+        "unexpected error for missing required field: {message}"
+    );
+}
+
+#[test]
+fn sequence_deserialization_reports_missing_required_element() {
+    let values = vec![1_u8];
+    let deserializer = serde_feather::serde::de::value::SeqDeserializer::<
+        _,
+        serde_feather::serde::de::value::Error,
+    >::new(values.into_iter());
+
+    let error = RequiredSeqModel::deserialize(deserializer)
+        .expect_err("missing required sequence element should fail");
+    let message = error.to_string();
+    assert!(
+        message.contains("invalid length"),
+        "unexpected error for missing required sequence element: {message}"
+    );
+}
+
+#[test]
+fn sequence_deserialization_rejects_extra_elements() {
+    let values = vec![1_u8, 2_u8, 3_u8];
+    let deserializer = serde_feather::serde::de::value::SeqDeserializer::<
+        _,
+        serde_feather::serde::de::value::Error,
+    >::new(values.into_iter());
+
+    let error = RequiredSeqModel::deserialize(deserializer)
+        .expect_err("extra sequence elements should fail");
+    let message = error.to_string();
+    assert!(
+        message.contains("invalid length"),
+        "unexpected error for extra sequence elements: {message}"
+    );
+}
+
+#[test]
+fn all_skip_deserializing_fields_default_from_map() {
+    let decoded: OnlySkippedModel = serde_json::from_str(
+        r#"{
+            "skipped_number": 10,
+            "skipped_flag": true,
+            "unknown": "value"
+        }"#,
+    )
+    .expect("deserialize model with only skipped fields");
+    assert_eq!(
+        decoded,
+        OnlySkippedModel {
+            skipped_number: 0,
+            skipped_flag: false,
+        }
+    );
+}
+
+#[test]
+fn all_skip_deserializing_fields_default_from_empty_sequence() {
+    let values = Vec::<u8>::new();
+    let deserializer = serde_feather::serde::de::value::SeqDeserializer::<
+        _,
+        serde_feather::serde::de::value::Error,
+    >::new(values.into_iter());
+
+    let decoded =
+        OnlySkippedModel::deserialize(deserializer).expect("deserialize empty sequence input");
+    assert_eq!(
+        decoded,
+        OnlySkippedModel {
+            skipped_number: 0,
+            skipped_flag: false,
+        }
+    );
+}
+
+#[test]
+fn all_skip_deserializing_fields_reject_non_empty_sequence() {
+    let values = vec![1_u8];
+    let deserializer = serde_feather::serde::de::value::SeqDeserializer::<
+        _,
+        serde_feather::serde::de::value::Error,
+    >::new(values.into_iter());
+
+    let error = OnlySkippedModel::deserialize(deserializer)
+        .expect_err("non-empty sequence should fail for skipped-only model");
+    let message = error.to_string();
+    assert!(
+        message.contains("invalid length"),
+        "unexpected error for skipped-only sequence input: {message}"
+    );
+}
+
+#[test]
+fn rejects_negative_numeric_discriminants() {
+    let error = EnumModel::deserialize(serde_feather::serde::de::value::I64Deserializer::<
+        serde_feather::serde::de::value::Error,
+    >::new(-1))
+    .expect_err("negative discriminant should fail");
+    let message = error.to_string();
+    assert!(
+        message.contains("invalid value") || message.contains("invalid type"),
+        "unexpected error for negative discriminant: {message}"
+    );
+}
+
+#[test]
+fn rejects_unit_variant_with_payload_from_numeric_discriminant() {
+    let error = EnumModel::deserialize(NumericEnumDeserializer::newtype_u8(0, 1))
+        .expect_err("unit variant with payload should fail");
+    let message = error.to_string();
+    assert!(
+        message.contains("unit variant cannot contain a payload"),
+        "unexpected error for payload on unit variant: {message}"
+    );
+}
+
+#[test]
+fn rejects_newtype_variant_without_payload_from_numeric_discriminant() {
+    let error = EnumModel::deserialize(NumericEnumDeserializer::unit(1))
+        .expect_err("newtype variant without payload should fail");
+    let message = error.to_string();
+    assert!(
+        message.contains("payload is missing"),
+        "unexpected error for missing payload on newtype variant: {message}"
+    );
+}
+
+#[test]
+fn rejects_newtype_variant_without_payload_from_json() {
+    let error = serde_json::from_str::<EnumModel>(r#"{"payload":null}"#)
+        .expect_err("null payload for newtype variant should fail");
+    let message = error.to_string();
+    assert!(
+        message.contains("invalid type"),
+        "unexpected error for null newtype payload: {message}"
+    );
+}
+
+#[test]
+fn normalizes_raw_identifier_enum_variant_names() {
+    let unit_encoded = serde_json::to_string(&RawIdentifierEnumModel::r#type)
+        .expect("serialize raw identifier unit variant");
+    assert_eq!(unit_encoded, r#""type""#);
+
+    let newtype_encoded = serde_json::to_string(&RawIdentifierEnumModel::r#yield(4))
+        .expect("serialize raw identifier newtype variant");
+    assert_eq!(newtype_encoded, r#"{"yield":4}"#);
+
+    let decoded_unit: RawIdentifierEnumModel =
+        serde_json::from_str(r#""type""#).expect("deserialize raw identifier unit variant");
+    assert_eq!(decoded_unit, RawIdentifierEnumModel::r#type);
+
+    let decoded_newtype: RawIdentifierEnumModel =
+        serde_json::from_str(r#"{"yield":4}"#).expect("deserialize raw identifier newtype variant");
+    assert_eq!(decoded_newtype, RawIdentifierEnumModel::r#yield(4));
 }

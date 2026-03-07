@@ -287,7 +287,6 @@ fn expand_deserialize_struct(
         .iter()
         .map(|binding| binding.field_name.clone())
         .collect();
-    let known_fields_in_map = known_fields.clone();
 
     let construct_fields: Vec<TokenStream2> = parsed
         .fields
@@ -367,6 +366,8 @@ fn expand_deserialize_struct(
             where
                 D: #crate_path::serde::de::Deserializer<'de>,
             {
+                const __FEATHER_FIELDS: &[&str] = &[#(#known_fields),*];
+
                 struct __FeatherVisitor;
 
                 impl<'de> #crate_path::serde::de::Visitor<'de> for __FeatherVisitor {
@@ -386,17 +387,13 @@ fn expand_deserialize_struct(
                     where
                         V: #crate_path::serde::de::MapAccess<'de>,
                     {
-                        const __FEATHER_FIELDS: &[&str] = &[#(#known_fields_in_map),*];
                         #(#field_bindings_in_map)*
                         while let ::core::option::Option::Some(key) = #crate_path::serde::de::MapAccess::next_key::<#crate_path::__private::OwnedFieldName>(&mut map)?
                         {
                             match #crate_path::__private::select_field_index(key.as_str(), __FEATHER_FIELDS) {
                                 ::core::option::Option::Some(index) => match index {
                                     #(#field_setter_match_arms)*
-                                    _ => {
-                                        let _: #crate_path::serde::de::IgnoredAny =
-                                            #crate_path::serde::de::MapAccess::next_value(&mut map)?;
-                                    }
+                                    _ => ::core::unreachable!(),
                                 },
                                 ::core::option::Option::None => {
                                     let _: #crate_path::serde::de::IgnoredAny =
@@ -432,7 +429,6 @@ fn expand_deserialize_struct(
                     }
                 }
 
-                const __FEATHER_FIELDS: &[&str] = &[#(#known_fields),*];
                 #crate_path::serde::de::Deserializer::deserialize_struct(
                     deserializer,
                     #struct_name,

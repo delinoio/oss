@@ -1,0 +1,5 @@
+error: duplicate serde field attribute `rename`
+ --> tests/ui/field_duplicate_rename.rs:5:31
+  |
+5 |     #[serde(rename = "first", rename = "second")]
+  |                               ^^^^^^^^^^^^^^^^^

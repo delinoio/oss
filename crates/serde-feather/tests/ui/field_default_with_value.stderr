@@ -1,0 +1,5 @@
+error: serde field attribute `default` does not accept a value
+ --> tests/ui/field_default_with_value.rs:5:13
+  |
+5 |     #[serde(default = "make_default")]
+  |             ^^^^^^^

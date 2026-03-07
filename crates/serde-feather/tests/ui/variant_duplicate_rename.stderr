@@ -1,0 +1,5 @@
+error: duplicate serde enum variant attribute `rename`
+ --> tests/ui/variant_duplicate_rename.rs:5:31
+  |
+5 |     #[serde(rename = "first", rename = "second")]
+  |                               ^^^^^^^^^^^^^^^^^

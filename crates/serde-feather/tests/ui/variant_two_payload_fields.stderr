@@ -1,0 +1,5 @@
+error: FeatherDeserialize only supports unit variants or newtype variants with one unnamed field
+ --> tests/ui/variant_two_payload_fields.rs:5:10
+  |
+5 |     Value(u8, u8),
+  |          ^^^^^^^^

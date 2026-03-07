@@ -1,0 +1,5 @@
+error: duplicate serde field attribute `skip_deserializing`
+ --> tests/ui/field_duplicate_skip_deserializing.rs:5:33
+  |
+5 |     #[serde(skip_deserializing, skip_deserializing)]
+  |                                 ^^^^^^^^^^^^^^^^^^

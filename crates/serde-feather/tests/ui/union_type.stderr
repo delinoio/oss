@@ -1,0 +1,5 @@
+error: FeatherDeserialize only supports structs or enums in this MVP
+ --> tests/ui/union_type.rs:4:7
+  |
+4 | union UnsupportedUnion {
+  |       ^^^^^^^^^^^^^^^^
