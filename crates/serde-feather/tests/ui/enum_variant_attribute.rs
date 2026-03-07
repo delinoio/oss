@@ -2,7 +2,7 @@ use serde_feather::FeatherSerialize;
 
 #[derive(FeatherSerialize)]
 enum Shape {
-    #[serde(alias = "circle")]
+    #[serde(skip_serializing)]
     Circle,
 }
 

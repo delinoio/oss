@@ -2,7 +2,7 @@ use serde_feather::FeatherDeserialize;
 
 #[derive(FeatherDeserialize)]
 enum Shape {
-    Circle(#[serde(default)] u8),
+    Pair(#[serde(rename = "left")] u8, u8),
 }
 
 fn main() {}
