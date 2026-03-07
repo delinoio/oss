@@ -293,3 +293,46 @@ func TestGetTaskStateDetectsCorruption(t *testing.T) {
 		t.Fatalf("expected CorruptionError, got=%T err=%v", err, err)
 	}
 }
+
+func TestGetTaskStateRejectsTrailingMetadataTokens(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "cache", "cache.sqlite3")
+	store, err := Open(databasePath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	if err := store.UpsertTask(TaskRecord{
+		TaskKey:                 "task-key-1",
+		Module:                  "build",
+		TaskID:                  "Build",
+		InputContentHash:        "input-content-hash",
+		ParameterHash:           "parameter-hash",
+		EnvironmentSnapshotHash: "environment-hash",
+		InputFingerprint:        "input-hash",
+		Deps:                    []string{"dep-a"},
+		Metadata:                map[string]any{"module": "build"},
+		UpdatedAt:               time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("upsert task: %v", err)
+	}
+
+	if _, err := store.db.Exec(`UPDATE task_cache SET metadata = '{"module":"build"} garbage' WHERE module = 'build' AND task_id = 'Build'`); err != nil {
+		t.Fatalf("inject trailing metadata tokens: %v", err)
+	}
+
+	_, found, err := store.GetTaskState("build", "Build")
+	if !found {
+		t.Fatal("expected corrupted state row to exist")
+	}
+	if err == nil {
+		t.Fatal("expected corruption error")
+	}
+	var corruptionErr *CorruptionError
+	if !errors.As(err, &corruptionErr) {
+		t.Fatalf("expected CorruptionError, got=%T err=%v", err, err)
+	}
+	if corruptionErr.Field != "metadata" {
+		t.Fatalf("expected metadata corruption field, got=%s", corruptionErr.Field)
+	}
+}

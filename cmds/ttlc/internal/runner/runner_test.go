@@ -144,6 +144,55 @@ task func Build(target string) Vc[Artifact] {
 	}
 }
 
+func TestExecuteHashBuiltinDisambiguatesArgumentBoundaries(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Digest string
+}
+
+task func Build(left string, right string) Vc[Artifact] {
+    return vc(Artifact{Digest: hash(left, right)})
+}
+`)
+
+	runDigest := func(left string, right string) string {
+		t.Helper()
+
+		program, err := BuildProgram(module, "Build", map[string]any{
+			"left":  left,
+			"right": right,
+		})
+		if err != nil {
+			t.Fatalf("build program: %v", err)
+		}
+		source, err := GenerateGoSource(program)
+		if err != nil {
+			t.Fatalf("generate source: %v", err)
+		}
+		result, err := Execute(context.Background(), t.TempDir(), source)
+		if err != nil {
+			t.Fatalf("execute runner: %v", err)
+		}
+
+		resultObject, ok := result.Result.(map[string]any)
+		if !ok {
+			t.Fatalf("expected object result, got=%T", result.Result)
+		}
+		digest, ok := resultObject["Digest"].(string)
+		if !ok {
+			t.Fatalf("expected Digest string, got=%T", resultObject["Digest"])
+		}
+		return digest
+	}
+
+	leftDigest := runDigest("a|b", "c")
+	rightDigest := runDigest("a", "b|c")
+	if leftDigest == rightDigest {
+		t.Fatalf("expected distinct hash outputs for different argument boundaries, digest=%s", leftDigest)
+	}
+}
+
 func TestExecutePreservesLargeIntegerJSONNumber(t *testing.T) {
 	module := parseModuleForTest(t, `package build
 

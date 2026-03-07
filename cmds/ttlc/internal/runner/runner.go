@@ -404,16 +404,18 @@ func (e *evaluator) evalCall(scope map[string]any, expression expression) (any, 
 		}
 		return e.evalExpression(scope, expression.Args[0])
 	case "hash":
-		parts := make([]string, 0, len(expression.Args))
+		payloadBuilder := strings.Builder{}
 		for _, argument := range expression.Args {
 			value, err := e.evalExpression(scope, argument)
 			if err != nil {
 				return nil, err
 			}
-			parts = append(parts, stableValueString(value))
+			encodedArgument := stableValueString(value)
+			payloadBuilder.WriteString(fmt.Sprintf("%%d:", len(encodedArgument)))
+			payloadBuilder.WriteString(encodedArgument)
+			payloadBuilder.WriteString(";")
 		}
-		payload := strings.Join(parts, "|")
-		sum := sha256.Sum256([]byte(payload))
+		sum := sha256.Sum256([]byte(payloadBuilder.String()))
 		return hex.EncodeToString(sum[:]), nil
 	case "print":
 		values := make([]any, 0, len(expression.Args))

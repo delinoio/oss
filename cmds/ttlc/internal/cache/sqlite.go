@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -184,6 +185,15 @@ func (s *Store) GetTaskState(module string, taskID string) (TaskState, bool, err
 			TaskID: taskID,
 			Field:  "metadata",
 			Err:    decodeErr,
+		}
+	}
+	trailing := struct{}{}
+	if decodeErr := metadataDecoder.Decode(&trailing); decodeErr != io.EOF {
+		return TaskState{}, true, &CorruptionError{
+			Module: module,
+			TaskID: taskID,
+			Field:  "metadata",
+			Err:    errors.New("invalid trailing tokens"),
 		}
 	}
 
