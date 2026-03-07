@@ -6,6 +6,7 @@ const (
 	TtlCommandBuild   TtlCommand = "build"
 	TtlCommandCheck   TtlCommand = "check"
 	TtlCommandExplain TtlCommand = "explain"
+	TtlCommandRun     TtlCommand = "run"
 )
 
 type TtlSchemaVersion string
@@ -76,4 +77,5 @@ const (
 	CompileStageGraph     CompileStage = "graph"
 	CompileStageEmit      CompileStage = "emit"
 	CompileStageCache     CompileStage = "cache"
+	CompileStageRun       CompileStage = "run"
 )

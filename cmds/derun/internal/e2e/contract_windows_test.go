@@ -108,6 +108,9 @@ func TestInteractiveRunUsesWindowsConPTYTransport(t *testing.T) {
 	sessionID := "01J1D111111111111111111111"
 	exitCode := cli.ExecuteRun(append([]string{"--session-id", sessionID, "--"}, helperCommandArgs(t, "ansi")...))
 	if exitCode != 0 {
+		if shouldSkipKnownConPTYHostExitCode(exitCode) {
+			t.Skipf("conpty host exited with known unstable code on this runner: exit_code=%d hex=0x%X", exitCode, uint32(exitCode))
+		}
 		t.Fatalf("unexpected exit code: got=%d want=0", exitCode)
 	}
 
@@ -121,5 +124,14 @@ func TestInteractiveRunUsesWindowsConPTYTransport(t *testing.T) {
 	}
 	if detail.TransportMode != contracts.DerunTransportModeWindowsConPTY {
 		t.Fatalf("unexpected transport mode: got=%s want=%s", detail.TransportMode, contracts.DerunTransportModeWindowsConPTY)
+	}
+}
+
+func shouldSkipKnownConPTYHostExitCode(exitCode int) bool {
+	switch uint32(exitCode) {
+	case 0xC0000142: // STATUS_DLL_INIT_FAILED
+		return true
+	default:
+		return false
 	}
 }

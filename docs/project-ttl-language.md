@@ -11,7 +11,7 @@ The design target is Go-like syntax plus ergonomic TurboTasks-style core types (
 ## Runtime and Language
 - Language surface: TTL (`.ttl`)
 - v1 compiler backend: generated Go source
-- v1 execution/caching backend: metadata-only SQLite cache (runtime execution is deferred)
+- v1 execution/caching backend: generated Go runner execution + SQLite metadata cache
 
 ## Users
 - Engineers authoring build/task pipelines in `.ttl`
@@ -45,6 +45,7 @@ Compilation flow:
 3. Build dependency edges from `read(vc)` and task calls.
 4. Derive task/cache fingerprints.
 5. Emit Go source that invokes runtime task APIs.
+6. For `ttlc run`, generate/execute runner Go code for supported subset expressions.
 
 ## Interfaces
 Canonical type and command identifiers:
@@ -62,6 +63,7 @@ enum TtlCommand {
   Build = "build",
   Check = "check",
   Explain = "explain",
+  Run = "run",
 }
 
 enum TtlSchemaVersion {
@@ -141,6 +143,7 @@ Invalidation contract:
 1. Input content hash
 2. Parameter hash
 3. Environment snapshot hash
+- For `run`, parameter hash includes task signature and canonicalized `--args` JSON object payload.
 - Reuse occurs only when full fingerprint matches.
 - Any component mismatch triggers recomputation.
 - Phase 1 default: `environment_snapshot_hash = hash("")`.
@@ -148,7 +151,8 @@ Invalidation contract:
 Parallel execution contract:
 - Scheduler may execute tasks concurrently when no unresolved dependency edge exists.
 - Execution order is deterministic with respect to dependency constraints, not submission order.
-- Phase 1 status: runtime scheduler is not yet active; only dependency graph diagnostics and metadata persistence are implemented.
+- Phase 2 status: `ttlc run` executes task graphs through generated Go runner code with deterministic dependency evaluation.
+- Current cache reuse scope for `run`: only the selected root task result is persisted/reused.
 
 Explain output contract (Phase 1 default JSON envelope):
 - Top-level envelope fields: `schema_version`, `command`, `status`, `diagnostics`, `data`
@@ -162,6 +166,31 @@ Explain output contract (Phase 1 default JSON envelope):
 - `data.cache_analysis` (`task_id`, `cache_key`, `cache_hit`, `invalidation_reason`)
 - Runtime failures in command execution still return the same envelope shape with `status=failed` and diagnostics.
 - If cache store open/read fails during `explain`, semantic analysis output is still returned and `data.cache_analysis` is an empty array.
+
+Run output contract (Phase 2 default JSON envelope):
+- Top-level envelope fields: `schema_version`, `command`, `status`, `diagnostics`, `data`
+- `schema_version` is `v1alpha1`
+- `command` is `run`
+- `status` is `ok|failed`
+- `data.entry`
+- `data.module`
+- `data.task`
+- `data.args` (JSON object)
+- `data.result` (selected task value)
+- `data.run_trace` (actual executed task order)
+- `data.cache_analysis` (single root-task row with `task_id`, `cache_key`, `cache_hit`, `invalidation_reason`)
+- `--task` is required for `run`.
+- `--args` must be a JSON object, and parameter type mismatches return `type_error` diagnostics.
+- Integer parameters reject fractional numeric values.
+- Integer parameters enforce width/range bounds (for example `int8`, `uint8`).
+- Structured parameters must match declared object shape and field types.
+- `run` cache state is maintained separately from `build`/`explain` semantic cache rows.
+
+Generated runner subset contract (Phase 2):
+- Supported statements: assignment (`:=`, `=`), expression statement, `return`.
+- Supported expressions: identifier, string literal, number literal, call, selector, composite literal.
+- Built-ins: `vc(...)`, `read(...)`, `hash(...)`, `print(...)`.
+- Unsupported expression forms (for example binary operators) are out of runtime subset scope in this phase.
 
 ## Storage
 Cache backend is fixed to SQLite in v1.

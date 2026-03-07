@@ -40,7 +40,7 @@ Primary boundaries:
 - Middle: typed IR and dependency graph builder.
 - Backend: Go emitter that lowers typed IR to generated Go source.
 - Runtime: scheduler, cache adapter, invalidation evaluator, and execution workers.
-- CLI: user-facing commands for build/check/explain workflows.
+- CLI: user-facing commands for build/check/explain/run workflows.
 
 Phase 1 flow:
 1. Parse `.ttl` files and type-check task/module declarations.
@@ -48,6 +48,12 @@ Phase 1 flow:
 3. Emit generated Go source into `.ttl/gen`.
 4. Persist task metadata rows in SQLite cache schema.
 5. Expose dependency and fingerprint details through `ttlc explain`.
+
+Phase 2 run flow:
+1. Reuse semantic analysis and fingerprint derivation.
+2. Select a root task from `--task` and validate `--args` JSON object.
+3. Generate and execute a Go runner for the supported TTL subset.
+4. Return `result` + `run_trace` and persist root-task run metadata in SQLite cache.
 
 ## Interfaces
 Canonical project and runtime identifiers:
@@ -69,6 +75,7 @@ enum TtlCommand {
   Build = "build",
   Check = "check",
   Explain = "explain",
+  Run = "run",
 }
 
 enum TtlSchemaVersion {
@@ -105,11 +112,15 @@ Canonical CLI command contracts:
 : Parses and type-checks without writing generated runtime artifacts.
 - `ttlc explain [--entry <file.ttl>] [--task <task-name>] [--no-color]`
 : Shows dependency graph, cache-key inputs, and invalidation reasons.
+- `ttlc run [--entry <file.ttl>] --task <task-name> [--args <json>] [--no-color]`
+: Executes the selected task with generated Go runner code and returns `result`, `run_trace`, and root-task `cache_analysis`.
 
 Default flag contract:
 - `--entry`: `./main.ttl`
 - `--out-dir`: `.ttl/gen`
 - `--no-color`: `false` (ANSI color enabled by default for logs)
+- `--task` (`run`): required
+- `--args` (`run`): `{}` (JSON object)
 - Cache DB path: `.ttl/cache/cache.sqlite3`
 
 Canonical CLI JSON response envelope:
@@ -117,7 +128,7 @@ Canonical CLI JSON response envelope:
 ```json
 {
   "schema_version": "v1alpha1",
-  "command": "build|check|explain",
+  "command": "build|check|explain|run",
   "status": "ok|failed",
   "diagnostics": [],
   "data": {}
@@ -128,9 +139,14 @@ Canonical CLI JSON response envelope:
 - Command-level runtime failures (for example path resolution or missing entry file errors) must still emit this envelope on stdout with `status=failed`.
 - `explain.data` includes per-task `cache_analysis` rows with `task_id`, `cache_key`, `cache_hit`, and `invalidation_reason`.
 - When cache initialization/read is unavailable during `explain`, the command still returns semantic explain output with `cache_analysis=[]`.
+- `run.data` includes `entry`, `module`, `task`, `args`, `result`, `run_trace`, and root-task `cache_analysis`.
+- `run` cache policy in this phase stores persistent results only for the selected root task.
+- `run` argument validation rejects fractional values for integer parameters and enforces structured parameter object shapes.
+- `run` cache rows are isolated from `build`/`explain` task-state rows to avoid cross-command invalidation drift.
 
 Cache-key contract (v1):
 - `cache_key = hash(input_content_hash + parameter_hash + environment_snapshot_hash)`
+- For `run`, `parameter_hash` includes task signature and canonicalized `--args` payload.
 - Cache hit requires exact key equality.
 - Cache mismatch triggers recomputation and cache overwrite.
 - Phase 1 uses `environment_snapshot_hash = hash("")` as an explicit baseline default.
@@ -183,7 +199,7 @@ Logging baseline:
 - CLI logs are ANSI-colorized by default and support `--no-color` opt-out.
 
 ## Build and Test
-Phase 1 implementation validation commands:
+Phase 1/2 implementation validation commands:
 - Build: `go build ./cmds/ttlc/...`
 - Test: `go test ./cmds/ttlc/...`
 - Workspace sanity: `go test ./...`

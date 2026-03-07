@@ -3,7 +3,9 @@ package compiler
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -302,6 +304,749 @@ task func Build(target string) Vc[Artifact] {
 		}
 		if len(result.CacheAnalysis) != 0 {
 			t.Fatalf("expected empty cache analysis when cache is unavailable, got=%+v", result.CacheAnalysis)
+		}
+	})
+}
+
+func TestRunCachesRootTask(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+    Digest string
+}
+
+task func ResolveSource(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target, Digest: "seed"})
+}
+
+task func Build(target string) Vc[Artifact] {
+    src := read(ResolveSource(target))
+    digest := hash(src.Path, src.Digest)
+    return vc(Artifact{Path: src.Path, Digest: digest})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+
+		firstRun, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"target": "web",
+			},
+		})
+		if err != nil {
+			t.Fatalf("first run returned error: %v", err)
+		}
+		if len(firstRun.Diagnostics) != 0 {
+			t.Fatalf("expected no diagnostics for first run, got=%+v", firstRun.Diagnostics)
+		}
+		if len(firstRun.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", firstRun.CacheAnalysis)
+		}
+		if firstRun.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonCacheMiss {
+			t.Fatalf("expected first run cache miss, got=%s", firstRun.CacheAnalysis[0].InvalidationReason)
+		}
+		if firstRun.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected first run cache miss state, got=%+v", firstRun.CacheAnalysis[0])
+		}
+		if len(firstRun.RunTrace) != 2 || firstRun.RunTrace[0] != "Build" || firstRun.RunTrace[1] != "ResolveSource" {
+			t.Fatalf("unexpected first run trace: %+v", firstRun.RunTrace)
+		}
+		firstRunResultObject, ok := firstRun.RunResult.(map[string]any)
+		if !ok {
+			t.Fatalf("expected first run result object, got=%T", firstRun.RunResult)
+		}
+		if firstRunResultObject["Path"] != "web" {
+			t.Fatalf("unexpected first run result path: %#v", firstRunResultObject["Path"])
+		}
+
+		secondRun, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"target": "web",
+			},
+		})
+		if err != nil {
+			t.Fatalf("second run returned error: %v", err)
+		}
+		if len(secondRun.Diagnostics) != 0 {
+			t.Fatalf("expected no diagnostics for second run, got=%+v", secondRun.Diagnostics)
+		}
+		if len(secondRun.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", secondRun.CacheAnalysis)
+		}
+		if secondRun.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonNone {
+			t.Fatalf("expected second run cache hit, got=%s", secondRun.CacheAnalysis[0].InvalidationReason)
+		}
+		if !secondRun.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected second run cache hit state, got=%+v", secondRun.CacheAnalysis[0])
+		}
+		if len(secondRun.RunTrace) != 2 || secondRun.RunTrace[0] != "Build" || secondRun.RunTrace[1] != "ResolveSource" {
+			t.Fatalf("unexpected second run trace: %+v", secondRun.RunTrace)
+		}
+		secondRunResultObject, ok := secondRun.RunResult.(map[string]any)
+		if !ok {
+			t.Fatalf("expected second run result object, got=%T", secondRun.RunResult)
+		}
+		if secondRunResultObject["Path"] != "web" {
+			t.Fatalf("unexpected second run result path: %#v", secondRunResultObject["Path"])
+		}
+	})
+}
+
+func TestRunCacheHitPreservesLargeIntegerJSONNumber(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Count int64
+}
+
+task func Build(count int64) Vc[Artifact] {
+    return vc(Artifact{Count: count})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	expectCountNumber := func(value any) {
+		t.Helper()
+		resultObject, ok := value.(map[string]any)
+		if !ok {
+			t.Fatalf("expected run result object, got=%T", value)
+		}
+
+		rawCount, ok := resultObject["Count"]
+		if !ok {
+			t.Fatalf("missing Count field: %#v", resultObject)
+		}
+		preciseCount, ok := rawCount.(json.Number)
+		if !ok {
+			t.Fatalf("expected Count as json.Number, got=%T value=%#v", rawCount, rawCount)
+		}
+		if preciseCount.String() != "9007199254740993" {
+			t.Fatalf("unexpected Count value: %s", preciseCount.String())
+		}
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+
+		firstRun, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"count": json.Number("9007199254740993"),
+			},
+		})
+		if err != nil {
+			t.Fatalf("first run returned error: %v", err)
+		}
+		if len(firstRun.Diagnostics) != 0 {
+			t.Fatalf("unexpected diagnostics for first run: %+v", firstRun.Diagnostics)
+		}
+		if len(firstRun.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", firstRun.CacheAnalysis)
+		}
+		if firstRun.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonCacheMiss {
+			t.Fatalf("expected first run cache miss, got=%s", firstRun.CacheAnalysis[0].InvalidationReason)
+		}
+		expectCountNumber(firstRun.RunResult)
+
+		secondRun, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"count": json.Number("9007199254740993"),
+			},
+		})
+		if err != nil {
+			t.Fatalf("second run returned error: %v", err)
+		}
+		if len(secondRun.Diagnostics) != 0 {
+			t.Fatalf("unexpected diagnostics for second run: %+v", secondRun.Diagnostics)
+		}
+		if len(secondRun.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", secondRun.CacheAnalysis)
+		}
+		if secondRun.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonNone {
+			t.Fatalf("expected second run cache hit, got=%s", secondRun.CacheAnalysis[0].InvalidationReason)
+		}
+		if !secondRun.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected cache hit for second run, got=%+v", secondRun.CacheAnalysis[0])
+		}
+		expectCountNumber(secondRun.RunResult)
+	})
+}
+
+func TestRunReportsTaskNotFound(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "MissingTask",
+			Args:  map[string]any{},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+		foundTaskNotFound := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "task not found: MissingTask" {
+				foundTaskNotFound = true
+				break
+			}
+		}
+		if !foundTaskNotFound {
+			t.Fatalf("expected task not found diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
+func TestRunReportsArgumentTypeMismatch(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"target": 10,
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+		foundTypeMismatch := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "invalid run argument type: target expects string" {
+				foundTypeMismatch = true
+				break
+			}
+		}
+		if !foundTypeMismatch {
+			t.Fatalf("expected type mismatch diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
+func TestRunInvalidatesCacheWhenArgsChange(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+
+		firstRun, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"target": "web",
+			},
+		})
+		if err != nil {
+			t.Fatalf("first run returned error: %v", err)
+		}
+		if len(firstRun.Diagnostics) != 0 {
+			t.Fatalf("unexpected diagnostics for first run: %+v", firstRun.Diagnostics)
+		}
+		if len(firstRun.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", firstRun.CacheAnalysis)
+		}
+		if firstRun.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonCacheMiss {
+			t.Fatalf("expected first run cache miss, got=%s", firstRun.CacheAnalysis[0].InvalidationReason)
+		}
+
+		secondRun, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"target": "mobile",
+			},
+		})
+		if err != nil {
+			t.Fatalf("second run returned error: %v", err)
+		}
+		if len(secondRun.Diagnostics) != 0 {
+			t.Fatalf("unexpected diagnostics for second run: %+v", secondRun.Diagnostics)
+		}
+		if len(secondRun.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", secondRun.CacheAnalysis)
+		}
+		if secondRun.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonParameterChanged {
+			t.Fatalf("expected parameter_changed on second run, got=%s", secondRun.CacheAnalysis[0].InvalidationReason)
+		}
+		if secondRun.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected cache miss on changed args, got=%+v", secondRun.CacheAnalysis[0])
+		}
+
+		resultObject, ok := secondRun.RunResult.(map[string]any)
+		if !ok {
+			t.Fatalf("expected second run result object, got=%T", secondRun.RunResult)
+		}
+		if resultObject["Path"] != "mobile" {
+			t.Fatalf("expected updated run result for changed args, got=%#v", resultObject["Path"])
+		}
+	})
+}
+
+func TestRunRejectsFractionalIntegerArgument(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Count int
+}
+
+task func Build(count int) Vc[Artifact] {
+    return vc(Artifact{Count: count})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"count": json.Number("1.5"),
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+
+		foundTypeMismatch := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "invalid run argument type: count expects int" {
+				foundTypeMismatch = true
+				break
+			}
+		}
+		if !foundTypeMismatch {
+			t.Fatalf("expected integer type mismatch diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
+func TestRunRejectsQuotedIntegerArgument(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Count int
+}
+
+task func Build(count int) Vc[Artifact] {
+    return vc(Artifact{Count: count})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"count": "1",
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+
+		foundTypeMismatch := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "invalid run argument type: count expects int" {
+				foundTypeMismatch = true
+				break
+			}
+		}
+		if !foundTypeMismatch {
+			t.Fatalf("expected integer type mismatch diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
+func TestRunRejectsOutOfRangeBoundedIntegerArgument(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Count int8
+}
+
+task func Build(count int8) Vc[Artifact] {
+    return vc(Artifact{Count: count})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"count": json.Number("300"),
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+
+		foundTypeMismatch := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "invalid run argument type: count expects int8" {
+				foundTypeMismatch = true
+				break
+			}
+		}
+		if !foundTypeMismatch {
+			t.Fatalf("expected bounded integer type mismatch diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
+func TestRunRejectsNonObjectForStructArgument(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(input Artifact) Vc[Artifact] {
+    return vc(Artifact{Path: input.Path})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"input": "invalid-scalar",
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+
+		foundTypeMismatch := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "invalid run argument type: input expects Artifact" {
+				foundTypeMismatch = true
+				break
+			}
+		}
+		if !foundTypeMismatch {
+			t.Fatalf("expected struct type mismatch diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
+func TestRunRejectsInvalidNestedFieldForRecursiveStructArgument(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Node struct {
+    Name string
+    Next Node
+}
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(input Node) Vc[Artifact] {
+    return vc(Artifact{Path: input.Next.Name})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"input": map[string]any{
+					"Name": "root",
+					"Next": map[string]any{
+						"Name": json.Number("10"),
+						"Next": map[string]any{
+							"Name": "leaf",
+							"Next": map[string]any{},
+						},
+					},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+
+		foundTypeMismatch := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "invalid run argument type: input expects Node" {
+				foundTypeMismatch = true
+				break
+			}
+		}
+		if !foundTypeMismatch {
+			t.Fatalf("expected recursive struct type mismatch diagnostic, got=%+v", result.Diagnostics)
+		}
+		if len(result.RunTrace) != 0 {
+			t.Fatalf("expected run trace to remain empty when validation fails, got=%+v", result.RunTrace)
+		}
+	})
+}
+
+func TestRunRejectsOutOfRangeFloat32Argument(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Value float32
+}
+
+task func Build(value float32) Vc[Artifact] {
+    return vc(Artifact{Value: value})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"value": json.Number("3.5e38"),
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+
+		foundTypeMismatch := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "invalid run argument type: value expects float32" {
+				foundTypeMismatch = true
+				break
+			}
+		}
+		if !foundTypeMismatch {
+			t.Fatalf("expected float32 type mismatch diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
+func TestRunRejectsNonRepresentableIntegerForFloat32Argument(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Value float32
+}
+
+task func Build(value float32) Vc[Artifact] {
+    return vc(Artifact{Value: value})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"value": int64(math.MaxInt64),
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+
+		foundTypeMismatch := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "invalid run argument type: value expects float32" {
+				foundTypeMismatch = true
+				break
+			}
+		}
+		if !foundTypeMismatch {
+			t.Fatalf("expected float32 type mismatch diagnostic for non-representable integer, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
+func TestRunCacheDoesNotMutateBuildOrExplainState(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+
+		buildResult, err := service.Build(context.Background(), BuildOptions{Entry: "./main.ttl", OutDir: "./out"})
+		if err != nil {
+			t.Fatalf("build returned error: %v", err)
+		}
+		if len(buildResult.Diagnostics) != 0 {
+			t.Fatalf("unexpected build diagnostics: %+v", buildResult.Diagnostics)
+		}
+
+		runResult, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"target": "web",
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+		if len(runResult.Diagnostics) != 0 {
+			t.Fatalf("unexpected run diagnostics: %+v", runResult.Diagnostics)
+		}
+
+		explainResult, err := service.Explain(context.Background(), ExplainOptions{Entry: "./main.ttl", Task: "Build"})
+		if err != nil {
+			t.Fatalf("explain returned error: %v", err)
+		}
+		if len(explainResult.Diagnostics) != 0 {
+			t.Fatalf("unexpected explain diagnostics: %+v", explainResult.Diagnostics)
+		}
+		if len(explainResult.CacheAnalysis) != 1 {
+			t.Fatalf("expected one explain cache row, got=%+v", explainResult.CacheAnalysis)
+		}
+		if explainResult.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonNone {
+			t.Fatalf("expected explain cache state to remain stable, got=%s", explainResult.CacheAnalysis[0].InvalidationReason)
+		}
+		if !explainResult.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected explain cache hit, got=%+v", explainResult.CacheAnalysis[0])
 		}
 	})
 }
