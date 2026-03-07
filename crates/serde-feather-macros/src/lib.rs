@@ -36,6 +36,7 @@ pub fn derive_feather_deserialize(input: TokenStream) -> TokenStream {
 }
 
 #[derive(Clone, Copy)]
+#[allow(clippy::enum_variant_names)]
 enum RenameRule {
     LowerCase,
     UpperCase,
@@ -639,6 +640,7 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn expand_deserialize_struct(
     struct_ident: &Ident,
     container_generics: &Generics,
@@ -734,6 +736,7 @@ fn expand_deserialize_struct(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn expand_deserialize_tuple_struct(
     struct_ident: &Ident,
     container_generics: &Generics,
@@ -913,6 +916,7 @@ fn expand_deserialize_tuple_struct(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn expand_deserialize_named_struct(
     struct_ident: &Ident,
     container_generics: &Generics,
@@ -1181,6 +1185,7 @@ fn expand_deserialize_named_struct(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn expand_deserialize_enum(
     enum_ident: &Ident,
     container_generics: &Generics,
@@ -1255,7 +1260,6 @@ fn expand_deserialize_enum(
         .iter()
         .enumerate()
         .map(|(variant_index, variant)| {
-            let variant_index = variant_index as usize;
             let variant_ident = &variant.ident;
             let variant_name = &variant.serialized_name;
 
