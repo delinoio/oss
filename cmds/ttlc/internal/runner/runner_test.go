@@ -144,6 +144,53 @@ task func Build(target string) Vc[Artifact] {
 	}
 }
 
+func TestExecutePrefersTaskCallOverBuiltinName(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func hash(input string) Vc[Artifact] {
+    return vc(Artifact{Path: input})
+}
+
+task func Build(target string) Vc[Artifact] {
+    return hash(target)
+}
+`)
+
+	program, err := BuildProgram(module, "Build", map[string]any{"target": "web"})
+	if err != nil {
+		t.Fatalf("build program: %v", err)
+	}
+
+	source, err := GenerateGoSource(program)
+	if err != nil {
+		t.Fatalf("generate source: %v", err)
+	}
+
+	result, err := Execute(context.Background(), t.TempDir(), source)
+	if err != nil {
+		t.Fatalf("execute runner: %v", err)
+	}
+
+	if len(result.ExecutedTasks) != 2 {
+		t.Fatalf("expected task call trace, got=%+v", result.ExecutedTasks)
+	}
+	if result.ExecutedTasks[0] != "Build" || result.ExecutedTasks[1] != "hash" {
+		t.Fatalf("expected Build -> hash trace, got=%+v", result.ExecutedTasks)
+	}
+
+	resultObject, ok := result.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected task result object, got=%T value=%#v", result.Result, result.Result)
+	}
+	if resultObject["Path"] != "web" {
+		t.Fatalf("unexpected task result path: %#v", resultObject["Path"])
+	}
+}
+
 func TestExecuteHashBuiltinDisambiguatesArgumentBoundaries(t *testing.T) {
 	module := parseModuleForTest(t, `package build
 

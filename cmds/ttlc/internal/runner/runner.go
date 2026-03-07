@@ -392,6 +392,21 @@ func (e *evaluator) evalCall(scope map[string]any, expression expression) (any, 
 		return nil, fmt.Errorf("unsupported call target kind: %%s", expression.Callee.Kind)
 	}
 	name := expression.Callee.Name
+	if task, exists := e.tasks[name]; exists {
+		callArgs := make([]any, 0, len(expression.Args))
+		for _, argument := range expression.Args {
+			value, err := e.evalExpression(scope, argument)
+			if err != nil {
+				return nil, err
+			}
+			callArgs = append(callArgs, value)
+		}
+		if len(callArgs) != len(task.Params) {
+			return nil, fmt.Errorf("task %%s argument count mismatch: got=%%d want=%%d", name, len(callArgs), len(task.Params))
+		}
+		return e.executeTask(name, callArgs)
+	}
+
 	switch name {
 	case "vc":
 		if len(expression.Args) != 1 {
@@ -429,22 +444,7 @@ func (e *evaluator) evalCall(scope map[string]any, expression expression) (any, 
 		_, _ = fmt.Fprintln(os.Stderr, values...)
 		return nil, nil
 	default:
-		task, exists := e.tasks[name]
-		if !exists {
-			return nil, fmt.Errorf("unsupported function call: %%s", name)
-		}
-		callArgs := make([]any, 0, len(expression.Args))
-		for _, argument := range expression.Args {
-			value, err := e.evalExpression(scope, argument)
-			if err != nil {
-				return nil, err
-			}
-			callArgs = append(callArgs, value)
-		}
-		if len(callArgs) != len(task.Params) {
-			return nil, fmt.Errorf("task %%s argument count mismatch: got=%%d want=%%d", name, len(callArgs), len(task.Params))
-		}
-		return e.executeTask(name, callArgs)
+		return nil, fmt.Errorf("unsupported function call: %%s", name)
 	}
 }
 

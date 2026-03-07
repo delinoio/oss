@@ -834,6 +834,69 @@ task func Build(input Artifact) Vc[Artifact] {
 	})
 }
 
+func TestRunRejectsInvalidNestedFieldForRecursiveStructArgument(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Node struct {
+    Name string
+    Next Node
+}
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(input Node) Vc[Artifact] {
+    return vc(Artifact{Path: input.Next.Name})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"input": map[string]any{
+					"Name": "root",
+					"Next": map[string]any{
+						"Name": json.Number("10"),
+						"Next": map[string]any{
+							"Name": "leaf",
+							"Next": map[string]any{},
+						},
+					},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+
+		foundTypeMismatch := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "invalid run argument type: input expects Node" {
+				foundTypeMismatch = true
+				break
+			}
+		}
+		if !foundTypeMismatch {
+			t.Fatalf("expected recursive struct type mismatch diagnostic, got=%+v", result.Diagnostics)
+		}
+		if len(result.RunTrace) != 0 {
+			t.Fatalf("expected run trace to remain empty when validation fails, got=%+v", result.RunTrace)
+		}
+	})
+}
+
 func TestRunRejectsOutOfRangeFloat32Argument(t *testing.T) {
 	workspace := t.TempDir()
 	entryPath := filepath.Join(workspace, "main.ttl")

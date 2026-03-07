@@ -742,7 +742,7 @@ func validateRunArgs(parameters []sema.TaskParam, args map[string]any, typeDecla
 			})
 			continue
 		}
-		if !runArgumentTypeMatches(parameter.Type, value, typeDeclarationsByName, map[string]bool{}) {
+		if !runArgumentTypeMatches(parameter.Type, value, typeDeclarationsByName, 0) {
 			diagnostics = append(diagnostics, diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindTypeError,
 				Message: fmt.Sprintf("invalid run argument type: %s expects %s", parameter.Name, parameter.Type),
@@ -771,7 +771,13 @@ func validateRunArgs(parameters []sema.TaskParam, args map[string]any, typeDecla
 	return diagnostics
 }
 
-func runArgumentTypeMatches(expectedType string, value any, typeDeclarationsByName map[string]sema.TypeDecl, visitedTypes map[string]bool) bool {
+const maxRunArgumentValidationDepth = 128
+
+func runArgumentTypeMatches(expectedType string, value any, typeDeclarationsByName map[string]sema.TypeDecl, depth int) bool {
+	if depth > maxRunArgumentValidationDepth {
+		return false
+	}
+
 	normalizedType := strings.TrimSpace(expectedType)
 	switch normalizedType {
 	case "string":
@@ -798,11 +804,6 @@ func runArgumentTypeMatches(expectedType string, value any, typeDeclarationsByNa
 		if !ok {
 			return false
 		}
-		if visitedTypes[typeName] {
-			return true
-		}
-		visitedTypes[typeName] = true
-		defer delete(visitedTypes, typeName)
 
 		seenFields := make(map[string]struct{}, len(objectValue))
 		for fieldName := range objectValue {
@@ -815,7 +816,7 @@ func runArgumentTypeMatches(expectedType string, value any, typeDeclarationsByNa
 				return false
 			}
 			delete(seenFields, field.Name)
-			if !runArgumentTypeMatches(field.Type, fieldValue, typeDeclarationsByName, visitedTypes) {
+			if !runArgumentTypeMatches(field.Type, fieldValue, typeDeclarationsByName, depth+1) {
 				return false
 			}
 		}
