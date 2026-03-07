@@ -57,6 +57,20 @@ struct RawIdentifierModel {
     r#type: u8,
 }
 
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+enum EnumModel {
+    Unit,
+    #[serde(rename = "payload")]
+    Newtype(u8),
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+#[serde(rename = "renamed_enum")]
+enum RenamedEnumModel {
+    Unit,
+    Newtype(u16),
+}
+
 #[test]
 fn round_trip_without_attributes() {
     let value = BasicModel {
@@ -196,4 +210,55 @@ fn normalizes_raw_identifier_field_names() {
     let decoded: RawIdentifierModel =
         serde_json::from_str(r#"{"type":8}"#).expect("deserialize raw identifier field");
     assert_eq!(decoded, RawIdentifierModel { r#type: 8 });
+}
+
+#[test]
+fn round_trip_enum_variants() {
+    let unit_encoded = serde_json::to_string(&EnumModel::Unit).expect("serialize unit variant");
+    assert_eq!(unit_encoded, r#""Unit""#);
+
+    let newtype_encoded =
+        serde_json::to_string(&EnumModel::Newtype(9)).expect("serialize newtype variant");
+    assert_eq!(newtype_encoded, r#"{"payload":9}"#);
+
+    let decoded_unit: EnumModel =
+        serde_json::from_str(r#""Unit""#).expect("deserialize unit variant");
+    assert_eq!(decoded_unit, EnumModel::Unit);
+
+    let decoded_newtype: EnumModel =
+        serde_json::from_str(r#"{"payload":9}"#).expect("deserialize newtype variant");
+    assert_eq!(decoded_newtype, EnumModel::Newtype(9));
+}
+
+#[test]
+fn enum_container_rename_changes_variant_tokens() {
+    assert_tokens(
+        &RenamedEnumModel::Unit,
+        &[Token::UnitVariant {
+            name: "renamed_enum",
+            variant: "Unit",
+        }],
+    );
+
+    assert_tokens(
+        &RenamedEnumModel::Newtype(7),
+        &[
+            Token::NewtypeVariant {
+                name: "renamed_enum",
+                variant: "Newtype",
+            },
+            Token::U16(7),
+        ],
+    );
+}
+
+#[test]
+fn rejects_unknown_enum_variant() {
+    let error = serde_json::from_str::<EnumModel>(r#""Missing""#)
+        .expect_err("unknown enum variant should fail");
+    let message = error.to_string();
+    assert!(
+        message.contains("unknown variant"),
+        "unexpected error for unknown variant: {message}"
+    );
 }

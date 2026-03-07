@@ -21,13 +21,18 @@ The current goal is to provide stable MVP derive support while keeping default b
 - Two-crate architecture with explicit runtime/proc-macro boundaries.
 - Stable MVP derive macros: `FeatherSerialize` and `FeatherDeserialize`.
 - Feature contracts for `std` and optional derive integration.
-- Named-struct-only derive support (non-generic).
+- Non-generic derive support for:
+  - Structs with named fields.
+  - Enums with unit variants and newtype variants (exactly one unnamed payload field).
 - Supported `serde(...)` attribute subset:
   - Container: `rename`
-  - Field: `rename`, `default`, `skip`, `skip_serializing`, `skip_deserializing`
+  - Struct field: `rename`, `default`, `skip`, `skip_serializing`, `skip_deserializing`
+  - Enum variant: `rename`
 
 ## Out of Scope
-- Enum, tuple struct, and unit struct derive support.
+- Enum variants with named fields or tuple payloads containing more than one field.
+- Enum payload field-level `serde(...)` attributes.
+- Tuple struct and unit struct derive support.
 - Generic type derive support.
 - Advanced serde attributes (for example `rename_all`, `skip_serializing_if`).
 - no-std derive support in this phase.
@@ -85,13 +90,18 @@ Package and feature contract:
   - `FeatherDeserialize`
 
 MVP derive target and attribute contract:
-- Derive target: non-generic structs with named fields only.
+- Derive target:
+  - Non-generic structs with named fields.
+  - Non-generic enums with unit and newtype variants.
 - Attribute namespace: `serde(...)` only.
+- Enum encoding/decoding uses serde default externally tagged representation.
 - Unknown input fields during deserialization must be ignored.
 - Struct deserialization must support both map and sequence struct encodings.
 - Sequence decoding must treat `skip_deserializing` fields as omitted positions (no placeholder element is consumed).
+- Unknown enum variants must fail with deterministic `unknown_variant` errors.
 - Overlapping `skip`, `skip_serializing`, and `skip_deserializing` combinations must be rejected deterministically.
 - Effective wire field names must be unique in both serialization and deserialization field sets.
+- Effective wire enum variant names must be unique.
 - Default wire field names must strip Rust raw identifier prefixes (for example `r#type` -> `type`).
 - Unsupported shapes and unsupported `serde(...)` attributes must fail with compile-time errors at attribute/type span.
 
@@ -120,11 +130,11 @@ Validation commands for MVP derive phase:
 - Phase 1: Document-first skeleton with workspace wiring and minimal feature contracts. (completed)
 - Phase 2: Derive macro API design and stabilization plan. (completed)
 - Phase 3: MVP derive implementation for named structs with compatibility tests. (completed)
-- Phase 4: Expand type and attribute coverage (enums, generics, advanced serde attributes).
+- Phase 4: Expand remaining type and attribute coverage (additional enum forms, generics, advanced serde attributes).
 - Phase 5: Evaluate publish readiness and lift `publish = false` when contracts are stable.
 
 ## Open Questions
-- Which enum and tuple-struct derive semantics should be prioritized next.
+- Which additional enum forms and tuple-struct derive semantics should be prioritized next.
 - Whether no-std + alloc derive support should be introduced after std-first MVP.
 - Which additional serde attributes should be added without bloating generated code size.
 

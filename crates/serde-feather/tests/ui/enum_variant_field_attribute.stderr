@@ -1,0 +1,5 @@
+error: unsupported serde field attribute on enum variant payload; field attributes are not supported for enum payloads
+ --> tests/ui/enum_variant_field_attribute.rs:5:12
+  |
+5 |     Circle(#[serde(default)] u8),
+  |            ^^^^^^^^^^^^^^^^^

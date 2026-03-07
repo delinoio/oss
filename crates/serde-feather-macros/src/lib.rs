@@ -35,6 +35,10 @@ struct ContainerAttrOptions {
     rename: Option<LitStr>,
 }
 
+struct VariantAttrOptions {
+    rename: Option<LitStr>,
+}
+
 #[derive(Default)]
 struct FieldAttrOptions {
     rename: Option<LitStr>,
@@ -56,6 +60,28 @@ struct ParsedStruct {
     ident: Ident,
     struct_name: LitStr,
     fields: Vec<ParsedField>,
+}
+
+struct ParsedEnum {
+    ident: Ident,
+    enum_name: LitStr,
+    variants: Vec<ParsedEnumVariant>,
+}
+
+struct ParsedEnumVariant {
+    ident: Ident,
+    serialized_name: LitStr,
+    kind: ParsedEnumVariantKind,
+}
+
+enum ParsedEnumVariantKind {
+    Unit,
+    Newtype { ty: syn::Type },
+}
+
+enum ParsedInput {
+    Struct(ParsedStruct),
+    Enum(ParsedEnum),
 }
 
 #[derive(Clone, Copy)]
@@ -84,6 +110,16 @@ fn expand_serialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let parsed = parse_input(input, "FeatherSerialize")?;
     let crate_path = serde_feather_path();
 
+    match parsed {
+        ParsedInput::Struct(parsed_struct) => expand_serialize_struct(&parsed_struct, &crate_path),
+        ParsedInput::Enum(parsed_enum) => expand_serialize_enum(&parsed_enum, &crate_path),
+    }
+}
+
+fn expand_serialize_struct(
+    parsed: &ParsedStruct,
+    crate_path: &TokenStream2,
+) -> syn::Result<TokenStream2> {
     let included_fields: Vec<&ParsedField> = parsed
         .fields
         .iter()
@@ -127,10 +163,75 @@ fn expand_serialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
     })
 }
 
+fn expand_serialize_enum(
+    parsed: &ParsedEnum,
+    crate_path: &TokenStream2,
+) -> syn::Result<TokenStream2> {
+    let enum_ident = &parsed.ident;
+    let enum_name = &parsed.enum_name;
+
+    let serialize_match_arms = parsed
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(variant_index, variant)| {
+            let variant_index = variant_index as u32;
+            let variant_ident = &variant.ident;
+            let variant_name = &variant.serialized_name;
+            match &variant.kind {
+                ParsedEnumVariantKind::Unit => quote! {
+                    Self::#variant_ident => #crate_path::serde::ser::Serializer::serialize_unit_variant(
+                        serializer,
+                        #enum_name,
+                        #variant_index,
+                        #variant_name,
+                    )
+                },
+                ParsedEnumVariantKind::Newtype { .. } => quote! {
+                    Self::#variant_ident(__feather_value) => #crate_path::serde::ser::Serializer::serialize_newtype_variant(
+                        serializer,
+                        #enum_name,
+                        #variant_index,
+                        #variant_name,
+                        __feather_value,
+                    )
+                },
+            }
+        });
+
+    Ok(quote! {
+        impl #crate_path::serde::ser::Serialize for #enum_ident {
+            fn serialize<S>(
+                &self,
+                serializer: S,
+            ) -> ::core::result::Result<S::Ok, S::Error>
+            where
+                S: #crate_path::serde::ser::Serializer,
+            {
+                match self {
+                    #(#serialize_match_arms,)*
+                }
+            }
+        }
+    })
+}
+
 fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let parsed = parse_input(input, "FeatherDeserialize")?;
     let crate_path = serde_feather_path();
 
+    match parsed {
+        ParsedInput::Struct(parsed_struct) => {
+            expand_deserialize_struct(&parsed_struct, &crate_path)
+        }
+        ParsedInput::Enum(parsed_enum) => expand_deserialize_enum(&parsed_enum, &crate_path),
+    }
+}
+
+fn expand_deserialize_struct(
+    parsed: &ParsedStruct,
+    crate_path: &TokenStream2,
+) -> syn::Result<TokenStream2> {
     struct DeserBinding {
         field_index: usize,
         binding_ident: Ident,
@@ -343,50 +444,159 @@ fn expand_deserialize(input: &DeriveInput) -> syn::Result<TokenStream2> {
     })
 }
 
-fn parse_input(input: &DeriveInput, macro_name: &str) -> syn::Result<ParsedStruct> {
+fn expand_deserialize_enum(
+    parsed: &ParsedEnum,
+    crate_path: &TokenStream2,
+) -> syn::Result<TokenStream2> {
+    let enum_ident = &parsed.ident;
+    let enum_name = &parsed.enum_name;
+    let known_variants: Vec<LitStr> = parsed
+        .variants
+        .iter()
+        .map(|variant| variant.serialized_name.clone())
+        .collect();
+
+    let variant_match_arms = parsed
+        .variants
+        .iter()
+        .enumerate()
+        .map(|(variant_index, variant)| {
+            let variant_ident = &variant.ident;
+            match &variant.kind {
+                ParsedEnumVariantKind::Unit => quote! {
+                    #variant_index => {
+                        #crate_path::serde::de::VariantAccess::unit_variant(variant_access)?;
+                        ::core::result::Result::Ok(#enum_ident::#variant_ident)
+                    }
+                },
+                ParsedEnumVariantKind::Newtype { ty } => quote! {
+                    #variant_index => {
+                        let value = #crate_path::serde::de::VariantAccess::newtype_variant::<#ty>(variant_access)?;
+                        ::core::result::Result::Ok(#enum_ident::#variant_ident(value))
+                    }
+                },
+            }
+        });
+
+    Ok(quote! {
+        impl<'de> #crate_path::serde::de::Deserialize<'de> for #enum_ident {
+            fn deserialize<D>(deserializer: D) -> ::core::result::Result<Self, D::Error>
+            where
+                D: #crate_path::serde::de::Deserializer<'de>,
+            {
+                const __FEATHER_VARIANTS: &[&str] = &[#(#known_variants),*];
+
+                struct __FeatherVisitor;
+
+                impl<'de> #crate_path::serde::de::Visitor<'de> for __FeatherVisitor {
+                    type Value = #enum_ident;
+
+                    fn expecting(
+                        &self,
+                        formatter: &mut ::core::fmt::Formatter<'_>,
+                    ) -> ::core::fmt::Result {
+                        ::core::write!(formatter, "enum {}", #enum_name)
+                    }
+
+                    fn visit_enum<A>(
+                        self,
+                        data: A,
+                    ) -> ::core::result::Result<Self::Value, A::Error>
+                    where
+                        A: #crate_path::serde::de::EnumAccess<'de>,
+                    {
+                        let (variant_key, variant_access) = #crate_path::serde::de::EnumAccess::variant::<#crate_path::__private::OwnedFieldName>(data)?;
+                        match #crate_path::__private::select_field_index(variant_key.as_str(), __FEATHER_VARIANTS) {
+                            ::core::option::Option::Some(index) => match index {
+                                #(#variant_match_arms)*
+                                _ => {
+                                    ::core::unreachable!()
+                                }
+                            },
+                            ::core::option::Option::None => {
+                                ::core::result::Result::Err(
+                                    #crate_path::serde::de::Error::unknown_variant(variant_key.as_str(), __FEATHER_VARIANTS)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                #crate_path::serde::de::Deserializer::deserialize_enum(
+                    deserializer,
+                    #enum_name,
+                    __FEATHER_VARIANTS,
+                    __FeatherVisitor,
+                )
+            }
+        }
+    })
+}
+
+fn parse_input(input: &DeriveInput, macro_name: &str) -> syn::Result<ParsedInput> {
+    let derive_target_kind = match &input.data {
+        Data::Struct(_) => "structs",
+        Data::Enum(_) => "enums",
+        _ => "structs or enums",
+    };
+
     if !input.generics.params.is_empty() || input.generics.where_clause.is_some() {
         return Err(syn::Error::new_spanned(
             &input.generics,
-            format!("{macro_name} only supports non-generic structs in this MVP"),
+            format!("{macro_name} only supports non-generic {derive_target_kind} in this MVP"),
         ));
     }
 
     let container_options = parse_container_attributes(&input.attrs)?;
-    let struct_name = container_options
+    let container_name = container_options
         .rename
         .unwrap_or_else(|| LitStr::new(&input.ident.to_string(), input.ident.span()));
 
-    let named_fields = match &input.data {
-        Data::Struct(data_struct) => match &data_struct.fields {
-            Fields::Named(fields) => &fields.named,
-            _ => {
-                return Err(syn::Error::new_spanned(
-                    &data_struct.fields,
-                    format!("{macro_name} only supports structs with named fields in this MVP"),
-                ))
+    match &input.data {
+        Data::Struct(data_struct) => {
+            let named_fields = match &data_struct.fields {
+                Fields::Named(fields) => &fields.named,
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        &data_struct.fields,
+                        format!("{macro_name} only supports structs with named fields in this MVP"),
+                    ))
+                }
+            };
+
+            let mut parsed_fields = Vec::with_capacity(named_fields.len());
+            for field in named_fields {
+                parsed_fields.push(parse_field(field)?);
             }
-        },
-        _ => {
-            return Err(syn::Error::new_spanned(
-                &input.ident,
-                format!("{macro_name} only supports structs in this MVP"),
-            ))
+
+            validate_unique_wire_field_names(&parsed_fields, WireDirection::Serialize)?;
+            validate_unique_wire_field_names(&parsed_fields, WireDirection::Deserialize)?;
+
+            Ok(ParsedInput::Struct(ParsedStruct {
+                ident: input.ident.clone(),
+                struct_name: container_name,
+                fields: parsed_fields,
+            }))
         }
-    };
+        Data::Enum(data_enum) => {
+            let mut parsed_variants = Vec::with_capacity(data_enum.variants.len());
+            for variant in &data_enum.variants {
+                parsed_variants.push(parse_enum_variant(variant, macro_name)?);
+            }
 
-    let mut parsed_fields = Vec::with_capacity(named_fields.len());
-    for field in named_fields {
-        parsed_fields.push(parse_field(field)?);
+            validate_unique_wire_variant_names(&parsed_variants)?;
+
+            Ok(ParsedInput::Enum(ParsedEnum {
+                ident: input.ident.clone(),
+                enum_name: container_name,
+                variants: parsed_variants,
+            }))
+        }
+        _ => Err(syn::Error::new_spanned(
+            &input.ident,
+            format!("{macro_name} only supports structs or enums in this MVP"),
+        )),
     }
-
-    validate_unique_wire_field_names(&parsed_fields, WireDirection::Serialize)?;
-    validate_unique_wire_field_names(&parsed_fields, WireDirection::Deserialize)?;
-
-    Ok(ParsedStruct {
-        ident: input.ident.clone(),
-        struct_name,
-        fields: parsed_fields,
-    })
 }
 
 fn validate_unique_wire_field_names(
@@ -417,6 +627,83 @@ fn validate_unique_wire_field_names(
     Ok(())
 }
 
+fn validate_unique_wire_variant_names(parsed_variants: &[ParsedEnumVariant]) -> syn::Result<()> {
+    let mut seen_by_name: HashMap<String, String> = HashMap::new();
+
+    for variant in parsed_variants {
+        let wire_name = variant.serialized_name.value();
+        let current_variant = variant.ident.to_string();
+        if let Some(previous_variant) = seen_by_name.insert(wire_name.clone(), current_variant) {
+            return Err(syn::Error::new(
+                variant.serialized_name.span(),
+                format!(
+                    "duplicate wire enum variant name `{wire_name}`; conflicts with variant \
+                     `{previous_variant}`"
+                ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_enum_variant(variant: &syn::Variant, macro_name: &str) -> syn::Result<ParsedEnumVariant> {
+    let options = parse_variant_attributes(&variant.attrs)?;
+    let serialized_name = options
+        .rename
+        .unwrap_or_else(|| LitStr::new(&variant.ident.unraw().to_string(), variant.ident.span()));
+
+    let kind = match &variant.fields {
+        Fields::Unit => ParsedEnumVariantKind::Unit,
+        Fields::Unnamed(fields) => {
+            if fields.unnamed.len() != 1 {
+                return Err(syn::Error::new_spanned(
+                    &variant.fields,
+                    format!(
+                        "{macro_name} only supports unit variants or newtype variants with one \
+                         unnamed field"
+                    ),
+                ));
+            }
+
+            let payload_field = fields
+                .unnamed
+                .first()
+                .expect("single enum payload field is present");
+            for attr in &payload_field.attrs {
+                if !attr.path().is_ident("serde") {
+                    continue;
+                }
+
+                return Err(syn::Error::new_spanned(
+                    attr,
+                    "unsupported serde field attribute on enum variant payload; field attributes \
+                     are not supported for enum payloads",
+                ));
+            }
+
+            ParsedEnumVariantKind::Newtype {
+                ty: payload_field.ty.clone(),
+            }
+        }
+        Fields::Named(_) => {
+            return Err(syn::Error::new_spanned(
+                &variant.fields,
+                format!(
+                    "{macro_name} only supports unit variants or newtype variants with one \
+                     unnamed field"
+                ),
+            ))
+        }
+    };
+
+    Ok(ParsedEnumVariant {
+        ident: variant.ident.clone(),
+        serialized_name,
+        kind,
+    })
+}
+
 fn parse_container_attributes(attrs: &[Attribute]) -> syn::Result<ContainerAttrOptions> {
     let mut options = ContainerAttrOptions { rename: None };
 
@@ -435,6 +722,31 @@ fn parse_container_attributes(attrs: &[Attribute]) -> syn::Result<ContainerAttrO
             }
 
             Err(meta.error("unsupported serde container attribute; supported attributes: `rename`"))
+        })?;
+    }
+
+    Ok(options)
+}
+
+fn parse_variant_attributes(attrs: &[Attribute]) -> syn::Result<VariantAttrOptions> {
+    let mut options = VariantAttrOptions { rename: None };
+
+    for attr in attrs {
+        if !attr.path().is_ident("serde") {
+            continue;
+        }
+
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("rename") {
+                let rename_value: LitStr = meta.value()?.parse()?;
+                if options.rename.replace(rename_value).is_some() {
+                    return Err(meta.error("duplicate serde enum variant attribute `rename`"));
+                }
+                return Ok(());
+            }
+
+            Err(meta
+                .error("unsupported serde enum variant attribute; supported attributes: `rename`"))
         })?;
     }
 
