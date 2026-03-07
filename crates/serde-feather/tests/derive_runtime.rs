@@ -129,6 +129,9 @@ struct UnitStructModel;
 struct TupleStructModel(u8, #[serde(default)] u8, #[serde(skip_deserializing)] u8);
 
 #[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+struct NewtypeTupleStructModel(u8);
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
 enum ExtendedEnumModel {
     Tuple(u8, #[serde(default)] u8),
     #[serde(rename_all = "camelCase")]
@@ -156,6 +159,11 @@ enum RuntimeHookEnum {
         count: u8,
     },
     Tuple(#[serde(with = "hex_u8")] u8, #[serde(default)] u8),
+}
+
+#[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
+enum NewtypeSkipIfEnumModel {
+    Value(#[serde(skip_serializing_if = "is_zero", default)] u8),
 }
 
 #[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
@@ -580,6 +588,17 @@ fn supports_unit_and_tuple_struct_derives() {
 }
 
 #[test]
+fn serializes_newtype_tuple_struct_as_scalar() {
+    let encoded =
+        serde_json::to_string(&NewtypeTupleStructModel(7)).expect("serialize newtype tuple struct");
+    assert_eq!(encoded, "7");
+
+    let decoded: NewtypeTupleStructModel =
+        serde_json::from_str("11").expect("deserialize newtype tuple struct");
+    assert_eq!(decoded, NewtypeTupleStructModel(11));
+}
+
+#[test]
 fn supports_tuple_and_named_enum_variants() {
     let tuple_value = ExtendedEnumModel::Tuple(7, 9);
     let tuple_encoded = serde_json::to_string(&tuple_value).expect("serialize tuple enum variant");
@@ -647,6 +666,21 @@ fn supports_variant_field_hooks() {
     let tuple_decoded: RuntimeHookEnum =
         serde_json::from_str(r#"{"Tuple":["2a"]}"#).expect("deserialize tuple hook variant");
     assert_eq!(tuple_decoded, RuntimeHookEnum::Tuple(42, 0));
+}
+
+#[test]
+fn preserves_newtype_encoding_for_skip_serializing_if_variant_fields() {
+    let encoded_non_zero =
+        serde_json::to_string(&NewtypeSkipIfEnumModel::Value(5)).expect("serialize non-zero");
+    assert_eq!(encoded_non_zero, r#"{"Value":5}"#);
+
+    let encoded_zero =
+        serde_json::to_string(&NewtypeSkipIfEnumModel::Value(0)).expect("serialize zero");
+    assert_eq!(encoded_zero, r#"{"Value":0}"#);
+
+    let decoded: NewtypeSkipIfEnumModel =
+        serde_json::from_str(r#"{"Value":9}"#).expect("deserialize newtype skip-if variant");
+    assert_eq!(decoded, NewtypeSkipIfEnumModel::Value(9));
 }
 
 #[test]

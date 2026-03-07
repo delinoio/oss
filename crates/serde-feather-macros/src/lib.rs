@@ -271,6 +271,27 @@ fn expand_serialize_struct(
             #crate_path::serde::ser::Serializer::serialize_unit_struct(serializer, #struct_name)
         }),
         ParsedStructKind::Tuple(fields) => {
+            if fields.len() == 1 {
+                let field = &fields[0];
+                let access = member_access(&field.accessor);
+                let wrapper_ident = format_ident!("__FeatherSerializeWithTupleStructField0");
+                let serialize_value = serialize_value_expression(
+                    field,
+                    quote!(&self.#access),
+                    &wrapper_ident,
+                    &wrapper_generics,
+                    crate_path,
+                );
+
+                return Ok(quote! {
+                    #crate_path::serde::ser::Serializer::serialize_newtype_struct(
+                        serializer,
+                        #struct_name,
+                        #serialize_value,
+                    )
+                });
+            }
+
             let included_fields: Vec<(usize, &ParsedField)> = fields
                 .iter()
                 .enumerate()
@@ -453,9 +474,7 @@ fn expand_serialize_enum(
                         .filter(|(_, field)| !field.skip_serializing)
                         .collect();
 
-                    let is_newtype = fields.len() == 1
-                        && included_fields.len() == 1
-                        && included_fields[0].1.skip_serializing_if.is_none();
+                    let is_newtype = fields.len() == 1 && included_fields.len() == 1;
 
                     if is_newtype {
                         let field = included_fields[0].1;
@@ -848,6 +867,108 @@ fn expand_deserialize_tuple_struct(
     } else {
         quote! { #de_lifetime, #(#helper_impl_params),* }
     };
+
+    if fields.len() == 1 {
+        let field = &fields[0];
+        let (wrapper_defs, decode_ty, unwrap_decoded) = if let Some(with_path) = &field.with {
+            let wrapper_ident = format_ident!("__FeatherDeserializeWithTupleStructField0");
+            let ty = &field.ty;
+            let wrapper_decl = if helper_params.is_empty() {
+                quote! { struct #wrapper_ident(#ty); }
+            } else {
+                quote! {
+                    struct #wrapper_ident<#(#helper_params),*>(
+                        #ty,
+                        ::core::marker::PhantomData<(#(#helper_phantom_types),*)>,
+                    ) #helper_where_clause;
+                }
+            };
+            let wrapper_impl_generics = if helper_impl_params.is_empty() {
+                quote! { #de_lifetime }
+            } else {
+                quote! { #de_lifetime, #(#helper_impl_params),* }
+            };
+            let wrapper_ty = if helper_args.is_empty() {
+                quote! { #wrapper_ident }
+            } else {
+                quote! { #wrapper_ident<#(#helper_args),*> }
+            };
+            let wrapper_ctor = if helper_args.is_empty() {
+                quote! { #wrapper_ident(value) }
+            } else {
+                quote! { #wrapper_ident::<#(#helper_args),*>(value, ::core::marker::PhantomData) }
+            };
+
+            (
+                quote! {
+                    #wrapper_decl
+
+                    impl<#wrapper_impl_generics> #crate_path::serde::de::Deserialize<#de_lifetime>
+                        for #wrapper_ty #helper_where_clause
+                    {
+                        fn deserialize<D>(
+                            deserializer: D,
+                        ) -> ::core::result::Result<Self, D::Error>
+                        where
+                            D: #crate_path::serde::de::Deserializer<#de_lifetime>,
+                        {
+                            #with_path::deserialize(deserializer).map(|value| {
+                                #wrapper_ctor
+                            })
+                        }
+                    }
+                },
+                wrapper_ty,
+                quote! { __feather_decoded_0.0 },
+            )
+        } else {
+            let ty = &field.ty;
+            (
+                TokenStream2::new(),
+                quote! { #ty },
+                quote! { __feather_decoded_0 },
+            )
+        };
+
+        return Ok(quote! {
+            #wrapper_defs
+
+            #visitor_decl
+
+            impl<#visitor_impl_generics> #crate_path::serde::de::Visitor<#de_lifetime>
+                for #visitor_ty #helper_where_clause
+            {
+                type Value = #struct_ident #ty_generics;
+
+                fn expecting(
+                    &self,
+                    formatter: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    ::core::write!(formatter, "newtype struct {}", #struct_name)
+                }
+
+                fn visit_newtype_struct<D>(
+                    self,
+                    deserializer: D,
+                ) -> ::core::result::Result<Self::Value, D::Error>
+                where
+                    D: #crate_path::serde::de::Deserializer<#de_lifetime>,
+                {
+                    let __feather_decoded_0 =
+                        <#decode_ty as #crate_path::serde::de::Deserialize<#de_lifetime>>::deserialize(
+                            deserializer,
+                        )?;
+                    ::core::result::Result::Ok(#struct_ident(#unwrap_decoded))
+                }
+            }
+
+            #crate_path::serde::de::Deserializer::deserialize_newtype_struct(
+                deserializer,
+                #struct_name,
+                #visitor_ctor,
+            )
+        });
+    }
 
     let (wrapper_defs, wrapper_by_field) = deserialize_wrapper_definitions(
         fields,
