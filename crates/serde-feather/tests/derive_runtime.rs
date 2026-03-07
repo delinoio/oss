@@ -209,6 +209,34 @@ where
     Value(#[serde(with = "passthrough_with")] T),
 }
 
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct BorrowedLifetimeModel<'a> {
+    value: &'a str,
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct GenericSkipDeserializeModel<T> {
+    #[serde(skip_deserializing)]
+    value: T,
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct GenericDefaultFieldModel<T> {
+    #[serde(default)]
+    value: T,
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct GenericDefaultVecFieldModel<T> {
+    #[serde(default)]
+    values: Vec<T>,
+}
+
+#[derive(Debug, PartialEq, FeatherDeserialize)]
+struct NoDefaultModel {
+    value: u8,
+}
+
 #[derive(Debug, PartialEq, FeatherSerialize, FeatherDeserialize)]
 #[serde(rename_all = "snake_case")]
 enum AliasRenameEnum {
@@ -784,6 +812,34 @@ fn supports_with_wrappers_on_generic_structs_and_enums() {
     let enum_decoded: GenericWithEnum<u8> =
         serde_json::from_str(r#"{"Value":42}"#).expect("deserialize generic with enum");
     assert_eq!(enum_decoded, GenericWithEnum::Value(42));
+}
+
+#[test]
+fn supports_borrowed_lifetime_deserialization() {
+    let decoded: BorrowedLifetimeModel<'_> =
+        serde_json::from_str(r#"{"value":"borrowed"}"#).expect("deserialize borrowed model");
+    assert_eq!(decoded, BorrowedLifetimeModel { value: "borrowed" });
+}
+
+#[test]
+fn infers_default_bounds_for_generic_fallback_paths() {
+    let skip_decoded: GenericSkipDeserializeModel<u8> =
+        serde_json::from_str(r#"{"value":9}"#).expect("deserialize generic skip_deserializing");
+    assert_eq!(skip_decoded, GenericSkipDeserializeModel { value: 0 });
+
+    let default_decoded: GenericDefaultFieldModel<u8> =
+        serde_json::from_str(r#"{}"#).expect("deserialize generic default field");
+    assert_eq!(default_decoded, GenericDefaultFieldModel { value: 0 });
+}
+
+#[test]
+fn does_not_overconstrain_default_bounds_for_nested_generic_types() {
+    let decoded: GenericDefaultVecFieldModel<NoDefaultModel> =
+        serde_json::from_str(r#"{}"#).expect("deserialize generic default vec field");
+    assert_eq!(
+        decoded,
+        GenericDefaultVecFieldModel::<NoDefaultModel> { values: Vec::new() }
+    );
 }
 
 #[test]
