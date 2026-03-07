@@ -190,6 +190,50 @@ task func Build(count int64) Vc[Artifact] {
 	}
 }
 
+func TestExecutePreservesLargeIntegerLiteralPrecision(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Count int64
+}
+
+task func Build() Vc[Artifact] {
+    return vc(Artifact{Count: 9007199254740993})
+}
+`)
+
+	program, err := BuildProgram(module, "Build", map[string]any{})
+	if err != nil {
+		t.Fatalf("build program: %v", err)
+	}
+
+	source, err := GenerateGoSource(program)
+	if err != nil {
+		t.Fatalf("generate source: %v", err)
+	}
+
+	result, err := Execute(context.Background(), t.TempDir(), source)
+	if err != nil {
+		t.Fatalf("execute runner: %v", err)
+	}
+
+	resultObject, ok := result.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected object result, got=%T", result.Result)
+	}
+	countValue, ok := resultObject["Count"]
+	if !ok {
+		t.Fatalf("missing Count field: %#v", resultObject)
+	}
+	preciseNumber, ok := countValue.(json.Number)
+	if !ok {
+		t.Fatalf("expected Count to decode as json.Number, got=%T value=%#v", countValue, countValue)
+	}
+	if preciseNumber.String() != "9007199254740993" {
+		t.Fatalf("unexpected Count number value: %s", preciseNumber.String())
+	}
+}
+
 func parseModuleForTest(t *testing.T, source string) *ast.Module {
 	t.Helper()
 	tokens, lexDiagnostics := lexer.Lex(source)

@@ -144,7 +144,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -343,11 +342,14 @@ func (e *evaluator) evalExpression(scope map[string]any, expression expression) 
 	case "string_literal":
 		return expression.Value, nil
 	case "number_literal":
-		numberValue, err := strconv.ParseFloat(expression.Value, 64)
-		if err != nil {
-			return nil, fmt.Errorf("parse number literal %%q: %%w", expression.Value, err)
+		numberValue := strings.TrimSpace(expression.Value)
+		if numberValue == "" {
+			return nil, fmt.Errorf("parse number literal %%q: empty value", expression.Value)
 		}
-		return numberValue, nil
+		if !json.Valid([]byte("[" + numberValue + "]")) {
+			return nil, fmt.Errorf("parse number literal %%q: invalid numeric literal", expression.Value)
+		}
+		return json.Number(numberValue), nil
 	case "call":
 		return e.evalCall(scope, expression)
 	case "selector":

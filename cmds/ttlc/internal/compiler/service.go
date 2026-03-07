@@ -930,30 +930,32 @@ func runIntegerValueAsBigInt(value any) (*big.Int, bool) {
 		if !isFiniteWholeNumber(float64(typed)) {
 			return nil, false
 		}
-		return runIntegerValueAsBigInt(strconv.FormatFloat(float64(typed), 'f', 0, 64))
+		return parseIntegerStringToBigInt(strconv.FormatFloat(float64(typed), 'f', 0, 64))
 	case float64:
 		if !isFiniteWholeNumber(typed) {
 			return nil, false
 		}
-		return runIntegerValueAsBigInt(strconv.FormatFloat(typed, 'f', 0, 64))
+		return parseIntegerStringToBigInt(strconv.FormatFloat(typed, 'f', 0, 64))
 	case json.Number:
-		return runIntegerValueAsBigInt(typed.String())
-	case string:
-		normalizedValue := strings.TrimSpace(typed)
-		if normalizedValue == "" {
-			return nil, false
-		}
-		if !isJSONIntegerValue(normalizedValue) {
-			return nil, false
-		}
-		parsed := new(big.Int)
-		if _, ok := parsed.SetString(normalizedValue, 10); !ok {
-			return nil, false
-		}
-		return parsed, true
+		return parseIntegerStringToBigInt(typed.String())
 	default:
 		return nil, false
 	}
+}
+
+func parseIntegerStringToBigInt(raw string) (*big.Int, bool) {
+	normalizedValue := strings.TrimSpace(raw)
+	if normalizedValue == "" {
+		return nil, false
+	}
+	if !isJSONIntegerValue(normalizedValue) {
+		return nil, false
+	}
+	parsed := new(big.Int)
+	if _, ok := parsed.SetString(normalizedValue, 10); !ok {
+		return nil, false
+	}
+	return parsed, true
 }
 
 func runIntegerBounds(expectedType string) (*big.Int, *big.Int, bool) {
