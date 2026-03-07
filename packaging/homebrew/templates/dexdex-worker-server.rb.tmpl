@@ -1,0 +1,17 @@
+class DexdexWorkerServer < Formula
+  desc "DexDex execution-plane session adapter server"
+  homepage "https://github.com/delinoio/oss"
+  url "__SOURCE_URL__"
+  sha256 "__SOURCE_SHA256__"
+  license "MIT"
+
+  depends_on "go" => :build
+
+  def install
+    system "go", "build", "-o", bin/"dexdex-worker-server", "./servers/dexdex-worker-server"
+  end
+
+  test do
+    assert_predicate bin/"dexdex-worker-server", :exist?
+  end
+end

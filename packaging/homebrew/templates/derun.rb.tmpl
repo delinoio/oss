@@ -1,0 +1,17 @@
+class Derun < Formula
+  desc "Terminal-faithful command runner with MCP output bridge"
+  homepage "https://github.com/delinoio/oss"
+  url "__SOURCE_URL__"
+  sha256 "__SOURCE_SHA256__"
+  license "MIT"
+
+  depends_on "go" => :build
+
+  def install
+    system "go", "build", "-o", bin/"derun", "./cmds/derun"
+  end
+
+  test do
+    assert_predicate bin/"derun", :exist?
+  end
+end

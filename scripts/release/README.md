@@ -1,0 +1,11 @@
+# Release Automation Scripts
+
+- `generate-checksums.sh`: produces `SHA256SUMS` and cosign signatures.
+- `update-homebrew.sh`: renders and optionally submits Homebrew formula/cask updates.
+- `update-winget.sh`: renders and optionally submits winget manifests.
+
+These scripts are designed for use by release workflows:
+
+- `.github/workflows/release-nodeup.yml`
+- `.github/workflows/release-derun.yml`
+- `.github/workflows/release-dexdex.yml`

@@ -1,0 +1,17 @@
+class Nodeup < Formula
+  desc "Rust-based Node.js version manager"
+  homepage "https://github.com/delinoio/oss"
+  url "__SOURCE_URL__"
+  sha256 "__SOURCE_SHA256__"
+  license "MIT"
+
+  depends_on "rust" => :build
+
+  def install
+    system "cargo", "install", "--locked", "--path", "crates/nodeup", "--root", prefix
+  end
+
+  test do
+    assert_predicate bin/"nodeup", :exist?
+  end
+end
