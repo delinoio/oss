@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +23,8 @@ const (
 	defaultStreamRetention        = 256
 	defaultStreamHeartbeat        = 15 * time.Second
 	defaultStreamSubscriberBuffer = 16
+	defaultListPageSize           = 20
+	maxListPageSize               = 100
 )
 
 var (
@@ -124,6 +128,37 @@ func (s *ConnectServer) GetWorkspace(
 	}), nil
 }
 
+func (s *ConnectServer) GetWorkspaceOverview(
+	_ context.Context,
+	request *connect.Request[dexdexv1.GetWorkspaceOverviewRequest],
+) (*connect.Response[dexdexv1.GetWorkspaceOverviewResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+
+	overview, getErr := s.store.getWorkspaceOverview(workspaceID)
+	if getErr != nil {
+		if errors.Is(getErr, errWorkspaceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, getErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, getErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.workspace.get_workspace_overview.success",
+		"workspace_id", workspaceID,
+		"total_unit_task_count", overview.GetTotalUnitTaskCount(),
+		"action_required_unit_task_count", overview.GetActionRequiredUnitTaskCount(),
+		"active_session_count", overview.GetActiveSessionCount(),
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.GetWorkspaceOverviewResponse{
+		Overview: overview,
+	}), nil
+}
+
 func (s *ConnectServer) GetRepositoryGroup(
 	_ context.Context,
 	request *connect.Request[dexdexv1.GetRepositoryGroupRequest],
@@ -154,6 +189,43 @@ func (s *ConnectServer) GetRepositoryGroup(
 
 	return connect.NewResponse(&dexdexv1.GetRepositoryGroupResponse{
 		RepositoryGroup: repositoryGroup,
+	}), nil
+}
+
+func (s *ConnectServer) ListRepositoryGroups(
+	_ context.Context,
+	request *connect.Request[dexdexv1.ListRepositoryGroupsRequest],
+) (*connect.Response[dexdexv1.ListRepositoryGroupsResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	pageSize, offset, err := normalizePagination(request.Msg.GetPageSize(), request.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+
+	items, nextPageToken, listErr := s.store.listRepositoryGroups(workspaceID, pageSize, offset)
+	if listErr != nil {
+		if errors.Is(listErr, errWorkspaceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, listErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, listErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.repository.list_repository_groups.success",
+		"workspace_id", workspaceID,
+		"page_size", pageSize,
+		"page_token", request.Msg.GetPageToken(),
+		"next_page_token", nextPageToken,
+		"item_count", len(items),
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.ListRepositoryGroupsResponse{
+		Items:         items,
+		NextPageToken: nextPageToken,
 	}), nil
 }
 
@@ -191,6 +263,51 @@ func (s *ConnectServer) GetSessionOutput(
 	}), nil
 }
 
+func (s *ConnectServer) ListSessions(
+	_ context.Context,
+	request *connect.Request[dexdexv1.ListSessionsRequest],
+) (*connect.Response[dexdexv1.ListSessionsResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	pageSize, offset, err := normalizePagination(request.Msg.GetPageSize(), request.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+
+	items, nextPageToken, listErr := s.store.listSessions(
+		workspaceID,
+		request.Msg.GetStatus(),
+		request.Msg.GetCliType(),
+		pageSize,
+		offset,
+	)
+	if listErr != nil {
+		if errors.Is(listErr, errWorkspaceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, listErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, listErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.session.list_sessions.success",
+		"workspace_id", workspaceID,
+		"status", request.Msg.GetStatus().String(),
+		"cli_type", request.Msg.GetCliType().String(),
+		"page_size", pageSize,
+		"page_token", request.Msg.GetPageToken(),
+		"next_page_token", nextPageToken,
+		"item_count", len(items),
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.ListSessionsResponse{
+		Items:         items,
+		NextPageToken: nextPageToken,
+	}), nil
+}
+
 func (s *ConnectServer) GetPullRequest(
 	_ context.Context,
 	request *connect.Request[dexdexv1.GetPullRequestRequest],
@@ -221,6 +338,49 @@ func (s *ConnectServer) GetPullRequest(
 
 	return connect.NewResponse(&dexdexv1.GetPullRequestResponse{
 		PullRequest: pullRequest,
+	}), nil
+}
+
+func (s *ConnectServer) ListPullRequests(
+	_ context.Context,
+	request *connect.Request[dexdexv1.ListPullRequestsRequest],
+) (*connect.Response[dexdexv1.ListPullRequestsResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	pageSize, offset, err := normalizePagination(request.Msg.GetPageSize(), request.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+
+	items, nextPageToken, listErr := s.store.listPullRequests(
+		workspaceID,
+		request.Msg.GetStatus(),
+		pageSize,
+		offset,
+	)
+	if listErr != nil {
+		if errors.Is(listErr, errWorkspaceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, listErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, listErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.pr.list_pull_requests.success",
+		"workspace_id", workspaceID,
+		"pr_status", request.Msg.GetStatus().String(),
+		"page_size", pageSize,
+		"page_token", request.Msg.GetPageToken(),
+		"next_page_token", nextPageToken,
+		"item_count", len(items),
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.ListPullRequestsResponse{
+		Items:         items,
+		NextPageToken: nextPageToken,
 	}), nil
 }
 
@@ -381,6 +541,49 @@ func (s *ConnectServer) GetUnitTask(
 	return connect.NewResponse(&dexdexv1.GetUnitTaskResponse{UnitTask: unitTask}), nil
 }
 
+func (s *ConnectServer) ListUnitTasks(
+	_ context.Context,
+	request *connect.Request[dexdexv1.ListUnitTasksRequest],
+) (*connect.Response[dexdexv1.ListUnitTasksResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	pageSize, offset, err := normalizePagination(request.Msg.GetPageSize(), request.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+
+	items, nextPageToken, listErr := s.store.listUnitTasks(
+		workspaceID,
+		request.Msg.GetStatus(),
+		pageSize,
+		offset,
+	)
+	if listErr != nil {
+		if errors.Is(listErr, errWorkspaceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, listErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, listErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.task.list_unit_tasks.success",
+		"workspace_id", workspaceID,
+		"unit_task_status", request.Msg.GetStatus().String(),
+		"page_size", pageSize,
+		"page_token", request.Msg.GetPageToken(),
+		"next_page_token", nextPageToken,
+		"item_count", len(items),
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.ListUnitTasksResponse{
+		Items:         items,
+		NextPageToken: nextPageToken,
+	}), nil
+}
+
 func (s *ConnectServer) GetSubTask(
 	_ context.Context,
 	request *connect.Request[dexdexv1.GetSubTaskRequest],
@@ -410,6 +613,52 @@ func (s *ConnectServer) GetSubTask(
 	)
 
 	return connect.NewResponse(&dexdexv1.GetSubTaskResponse{SubTask: subTask}), nil
+}
+
+func (s *ConnectServer) ListSubTasks(
+	_ context.Context,
+	request *connect.Request[dexdexv1.ListSubTasksRequest],
+) (*connect.Response[dexdexv1.ListSubTasksResponse], error) {
+	workspaceID, err := normalizeRequiredValue(request.Msg.GetWorkspaceId(), "workspace_id")
+	if err != nil {
+		return nil, err
+	}
+	pageSize, offset, err := normalizePagination(request.Msg.GetPageSize(), request.Msg.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	unitTaskID := strings.TrimSpace(request.Msg.GetUnitTaskId())
+
+	items, nextPageToken, listErr := s.store.listSubTasks(
+		workspaceID,
+		unitTaskID,
+		request.Msg.GetStatus(),
+		pageSize,
+		offset,
+	)
+	if listErr != nil {
+		if errors.Is(listErr, errWorkspaceNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, listErr)
+		}
+		return nil, connect.NewError(connect.CodeInternal, listErr)
+	}
+
+	s.logger.Info(
+		"dexdex.main.task.list_sub_tasks.success",
+		"workspace_id", workspaceID,
+		"unit_task_id", unitTaskID,
+		"sub_task_status", request.Msg.GetStatus().String(),
+		"page_size", pageSize,
+		"page_token", request.Msg.GetPageToken(),
+		"next_page_token", nextPageToken,
+		"item_count", len(items),
+		"result", "success",
+	)
+
+	return connect.NewResponse(&dexdexv1.ListSubTasksResponse{
+		Items:         items,
+		NextPageToken: nextPageToken,
+	}), nil
 }
 
 func (s *ConnectServer) SubmitPlanDecision(
@@ -710,6 +959,40 @@ func normalizeRequiredValue(rawValue string, fieldName string) (string, error) {
 	return value, nil
 }
 
+func normalizePagination(rawPageSize int32, rawPageToken string) (int, int, error) {
+	pageSize := int(rawPageSize)
+	if pageSize == 0 {
+		pageSize = defaultListPageSize
+	}
+	if pageSize < 0 {
+		return 0, 0, connect.NewError(connect.CodeInvalidArgument, errors.New("page_size must be greater than or equal to zero"))
+	}
+	if pageSize > maxListPageSize {
+		return 0, 0, connect.NewError(
+			connect.CodeInvalidArgument,
+			fmt.Errorf("page_size must be less than or equal to %d", maxListPageSize),
+		)
+	}
+
+	offset := 0
+	pageToken := strings.TrimSpace(rawPageToken)
+	if pageToken != "" {
+		parsed, err := strconv.Atoi(pageToken)
+		if err != nil || parsed < 0 {
+			return 0, 0, connect.NewError(connect.CodeInvalidArgument, errors.New("page_token must be a non-negative integer offset"))
+		}
+		offset = parsed
+	}
+	return pageSize, offset, nil
+}
+
+func nextPageToken(offset int) string {
+	if offset <= 0 {
+		return ""
+	}
+	return strconv.Itoa(offset)
+}
+
 func planDecisionFromProto(protoDecision dexdexv1.PlanDecision) (PlanDecision, error) {
 	switch protoDecision {
 	case dexdexv1.PlanDecision_PLAN_DECISION_APPROVE:
@@ -844,6 +1127,59 @@ func (s *workspaceStore) getWorkspace(workspaceID string) (*dexdexv1.Workspace, 
 	return &dexdexv1.Workspace{WorkspaceId: workspaceID}, nil
 }
 
+func (s *workspaceStore) getWorkspaceOverview(workspaceID string) (*dexdexv1.WorkspaceOverview, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, errWorkspaceNotFound
+	}
+
+	actionRequiredUnitTaskCount := 0
+	for _, unitTask := range workspace.unitTasks {
+		if unitTask.GetStatus() == dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_ACTION_REQUIRED {
+			actionRequiredUnitTaskCount++
+		}
+	}
+
+	waitingPlanSubTaskCount := 0
+	failedSubTaskCount := 0
+	for _, subTask := range workspace.subTasks {
+		switch subTask.GetStatus() {
+		case dexdexv1.SubTaskStatus_SUB_TASK_STATUS_WAITING_FOR_PLAN_APPROVAL:
+			waitingPlanSubTaskCount++
+		case dexdexv1.SubTaskStatus_SUB_TASK_STATUS_FAILED:
+			failedSubTaskCount++
+		}
+	}
+
+	activeSessionCount := 0
+	for _, summary := range buildSessionSummariesLocked(workspace) {
+		if isActiveSessionStatus(summary.GetStatus()) {
+			activeSessionCount++
+		}
+	}
+
+	openPullRequestCount := 0
+	for _, pullRequest := range workspace.pullRequests {
+		if pullRequest.GetStatus() == dexdexv1.PrStatus_PR_STATUS_OPEN {
+			openPullRequestCount++
+		}
+	}
+
+	return &dexdexv1.WorkspaceOverview{
+		WorkspaceId:                 workspaceID,
+		TotalUnitTaskCount:          uint32(len(workspace.unitTasks)),
+		ActionRequiredUnitTaskCount: uint32(actionRequiredUnitTaskCount),
+		WaitingPlanSubTaskCount:     uint32(waitingPlanSubTaskCount),
+		FailedSubTaskCount:          uint32(failedSubTaskCount),
+		ActiveSessionCount:          uint32(activeSessionCount),
+		OpenPullRequestCount:        uint32(openPullRequestCount),
+		NotificationCount:           uint32(len(workspace.notifications)),
+	}, nil
+}
+
 func (s *workspaceStore) getRepositoryGroup(
 	workspaceID string,
 	repositoryGroupID string,
@@ -862,6 +1198,32 @@ func (s *workspaceStore) getRepositoryGroup(
 	}
 
 	return cloneRepositoryGroup(group), nil
+}
+
+func (s *workspaceStore) listRepositoryGroups(
+	workspaceID string,
+	pageSize int,
+	offset int,
+) ([]*dexdexv1.RepositoryGroup, string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, "", errWorkspaceNotFound
+	}
+
+	items := make([]*dexdexv1.RepositoryGroup, 0, len(workspace.repositoryGroups))
+	groupIDs := make([]string, 0, len(workspace.repositoryGroups))
+	for groupID := range workspace.repositoryGroups {
+		groupIDs = append(groupIDs, groupID)
+	}
+	sort.Strings(groupIDs)
+	for _, groupID := range groupIDs {
+		items = append(items, cloneRepositoryGroup(workspace.repositoryGroups[groupID]))
+	}
+
+	return paginateMessages(items, pageSize, offset), nextPageTokenForLen(len(items), pageSize, offset), nil
 }
 
 func (s *workspaceStore) listSessionOutput(
@@ -888,6 +1250,38 @@ func (s *workspaceStore) listSessionOutput(
 	return cloned, nil
 }
 
+func (s *workspaceStore) listSessions(
+	workspaceID string,
+	statusFilter dexdexv1.AgentSessionStatus,
+	cliTypeFilter dexdexv1.AgentCliType,
+	pageSize int,
+	offset int,
+) ([]*dexdexv1.SessionSummary, string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, "", errWorkspaceNotFound
+	}
+
+	summaries := buildSessionSummariesLocked(workspace)
+	filtered := make([]*dexdexv1.SessionSummary, 0, len(summaries))
+	for _, summary := range summaries {
+		if statusFilter != dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_UNSPECIFIED &&
+			summary.GetStatus() != statusFilter {
+			continue
+		}
+		if cliTypeFilter != dexdexv1.AgentCliType_AGENT_CLI_TYPE_UNSPECIFIED &&
+			summary.GetCliType() != cliTypeFilter {
+			continue
+		}
+		filtered = append(filtered, cloneSessionSummary(summary))
+	}
+
+	return paginateMessages(filtered, pageSize, offset), nextPageTokenForLen(len(filtered), pageSize, offset), nil
+}
+
 func (s *workspaceStore) getPullRequest(
 	workspaceID string,
 	prTrackingID string,
@@ -906,6 +1300,39 @@ func (s *workspaceStore) getPullRequest(
 	}
 
 	return clonePullRequestRecord(pullRequest), nil
+}
+
+func (s *workspaceStore) listPullRequests(
+	workspaceID string,
+	statusFilter dexdexv1.PrStatus,
+	pageSize int,
+	offset int,
+) ([]*dexdexv1.PullRequestRecord, string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, "", errWorkspaceNotFound
+	}
+
+	pullRequestIDs := make([]string, 0, len(workspace.pullRequests))
+	for prTrackingID := range workspace.pullRequests {
+		pullRequestIDs = append(pullRequestIDs, prTrackingID)
+	}
+	sort.Strings(pullRequestIDs)
+
+	filtered := make([]*dexdexv1.PullRequestRecord, 0, len(pullRequestIDs))
+	for _, prTrackingID := range pullRequestIDs {
+		pullRequest := workspace.pullRequests[prTrackingID]
+		if statusFilter != dexdexv1.PrStatus_PR_STATUS_UNSPECIFIED &&
+			pullRequest.GetStatus() != statusFilter {
+			continue
+		}
+		filtered = append(filtered, clonePullRequestRecord(pullRequest))
+	}
+
+	return paginateMessages(filtered, pageSize, offset), nextPageTokenForLen(len(filtered), pageSize, offset), nil
 }
 
 func (s *workspaceStore) listReviewAssistItems(
@@ -990,6 +1417,76 @@ func (s *workspaceStore) listNotifications(workspaceID string) ([]*dexdexv1.Noti
 		notifications = append(notifications, cloneNotificationRecord(notification))
 	}
 	return notifications, nil
+}
+
+func (s *workspaceStore) listUnitTasks(
+	workspaceID string,
+	statusFilter dexdexv1.UnitTaskStatus,
+	pageSize int,
+	offset int,
+) ([]*dexdexv1.UnitTask, string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, "", errWorkspaceNotFound
+	}
+
+	unitTaskIDs := make([]string, 0, len(workspace.unitTasks))
+	for unitTaskID := range workspace.unitTasks {
+		unitTaskIDs = append(unitTaskIDs, unitTaskID)
+	}
+	sort.Strings(unitTaskIDs)
+
+	filtered := make([]*dexdexv1.UnitTask, 0, len(unitTaskIDs))
+	for _, unitTaskID := range unitTaskIDs {
+		unitTask := workspace.unitTasks[unitTaskID]
+		if statusFilter != dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_UNSPECIFIED &&
+			unitTask.GetStatus() != statusFilter {
+			continue
+		}
+		filtered = append(filtered, cloneUnitTask(unitTask))
+	}
+
+	return paginateMessages(filtered, pageSize, offset), nextPageTokenForLen(len(filtered), pageSize, offset), nil
+}
+
+func (s *workspaceStore) listSubTasks(
+	workspaceID string,
+	unitTaskIDFilter string,
+	statusFilter dexdexv1.SubTaskStatus,
+	pageSize int,
+	offset int,
+) ([]*dexdexv1.SubTask, string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	workspace, exists := s.workspaces[workspaceID]
+	if !exists {
+		return nil, "", errWorkspaceNotFound
+	}
+
+	subTaskIDs := make([]string, 0, len(workspace.subTasks))
+	for subTaskID := range workspace.subTasks {
+		subTaskIDs = append(subTaskIDs, subTaskID)
+	}
+	sort.Strings(subTaskIDs)
+
+	filtered := make([]*dexdexv1.SubTask, 0, len(subTaskIDs))
+	for _, subTaskID := range subTaskIDs {
+		subTask := workspace.subTasks[subTaskID]
+		if unitTaskIDFilter != "" && subTask.GetUnitTaskId() != unitTaskIDFilter {
+			continue
+		}
+		if statusFilter != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_UNSPECIFIED &&
+			subTask.GetStatus() != statusFilter {
+			continue
+		}
+		filtered = append(filtered, cloneSubTask(subTask))
+	}
+
+	return paginateMessages(filtered, pageSize, offset), nextPageTokenForLen(len(filtered), pageSize, offset), nil
 }
 
 func (s *workspaceStore) submitPlanDecision(
@@ -1468,6 +1965,109 @@ func workspaceHasNoState(workspace *workspaceState) bool {
 		len(workspace.subscribers) == 0
 }
 
+func buildSessionSummariesLocked(workspace *workspaceState) []*dexdexv1.SessionSummary {
+	summariesByID := make(map[string]*dexdexv1.SessionSummary, len(workspace.sessionOutputs))
+	for sessionID, events := range workspace.sessionOutputs {
+		summary := &dexdexv1.SessionSummary{
+			SessionId: sessionID,
+		}
+		if len(events) > 0 {
+			lastEvent := events[len(events)-1]
+			summary.LastOutputKind = lastEvent.GetKind()
+			summary.CliType = lastEvent.GetSource().GetCliType()
+			if lastEvent.GetIsTerminal() {
+				if lastEvent.GetKind() == dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_ERROR {
+					summary.Status = dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_FAILED
+				} else {
+					summary.Status = dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED
+				}
+			}
+		}
+		summariesByID[sessionID] = summary
+	}
+
+	for _, event := range workspace.events {
+		switch payload := event.GetPayload().(type) {
+		case *dexdexv1.StreamWorkspaceEventsResponse_SessionOutput:
+			sessionID := payload.SessionOutput.GetSessionId()
+			if sessionID == "" {
+				continue
+			}
+			summary := summariesByID[sessionID]
+			if summary == nil {
+				summary = &dexdexv1.SessionSummary{SessionId: sessionID}
+				summariesByID[sessionID] = summary
+			}
+			summary.LastOutputKind = payload.SessionOutput.GetKind()
+			summary.CliType = payload.SessionOutput.GetSource().GetCliType()
+			if isNewerTimestamp(summary.GetUpdatedAt(), event.GetOccurredAt()) {
+				summary.UpdatedAt = event.GetOccurredAt()
+			}
+		case *dexdexv1.StreamWorkspaceEventsResponse_SessionStateChanged:
+			sessionID := payload.SessionStateChanged.GetSessionId()
+			if sessionID == "" {
+				continue
+			}
+			summary := summariesByID[sessionID]
+			if summary == nil {
+				summary = &dexdexv1.SessionSummary{SessionId: sessionID}
+				summariesByID[sessionID] = summary
+			}
+			summary.Status = payload.SessionStateChanged.GetStatus()
+			if isNewerTimestamp(summary.GetUpdatedAt(), event.GetOccurredAt()) {
+				summary.UpdatedAt = event.GetOccurredAt()
+			}
+		}
+	}
+
+	summaries := make([]*dexdexv1.SessionSummary, 0, len(summariesByID))
+	for _, summary := range summariesByID {
+		if summary.GetUpdatedAt() == nil {
+			summary.UpdatedAt = timestamppb.Now()
+		}
+		summaries = append(summaries, summary)
+	}
+	sort.Slice(summaries, func(i int, j int) bool {
+		return summaries[i].GetSessionId() < summaries[j].GetSessionId()
+	})
+	return summaries
+}
+
+func isNewerTimestamp(current *timestamppb.Timestamp, candidate *timestamppb.Timestamp) bool {
+	if candidate == nil {
+		return false
+	}
+	if current == nil {
+		return true
+	}
+	return candidate.AsTime().After(current.AsTime())
+}
+
+func isActiveSessionStatus(status dexdexv1.AgentSessionStatus) bool {
+	return status == dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_STARTING ||
+		status == dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING ||
+		status == dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_WAITING_FOR_INPUT
+}
+
+func paginateMessages[T any](items []T, pageSize int, offset int) []T {
+	if offset >= len(items) {
+		return make([]T, 0)
+	}
+	end := offset + pageSize
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[offset:end]
+}
+
+func nextPageTokenForLen(itemLen int, pageSize int, offset int) string {
+	nextOffset := offset + pageSize
+	if nextOffset >= itemLen {
+		return ""
+	}
+	return nextPageToken(nextOffset)
+}
+
 func protoSubTaskToDomain(subTask *dexdexv1.SubTask) SubTask {
 	if subTask == nil {
 		return SubTask{}
@@ -1669,6 +2269,13 @@ func cloneSessionOutputEvent(event *dexdexv1.SessionOutputEvent) *dexdexv1.Sessi
 		return nil
 	}
 	return proto.Clone(event).(*dexdexv1.SessionOutputEvent)
+}
+
+func cloneSessionSummary(summary *dexdexv1.SessionSummary) *dexdexv1.SessionSummary {
+	if summary == nil {
+		return nil
+	}
+	return proto.Clone(summary).(*dexdexv1.SessionSummary)
 }
 
 func cloneSessionStateChangedEvent(event *dexdexv1.SessionStateChangedEvent) *dexdexv1.SessionStateChangedEvent {
