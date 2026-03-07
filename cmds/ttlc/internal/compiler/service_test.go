@@ -402,6 +402,93 @@ task func Build(target string) Vc[Artifact] {
 	})
 }
 
+func TestRunCacheHitPreservesLargeIntegerJSONNumber(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Count int64
+}
+
+task func Build(count int64) Vc[Artifact] {
+    return vc(Artifact{Count: count})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	expectCountNumber := func(value any) {
+		t.Helper()
+		resultObject, ok := value.(map[string]any)
+		if !ok {
+			t.Fatalf("expected run result object, got=%T", value)
+		}
+
+		rawCount, ok := resultObject["Count"]
+		if !ok {
+			t.Fatalf("missing Count field: %#v", resultObject)
+		}
+		preciseCount, ok := rawCount.(json.Number)
+		if !ok {
+			t.Fatalf("expected Count as json.Number, got=%T value=%#v", rawCount, rawCount)
+		}
+		if preciseCount.String() != "9007199254740993" {
+			t.Fatalf("unexpected Count value: %s", preciseCount.String())
+		}
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+
+		firstRun, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"count": json.Number("9007199254740993"),
+			},
+		})
+		if err != nil {
+			t.Fatalf("first run returned error: %v", err)
+		}
+		if len(firstRun.Diagnostics) != 0 {
+			t.Fatalf("unexpected diagnostics for first run: %+v", firstRun.Diagnostics)
+		}
+		if len(firstRun.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", firstRun.CacheAnalysis)
+		}
+		if firstRun.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonCacheMiss {
+			t.Fatalf("expected first run cache miss, got=%s", firstRun.CacheAnalysis[0].InvalidationReason)
+		}
+		expectCountNumber(firstRun.RunResult)
+
+		secondRun, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"count": json.Number("9007199254740993"),
+			},
+		})
+		if err != nil {
+			t.Fatalf("second run returned error: %v", err)
+		}
+		if len(secondRun.Diagnostics) != 0 {
+			t.Fatalf("unexpected diagnostics for second run: %+v", secondRun.Diagnostics)
+		}
+		if len(secondRun.CacheAnalysis) != 1 {
+			t.Fatalf("expected one cache analysis row, got=%+v", secondRun.CacheAnalysis)
+		}
+		if secondRun.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonNone {
+			t.Fatalf("expected second run cache hit, got=%s", secondRun.CacheAnalysis[0].InvalidationReason)
+		}
+		if !secondRun.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected cache hit for second run, got=%+v", secondRun.CacheAnalysis[0])
+		}
+		expectCountNumber(secondRun.RunResult)
+	})
+}
+
 func TestRunReportsTaskNotFound(t *testing.T) {
 	workspace := t.TempDir()
 	entryPath := filepath.Join(workspace, "main.ttl")

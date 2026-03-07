@@ -136,6 +136,7 @@ func GenerateGoSource(program Program) ([]byte, error) {
 	source := fmt.Sprintf(`package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -222,7 +223,9 @@ func loadProgram() (program, error) {
 		return program{}, fmt.Errorf("decode program payload: %%w", err)
 	}
 	programData := program{}
-	if err := json.Unmarshal(payloadBytes, &programData); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(payloadBytes))
+	decoder.UseNumber()
+	if err := decoder.Decode(&programData); err != nil {
 		return program{}, fmt.Errorf("decode program json: %%w", err)
 	}
 	return programData, nil
@@ -537,7 +540,9 @@ func Execute(ctx context.Context, outDir string, source []byte) (ExecutionResult
 	}
 
 	decodedResult := ExecutionResult{}
-	if err := json.Unmarshal(stdoutBuffer.Bytes(), &decodedResult); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(stdoutBuffer.Bytes()))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decodedResult); err != nil {
 		return ExecutionResult{}, fmt.Errorf("decode generated runner output: %w", err)
 	}
 	if decodedResult.ExecutedTasks == nil {

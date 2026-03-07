@@ -176,12 +176,14 @@ func (s *Store) GetTaskState(module string, taskID string) (TaskState, bool, err
 			Err:    unmarshalErr,
 		}
 	}
-	if unmarshalErr := json.Unmarshal([]byte(metadataJSON), &state.Metadata); unmarshalErr != nil {
+	metadataDecoder := json.NewDecoder(strings.NewReader(metadataJSON))
+	metadataDecoder.UseNumber()
+	if decodeErr := metadataDecoder.Decode(&state.Metadata); decodeErr != nil {
 		return TaskState{}, true, &CorruptionError{
 			Module: module,
 			TaskID: taskID,
 			Field:  "metadata",
-			Err:    unmarshalErr,
+			Err:    decodeErr,
 		}
 	}
 

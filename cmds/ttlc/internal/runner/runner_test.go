@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -140,6 +141,52 @@ task func Build(target string) Vc[Artifact] {
 	}
 	if resultObject["Path"] != "mobile" {
 		t.Fatalf("unexpected run result payload: %#v", resultObject["Path"])
+	}
+}
+
+func TestExecutePreservesLargeIntegerJSONNumber(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+type Artifact struct {
+    Count int64
+}
+
+task func Build(count int64) Vc[Artifact] {
+    return vc(Artifact{Count: count})
+}
+`)
+
+	program, err := BuildProgram(module, "Build", map[string]any{
+		"count": json.Number("9007199254740993"),
+	})
+	if err != nil {
+		t.Fatalf("build program: %v", err)
+	}
+
+	source, err := GenerateGoSource(program)
+	if err != nil {
+		t.Fatalf("generate source: %v", err)
+	}
+
+	result, err := Execute(context.Background(), t.TempDir(), source)
+	if err != nil {
+		t.Fatalf("execute runner: %v", err)
+	}
+
+	resultObject, ok := result.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected object result, got=%T", result.Result)
+	}
+	countValue, ok := resultObject["Count"]
+	if !ok {
+		t.Fatalf("missing Count field: %#v", resultObject)
+	}
+	preciseNumber, ok := countValue.(json.Number)
+	if !ok {
+		t.Fatalf("expected Count to decode as json.Number, got=%T value=%#v", countValue, countValue)
+	}
+	if preciseNumber.String() != "9007199254740993" {
+		t.Fatalf("unexpected Count number value: %s", preciseNumber.String())
 	}
 }
 
