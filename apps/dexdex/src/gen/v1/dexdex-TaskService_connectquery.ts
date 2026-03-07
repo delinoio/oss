@@ -15,6 +15,16 @@ export const getUnitTask = TaskService.method.getUnitTask;
 export const getSubTask = TaskService.method.getSubTask;
 
 /**
+ * @generated from rpc dexdex.v1.TaskService.ListUnitTasks
+ */
+export const listUnitTasks = TaskService.method.listUnitTasks;
+
+/**
+ * @generated from rpc dexdex.v1.TaskService.ListSubTasks
+ */
+export const listSubTasks = TaskService.method.listSubTasks;
+
+/**
  * @generated from rpc dexdex.v1.TaskService.SubmitPlanDecision
  */
 export const submitPlanDecision = TaskService.method.submitPlanDecision;

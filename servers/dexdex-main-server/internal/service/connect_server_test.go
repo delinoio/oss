@@ -65,6 +65,112 @@ func TestGetUnitTaskReturnsStoredTask(t *testing.T) {
 	}
 }
 
+func TestListUnitTasksSupportsStatusAndPagination(t *testing.T) {
+	service, taskClient, _, _ := newDexDexMainTestServer(t, ConnectServerConfig{})
+	service.store.upsertUnitTask("workspace-1", &dexdexv1.UnitTask{
+		UnitTaskId: "unit-3",
+		Status:     dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_ACTION_REQUIRED,
+	})
+	service.store.upsertUnitTask("workspace-1", &dexdexv1.UnitTask{
+		UnitTaskId: "unit-1",
+		Status:     dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_ACTION_REQUIRED,
+	})
+	service.store.upsertUnitTask("workspace-1", &dexdexv1.UnitTask{
+		UnitTaskId: "unit-2",
+		Status:     dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED,
+	})
+
+	firstPage, err := taskClient.ListUnitTasks(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListUnitTasksRequest{
+			WorkspaceId: "workspace-1",
+			Status:      dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_ACTION_REQUIRED,
+			PageSize:    1,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ListUnitTasks first page returned error: %v", err)
+	}
+	if len(firstPage.Msg.GetItems()) != 1 {
+		t.Fatalf("expected first page item count=1, got=%d", len(firstPage.Msg.GetItems()))
+	}
+	if firstPage.Msg.GetItems()[0].GetUnitTaskId() != "unit-1" {
+		t.Fatalf("unexpected first page unit_task_id: got=%q", firstPage.Msg.GetItems()[0].GetUnitTaskId())
+	}
+	if firstPage.Msg.GetNextPageToken() == "" {
+		t.Fatal("expected non-empty next page token for ListUnitTasks")
+	}
+
+	secondPage, err := taskClient.ListUnitTasks(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListUnitTasksRequest{
+			WorkspaceId: "workspace-1",
+			Status:      dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_ACTION_REQUIRED,
+			PageSize:    1,
+			PageToken:   firstPage.Msg.GetNextPageToken(),
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ListUnitTasks second page returned error: %v", err)
+	}
+	if len(secondPage.Msg.GetItems()) != 1 {
+		t.Fatalf("expected second page item count=1, got=%d", len(secondPage.Msg.GetItems()))
+	}
+	if secondPage.Msg.GetItems()[0].GetUnitTaskId() != "unit-3" {
+		t.Fatalf("unexpected second page unit_task_id: got=%q", secondPage.Msg.GetItems()[0].GetUnitTaskId())
+	}
+}
+
+func TestListSubTasksSupportsFilters(t *testing.T) {
+	service, taskClient, _, _ := newDexDexMainTestServer(t, ConnectServerConfig{})
+	service.store.upsertSubTask("workspace-1", &dexdexv1.SubTask{
+		SubTaskId:  "sub-1",
+		UnitTaskId: "unit-1",
+		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+	}, false)
+	service.store.upsertSubTask("workspace-1", &dexdexv1.SubTask{
+		SubTaskId:  "sub-2",
+		UnitTaskId: "unit-1",
+		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_FAILED,
+	}, false)
+	service.store.upsertSubTask("workspace-1", &dexdexv1.SubTask{
+		SubTaskId:  "sub-3",
+		UnitTaskId: "unit-2",
+		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+	}, false)
+
+	response, err := taskClient.ListSubTasks(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListSubTasksRequest{
+			WorkspaceId: "workspace-1",
+			UnitTaskId:  "unit-1",
+			Status:      dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ListSubTasks returned error: %v", err)
+	}
+	if len(response.Msg.GetItems()) != 1 {
+		t.Fatalf("expected one filtered sub task, got=%d", len(response.Msg.GetItems()))
+	}
+	if response.Msg.GetItems()[0].GetSubTaskId() != "sub-1" {
+		t.Fatalf("unexpected filtered sub_task_id: got=%q", response.Msg.GetItems()[0].GetSubTaskId())
+	}
+}
+
+func TestListUnitTasksRejectsInvalidPageToken(t *testing.T) {
+	_, taskClient, _, _ := newDexDexMainTestServer(t, ConnectServerConfig{})
+
+	_, err := taskClient.ListUnitTasks(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListUnitTasksRequest{
+			WorkspaceId: "workspace-1",
+			PageToken:   "invalid-token",
+		}),
+	)
+	requireConnectErrorCode(t, err, connect.CodeInvalidArgument)
+}
+
 func TestGetWorkspaceValidatesRequiredFields(t *testing.T) {
 	_, _, _, httpServer := newDexDexMainTestServer(t, ConnectServerConfig{})
 	workspaceClient := dexdexv1connect.NewWorkspaceServiceClient(httpServer.Client(), httpServer.URL)
@@ -104,6 +210,75 @@ func TestGetWorkspaceReturnsStoredWorkspace(t *testing.T) {
 	}
 	if response.Msg.GetWorkspace().GetWorkspaceId() != "workspace-1" {
 		t.Fatalf("unexpected workspace id: got=%q want=%q", response.Msg.GetWorkspace().GetWorkspaceId(), "workspace-1")
+	}
+}
+
+func TestGetWorkspaceOverviewReturnsCounts(t *testing.T) {
+	service, _, _, httpServer := newDexDexMainTestServer(t, ConnectServerConfig{})
+	workspaceClient := dexdexv1connect.NewWorkspaceServiceClient(httpServer.Client(), httpServer.URL)
+
+	service.store.upsertUnitTask("workspace-1", &dexdexv1.UnitTask{
+		UnitTaskId: "unit-1",
+		Status:     dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_ACTION_REQUIRED,
+	})
+	service.store.upsertUnitTask("workspace-1", &dexdexv1.UnitTask{
+		UnitTaskId: "unit-2",
+		Status:     dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED,
+	})
+	service.store.upsertSubTask("workspace-1", &dexdexv1.SubTask{
+		SubTaskId:  "sub-1",
+		UnitTaskId: "unit-1",
+		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_WAITING_FOR_PLAN_APPROVAL,
+	}, false)
+	service.store.upsertSubTask("workspace-1", &dexdexv1.SubTask{
+		SubTaskId:  "sub-2",
+		UnitTaskId: "unit-2",
+		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_FAILED,
+	}, false)
+	service.store.upsertPullRequest("workspace-1", &dexdexv1.PullRequestRecord{
+		PrTrackingId: "pr-1",
+		Status:       dexdexv1.PrStatus_PR_STATUS_OPEN,
+	})
+	service.store.replaceNotifications("workspace-1", []*dexdexv1.NotificationRecord{
+		{
+			NotificationId: "notification-1",
+			Type:           dexdexv1.NotificationType_NOTIFICATION_TYPE_TASK_ACTION_REQUIRED,
+		},
+		{
+			NotificationId: "notification-2",
+			Type:           dexdexv1.NotificationType_NOTIFICATION_TYPE_PLAN_ACTION_REQUIRED,
+		},
+	})
+
+	response, err := workspaceClient.GetWorkspaceOverview(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.GetWorkspaceOverviewRequest{WorkspaceId: "workspace-1"}),
+	)
+	if err != nil {
+		t.Fatalf("GetWorkspaceOverview returned error: %v", err)
+	}
+
+	overview := response.Msg.GetOverview()
+	if overview.GetWorkspaceId() != "workspace-1" {
+		t.Fatalf("unexpected workspace id: got=%q want=%q", overview.GetWorkspaceId(), "workspace-1")
+	}
+	if overview.GetTotalUnitTaskCount() != 2 {
+		t.Fatalf("unexpected total_unit_task_count: got=%d want=2", overview.GetTotalUnitTaskCount())
+	}
+	if overview.GetActionRequiredUnitTaskCount() != 1 {
+		t.Fatalf("unexpected action_required_unit_task_count: got=%d want=1", overview.GetActionRequiredUnitTaskCount())
+	}
+	if overview.GetWaitingPlanSubTaskCount() != 1 {
+		t.Fatalf("unexpected waiting_plan_sub_task_count: got=%d want=1", overview.GetWaitingPlanSubTaskCount())
+	}
+	if overview.GetFailedSubTaskCount() != 1 {
+		t.Fatalf("unexpected failed_sub_task_count: got=%d want=1", overview.GetFailedSubTaskCount())
+	}
+	if overview.GetOpenPullRequestCount() != 1 {
+		t.Fatalf("unexpected open_pull_request_count: got=%d want=1", overview.GetOpenPullRequestCount())
+	}
+	if overview.GetNotificationCount() != 2 {
+		t.Fatalf("unexpected notification_count: got=%d want=2", overview.GetNotificationCount())
 	}
 }
 
@@ -149,6 +324,56 @@ func TestGetRepositoryGroupReturnsNotFoundWhenMissing(t *testing.T) {
 		}),
 	)
 	requireConnectErrorCode(t, err, connect.CodeNotFound)
+}
+
+func TestListRepositoryGroupsSupportsPagination(t *testing.T) {
+	service, _, _, httpServer := newDexDexMainTestServer(t, ConnectServerConfig{})
+	repositoryClient := dexdexv1connect.NewRepositoryServiceClient(httpServer.Client(), httpServer.URL)
+
+	service.store.upsertRepositoryGroup("workspace-1", &dexdexv1.RepositoryGroup{RepositoryGroupId: "repo-group-3"})
+	service.store.upsertRepositoryGroup("workspace-1", &dexdexv1.RepositoryGroup{RepositoryGroupId: "repo-group-1"})
+	service.store.upsertRepositoryGroup("workspace-1", &dexdexv1.RepositoryGroup{RepositoryGroupId: "repo-group-2"})
+
+	firstPage, err := repositoryClient.ListRepositoryGroups(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListRepositoryGroupsRequest{
+			WorkspaceId: "workspace-1",
+			PageSize:    2,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ListRepositoryGroups first page returned error: %v", err)
+	}
+	if len(firstPage.Msg.GetItems()) != 2 {
+		t.Fatalf("expected first page item count=2, got=%d", len(firstPage.Msg.GetItems()))
+	}
+	if firstPage.Msg.GetItems()[0].GetRepositoryGroupId() != "repo-group-1" {
+		t.Fatalf("unexpected first page first id: got=%q", firstPage.Msg.GetItems()[0].GetRepositoryGroupId())
+	}
+	if firstPage.Msg.GetNextPageToken() == "" {
+		t.Fatal("expected next page token for first page")
+	}
+
+	secondPage, err := repositoryClient.ListRepositoryGroups(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListRepositoryGroupsRequest{
+			WorkspaceId: "workspace-1",
+			PageSize:    2,
+			PageToken:   firstPage.Msg.GetNextPageToken(),
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ListRepositoryGroups second page returned error: %v", err)
+	}
+	if len(secondPage.Msg.GetItems()) != 1 {
+		t.Fatalf("expected second page item count=1, got=%d", len(secondPage.Msg.GetItems()))
+	}
+	if secondPage.Msg.GetItems()[0].GetRepositoryGroupId() != "repo-group-3" {
+		t.Fatalf("unexpected second page id: got=%q", secondPage.Msg.GetItems()[0].GetRepositoryGroupId())
+	}
+	if secondPage.Msg.GetNextPageToken() != "" {
+		t.Fatalf("expected empty next token on last page, got=%q", secondPage.Msg.GetNextPageToken())
+	}
 }
 
 func TestGetSessionOutputReturnsEmptyWhenSessionHasNoEvents(t *testing.T) {
@@ -200,6 +425,181 @@ func TestGetSessionOutputReturnsStoredEvents(t *testing.T) {
 	}
 }
 
+func TestListSessionsSupportsFilters(t *testing.T) {
+	service, _, _, httpServer := newDexDexMainTestServer(t, ConnectServerConfig{})
+	sessionClient := dexdexv1connect.NewSessionServiceClient(httpServer.Client(), httpServer.URL)
+
+	seedSubTask(
+		service,
+		"workspace-1",
+		"unit-1",
+		"sub-1",
+		dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+	)
+	seedSubTask(
+		service,
+		"workspace-1",
+		"unit-2",
+		"sub-2",
+		dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+	)
+
+	_, _, runErr := service.store.applySessionAdapterRun(
+		"workspace-1",
+		"unit-1",
+		"sub-1",
+		"session-1",
+		[]*dexdexv1.SessionOutputEvent{
+			{
+				SessionId: "session-1",
+				Kind:      dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_TEXT,
+				Source: &dexdexv1.SessionOutputSourceMetadata{
+					CliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+				},
+				Body: "running",
+			},
+		},
+		dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+	)
+	if runErr != nil {
+		t.Fatalf("applySessionAdapterRun session-1 returned error: %v", runErr)
+	}
+
+	_, _, runErr = service.store.applySessionAdapterRun(
+		"workspace-1",
+		"unit-2",
+		"sub-2",
+		"session-2",
+		[]*dexdexv1.SessionOutputEvent{
+			{
+				SessionId: "session-2",
+				Kind:      dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_TEXT,
+				Source: &dexdexv1.SessionOutputSourceMetadata{
+					CliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+				},
+				Body: "completed",
+			},
+		},
+		dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED,
+	)
+	if runErr != nil {
+		t.Fatalf("applySessionAdapterRun session-2 returned error: %v", runErr)
+	}
+
+	response, err := sessionClient.ListSessions(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListSessionsRequest{
+			WorkspaceId: "workspace-1",
+			Status:      dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ListSessions returned error: %v", err)
+	}
+	if len(response.Msg.GetItems()) != 1 {
+		t.Fatalf("expected one running session, got=%d", len(response.Msg.GetItems()))
+	}
+	if response.Msg.GetItems()[0].GetSessionId() != "session-1" {
+		t.Fatalf("unexpected running session id: got=%q", response.Msg.GetItems()[0].GetSessionId())
+	}
+
+	cliResponse, err := sessionClient.ListSessions(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListSessionsRequest{
+			WorkspaceId: "workspace-1",
+			CliType:     dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ListSessions by cli type returned error: %v", err)
+	}
+	if len(cliResponse.Msg.GetItems()) != 1 {
+		t.Fatalf("expected one claude session, got=%d", len(cliResponse.Msg.GetItems()))
+	}
+	if cliResponse.Msg.GetItems()[0].GetSessionId() != "session-2" {
+		t.Fatalf("unexpected claude session id: got=%q", cliResponse.Msg.GetItems()[0].GetSessionId())
+	}
+}
+
+func TestListSessionsPreservesStateAfterStreamRetentionTrim(t *testing.T) {
+	service, _, _, httpServer := newDexDexMainTestServer(t, ConnectServerConfig{
+		StreamRetention: 2,
+	})
+	sessionClient := dexdexv1connect.NewSessionServiceClient(httpServer.Client(), httpServer.URL)
+	workspaceClient := dexdexv1connect.NewWorkspaceServiceClient(httpServer.Client(), httpServer.URL)
+
+	seedSubTask(
+		service,
+		"workspace-1",
+		"unit-1",
+		"sub-1",
+		dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+	)
+
+	_, _, runErr := service.store.applySessionAdapterRun(
+		"workspace-1",
+		"unit-1",
+		"sub-1",
+		"session-running",
+		[]*dexdexv1.SessionOutputEvent{
+			{
+				SessionId: "session-running",
+				Kind:      dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_TEXT,
+				Source: &dexdexv1.SessionOutputSourceMetadata{
+					CliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+				},
+				Body: "still running",
+			},
+		},
+		dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+	)
+	if runErr != nil {
+		t.Fatalf("applySessionAdapterRun returned error: %v", runErr)
+	}
+
+	for i := 0; i < 5; i++ {
+		service.store.upsertSubTask("workspace-1", &dexdexv1.SubTask{
+			SubTaskId:  "sub-1",
+			UnitTaskId: "unit-1",
+			Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_INITIAL_IMPLEMENTATION,
+			Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+		}, true)
+	}
+
+	response, err := sessionClient.ListSessions(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListSessionsRequest{
+			WorkspaceId: "workspace-1",
+			Status:      dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ListSessions returned error: %v", err)
+	}
+	if len(response.Msg.GetItems()) != 1 {
+		t.Fatalf("expected one running session after retention trim, got=%d", len(response.Msg.GetItems()))
+	}
+	if response.Msg.GetItems()[0].GetSessionId() != "session-running" {
+		t.Fatalf("unexpected running session id: got=%q", response.Msg.GetItems()[0].GetSessionId())
+	}
+
+	overviewResponse, err := workspaceClient.GetWorkspaceOverview(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.GetWorkspaceOverviewRequest{
+			WorkspaceId: "workspace-1",
+		}),
+	)
+	if err != nil {
+		t.Fatalf("GetWorkspaceOverview returned error: %v", err)
+	}
+	if overviewResponse.Msg.GetOverview().GetActiveSessionCount() != 1 {
+		t.Fatalf(
+			"unexpected active_session_count after retention trim: got=%d want=1",
+			overviewResponse.Msg.GetOverview().GetActiveSessionCount(),
+		)
+	}
+}
+
 func TestGetPullRequestReturnsStoredPullRequest(t *testing.T) {
 	service, _, _, httpServer := newDexDexMainTestServer(t, ConnectServerConfig{})
 	prClient := dexdexv1connect.NewPrManagementServiceClient(httpServer.Client(), httpServer.URL)
@@ -236,6 +636,64 @@ func TestGetPullRequestReturnsNotFoundWhenMissing(t *testing.T) {
 		}),
 	)
 	requireConnectErrorCode(t, err, connect.CodeNotFound)
+}
+
+func TestListPullRequestsSupportsFilterAndPagination(t *testing.T) {
+	service, _, _, httpServer := newDexDexMainTestServer(t, ConnectServerConfig{})
+	prClient := dexdexv1connect.NewPrManagementServiceClient(httpServer.Client(), httpServer.URL)
+
+	service.store.upsertPullRequest("workspace-1", &dexdexv1.PullRequestRecord{
+		PrTrackingId: "pr-3",
+		Status:       dexdexv1.PrStatus_PR_STATUS_OPEN,
+	})
+	service.store.upsertPullRequest("workspace-1", &dexdexv1.PullRequestRecord{
+		PrTrackingId: "pr-1",
+		Status:       dexdexv1.PrStatus_PR_STATUS_OPEN,
+	})
+	service.store.upsertPullRequest("workspace-1", &dexdexv1.PullRequestRecord{
+		PrTrackingId: "pr-2",
+		Status:       dexdexv1.PrStatus_PR_STATUS_MERGED,
+	})
+
+	firstPage, err := prClient.ListPullRequests(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListPullRequestsRequest{
+			WorkspaceId: "workspace-1",
+			Status:      dexdexv1.PrStatus_PR_STATUS_OPEN,
+			PageSize:    1,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ListPullRequests first page returned error: %v", err)
+	}
+	if len(firstPage.Msg.GetItems()) != 1 {
+		t.Fatalf("expected first page item count=1, got=%d", len(firstPage.Msg.GetItems()))
+	}
+	if firstPage.Msg.GetItems()[0].GetPrTrackingId() != "pr-1" {
+		t.Fatalf("unexpected first page id: got=%q", firstPage.Msg.GetItems()[0].GetPrTrackingId())
+	}
+	if firstPage.Msg.GetNextPageToken() == "" {
+		t.Fatal("expected next page token for filtered pull requests")
+	}
+
+	secondPage, err := prClient.ListPullRequests(
+		context.Background(),
+		connect.NewRequest(&dexdexv1.ListPullRequestsRequest{
+			WorkspaceId: "workspace-1",
+			Status:      dexdexv1.PrStatus_PR_STATUS_OPEN,
+			PageSize:    1,
+			PageToken:   firstPage.Msg.GetNextPageToken(),
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ListPullRequests second page returned error: %v", err)
+	}
+	if len(secondPage.Msg.GetItems()) != 1 {
+		t.Fatalf("expected second page item count=1, got=%d", len(secondPage.Msg.GetItems()))
+	}
+	if secondPage.Msg.GetItems()[0].GetPrTrackingId() != "pr-3" {
+		t.Fatalf("unexpected second page id: got=%q", secondPage.Msg.GetItems()[0].GetPrTrackingId())
+	}
 }
 
 func TestListReviewAssistItemsReturnsEmptyWhenNoItems(t *testing.T) {

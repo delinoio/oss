@@ -43,8 +43,9 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 
 ## Architecture
 - Main server (`servers/dexdex-main-server`) is the control-plane Go service scaffold
-: It serves `WorkspaceService.GetWorkspace`, `RepositoryService.GetRepositoryGroup`, `TaskService` (`GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`, `RunSubTaskSessionAdapter`), `SessionService.GetSessionOutput`, `PrManagementService.GetPullRequest`, `ReviewAssistService.ListReviewAssistItems`, `ReviewCommentService.ListReviewComments`, `BadgeThemeService.GetBadgeTheme`, `NotificationService.ListNotifications`, and `EventStreamService.StreamWorkspaceEvents` over Connect RPC.
+: It serves `WorkspaceService` (`GetWorkspace`, `GetWorkspaceOverview`), `RepositoryService` (`GetRepositoryGroup`, `ListRepositoryGroups`), `TaskService` (`GetUnitTask`, `GetSubTask`, `ListUnitTasks`, `ListSubTasks`, `SubmitPlanDecision`, `RunSubTaskSessionAdapter`), `SessionService` (`GetSessionOutput`, `ListSessions`), `PrManagementService` (`GetPullRequest`, `ListPullRequests`), `ReviewAssistService.ListReviewAssistItems`, `ReviewCommentService.ListReviewComments`, `BadgeThemeService.GetBadgeTheme`, `NotificationService.ListNotifications`, and `EventStreamService.StreamWorkspaceEvents` over Connect RPC.
 : It keeps workspace task/subtask/event state in memory and starts with an empty workspace set.
+: It provides filtered list/index read models with page-size + page-token pagination for product UI list surfaces.
 : It provides replay + live-tail stream delivery with retention validation and keepalive heartbeat frames.
 : It orchestrates worker-driven session adapter normalization and materializes session/subtask stream events in order.
 : It uses structured logs via `log/slog`.
@@ -57,15 +58,19 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 - Desktop app (`apps/dexdex`) is the orchestration client shell
 : It starts at a workspace picker (`/`) and requires workspace selection before entering desktop role routes.
 : It resolves workspace mode into one normalized Connect RPC connection contract during picker open.
-: It renders a three-panel desktop information architecture (left navigation, center RPC workspace, right inspector) with dark-first styling.
+: It renders a three-panel desktop information architecture (left navigation, center page container, right action center) with dark-first styling.
 : It exposes route-scoped multi-page workflows aligned with Codex desktop roles (`/projects`, `/threads`, `/review`, `/automations`, `/worktrees`, `/local-environments`, `/settings`).
 : It guards desktop role routes when no active workspace session is selected and redirects to startup picker.
 : It provides a shared React Query + Connect Query transport scaffold for RPC data flows.
-: It renders page-scoped Connect RPC workflows for project/thread/review/worktree roles, with `DashboardSectionId` retained as internal card grouping.
-: It provides skeleton-only role pages for `Automations` and `Settings` until dedicated service contracts are introduced.
-: It surfaces right-panel inspector diagnostics for lookup history, last action status, and stream state.
+: It replaces RPC card dashboards with product-first page containers:
+: `Projects` -> workspace overview + repository groups + active task summary.
+: `Threads` -> inbox + detail timeline + action center.
+: `Review` -> PR queue + review assist/comment context.
+: `Worktrees` -> session list + stream timeline with incremental cache updates.
+: It provides local-store backed usable pages for `Automations`, `Local Environments`, and `Settings` (create/update/delete/toggle + last-selected restore + diagnostics history).
+: It surfaces right-panel action context for plan decision/session adapter execution based on current shared selection state.
 : It applies resolved workspace token values as `Authorization: Bearer <token>` request headers when token is present.
-: It binds selected `workspace_id` globally across RPC dashboard actions (no per-action workspace input field).
+: It binds selected `workspace_id` globally and shares selected IDs (`selected_unit_task_id`, `selected_sub_task_id`, `selected_session_id`, `selected_pr_tracking_id`) across page containers and action center.
 : It stores workspace profile metadata locally (without token persistence) and keeps active session state in memory.
 : Post-resolution behavior stays identical between `LOCAL` and `REMOTE` modes.
 - Shared proto (`protos/dexdex/v1/dexdex.proto`) is the canonical contract surface for cross-runtime integrations.
@@ -203,58 +208,65 @@ Desktop page route contract:
 - `/local-environments`
 - `/settings`
 
-Desktop dashboard section identifiers:
+Desktop shared selection contract:
 
 ```ts
-enum DashboardSectionId {
-  Workspace = "workspace",
-  Repository = "repository",
-  Tasks = "tasks",
-  Sessions = "sessions",
-  Review = "review",
-  BadgeTheme = "badge-theme",
-  Notifications = "notifications",
-  SessionAdapter = "session-adapter",
-  EventStream = "event-stream",
-}
-```
-
-Desktop page-to-dashboard section mapping contract:
-
-```ts
-type RpcDashboardPageMapping = {
-  [DexDexPageId.Projects]: [DashboardSectionId.Workspace, DashboardSectionId.Repository];
-  [DexDexPageId.Threads]: [
-    DashboardSectionId.Tasks,
-    DashboardSectionId.Sessions,
-    DashboardSectionId.BadgeTheme,
-    DashboardSectionId.Notifications,
-  ];
-  [DexDexPageId.Review]: [DashboardSectionId.Review];
-  [DexDexPageId.Worktrees]: [
-    DashboardSectionId.SessionAdapter,
-    DashboardSectionId.EventStream,
-  ];
+type SharedSelectionState = {
+  selectedUnitTaskId: string | null;
+  selectedSubTaskId: string | null;
+  selectedSessionId: string | null;
+  selectedPrTrackingId: string | null;
 };
 ```
 
-Desktop inspector state contract:
+Desktop list-read request contract:
 
 ```ts
-type DashboardInspectorState = {
-  history: {
-    workspaceId: string[];
-    repositoryGroupId: string[];
-    unitTaskId: string[];
-    subTaskId: string[];
-    sessionId: string[];
-    prTrackingId: string[];
+type DexDexListRequest = {
+  workspaceId: string;
+  pageSize: number;
+  pageToken: string;
+  status?: "ENUM_FILTER";
+  cliType?: "ENUM_FILTER";
+};
+```
+
+Desktop action center state contract:
+
+```ts
+type ActionCenterState = {
+  label: string;
+  status: "idle" | "pending" | "success" | "error";
+  message: string;
+};
+```
+
+Desktop local store contract:
+
+```ts
+type DesktopLocalStoreState = {
+  automations: {
+    id: string;
+    name: string;
+    schedule: string;
+    enabled: boolean;
+    lastRunAt: string | null;
+  }[];
+  localEnvironments: {
+    id: string;
+    name: string;
+    endpointUrl: string;
+    health: "UNKNOWN" | "HEALTHY" | "UNREACHABLE";
+    lastCheckedAt: string | null;
+    lastErrorMessage: string | null;
+  }[];
+  settings: {
+    defaultPage: DexDexPageId;
+    compactMode: boolean;
+    autoStartStream: boolean;
   };
-  lastActionLabel: string;
-  lastActionStatus: "idle" | "pending" | "success" | "error";
-  lastActionMessage: string;
-  streamStatus: "idle" | "running" | "stopped" | "error";
-  streamEventCount: number;
+  lastSelectedAutomationId: string | null;
+  lastSelectedEnvironmentId: string | null;
 };
 ```
 
@@ -281,13 +293,19 @@ Proto source-of-truth contract:
 
 Primary Connect RPC service contracts:
 - `WorkspaceService.GetWorkspace`
+- `WorkspaceService.GetWorkspaceOverview`
 - `RepositoryService.GetRepositoryGroup`
+- `RepositoryService.ListRepositoryGroups`
 - `TaskService.GetUnitTask`
 - `TaskService.GetSubTask`
+- `TaskService.ListUnitTasks`
+- `TaskService.ListSubTasks`
 - `TaskService.SubmitPlanDecision`
 - `TaskService.RunSubTaskSessionAdapter`
 - `SessionService.GetSessionOutput`
+- `SessionService.ListSessions`
 - `PrManagementService.GetPullRequest`
+- `PrManagementService.ListPullRequests`
 - `ReviewAssistService.ListReviewAssistItems`
 - `ReviewCommentService.ListReviewComments`
 - `BadgeThemeService.GetBadgeTheme`
@@ -538,21 +556,24 @@ Acceptance-focused scenarios:
 17. Worker converts malformed JSON source lines into non-terminal parse-error output events.
 18. Main server unary handlers return `NotFound` for unknown workspace/resource IDs and `InvalidArgument` for missing required fields.
 19. `GetSessionOutput`, `ListReviewAssistItems`, `ListReviewComments`, and `ListNotifications` return empty arrays when workspace exists but no records are present.
-20. Desktop dashboard can query all unary RPC methods after workspace selection and connection resolution without changing workspace mode-specific UX flow.
-21. Desktop lookup histories are in-memory, deduped, recency-ordered, and capped at five entries per lookup key; workspace history is seeded from selected workspace context.
-22. Desktop Connect transport sets `Authorization: Bearer <token>` only when a resolved token exists.
+20. `GetWorkspaceOverview`, `ListRepositoryGroups`, `ListUnitTasks`, `ListSubTasks`, `ListSessions`, and `ListPullRequests` require `workspace_id` and return `items + next_page_token` envelopes.
+21. New `List*` methods apply enum-based filters (`status`, `cli_type`) and deterministic page-size/page-token pagination.
+22. `List*` methods return empty `items` with empty `next_page_token` for existing workspaces with no matching data.
 23. Worker `NormalizeSessionOutputFixture` accepts fixture presets and raw JSONL, then returns normalized `SessionOutputEvent[]` with a derived `session_status`.
 24. Main `RunSubTaskSessionAdapter` rejects missing input oneof and `unit_task_id`/`sub_task_id` ownership mismatches with typed Connect errors.
 25. Main `RunSubTaskSessionAdapter` persists session output under `session_id` and returns the updated SubTask state.
 26. Main stream emits session adapter events in ordered sequence (`SUBTASK_UPDATED` -> `SESSION_OUTPUT` -> `SESSION_STATE_CHANGED` -> final `SUBTASK_UPDATED` when status terminal).
-27. Desktop dashboard can run session adapter requests with preset/raw input and render live stream events while ignoring heartbeat frames.
-28. Desktop dashboard can submit `APPROVE`, `REVISE`, and `REJECT` plan decisions, requiring `revision_note` only for `REVISE`, while preserving the same post-resolution UX flow across workspace modes.
-29. Desktop startup always renders workspace picker at `/`, and desktop navigation exposes seven Codex-role pages after workspace selection.
-30. Desktop `Projects`, `Threads`, `Review`, and `Worktrees` routes preserve existing RPC behavior using page-scoped section mapping.
-31. Desktop `Automations` and `Settings` routes render skeleton queue/detail/action surfaces without issuing RPC requests.
-32. Desktop route guard redirects `/projects`, `/threads`, `/review`, `/automations`, `/worktrees`, `/local-environments`, and `/settings` to `/` when no active workspace session exists.
-33. Desktop `Local Environments` route shows the active resolved connection and provides switch-back-to-picker entry.
-34. Desktop workspace profile persistence excludes remote token values from local storage payloads.
+27. Desktop startup always renders workspace picker at `/`, and desktop navigation exposes seven Codex-role pages after workspace selection.
+28. Desktop route guard redirects `/projects`, `/threads`, `/review`, `/automations`, `/worktrees`, `/local-environments`, and `/settings` to `/` when no active workspace session exists.
+29. Desktop `Threads` route provides inbox + detail timeline, and shared selection state drives Action Center context.
+30. Desktop `Threads` flow supports selecting a task/subtask/session, then executing `SubmitPlanDecision` and `RunSubTaskSessionAdapter` from Action Center in one continuous workflow.
+31. Desktop `Worktrees` route merges session list and event timeline, and stream updates incrementally refresh React Query caches.
+32. Desktop `Projects` route renders workspace overview, repository groups, and active task summaries from read APIs.
+33. Desktop `Review` route renders PR queue with review assist/comments and propagates selected PR context to Action Center.
+34. Desktop `Automations`, `Local Environments`, and `Settings` routes provide real local read/write UX (create/update/delete/toggle, diagnostics history, last-selected restore).
+35. Desktop Connect transport sets `Authorization: Bearer <token>` only when a resolved token exists.
+36. Desktop workspace profile persistence excludes remote token values from local storage payloads.
+37. Desktop UI exposes no `RPC Dashboard` surface or dependency in route containers.
 
 ## Roadmap
 - Phase 1: Shared proto contract scaffold (`dexdex.v1`) and desktop connection normalization.
