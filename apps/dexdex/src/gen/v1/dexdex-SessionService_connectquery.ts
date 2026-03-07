@@ -8,3 +8,8 @@ import { SessionService } from "./dexdex_pb";
  * @generated from rpc dexdex.v1.SessionService.GetSessionOutput
  */
 export const getSessionOutput = SessionService.method.getSessionOutput;
+
+/**
+ * @generated from rpc dexdex.v1.SessionService.ListSessions
+ */
+export const listSessions = SessionService.method.listSessions;

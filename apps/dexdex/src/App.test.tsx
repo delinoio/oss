@@ -51,10 +51,10 @@ describe("App", () => {
       screen.getByRole("heading", { level: 1, name: "Workspace Picker" }),
     ).toBeTruthy();
     expect(window.location.pathname).toBe("/");
-    expect(screen.queryByTestId("rpc-dashboard")).toBeNull();
+    expect(screen.queryByRole("heading", { level: 2, name: "Action Center" })).toBeNull();
   });
 
-  it("opens LOCAL workspace and navigates to /projects", async () => {
+  it("opens LOCAL workspace and navigates to default page", async () => {
     window.history.replaceState({}, "", "/");
 
     const resolver = vi.fn().mockResolvedValue({
@@ -72,8 +72,8 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(resolver).toHaveBeenCalledTimes(1);
-      expect(window.location.pathname).toBe("/projects");
-      expect(screen.getByTestId("rpc-dashboard")).toBeTruthy();
+      expect(window.location.pathname).toBe("/threads");
+      expect(screen.getByRole("heading", { level: 2, name: "Action Center" })).toBeTruthy();
     });
 
     const firstArg = resolver.mock.calls[0][0] as ResolveWorkspaceConnectionInput;
@@ -114,8 +114,8 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Open Workspace" }));
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/projects");
-      expect(screen.getByTestId("rpc-dashboard")).toBeTruthy();
+      expect(window.location.pathname).toBe("/threads");
+      expect(screen.getByRole("heading", { level: 2, name: "Action Center" })).toBeTruthy();
     });
 
     await user.click(screen.getByRole("button", { name: "Switch Workspace" }));
@@ -125,7 +125,7 @@ describe("App", () => {
       expect(
         screen.getByRole("heading", { level: 1, name: "Workspace Picker" }),
       ).toBeTruthy();
-      expect(screen.queryByTestId("rpc-dashboard")).toBeNull();
+      expect(screen.queryByRole("heading", { level: 2, name: "Action Center" })).toBeNull();
     });
   });
 });

@@ -8,3 +8,8 @@ import { WorkspaceService } from "./dexdex_pb";
  * @generated from rpc dexdex.v1.WorkspaceService.GetWorkspace
  */
 export const getWorkspace = WorkspaceService.method.getWorkspace;
+
+/**
+ * @generated from rpc dexdex.v1.WorkspaceService.GetWorkspaceOverview
+ */
+export const getWorkspaceOverview = WorkspaceService.method.getWorkspaceOverview;
