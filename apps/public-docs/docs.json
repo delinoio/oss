@@ -54,6 +54,15 @@
             "pages": ["derun"]
           }
         ]
+      },
+      {
+        "tab": "DexDex",
+        "groups": [
+          {
+            "group": "Desktop + Servers",
+            "pages": ["dexdex"]
+          }
+        ]
       }
     ]
   }

@@ -112,6 +112,30 @@ enum NodeupChannel {
 }
 ```
 
+Canonical release tag prefix:
+
+```ts
+enum NodeupReleaseTagPrefix {
+  Stable = "nodeup@v",
+}
+```
+
+Canonical package identifiers:
+
+```ts
+enum NodeupPackageId {
+  HomebrewFormula = "nodeup",
+  Winget = "DelinoIO.Nodeup",
+}
+```
+
+Installer script contract:
+- `scripts/install/nodeup.sh`
+- `scripts/install/nodeup.ps1`
+- Required shared flags:
+: `--version <semver|latest>`
+: `--method package-manager|direct`
+
 CLI entrypoints:
 - `nodeup [--output <human|json>] <command> ...`
 - Shim dispatch path: when the same binary is invoked as `node`, `npm`, or `npx`, nodeup resolves the active runtime and delegates execution directly (without going through the management CLI parser).
@@ -331,6 +355,19 @@ Release automation integration:
 - `.github/workflows/auto-publish.yml` runs workspace publish orchestration through `cargo run -p cargo-mono -- publish`.
 - The workflow triggers on `push` to `main` and `workflow_dispatch`, with a `main`-branch runtime guard.
 - Nodeup is included automatically when selected by `cargo-mono publish` as a publishable crate version.
+- `.github/workflows/release-nodeup.yml` is the nodeup distribution pipeline.
+- `release-nodeup` trigger contract:
+: push tags: `nodeup@v*`
+: `workflow_dispatch` with `version` and `dry_run`
+- Release artifact contract:
+: `nodeup-linux-amd64.tar.gz`
+: `nodeup-darwin-amd64.tar.gz`
+: `nodeup-darwin-arm64.tar.gz`
+: `nodeup-windows-amd64.zip`
+: `SHA256SUMS` + per-artifact cosign signatures (`*.sig`, `*.pem`)
+- Package-manager publication integration:
+: Homebrew formula update via `scripts/release/update-homebrew.sh` (`nodeup`)
+: winget manifest update via `scripts/release/update-winget.sh` (`DelinoIO.Nodeup`)
 
 ## Roadmap
 - Phase 1: Rustup-style command skeleton (`toolchain`, `default`, `show`, `override`, `run`, `which`).

@@ -111,6 +111,30 @@ enum DerunMcpTool {
 }
 ```
 
+Canonical release tag prefix:
+
+```ts
+enum DerunReleaseTagPrefix {
+  Stable = "derun@v",
+}
+```
+
+Canonical package identifiers:
+
+```ts
+enum DerunPackageId {
+  HomebrewFormula = "derun",
+  Winget = "DelinoIO.Derun",
+}
+```
+
+Installer script contract:
+- `scripts/install/derun.sh`
+- `scripts/install/derun.ps1`
+- Required shared flags:
+: `--version <semver|latest>`
+: `--method package-manager|direct`
+
 Command contracts:
 - `derun run [--session-id <id>] [--retention <duration>] -- <command> [args...]`
 : Executes user command with terminal-fidelity proxying and side-channel transcript capture.
@@ -221,6 +245,19 @@ Validation commands:
 - Workspace validation: `go test ./...`
 - CI gating: `.github/workflows/CI.yml` runs `go test ./...` on `ubuntu-latest`, `macos-latest`, and `windows-latest`.
 - Windows ConPTY E2E coverage requires console device handles (`CONIN$`, `CONOUT$`) and may skip parity assertions when the host returns no ConPTY output bytes.
+- Distribution pipeline:
+: `.github/workflows/release-derun.yml`
+: tag trigger: `derun@v*`
+: `workflow_dispatch` supports `version` and `dry_run`
+- Release artifact contract:
+: `derun-linux-amd64.tar.gz`
+: `derun-darwin-amd64.tar.gz`
+: `derun-darwin-arm64.tar.gz`
+: `derun-windows-amd64.zip`
+: `SHA256SUMS` + per-artifact cosign signatures (`*.sig`, `*.pem`)
+- Package-manager publication integration:
+: Homebrew formula update via `scripts/release/update-homebrew.sh` (`derun`)
+: winget manifest update via `scripts/release/update-winget.sh` (`DelinoIO.Derun`)
 
 Implemented defaults:
 - `derun_read_output` default `max_bytes`: `65536`.

@@ -85,6 +85,34 @@ enum DexDexComponent {
 }
 ```
 
+Canonical release tag prefix:
+
+```ts
+enum DexDexReleaseTagPrefix {
+  Stable = "dexdex@v",
+}
+```
+
+Canonical package identifiers:
+
+```ts
+enum DexDexPackageId {
+  HomebrewDesktopCask = "dexdex",
+  HomebrewMainServerFormula = "dexdex-main-server",
+  HomebrewWorkerServerFormula = "dexdex-worker-server",
+  WingetDesktop = "DelinoIO.DexDex",
+  WingetMainServer = "DelinoIO.DexDexMainServer",
+  WingetWorkerServer = "DelinoIO.DexDexWorkerServer",
+}
+```
+
+Installer script contract:
+- `scripts/install/dexdex-stack.sh`
+- `scripts/install/dexdex-stack.ps1`
+- Required shared flags:
+: `--version <semver|latest>`
+: `--method package-manager|direct`
+
 Deployment mode identifiers:
 
 ```ts
@@ -447,6 +475,21 @@ Current local validation commands:
 - `cargo test`
 - `pnpm --filter dexdex test`
 - `cd apps/dexdex && pnpm test`
+- Distribution pipeline:
+: `.github/workflows/release-dexdex.yml`
+: tag trigger: `dexdex@v*`
+: `workflow_dispatch` supports `version` and `dry_run`
+- Release artifact contract:
+: Desktop: `dexdex-desktop-linux-amd64.AppImage`, `dexdex-desktop-darwin-universal.dmg`, `dexdex-desktop-windows-amd64.msi`
+: Main server: `dexdex-main-server-{linux|darwin|windows}-{amd64|arm64}.(tar.gz|zip)`
+: Worker server: `dexdex-worker-server-{linux|darwin|windows}-{amd64|arm64}.(tar.gz|zip)`
+: Integrity/signature set: `SHA256SUMS` + per-artifact cosign signatures (`*.sig`, `*.pem`)
+- Package-manager publication integration:
+: Homebrew updates via `scripts/release/update-homebrew.sh` (`dexdex`, `dexdex-main-server`, `dexdex-worker-server`)
+: winget updates via `scripts/release/update-winget.sh` (`DelinoIO.DexDex`, `DelinoIO.DexDexMainServer`, `DelinoIO.DexDexWorkerServer`)
+- Desktop signing/notarization contract:
+: macOS signing/notarization uses GitHub Actions secrets (`DEXDEX_APPLE_CERTIFICATE_BASE64`, `DEXDEX_APPLE_CERTIFICATE_PASSWORD`, `DEXDEX_APPLE_SIGNING_IDENTITY`, `DEXDEX_APPLE_ID`, `DEXDEX_APPLE_PASSWORD`, `DEXDEX_APPLE_TEAM_ID`)
+: Windows signing uses GitHub Actions secrets (`DEXDEX_WINDOWS_CERTIFICATE_BASE64`, `DEXDEX_WINDOWS_CERTIFICATE_PASSWORD`)
 
 Main server runtime configuration:
 - `DEXDEX_MAIN_SERVER_ADDR` (default: `127.0.0.1:7878`)

@@ -15,6 +15,27 @@
 - Runtime-aware execution: `run`, `which`
 - Self-management: `self update|uninstall|upgrade-data`
 
+## Install
+
+Tag contract:
+
+- `nodeup@v<semver>`
+
+Package managers:
+
+- macOS/Linux: `brew install delinoio/tap/nodeup`
+- Windows: `winget install --id DelinoIO.Nodeup --exact`
+
+Script installer (package manager first, then direct fallback):
+
+```bash
+./scripts/install/nodeup.sh --version latest --method package-manager
+```
+
+```powershell
+./scripts/install/nodeup.ps1 -Version latest -Method package-manager
+```
+
 ## Common workflows
 
 Set a global default runtime:
