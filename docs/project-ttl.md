@@ -141,6 +141,7 @@ Canonical CLI JSON response envelope:
 - When cache initialization/read is unavailable during `explain`, the command still returns semantic explain output with `cache_analysis=[]`.
 - `run.data` includes `entry`, `module`, `task`, `args`, `result`, `run_trace`, and root-task `cache_analysis`.
 - `run` cache policy in this phase stores persistent results only for the selected root task.
+- `run` argument validation rejects fractional values for integer parameters and enforces structured parameter object shapes.
 
 Cache-key contract (v1):
 - `cache_key = hash(input_content_hash + parameter_hash + environment_snapshot_hash)`

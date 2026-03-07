@@ -181,6 +181,8 @@ Run output contract (Phase 2 default JSON envelope):
 - `data.cache_analysis` (single root-task row with `task_id`, `cache_key`, `cache_hit`, `invalidation_reason`)
 - `--task` is required for `run`.
 - `--args` must be a JSON object, and parameter type mismatches return `type_error` diagnostics.
+- Integer parameters reject fractional numeric values.
+- Structured parameters must match declared object shape and field types.
 
 Generated runner subset contract (Phase 2):
 - Supported statements: assignment (`:=`, `=`), expression statement, `return`.

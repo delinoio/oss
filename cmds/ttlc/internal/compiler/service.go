@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -201,7 +202,7 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	}
 
 	rootTask := result.Tasks[0]
-	result.Diagnostics = append(result.Diagnostics, validateRunArgs(rootTask.Params, options.Args)...)
+	result.Diagnostics = append(result.Diagnostics, validateRunArgs(rootTask.Params, options.Args, analysisResult.typeDeclarations)...)
 	if hasErrorDiagnostics(result.Diagnostics) {
 		return result, nil
 	}
@@ -713,10 +714,14 @@ func stableRunValueString(value any) (string, error) {
 	}
 }
 
-func validateRunArgs(parameters []sema.TaskParam, args map[string]any) []diagnostic.Diagnostic {
+func validateRunArgs(parameters []sema.TaskParam, args map[string]any, typeDeclarations []sema.TypeDecl) []diagnostic.Diagnostic {
 	diagnostics := make([]diagnostic.Diagnostic, 0)
 	if args == nil {
 		args = map[string]any{}
+	}
+	typeDeclarationsByName := make(map[string]sema.TypeDecl, len(typeDeclarations))
+	for _, typeDeclaration := range typeDeclarations {
+		typeDeclarationsByName[typeDeclaration.Name] = typeDeclaration
 	}
 
 	parameterByName := make(map[string]sema.TaskParam, len(parameters))
@@ -733,7 +738,7 @@ func validateRunArgs(parameters []sema.TaskParam, args map[string]any) []diagnos
 			})
 			continue
 		}
-		if !runArgumentTypeMatches(parameter.Type, value) {
+		if !runArgumentTypeMatches(parameter.Type, value, typeDeclarationsByName, map[string]bool{}) {
 			diagnostics = append(diagnostics, diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindTypeError,
 				Message: fmt.Sprintf("invalid run argument type: %s expects %s", parameter.Name, parameter.Type),
@@ -762,7 +767,7 @@ func validateRunArgs(parameters []sema.TaskParam, args map[string]any) []diagnos
 	return diagnostics
 }
 
-func runArgumentTypeMatches(expectedType string, value any) bool {
+func runArgumentTypeMatches(expectedType string, value any, typeDeclarationsByName map[string]sema.TypeDecl, visitedTypes map[string]bool) bool {
 	normalizedType := strings.TrimSpace(expectedType)
 	switch normalizedType {
 	case "string":
@@ -772,30 +777,130 @@ func runArgumentTypeMatches(expectedType string, value any) bool {
 		_, ok := value.(bool)
 		return ok
 	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr":
-		switch value.(type) {
-		case int, int8, int16, int32, int64:
-			return true
-		case uint, uint8, uint16, uint32, uint64, uintptr:
-			return true
-		case float64, float32:
-			return true
-		case json.Number:
-			return true
-		default:
-			return false
-		}
+		return runIntegerArgumentTypeMatches(normalizedType, value)
 	case "float32", "float64":
-		switch value.(type) {
-		case float32, float64:
-			return true
-		case json.Number:
-			return true
-		default:
+		return runFloatArgumentTypeMatches(value)
+	default:
+		typeName := normalizedType
+		if separator := strings.LastIndex(typeName, "."); separator >= 0 {
+			typeName = typeName[separator+1:]
+		}
+		typeDeclaration, exists := typeDeclarationsByName[typeName]
+		if !exists {
 			return false
 		}
-	default:
-		return true
+
+		objectValue, ok := value.(map[string]any)
+		if !ok {
+			return false
+		}
+		if visitedTypes[typeName] {
+			return true
+		}
+		visitedTypes[typeName] = true
+		defer delete(visitedTypes, typeName)
+
+		seenFields := make(map[string]struct{}, len(objectValue))
+		for fieldName := range objectValue {
+			seenFields[fieldName] = struct{}{}
+		}
+
+		for _, field := range typeDeclaration.Fields {
+			fieldValue, exists := objectValue[field.Name]
+			if !exists {
+				return false
+			}
+			delete(seenFields, field.Name)
+			if !runArgumentTypeMatches(field.Type, fieldValue, typeDeclarationsByName, visitedTypes) {
+				return false
+			}
+		}
+		return len(seenFields) == 0
 	}
+}
+
+func runIntegerArgumentTypeMatches(expectedType string, value any) bool {
+	unsignedOnly := strings.HasPrefix(expectedType, "u") || expectedType == "uintptr"
+	switch typed := value.(type) {
+	case int:
+		return !unsignedOnly || typed >= 0
+	case int8:
+		return !unsignedOnly || typed >= 0
+	case int16:
+		return !unsignedOnly || typed >= 0
+	case int32:
+		return !unsignedOnly || typed >= 0
+	case int64:
+		return !unsignedOnly || typed >= 0
+	case uint, uint8, uint16, uint32, uint64, uintptr:
+		return true
+	case float32:
+		if !isFiniteWholeNumber(float64(typed)) {
+			return false
+		}
+		return !unsignedOnly || typed >= 0
+	case float64:
+		if !isFiniteWholeNumber(typed) {
+			return false
+		}
+		return !unsignedOnly || typed >= 0
+	case json.Number:
+		return isJSONIntegerValue(typed.String(), unsignedOnly)
+	default:
+		return false
+	}
+}
+
+func runFloatArgumentTypeMatches(value any) bool {
+	switch typed := value.(type) {
+	case int, int8, int16, int32, int64:
+		return true
+	case uint, uint8, uint16, uint32, uint64, uintptr:
+		return true
+	case float32:
+		return !math.IsNaN(float64(typed)) && !math.IsInf(float64(typed), 0)
+	case float64:
+		return !math.IsNaN(typed) && !math.IsInf(typed, 0)
+	case json.Number:
+		_, err := typed.Float64()
+		return err == nil
+	default:
+		return false
+	}
+}
+
+func isFiniteWholeNumber(value float64) bool {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return false
+	}
+	return math.Trunc(value) == value
+}
+
+func isJSONIntegerValue(raw string, unsignedOnly bool) bool {
+	normalized := strings.TrimSpace(raw)
+	if normalized == "" {
+		return false
+	}
+	if strings.ContainsAny(normalized, ".eE") {
+		return false
+	}
+
+	start := 0
+	if normalized[0] == '+' || normalized[0] == '-' {
+		if unsignedOnly && normalized[0] == '-' {
+			return false
+		}
+		start = 1
+	}
+	if start >= len(normalized) {
+		return false
+	}
+	for _, character := range normalized[start:] {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneArgs(args map[string]any) map[string]any {
