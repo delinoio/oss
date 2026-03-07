@@ -28,10 +28,79 @@ import { createDexDexTransport } from "../lib/connect-query-provider";
 const HISTORY_LIMIT = 5;
 const STREAM_EVENT_HISTORY_LIMIT = 100;
 
+export enum DashboardSectionId {
+  All = "all",
+  Workspace = "workspace",
+  Repository = "repository",
+  Tasks = "tasks",
+  Sessions = "sessions",
+  Review = "review",
+  BadgeTheme = "badge-theme",
+  Notifications = "notifications",
+  SessionAdapter = "session-adapter",
+  EventStream = "event-stream",
+}
+
+type DashboardSectionDefinition = {
+  id: DashboardSectionId;
+  label: string;
+  description: string;
+};
+
+export const dashboardSectionDefinitions: ReadonlyArray<DashboardSectionDefinition> =
+  [
+    {
+      id: DashboardSectionId.Workspace,
+      label: "Workspace",
+      description: "Workspace contract and root metadata",
+    },
+    {
+      id: DashboardSectionId.Repository,
+      label: "Repository",
+      description: "Repository group lookups",
+    },
+    {
+      id: DashboardSectionId.Tasks,
+      label: "Tasks",
+      description: "Unit/sub-task reads and plan decisions",
+    },
+    {
+      id: DashboardSectionId.Sessions,
+      label: "Sessions",
+      description: "Session output inspection",
+    },
+    {
+      id: DashboardSectionId.Review,
+      label: "Review",
+      description: "PR, assist items, and review comments",
+    },
+    {
+      id: DashboardSectionId.BadgeTheme,
+      label: "Theme",
+      description: "Badge theme lookup",
+    },
+    {
+      id: DashboardSectionId.Notifications,
+      label: "Notifications",
+      description: "Workspace notifications",
+    },
+    {
+      id: DashboardSectionId.SessionAdapter,
+      label: "Session Adapter",
+      description: "Fixture normalization execution",
+    },
+    {
+      id: DashboardSectionId.EventStream,
+      label: "Event Stream",
+      description: "Live workspace stream monitor",
+    },
+  ];
+
 type StreamStatus = "idle" | "running" | "stopped" | "error";
 type SessionAdapterInputMode = "preset" | "raw";
+type DashboardActionStatus = "idle" | "pending" | "success" | "error";
 
-type LookupHistory = {
+export type LookupHistory = {
   workspaceId: string[];
   repositoryGroupId: string[];
   unitTaskId: string[];
@@ -39,6 +108,43 @@ type LookupHistory = {
   sessionId: string[];
   prTrackingId: string[];
 };
+
+type DashboardActionState = {
+  label: string;
+  status: DashboardActionStatus;
+  message: string;
+};
+
+export type DashboardInspectorState = {
+  history: LookupHistory;
+  lastActionLabel: string;
+  lastActionStatus: DashboardActionStatus;
+  lastActionMessage: string;
+  streamStatus: StreamStatus;
+  streamEventCount: number;
+};
+
+function createEmptyLookupHistory(): LookupHistory {
+  return {
+    workspaceId: [],
+    repositoryGroupId: [],
+    unitTaskId: [],
+    subTaskId: [],
+    sessionId: [],
+    prTrackingId: [],
+  };
+}
+
+export function createEmptyDashboardInspectorState(): DashboardInspectorState {
+  return {
+    history: createEmptyLookupHistory(),
+    lastActionLabel: "Awaiting action",
+    lastActionStatus: "idle",
+    lastActionMessage: "Run a query or stream to populate diagnostics.",
+    streamStatus: "idle",
+    streamEventCount: 0,
+  };
+}
 
 type QueryResultPanelProps = {
   title: string;
@@ -217,8 +323,12 @@ function HistoryRow({ title, values, onSelect }: HistoryRowProps) {
 
 export function RpcDashboard({
   connection,
+  activeSection = DashboardSectionId.All,
+  onInspectorChange,
 }: {
   connection: ResolvedWorkspaceConnection;
+  activeSection?: DashboardSectionId;
+  onInspectorChange?: (next: DashboardInspectorState) => void;
 }) {
   const [workspaceInput, setWorkspaceInput] = useState("workspace-1");
   const [repositoryGroupInput, setRepositoryGroupInput] = useState("");
@@ -267,17 +377,15 @@ export function RpcDashboard({
   const [streamEvents, setStreamEvents] = useState<StreamWorkspaceEventsResponse[]>(
     [],
   );
+  const [lastAction, setLastAction] = useState<DashboardActionState>({
+    label: "Awaiting action",
+    status: "idle",
+    message: "Run a query or stream to populate diagnostics.",
+  });
   const streamAbortControllerRef = useRef<AbortController | null>(null);
   const planDecisionRequestIDRef = useRef(0);
   const sessionAdapterRequestIDRef = useRef(0);
-  const [history, setHistory] = useState<LookupHistory>({
-    workspaceId: [],
-    repositoryGroupId: [],
-    unitTaskId: [],
-    subTaskId: [],
-    sessionId: [],
-    prTrackingId: [],
-  });
+  const [history, setHistory] = useState<LookupHistory>(createEmptyLookupHistory);
 
   const [workspaceLookup, setWorkspaceLookup] = useState<{ workspaceId: string } | null>(null);
   const [repositoryLookup, setRepositoryLookup] = useState<{
@@ -372,6 +480,25 @@ export function RpcDashboard({
     },
   );
 
+  const selectedSection = useMemo(
+    () =>
+      dashboardSectionDefinitions.find((section) => section.id === activeSection) ??
+      dashboardSectionDefinitions[0],
+    [activeSection],
+  );
+
+  const inspectorState = useMemo<DashboardInspectorState>(
+    () => ({
+      history,
+      lastActionLabel: lastAction.label,
+      lastActionStatus: lastAction.status,
+      lastActionMessage: lastAction.message,
+      streamStatus,
+      streamEventCount: streamEvents.length,
+    }),
+    [history, lastAction, streamEvents.length, streamStatus],
+  );
+
   useEffect(() => {
     return () => {
       if (streamAbortControllerRef.current) {
@@ -399,12 +526,42 @@ export function RpcDashboard({
     setStreamEvents([]);
     setSessionAdapterError(null);
     setSessionAdapterResult(null);
+    setLastAction({
+      label: "Connection changed",
+      status: "idle",
+      message: "Waiting for the next dashboard action.",
+    });
   }, [
     connection.endpointSource,
     connection.endpointUrl,
     connection.mode,
     connection.token,
   ]);
+
+  useEffect(() => {
+    if (!onInspectorChange) {
+      return;
+    }
+    onInspectorChange(inspectorState);
+  }, [inspectorState, onInspectorChange]);
+
+  function setAction(
+    label: string,
+    status: DashboardActionStatus,
+    message: string,
+  ) {
+    setLastAction({
+      label,
+      status,
+      message,
+    });
+  }
+
+  function showSection(section: DashboardSectionId): boolean {
+    return (
+      activeSection === DashboardSectionId.All || activeSection === section
+    );
+  }
 
   function remember(key: keyof LookupHistory, value: string) {
     setHistory((previous) => ({
@@ -416,7 +573,9 @@ export function RpcDashboard({
   function requireWorkspaceInput(actionLabel: string): string | null {
     const workspaceId = workspaceInput.trim();
     if (workspaceId.length === 0) {
-      setLocalError(`${actionLabel}: workspace id is required.`);
+      const message = `${actionLabel}: workspace id is required.`;
+      setLocalError(message);
+      setAction(actionLabel, "error", message);
       return null;
     }
 
@@ -432,7 +591,9 @@ export function RpcDashboard({
   ): string | null {
     const normalized = rawValue.trim();
     if (normalized.length === 0) {
-      setLocalError(`${actionLabel}: ${fieldName} is required.`);
+      const message = `${actionLabel}: ${fieldName} is required.`;
+      setLocalError(message);
+      setAction(actionLabel, "error", message);
       return null;
     }
 
@@ -448,6 +609,7 @@ export function RpcDashboard({
     }
 
     setWorkspaceLookup({ workspaceId });
+    setAction("Fetch Workspace", "success", "Workspace query submitted.");
   }
 
   function handleRepositoryLookup(event: FormEvent<HTMLFormElement>) {
@@ -470,6 +632,11 @@ export function RpcDashboard({
       workspaceId,
       repositoryGroupId,
     });
+    setAction(
+      "Fetch Repository Group",
+      "success",
+      "Repository group query submitted.",
+    );
   }
 
   function handleUnitTaskLookup(event: FormEvent<HTMLFormElement>) {
@@ -492,6 +659,7 @@ export function RpcDashboard({
       workspaceId,
       unitTaskId,
     });
+    setAction("Fetch Unit Task", "success", "Unit task query submitted.");
   }
 
   function handleSubTaskLookup(event: FormEvent<HTMLFormElement>) {
@@ -514,6 +682,7 @@ export function RpcDashboard({
       workspaceId,
       subTaskId,
     });
+    setAction("Fetch Sub Task", "success", "Sub task query submitted.");
   }
 
   function handleSessionLookup(event: FormEvent<HTMLFormElement>) {
@@ -536,6 +705,7 @@ export function RpcDashboard({
       workspaceId,
       sessionId,
     });
+    setAction("Fetch Session Output", "success", "Session output query submitted.");
   }
 
   function handlePullRequestLookup(event: FormEvent<HTMLFormElement>) {
@@ -558,6 +728,7 @@ export function RpcDashboard({
       workspaceId,
       prTrackingId,
     });
+    setAction("Fetch Pull Request", "success", "Pull request query submitted.");
   }
 
   function handleReviewAssistLookup(event: FormEvent<HTMLFormElement>) {
@@ -580,6 +751,11 @@ export function RpcDashboard({
       workspaceId,
       unitTaskId,
     });
+    setAction(
+      "Fetch Review Assist",
+      "success",
+      "Review assist query submitted.",
+    );
   }
 
   function handleReviewCommentLookup(event: FormEvent<HTMLFormElement>) {
@@ -602,6 +778,11 @@ export function RpcDashboard({
       workspaceId,
       prTrackingId,
     });
+    setAction(
+      "Fetch Review Comments",
+      "success",
+      "Review comments query submitted.",
+    );
   }
 
   function handleBadgeThemeLookup(event: FormEvent<HTMLFormElement>) {
@@ -611,6 +792,7 @@ export function RpcDashboard({
       return;
     }
     setBadgeThemeLookup({ workspaceId });
+    setAction("Fetch Badge Theme", "success", "Badge theme query submitted.");
   }
 
   function handleNotificationLookup(event: FormEvent<HTMLFormElement>) {
@@ -620,6 +802,7 @@ export function RpcDashboard({
       return;
     }
     setNotificationLookup({ workspaceId });
+    setAction("Fetch Notifications", "success", "Notification query submitted.");
   }
 
   async function handleSubmitPlanDecision(event: FormEvent<HTMLFormElement>) {
@@ -664,6 +847,11 @@ export function RpcDashboard({
 
     setPlanDecisionPending(true);
     setPlanDecisionError(null);
+    setAction(
+      "Submit Plan Decision",
+      "pending",
+      "Submitting plan decision request.",
+    );
     const requestID = planDecisionRequestIDRef.current + 1;
     planDecisionRequestIDRef.current = requestID;
 
@@ -673,14 +861,22 @@ export function RpcDashboard({
         return;
       }
       setPlanDecisionResult(response);
+      setAction(
+        "Submit Plan Decision",
+        "success",
+        "Plan decision submitted successfully.",
+      );
     } catch (error) {
       if (requestID !== planDecisionRequestIDRef.current) {
         return;
       }
-      setPlanDecisionError(
-        describeQueryError(error, "Plan decision target was not found."),
+      const message = describeQueryError(
+        error,
+        "Plan decision target was not found.",
       );
+      setPlanDecisionError(message);
       setPlanDecisionResult(null);
+      setAction("Submit Plan Decision", "error", message);
     } finally {
       if (requestID !== planDecisionRequestIDRef.current) {
         return;
@@ -744,6 +940,11 @@ export function RpcDashboard({
 
     setSessionAdapterPending(true);
     setSessionAdapterError(null);
+    setAction(
+      "Run Session Adapter",
+      "pending",
+      "Submitting session adapter execution.",
+    );
     const requestID = sessionAdapterRequestIDRef.current + 1;
     sessionAdapterRequestIDRef.current = requestID;
     try {
@@ -759,14 +960,22 @@ export function RpcDashboard({
         return;
       }
       setSessionAdapterResult(response);
+      setAction(
+        "Run Session Adapter",
+        "success",
+        "Session adapter execution completed.",
+      );
     } catch (error) {
       if (requestID !== sessionAdapterRequestIDRef.current) {
         return;
       }
-      setSessionAdapterError(
-        describeQueryError(error, "Session adapter target was not found."),
+      const message = describeQueryError(
+        error,
+        "Session adapter target was not found.",
       );
+      setSessionAdapterError(message);
       setSessionAdapterResult(null);
+      setAction("Run Session Adapter", "error", message);
     } finally {
       if (requestID !== sessionAdapterRequestIDRef.current) {
         return;
@@ -783,6 +992,7 @@ export function RpcDashboard({
     streamAbortControllerRef.current.abort();
     streamAbortControllerRef.current = null;
     setStreamStatus("stopped");
+    setAction("Stop Live Stream", "success", "Workspace stream stopped.");
   }
 
   async function startLiveWorkspaceStream() {
@@ -793,7 +1003,10 @@ export function RpcDashboard({
 
     const fromSequence = parseFromSequence(streamFromSequenceInput);
     if (fromSequence === null) {
-      setLocalError("Start Live Stream: from sequence must be a non-negative integer.");
+      const message =
+        "Start Live Stream: from sequence must be a non-negative integer.";
+      setLocalError(message);
+      setAction("Start Live Stream", "error", message);
       return;
     }
 
@@ -805,6 +1018,7 @@ export function RpcDashboard({
     setStreamStatus("running");
     setStreamError(null);
     setStreamEvents([]);
+    setAction("Start Live Stream", "pending", "Opening live stream.");
 
     try {
       for await (const event of eventStreamClient.streamWorkspaceEvents(
@@ -827,6 +1041,7 @@ export function RpcDashboard({
 
       if (!abortController.signal.aborted) {
         setStreamStatus("stopped");
+        setAction("Start Live Stream", "success", "Live stream completed.");
       }
     } catch (error) {
       if (abortController.signal.aborted) {
@@ -834,12 +1049,12 @@ export function RpcDashboard({
       }
 
       setStreamStatus("error");
-      setStreamError(
-        describeQueryError(
-          error,
-          "No workspace found for this stream subscription.",
-        ),
+      const message = describeQueryError(
+        error,
+        "No workspace found for this stream subscription.",
       );
+      setStreamError(message);
+      setAction("Start Live Stream", "error", message);
     } finally {
       if (streamAbortControllerRef.current === abortController) {
         streamAbortControllerRef.current = null;
@@ -848,13 +1063,21 @@ export function RpcDashboard({
   }
 
   return (
-    <section className="panel" data-testid="rpc-dashboard">
-      <h2>RPC Dashboard</h2>
-      <p className="note">
-        Endpoint: <code>{connection.endpointUrl}</code> · Source:{" "}
-        <code>{connection.endpointSource}</code> · Token:{" "}
-        <code>{connection.token ? "present" : "absent"}</code>
-      </p>
+    <section className="panel dashboard-panel" data-testid="rpc-dashboard">
+      <header className="dashboard-header">
+        <div>
+          <h2>RPC Dashboard</h2>
+          <p className="note">
+            Endpoint: <code>{connection.endpointUrl}</code> · Source:{" "}
+            <code>{connection.endpointSource}</code> · Token:{" "}
+            <code>{connection.token ? "present" : "absent"}</code>
+          </p>
+        </div>
+        <div className="dashboard-active-pill">
+          <span>Active View</span>
+          <strong>{selectedSection.label}</strong>
+        </div>
+      </header>
 
       <div className="field">
         <label htmlFor="lookup-workspace-id">Workspace ID</label>
@@ -879,538 +1102,568 @@ export function RpcDashboard({
       ) : null}
 
       <div className="dashboard-grid">
-        <article className="query-card">
-          <h3>WorkspaceService.GetWorkspace</h3>
-          <form onSubmit={handleWorkspaceLookup}>
-            <button type="submit">Fetch Workspace</button>
-          </form>
-          <QueryResultPanel
-            title="workspace"
-            pending={workspaceQuery.isPending}
-            fetching={workspaceQuery.isFetching}
-            error={workspaceQuery.error}
-            data={workspaceQuery.data?.workspace}
-            idleMessage="Run lookup to load workspace data."
-            notFoundMessage="No workspace found for this workspace id."
-          />
-        </article>
+        {showSection(DashboardSectionId.Workspace) ? (
+          <article className="query-card">
+            <h3>WorkspaceService.GetWorkspace</h3>
+            <form onSubmit={handleWorkspaceLookup}>
+              <button type="submit">Fetch Workspace</button>
+            </form>
+            <QueryResultPanel
+              title="workspace"
+              pending={workspaceQuery.isPending}
+              fetching={workspaceQuery.isFetching}
+              error={workspaceQuery.error}
+              data={workspaceQuery.data?.workspace}
+              idleMessage="Run lookup to load workspace data."
+              notFoundMessage="No workspace found for this workspace id."
+            />
+          </article>
+        ) : null}
 
-        <article className="query-card">
-          <h3>RepositoryService.GetRepositoryGroup</h3>
-          <form onSubmit={handleRepositoryLookup}>
-            <div className="field">
-              <label htmlFor="lookup-repository-group-id">Repository Group ID</label>
-              <input
-                id="lookup-repository-group-id"
-                name="lookup-repository-group-id"
-                value={repositoryGroupInput}
-                onChange={(event) => setRepositoryGroupInput(event.target.value)}
-                placeholder="repo-group-1"
-              />
-            </div>
-            <button type="submit">Fetch Repository Group</button>
-          </form>
-          <HistoryRow
-            title="Recent repository groups"
-            values={history.repositoryGroupId}
-            onSelect={setRepositoryGroupInput}
-          />
-          <QueryResultPanel
-            title="repository-group"
-            pending={repositoryQuery.isPending}
-            fetching={repositoryQuery.isFetching}
-            error={repositoryQuery.error}
-            data={repositoryQuery.data?.repositoryGroup}
-            idleMessage="Run lookup to load repository group data."
-            notFoundMessage="No repository group found for this workspace and id."
-          />
-        </article>
-
-        <article className="query-card">
-          <h3>TaskService.GetUnitTask</h3>
-          <form onSubmit={handleUnitTaskLookup}>
-            <div className="field">
-              <label htmlFor="lookup-unit-task-id">Unit Task ID</label>
-              <input
-                id="lookup-unit-task-id"
-                name="lookup-unit-task-id"
-                value={unitTaskInput}
-                onChange={(event) => setUnitTaskInput(event.target.value)}
-                placeholder="unit-1"
-              />
-            </div>
-            <button type="submit">Fetch Unit Task</button>
-          </form>
-          <HistoryRow
-            title="Recent unit tasks"
-            values={history.unitTaskId}
-            onSelect={setUnitTaskInput}
-          />
-          <QueryResultPanel
-            title="unit-task"
-            pending={unitTaskQuery.isPending}
-            fetching={unitTaskQuery.isFetching}
-            error={unitTaskQuery.error}
-            data={unitTaskQuery.data?.unitTask}
-            idleMessage="Run lookup to load unit task data."
-            notFoundMessage="No unit task found for this workspace and id."
-          />
-        </article>
-
-        <article className="query-card">
-          <h3>TaskService.GetSubTask</h3>
-          <form onSubmit={handleSubTaskLookup}>
-            <div className="field">
-              <label htmlFor="lookup-sub-task-id">Sub Task ID</label>
-              <input
-                id="lookup-sub-task-id"
-                name="lookup-sub-task-id"
-                value={subTaskInput}
-                onChange={(event) => setSubTaskInput(event.target.value)}
-                placeholder="sub-1"
-              />
-            </div>
-            <button type="submit">Fetch Sub Task</button>
-          </form>
-          <HistoryRow
-            title="Recent sub tasks"
-            values={history.subTaskId}
-            onSelect={setSubTaskInput}
-          />
-          <QueryResultPanel
-            title="sub-task"
-            pending={subTaskQuery.isPending}
-            fetching={subTaskQuery.isFetching}
-            error={subTaskQuery.error}
-            data={subTaskQuery.data?.subTask}
-            idleMessage="Run lookup to load sub task data."
-            notFoundMessage="No sub task found for this workspace and id."
-          />
-        </article>
-
-        <article className="query-card">
-          <h3>TaskService.SubmitPlanDecision</h3>
-          <form onSubmit={handleSubmitPlanDecision}>
-            <div className="field">
-              <label htmlFor="plan-sub-task-id">Plan Sub Task ID</label>
-              <input
-                id="plan-sub-task-id"
-                name="plan-sub-task-id"
-                value={planSubTaskInput}
-                onChange={(event) => setPlanSubTaskInput(event.target.value)}
-                placeholder="sub-1"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="plan-decision">Plan Decision</label>
-              <select
-                id="plan-decision"
-                name="plan-decision"
-                value={planDecisionInput}
-                onChange={(event) =>
-                  setPlanDecisionInput(Number(event.target.value) as PlanDecision)
-                }
-              >
-                {planDecisionOptions().map((option) => (
-                  <option key={option.label} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {planDecisionInput === PlanDecision.REVISE ? (
+        {showSection(DashboardSectionId.Repository) ? (
+          <article className="query-card">
+            <h3>RepositoryService.GetRepositoryGroup</h3>
+            <form onSubmit={handleRepositoryLookup}>
               <div className="field">
-                <label htmlFor="plan-revision-note">Revision Note</label>
-                <textarea
-                  id="plan-revision-note"
-                  name="plan-revision-note"
-                  value={planRevisionNoteInput}
-                  onChange={(event) => setPlanRevisionNoteInput(event.target.value)}
-                  rows={4}
+                <label htmlFor="lookup-repository-group-id">
+                  Repository Group ID
+                </label>
+                <input
+                  id="lookup-repository-group-id"
+                  name="lookup-repository-group-id"
+                  value={repositoryGroupInput}
+                  onChange={(event) => setRepositoryGroupInput(event.target.value)}
+                  placeholder="repo-group-1"
                 />
               </div>
-            ) : null}
-            <button type="submit" disabled={planDecisionPending}>
-              {planDecisionPending ? "Submitting..." : "Submit Plan Decision"}
-            </button>
-          </form>
-          <HistoryRow
-            title="Recent sub tasks"
-            values={history.subTaskId}
-            onSelect={setPlanSubTaskInput}
-          />
-          {planDecisionError ? (
-            <p className="error" role="alert">
-              {planDecisionError}
-            </p>
-          ) : null}
-          {planDecisionResult ? (
-            <pre className="query-result" data-testid="plan-decision-result">
-              {formatForDisplay(planDecisionResult)}
-            </pre>
-          ) : (
-            <p className="query-status">
-              Submit plan decision to update the current sub task state.
-            </p>
-          )}
-        </article>
+              <button type="submit">Fetch Repository Group</button>
+            </form>
+            <HistoryRow
+              title="Recent repository groups"
+              values={history.repositoryGroupId}
+              onSelect={setRepositoryGroupInput}
+            />
+            <QueryResultPanel
+              title="repository-group"
+              pending={repositoryQuery.isPending}
+              fetching={repositoryQuery.isFetching}
+              error={repositoryQuery.error}
+              data={repositoryQuery.data?.repositoryGroup}
+              idleMessage="Run lookup to load repository group data."
+              notFoundMessage="No repository group found for this workspace and id."
+            />
+          </article>
+        ) : null}
 
-        <article className="query-card">
-          <h3>SessionService.GetSessionOutput</h3>
-          <form onSubmit={handleSessionLookup}>
-            <div className="field">
-              <label htmlFor="lookup-session-id">Session ID</label>
-              <input
-                id="lookup-session-id"
-                name="lookup-session-id"
-                value={sessionInput}
-                onChange={(event) => setSessionInput(event.target.value)}
-                placeholder="session-1"
-              />
-            </div>
-            <button type="submit">Fetch Session Output</button>
-          </form>
-          <HistoryRow
-            title="Recent sessions"
-            values={history.sessionId}
-            onSelect={setSessionInput}
-          />
-          <QueryResultPanel
-            title="session-output"
-            pending={sessionQuery.isPending}
-            fetching={sessionQuery.isFetching}
-            error={sessionQuery.error}
-            data={sessionQuery.data?.events}
-            idleMessage="Run lookup to load session events."
-            notFoundMessage="No workspace found for this session lookup."
-            emptyMessage="No session output events available for this session id."
-          />
-        </article>
-
-        <article className="query-card">
-          <h3>PrManagementService.GetPullRequest</h3>
-          <form onSubmit={handlePullRequestLookup}>
-            <div className="field">
-              <label htmlFor="lookup-pr-tracking-id">PR Tracking ID</label>
-              <input
-                id="lookup-pr-tracking-id"
-                name="lookup-pr-tracking-id"
-                value={pullRequestInput}
-                onChange={(event) => setPullRequestInput(event.target.value)}
-                placeholder="pr-1"
-              />
-            </div>
-            <button type="submit">Fetch Pull Request</button>
-          </form>
-          <HistoryRow
-            title="Recent PR tracking IDs"
-            values={history.prTrackingId}
-            onSelect={setPullRequestInput}
-          />
-          <QueryResultPanel
-            title="pull-request"
-            pending={pullRequestQuery.isPending}
-            fetching={pullRequestQuery.isFetching}
-            error={pullRequestQuery.error}
-            data={pullRequestQuery.data?.pullRequest}
-            idleMessage="Run lookup to load pull request data."
-            notFoundMessage="No pull request found for this workspace and tracking id."
-          />
-        </article>
-
-        <article className="query-card">
-          <h3>ReviewAssistService.ListReviewAssistItems</h3>
-          <form onSubmit={handleReviewAssistLookup}>
-            <div className="field">
-              <label htmlFor="lookup-review-assist-unit-task-id">
-                Unit Task ID
-              </label>
-              <input
-                id="lookup-review-assist-unit-task-id"
-                name="lookup-review-assist-unit-task-id"
-                value={reviewAssistInput}
-                onChange={(event) => setReviewAssistInput(event.target.value)}
-                placeholder="unit-1"
-              />
-            </div>
-            <button type="submit">Fetch Review Assist Items</button>
-          </form>
-          <HistoryRow
-            title="Recent unit tasks"
-            values={history.unitTaskId}
-            onSelect={setReviewAssistInput}
-          />
-          <QueryResultPanel
-            title="review-assist"
-            pending={reviewAssistQuery.isPending}
-            fetching={reviewAssistQuery.isFetching}
-            error={reviewAssistQuery.error}
-            data={reviewAssistQuery.data?.items}
-            idleMessage="Run lookup to load review assist items."
-            notFoundMessage="No workspace found for this review assist lookup."
-            emptyMessage="No review assist items available for this unit task id."
-          />
-        </article>
-
-        <article className="query-card">
-          <h3>ReviewCommentService.ListReviewComments</h3>
-          <form onSubmit={handleReviewCommentLookup}>
-            <div className="field">
-              <label htmlFor="lookup-review-comment-pr-id">PR Tracking ID</label>
-              <input
-                id="lookup-review-comment-pr-id"
-                name="lookup-review-comment-pr-id"
-                value={reviewCommentInput}
-                onChange={(event) => setReviewCommentInput(event.target.value)}
-                placeholder="pr-1"
-              />
-            </div>
-            <button type="submit">Fetch Review Comments</button>
-          </form>
-          <HistoryRow
-            title="Recent PR tracking IDs"
-            values={history.prTrackingId}
-            onSelect={setReviewCommentInput}
-          />
-          <QueryResultPanel
-            title="review-comments"
-            pending={reviewCommentQuery.isPending}
-            fetching={reviewCommentQuery.isFetching}
-            error={reviewCommentQuery.error}
-            data={reviewCommentQuery.data?.comments}
-            idleMessage="Run lookup to load review comments."
-            notFoundMessage="No workspace found for this review comment lookup."
-            emptyMessage="No review comments available for this pr tracking id."
-          />
-        </article>
-
-        <article className="query-card">
-          <h3>BadgeThemeService.GetBadgeTheme</h3>
-          <form onSubmit={handleBadgeThemeLookup}>
-            <button type="submit">Fetch Badge Theme</button>
-          </form>
-          <QueryResultPanel
-            title="badge-theme"
-            pending={badgeThemeQuery.isPending}
-            fetching={badgeThemeQuery.isFetching}
-            error={badgeThemeQuery.error}
-            data={badgeThemeQuery.data?.theme}
-            idleMessage="Run lookup to load badge theme data."
-            notFoundMessage="No badge theme found for this workspace id."
-          />
-        </article>
-
-        <article className="query-card">
-          <h3>NotificationService.ListNotifications</h3>
-          <form onSubmit={handleNotificationLookup}>
-            <button type="submit">Fetch Notifications</button>
-          </form>
-          <QueryResultPanel
-            title="notifications"
-            pending={notificationQuery.isPending}
-            fetching={notificationQuery.isFetching}
-            error={notificationQuery.error}
-            data={notificationQuery.data?.notifications}
-            idleMessage="Run lookup to load notifications."
-            notFoundMessage="No workspace found for this notification lookup."
-            emptyMessage="No notifications available for this workspace id."
-          />
-        </article>
-
-        <article className="query-card">
-          <h3>TaskService.RunSubTaskSessionAdapter</h3>
-          <form onSubmit={handleRunSessionAdapter}>
-            <div className="field">
-              <label htmlFor="run-unit-task-id">Run Unit Task ID</label>
-              <input
-                id="run-unit-task-id"
-                name="run-unit-task-id"
-                value={runUnitTaskInput}
-                onChange={(event) => setRunUnitTaskInput(event.target.value)}
-                placeholder="unit-1"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="run-sub-task-id">Run Sub Task ID</label>
-              <input
-                id="run-sub-task-id"
-                name="run-sub-task-id"
-                value={runSubTaskInput}
-                onChange={(event) => setRunSubTaskInput(event.target.value)}
-                placeholder="sub-1"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="run-session-id">Run Session ID</label>
-              <input
-                id="run-session-id"
-                name="run-session-id"
-                value={runSessionInput}
-                onChange={(event) => setRunSessionInput(event.target.value)}
-                placeholder="session-1"
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="run-cli-type">CLI Type</label>
-              <select
-                id="run-cli-type"
-                name="run-cli-type"
-                value={runCliTypeInput}
-                onChange={(event) =>
-                  setRunCliTypeInput(Number(event.target.value) as AgentCliType)
-                }
-              >
-                {cliTypeOptions().map((option) => (
-                  <option key={option.label} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="run-input-mode">Input Mode</label>
-              <select
-                id="run-input-mode"
-                name="run-input-mode"
-                value={runInputMode}
-                onChange={(event) =>
-                  setRunInputMode(event.target.value as SessionAdapterInputMode)
-                }
-              >
-                <option value="preset">Preset Fixture</option>
-                <option value="raw">Raw JSONL</option>
-              </select>
-            </div>
-
-            {runInputMode === "preset" ? (
+        {showSection(DashboardSectionId.Tasks) ? (
+          <article className="query-card">
+            <h3>TaskService.GetUnitTask</h3>
+            <form onSubmit={handleUnitTaskLookup}>
               <div className="field">
-                <label htmlFor="run-fixture-preset">Fixture Preset</label>
+                <label htmlFor="lookup-unit-task-id">Unit Task ID</label>
+                <input
+                  id="lookup-unit-task-id"
+                  name="lookup-unit-task-id"
+                  value={unitTaskInput}
+                  onChange={(event) => setUnitTaskInput(event.target.value)}
+                  placeholder="unit-1"
+                />
+              </div>
+              <button type="submit">Fetch Unit Task</button>
+            </form>
+            <HistoryRow
+              title="Recent unit tasks"
+              values={history.unitTaskId}
+              onSelect={setUnitTaskInput}
+            />
+            <QueryResultPanel
+              title="unit-task"
+              pending={unitTaskQuery.isPending}
+              fetching={unitTaskQuery.isFetching}
+              error={unitTaskQuery.error}
+              data={unitTaskQuery.data?.unitTask}
+              idleMessage="Run lookup to load unit task data."
+              notFoundMessage="No unit task found for this workspace and id."
+            />
+          </article>
+        ) : null}
+
+        {showSection(DashboardSectionId.Tasks) ? (
+          <article className="query-card">
+            <h3>TaskService.GetSubTask</h3>
+            <form onSubmit={handleSubTaskLookup}>
+              <div className="field">
+                <label htmlFor="lookup-sub-task-id">Sub Task ID</label>
+                <input
+                  id="lookup-sub-task-id"
+                  name="lookup-sub-task-id"
+                  value={subTaskInput}
+                  onChange={(event) => setSubTaskInput(event.target.value)}
+                  placeholder="sub-1"
+                />
+              </div>
+              <button type="submit">Fetch Sub Task</button>
+            </form>
+            <HistoryRow
+              title="Recent sub tasks"
+              values={history.subTaskId}
+              onSelect={setSubTaskInput}
+            />
+            <QueryResultPanel
+              title="sub-task"
+              pending={subTaskQuery.isPending}
+              fetching={subTaskQuery.isFetching}
+              error={subTaskQuery.error}
+              data={subTaskQuery.data?.subTask}
+              idleMessage="Run lookup to load sub task data."
+              notFoundMessage="No sub task found for this workspace and id."
+            />
+          </article>
+        ) : null}
+
+        {showSection(DashboardSectionId.Tasks) ? (
+          <article className="query-card">
+            <h3>TaskService.SubmitPlanDecision</h3>
+            <form onSubmit={handleSubmitPlanDecision}>
+              <div className="field">
+                <label htmlFor="plan-sub-task-id">Plan Sub Task ID</label>
+                <input
+                  id="plan-sub-task-id"
+                  name="plan-sub-task-id"
+                  value={planSubTaskInput}
+                  onChange={(event) => setPlanSubTaskInput(event.target.value)}
+                  placeholder="sub-1"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="plan-decision">Plan Decision</label>
                 <select
-                  id="run-fixture-preset"
-                  name="run-fixture-preset"
-                  value={runPresetInput}
+                  id="plan-decision"
+                  name="plan-decision"
+                  value={planDecisionInput}
                   onChange={(event) =>
-                    setRunPresetInput(
-                      Number(event.target.value) as SessionAdapterFixturePreset,
-                    )
+                    setPlanDecisionInput(Number(event.target.value) as PlanDecision)
                   }
                 >
-                  {fixturePresetOptions().map((option) => (
+                  {planDecisionOptions().map((option) => (
                     <option key={option.label} value={option.value}>
                       {option.label}
                     </option>
                   ))}
                 </select>
               </div>
+              {planDecisionInput === PlanDecision.REVISE ? (
+                <div className="field">
+                  <label htmlFor="plan-revision-note">Revision Note</label>
+                  <textarea
+                    id="plan-revision-note"
+                    name="plan-revision-note"
+                    value={planRevisionNoteInput}
+                    onChange={(event) => setPlanRevisionNoteInput(event.target.value)}
+                    rows={4}
+                  />
+                </div>
+              ) : null}
+              <button type="submit" disabled={planDecisionPending}>
+                {planDecisionPending ? "Submitting..." : "Submit Plan Decision"}
+              </button>
+            </form>
+            <HistoryRow
+              title="Recent sub tasks"
+              values={history.subTaskId}
+              onSelect={setPlanSubTaskInput}
+            />
+            {planDecisionError ? (
+              <p className="error" role="alert">
+                {planDecisionError}
+              </p>
+            ) : null}
+            {planDecisionResult ? (
+              <pre className="query-result" data-testid="plan-decision-result">
+                {formatForDisplay(planDecisionResult)}
+              </pre>
             ) : (
+              <p className="query-status">
+                Submit plan decision to update the current sub task state.
+              </p>
+            )}
+          </article>
+        ) : null}
+
+        {showSection(DashboardSectionId.Sessions) ? (
+          <article className="query-card">
+            <h3>SessionService.GetSessionOutput</h3>
+            <form onSubmit={handleSessionLookup}>
               <div className="field">
-                <label htmlFor="run-raw-jsonl">Raw JSONL</label>
-                <textarea
-                  id="run-raw-jsonl"
-                  name="run-raw-jsonl"
-                  value={runRawJsonlInput}
-                  onChange={(event) => setRunRawJsonlInput(event.target.value)}
-                  rows={6}
+                <label htmlFor="lookup-session-id">Session ID</label>
+                <input
+                  id="lookup-session-id"
+                  name="lookup-session-id"
+                  value={sessionInput}
+                  onChange={(event) => setSessionInput(event.target.value)}
+                  placeholder="session-1"
                 />
               </div>
-            )}
-            <button type="submit" disabled={sessionAdapterPending}>
-              {sessionAdapterPending ? "Running..." : "Run Session Adapter"}
-            </button>
-          </form>
-          <HistoryRow
-            title="Recent unit tasks"
-            values={history.unitTaskId}
-            onSelect={setRunUnitTaskInput}
-          />
-          <HistoryRow
-            title="Recent sub tasks"
-            values={history.subTaskId}
-            onSelect={setRunSubTaskInput}
-          />
-          <HistoryRow
-            title="Recent sessions"
-            values={history.sessionId}
-            onSelect={setRunSessionInput}
-          />
-          {sessionAdapterError ? (
-            <p className="error" role="alert">
-              {sessionAdapterError}
-            </p>
-          ) : null}
-          {sessionAdapterResult ? (
-            <pre className="query-result" data-testid="session-adapter-result">
-              {formatForDisplay(sessionAdapterResult)}
-            </pre>
-          ) : (
-            <p className="query-status">
-              Run session adapter to execute fixture normalization.
-            </p>
-          )}
-        </article>
-
-        <article className="query-card">
-          <h3>EventStreamService.StreamWorkspaceEvents</h3>
-          <div className="field">
-            <label htmlFor="stream-from-sequence">From Sequence</label>
-            <input
-              id="stream-from-sequence"
-              name="stream-from-sequence"
-              value={streamFromSequenceInput}
-              onChange={(event) => setStreamFromSequenceInput(event.target.value)}
-              placeholder="0"
+              <button type="submit">Fetch Session Output</button>
+            </form>
+            <HistoryRow
+              title="Recent sessions"
+              values={history.sessionId}
+              onSelect={setSessionInput}
             />
-          </div>
-          <div className="actions">
-            <button
-              type="button"
-              onClick={() => {
-                void startLiveWorkspaceStream();
-              }}
-              disabled={streamStatus === "running"}
-            >
-              Start Live Stream
-            </button>
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={stopLiveWorkspaceStream}
-              disabled={streamStatus !== "running"}
-            >
-              Stop Live Stream
-            </button>
-          </div>
-          <p className="query-status">
-            Stream status: <code>{streamStatus.toUpperCase()}</code>
-          </p>
-          {streamError ? (
-            <p className="error" role="alert">
-              {streamError}
-            </p>
-          ) : null}
-          {streamEvents.length > 0 ? (
-            <div className="stream-events">
-              {streamEvents.map((event) => (
-                <article
-                  key={`${event.sequence.toString()}-${event.eventType}`}
-                  className="stream-event-item"
+            <QueryResultPanel
+              title="session-output"
+              pending={sessionQuery.isPending}
+              fetching={sessionQuery.isFetching}
+              error={sessionQuery.error}
+              data={sessionQuery.data?.events}
+              idleMessage="Run lookup to load session events."
+              notFoundMessage="No workspace found for this session lookup."
+              emptyMessage="No session output events available for this session id."
+            />
+          </article>
+        ) : null}
+
+        {showSection(DashboardSectionId.Review) ? (
+          <article className="query-card">
+            <h3>PrManagementService.GetPullRequest</h3>
+            <form onSubmit={handlePullRequestLookup}>
+              <div className="field">
+                <label htmlFor="lookup-pr-tracking-id">PR Tracking ID</label>
+                <input
+                  id="lookup-pr-tracking-id"
+                  name="lookup-pr-tracking-id"
+                  value={pullRequestInput}
+                  onChange={(event) => setPullRequestInput(event.target.value)}
+                  placeholder="pr-1"
+                />
+              </div>
+              <button type="submit">Fetch Pull Request</button>
+            </form>
+            <HistoryRow
+              title="Recent PR tracking IDs"
+              values={history.prTrackingId}
+              onSelect={setPullRequestInput}
+            />
+            <QueryResultPanel
+              title="pull-request"
+              pending={pullRequestQuery.isPending}
+              fetching={pullRequestQuery.isFetching}
+              error={pullRequestQuery.error}
+              data={pullRequestQuery.data?.pullRequest}
+              idleMessage="Run lookup to load pull request data."
+              notFoundMessage="No pull request found for this workspace and tracking id."
+            />
+          </article>
+        ) : null}
+
+        {showSection(DashboardSectionId.Review) ? (
+          <article className="query-card">
+            <h3>ReviewAssistService.ListReviewAssistItems</h3>
+            <form onSubmit={handleReviewAssistLookup}>
+              <div className="field">
+                <label htmlFor="lookup-review-assist-unit-task-id">
+                  Unit Task ID
+                </label>
+                <input
+                  id="lookup-review-assist-unit-task-id"
+                  name="lookup-review-assist-unit-task-id"
+                  value={reviewAssistInput}
+                  onChange={(event) => setReviewAssistInput(event.target.value)}
+                  placeholder="unit-1"
+                />
+              </div>
+              <button type="submit">Fetch Review Assist Items</button>
+            </form>
+            <HistoryRow
+              title="Recent unit tasks"
+              values={history.unitTaskId}
+              onSelect={setReviewAssistInput}
+            />
+            <QueryResultPanel
+              title="review-assist"
+              pending={reviewAssistQuery.isPending}
+              fetching={reviewAssistQuery.isFetching}
+              error={reviewAssistQuery.error}
+              data={reviewAssistQuery.data?.items}
+              idleMessage="Run lookup to load review assist items."
+              notFoundMessage="No workspace found for this review assist lookup."
+              emptyMessage="No review assist items available for this unit task id."
+            />
+          </article>
+        ) : null}
+
+        {showSection(DashboardSectionId.Review) ? (
+          <article className="query-card">
+            <h3>ReviewCommentService.ListReviewComments</h3>
+            <form onSubmit={handleReviewCommentLookup}>
+              <div className="field">
+                <label htmlFor="lookup-review-comment-pr-id">
+                  PR Tracking ID
+                </label>
+                <input
+                  id="lookup-review-comment-pr-id"
+                  name="lookup-review-comment-pr-id"
+                  value={reviewCommentInput}
+                  onChange={(event) => setReviewCommentInput(event.target.value)}
+                  placeholder="pr-1"
+                />
+              </div>
+              <button type="submit">Fetch Review Comments</button>
+            </form>
+            <HistoryRow
+              title="Recent PR tracking IDs"
+              values={history.prTrackingId}
+              onSelect={setReviewCommentInput}
+            />
+            <QueryResultPanel
+              title="review-comments"
+              pending={reviewCommentQuery.isPending}
+              fetching={reviewCommentQuery.isFetching}
+              error={reviewCommentQuery.error}
+              data={reviewCommentQuery.data?.comments}
+              idleMessage="Run lookup to load review comments."
+              notFoundMessage="No workspace found for this review comment lookup."
+              emptyMessage="No review comments available for this pr tracking id."
+            />
+          </article>
+        ) : null}
+
+        {showSection(DashboardSectionId.BadgeTheme) ? (
+          <article className="query-card">
+            <h3>BadgeThemeService.GetBadgeTheme</h3>
+            <form onSubmit={handleBadgeThemeLookup}>
+              <button type="submit">Fetch Badge Theme</button>
+            </form>
+            <QueryResultPanel
+              title="badge-theme"
+              pending={badgeThemeQuery.isPending}
+              fetching={badgeThemeQuery.isFetching}
+              error={badgeThemeQuery.error}
+              data={badgeThemeQuery.data?.theme}
+              idleMessage="Run lookup to load badge theme data."
+              notFoundMessage="No badge theme found for this workspace id."
+            />
+          </article>
+        ) : null}
+
+        {showSection(DashboardSectionId.Notifications) ? (
+          <article className="query-card">
+            <h3>NotificationService.ListNotifications</h3>
+            <form onSubmit={handleNotificationLookup}>
+              <button type="submit">Fetch Notifications</button>
+            </form>
+            <QueryResultPanel
+              title="notifications"
+              pending={notificationQuery.isPending}
+              fetching={notificationQuery.isFetching}
+              error={notificationQuery.error}
+              data={notificationQuery.data?.notifications}
+              idleMessage="Run lookup to load notifications."
+              notFoundMessage="No workspace found for this notification lookup."
+              emptyMessage="No notifications available for this workspace id."
+            />
+          </article>
+        ) : null}
+
+        {showSection(DashboardSectionId.SessionAdapter) ? (
+          <article className="query-card">
+            <h3>TaskService.RunSubTaskSessionAdapter</h3>
+            <form onSubmit={handleRunSessionAdapter}>
+              <div className="field">
+                <label htmlFor="run-unit-task-id">Run Unit Task ID</label>
+                <input
+                  id="run-unit-task-id"
+                  name="run-unit-task-id"
+                  value={runUnitTaskInput}
+                  onChange={(event) => setRunUnitTaskInput(event.target.value)}
+                  placeholder="unit-1"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="run-sub-task-id">Run Sub Task ID</label>
+                <input
+                  id="run-sub-task-id"
+                  name="run-sub-task-id"
+                  value={runSubTaskInput}
+                  onChange={(event) => setRunSubTaskInput(event.target.value)}
+                  placeholder="sub-1"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="run-session-id">Run Session ID</label>
+                <input
+                  id="run-session-id"
+                  name="run-session-id"
+                  value={runSessionInput}
+                  onChange={(event) => setRunSessionInput(event.target.value)}
+                  placeholder="session-1"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="run-cli-type">CLI Type</label>
+                <select
+                  id="run-cli-type"
+                  name="run-cli-type"
+                  value={runCliTypeInput}
+                  onChange={(event) =>
+                    setRunCliTypeInput(Number(event.target.value) as AgentCliType)
+                  }
                 >
-                  <header className="stream-event-header">
-                    <span>#{event.sequence.toString()}</span>
-                    <span>{describeStreamEventType(event.eventType)}</span>
-                  </header>
-                  <pre className="query-result stream-event-body">
-                    {formatForDisplay(event)}
-                  </pre>
-                </article>
-              ))}
+                  {cliTypeOptions().map((option) => (
+                    <option key={option.label} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="run-input-mode">Input Mode</label>
+                <select
+                  id="run-input-mode"
+                  name="run-input-mode"
+                  value={runInputMode}
+                  onChange={(event) =>
+                    setRunInputMode(event.target.value as SessionAdapterInputMode)
+                  }
+                >
+                  <option value="preset">Preset Fixture</option>
+                  <option value="raw">Raw JSONL</option>
+                </select>
+              </div>
+
+              {runInputMode === "preset" ? (
+                <div className="field">
+                  <label htmlFor="run-fixture-preset">Fixture Preset</label>
+                  <select
+                    id="run-fixture-preset"
+                    name="run-fixture-preset"
+                    value={runPresetInput}
+                    onChange={(event) =>
+                      setRunPresetInput(
+                        Number(event.target.value) as SessionAdapterFixturePreset,
+                      )
+                    }
+                  >
+                    {fixturePresetOptions().map((option) => (
+                      <option key={option.label} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="field">
+                  <label htmlFor="run-raw-jsonl">Raw JSONL</label>
+                  <textarea
+                    id="run-raw-jsonl"
+                    name="run-raw-jsonl"
+                    value={runRawJsonlInput}
+                    onChange={(event) => setRunRawJsonlInput(event.target.value)}
+                    rows={6}
+                  />
+                </div>
+              )}
+              <button type="submit" disabled={sessionAdapterPending}>
+                {sessionAdapterPending ? "Running..." : "Run Session Adapter"}
+              </button>
+            </form>
+            <HistoryRow
+              title="Recent unit tasks"
+              values={history.unitTaskId}
+              onSelect={setRunUnitTaskInput}
+            />
+            <HistoryRow
+              title="Recent sub tasks"
+              values={history.subTaskId}
+              onSelect={setRunSubTaskInput}
+            />
+            <HistoryRow
+              title="Recent sessions"
+              values={history.sessionId}
+              onSelect={setRunSessionInput}
+            />
+            {sessionAdapterError ? (
+              <p className="error" role="alert">
+                {sessionAdapterError}
+              </p>
+            ) : null}
+            {sessionAdapterResult ? (
+              <pre className="query-result" data-testid="session-adapter-result">
+                {formatForDisplay(sessionAdapterResult)}
+              </pre>
+            ) : (
+              <p className="query-status">
+                Run session adapter to execute fixture normalization.
+              </p>
+            )}
+          </article>
+        ) : null}
+
+        {showSection(DashboardSectionId.EventStream) ? (
+          <article className="query-card">
+            <h3>EventStreamService.StreamWorkspaceEvents</h3>
+            <div className="field">
+              <label htmlFor="stream-from-sequence">From Sequence</label>
+              <input
+                id="stream-from-sequence"
+                name="stream-from-sequence"
+                value={streamFromSequenceInput}
+                onChange={(event) => setStreamFromSequenceInput(event.target.value)}
+                placeholder="0"
+              />
             </div>
-          ) : (
+            <div className="actions">
+              <button
+                type="button"
+                onClick={() => {
+                  void startLiveWorkspaceStream();
+                }}
+                disabled={streamStatus === "running"}
+              >
+                Start Live Stream
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={stopLiveWorkspaceStream}
+                disabled={streamStatus !== "running"}
+              >
+                Stop Live Stream
+              </button>
+            </div>
             <p className="query-status">
-              No live stream events yet (heartbeats are filtered out).
+              Stream status: <code>{streamStatus.toUpperCase()}</code>
             </p>
-          )}
-        </article>
+            {streamError ? (
+              <p className="error" role="alert">
+                {streamError}
+              </p>
+            ) : null}
+            {streamEvents.length > 0 ? (
+              <div className="stream-events">
+                {streamEvents.map((event) => (
+                  <article
+                    key={`${event.sequence.toString()}-${event.eventType}`}
+                    className="stream-event-item"
+                  >
+                    <header className="stream-event-header">
+                      <span>#{event.sequence.toString()}</span>
+                      <span>{describeStreamEventType(event.eventType)}</span>
+                    </header>
+                    <pre className="query-result stream-event-body">
+                      {formatForDisplay(event)}
+                    </pre>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="query-status">
+                No live stream events yet (heartbeats are filtered out).
+              </p>
+            )}
+          </article>
+        ) : null}
       </div>
     </section>
   );
