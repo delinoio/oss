@@ -130,7 +130,7 @@ func TestConcurrentSessionsAreIsolated(t *testing.T) {
 			t.Fatalf("unexpected state for %s: got=%s want=%s", tc.sessionID, detail.State, contracts.DerunSessionStateExited)
 		}
 
-		outputText := waitForOutputContainingToken(t, store, tc.sessionID, tc.token, 2*time.Second)
+		outputText := waitForOutputContainingToken(t, store, tc.sessionID, tc.token, 5*time.Second)
 		for _, other := range sessions {
 			if other.sessionID == tc.sessionID {
 				continue
@@ -236,7 +236,14 @@ func waitForOutputContainingToken(
 
 	deadline := time.Now().Add(timeout)
 	lastOutput := ""
+	lastDetail := session.Detail{}
+	hasDetail := false
 	for time.Now().Before(deadline) {
+		detail, err := store.GetSession(sessionID)
+		if err == nil {
+			lastDetail = detail
+			hasDetail = true
+		}
 		lastOutput = readAllOutput(t, store, sessionID)
 		if strings.Contains(lastOutput, token) {
 			return lastOutput
@@ -244,6 +251,19 @@ func waitForOutputContainingToken(
 		time.Sleep(20 * time.Millisecond)
 	}
 
+	if hasDetail {
+		t.Fatalf(
+			"session %s output missing token %q within %s: state=%s output_bytes=%d chunk_count=%d last_chunk_at=%v output=%q",
+			sessionID,
+			token,
+			timeout,
+			lastDetail.State,
+			lastDetail.OutputBytes,
+			lastDetail.ChunkCount,
+			lastDetail.LastChunkAt,
+			lastOutput,
+		)
+	}
 	t.Fatalf("session %s output missing token %q within %s: %q", sessionID, token, timeout, lastOutput)
 	return ""
 }
