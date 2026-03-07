@@ -18,7 +18,7 @@ USAGE
 }
 
 repo="delinoio/oss"
-tag_prefix="nodeup/v"
+tag_prefix="nodeup@v"
 workflow_identity="https://github.com/delinoio/oss/.github/workflows/release-nodeup.yml@"
 
 version="latest"

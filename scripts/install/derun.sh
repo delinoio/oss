@@ -18,7 +18,7 @@ USAGE
 }
 
 repo="delinoio/oss"
-tag_prefix="derun/v"
+tag_prefix="derun@v"
 workflow_identity="https://github.com/delinoio/oss/.github/workflows/release-derun.yml@"
 
 version="latest"

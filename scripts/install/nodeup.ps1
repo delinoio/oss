@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Repo = "delinoio/oss"
-$TagPrefix = "nodeup/v"
+$TagPrefix = "nodeup@v"
 $WorkflowIdentityPattern = "^https://github.com/delinoio/oss/.github/workflows/release-nodeup.yml@"
 
 function Resolve-LatestTag {

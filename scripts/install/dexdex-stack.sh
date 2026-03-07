@@ -18,7 +18,7 @@ USAGE
 }
 
 repo="delinoio/oss"
-tag_prefix="dexdex/v"
+tag_prefix="dexdex@v"
 workflow_identity="https://github.com/delinoio/oss/.github/workflows/release-dexdex.yml@"
 
 version="latest"

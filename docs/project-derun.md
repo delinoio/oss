@@ -115,7 +115,7 @@ Canonical release tag prefix:
 
 ```ts
 enum DerunReleaseTagPrefix {
-  Stable = "derun/v",
+  Stable = "derun@v",
 }
 ```
 
@@ -247,7 +247,7 @@ Validation commands:
 - Windows ConPTY E2E coverage requires console device handles (`CONIN$`, `CONOUT$`) and may skip parity assertions when the host returns no ConPTY output bytes.
 - Distribution pipeline:
 : `.github/workflows/release-derun.yml`
-: tag trigger: `derun/v*`
+: tag trigger: `derun@v*`
 : `workflow_dispatch` supports `version` and `dry_run`
 - Release artifact contract:
 : `derun-linux-amd64.tar.gz`

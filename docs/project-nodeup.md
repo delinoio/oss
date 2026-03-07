@@ -116,7 +116,7 @@ Canonical release tag prefix:
 
 ```ts
 enum NodeupReleaseTagPrefix {
-  Stable = "nodeup/v",
+  Stable = "nodeup@v",
 }
 ```
 
@@ -357,7 +357,7 @@ Release automation integration:
 - Nodeup is included automatically when selected by `cargo-mono publish` as a publishable crate version.
 - `.github/workflows/release-nodeup.yml` is the nodeup distribution pipeline.
 - `release-nodeup` trigger contract:
-: push tags: `nodeup/v*`
+: push tags: `nodeup@v*`
 : `workflow_dispatch` with `version` and `dry_run`
 - Release artifact contract:
 : `nodeup-linux-amd64.tar.gz`

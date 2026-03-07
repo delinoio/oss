@@ -3,7 +3,7 @@ name: Release nodeup
 on:
   push:
     tags:
-      - "nodeup/v*"
+      - "nodeup@v*"
   workflow_dispatch:
     inputs:
       version:
@@ -42,14 +42,14 @@ jobs:
           set -euo pipefail
 
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            tag="nodeup/v${{ github.event.inputs.version }}"
+            tag="nodeup@v${{ github.event.inputs.version }}"
             dry_run="${{ github.event.inputs.dry_run }}"
           else
             tag="${GITHUB_REF_NAME}"
             dry_run="false"
           fi
 
-          version="${tag#nodeup/v}"
+          version="${tag#nodeup@v}"
 
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"

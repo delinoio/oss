@@ -3,7 +3,7 @@ name: Release derun
 on:
   push:
     tags:
-      - "derun/v*"
+      - "derun@v*"
   workflow_dispatch:
     inputs:
       version:
@@ -42,14 +42,14 @@ jobs:
           set -euo pipefail
 
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            tag="derun/v${{ github.event.inputs.version }}"
+            tag="derun@v${{ github.event.inputs.version }}"
             dry_run="${{ github.event.inputs.dry_run }}"
           else
             tag="${GITHUB_REF_NAME}"
             dry_run="false"
           fi
 
-          version="${tag#derun/v}"
+          version="${tag#derun@v}"
 
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"

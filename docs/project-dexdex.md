@@ -87,7 +87,7 @@ Canonical release tag prefix:
 
 ```ts
 enum DexDexReleaseTagPrefix {
-  Stable = "dexdex/v",
+  Stable = "dexdex@v",
 }
 ```
 
@@ -433,7 +433,7 @@ Current local validation commands:
 - `cd apps/dexdex && pnpm test`
 - Distribution pipeline:
 : `.github/workflows/release-dexdex.yml`
-: tag trigger: `dexdex/v*`
+: tag trigger: `dexdex@v*`
 : `workflow_dispatch` supports `version` and `dry_run`
 - Release artifact contract:
 : Desktop: `dexdex-desktop-linux-amd64.AppImage`, `dexdex-desktop-darwin-universal.dmg`, `dexdex-desktop-windows-amd64.msi`

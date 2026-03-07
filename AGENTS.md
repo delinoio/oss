@@ -276,13 +276,13 @@ Release automation baseline:
 - Publish command contract: `cargo run -p cargo-mono -- publish`.
 - Required secret contract: `CARGO_REGISTRY_TOKEN`.
 - `release-nodeup` is defined in `.github/workflows/release-nodeup.yml`.
-- Trigger contract: runs on tag push `nodeup/v*` and supports `workflow_dispatch` (`version`, `dry_run`).
+- Trigger contract: runs on tag push `nodeup@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS nodeup release artifacts, updates Homebrew (`nodeup`), and updates winget (`DelinoIO.Nodeup`).
 - `release-derun` is defined in `.github/workflows/release-derun.yml`.
-- Trigger contract: runs on tag push `derun/v*` and supports `workflow_dispatch` (`version`, `dry_run`).
+- Trigger contract: runs on tag push `derun@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS derun release artifacts, updates Homebrew (`derun`), and updates winget (`DelinoIO.Derun`).
 - `release-dexdex` is defined in `.github/workflows/release-dexdex.yml`.
-- Trigger contract: runs on tag push `dexdex/v*` and supports `workflow_dispatch` (`version`, `dry_run`).
+- Trigger contract: runs on tag push `dexdex@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed DexDex desktop + main/worker server artifacts, applies desktop signing/notarization secrets, updates Homebrew (`dexdex`, `dexdex-main-server`, `dexdex-worker-server`), and updates winget (`DelinoIO.DexDex`, `DelinoIO.DexDexMainServer`, `DelinoIO.DexDexWorkerServer`).
 
 ### Documentation Lifecycle Rules
