@@ -142,6 +142,7 @@ Canonical CLI JSON response envelope:
 - `run.data` includes `entry`, `module`, `task`, `args`, `result`, `run_trace`, and root-task `cache_analysis`.
 - `run` cache policy in this phase stores persistent results only for the selected root task.
 - `run` argument validation rejects fractional values for integer parameters and enforces structured parameter object shapes.
+- `run` cache rows are isolated from `build`/`explain` task-state rows to avoid cross-command invalidation drift.
 
 Cache-key contract (v1):
 - `cache_key = hash(input_content_hash + parameter_hash + environment_snapshot_hash)`

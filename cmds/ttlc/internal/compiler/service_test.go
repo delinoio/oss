@@ -609,6 +609,52 @@ task func Build(count int) Vc[Artifact] {
 	})
 }
 
+func TestRunRejectsOutOfRangeBoundedIntegerArgument(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Count int8
+}
+
+task func Build(count int8) Vc[Artifact] {
+    return vc(Artifact{Count: count})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"count": json.Number("300"),
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+
+		foundTypeMismatch := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "invalid run argument type: count expects int8" {
+				foundTypeMismatch = true
+				break
+			}
+		}
+		if !foundTypeMismatch {
+			t.Fatalf("expected bounded integer type mismatch diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
 func TestRunRejectsNonObjectForStructArgument(t *testing.T) {
 	workspace := t.TempDir()
 	entryPath := filepath.Join(workspace, "main.ttl")
@@ -651,6 +697,67 @@ task func Build(input Artifact) Vc[Artifact] {
 		}
 		if !foundTypeMismatch {
 			t.Fatalf("expected struct type mismatch diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
+func TestRunCacheDoesNotMutateBuildOrExplainState(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+
+		buildResult, err := service.Build(context.Background(), BuildOptions{Entry: "./main.ttl", OutDir: "./out"})
+		if err != nil {
+			t.Fatalf("build returned error: %v", err)
+		}
+		if len(buildResult.Diagnostics) != 0 {
+			t.Fatalf("unexpected build diagnostics: %+v", buildResult.Diagnostics)
+		}
+
+		runResult, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"target": "web",
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+		if len(runResult.Diagnostics) != 0 {
+			t.Fatalf("unexpected run diagnostics: %+v", runResult.Diagnostics)
+		}
+
+		explainResult, err := service.Explain(context.Background(), ExplainOptions{Entry: "./main.ttl", Task: "Build"})
+		if err != nil {
+			t.Fatalf("explain returned error: %v", err)
+		}
+		if len(explainResult.Diagnostics) != 0 {
+			t.Fatalf("unexpected explain diagnostics: %+v", explainResult.Diagnostics)
+		}
+		if len(explainResult.CacheAnalysis) != 1 {
+			t.Fatalf("expected one explain cache row, got=%+v", explainResult.CacheAnalysis)
+		}
+		if explainResult.CacheAnalysis[0].InvalidationReason != contracts.TtlInvalidationReasonNone {
+			t.Fatalf("expected explain cache state to remain stable, got=%s", explainResult.CacheAnalysis[0].InvalidationReason)
+		}
+		if !explainResult.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected explain cache hit, got=%+v", explainResult.CacheAnalysis[0])
 		}
 	})
 }

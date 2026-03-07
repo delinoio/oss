@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"math/big"
+	"math/bits"
 	"os"
 	"sort"
 	"strconv"
@@ -218,6 +220,7 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	rootFingerprint.Components.ParameterHash = runParameterHash
 	rootFingerprint.CacheKey = fingerprint.CacheKey(rootFingerprint.Components)
 	result.FingerprintComponents = rootFingerprint.Components
+	runCacheModuleName := composeRunCacheModuleName(analysisResult.moduleName)
 
 	cacheStart := time.Now()
 	s.logStageStart(contracts.CompileStageCache)
@@ -228,14 +231,14 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	}
 	defer store.Close()
 
-	cacheAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, analysisResult.moduleName, rootFingerprint, true)
+	cacheAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, runCacheModuleName, rootFingerprint, true)
 	if lookupErr != nil {
 		s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
 		return Result{}, fmt.Errorf("analyze task cache state for %s: %w", rootFingerprint.Task.ID, lookupErr)
 	}
 
 	if cacheAnalysis.CacheHit {
-		cachedState, stateFound, stateErr := store.GetTaskState(analysisResult.moduleName, rootFingerprint.Task.ID)
+		cachedState, stateFound, stateErr := store.GetTaskState(runCacheModuleName, rootFingerprint.Task.ID)
 		if stateErr != nil {
 			s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
 			return Result{}, fmt.Errorf("read cache state for %s: %w", rootFingerprint.Task.ID, stateErr)
@@ -277,7 +280,7 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 
 	record := cache.TaskRecord{
 		TaskKey:                 rootFingerprint.CacheKey,
-		Module:                  analysisResult.moduleName,
+		Module:                  runCacheModuleName,
 		TaskID:                  rootTask.ID,
 		InputContentHash:        rootFingerprint.Components.InputContentHash,
 		ParameterHash:           rootFingerprint.Components.ParameterHash,
@@ -287,6 +290,7 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 		Deps:                    append([]string{}, rootTask.Deps...),
 		Metadata: map[string]any{
 			"module":      analysisResult.moduleName,
+			"cache_scope": "run",
 			"task_id":     rootTask.ID,
 			"return_type": rootTask.ReturnType,
 			"run_result":  runExecutionResult.Result,
@@ -820,35 +824,21 @@ func runArgumentTypeMatches(expectedType string, value any, typeDeclarationsByNa
 }
 
 func runIntegerArgumentTypeMatches(expectedType string, value any) bool {
-	unsignedOnly := strings.HasPrefix(expectedType, "u") || expectedType == "uintptr"
-	switch typed := value.(type) {
-	case int:
-		return !unsignedOnly || typed >= 0
-	case int8:
-		return !unsignedOnly || typed >= 0
-	case int16:
-		return !unsignedOnly || typed >= 0
-	case int32:
-		return !unsignedOnly || typed >= 0
-	case int64:
-		return !unsignedOnly || typed >= 0
-	case uint, uint8, uint16, uint32, uint64, uintptr:
-		return true
-	case float32:
-		if !isFiniteWholeNumber(float64(typed)) {
-			return false
-		}
-		return !unsignedOnly || typed >= 0
-	case float64:
-		if !isFiniteWholeNumber(typed) {
-			return false
-		}
-		return !unsignedOnly || typed >= 0
-	case json.Number:
-		return isJSONIntegerValue(typed.String(), unsignedOnly)
-	default:
+	minimum, maximum, hasBounds := runIntegerBounds(expectedType)
+	if !hasBounds {
 		return false
 	}
+	valueAsInteger, ok := runIntegerValueAsBigInt(value)
+	if !ok {
+		return false
+	}
+	if valueAsInteger.Cmp(minimum) < 0 {
+		return false
+	}
+	if valueAsInteger.Cmp(maximum) > 0 {
+		return false
+	}
+	return true
 }
 
 func runFloatArgumentTypeMatches(value any) bool {
@@ -876,7 +866,7 @@ func isFiniteWholeNumber(value float64) bool {
 	return math.Trunc(value) == value
 }
 
-func isJSONIntegerValue(raw string, unsignedOnly bool) bool {
+func isJSONIntegerValue(raw string) bool {
 	normalized := strings.TrimSpace(raw)
 	if normalized == "" {
 		return false
@@ -887,9 +877,6 @@ func isJSONIntegerValue(raw string, unsignedOnly bool) bool {
 
 	start := 0
 	if normalized[0] == '+' || normalized[0] == '-' {
-		if unsignedOnly && normalized[0] == '-' {
-			return false
-		}
 		start = 1
 	}
 	if start >= len(normalized) {
@@ -901,6 +888,114 @@ func isJSONIntegerValue(raw string, unsignedOnly bool) bool {
 		}
 	}
 	return true
+}
+
+func runIntegerValueAsBigInt(value any) (*big.Int, bool) {
+	switch typed := value.(type) {
+	case int:
+		return big.NewInt(int64(typed)), true
+	case int8:
+		return big.NewInt(int64(typed)), true
+	case int16:
+		return big.NewInt(int64(typed)), true
+	case int32:
+		return big.NewInt(int64(typed)), true
+	case int64:
+		return big.NewInt(typed), true
+	case uint:
+		number := new(big.Int)
+		number.SetUint64(uint64(typed))
+		return number, true
+	case uint8:
+		number := new(big.Int)
+		number.SetUint64(uint64(typed))
+		return number, true
+	case uint16:
+		number := new(big.Int)
+		number.SetUint64(uint64(typed))
+		return number, true
+	case uint32:
+		number := new(big.Int)
+		number.SetUint64(uint64(typed))
+		return number, true
+	case uint64:
+		number := new(big.Int)
+		number.SetUint64(typed)
+		return number, true
+	case uintptr:
+		number := new(big.Int)
+		number.SetUint64(uint64(typed))
+		return number, true
+	case float32:
+		if !isFiniteWholeNumber(float64(typed)) {
+			return nil, false
+		}
+		return runIntegerValueAsBigInt(strconv.FormatFloat(float64(typed), 'f', 0, 64))
+	case float64:
+		if !isFiniteWholeNumber(typed) {
+			return nil, false
+		}
+		return runIntegerValueAsBigInt(strconv.FormatFloat(typed, 'f', 0, 64))
+	case json.Number:
+		return runIntegerValueAsBigInt(typed.String())
+	case string:
+		normalizedValue := strings.TrimSpace(typed)
+		if normalizedValue == "" {
+			return nil, false
+		}
+		if !isJSONIntegerValue(normalizedValue) {
+			return nil, false
+		}
+		parsed := new(big.Int)
+		if _, ok := parsed.SetString(normalizedValue, 10); !ok {
+			return nil, false
+		}
+		return parsed, true
+	default:
+		return nil, false
+	}
+}
+
+func runIntegerBounds(expectedType string) (*big.Int, *big.Int, bool) {
+	switch expectedType {
+	case "int8":
+		return big.NewInt(math.MinInt8), big.NewInt(math.MaxInt8), true
+	case "int16":
+		return big.NewInt(math.MinInt16), big.NewInt(math.MaxInt16), true
+	case "int32":
+		return big.NewInt(math.MinInt32), big.NewInt(math.MaxInt32), true
+	case "int64":
+		return big.NewInt(math.MinInt64), big.NewInt(math.MaxInt64), true
+	case "int":
+		if strconv.IntSize == 32 {
+			return big.NewInt(math.MinInt32), big.NewInt(math.MaxInt32), true
+		}
+		return big.NewInt(math.MinInt64), big.NewInt(math.MaxInt64), true
+	case "uint8":
+		return big.NewInt(0), big.NewInt(math.MaxUint8), true
+	case "uint16":
+		return big.NewInt(0), big.NewInt(math.MaxUint16), true
+	case "uint32":
+		return big.NewInt(0), new(big.Int).SetUint64(math.MaxUint32), true
+	case "uint64":
+		return big.NewInt(0), new(big.Int).SetUint64(math.MaxUint64), true
+	case "uint":
+		if bits.UintSize == 32 {
+			return big.NewInt(0), new(big.Int).SetUint64(math.MaxUint32), true
+		}
+		return big.NewInt(0), new(big.Int).SetUint64(math.MaxUint64), true
+	case "uintptr":
+		if bits.UintSize == 32 {
+			return big.NewInt(0), new(big.Int).SetUint64(math.MaxUint32), true
+		}
+		return big.NewInt(0), new(big.Int).SetUint64(math.MaxUint64), true
+	default:
+		return nil, nil, false
+	}
+}
+
+func composeRunCacheModuleName(moduleName string) string {
+	return moduleName + "#run"
 }
 
 func cloneArgs(args map[string]any) map[string]any {

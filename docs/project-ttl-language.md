@@ -182,7 +182,9 @@ Run output contract (Phase 2 default JSON envelope):
 - `--task` is required for `run`.
 - `--args` must be a JSON object, and parameter type mismatches return `type_error` diagnostics.
 - Integer parameters reject fractional numeric values.
+- Integer parameters enforce width/range bounds (for example `int8`, `uint8`).
 - Structured parameters must match declared object shape and field types.
+- `run` cache state is maintained separately from `build`/`explain` semantic cache rows.
 
 Generated runner subset contract (Phase 2):
 - Supported statements: assignment (`:=`, `=`), expression statement, `return`.
