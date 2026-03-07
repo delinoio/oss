@@ -1,0 +1,5 @@
+error: duplicate wire enum variant name `circle`; conflicts with variant `Circle`
+ --> tests/ui/enum_duplicate_variant_name.rs:7:22
+  |
+7 |     #[serde(rename = "circle")]
+  |                      ^^^^^^^^
