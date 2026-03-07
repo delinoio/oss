@@ -9,7 +9,19 @@ import { WorkspaceMode } from "./contracts/workspace-mode";
 import { App } from "./App";
 
 describe("App", () => {
+  it("redirects root path to /projects", async () => {
+    window.history.replaceState({}, "", "/");
+
+    render(<App resolver={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/projects");
+    });
+  });
+
   it("resolves LOCAL mode and renders normalized connection summary", async () => {
+    window.history.replaceState({}, "", "/local-environments");
+
     const resolver = vi.fn().mockResolvedValue({
       mode: WorkspaceMode.Local,
       endpointUrl: "http://127.0.0.1:7878/",
@@ -29,10 +41,18 @@ describe("App", () => {
     expect(screen.getByTestId("connection-summary").textContent).toContain(
       "MANAGED_LOOPBACK",
     );
-    expect(screen.getByTestId("rpc-dashboard")).toBeTruthy();
+
+    await user.click(screen.getByRole("link", { name: /Projects/i }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/projects");
+      expect(screen.getByTestId("rpc-dashboard")).toBeTruthy();
+    });
   });
 
   it("resolves REMOTE mode through the same summary flow", async () => {
+    window.history.replaceState({}, "", "/local-environments");
+
     const resolver = vi.fn().mockResolvedValue({
       mode: WorkspaceMode.Remote,
       endpointUrl: "https://dexdex.example/rpc",
@@ -76,10 +96,11 @@ describe("App", () => {
     expect(screen.getByTestId("connection-summary").textContent).toContain(
       "CONNECT_RPC",
     );
-    expect(screen.getByTestId("rpc-dashboard")).toBeTruthy();
   });
 
   it("shows actionable error state on resolve failure", async () => {
+    window.history.replaceState({}, "", "/local-environments");
+
     const resolver = vi
       .fn()
       .mockRejectedValue(new Error("remoteEndpointUrl must be a valid absolute URL."));
@@ -95,5 +116,28 @@ describe("App", () => {
 
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain("valid absolute URL");
+  });
+
+  it("navigates to automations and settings skeleton pages", async () => {
+    window.history.replaceState({}, "", "/projects");
+
+    const user = userEvent.setup();
+    render(<App resolver={vi.fn()} />);
+
+    await user.click(screen.getByRole("link", { name: /Automations/i }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/automations");
+    });
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Automations" }),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("rpc-dashboard")).toBeNull();
+
+    await user.click(screen.getByRole("link", { name: /Settings/i }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/settings");
+    });
+    expect(screen.getByRole("heading", { level: 2, name: "Settings" })).toBeTruthy();
+    expect(screen.queryByTestId("rpc-dashboard")).toBeNull();
   });
 });

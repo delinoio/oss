@@ -57,8 +57,10 @@ The project exposes a shared protobuf contract (`dexdex.v1`) for multi-runtime i
 - Desktop app (`apps/dexdex`) is the orchestration client shell
 : It resolves workspace mode into one normalized Connect RPC connection contract.
 : It renders a three-panel desktop information architecture (left navigation, center RPC workspace, right inspector) with dark-first styling.
+: It exposes route-scoped multi-page workflows aligned with Codex desktop roles (`/projects`, `/threads`, `/review`, `/automations`, `/worktrees`, `/local-environments`, `/settings`).
 : It provides a shared React Query + Connect Query transport scaffold for RPC data flows.
-: It renders section-scoped Connect RPC dashboard workflows with unary lookups, plan-decision controls, session-adapter execution controls, and live workspace stream monitoring.
+: It renders page-scoped Connect RPC workflows for project/thread/review/worktree roles, with `DashboardSectionId` retained as internal card grouping.
+: It provides skeleton-only role pages for `Automations` and `Settings` until dedicated service contracts are introduced.
 : It surfaces right-panel inspector diagnostics for lookup history, last action status, and stream state.
 : It applies resolved workspace token values as `Authorization: Bearer <token>` request headers when token is present.
 : Post-resolution behavior stays identical between `LOCAL` and `REMOTE` modes.
@@ -134,6 +136,29 @@ type DexDexConnectQueryRuntime = {
 };
 ```
 
+Desktop page identifiers:
+
+```ts
+enum DexDexPageId {
+  Projects = "PROJECTS",
+  Threads = "THREADS",
+  Review = "REVIEW",
+  Automations = "AUTOMATIONS",
+  Worktrees = "WORKTREES",
+  LocalEnvironments = "LOCAL_ENVIRONMENTS",
+  Settings = "SETTINGS",
+}
+```
+
+Desktop page route contract:
+- `/projects`
+- `/threads`
+- `/review`
+- `/automations`
+- `/worktrees`
+- `/local-environments`
+- `/settings`
+
 Desktop dashboard section identifiers:
 
 ```ts
@@ -148,6 +173,25 @@ enum DashboardSectionId {
   SessionAdapter = "session-adapter",
   EventStream = "event-stream",
 }
+```
+
+Desktop page-to-dashboard section mapping contract:
+
+```ts
+type RpcDashboardPageMapping = {
+  [DexDexPageId.Projects]: [DashboardSectionId.Workspace, DashboardSectionId.Repository];
+  [DexDexPageId.Threads]: [
+    DashboardSectionId.Tasks,
+    DashboardSectionId.Sessions,
+    DashboardSectionId.BadgeTheme,
+    DashboardSectionId.Notifications,
+  ];
+  [DexDexPageId.Review]: [DashboardSectionId.Review];
+  [DexDexPageId.Worktrees]: [
+    DashboardSectionId.SessionAdapter,
+    DashboardSectionId.EventStream,
+  ];
+};
 ```
 
 Desktop inspector state contract:
@@ -442,6 +486,10 @@ Acceptance-focused scenarios:
 26. Main stream emits session adapter events in ordered sequence (`SUBTASK_UPDATED` -> `SESSION_OUTPUT` -> `SESSION_STATE_CHANGED` -> final `SUBTASK_UPDATED` when status terminal).
 27. Desktop dashboard can run session adapter requests with preset/raw input and render live stream events while ignoring heartbeat frames.
 28. Desktop dashboard can submit `APPROVE`, `REVISE`, and `REJECT` plan decisions, requiring `revision_note` only for `REVISE`, while preserving the same post-resolution UX flow across workspace modes.
+29. Desktop navigation exposes seven Codex-role pages and updates browser URL paths for each route.
+30. Desktop `Projects`, `Threads`, `Review`, and `Worktrees` routes preserve existing RPC behavior using page-scoped section mapping.
+31. Desktop `Automations` and `Settings` routes render skeleton queue/detail/action surfaces without issuing RPC requests.
+32. Desktop `Local Environments` route owns workspace mode resolution UI and updates global inspector connection state after successful resolve.
 
 ## Roadmap
 - Phase 1: Shared proto contract scaffold (`dexdex.v1`) and desktop connection normalization.
