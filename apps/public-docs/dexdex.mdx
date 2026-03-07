@@ -1,0 +1,50 @@
+# dexdex
+
+`dexdex` is a Connect RPC-first orchestration platform with a desktop client and two server components.
+
+## Why use dexdex
+
+- Keep desktop and backend orchestration contracts aligned through shared proto definitions.
+- Run a full local stack with desktop UI + main server + worker server.
+- Use the same release tag, package-manager, and script-install flows across macOS, Linux, and Windows.
+
+## Components
+
+- Desktop app: `dexdex`
+- Main server: `dexdex-main-server`
+- Worker server: `dexdex-worker-server`
+
+## Install
+
+Tag contract:
+
+- `dexdex/v<semver>`
+
+Package managers:
+
+- macOS (desktop + servers):
+  - `brew install --cask delinoio/tap/dexdex`
+  - `brew install delinoio/tap/dexdex-main-server`
+  - `brew install delinoio/tap/dexdex-worker-server`
+- Linux (servers):
+  - `brew install delinoio/tap/dexdex-main-server`
+  - `brew install delinoio/tap/dexdex-worker-server`
+- Windows:
+  - `winget install --id DelinoIO.DexDex --exact`
+  - `winget install --id DelinoIO.DexDexMainServer --exact`
+  - `winget install --id DelinoIO.DexDexWorkerServer --exact`
+
+Script installer (package manager first, then direct fallback):
+
+```bash
+./scripts/install/dexdex-stack.sh --version latest --method package-manager
+```
+
+```powershell
+./scripts/install/dexdex-stack.ps1 -Version latest -Method package-manager
+```
+
+## Related pages
+
+- [Projects Overview](projects-overview)
+- [Documentation Lifecycle](documentation-lifecycle)

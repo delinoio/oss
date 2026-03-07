@@ -19,6 +19,27 @@
   - `derun_read_output`
   - `derun_wait_output`
 
+## Install
+
+Tag contract:
+
+- `derun/v<semver>`
+
+Package managers:
+
+- macOS/Linux: `brew install delinoio/tap/derun`
+- Windows: `winget install --id DelinoIO.Derun --exact`
+
+Script installer (package manager first, then direct fallback):
+
+```bash
+./scripts/install/derun.sh --version latest --method package-manager
+```
+
+```powershell
+./scripts/install/derun.ps1 -Version latest -Method package-manager
+```
+
 ## Quick start
 
 Run a command with transcript capture:
