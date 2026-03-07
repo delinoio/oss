@@ -2483,6 +2483,7 @@ fn parse_input(input: &DeriveInput) -> syn::Result<ParsedContainer> {
                     for (index, field) in unnamed_fields.unnamed.iter().enumerate() {
                         parsed_fields.push(parse_field(field, index, FieldShape::Tuple)?);
                     }
+                    validate_tuple_deserialize_default_suffix(&parsed_fields)?;
 
                     ParsedStruct {
                         kind: ParsedStructKind::Tuple(parsed_fields),
@@ -2545,6 +2546,7 @@ fn parse_enum_variant(
             for (index, field) in unnamed_fields.unnamed.iter().enumerate() {
                 parsed_fields.push(parse_field(field, index, FieldShape::Tuple)?);
             }
+            validate_tuple_deserialize_default_suffix(&parsed_fields)?;
             ParsedEnumVariantKind::Unnamed(parsed_fields)
         }
         Fields::Named(named_fields) => {
@@ -2747,6 +2749,40 @@ fn validate_unique_wire_field_names(
                     "duplicate wire field name `{wire_name}` in {}; conflicts with field \
                      `{previous_field}`",
                     direction.name()
+                ),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_tuple_deserialize_default_suffix(fields: &[ParsedField]) -> syn::Result<()> {
+    let mut first_default_index: Option<usize> = None;
+
+    for field in fields {
+        if field.skip_deserializing {
+            continue;
+        }
+
+        let field_index = match &field.accessor {
+            FieldAccessor::Unnamed(index) => *index,
+            FieldAccessor::Named(_) => continue,
+        };
+
+        if field.default {
+            if first_default_index.is_none() {
+                first_default_index = Some(field_index);
+            }
+            continue;
+        }
+
+        if let Some(default_index) = first_default_index {
+            return Err(syn::Error::new(
+                field.ty.span(),
+                format!(
+                    "serde tuple fields with `default` must form a suffix for deserialization; \
+                     field index `{field_index}` follows defaulted field index `{default_index}`"
                 ),
             ));
         }
