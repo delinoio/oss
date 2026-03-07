@@ -611,6 +611,7 @@ function ThreadsPage({
                       onSelectionChange({
                         selectedUnitTaskId: unitTask.unitTaskId,
                         selectedSubTaskId: null,
+                        selectedSessionId: null,
                       })
                     }
                   >
@@ -1146,7 +1147,7 @@ function WorktreesPage({
           <h4>Selected Session Output</h4>
           {selectedSessionOutputQuery.data?.events.length ? (
             <pre className="query-result">
-              {JSON.stringify(selectedSessionOutputQuery.data.events, null, 2)}
+              {stringifyForUi(selectedSessionOutputQuery.data.events)}
             </pre>
           ) : (
             <p className="query-status">Select a session to inspect output.</p>
