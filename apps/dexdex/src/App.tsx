@@ -85,6 +85,7 @@ import {
   resolveWorkspaceConnection,
   type ResolveWorkspaceConnection,
 } from "./lib/resolve-workspace-connection";
+import { stringifyForUi } from "./lib/safe-json";
 
 enum AppStatus {
   Idle = "idle",
@@ -463,6 +464,9 @@ function ProjectsPage({
                     onClick={() =>
                       onSelectionChange({
                         selectedUnitTaskId: unitTask.unitTaskId,
+                        selectedSubTaskId: null,
+                        selectedSessionId: null,
+                        selectedPrTrackingId: null,
                       })
                     }
                   >
@@ -1137,7 +1141,7 @@ function WorktreesPage({
                   </header>
                   <p className="note">{formatOccurredAt(event.occurredAt)}</p>
                   <pre className="query-result stream-event-body">
-                    {JSON.stringify(event, null, 2)}
+                    {stringifyForUi(event)}
                   </pre>
                 </article>
               ))}
