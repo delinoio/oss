@@ -261,7 +261,7 @@ func executeRun(args []string, stdout io.Writer, stderr io.Writer) int {
 		payload := map[string]any{
 			"entry":          entry,
 			"task":           task,
-			"args":           rawArgs,
+			"args":           map[string]any{},
 			"result":         nil,
 			"run_trace":      make([]string, 0),
 			"cache_analysis": make([]compiler.CacheAnalysis, 0),

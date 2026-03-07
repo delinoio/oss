@@ -235,6 +235,111 @@ func (s *Store) GetTaskState(module string, taskID string) (TaskState, bool, err
 	return state, true, nil
 }
 
+func (s *Store) GetTaskStateByTaskKey(taskKey string) (TaskState, bool, error) {
+	if s == nil || s.db == nil {
+		return TaskState{}, false, fmt.Errorf("cache store is not initialized")
+	}
+	if strings.TrimSpace(taskKey) == "" {
+		return TaskState{}, false, fmt.Errorf("task key is required")
+	}
+
+	row := s.db.QueryRow(`
+		SELECT task_key, module, task_id, input_content_hash, parameter_hash, environment_snapshot_hash, input_fingerprint, output_blob_ref, deps, metadata, updated_at
+		FROM task_cache
+		WHERE task_key = ?
+		LIMIT 1
+	`, taskKey)
+
+	state := TaskState{}
+	var depsJSON string
+	var metadataJSON string
+	var updatedAt string
+	err := row.Scan(
+		&state.TaskKey,
+		&state.Module,
+		&state.TaskID,
+		&state.InputContentHash,
+		&state.ParameterHash,
+		&state.EnvironmentSnapshotHash,
+		&state.InputFingerprint,
+		&state.OutputBlobRef,
+		&depsJSON,
+		&metadataJSON,
+		&updatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return TaskState{}, false, nil
+	}
+	if err != nil {
+		return TaskState{}, false, fmt.Errorf("query task cache state by task key: %w", err)
+	}
+
+	if unmarshalErr := json.Unmarshal([]byte(depsJSON), &state.Deps); unmarshalErr != nil {
+		return TaskState{}, true, &CorruptionError{
+			Module: state.Module,
+			TaskID: state.TaskID,
+			Field:  "deps",
+			Err:    unmarshalErr,
+		}
+	}
+	metadataDecoder := json.NewDecoder(strings.NewReader(metadataJSON))
+	metadataDecoder.UseNumber()
+	if decodeErr := metadataDecoder.Decode(&state.Metadata); decodeErr != nil {
+		return TaskState{}, true, &CorruptionError{
+			Module: state.Module,
+			TaskID: state.TaskID,
+			Field:  "metadata",
+			Err:    decodeErr,
+		}
+	}
+	trailing := struct{}{}
+	if decodeErr := metadataDecoder.Decode(&trailing); decodeErr != io.EOF {
+		return TaskState{}, true, &CorruptionError{
+			Module: state.Module,
+			TaskID: state.TaskID,
+			Field:  "metadata",
+			Err:    errors.New("invalid trailing tokens"),
+		}
+	}
+
+	if strings.TrimSpace(state.InputContentHash) == "" {
+		return TaskState{}, true, &CorruptionError{
+			Module: state.Module,
+			TaskID: state.TaskID,
+			Field:  "input_content_hash",
+			Err:    errors.New("empty input content hash"),
+		}
+	}
+	if strings.TrimSpace(state.ParameterHash) == "" {
+		return TaskState{}, true, &CorruptionError{
+			Module: state.Module,
+			TaskID: state.TaskID,
+			Field:  "parameter_hash",
+			Err:    errors.New("empty parameter hash"),
+		}
+	}
+	if strings.TrimSpace(state.EnvironmentSnapshotHash) == "" {
+		return TaskState{}, true, &CorruptionError{
+			Module: state.Module,
+			TaskID: state.TaskID,
+			Field:  "environment_snapshot_hash",
+			Err:    errors.New("empty environment snapshot hash"),
+		}
+	}
+
+	parsedUpdatedAt, parseErr := time.Parse(time.RFC3339Nano, updatedAt)
+	if parseErr != nil {
+		return TaskState{}, true, &CorruptionError{
+			Module: state.Module,
+			TaskID: state.TaskID,
+			Field:  "updated_at",
+			Err:    parseErr,
+		}
+	}
+	state.UpdatedAt = parsedUpdatedAt
+	return state, true, nil
+}
+
 func (s *Store) DeleteTaskState(module string, taskID string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("cache store is not initialized")

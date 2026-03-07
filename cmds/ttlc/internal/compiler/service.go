@@ -238,10 +238,10 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	}
 
 	if cacheAnalysis.CacheHit {
-		cachedState, stateFound, stateErr := store.GetTaskState(runCacheModuleName, rootFingerprint.Task.ID)
+		cachedState, stateFound, stateErr := store.GetTaskStateByTaskKey(rootFingerprint.CacheKey)
 		if stateErr != nil {
 			s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
-			return Result{}, fmt.Errorf("read cache state for %s: %w", rootFingerprint.Task.ID, stateErr)
+			return Result{}, fmt.Errorf("read cache state for %s by task key: %w", rootFingerprint.Task.ID, stateErr)
 		}
 		if stateFound {
 			cachedResult, cachedRunTrace, ok := decodeRunMetadata(cachedState.Metadata)

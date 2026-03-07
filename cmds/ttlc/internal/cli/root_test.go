@@ -374,6 +374,17 @@ func TestRunRequiresTaskFlag(t *testing.T) {
 		if envelope.Diagnostics[0]["kind"] != string(contracts.DiagnosticKindTypeError) {
 			t.Fatalf("unexpected diagnostic kind: %+v", envelope.Diagnostics[0])
 		}
+		data, ok := envelope.Data.(map[string]any)
+		if !ok {
+			t.Fatalf("expected data map payload, got=%T", envelope.Data)
+		}
+		argsObject, ok := data["args"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected args object payload, got=%T", data["args"])
+		}
+		if len(argsObject) != 0 {
+			t.Fatalf("expected empty args object payload, got=%#v", argsObject)
+		}
 	})
 }
 
@@ -402,6 +413,17 @@ func TestRunReportsInvalidJSONArgs(t *testing.T) {
 		}
 		if envelope.Diagnostics[0]["kind"] != string(contracts.DiagnosticKindTypeError) {
 			t.Fatalf("unexpected diagnostic kind: %+v", envelope.Diagnostics[0])
+		}
+		data, ok := envelope.Data.(map[string]any)
+		if !ok {
+			t.Fatalf("expected data map payload, got=%T", envelope.Data)
+		}
+		argsObject, ok := data["args"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected args object payload, got=%T", data["args"])
+		}
+		if len(argsObject) != 0 {
+			t.Fatalf("expected empty args object payload, got=%#v", argsObject)
 		}
 	})
 }
