@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   WorkspaceEndpointSource,
   type ResolveWorkspaceConnectionInput,
@@ -8,19 +8,54 @@ import {
 import { WorkspaceMode } from "./contracts/workspace-mode";
 import { App } from "./App";
 
+function createMemoryStorage(): Storage {
+  const values = new Map<string, string>();
+
+  return {
+    get length() {
+      return values.size;
+    },
+    clear() {
+      values.clear();
+    },
+    getItem(key) {
+      return values.has(key) ? values.get(key) ?? null : null;
+    },
+    key(index) {
+      return Array.from(values.keys())[index] ?? null;
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+    setItem(key, value) {
+      values.set(key, value);
+    },
+  };
+}
+
 describe("App", () => {
-  it("redirects root path to /projects", async () => {
+  beforeEach(() => {
+    Object.defineProperty(window, "localStorage", {
+      value: createMemoryStorage(),
+      configurable: true,
+    });
+    window.localStorage.clear();
+  });
+
+  it("renders workspace picker at root", () => {
     window.history.replaceState({}, "", "/");
 
     render(<App resolver={vi.fn()} />);
 
-    await waitFor(() => {
-      expect(window.location.pathname).toBe("/projects");
-    });
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Workspace Picker" }),
+    ).toBeTruthy();
+    expect(window.location.pathname).toBe("/");
+    expect(screen.queryByTestId("rpc-dashboard")).toBeNull();
   });
 
-  it("resolves LOCAL mode and renders normalized connection summary", async () => {
-    window.history.replaceState({}, "", "/local-environments");
+  it("opens LOCAL workspace and navigates to /projects", async () => {
+    window.history.replaceState({}, "", "/");
 
     const resolver = vi.fn().mockResolvedValue({
       mode: WorkspaceMode.Local,
@@ -32,112 +67,65 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App resolver={resolver} />);
 
-    await user.click(screen.getByRole("button", { name: "Resolve Workspace" }));
-
-    await waitFor(() => expect(resolver).toHaveBeenCalledTimes(1));
-    expect(screen.getByTestId("connection-summary").textContent).toContain(
-      "CONNECT_RPC",
-    );
-    expect(screen.getByTestId("connection-summary").textContent).toContain(
-      "MANAGED_LOOPBACK",
-    );
-
-    await user.click(screen.getByRole("link", { name: /Projects/i }));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.click(screen.getByRole("button", { name: "Open Workspace" }));
 
     await waitFor(() => {
+      expect(resolver).toHaveBeenCalledTimes(1);
       expect(window.location.pathname).toBe("/projects");
       expect(screen.getByTestId("rpc-dashboard")).toBeTruthy();
     });
+
+    const firstArg = resolver.mock.calls[0][0] as ResolveWorkspaceConnectionInput;
+    expect(firstArg).toMatchObject({
+      mode: WorkspaceMode.Local,
+    });
+
+    expect(screen.getByText(/Workspace ID:/).textContent).toContain("workspace-1");
   });
 
-  it("resolves REMOTE mode through the same summary flow", async () => {
-    window.history.replaceState({}, "", "/local-environments");
+  it("guards desktop routes and redirects to picker without active session", async () => {
+    window.history.replaceState({}, "", "/projects");
+
+    render(<App resolver={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/");
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Workspace Picker" }),
+      ).toBeTruthy();
+    });
+  });
+
+  it("switches back to workspace picker from desktop shell", async () => {
+    window.history.replaceState({}, "", "/");
 
     const resolver = vi.fn().mockResolvedValue({
-      mode: WorkspaceMode.Remote,
-      endpointUrl: "https://dexdex.example/rpc",
-      endpointSource: WorkspaceEndpointSource.UserRemote,
-      token: "token-1",
+      mode: WorkspaceMode.Local,
+      endpointUrl: "http://127.0.0.1:7878/",
+      endpointSource: WorkspaceEndpointSource.ManagedLoopback,
       transport: "CONNECT_RPC",
     });
 
     const user = userEvent.setup();
     render(<App resolver={resolver} />);
 
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Workspace Mode" }),
-      WorkspaceMode.Remote,
-    );
-    await user.clear(
-      screen.getByRole("textbox", { name: "Remote Endpoint URL" }),
-    );
-    await user.type(
-      screen.getByRole("textbox", { name: "Remote Endpoint URL" }),
-      "https://dexdex.example/rpc",
-    );
-    await user.type(
-      screen.getByLabelText("Remote Token (optional)"),
-      "token-1",
-    );
-    await user.click(screen.getByRole("button", { name: "Resolve Workspace" }));
+    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
+    await user.click(screen.getByRole("button", { name: "Open Workspace" }));
 
-    await waitFor(() => expect(resolver).toHaveBeenCalledTimes(1));
-
-    const firstArg = resolver.mock.calls[0][0] as ResolveWorkspaceConnectionInput;
-    expect(firstArg).toMatchObject({
-      mode: WorkspaceMode.Remote,
-      remoteEndpointUrl: "https://dexdex.example/rpc",
-      remoteToken: "token-1",
-    });
-
-    expect(screen.getByTestId("connection-summary").textContent).toContain(
-      "USER_REMOTE",
-    );
-    expect(screen.getByTestId("connection-summary").textContent).toContain(
-      "CONNECT_RPC",
-    );
-  });
-
-  it("shows actionable error state on resolve failure", async () => {
-    window.history.replaceState({}, "", "/local-environments");
-
-    const resolver = vi
-      .fn()
-      .mockRejectedValue(new Error("remoteEndpointUrl must be a valid absolute URL."));
-
-    const user = userEvent.setup();
-    render(<App resolver={resolver} />);
-
-    await user.selectOptions(
-      screen.getByRole("combobox", { name: "Workspace Mode" }),
-      WorkspaceMode.Remote,
-    );
-    await user.click(screen.getByRole("button", { name: "Resolve Workspace" }));
-
-    expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toContain("valid absolute URL");
-  });
-
-  it("navigates to automations and settings skeleton pages", async () => {
-    window.history.replaceState({}, "", "/projects");
-
-    const user = userEvent.setup();
-    render(<App resolver={vi.fn()} />);
-
-    await user.click(screen.getByRole("link", { name: /Automations/i }));
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/automations");
+      expect(window.location.pathname).toBe("/projects");
+      expect(screen.getByTestId("rpc-dashboard")).toBeTruthy();
     });
-    expect(
-      screen.getByRole("heading", { level: 2, name: "Automations" }),
-    ).toBeTruthy();
-    expect(screen.queryByTestId("rpc-dashboard")).toBeNull();
 
-    await user.click(screen.getByRole("link", { name: /Settings/i }));
+    await user.click(screen.getByRole("button", { name: "Switch Workspace" }));
+
     await waitFor(() => {
-      expect(window.location.pathname).toBe("/settings");
+      expect(window.location.pathname).toBe("/");
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Workspace Picker" }),
+      ).toBeTruthy();
+      expect(screen.queryByTestId("rpc-dashboard")).toBeNull();
     });
-    expect(screen.getByRole("heading", { level: 2, name: "Settings" })).toBeTruthy();
-    expect(screen.queryByTestId("rpc-dashboard")).toBeNull();
   });
 });

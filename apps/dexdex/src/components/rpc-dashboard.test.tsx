@@ -152,6 +152,7 @@ describe("RpcDashboard", () => {
 
     render(
       <RpcDashboard
+        workspaceId="workspace-found"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -161,9 +162,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-found");
     await user.click(screen.getByRole("button", { name: "Fetch Workspace" }));
 
     await waitFor(() => {
@@ -184,6 +182,7 @@ describe("RpcDashboard", () => {
 
     render(
       <RpcDashboard
+        workspaceId="workspace-missing"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -193,21 +192,17 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-missing");
     await user.click(screen.getByRole("button", { name: "Fetch Workspace" }));
 
     expect(
-      await screen.findByText("No workspace found for this workspace id."),
+      await screen.findByText("No workspace found for the selected workspace id."),
     ).toBeTruthy();
   });
 
-  it("keeps workspace lookup history deduped, recency-ordered, and capped to five", async () => {
-    const user = userEvent.setup();
-
+  it("locks workspace id to the selected workspace", () => {
     render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -218,22 +213,14 @@ describe("RpcDashboard", () => {
       />,
     );
 
-    for (const workspaceId of ["a", "b", "a", "c", "d", "e", "f"]) {
-      await user.clear(screen.getByLabelText("Workspace ID"));
-      await user.type(screen.getByLabelText("Workspace ID"), workspaceId);
-      await user.click(screen.getByRole("button", { name: "Fetch Workspace" }));
-    }
-
-    for (const expected of ["f", "e", "d", "c", "a"]) {
-      expect(screen.getByRole("button", { name: expected })).toBeTruthy();
-    }
-    expect(screen.queryByRole("button", { name: "b" })).toBeNull();
-    expect(screen.getAllByRole("button", { name: "a" })).toHaveLength(1);
+    expect(screen.getByText(/Workspace:/).textContent).toContain("workspace-1");
+    expect(screen.queryByLabelText("Workspace ID")).toBeNull();
   });
 
   it("renders only cards mapped to the selected page", () => {
     render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -257,6 +244,7 @@ describe("RpcDashboard", () => {
 
     render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -266,9 +254,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
     await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
 
@@ -301,6 +286,7 @@ describe("RpcDashboard", () => {
 
     render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -310,9 +296,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
     await user.selectOptions(
       screen.getByLabelText("Plan Decision"),
@@ -343,6 +326,7 @@ describe("RpcDashboard", () => {
 
     render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -352,9 +336,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
     await user.selectOptions(
       screen.getByLabelText("Plan Decision"),
@@ -373,6 +354,7 @@ describe("RpcDashboard", () => {
 
     const { rerender } = render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -382,9 +364,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
     await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
 
@@ -392,6 +371,7 @@ describe("RpcDashboard", () => {
 
     rerender(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex-other.example/rpc",
@@ -420,6 +400,7 @@ describe("RpcDashboard", () => {
 
     const { rerender } = render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -429,9 +410,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
     await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
 
@@ -439,6 +417,7 @@ describe("RpcDashboard", () => {
 
     rerender(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex-other.example/rpc",
@@ -470,6 +449,7 @@ describe("RpcDashboard", () => {
 
     const { rerender } = render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -479,9 +459,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
     await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
 
@@ -491,6 +468,7 @@ describe("RpcDashboard", () => {
 
     rerender(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex-other.example/rpc",
@@ -523,6 +501,7 @@ describe("RpcDashboard", () => {
 
     const { rerender } = render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -532,14 +511,12 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Plan Sub Task ID"), "sub-1");
     await user.click(screen.getByRole("button", { name: "Submit Plan Decision" }));
 
     rerender(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex-other.example/rpc",
@@ -569,6 +546,7 @@ describe("RpcDashboard", () => {
 
     render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -578,9 +556,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Sub Task ID"), "sub-history-1");
     await user.click(screen.getByRole("button", { name: "Fetch Sub Task" }));
 
@@ -605,6 +580,7 @@ describe("RpcDashboard", () => {
 
     render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -614,9 +590,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Run Unit Task ID"), "unit-1");
     await user.type(screen.getByLabelText("Run Sub Task ID"), "sub-1");
     await user.type(screen.getByLabelText("Run Session ID"), "session-1");
@@ -646,6 +619,7 @@ describe("RpcDashboard", () => {
 
     const { rerender } = render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -655,9 +629,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Run Unit Task ID"), "unit-1");
     await user.type(screen.getByLabelText("Run Sub Task ID"), "sub-1");
     await user.type(screen.getByLabelText("Run Session ID"), "session-1");
@@ -667,6 +638,7 @@ describe("RpcDashboard", () => {
 
     rerender(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex-other.example/rpc",
@@ -695,6 +667,7 @@ describe("RpcDashboard", () => {
 
     const { rerender } = render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -704,9 +677,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Run Unit Task ID"), "unit-1");
     await user.type(screen.getByLabelText("Run Sub Task ID"), "sub-1");
     await user.type(screen.getByLabelText("Run Session ID"), "session-1");
@@ -716,6 +686,7 @@ describe("RpcDashboard", () => {
 
     rerender(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex-other.example/rpc",
@@ -749,6 +720,7 @@ describe("RpcDashboard", () => {
 
     const { rerender } = render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -758,9 +730,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Run Unit Task ID"), "unit-1");
     await user.type(screen.getByLabelText("Run Sub Task ID"), "sub-1");
     await user.type(screen.getByLabelText("Run Session ID"), "session-1");
@@ -772,6 +741,7 @@ describe("RpcDashboard", () => {
 
     rerender(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex-other.example/rpc",
@@ -809,6 +779,7 @@ describe("RpcDashboard", () => {
 
     const { rerender } = render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -818,9 +789,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.type(screen.getByLabelText("Run Unit Task ID"), "unit-1");
     await user.type(screen.getByLabelText("Run Sub Task ID"), "sub-1");
     await user.type(screen.getByLabelText("Run Session ID"), "session-1");
@@ -828,6 +796,7 @@ describe("RpcDashboard", () => {
 
     rerender(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex-other.example/rpc",
@@ -860,6 +829,7 @@ describe("RpcDashboard", () => {
 
     render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -869,9 +839,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.clear(screen.getByLabelText("From Sequence"));
     await user.type(screen.getByLabelText("From Sequence"), "0");
     await user.click(screen.getByRole("button", { name: "Start Live Stream" }));
@@ -915,6 +882,7 @@ describe("RpcDashboard", () => {
 
     const { rerender } = render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -924,9 +892,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.clear(screen.getByLabelText("From Sequence"));
     await user.type(screen.getByLabelText("From Sequence"), "0");
     await user.click(screen.getByRole("button", { name: "Start Live Stream" }));
@@ -944,6 +909,7 @@ describe("RpcDashboard", () => {
 
     rerender(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex-next.example/rpc",
@@ -964,6 +930,7 @@ describe("RpcDashboard", () => {
 
     const { rerender } = render(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex.example/rpc",
@@ -973,9 +940,6 @@ describe("RpcDashboard", () => {
         }}
       />,
     );
-
-    await user.clear(screen.getByLabelText("Workspace ID"));
-    await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
     await user.clear(screen.getByLabelText("From Sequence"));
     await user.type(screen.getByLabelText("From Sequence"), "0");
     await user.click(screen.getByRole("button", { name: "Start Live Stream" }));
@@ -986,6 +950,7 @@ describe("RpcDashboard", () => {
 
     rerender(
       <RpcDashboard
+        workspaceId="workspace-1"
         connection={{
           mode: "REMOTE",
           endpointUrl: "https://dexdex-other.example/rpc",
