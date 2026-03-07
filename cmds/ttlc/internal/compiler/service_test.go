@@ -834,6 +834,52 @@ task func Build(input Artifact) Vc[Artifact] {
 	})
 }
 
+func TestRunRejectsOutOfRangeFloat32Argument(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Value float32
+}
+
+task func Build(value float32) Vc[Artifact] {
+    return vc(Artifact{Value: value})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args: map[string]any{
+				"value": json.Number("3.5e38"),
+			},
+		})
+		if err != nil {
+			t.Fatalf("run returned unexpected error: %v", err)
+		}
+		if len(result.Diagnostics) == 0 {
+			t.Fatal("expected diagnostics")
+		}
+
+		foundTypeMismatch := false
+		for _, issue := range result.Diagnostics {
+			if issue.Message == "invalid run argument type: value expects float32" {
+				foundTypeMismatch = true
+				break
+			}
+		}
+		if !foundTypeMismatch {
+			t.Fatalf("expected float32 type mismatch diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
 func TestRunCacheDoesNotMutateBuildOrExplainState(t *testing.T) {
 	workspace := t.TempDir()
 	entryPath := filepath.Join(workspace, "main.ttl")

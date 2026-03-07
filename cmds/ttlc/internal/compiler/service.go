@@ -783,7 +783,7 @@ func runArgumentTypeMatches(expectedType string, value any, typeDeclarationsByNa
 	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr":
 		return runIntegerArgumentTypeMatches(normalizedType, value)
 	case "float32", "float64":
-		return runFloatArgumentTypeMatches(value)
+		return runFloatArgumentTypeMatches(normalizedType, value)
 	default:
 		typeName := normalizedType
 		if separator := strings.LastIndex(typeName, "."); separator >= 0 {
@@ -841,19 +841,32 @@ func runIntegerArgumentTypeMatches(expectedType string, value any) bool {
 	return true
 }
 
-func runFloatArgumentTypeMatches(value any) bool {
+func runFloatArgumentTypeMatches(expectedType string, value any) bool {
+	fitsExpectedType := func(floatValue float64) bool {
+		if math.IsNaN(floatValue) || math.IsInf(floatValue, 0) {
+			return false
+		}
+		if expectedType == "float32" {
+			return floatValue <= math.MaxFloat32 && floatValue >= -math.MaxFloat32
+		}
+		return true
+	}
+
 	switch typed := value.(type) {
 	case int, int8, int16, int32, int64:
 		return true
 	case uint, uint8, uint16, uint32, uint64, uintptr:
 		return true
 	case float32:
-		return !math.IsNaN(float64(typed)) && !math.IsInf(float64(typed), 0)
+		return fitsExpectedType(float64(typed))
 	case float64:
-		return !math.IsNaN(typed) && !math.IsInf(typed, 0)
+		return fitsExpectedType(typed)
 	case json.Number:
-		_, err := typed.Float64()
-		return err == nil
+		floatValue, err := typed.Float64()
+		if err != nil {
+			return false
+		}
+		return fitsExpectedType(floatValue)
 	default:
 		return false
 	}
