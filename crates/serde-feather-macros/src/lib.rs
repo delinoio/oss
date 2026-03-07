@@ -76,7 +76,7 @@ struct ParsedEnumVariant {
 
 enum ParsedEnumVariantKind {
     Unit,
-    Newtype { ty: syn::Type },
+    Newtype { ty: Box<syn::Type> },
 }
 
 enum ParsedInput {
@@ -799,7 +799,7 @@ fn parse_enum_variant(variant: &syn::Variant, macro_name: &str) -> syn::Result<P
             }
 
             ParsedEnumVariantKind::Newtype {
-                ty: payload_field.ty.clone(),
+                ty: Box::new(payload_field.ty.clone()),
             }
         }
         Fields::Named(_) => {
