@@ -855,9 +855,23 @@ func runFloatArgumentTypeMatches(expectedType string, value any) bool {
 
 	switch typed := value.(type) {
 	case int, int8, int16, int32, int64:
-		return true
+		if expectedType != "float32" {
+			return true
+		}
+		integerValue, ok := runIntegerValueAsBigInt(typed)
+		if !ok {
+			return false
+		}
+		return runIntegerFitsFloat32(integerValue)
 	case uint, uint8, uint16, uint32, uint64, uintptr:
-		return true
+		if expectedType != "float32" {
+			return true
+		}
+		integerValue, ok := runIntegerValueAsBigInt(typed)
+		if !ok {
+			return false
+		}
+		return runIntegerFitsFloat32(integerValue)
 	case float32:
 		return fitsExpectedType(float64(typed))
 	case float64:
@@ -871,6 +885,26 @@ func runFloatArgumentTypeMatches(expectedType string, value any) bool {
 	default:
 		return false
 	}
+}
+
+func runIntegerFitsFloat32(value *big.Int) bool {
+	if value == nil {
+		return false
+	}
+	if value.Sign() == 0 {
+		return true
+	}
+
+	absoluteValue := new(big.Int).Abs(new(big.Int).Set(value))
+	if absoluteValue.BitLen() <= 24 {
+		return true
+	}
+
+	truncatedBits := absoluteValue.BitLen() - 24
+	mask := new(big.Int).Lsh(big.NewInt(1), uint(truncatedBits))
+	mask.Sub(mask, big.NewInt(1))
+	lowBits := new(big.Int).And(absoluteValue, mask)
+	return lowBits.Sign() == 0
 }
 
 func isFiniteWholeNumber(value float64) bool {
