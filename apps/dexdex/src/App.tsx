@@ -3,12 +3,9 @@ import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { createQueryOptions } from "@connectrpc/connect-query-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import {
-  BrowserRouter,
-  NavLink,
-  useLocation,
-  useNavigate,
-} from "react-router-dom";
+import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
+import { WorkspacePicker } from "./components/workspace-picker";
+import { DesktopShellFrame } from "./components/desktop-shell-frame";
 import {
   DexDexPageId,
   dexdexPageDefinitions,
@@ -22,11 +19,12 @@ import type { SavedWorkspaceProfile } from "./contracts/workspace-profile";
 import {
   type ResolveWorkspaceConnectionInput,
   type ResolvedWorkspaceConnection,
+  WorkspaceEndpointSource,
 } from "./contracts/workspace-connection";
 import { WorkspaceMode } from "./contracts/workspace-mode";
 import {
-  getWorkspaceOverview,
-} from "./gen/v1/dexdex-WorkspaceService_connectquery";
+  listRepositoryGroups,
+} from "./gen/v1/dexdex-RepositoryService_connectquery";
 import {
   getSessionOutput,
   listSessions,
@@ -42,6 +40,7 @@ import {
 } from "./gen/v1/dexdex-PrManagementService_connectquery";
 import { listReviewAssistItems } from "./gen/v1/dexdex-ReviewAssistService_connectquery";
 import { listReviewComments } from "./gen/v1/dexdex-ReviewCommentService_connectquery";
+import { getWorkspaceOverview } from "./gen/v1/dexdex-WorkspaceService_connectquery";
 import {
   AgentCliType,
   AgentSessionStatus,
@@ -56,32 +55,43 @@ import {
   UnitTaskStatus,
   type ListSessionsResponse,
   type ListSubTasksResponse,
+  type PullRequestRecord,
+  type RepositoryGroup,
   type SessionSummary,
   type StreamWorkspaceEventsResponse,
+  type SubTask,
+  type WorkspaceOverview,
 } from "./gen/v1/dexdex_pb";
 import { ConnectQueryProvider, createDexDexTransport } from "./lib/connect-query-provider";
-import {
-  defaultLogger,
-  type DexDexLogger,
-} from "./lib/logger";
 import {
   LocalEnvironmentHealth,
   type DesktopLocalStoreState,
   loadDesktopLocalStoreState,
   updateDesktopLocalStoreState,
 } from "./lib/desktop-local-store";
+import { defaultLogger, type DexDexLogger } from "./lib/logger";
+import {
+  resolveWorkspaceConnection,
+  type ResolveWorkspaceConnection,
+} from "./lib/resolve-workspace-connection";
+import { stringifyForUi } from "./lib/safe-json";
 import {
   deleteWorkspaceProfile,
   listSavedWorkspaceProfiles,
   upsertWorkspaceProfile,
 } from "./lib/workspace-profiles-store";
 import {
-  resolveWorkspaceConnection,
-  type ResolveWorkspaceConnection,
-} from "./lib/resolve-workspace-connection";
-import { stringifyForUi } from "./lib/safe-json";
-
-// ── Types ──────────────────────────────────────────────────
+  visualPullRequests,
+  visualRepositoryGroups,
+  visualReviewAssistItems,
+  visualReviewComments,
+  visualSessionOutputEvents,
+  visualSessions,
+  visualStreamEvents,
+  visualSubTasks,
+  visualUnitTasks,
+  visualWorkspaceOverview,
+} from "./lib/visual-fixtures";
 
 enum AppStatus {
   Idle = "idle",
@@ -117,14 +127,11 @@ type UpdateLocalStore = (
   updater: (current: DesktopLocalStoreState) => DesktopLocalStoreState,
 ) => void;
 
-// ── Constants ──────────────────────────────────────────────
-
 const defaultPagePath = "/threads";
 const defaultRemoteEndpointUrl = "http://127.0.0.1:7878";
 const defaultListPageSize = 50;
 const maxStreamEvents = 120;
-
-// ── Utility functions ──────────────────────────────────────
+const visualWorkspaceId = "visual-workspace";
 
 function describeConnectError(error: unknown, fallbackMessage: string): string {
   if (error instanceof ConnectError) {
@@ -137,13 +144,6 @@ function describeConnectError(error: unknown, fallbackMessage: string): string {
     return error.message;
   }
   return fallbackMessage;
-}
-
-function modeOptions(): Array<{ value: WorkspaceMode; label: string }> {
-  return [
-    { value: WorkspaceMode.Local, label: "LOCAL" },
-    { value: WorkspaceMode.Remote, label: "REMOTE" },
-  ];
 }
 
 function resolvePageByPath(pathname: string): DexDexPageDefinition | null {
@@ -197,53 +197,86 @@ function updateSelectionState(
 
 function unitTaskDotClass(status: number): string {
   switch (status) {
-    case UnitTaskStatus.IN_PROGRESS: return "dot-running";
-    case UnitTaskStatus.COMPLETED: return "dot-completed";
-    case UnitTaskStatus.FAILED: return "dot-failed";
-    case UnitTaskStatus.ACTION_REQUIRED: return "dot-action-required";
-    case UnitTaskStatus.BLOCKED: return "dot-warning";
-    case UnitTaskStatus.CANCELLED: return "dot-cancelled";
-    default: return "dot-pending";
+    case UnitTaskStatus.IN_PROGRESS:
+      return "dot-running";
+    case UnitTaskStatus.COMPLETED:
+      return "dot-completed";
+    case UnitTaskStatus.FAILED:
+      return "dot-failed";
+    case UnitTaskStatus.ACTION_REQUIRED:
+      return "dot-action-required";
+    case UnitTaskStatus.BLOCKED:
+      return "dot-warning";
+    case UnitTaskStatus.CANCELLED:
+      return "dot-cancelled";
+    default:
+      return "dot-pending";
   }
 }
 
 function subTaskDotClass(status: number): string {
   switch (status) {
-    case SubTaskStatus.IN_PROGRESS: return "dot-running";
-    case SubTaskStatus.COMPLETED: return "dot-completed";
-    case SubTaskStatus.FAILED: return "dot-failed";
-    case SubTaskStatus.WAITING_FOR_PLAN_APPROVAL: return "dot-waiting";
-    case SubTaskStatus.WAITING_FOR_USER_INPUT: return "dot-action-required";
-    case SubTaskStatus.CANCELLED: return "dot-cancelled";
-    default: return "dot-pending";
+    case SubTaskStatus.IN_PROGRESS:
+      return "dot-running";
+    case SubTaskStatus.COMPLETED:
+      return "dot-completed";
+    case SubTaskStatus.FAILED:
+      return "dot-failed";
+    case SubTaskStatus.WAITING_FOR_PLAN_APPROVAL:
+      return "dot-waiting";
+    case SubTaskStatus.WAITING_FOR_USER_INPUT:
+      return "dot-action-required";
+    case SubTaskStatus.CANCELLED:
+      return "dot-cancelled";
+    default:
+      return "dot-pending";
   }
 }
 
 function sessionDotClass(status: number): string {
   switch (status) {
-    case AgentSessionStatus.RUNNING: return "dot-running";
-    case AgentSessionStatus.COMPLETED: return "dot-completed";
-    case AgentSessionStatus.FAILED: return "dot-failed";
-    case AgentSessionStatus.WAITING_FOR_INPUT: return "dot-waiting";
-    case AgentSessionStatus.STARTING: return "dot-pending";
-    case AgentSessionStatus.CANCELLED: return "dot-cancelled";
-    default: return "dot-default";
+    case AgentSessionStatus.RUNNING:
+      return "dot-running";
+    case AgentSessionStatus.COMPLETED:
+      return "dot-completed";
+    case AgentSessionStatus.FAILED:
+      return "dot-failed";
+    case AgentSessionStatus.WAITING_FOR_INPUT:
+      return "dot-waiting";
+    case AgentSessionStatus.STARTING:
+      return "dot-pending";
+    case AgentSessionStatus.CANCELLED:
+      return "dot-cancelled";
+    default:
+      return "dot-default";
   }
 }
 
 function prDotClass(status: number): string {
   switch (status) {
-    case PrStatus.OPEN: return "dot-open";
-    case PrStatus.APPROVED: return "dot-approved";
-    case PrStatus.MERGED: return "dot-merged";
-    case PrStatus.CHANGES_REQUESTED: return "dot-changes-requested";
-    case PrStatus.CLOSED: return "dot-closed";
-    case PrStatus.CI_FAILED: return "dot-ci-failed";
-    default: return "dot-default";
+    case PrStatus.OPEN:
+      return "dot-open";
+    case PrStatus.APPROVED:
+      return "dot-approved";
+    case PrStatus.MERGED:
+      return "dot-merged";
+    case PrStatus.CHANGES_REQUESTED:
+      return "dot-changes-requested";
+    case PrStatus.CLOSED:
+      return "dot-closed";
+    case PrStatus.CI_FAILED:
+      return "dot-ci-failed";
+    default:
+      return "dot-default";
   }
 }
 
-// ── Stream cache updater ───────────────────────────────────
+function isVisualModeActive(search: string): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return new URLSearchParams(search).get("visual") === "1";
+}
 
 function applyStreamEventToCaches(
   event: StreamWorkspaceEventsResponse,
@@ -289,7 +322,7 @@ function applyStreamEventToCaches(
               cliType: AgentCliType.UNSPECIFIED,
               lastOutputKind: SessionOutputKind.UNSPECIFIED,
               updatedAt: undefined,
-            } satisfies SessionSummary);
+            } as unknown as SessionSummary);
       const nextStatus = sessionOutput.isTerminal
         ? sessionOutput.kind === SessionOutputKind.ERROR
           ? AgentSessionStatus.FAILED
@@ -329,7 +362,7 @@ function applyStreamEventToCaches(
               cliType: AgentCliType.UNSPECIFIED,
               lastOutputKind: SessionOutputKind.UNSPECIFIED,
               updatedAt: undefined,
-            } satisfies SessionSummary);
+            } as unknown as SessionSummary);
       const updated: SessionSummary = {
         ...existing,
         status: changed.status,
@@ -363,36 +396,140 @@ function applyStreamEventToCaches(
   }
 }
 
-// ══════════════════════════════════════════════════════════
-//  Page Components
-// ══════════════════════════════════════════════════════════
+function ProjectsPage({
+  workspaceId,
+  visualMode,
+}: {
+  workspaceId: string;
+  visualMode: boolean;
+}) {
+  const overviewQuery = useQuery(
+    getWorkspaceOverview,
+    { workspaceId },
+    { enabled: !visualMode },
+  );
+  const repositoryGroupsQuery = useQuery(
+    listRepositoryGroups,
+    {
+      workspaceId,
+      pageSize: defaultListPageSize,
+      pageToken: "",
+    },
+    { enabled: !visualMode },
+  );
+  const unitTasksQuery = useQuery(
+    listUnitTasks,
+    {
+      workspaceId,
+      status: UnitTaskStatus.UNSPECIFIED,
+      pageSize: defaultListPageSize,
+      pageToken: "",
+    },
+    { enabled: !visualMode },
+  );
 
-// ── Threads Page ───────────────────────────────────────────
+  const overview: WorkspaceOverview | undefined = visualMode
+    ? visualWorkspaceOverview
+    : overviewQuery.data?.overview;
+  const repositoryGroups: RepositoryGroup[] = visualMode
+    ? visualRepositoryGroups
+    : (repositoryGroupsQuery.data?.items ?? []);
+  const activeTasks = (visualMode ? visualUnitTasks : unitTasksQuery.data?.items ?? []).filter(
+    (task) =>
+      task.status === UnitTaskStatus.IN_PROGRESS ||
+      task.status === UnitTaskStatus.ACTION_REQUIRED ||
+      task.status === UnitTaskStatus.BLOCKED,
+  );
+
+  return (
+    <div className="content-body">
+      <div className="dashboard-grid">
+        <section className="panel">
+          <header className="panel-header">Workspace Overview</header>
+          <div className="panel-body">
+            {overview ? (
+              <div className="metric-grid">
+                <div className="metric-card">
+                  <span className="metric-label">Total Unit Tasks</span>
+                  <span className="metric-value">{overview.totalUnitTaskCount}</span>
+                </div>
+                <div className="metric-card">
+                  <span className="metric-label">Action Required</span>
+                  <span className="metric-value">{overview.actionRequiredUnitTaskCount}</span>
+                </div>
+                <div className="metric-card">
+                  <span className="metric-label">Active Sessions</span>
+                  <span className="metric-value">{overview.activeSessionCount}</span>
+                </div>
+                <div className="metric-card">
+                  <span className="metric-label">Open PRs</span>
+                  <span className="metric-value">{overview.openPullRequestCount}</span>
+                </div>
+              </div>
+            ) : overviewQuery.isPending ? (
+              <p className="text-muted text-sm">Loading workspace overview...</p>
+            ) : (
+              <p className="empty-state">No overview data available.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="panel">
+          <header className="panel-header">Repository Groups</header>
+          <div className="panel-body">
+            {repositoryGroups.length > 0 ? (
+              <ul className="item-list">
+                {repositoryGroups.map((group) => (
+                  <li key={group.repositoryGroupId} className="panel-list-item">
+                    <p className="item-row-title">{group.repositoryGroupId}</p>
+                    <p className="item-row-sub">{group.repositories.length} repositories</p>
+                  </li>
+                ))}
+              </ul>
+            ) : repositoryGroupsQuery.isPending ? (
+              <p className="text-muted text-sm">Loading repository groups...</p>
+            ) : (
+              <p className="empty-state">No repository groups found.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="panel">
+          <header className="panel-header">Active Task Summary</header>
+          <div className="panel-body">
+            {activeTasks.length > 0 ? (
+              <ul className="item-list">
+                {activeTasks.map((task) => (
+                  <li key={task.unitTaskId} className="panel-list-item">
+                    <div className="inline-gap">
+                      <span className={`item-row-dot ${unitTaskDotClass(task.status)}`} />
+                      <span className="item-row-title">{task.unitTaskId}</span>
+                    </div>
+                    <p className="item-row-sub">{enumLabel(UnitTaskStatus, task.status)}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-state">No active tasks.</p>
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
 
 function ThreadsPage({
   workspaceId,
   selection,
   onSelectionChange,
-  logger,
+  visualMode,
 }: {
   workspaceId: string;
   selection: SharedSelectionState;
   onSelectionChange: (patch: Partial<SharedSelectionState>) => void;
-  logger: DexDexLogger;
+  visualMode: boolean;
 }) {
-  const queryClient = useQueryClient();
-  const transport = useTransport();
-  const eventStreamClient = useMemo(
-    () => createClient(EventStreamService, transport),
-    [transport],
-  );
-
-  const [threadTab, setThreadTab] = useState<"detail" | "sessions" | "stream">("detail");
-  const [streamStatus, setStreamStatus] = useState<"idle" | "running" | "stopped" | "error">("idle");
-  const [streamError, setStreamError] = useState<string | null>(null);
-  const [streamEvents, setStreamEvents] = useState<StreamWorkspaceEventsResponse[]>([]);
-  const streamAbortControllerRef = useRef<AbortController | null>(null);
-
   const subTasksQuery = useQuery(
     listSubTasks,
     {
@@ -402,23 +539,29 @@ function ThreadsPage({
       pageSize: defaultListPageSize,
       pageToken: "",
     },
-    { enabled: selection.selectedUnitTaskId !== null },
+    {
+      enabled: !visualMode && selection.selectedUnitTaskId !== null,
+    },
   );
 
-  const sessionListQuery = useQuery(listSessions, {
-    workspaceId,
-    status: AgentSessionStatus.UNSPECIFIED,
-    cliType: AgentCliType.UNSPECIFIED,
-    pageSize: defaultListPageSize,
-    pageToken: "",
-  });
+  const sessionListQuery = useQuery(
+    listSessions,
+    {
+      workspaceId,
+      status: AgentSessionStatus.UNSPECIFIED,
+      cliType: AgentCliType.UNSPECIFIED,
+      pageSize: defaultListPageSize,
+      pageToken: "",
+    },
+    { enabled: !visualMode },
+  );
 
   const selectedSubTaskQuery = useQuery(
     getSubTask,
     selection.selectedSubTaskId
       ? { workspaceId, subTaskId: selection.selectedSubTaskId }
       : undefined,
-    { enabled: selection.selectedSubTaskId !== null },
+    { enabled: !visualMode && selection.selectedSubTaskId !== null },
   );
 
   const selectedSessionOutputQuery = useQuery(
@@ -426,18 +569,339 @@ function ThreadsPage({
     selection.selectedSessionId
       ? { workspaceId, sessionId: selection.selectedSessionId }
       : undefined,
-    { enabled: selection.selectedSessionId !== null },
+    { enabled: !visualMode && selection.selectedSessionId !== null },
   );
 
-  useEffect(() => {
-    if (selection.selectedSubTaskId || !subTasksQuery.data?.items.length) return;
-    onSelectionChange({ selectedSubTaskId: subTasksQuery.data.items[0].subTaskId });
-  }, [onSelectionChange, selection.selectedSubTaskId, subTasksQuery.data?.items]);
+  const subTasks = visualMode
+    ? visualSubTasks.filter((subTask) =>
+        selection.selectedUnitTaskId
+          ? subTask.unitTaskId === selection.selectedUnitTaskId
+          : true,
+      )
+    : (subTasksQuery.data?.items ?? []);
+  const sessions = visualMode ? visualSessions : (sessionListQuery.data?.items ?? []);
+  const selectedSubTask = visualMode
+    ? visualSubTasks.find((item) => item.subTaskId === selection.selectedSubTaskId)
+    : selectedSubTaskQuery.data?.subTask;
+  const selectedSessionEvents = visualMode
+    ? visualSessionOutputEvents.filter((event) =>
+        selection.selectedSessionId ? event.sessionId === selection.selectedSessionId : true,
+      )
+    : selectedSessionOutputQuery.data?.events ?? [];
 
   useEffect(() => {
-    if (selection.selectedSessionId || !sessionListQuery.data?.items.length) return;
-    onSelectionChange({ selectedSessionId: sessionListQuery.data.items[0].sessionId });
-  }, [onSelectionChange, selection.selectedSessionId, sessionListQuery.data?.items]);
+    if (selection.selectedSubTaskId || subTasks.length === 0) return;
+    onSelectionChange({ selectedSubTaskId: subTasks[0].subTaskId });
+  }, [onSelectionChange, selection.selectedSubTaskId, subTasks]);
+
+  useEffect(() => {
+    if (selection.selectedSessionId || sessions.length === 0) return;
+    onSelectionChange({ selectedSessionId: sessions[0].sessionId });
+  }, [onSelectionChange, selection.selectedSessionId, sessions]);
+
+  return (
+    <div className="content-split">
+      <section className="content-list-pane">
+        <div className="section-label">Inbox</div>
+        {selection.selectedUnitTaskId ? null : (
+          <p className="empty-state">Select a unit task in the left sidebar.</p>
+        )}
+        {selection.selectedUnitTaskId && subTasks.length === 0 ? (
+          subTasksQuery.isPending ? (
+            <p className="text-muted text-sm">Loading sub tasks...</p>
+          ) : (
+            <p className="empty-state">No sub tasks for this task.</p>
+          )
+        ) : null}
+        {subTasks.length > 0 ? (
+          <ul className="item-list">
+            {subTasks.map((subTask) => (
+              <li key={subTask.subTaskId}>
+                <button
+                  type="button"
+                  className={`item-row ${selection.selectedSubTaskId === subTask.subTaskId ? "item-row-active" : ""}`}
+                  onClick={() =>
+                    onSelectionChange({
+                      selectedSubTaskId: subTask.subTaskId,
+                      selectedUnitTaskId: subTask.unitTaskId,
+                    })
+                  }
+                >
+                  <span className={`item-row-dot ${subTaskDotClass(subTask.status)}`} />
+                  <span className="item-row-body">
+                    <span className="item-row-title">{subTask.subTaskId}</span>
+                    <span className="item-row-sub">{enumLabel(SubTaskStatus, subTask.status)}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
+
+      <section className="content-detail-pane">
+        <div className="panel">
+          <header className="panel-header">Thread Detail</header>
+          <div className="panel-body">
+            {selectedSubTask ? (
+              <div className="kv-grid">
+                <span className="kv-key">Sub task</span>
+                <span className="kv-value">{selectedSubTask.subTaskId}</span>
+                <span className="kv-key">Unit task</span>
+                <span className="kv-value">{selectedSubTask.unitTaskId}</span>
+                <span className="kv-key">Type</span>
+                <span className="kv-value">{enumLabel(SubTaskStatus, selectedSubTask.status)}</span>
+              </div>
+            ) : (
+              <p className="empty-state">Select a sub task to inspect details.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="panel">
+          <header className="panel-header">Timeline</header>
+          <div className="panel-body">
+            {sessions.length > 0 ? (
+              <ul className="item-list">
+                {sessions.map((session) => (
+                  <li key={session.sessionId}>
+                    <button
+                      type="button"
+                      className={`item-row ${selection.selectedSessionId === session.sessionId ? "item-row-active" : ""}`}
+                      onClick={() => onSelectionChange({ selectedSessionId: session.sessionId })}
+                    >
+                      <span className={`item-row-dot ${sessionDotClass(session.status)}`} />
+                      <span className="item-row-body">
+                        <span className="item-row-title">{session.sessionId}</span>
+                        <span className="item-row-sub">{enumLabel(AgentSessionStatus, session.status)}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : sessionListQuery.isPending ? (
+              <p className="text-muted text-sm">Loading sessions...</p>
+            ) : (
+              <p className="empty-state">No sessions found.</p>
+            )}
+
+            {selectedSessionEvents.length > 0 ? (
+              <div className="stream-list mt-4">
+                {selectedSessionEvents.map((event, index) => (
+                  <article key={`${event.sessionId}-${index}`} className="stream-item">
+                    <header className="stream-item-header">
+                      <span>{enumLabel(SessionOutputKind, event.kind)}</span>
+                      <span>{event.isTerminal ? "terminal" : "active"}</span>
+                    </header>
+                    <pre className="stream-item-body">{event.body}</pre>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ReviewPage({
+  workspaceId,
+  selection,
+  onSelectionChange,
+  visualMode,
+}: {
+  workspaceId: string;
+  selection: SharedSelectionState;
+  onSelectionChange: (patch: Partial<SharedSelectionState>) => void;
+  visualMode: boolean;
+}) {
+  const pullRequestListQuery = useQuery(
+    listPullRequests,
+    {
+      workspaceId,
+      status: PrStatus.UNSPECIFIED,
+      pageSize: defaultListPageSize,
+      pageToken: "",
+    },
+    { enabled: !visualMode },
+  );
+
+  const selectedPullRequestQuery = useQuery(
+    getPullRequest,
+    selection.selectedPrTrackingId
+      ? { workspaceId, prTrackingId: selection.selectedPrTrackingId }
+      : undefined,
+    { enabled: !visualMode && selection.selectedPrTrackingId !== null },
+  );
+
+  const reviewCommentQuery = useQuery(
+    listReviewComments,
+    selection.selectedPrTrackingId
+      ? { workspaceId, prTrackingId: selection.selectedPrTrackingId }
+      : undefined,
+    { enabled: !visualMode && selection.selectedPrTrackingId !== null },
+  );
+
+  const reviewAssistQuery = useQuery(
+    listReviewAssistItems,
+    selection.selectedUnitTaskId
+      ? { workspaceId, unitTaskId: selection.selectedUnitTaskId }
+      : undefined,
+    { enabled: !visualMode && selection.selectedUnitTaskId !== null },
+  );
+
+  const pullRequests: PullRequestRecord[] = visualMode
+    ? visualPullRequests
+    : (pullRequestListQuery.data?.items ?? []);
+  const selectedPullRequest = visualMode
+    ? visualPullRequests.find((item) => item.prTrackingId === selection.selectedPrTrackingId)
+    : selectedPullRequestQuery.data?.pullRequest;
+  const reviewComments = visualMode
+    ? visualReviewComments
+    : reviewCommentQuery.data?.comments ?? [];
+  const reviewAssistItems = visualMode
+    ? visualReviewAssistItems
+    : reviewAssistQuery.data?.items ?? [];
+
+  useEffect(() => {
+    if (selection.selectedPrTrackingId || pullRequests.length === 0) return;
+    onSelectionChange({ selectedPrTrackingId: pullRequests[0].prTrackingId });
+  }, [onSelectionChange, pullRequests, selection.selectedPrTrackingId]);
+
+  return (
+    <div className="content-split">
+      <section className="content-list-pane">
+        <div className="section-label">Pull Requests</div>
+        {pullRequests.length > 0 ? (
+          <ul className="item-list">
+            {pullRequests.map((pullRequest) => (
+              <li key={pullRequest.prTrackingId}>
+                <button
+                  type="button"
+                  className={`item-row ${selection.selectedPrTrackingId === pullRequest.prTrackingId ? "item-row-active" : ""}`}
+                  onClick={() => onSelectionChange({ selectedPrTrackingId: pullRequest.prTrackingId })}
+                >
+                  <span className={`item-row-dot ${prDotClass(pullRequest.status)}`} />
+                  <span className="item-row-body">
+                    <span className="item-row-title">{pullRequest.prTrackingId}</span>
+                    <span className="item-row-sub">{enumLabel(PrStatus, pullRequest.status)}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : pullRequestListQuery.isPending ? (
+          <p className="text-muted text-sm">Loading pull requests...</p>
+        ) : (
+          <p className="empty-state">No pull requests.</p>
+        )}
+      </section>
+
+      <section className="content-detail-pane">
+        <div className="panel">
+          <header className="panel-header">Review Context</header>
+          <div className="panel-body">
+            {selectedPullRequest ? (
+              <div className="kv-grid">
+                <span className="kv-key">PR tracking ID</span>
+                <span className="kv-value">{selectedPullRequest.prTrackingId}</span>
+                <span className="kv-key">Status</span>
+                <span className="kv-value">{enumLabel(PrStatus, selectedPullRequest.status)}</span>
+              </div>
+            ) : (
+              <p className="empty-state">Select a pull request to view details.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="panel">
+          <header className="panel-header">Review Assist</header>
+          <div className="panel-body">
+            {reviewAssistItems.length > 0 ? (
+              <ul className="item-list">
+                {reviewAssistItems.map((item) => (
+                  <li key={item.reviewAssistId} className="panel-list-item">
+                    <p className="item-row-title">{item.reviewAssistId}</p>
+                    <p className="item-row-sub">{item.body}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-state">No review assist records.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="panel">
+          <header className="panel-header">Inline Comments</header>
+          <div className="panel-body">
+            {reviewComments.length > 0 ? (
+              <ul className="item-list">
+                {reviewComments.map((comment) => (
+                  <li key={comment.reviewCommentId} className="panel-list-item">
+                    <p className="item-row-title">{comment.reviewCommentId}</p>
+                    <p className="item-row-sub">{comment.body}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="empty-state">No review comments.</p>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function WorktreesPage({
+  workspaceId,
+  selection,
+  onSelectionChange,
+  logger,
+  visualMode,
+}: {
+  workspaceId: string;
+  selection: SharedSelectionState;
+  onSelectionChange: (patch: Partial<SharedSelectionState>) => void;
+  logger: DexDexLogger;
+  visualMode: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const transport = useTransport();
+  const eventStreamClient = useMemo(
+    () => createClient(EventStreamService, transport),
+    [transport],
+  );
+
+  const [streamStatus, setStreamStatus] = useState<"idle" | "running" | "stopped" | "error">(
+    visualMode ? "running" : "idle",
+  );
+  const [streamError, setStreamError] = useState<string | null>(null);
+  const [streamEvents, setStreamEvents] = useState<StreamWorkspaceEventsResponse[]>(
+    visualMode ? visualStreamEvents : [],
+  );
+  const streamAbortControllerRef = useRef<AbortController | null>(null);
+
+  const sessionListQuery = useQuery(
+    listSessions,
+    {
+      workspaceId,
+      status: AgentSessionStatus.UNSPECIFIED,
+      cliType: AgentCliType.UNSPECIFIED,
+      pageSize: defaultListPageSize,
+      pageToken: "",
+    },
+    { enabled: !visualMode },
+  );
+
+  const sessions = visualMode ? visualSessions : (sessionListQuery.data?.items ?? []);
+
+  useEffect(() => {
+    if (selection.selectedSessionId || sessions.length === 0) return;
+    onSelectionChange({ selectedSessionId: sessions[0].sessionId });
+  }, [onSelectionChange, selection.selectedSessionId, sessions]);
 
   useEffect(() => {
     return () => {
@@ -447,6 +911,13 @@ function ThreadsPage({
   }, []);
 
   async function startStream() {
+    if (visualMode) {
+      setStreamStatus("running");
+      setStreamError(null);
+      setStreamEvents(visualStreamEvents);
+      return;
+    }
+
     streamAbortControllerRef.current?.abort();
     const abortController = new AbortController();
     streamAbortControllerRef.current = abortController;
@@ -461,7 +932,7 @@ function ThreadsPage({
         { signal: abortController.signal },
       )) {
         if (event.sequence === 0n) continue;
-        setStreamEvents((prev) => [event, ...prev].slice(0, maxStreamEvents));
+        setStreamEvents((previous) => [event, ...previous].slice(0, maxStreamEvents));
         applyStreamEventToCaches(event, workspaceId, transport, queryClient);
       }
       if (!abortController.signal.aborted) {
@@ -479,170 +950,49 @@ function ThreadsPage({
   }
 
   function stopStream() {
+    if (visualMode) {
+      setStreamStatus("stopped");
+      return;
+    }
     streamAbortControllerRef.current?.abort();
     streamAbortControllerRef.current = null;
     setStreamStatus("stopped");
   }
 
   return (
-    <>
-      <div className="tab-bar">
-        <button
-          type="button"
-          className={`tab-item ${threadTab === "detail" ? "tab-item-active" : ""}`}
-          onClick={() => setThreadTab("detail")}
-        >
-          Detail
-        </button>
-        <button
-          type="button"
-          className={`tab-item ${threadTab === "sessions" ? "tab-item-active" : ""}`}
-          onClick={() => setThreadTab("sessions")}
-        >
-          Sessions
-        </button>
-        <button
-          type="button"
-          className={`tab-item ${threadTab === "stream" ? "tab-item-active" : ""}`}
-          onClick={() => setThreadTab("stream")}
-        >
-          Live Stream
-          {streamStatus === "running" ? (
-            <span style={{ marginLeft: 6, width: 6, height: 6, borderRadius: "50%", background: "var(--green)", display: "inline-block" }} />
-          ) : null}
-        </button>
-      </div>
-
-      <div className="content-body">
-        {threadTab === "detail" ? (
-          <>
-            <div className="detail-card">
-              <div className="detail-card-header">
-                <h3>Sub Tasks</h3>
-                {selection.selectedUnitTaskId ? (
-                  <span className="badge badge-muted">{selection.selectedUnitTaskId}</span>
-                ) : null}
-              </div>
-              <div className="detail-card-body">
-                {!selection.selectedUnitTaskId ? (
-                  <p className="empty-state">Select a thread from the sidebar.</p>
-                ) : subTasksQuery.isPending ? (
-                  <p className="text-muted text-sm">Loading sub tasks...</p>
-                ) : subTasksQuery.error ? (
-                  <p style={{ color: "var(--red)", fontSize: 13 }}>
-                    {describeConnectError(subTasksQuery.error, "Failed to load sub tasks.")}
-                  </p>
-                ) : subTasksQuery.data?.items.length ? (
-                  <ul className="item-list">
-                    {subTasksQuery.data.items.map((subTask) => (
-                      <li key={subTask.subTaskId}>
-                        <button
-                          type="button"
-                          className={`item-row ${selection.selectedSubTaskId === subTask.subTaskId ? "item-row-active" : ""}`}
-                          onClick={() => onSelectionChange({
-                            selectedSubTaskId: subTask.subTaskId,
-                            selectedUnitTaskId: subTask.unitTaskId,
-                          })}
-                        >
-                          <span className={`item-row-dot ${subTaskDotClass(subTask.status)}`} />
-                          <span className="item-row-body">
-                            <span className="item-row-title">{subTask.subTaskId}</span>
-                            <span className="item-row-sub">{enumLabel(SubTaskStatus, subTask.status)}</span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="empty-state">No sub tasks found.</p>
-                )}
-              </div>
-            </div>
-
-            {selectedSubTaskQuery.data?.subTask ? (
-              <div className="detail-card">
-                <div className="detail-card-header">
-                  <h3>Sub Task Detail</h3>
-                  <span className={`badge ${subTaskDotClass(selectedSubTaskQuery.data.subTask.status) === "dot-running" ? "badge-green" : subTaskDotClass(selectedSubTaskQuery.data.subTask.status) === "dot-failed" ? "badge-red" : "badge-muted"}`}>
-                    {enumLabel(SubTaskStatus, selectedSubTaskQuery.data.subTask.status)}
+    <div className="content-split">
+      <section className="content-list-pane">
+        <div className="section-label">Sessions</div>
+        {sessions.length > 0 ? (
+          <ul className="item-list">
+            {sessions.map((session) => (
+              <li key={session.sessionId}>
+                <button
+                  type="button"
+                  className={`item-row ${selection.selectedSessionId === session.sessionId ? "item-row-active" : ""}`}
+                  onClick={() => onSelectionChange({ selectedSessionId: session.sessionId })}
+                >
+                  <span className={`item-row-dot ${sessionDotClass(session.status)}`} />
+                  <span className="item-row-body">
+                    <span className="item-row-title">{session.sessionId}</span>
+                    <span className="item-row-sub">{enumLabel(AgentSessionStatus, session.status)}</span>
                   </span>
-                </div>
-                <div className="detail-card-body">
-                  <div className="kv-grid">
-                    <span className="kv-key">Sub task</span>
-                    <span className="kv-value">{selectedSubTaskQuery.data.subTask.subTaskId}</span>
-                    <span className="kv-key">Unit task</span>
-                    <span className="kv-value">{selectedSubTaskQuery.data.subTask.unitTaskId}</span>
-                    <span className="kv-key">Status</span>
-                    <span className="kv-value">{enumLabel(SubTaskStatus, selectedSubTaskQuery.data.subTask.status)}</span>
-                  </div>
-                </div>
-              </div>
-            ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : sessionListQuery.isPending ? (
+          <p className="text-muted text-sm">Loading sessions...</p>
+        ) : (
+          <p className="empty-state">No sessions available.</p>
+        )}
+      </section>
 
-            {selectedSessionOutputQuery.data?.events.length ? (
-              <div className="detail-card">
-                <div className="detail-card-header">
-                  <h3>Session Output</h3>
-                </div>
-                <div className="detail-card-body">
-                  <div className="stream-list">
-                    {selectedSessionOutputQuery.data.events.map((event, index) => (
-                      <div key={`${event.sessionId}-${index}`} className="stream-item">
-                        <div className="stream-item-header">
-                          <span>{enumLabel(SessionOutputKind, event.kind)}</span>
-                          <span>{event.isTerminal ? "terminal" : "active"}</span>
-                        </div>
-                        <pre className="stream-item-body">{event.body}</pre>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </>
-        ) : null}
-
-        {threadTab === "sessions" ? (
-          <div className="detail-card">
-            <div className="detail-card-header">
-              <h3>Session Runs</h3>
-            </div>
-            <div className="detail-card-body">
-              {sessionListQuery.isPending ? (
-                <p className="text-muted text-sm">Loading sessions...</p>
-              ) : sessionListQuery.error ? (
-                <p style={{ color: "var(--red)", fontSize: 13 }}>
-                  {describeConnectError(sessionListQuery.error, "Failed to load sessions.")}
-                </p>
-              ) : sessionListQuery.data?.items.length ? (
-                <ul className="item-list">
-                  {sessionListQuery.data.items.map((session) => (
-                    <li key={session.sessionId}>
-                      <button
-                        type="button"
-                        className={`item-row ${selection.selectedSessionId === session.sessionId ? "item-row-active" : ""}`}
-                        onClick={() => onSelectionChange({ selectedSessionId: session.sessionId })}
-                      >
-                        <span className={`item-row-dot ${sessionDotClass(session.status)}`} />
-                        <span className="item-row-body">
-                          <span className="item-row-title">{session.sessionId}</span>
-                          <span className="item-row-sub">{enumLabel(AgentSessionStatus, session.status)}</span>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="empty-state">No sessions found.</p>
-              )}
-            </div>
-          </div>
-        ) : null}
-
-        {threadTab === "stream" ? (
-          <>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <section className="content-detail-pane">
+        <div className="panel">
+          <header className="panel-header">Event Timeline</header>
+          <div className="panel-body">
+            <div className="toolbar-row">
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
@@ -659,193 +1009,32 @@ function ThreadsPage({
               >
                 Stop
               </button>
-              <span className="text-muted text-sm" style={{ display: "flex", alignItems: "center" }}>
-                {streamStatus.toUpperCase()}
-              </span>
+              <span className="status-pill">{streamStatus.toUpperCase()}</span>
             </div>
 
-            {streamError ? (
-              <p style={{ color: "var(--red)", fontSize: 13, marginBottom: 12 }}>{streamError}</p>
-            ) : null}
+            {streamError ? <p className="error-inline">{streamError}</p> : null}
 
             {streamEvents.length > 0 ? (
-              <div className="stream-list">
+              <div className="stream-list mt-3">
                 {streamEvents.map((event) => (
-                  <div
-                    key={`${event.sequence.toString()}-${event.eventType}`}
-                    className="stream-item"
-                  >
-                    <div className="stream-item-header">
+                  <article key={`${event.sequence.toString()}-${event.eventType}`} className="stream-item">
+                    <header className="stream-item-header">
                       <span>#{event.sequence.toString()}</span>
                       <span>{enumLabel(StreamEventType, event.eventType)}</span>
-                    </div>
+                    </header>
                     <pre className="stream-item-body">{stringifyForUi(event)}</pre>
-                  </div>
+                  </article>
                 ))}
               </div>
             ) : (
-              <p className="empty-state">No stream events yet. Press Start Stream to begin.</p>
+              <p className="empty-state">No stream events yet.</p>
             )}
-          </>
-        ) : null}
-      </div>
-    </>
-  );
-}
-
-// ── Review Page ────────────────────────────────────────────
-
-function ReviewPage({
-  workspaceId,
-  selection,
-  onSelectionChange,
-}: {
-  workspaceId: string;
-  selection: SharedSelectionState;
-  onSelectionChange: (patch: Partial<SharedSelectionState>) => void;
-}) {
-  const pullRequestListQuery = useQuery(listPullRequests, {
-    workspaceId,
-    status: PrStatus.UNSPECIFIED,
-    pageSize: defaultListPageSize,
-    pageToken: "",
-  });
-
-  const selectedPullRequestQuery = useQuery(
-    getPullRequest,
-    selection.selectedPrTrackingId
-      ? { workspaceId, prTrackingId: selection.selectedPrTrackingId }
-      : undefined,
-    { enabled: selection.selectedPrTrackingId !== null },
-  );
-
-  const reviewCommentQuery = useQuery(
-    listReviewComments,
-    selection.selectedPrTrackingId
-      ? { workspaceId, prTrackingId: selection.selectedPrTrackingId }
-      : undefined,
-    { enabled: selection.selectedPrTrackingId !== null },
-  );
-
-  const reviewAssistQuery = useQuery(
-    listReviewAssistItems,
-    selection.selectedUnitTaskId
-      ? { workspaceId, unitTaskId: selection.selectedUnitTaskId }
-      : undefined,
-    { enabled: selection.selectedUnitTaskId !== null },
-  );
-
-  useEffect(() => {
-    if (selection.selectedPrTrackingId || !pullRequestListQuery.data?.items.length) return;
-    onSelectionChange({ selectedPrTrackingId: pullRequestListQuery.data.items[0].prTrackingId });
-  }, [onSelectionChange, pullRequestListQuery.data?.items, selection.selectedPrTrackingId]);
-
-  return (
-    <div className="content-split">
-      <div className="content-list-pane">
-        <div style={{ padding: "8px 8px 4px", fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.05em", color: "var(--text-muted)" }}>
-          Pull Requests
+          </div>
         </div>
-        {pullRequestListQuery.isPending ? (
-          <p className="empty-state">Loading...</p>
-        ) : pullRequestListQuery.error ? (
-          <p style={{ color: "var(--red)", fontSize: 13, padding: 12 }}>
-            {describeConnectError(pullRequestListQuery.error, "Failed to load pull requests.")}
-          </p>
-        ) : pullRequestListQuery.data?.items.length ? (
-          <ul className="item-list">
-            {pullRequestListQuery.data.items.map((pr) => (
-              <li key={pr.prTrackingId}>
-                <button
-                  type="button"
-                  className={`item-row ${selection.selectedPrTrackingId === pr.prTrackingId ? "item-row-active" : ""}`}
-                  onClick={() => onSelectionChange({ selectedPrTrackingId: pr.prTrackingId })}
-                >
-                  <span className={`item-row-dot ${prDotClass(pr.status)}`} />
-                  <span className="item-row-body">
-                    <span className="item-row-title">{pr.prTrackingId}</span>
-                    <span className="item-row-sub">{enumLabel(PrStatus, pr.status)}</span>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="empty-state">No pull requests.</p>
-        )}
-      </div>
-
-      <div className="content-detail-pane">
-        {selectedPullRequestQuery.data?.pullRequest ? (
-          <div className="detail-card">
-            <div className="detail-card-header">
-              <h3>Pull Request</h3>
-              <span className={`badge ${prDotClass(selectedPullRequestQuery.data.pullRequest.status) === "dot-open" ? "badge-green" : prDotClass(selectedPullRequestQuery.data.pullRequest.status) === "dot-merged" ? "badge-blue" : "badge-muted"}`}>
-                {enumLabel(PrStatus, selectedPullRequestQuery.data.pullRequest.status)}
-              </span>
-            </div>
-            <div className="detail-card-body">
-              <div className="kv-grid">
-                <span className="kv-key">PR tracking ID</span>
-                <span className="kv-value">{selectedPullRequestQuery.data.pullRequest.prTrackingId}</span>
-                <span className="kv-key">Status</span>
-                <span className="kv-value">{enumLabel(PrStatus, selectedPullRequestQuery.data.pullRequest.status)}</span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <p className="empty-state">Select a pull request to view details.</p>
-        )}
-
-        {reviewAssistQuery.data?.items.length ? (
-          <div className="detail-card">
-            <div className="detail-card-header">
-              <h3>Review Assist</h3>
-            </div>
-            <div className="detail-card-body">
-              <ul className="item-list">
-                {reviewAssistQuery.data.items.map((item) => (
-                  <li key={item.reviewAssistId}>
-                    <div className="item-row">
-                      <span className="item-row-body">
-                        <span className="item-row-title">{item.reviewAssistId}</span>
-                        <span className="item-row-sub">{item.body}</span>
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ) : null}
-
-        {reviewCommentQuery.data?.comments.length ? (
-          <div className="detail-card">
-            <div className="detail-card-header">
-              <h3>Review Comments</h3>
-            </div>
-            <div className="detail-card-body">
-              <ul className="item-list">
-                {reviewCommentQuery.data.comments.map((comment) => (
-                  <li key={comment.reviewCommentId}>
-                    <div className="item-row">
-                      <span className="item-row-body">
-                        <span className="item-row-title">{comment.reviewCommentId}</span>
-                        <span className="item-row-sub">{comment.body}</span>
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ) : null}
-      </div>
+      </section>
     </div>
   );
 }
-
-// ── Automations Page ───────────────────────────────────────
 
 function AutomationsPage({
   localStoreState,
@@ -878,104 +1067,100 @@ function AutomationsPage({
 
   return (
     <div className="content-body">
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.05em", color: "var(--text-muted)", marginBottom: 10 }}>
-            Automation Queue
-          </div>
-          {localStoreState.automations.length === 0 ? (
-            <p className="empty-state">No automations configured.</p>
-          ) : (
-            localStoreState.automations.map((automation) => (
-              <div key={automation.id} className="automation-item">
-                <div className="automation-item-header">
-                  <div>
-                    <div className="automation-item-name">
-                      {automation.name}
-                      {!automation.enabled ? (
-                        <span className="badge badge-muted" style={{ marginLeft: 8 }}>Disabled</span>
-                      ) : null}
+      <div className="dashboard-grid two-columns">
+        <section className="panel">
+          <header className="panel-header">Automation Queue</header>
+          <div className="panel-body">
+            {localStoreState.automations.length === 0 ? (
+              <p className="empty-state">No automations configured.</p>
+            ) : (
+              <div className="stack-gap">
+                {localStoreState.automations.map((automation) => (
+                  <article key={automation.id} className="automation-item">
+                    <div className="automation-item-header">
+                      <div>
+                        <p className="automation-item-name">{automation.name}</p>
+                        <p className="automation-item-schedule">{automation.schedule}</p>
+                      </div>
+                      {!automation.enabled ? <span className="badge badge-muted">Disabled</span> : null}
                     </div>
-                    <div className="automation-item-schedule">{automation.schedule}</div>
-                  </div>
-                </div>
-                <div className="automation-item-actions">
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() =>
-                      updateLocalStore((c) => ({
-                        ...c,
-                        automations: c.automations.map((a) =>
-                          a.id === automation.id ? { ...a, enabled: !a.enabled, lastRunAt: a.lastRunAt } : a,
-                        ),
-                      }))
-                    }
-                  >
-                    {automation.enabled ? "Disable" : "Enable"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-danger btn-sm"
-                    onClick={() =>
-                      updateLocalStore((c) => ({
-                        ...c,
-                        automations: c.automations.filter((a) => a.id !== automation.id),
-                        lastSelectedAutomationId:
-                          c.lastSelectedAutomationId === automation.id ? null : c.lastSelectedAutomationId,
-                      }))
-                    }
-                  >
-                    Delete
-                  </button>
-                </div>
+                    <div className="automation-item-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() =>
+                          updateLocalStore((current) => ({
+                            ...current,
+                            automations: current.automations.map((item) =>
+                              item.id === automation.id
+                                ? { ...item, enabled: !item.enabled }
+                                : item,
+                            ),
+                          }))
+                        }
+                      >
+                        {automation.enabled ? "Disable" : "Enable"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        onClick={() =>
+                          updateLocalStore((current) => ({
+                            ...current,
+                            automations: current.automations.filter((item) => item.id !== automation.id),
+                            lastSelectedAutomationId:
+                              current.lastSelectedAutomationId === automation.id
+                                ? null
+                                : current.lastSelectedAutomationId,
+                          }))
+                        }
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                ))}
               </div>
-            ))
-          )}
-        </div>
-
-        <div>
-          <div className="detail-card">
-            <div className="detail-card-header">
-              <h3>Create Automation</h3>
-            </div>
-            <div className="detail-card-body">
-              <form onSubmit={handleCreate}>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="auto-name">Name</label>
-                  <input
-                    id="auto-name"
-                    className="form-input"
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    placeholder="Nightly Stream Health"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="auto-schedule">Schedule</label>
-                  <input
-                    id="auto-schedule"
-                    className="form-input"
-                    value={newSchedule}
-                    onChange={(e) => setNewSchedule(e.target.value)}
-                    placeholder="Every weekday 09:00"
-                  />
-                </div>
-                <div className="form-actions">
-                  <button type="submit" className="btn btn-primary btn-sm">Create</button>
-                </div>
-              </form>
-            </div>
+            )}
           </div>
-        </div>
+        </section>
+
+        <section className="panel">
+          <header className="panel-header">Create Automation</header>
+          <div className="panel-body">
+            <form onSubmit={handleCreate} className="form-stack">
+              <div className="form-group">
+                <label className="form-label" htmlFor="auto-name">Name</label>
+                <input
+                  id="auto-name"
+                  className="form-input"
+                  value={newName}
+                  onChange={(event) => setNewName(event.target.value)}
+                  placeholder="Nightly Stream Health"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="auto-schedule">Schedule</label>
+                <input
+                  id="auto-schedule"
+                  className="form-input"
+                  value={newSchedule}
+                  onChange={(event) => setNewSchedule(event.target.value)}
+                  placeholder="Every weekday 09:00"
+                />
+              </div>
+              <div className="form-actions">
+                <button type="submit" className="btn btn-primary btn-sm">Create</button>
+              </div>
+            </form>
+          </div>
+        </section>
       </div>
     </div>
   );
 }
 
-// ── Settings Page ──────────────────────────────────────────
-
-function SettingsPage({
+function LocalEnvironmentsPage({
   localStoreState,
   updateLocalStore,
 }: {
@@ -985,7 +1170,7 @@ function SettingsPage({
   const [envName, setEnvName] = useState("");
   const [envEndpoint, setEnvEndpoint] = useState("http://127.0.0.1:7878");
 
-  function handleCreateEnv(event: FormEvent<HTMLFormElement>) {
+  function handleCreateEnvironment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = envName.trim();
     const endpointUrl = envEndpoint.trim();
@@ -997,7 +1182,14 @@ function SettingsPage({
         ...current,
         localEnvironments: [
           ...current.localEnvironments,
-          { id, name, endpointUrl, health: LocalEnvironmentHealth.Unknown, lastCheckedAt: null, lastErrorMessage: null },
+          {
+            id,
+            name,
+            endpointUrl,
+            health: LocalEnvironmentHealth.Unknown,
+            lastCheckedAt: null,
+            lastErrorMessage: null,
+          },
         ],
         lastSelectedEnvironmentId: id,
       };
@@ -1008,12 +1200,18 @@ function SettingsPage({
   function runDiagnostics(environmentId: string) {
     updateLocalStore((current) => ({
       ...current,
-      localEnvironments: current.localEnvironments.map((env) => {
-        if (env.id !== environmentId) return env;
-        const reachable = env.endpointUrl.startsWith("http://") || env.endpointUrl.startsWith("https://");
+      localEnvironments: current.localEnvironments.map((environment) => {
+        if (environment.id !== environmentId) {
+          return environment;
+        }
+        const reachable =
+          environment.endpointUrl.startsWith("http://") ||
+          environment.endpointUrl.startsWith("https://");
         return {
-          ...env,
-          health: reachable ? LocalEnvironmentHealth.Healthy : LocalEnvironmentHealth.Unreachable,
+          ...environment,
+          health: reachable
+            ? LocalEnvironmentHealth.Healthy
+            : LocalEnvironmentHealth.Unreachable,
           lastCheckedAt: new Date().toISOString(),
           lastErrorMessage: reachable ? null : "endpoint must use http/https",
         };
@@ -1024,116 +1222,172 @@ function SettingsPage({
 
   return (
     <div className="content-body">
-      {/* Preferences */}
-      <div className="settings-section">
-        <div className="settings-section-header">Preferences</div>
-        <div className="settings-section-body">
+      <div className="dashboard-grid two-columns">
+        <section className="panel">
+          <header className="panel-header">Environment List</header>
+          <div className="panel-body">
+            {localStoreState.localEnvironments.length === 0 ? (
+              <p className="empty-state">No local environments configured.</p>
+            ) : (
+              <div className="stack-gap">
+                {localStoreState.localEnvironments.map((environment) => (
+                  <article key={environment.id} className="env-item">
+                    <p className="env-item-name">{environment.name}</p>
+                    <p className="env-item-meta">{environment.endpointUrl}</p>
+                    <p className="env-item-meta">
+                      Health: {environment.health} · Last checked: {environment.lastCheckedAt ? new Date(environment.lastCheckedAt).toLocaleString() : "never"}
+                    </p>
+                    <div className="env-item-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => runDiagnostics(environment.id)}
+                      >
+                        Diagnostics
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm"
+                        onClick={() =>
+                          updateLocalStore((current) => ({
+                            ...current,
+                            localEnvironments: current.localEnvironments.filter(
+                              (item) => item.id !== environment.id,
+                            ),
+                            lastSelectedEnvironmentId:
+                              current.lastSelectedEnvironmentId === environment.id
+                                ? null
+                                : current.lastSelectedEnvironmentId,
+                          }))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="panel">
+          <header className="panel-header">Add Environment</header>
+          <div className="panel-body">
+            <form onSubmit={handleCreateEnvironment} className="form-stack">
+              <div className="form-group">
+                <label className="form-label" htmlFor="env-name">Name</label>
+                <input
+                  id="env-name"
+                  className="form-input"
+                  value={envName}
+                  onChange={(event) => setEnvName(event.target.value)}
+                  placeholder="Staging Cluster"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="env-endpoint">Endpoint URL</label>
+                <input
+                  id="env-endpoint"
+                  className="form-input"
+                  value={envEndpoint}
+                  onChange={(event) => setEnvEndpoint(event.target.value)}
+                  placeholder="https://dexdex.example/rpc"
+                />
+              </div>
+              <div className="form-actions">
+                <button type="submit" className="btn btn-primary btn-sm">Add</button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function SettingsPage({
+  localStoreState,
+  updateLocalStore,
+}: {
+  localStoreState: DesktopLocalStoreState;
+  updateLocalStore: UpdateLocalStore;
+}) {
+  return (
+    <div className="content-body">
+      <section className="panel">
+        <header className="panel-header">Preferences</header>
+        <div className="panel-body">
           <div className="settings-row">
             <div>
-              <div className="settings-row-label">Default Page</div>
-              <div className="settings-row-description">Which page to open when entering a workspace.</div>
+              <p className="settings-row-label">Default Page</p>
+              <p className="settings-row-description">Which page opens after connecting to a workspace.</p>
             </div>
             <select
-              className="form-select"
-              style={{ width: 160 }}
+              className="form-select settings-select"
               value={localStoreState.settings.defaultPage}
-              onChange={(e) =>
-                updateLocalStore((c) => ({
-                  ...c,
-                  settings: { ...c.settings, defaultPage: e.target.value as DexDexPageId },
+              onChange={(event) =>
+                updateLocalStore((current) => ({
+                  ...current,
+                  settings: {
+                    ...current.settings,
+                    defaultPage: event.target.value as DexDexPageId,
+                  },
                 }))
               }
             >
-              {dexdexPageDefinitions.map((p) => (
-                <option key={p.id} value={p.id}>{p.label}</option>
+              {dexdexPageDefinitions.map((page) => (
+                <option key={page.id} value={page.id}>{page.label}</option>
               ))}
             </select>
           </div>
 
           <div className="settings-row">
             <div>
-              <div className="settings-row-label">Compact Mode</div>
-              <div className="settings-row-description">Reduce spacing and font sizes.</div>
+              <p className="settings-row-label">Compact Mode</p>
+              <p className="settings-row-description">Reduce spacing and typography scale.</p>
             </div>
             <input
               type="checkbox"
               checked={localStoreState.settings.compactMode}
-              onChange={(e) =>
-                updateLocalStore((c) => ({
-                  ...c,
-                  settings: { ...c.settings, compactMode: e.target.checked },
+              onChange={(event) =>
+                updateLocalStore((current) => ({
+                  ...current,
+                  settings: {
+                    ...current.settings,
+                    compactMode: event.target.checked,
+                  },
                 }))
               }
-              style={{ width: 18, height: 18, accentColor: "var(--green)" }}
+              className="settings-checkbox"
             />
           </div>
 
           <div className="settings-row">
             <div>
-              <div className="settings-row-label">Auto Start Stream</div>
-              <div className="settings-row-description">Automatically start live stream on Threads page.</div>
+              <p className="settings-row-label">Auto Start Stream</p>
+              <p className="settings-row-description">Start live stream automatically on Worktrees page.</p>
             </div>
             <input
               type="checkbox"
               checked={localStoreState.settings.autoStartStream}
-              onChange={(e) =>
-                updateLocalStore((c) => ({
-                  ...c,
-                  settings: { ...c.settings, autoStartStream: e.target.checked },
+              onChange={(event) =>
+                updateLocalStore((current) => ({
+                  ...current,
+                  settings: {
+                    ...current.settings,
+                    autoStartStream: event.target.checked,
+                  },
                 }))
               }
-              style={{ width: 18, height: 18, accentColor: "var(--green)" }}
+              className="settings-checkbox"
             />
           </div>
         </div>
-      </div>
-
-      {/* Local Environments */}
-      <div className="settings-section">
-        <div className="settings-section-header">Local Environments</div>
-        <div className="settings-section-body">
-          {localStoreState.localEnvironments.map((env) => (
-            <div key={env.id} className="env-item">
-              <div className="env-item-name">{env.name}</div>
-              <div className="env-item-meta">{env.endpointUrl}</div>
-              <div className="env-item-meta">
-                Health: {env.health} · Last checked: {env.lastCheckedAt ? new Date(env.lastCheckedAt).toLocaleString() : "never"}
-              </div>
-              <div className="env-item-actions">
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => runDiagnostics(env.id)}>
-                  Diagnostics
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={() =>
-                    updateLocalStore((c) => ({
-                      ...c,
-                      localEnvironments: c.localEnvironments.filter((e) => e.id !== env.id),
-                      lastSelectedEnvironmentId: c.lastSelectedEnvironmentId === env.id ? null : c.lastSelectedEnvironmentId,
-                    }))
-                  }
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
-
-          <form onSubmit={handleCreateEnv} style={{ marginTop: 16 }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input className="form-input" value={envName} onChange={(e) => setEnvName(e.target.value)} placeholder="Name" />
-              <input className="form-input" value={envEndpoint} onChange={(e) => setEnvEndpoint(e.target.value)} placeholder="Endpoint URL" />
-              <button type="submit" className="btn btn-primary btn-sm" style={{ flexShrink: 0 }}>Add</button>
-            </div>
-          </form>
-        </div>
-      </div>
+      </section>
     </div>
   );
 }
-
-// ── Action Center (Right Panel) ────────────────────────────
 
 function ActionCenter({
   activePage,
@@ -1168,18 +1422,32 @@ function ActionCenter({
   const [runRawJsonlInput, setRunRawJsonlInput] = useState('{"type":"text","part":{"text":"hello"}}');
   const [runInputMode, setRunInputMode] = useState<"preset" | "raw">("preset");
 
+  const isThreadActionPage = activePage?.id === DexDexPageId.Threads;
+
   async function handleSubmitPlanDecision(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selection.selectedSubTaskId) {
-      onActionStateChange({ label: "Plan Decision", status: ActionResultStatus.Error, message: "Select a sub task first." });
+      onActionStateChange({
+        label: "Plan Decision",
+        status: ActionResultStatus.Error,
+        message: "Select a sub task first.",
+      });
       return;
     }
     if (planDecision === PlanDecision.REVISE && planRevisionNote.trim().length === 0) {
-      onActionStateChange({ label: "Plan Decision", status: ActionResultStatus.Error, message: "Revision note required." });
+      onActionStateChange({
+        label: "Plan Decision",
+        status: ActionResultStatus.Error,
+        message: "Revision note required.",
+      });
       return;
     }
 
-    onActionStateChange({ label: "Plan Decision", status: ActionResultStatus.Pending, message: "Submitting..." });
+    onActionStateChange({
+      label: "Plan Decision",
+      status: ActionResultStatus.Pending,
+      message: "Submitting...",
+    });
 
     try {
       const response = await taskClient.submitPlanDecision({
@@ -1189,28 +1457,51 @@ function ActionCenter({
         revisionNote: planDecision === PlanDecision.REVISE ? planRevisionNote : "",
       });
       onSelectionChange({
-        selectedSubTaskId: response.createdSubTask?.subTaskId ?? response.updatedSubTask?.subTaskId ?? selection.selectedSubTaskId,
+        selectedSubTaskId:
+          response.createdSubTask?.subTaskId ??
+          response.updatedSubTask?.subTaskId ??
+          selection.selectedSubTaskId,
         selectedUnitTaskId: response.updatedSubTask?.unitTaskId ?? selection.selectedUnitTaskId,
       });
       await queryClient.invalidateQueries();
-      onActionStateChange({ label: "Plan Decision", status: ActionResultStatus.Success, message: "Decision submitted." });
+      onActionStateChange({
+        label: "Plan Decision",
+        status: ActionResultStatus.Success,
+        message: "Decision submitted.",
+      });
     } catch (error) {
-      onActionStateChange({ label: "Plan Decision", status: ActionResultStatus.Error, message: describeConnectError(error, "Failed.") });
+      onActionStateChange({
+        label: "Plan Decision",
+        status: ActionResultStatus.Error,
+        message: describeConnectError(error, "Failed."),
+      });
     }
   }
 
   async function handleRunSessionAdapter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selection.selectedUnitTaskId || !selection.selectedSubTaskId || !selection.selectedSessionId) {
-      onActionStateChange({ label: "Session Adapter", status: ActionResultStatus.Error, message: "Select unit task, sub task, and session." });
+      onActionStateChange({
+        label: "Session Adapter",
+        status: ActionResultStatus.Error,
+        message: "Select unit task, sub task, and session.",
+      });
       return;
     }
     if (runInputMode === "raw" && runRawJsonlInput.trim().length === 0) {
-      onActionStateChange({ label: "Session Adapter", status: ActionResultStatus.Error, message: "Raw JSONL required." });
+      onActionStateChange({
+        label: "Session Adapter",
+        status: ActionResultStatus.Error,
+        message: "Raw JSONL required.",
+      });
       return;
     }
 
-    onActionStateChange({ label: "Session Adapter", status: ActionResultStatus.Pending, message: "Running..." });
+    onActionStateChange({
+      label: "Session Adapter",
+      status: ActionResultStatus.Pending,
+      message: "Running...",
+    });
 
     try {
       await taskClient.runSubTaskSessionAdapter({
@@ -1219,33 +1510,50 @@ function ActionCenter({
         subTaskId: selection.selectedSubTaskId,
         sessionId: selection.selectedSessionId,
         cliType: runCliType,
-        input: runInputMode === "preset"
-          ? { case: "fixturePreset", value: runFixturePreset }
-          : { case: "rawJsonl", value: runRawJsonlInput },
+        input:
+          runInputMode === "preset"
+            ? { case: "fixturePreset", value: runFixturePreset }
+            : { case: "rawJsonl", value: runRawJsonlInput },
       });
       await queryClient.invalidateQueries();
-      onActionStateChange({ label: "Session Adapter", status: ActionResultStatus.Success, message: "Completed." });
+      onActionStateChange({
+        label: "Session Adapter",
+        status: ActionResultStatus.Success,
+        message: "Completed.",
+      });
     } catch (error) {
-      onActionStateChange({ label: "Session Adapter", status: ActionResultStatus.Error, message: describeConnectError(error, "Failed.") });
+      onActionStateChange({
+        label: "Session Adapter",
+        status: ActionResultStatus.Error,
+        message: describeConnectError(error, "Failed."),
+      });
     }
   }
 
   return (
-    <aside className="right-panel">
-      {/* Status */}
-      <div className="right-panel-section">
-        <div className="right-panel-title">Status</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-          <span className={`topbar-status topbar-status-${actionState.status === ActionResultStatus.Success ? "resolved" : actionState.status === ActionResultStatus.Error ? "error" : actionState.status === ActionResultStatus.Pending ? "resolving" : "idle"}`} />
+    <aside className="right-panel" aria-label="Action center">
+      <section className="right-panel-section">
+        <h3 className="right-panel-title">Status</h3>
+        <div className="inline-gap">
+          <span
+            className={`topbar-status topbar-status-${
+              actionState.status === ActionResultStatus.Success
+                ? "resolved"
+                : actionState.status === ActionResultStatus.Error
+                  ? "error"
+                  : actionState.status === ActionResultStatus.Pending
+                    ? "resolving"
+                    : "idle"
+            }`}
+          />
           <span>{actionState.label}</span>
         </div>
         <p className="text-muted text-sm mt-2">{actionState.message}</p>
-      </div>
+      </section>
 
-      {/* Selection */}
-      <div className="right-panel-section">
-        <div className="right-panel-title">Selection</div>
-        <div className="kv-grid" style={{ fontSize: 12 }}>
+      <section className="right-panel-section">
+        <h3 className="right-panel-title">Selection</h3>
+        <div className="kv-grid">
           <span className="kv-key">Unit task</span>
           <span className="kv-value">{selection.selectedUnitTaskId ?? "—"}</span>
           <span className="kv-key">Sub task</span>
@@ -1255,20 +1563,19 @@ function ActionCenter({
           <span className="kv-key">PR</span>
           <span className="kv-value">{selection.selectedPrTrackingId ?? "—"}</span>
         </div>
-      </div>
+      </section>
 
-      {/* Plan Decision */}
-      {activePage?.id === DexDexPageId.Threads ? (
-        <div className="right-panel-section">
-          <div className="right-panel-title">Plan Decision</div>
-          <form onSubmit={handleSubmitPlanDecision}>
+      {isThreadActionPage ? (
+        <section className="right-panel-section">
+          <h3 className="right-panel-title">Plan Decision</h3>
+          <form onSubmit={handleSubmitPlanDecision} className="form-stack">
             <div className="form-group">
               <label className="form-label" htmlFor="rp-plan-decision">Decision</label>
               <select
                 id="rp-plan-decision"
                 className="form-select"
                 value={planDecision}
-                onChange={(e) => setPlanDecision(Number(e.target.value) as PlanDecision)}
+                onChange={(event) => setPlanDecision(Number(event.target.value) as PlanDecision)}
               >
                 <option value={PlanDecision.APPROVE}>APPROVE</option>
                 <option value={PlanDecision.REVISE}>REVISE</option>
@@ -1282,7 +1589,7 @@ function ActionCenter({
                   id="rp-revision-note"
                   className="form-textarea"
                   value={planRevisionNote}
-                  onChange={(e) => setPlanRevisionNote(e.target.value)}
+                  onChange={(event) => setPlanRevisionNote(event.target.value)}
                   rows={3}
                 />
               </div>
@@ -1291,21 +1598,20 @@ function ActionCenter({
               <button type="submit" className="btn btn-primary btn-sm">Submit</button>
             </div>
           </form>
-        </div>
+        </section>
       ) : null}
 
-      {/* Session Adapter */}
-      {activePage?.id === DexDexPageId.Threads ? (
-        <div className="right-panel-section">
-          <div className="right-panel-title">Session Adapter</div>
-          <form onSubmit={handleRunSessionAdapter}>
+      {isThreadActionPage ? (
+        <section className="right-panel-section">
+          <h3 className="right-panel-title">Session Adapter</h3>
+          <form onSubmit={handleRunSessionAdapter} className="form-stack">
             <div className="form-group">
               <label className="form-label" htmlFor="rp-cli-type">CLI Type</label>
               <select
                 id="rp-cli-type"
                 className="form-select"
                 value={runCliType}
-                onChange={(e) => setRunCliType(Number(e.target.value) as AgentCliType)}
+                onChange={(event) => setRunCliType(Number(event.target.value) as AgentCliType)}
               >
                 <option value={AgentCliType.CODEX_CLI}>CODEX_CLI</option>
                 <option value={AgentCliType.CLAUDE_CODE}>CLAUDE_CODE</option>
@@ -1318,7 +1624,7 @@ function ActionCenter({
                 id="rp-input-mode"
                 className="form-select"
                 value={runInputMode}
-                onChange={(e) => setRunInputMode(e.target.value as "preset" | "raw")}
+                onChange={(event) => setRunInputMode(event.target.value as "preset" | "raw")}
               >
                 <option value="preset">Preset Fixture</option>
                 <option value="raw">Raw JSONL</option>
@@ -1331,7 +1637,9 @@ function ActionCenter({
                   id="rp-fixture"
                   className="form-select"
                   value={runFixturePreset}
-                  onChange={(e) => setRunFixturePreset(Number(e.target.value) as SessionAdapterFixturePreset)}
+                  onChange={(event) =>
+                    setRunFixturePreset(Number(event.target.value) as SessionAdapterFixturePreset)
+                  }
                 >
                   <option value={SessionAdapterFixturePreset.CODEX_CLI_FAILURE}>CODEX_CLI_FAILURE</option>
                   <option value={SessionAdapterFixturePreset.CLAUDE_CODE_STREAM}>CLAUDE_CODE_STREAM</option>
@@ -1345,7 +1653,7 @@ function ActionCenter({
                   id="rp-raw-jsonl"
                   className="form-textarea"
                   value={runRawJsonlInput}
-                  onChange={(e) => setRunRawJsonlInput(e.target.value)}
+                  onChange={(event) => setRunRawJsonlInput(event.target.value)}
                   rows={4}
                 />
               </div>
@@ -1354,13 +1662,12 @@ function ActionCenter({
               <button type="submit" className="btn btn-primary btn-sm">Run</button>
             </div>
           </form>
-        </div>
+        </section>
       ) : null}
 
-      {/* Connection */}
-      <div className="right-panel-section">
-        <div className="right-panel-title">Connection</div>
-        <div className="kv-grid" style={{ fontSize: 12 }}>
+      <section className="right-panel-section">
+        <h3 className="right-panel-title">Connection</h3>
+        <div className="kv-grid">
           <span className="kv-key">Workspace</span>
           <span className="kv-value">{workspaceId}</span>
           <span className="kv-key">Mode</span>
@@ -1370,161 +1677,10 @@ function ActionCenter({
           <span className="kv-key">Source</span>
           <span className="kv-value">{connection.endpointSource}</span>
         </div>
-      </div>
+      </section>
     </aside>
   );
 }
-
-// ══════════════════════════════════════════════════════════
-//  Workspace Picker
-// ══════════════════════════════════════════════════════════
-
-function WorkspacePicker({
-  status,
-  errorMessage,
-  pickerMessage,
-  mode,
-  workspaceIdInput,
-  remoteEndpointUrl,
-  remoteToken,
-  savedProfiles,
-  onModeChange,
-  onWorkspaceIdChange,
-  onRemoteEndpointChange,
-  onRemoteTokenChange,
-  onOpenWorkspace,
-  onSaveProfile,
-  onEditProfile,
-  onDeleteProfile,
-}: {
-  status: AppStatus;
-  errorMessage: string | null;
-  pickerMessage: string | null;
-  mode: WorkspaceMode;
-  workspaceIdInput: string;
-  remoteEndpointUrl: string;
-  remoteToken: string;
-  savedProfiles: SavedWorkspaceProfile[];
-  onModeChange: (mode: WorkspaceMode) => void;
-  onWorkspaceIdChange: (value: string) => void;
-  onRemoteEndpointChange: (value: string) => void;
-  onRemoteTokenChange: (value: string) => void;
-  onOpenWorkspace: (event: FormEvent<HTMLFormElement>) => void;
-  onSaveProfile: () => void;
-  onEditProfile: (profile: SavedWorkspaceProfile) => void;
-  onDeleteProfile: (profile: SavedWorkspaceProfile) => void;
-}) {
-  const isRemoteMode = mode === WorkspaceMode.Remote;
-
-  return (
-    <main className="picker-shell">
-      <div className="picker-container">
-        <div className="picker-header">
-          <div className="picker-logo">DexDex</div>
-          <div className="picker-subtitle">Select a workspace to get started.</div>
-        </div>
-
-        {/* Recent Profiles */}
-        {savedProfiles.length > 0 ? (
-          <div className="picker-card">
-            <div className="picker-card-header">Recent Workspaces</div>
-            <div className="picker-card-body">
-              {savedProfiles.map((profile) => (
-                <div key={profile.workspaceId} className="picker-profile" onClick={() => onEditProfile(profile)}>
-                  <div className="picker-profile-info">
-                    <div className="picker-profile-name">{profile.workspaceId}</div>
-                    <div className="picker-profile-meta">
-                      {profile.mode} · {profile.remoteEndpointUrl ?? "managed-local"}
-                    </div>
-                  </div>
-                  <div className="picker-profile-actions" onClick={(e) => e.stopPropagation()}>
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => onDeleteProfile(profile)}>
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {/* Open Workspace Form */}
-        <div className="picker-card">
-          <div className="picker-card-header">Open Workspace</div>
-          <div className="picker-card-body">
-            <form onSubmit={onOpenWorkspace}>
-              <div className="form-group">
-                <label className="form-label" htmlFor="ws-id">Workspace ID</label>
-                <input
-                  id="ws-id"
-                  className="form-input"
-                  value={workspaceIdInput}
-                  onChange={(e) => onWorkspaceIdChange(e.target.value)}
-                  placeholder="workspace-1"
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="ws-mode">Mode</label>
-                <select
-                  id="ws-mode"
-                  className="form-select"
-                  value={mode}
-                  onChange={(e) => onModeChange(e.target.value as WorkspaceMode)}
-                >
-                  {modeOptions().map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="ws-endpoint">Remote Endpoint</label>
-                <input
-                  id="ws-endpoint"
-                  className="form-input"
-                  type="url"
-                  value={remoteEndpointUrl}
-                  disabled={!isRemoteMode}
-                  onChange={(e) => onRemoteEndpointChange(e.target.value)}
-                  placeholder="https://dexdex.example/rpc"
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="ws-token">Token (not persisted)</label>
-                <input
-                  id="ws-token"
-                  className="form-input"
-                  type="password"
-                  value={remoteToken}
-                  disabled={!isRemoteMode}
-                  onChange={(e) => onRemoteTokenChange(e.target.value)}
-                />
-              </div>
-
-              <div className="form-actions">
-                <button type="submit" className="btn btn-primary" disabled={status === AppStatus.Resolving}>
-                  {status === AppStatus.Resolving ? "Connecting..." : "Connect"}
-                </button>
-                <button type="button" className="btn btn-secondary" onClick={onSaveProfile}>
-                  Save Profile
-                </button>
-              </div>
-            </form>
-
-            {pickerMessage ? <p className="picker-message">{pickerMessage}</p> : null}
-            {errorMessage ? <p className="picker-error">{errorMessage}</p> : null}
-          </div>
-        </div>
-      </div>
-    </main>
-  );
-}
-
-// ══════════════════════════════════════════════════════════
-//  Desktop Layout (rendered inside ConnectQueryProvider)
-// ══════════════════════════════════════════════════════════
 
 function DesktopLayout({
   workspaceSession,
@@ -1534,6 +1690,7 @@ function DesktopLayout({
   actionState,
   localStoreState,
   logger,
+  visualMode,
   onSwitchWorkspace,
   onSelectionChange,
   onActionStateChange,
@@ -1546,37 +1703,59 @@ function DesktopLayout({
   actionState: ActionCenterState;
   localStoreState: DesktopLocalStoreState;
   logger: DexDexLogger;
+  visualMode: boolean;
   onSwitchWorkspace: () => void;
   onSelectionChange: (patch: Partial<SharedSelectionState>) => void;
   onActionStateChange: (next: ActionCenterState) => void;
   updateLocalStore: UpdateLocalStore;
 }) {
-  const overviewQuery = useQuery(getWorkspaceOverview, {
-    workspaceId: workspaceSession.workspaceId,
-  });
+  const overviewQuery = useQuery(
+    getWorkspaceOverview,
+    {
+      workspaceId: workspaceSession.workspaceId,
+    },
+    { enabled: !visualMode },
+  );
 
-  const unitTasksQuery = useQuery(listUnitTasks, {
-    workspaceId: workspaceSession.workspaceId,
-    status: UnitTaskStatus.UNSPECIFIED,
-    pageSize: defaultListPageSize,
-    pageToken: "",
-  });
+  const unitTasksQuery = useQuery(
+    listUnitTasks,
+    {
+      workspaceId: workspaceSession.workspaceId,
+      status: UnitTaskStatus.UNSPECIFIED,
+      pageSize: defaultListPageSize,
+      pageToken: "",
+    },
+    { enabled: !visualMode },
+  );
+
+  const sidebarUnitTasks = visualMode ? visualUnitTasks : (unitTasksQuery.data?.items ?? []);
+  const overview = visualMode ? visualWorkspaceOverview : overviewQuery.data?.overview;
 
   useEffect(() => {
-    if (selectionState.selectedUnitTaskId || !unitTasksQuery.data?.items.length) return;
-    onSelectionChange({ selectedUnitTaskId: unitTasksQuery.data.items[0].unitTaskId });
-  }, [onSelectionChange, selectionState.selectedUnitTaskId, unitTasksQuery.data?.items]);
+    if (selectionState.selectedUnitTaskId || sidebarUnitTasks.length === 0) return;
+    onSelectionChange({ selectedUnitTaskId: sidebarUnitTasks[0].unitTaskId });
+  }, [onSelectionChange, selectionState.selectedUnitTaskId, sidebarUnitTasks]);
 
   function renderPageContent() {
-    if (!activePage) return <p className="empty-state">Unknown page.</p>;
+    if (!activePage) {
+      return <p className="empty-state">Unknown page.</p>;
+    }
+
     switch (activePage.id) {
+      case DexDexPageId.Projects:
+        return (
+          <ProjectsPage
+            workspaceId={workspaceSession.workspaceId}
+            visualMode={visualMode}
+          />
+        );
       case DexDexPageId.Threads:
         return (
           <ThreadsPage
             workspaceId={workspaceSession.workspaceId}
             selection={selectionState}
             onSelectionChange={onSelectionChange}
-            logger={logger}
+            visualMode={visualMode}
           />
         );
       case DexDexPageId.Review:
@@ -1585,11 +1764,29 @@ function DesktopLayout({
             workspaceId={workspaceSession.workspaceId}
             selection={selectionState}
             onSelectionChange={onSelectionChange}
+            visualMode={visualMode}
           />
         );
       case DexDexPageId.Automations:
         return (
           <AutomationsPage
+            localStoreState={localStoreState}
+            updateLocalStore={updateLocalStore}
+          />
+        );
+      case DexDexPageId.Worktrees:
+        return (
+          <WorktreesPage
+            workspaceId={workspaceSession.workspaceId}
+            selection={selectionState}
+            onSelectionChange={onSelectionChange}
+            logger={logger}
+            visualMode={visualMode}
+          />
+        );
+      case DexDexPageId.LocalEnvironments:
+        return (
+          <LocalEnvironmentsPage
             localStoreState={localStoreState}
             updateLocalStore={updateLocalStore}
           />
@@ -1607,103 +1804,65 @@ function DesktopLayout({
   }
 
   return (
-    <div className="desktop-shell">
-      {/* ── Top Bar ── */}
-      <header className="topbar">
-        <div className="topbar-left">
-          <span className="topbar-logo">DexDex</span>
-          <span className="topbar-workspace">{workspaceSession.workspaceId}</span>
-          <span className={`topbar-status topbar-status-${status}`} />
-        </div>
-        <div className="topbar-right">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onSwitchWorkspace}>
-            Switch
-          </button>
-        </div>
-      </header>
-
-      <div className="desktop-body">
-        {/* ── Sidebar ── */}
-        <aside className="sidebar">
-          <nav className="sidebar-nav">
-            {dexdexPageDefinitions.map((page) => (
-              <NavLink
-                key={page.id}
-                to={page.path}
-                className={({ isActive }) =>
-                  `sidebar-item ${isActive ? "sidebar-item-active" : ""}`
-                }
-              >
-                {page.label}
-              </NavLink>
-            ))}
-          </nav>
-
-          {/* Workspace stats */}
-          <div className="sidebar-stats">
-            {overviewQuery.data?.overview ? (
-              <>
-                <div className="sidebar-stat">
-                  <span className="sidebar-stat-value">{overviewQuery.data.overview.totalUnitTaskCount}</span>
-                  <span className="sidebar-stat-label">Tasks</span>
-                </div>
-                <div className="sidebar-stat">
-                  <span className="sidebar-stat-value">{overviewQuery.data.overview.activeSessionCount}</span>
-                  <span className="sidebar-stat-label">Sessions</span>
-                </div>
-              </>
-            ) : null}
+    <DesktopShellFrame
+      workspaceId={workspaceSession.workspaceId}
+      status={status}
+      pages={dexdexPageDefinitions}
+      activePage={activePage}
+      onSwitchWorkspace={onSwitchWorkspace}
+      sidebarStats={[
+        {
+          label: "Tasks",
+          value: overview?.totalUnitTaskCount ?? "-",
+        },
+        {
+          label: "Sessions",
+          value: overview?.activeSessionCount ?? "-",
+        },
+        {
+          label: "PRs",
+          value: overview?.openPullRequestCount ?? "-",
+        },
+        {
+          label: "Alerts",
+          value: overview?.notificationCount ?? "-",
+        },
+      ]}
+      sidebarBody={
+        <>
+          <div className="sidebar-section">
+            <div className="sidebar-section-title">Unit Tasks</div>
           </div>
-
-          {/* Thread list */}
-          <div className="sidebar-threads">
-            <div className="sidebar-section-label">Unit Tasks</div>
-            {unitTasksQuery.isPending ? (
-              <div className="sidebar-empty">Loading...</div>
-            ) : unitTasksQuery.error ? (
-              <div className="sidebar-empty" style={{ color: "var(--red)" }}>
-                {describeConnectError(unitTasksQuery.error, "Failed to load.")}
-              </div>
-            ) : unitTasksQuery.data?.items.length ? (
-              <ul className="sidebar-thread-list">
-                {unitTasksQuery.data.items.map((task) => (
+          <div className="sidebar-list">
+            {sidebarUnitTasks.length > 0 ? (
+              <ul className="item-list">
+                {sidebarUnitTasks.map((task) => (
                   <li key={task.unitTaskId}>
                     <button
                       type="button"
-                      className={`sidebar-thread-item ${selectionState.selectedUnitTaskId === task.unitTaskId ? "sidebar-thread-item-active" : ""}`}
+                      className={`sidebar-item ${selectionState.selectedUnitTaskId === task.unitTaskId ? "sidebar-item-active" : ""}`}
                       onClick={() => onSelectionChange({ selectedUnitTaskId: task.unitTaskId })}
                     >
-                      <span className={`sidebar-thread-dot ${unitTaskDotClass(task.status)}`} />
-                      <span className="sidebar-thread-body">
-                        <span className="sidebar-thread-title">{task.unitTaskId}</span>
-                        <span className="sidebar-thread-sub">{enumLabel(UnitTaskStatus, task.status)}</span>
+                      <span className={`sidebar-item-dot ${unitTaskDotClass(task.status)}`} />
+                      <span className="sidebar-item-content">
+                        <span className="sidebar-item-title">{task.unitTaskId}</span>
+                        <span className="sidebar-item-meta">{enumLabel(UnitTaskStatus, task.status)}</span>
                       </span>
                     </button>
                   </li>
                 ))}
               </ul>
+            ) : unitTasksQuery.isPending ? (
+              <p className="text-muted text-sm">Loading tasks...</p>
             ) : (
-              <div className="sidebar-empty">No unit tasks.</div>
+              <p className="empty-state">No unit tasks.</p>
             )}
           </div>
-
-          {/* Footer */}
-          <div className="sidebar-footer">
-            <span className="text-muted text-xs">{workspaceSession.connection.mode}</span>
-          </div>
-        </aside>
-
-        {/* ── Main Content ── */}
-        <main className="main-content">
-          {activePage ? (
-            <div className="main-content-header">
-              <h2 className="main-content-title">{activePage.label}</h2>
-            </div>
-          ) : null}
-          {renderPageContent()}
-        </main>
-
-        {/* ── Right Panel ── */}
+        </>
+      }
+      connectionMode={workspaceSession.connection.mode}
+      mainContent={renderPageContent()}
+      rightPanel={
         <ActionCenter
           activePage={activePage}
           workspaceId={workspaceSession.workspaceId}
@@ -1713,14 +1872,10 @@ function DesktopLayout({
           onActionStateChange={onActionStateChange}
           onSelectionChange={onSelectionChange}
         />
-      </div>
-    </div>
+      }
+    />
   );
 }
-
-// ══════════════════════════════════════════════════════════
-//  Main Shell
-// ══════════════════════════════════════════════════════════
 
 function DexDexShell({
   resolver,
@@ -1732,7 +1887,6 @@ function DexDexShell({
   const location = useLocation();
   const navigate = useNavigate();
 
-  // ── Workspace state ──
   const [mode, setMode] = useState<WorkspaceMode>(WorkspaceMode.Local);
   const [workspaceIdInput, setWorkspaceIdInput] = useState("");
   const [remoteEndpointUrl, setRemoteEndpointUrl] = useState(defaultRemoteEndpointUrl);
@@ -1740,30 +1894,78 @@ function DexDexShell({
   const [status, setStatus] = useState<AppStatus>(AppStatus.Idle);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pickerMessage, setPickerMessage] = useState<string | null>(null);
-  const [activeWorkspaceSession, setActiveWorkspaceSession] = useState<ActiveWorkspaceSession | null>(null);
-  const [savedProfiles, setSavedProfiles] = useState<SavedWorkspaceProfile[]>(() => listSavedWorkspaceProfiles());
+  const [activeWorkspaceSession, setActiveWorkspaceSession] = useState<ActiveWorkspaceSession | null>(
+    null,
+  );
+  const [savedProfiles, setSavedProfiles] = useState<SavedWorkspaceProfile[]>(() =>
+    listSavedWorkspaceProfiles(),
+  );
 
-  // ── UI state ──
-  const [selectionState, setSelectionState] = useState<SharedSelectionState>(createEmptySharedSelectionState());
+  const [selectionState, setSelectionState] = useState<SharedSelectionState>(
+    createEmptySharedSelectionState(),
+  );
   const [actionState, setActionState] = useState<ActionCenterState>({
     label: "Ready",
     status: ActionResultStatus.Idle,
     message: "Select an item and run an action.",
   });
-  const [localStoreState, setLocalStoreState] = useState<DesktopLocalStoreState>(() => loadDesktopLocalStoreState());
+  const [localStoreState, setLocalStoreState] = useState<DesktopLocalStoreState>(() =>
+    loadDesktopLocalStoreState(),
+  );
 
   const activePage = useMemo(() => resolvePageByPath(location.pathname), [location.pathname]);
+  const visualMode = isVisualModeActive(location.search);
 
-  // ── Routing ──
   useEffect(() => {
-    if (!activeWorkspaceSession) {
-      if (location.pathname !== "/") navigate("/", { replace: true });
+    if (!visualMode || location.pathname === "/" || activeWorkspaceSession) {
       return;
     }
+
+    setActiveWorkspaceSession({
+      workspaceId: visualWorkspaceId,
+      connection: {
+        mode: WorkspaceMode.Remote,
+        endpointUrl: "http://127.0.0.1:7878/",
+        endpointSource: WorkspaceEndpointSource.UserRemote,
+        transport: "CONNECT_RPC",
+      },
+    });
+    setSelectionState({
+      selectedUnitTaskId: visualUnitTasks[0]?.unitTaskId ?? null,
+      selectedSubTaskId: visualSubTasks[0]?.subTaskId ?? null,
+      selectedSessionId: visualSessions[0]?.sessionId ?? null,
+      selectedPrTrackingId: visualPullRequests[0]?.prTrackingId ?? null,
+    });
+    setStatus(AppStatus.Resolved);
+    setActionState({
+      label: "Visual Mode",
+      status: ActionResultStatus.Success,
+      message: "Using fixture-backed visual references.",
+    });
+  }, [activeWorkspaceSession, location.pathname, visualMode]);
+
+  useEffect(() => {
+    if (!activeWorkspaceSession) {
+      if (visualMode && location.pathname !== "/") {
+        return;
+      }
+      if (location.pathname !== "/") {
+        navigate("/", { replace: true });
+      }
+      return;
+    }
+
     if (location.pathname === "/" || activePage === null) {
       navigate(pagePathFromPageId(localStoreState.settings.defaultPage), { replace: true });
     }
-  }, [activePage, activeWorkspaceSession, localStoreState.settings.defaultPage, location.pathname, navigate]);
+  }, [
+    activePage,
+    activeWorkspaceSession,
+    localStoreState.settings.defaultPage,
+    location.pathname,
+    navigate,
+    visualMode,
+  ]);
 
   useEffect(() => {
     if (!activeWorkspaceSession || !activePage) return;
@@ -1774,12 +1976,10 @@ function DexDexShell({
     });
   }, [activePage, activeWorkspaceSession, logger]);
 
-  // ── Local store helpers ──
   function updateLocalStore(updater: (current: DesktopLocalStoreState) => DesktopLocalStoreState) {
     setLocalStoreState(updateDesktopLocalStoreState(updater));
   }
 
-  // ── Workspace operations ──
   function resolveProfileInputFromForm(actionLabel: string) {
     const workspaceId = workspaceIdInput.trim();
     if (workspaceId.length === 0) {
@@ -1788,14 +1988,17 @@ function DexDexShell({
       setStatus(AppStatus.Error);
       return null;
     }
+
     try {
-      const normalizedRemoteEndpointUrl = mode === WorkspaceMode.Remote ? normalizeRemoteEndpointUrl(remoteEndpointUrl) : undefined;
+      const normalizedRemoteEndpointUrl =
+        mode === WorkspaceMode.Remote ? normalizeRemoteEndpointUrl(remoteEndpointUrl) : undefined;
       setErrorMessage(null);
       setPickerMessage(null);
       setStatus(AppStatus.Idle);
       return { workspaceId, mode, remoteEndpointUrl: normalizedRemoteEndpointUrl };
     } catch (error) {
-      const message = error instanceof Error ? error.message : `${actionLabel}: invalid remote endpoint.`;
+      const message =
+        error instanceof Error ? error.message : `${actionLabel}: invalid remote endpoint.`;
       setErrorMessage(`${actionLabel}: ${message}`);
       setPickerMessage(null);
       setStatus(AppStatus.Error);
@@ -1848,7 +2051,11 @@ function DexDexShell({
       setSavedProfiles(upsertWorkspaceProfile(input));
       setActiveWorkspaceSession({ workspaceId: input.workspaceId, connection });
       setSelectionState(createEmptySharedSelectionState());
-      setActionState({ label: "Connected", status: ActionResultStatus.Success, message: "Workspace connected." });
+      setActionState({
+        label: "Connected",
+        status: ActionResultStatus.Success,
+        message: "Workspace connected.",
+      });
       setRemoteToken("");
       setStatus(AppStatus.Resolved);
       navigate(pagePathFromPageId(localStoreState.settings.defaultPage), { replace: true });
@@ -1866,14 +2073,17 @@ function DexDexShell({
     setRemoteToken("");
     setActiveWorkspaceSession(null);
     setSelectionState(createEmptySharedSelectionState());
-    setActionState({ label: "Ready", status: ActionResultStatus.Idle, message: "Select an item and run an action." });
+    setActionState({
+      label: "Ready",
+      status: ActionResultStatus.Idle,
+      message: "Select an item and run an action.",
+    });
     setStatus(AppStatus.Idle);
     setErrorMessage(null);
     setPickerMessage("Choose a workspace or connect manually.");
     navigate("/", { replace: true });
   }
 
-  // ── Render: Workspace Picker ──
   if (!activeWorkspaceSession) {
     return (
       <WorkspacePicker
@@ -1897,7 +2107,6 @@ function DexDexShell({
     );
   }
 
-  // ── Render: Desktop Layout ──
   return (
     <ConnectQueryProvider
       endpointUrl={activeWorkspaceSession.connection.endpointUrl}
@@ -1911,6 +2120,7 @@ function DexDexShell({
         actionState={actionState}
         localStoreState={localStoreState}
         logger={logger}
+        visualMode={visualMode && activeWorkspaceSession.workspaceId === visualWorkspaceId}
         onSwitchWorkspace={handleSwitchWorkspace}
         onSelectionChange={(patch) => setSelectionState((prev) => updateSelectionState(prev, patch))}
         onActionStateChange={setActionState}
@@ -1919,10 +2129,6 @@ function DexDexShell({
     </ConnectQueryProvider>
   );
 }
-
-// ══════════════════════════════════════════════════════════
-//  App Entry Point
-// ══════════════════════════════════════════════════════════
 
 export function App({
   resolver = resolveWorkspaceConnection,

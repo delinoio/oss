@@ -33,6 +33,16 @@ function createMemoryStorage(): Storage {
   };
 }
 
+const guardedRoutes = [
+  "/projects",
+  "/threads",
+  "/review",
+  "/automations",
+  "/worktrees",
+  "/local-environments",
+  "/settings",
+];
+
 describe("App", () => {
   beforeEach(() => {
     Object.defineProperty(window, "localStorage", {
@@ -81,16 +91,19 @@ describe("App", () => {
     expect(screen.getAllByText("workspace-1").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("guards desktop routes and redirects to picker without active session", async () => {
-    window.history.replaceState({}, "", "/threads");
+  it.each(guardedRoutes)(
+    "guards desktop route %s and redirects to picker without active session",
+    async (route) => {
+      window.history.replaceState({}, "", route);
 
-    render(<App resolver={vi.fn()} />);
+      render(<App resolver={vi.fn()} />);
 
-    await waitFor(() => {
-      expect(window.location.pathname).toBe("/");
-      expect(screen.getByText("Select a workspace to get started.")).toBeTruthy();
-    });
-  });
+      await waitFor(() => {
+        expect(window.location.pathname).toBe("/");
+        expect(screen.getByText("Select a workspace to get started.")).toBeTruthy();
+      });
+    },
+  );
 
   it("switches back to workspace picker from desktop shell", async () => {
     window.history.replaceState({}, "", "/");

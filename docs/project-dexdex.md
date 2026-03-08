@@ -208,6 +208,11 @@ Desktop page route contract:
 - `/local-environments`
 - `/settings`
 
+Desktop visual-regression mode contract:
+- Query parameter `?visual=1` enables fixture-backed desktop rendering for route screenshots.
+- Visual mode auto-bootstraps a synthetic workspace session when route is not `/`.
+- Visual mode preserves the startup picker at `/` for dedicated picker screenshot baselines.
+
 Desktop shared selection contract:
 
 ```ts
@@ -510,7 +515,16 @@ Current local validation commands:
 - `go test ./...`
 - `cargo test`
 - `pnpm --filter dexdex test`
+- `pnpm --filter dexdex run test:visual`
 - `cd apps/dexdex && pnpm test`
+- `cd apps/dexdex && pnpm run test:visual`
+- Visual baseline references (phase 1):
+: `https://developers.openai.com/codex/overview`
+: `https://developers.openai.com/codex/features`
+: `https://developers.openai.com/codex/review-comments`
+: `https://developers.openai.com/codex/projects`
+: `https://developers.openai.com/codex/local-environments`
+: `https://developers.openai.com/codex/settings`
 - Distribution pipeline:
 : `.github/workflows/release-dexdex.yml`
 : tag trigger: `dexdex@v*`

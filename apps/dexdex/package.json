@@ -10,6 +10,7 @@
     "gen:proto": "buf generate ../../protos/dexdex --template ../../protos/dexdex/buf.gen.web.yaml",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:visual": "playwright test --config playwright.config.ts",
     "test:watch": "vitest",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -27,6 +28,7 @@
     "react-router-dom": "^7.0.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@bufbuild/protoc-gen-es": "^2.11.0",
     "@connectrpc/protoc-gen-connect-query": "^2.2.0",
     "@tauri-apps/cli": "^2.0.0",
