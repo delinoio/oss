@@ -47,11 +47,9 @@ describe("App", () => {
 
     render(<App resolver={vi.fn()} />);
 
-    expect(
-      screen.getByRole("heading", { level: 1, name: "Workspace Picker" }),
-    ).toBeTruthy();
+    expect(screen.getByText("DexDex")).toBeTruthy();
+    expect(screen.getByText("Select a workspace to get started.")).toBeTruthy();
     expect(window.location.pathname).toBe("/");
-    expect(screen.queryByRole("heading", { level: 2, name: "Action Center" })).toBeNull();
   });
 
   it("opens LOCAL workspace and navigates to default page", async () => {
@@ -68,12 +66,11 @@ describe("App", () => {
     render(<App resolver={resolver} />);
 
     await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
-    await user.click(screen.getByRole("button", { name: "Open Workspace" }));
+    await user.click(screen.getByRole("button", { name: "Connect" }));
 
     await waitFor(() => {
       expect(resolver).toHaveBeenCalledTimes(1);
       expect(window.location.pathname).toBe("/threads");
-      expect(screen.getByRole("heading", { level: 2, name: "Action Center" })).toBeTruthy();
     });
 
     const firstArg = resolver.mock.calls[0][0] as ResolveWorkspaceConnectionInput;
@@ -81,19 +78,17 @@ describe("App", () => {
       mode: WorkspaceMode.Local,
     });
 
-    expect(screen.getByText(/Workspace ID:/).textContent).toContain("workspace-1");
+    expect(screen.getAllByText("workspace-1").length).toBeGreaterThanOrEqual(1);
   });
 
   it("guards desktop routes and redirects to picker without active session", async () => {
-    window.history.replaceState({}, "", "/projects");
+    window.history.replaceState({}, "", "/threads");
 
     render(<App resolver={vi.fn()} />);
 
     await waitFor(() => {
       expect(window.location.pathname).toBe("/");
-      expect(
-        screen.getByRole("heading", { level: 1, name: "Workspace Picker" }),
-      ).toBeTruthy();
+      expect(screen.getByText("Select a workspace to get started.")).toBeTruthy();
     });
   });
 
@@ -111,21 +106,17 @@ describe("App", () => {
     render(<App resolver={resolver} />);
 
     await user.type(screen.getByLabelText("Workspace ID"), "workspace-1");
-    await user.click(screen.getByRole("button", { name: "Open Workspace" }));
+    await user.click(screen.getByRole("button", { name: "Connect" }));
 
     await waitFor(() => {
       expect(window.location.pathname).toBe("/threads");
-      expect(screen.getByRole("heading", { level: 2, name: "Action Center" })).toBeTruthy();
     });
 
-    await user.click(screen.getByRole("button", { name: "Switch Workspace" }));
+    await user.click(screen.getByRole("button", { name: "Switch" }));
 
     await waitFor(() => {
       expect(window.location.pathname).toBe("/");
-      expect(
-        screen.getByRole("heading", { level: 1, name: "Workspace Picker" }),
-      ).toBeTruthy();
-      expect(screen.queryByRole("heading", { level: 2, name: "Action Center" })).toBeNull();
+      expect(screen.getByText("Select a workspace to get started.")).toBeTruthy();
     });
   });
 });
