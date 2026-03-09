@@ -234,6 +234,7 @@ enum DexDexComponent {
 ### Shell Command Safety Rules
 
 - Use `$(...)` for command substitution; do not use legacy backticks in new scripts.
+- Wrap all file paths in quotes by default in shell commands and scripts to prevent whitespace and glob-expansion bugs.
 - Apply strict quoting and escaping for all dynamic shell values to prevent command injection and parsing bugs.
 - Run GitHub CLI (`gh`) commands outside sandbox restrictions by default; use the required approval flow when escalation is needed.
 - If an operation is blocked by sandbox restrictions, retry it without sandbox restrictions using the required approval flow.
