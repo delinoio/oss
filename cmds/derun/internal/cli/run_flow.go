@@ -52,6 +52,7 @@ func (runtimeState *runRuntime) Close() {
 func parseRunRequest(args []string) (runRequest, int) {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	fs.Usage = printRunUsage
 
 	request := runRequest{retentionDuration: defaultRetention}
 	fs.StringVar(&request.sessionID, "session-id", "", "explicit session id")
@@ -59,6 +60,9 @@ func parseRunRequest(args []string) (runRequest, int) {
 
 	flagArgs, commandArgs, hasSeparator := splitRunArgs(args)
 	if err := fs.Parse(flagArgs); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return runRequest{}, 2
+		}
 		return runRequest{}, 2
 	}
 	if !hasSeparator {

@@ -176,8 +176,14 @@ func TestExecuteRunShowsHelpWithoutSeparator(t *testing.T) {
 	if strings.Contains(stderrOutput, "run command requires '--' separator before target command") {
 		t.Fatalf("help output should not include separator error: %q", stderrOutput)
 	}
-	if !strings.Contains(stderrOutput, "Usage of run:") {
-		t.Fatalf("help output should include usage text: %q", stderrOutput)
+	if !strings.Contains(stderrOutput, "Run command: execute a target command with terminal-fidelity streaming and transcript capture.") {
+		t.Fatalf("help output should include run description: %q", stderrOutput)
+	}
+	if !strings.Contains(stderrOutput, "derun run [--session-id <id>] [--retention <duration>] -- <command> [args...]") {
+		t.Fatalf("help output should include detailed usage text: %q", stderrOutput)
+	}
+	if !strings.Contains(stderrOutput, "The `--` separator is required to split derun flags from target command arguments.") {
+		t.Fatalf("help output should include separator guidance: %q", stderrOutput)
 	}
 
 	assertNoSessionsCreated(t, stateRoot)
