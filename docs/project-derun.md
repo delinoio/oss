@@ -144,6 +144,10 @@ Command contracts:
 - `derun run` must reject explicit invalid `--session-id` values (including path-segment alias `"."`), returning exit code `2` without mutating session artifacts.
 - `derun mcp`
 : Starts stdio MCP server for AI-driven session/output retrieval.
+- `derun help [run|mcp]`
+: Prints detailed root/subcommand usage, behavior notes, and examples.
+- `derun --help`, `derun run --help`, and `derun mcp --help` print detailed usage text to `stderr`.
+: Root-level help exits with `0`; subcommand flag help exits with `2` to preserve existing flag-parser semantics.
 
 Workspace integration contract:
 - Root `pnpm dev` must execute `./scripts/dev.sh`, which runs `go -C <repo-root> run ./cmds/derun run -- turbo dev` with repository-local `DERUN_STATE_ROOT`, `GOMODCACHE`, `GOCACHE`, and `GOPATH` exports so local development sessions are discoverable by the configured `derun mcp` server.
