@@ -1,69 +1,45 @@
 # Project Documentation Template
 
 ## Purpose
-This document defines the mandatory structure for every `docs/project-*.md` file in this monorepo.
-Use this template when creating a new project document.
+This template defines the required folder-based structure for each project contract set under `docs/`.
+Use it when creating or restructuring project documentation.
 
-## Required File Naming
-- File name format: `docs/project-<project-id>.md`
+## Required Directory Naming
+- Directory format: `docs/project-<project-id>/`
 - `project-id` must be lowercase kebab-case.
 - `project-id` must be unique inside this repository.
+- The directory must remain flat (no nested subdirectories such as `domains/` or `features/`).
 
-## Required Sections
-All project documents must include the sections below in this exact order.
+## Required Files
+Each project documentation set must include:
+- `README.md` (canonical entrypoint)
+- At least one feature contract file named `feature-<kebab-id>.md`
 
-## Goal
-State why the project exists and what user problem it solves.
+## README.md Required Sections
+`README.md` must include sections in this order:
+1. `# Project: <project-id>`
+2. `## Documentation Layout`
+3. `## Goal`
+4. `## Path`
+5. `## Runtime and Language`
+6. `## Users`
+7. `## In Scope`
+8. `## Out of Scope`
+9. `## Document Index`
+10. `## Documentation Update Rules`
 
-## Path
-Declare canonical repository path(s) for the project.
-Include all primary components if the project is split across multiple paths.
-
-## Runtime and Language
-Declare runtime and primary language.
-Examples: `Rust CLI`, `Go CLI`, `Next.js 16 (TypeScript)`, `Expo React Native`.
-
-## Users
-List target users or operators.
-
-## In Scope
-List features that belong to this project now.
-
-## Out of Scope
-List features intentionally excluded from this project.
-
-## Architecture
-Describe high-level component boundaries and internal modules.
-
-## Interfaces
-Document public interfaces and contracts.
-Use enum-style identifiers when possible.
-Include route patterns, command shapes, API boundaries, and integration contracts.
-
-## Storage
-Document persistent data, cache, local files, and retention expectations.
-
-## Security
-Document trust boundaries, secrets handling, permissions, and data safety rules.
-
-## Logging
-Document required structured log fields and debugging expectations.
-Include minimum operational logs for troubleshooting.
-Prefer structured logging libraries (Go: `log/slog`, Rust: `tracing`) for operational and business events.
-
-## Build and Test
-Define local build commands, validation commands, and CI expectations.
-
-## Roadmap
-List phased milestones and future expansion directions.
-
-## Open Questions
-Track unresolved items that require explicit product or engineering decisions.
+## Feature File Contract
+- Use `feature-<kebab-id>.md` naming for feature-level contracts.
+- Keep one cohesive capability per feature file when possible.
+- Feature files can contain any required contract sections (for example: `Interfaces`, `Storage`, `Security`, `Logging`, `Build and Test`, `Roadmap`, `Open Questions`, `References`).
+- Keep all feature files discoverable from `README.md` under `## Document Index`.
 
 ## Checklist for New Project Docs
-- The file name uses `project-` prefix and kebab-case ID.
-- All required sections are present.
-- Paths in the doc exist or are explicitly marked as planned.
+- The directory name uses `project-` prefix and kebab-case project ID.
+- `README.md` exists and follows the required section order.
+- At least one `feature-*.md` file exists.
+- No nested directories exist under `docs/project-<project-id>/`.
+- Paths in docs exist or are explicitly marked as planned.
 - Interfaces use stable enum-style identifiers where possible.
-- Integration points reference canonical repository and domain rules in `AGENTS.md` and the relevant domain `AGENTS.md`.
-- The document is updated with every structural project change.
+- Integration points reference canonical repository and domain rules in `AGENTS.md` files.
+- The document set is updated with every structural project change.

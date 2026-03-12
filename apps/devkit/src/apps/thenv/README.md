@@ -21,5 +21,5 @@ This directory hosts the Devkit mini app with the stable id `thenv`.
 - Devkit API routes proxy to `servers/thenv` Connect RPC endpoints.
 
 ## References
-- `docs/project-thenv.md`
-- `docs/project-devkit.md`
+- `docs/project-thenv/README.md`
+- `docs/project-devkit/README.md`

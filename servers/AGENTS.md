@@ -41,14 +41,14 @@ Stateful server projects under `servers/<service_name>/` should follow this mini
 - `scripts/generate-go-proto.sh`
 - `generate.go` (with `go:generate` directive)
 
-Scaffold-only service projects may start with a smaller structure (`main.go` + `internal/service`) when documented in `docs/project-<id>.md`, but must adopt explicit contract/data/logging subdirectories before persistence and public API rollout.
+Scaffold-only service projects may start with a smaller structure (`main.go` + `internal/service`) when documented in `docs/project-<id>/README.md`, but must adopt explicit contract/data/logging subdirectories before persistence and public API rollout.
 
 ### Integration Rules
 
 - Changes to server interfaces must be synchronized with related CLI and app contracts.
-- Update `docs/project-thenv.md` for every thenv interface or trust model update.
-- Update `docs/project-devkit-commit-tracker.md` for every commit-tracker API contract update.
-- Update `docs/project-dexdex.md` for every DexDex server interface or ownership contract update.
+- Update `docs/project-thenv/README.md` and relevant `feature-*.md` files for every thenv interface or trust model update.
+- Update `docs/project-devkit-commit-tracker/README.md` and relevant `feature-*.md` files for every commit-tracker API contract update.
+- Update `docs/project-dexdex/README.md` and relevant `feature-*.md` files for every DexDex server interface or ownership contract update.
 
 ### Testing and Validation
 

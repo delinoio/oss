@@ -39,20 +39,20 @@
 ### Canonical Directory Map
 
 - `docs/project-template.md`: Required structure for new project docs.
-- `docs/project-cargo-mono.md`: Cargo subcommand for Rust monorepo management.
-- `docs/project-nodeup.md`: Rust-based Node.js version manager.
-- `docs/project-derun.md`: Go CLI for terminal-fidelity run execution and MCP output bridge access for AI.
-- `docs/project-ttl.md`: TTL language/compiler project contracts for incremental task execution on Go runtime foundations.
-- `docs/project-ttl-language.md`: TTL language syntax, type, invalidation, and Go code-generation contracts.
-- `docs/project-mpapp.md`: Expo React Native mobile app.
-- `docs/project-devkit.md`: Next.js 16 web micro-app platform.
-- `docs/project-devkit-commit-tracker.md`: Commit Tracker contracts (Web UI + API server + collector).
-- `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app.
-- `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
-- `docs/project-devmon.md`: Go automation daemon with macOS menu bar-managed lifecycle controls.
-- `docs/project-public-docs.md`: Mintlify-based public documentation app.
-- `docs/project-serde-feather.md`: Size-first serde derive scaffolding contracts (core + proc-macro split).
-- `docs/project-dexdex.md`: Connect RPC-first orchestration platform contracts (Go main server + Go worker server + Tauri desktop app).
+- `docs/project-cargo-mono/README.md`: Cargo subcommand for Rust monorepo management.
+- `docs/project-nodeup/README.md`: Rust-based Node.js version manager.
+- `docs/project-derun/README.md`: Go CLI for terminal-fidelity run execution and MCP output bridge access for AI.
+- `docs/project-ttl/README.md`: TTL language/compiler project contracts for incremental task execution on Go runtime foundations.
+- `docs/project-ttl/feature-language-spec.md`: TTL language syntax, type, invalidation, and Go code-generation contracts.
+- `docs/project-mpapp/README.md`: Expo React Native mobile app.
+- `docs/project-devkit/README.md`: Next.js 16 web micro-app platform.
+- `docs/project-devkit-commit-tracker/README.md`: Commit Tracker contracts (Web UI + API server + collector).
+- `docs/project-devkit-remote-file-picker/README.md`: Remote File Picker mini app.
+- `docs/project-thenv/README.md`: Secure `.env` sharing system (CLI + Server + Web).
+- `docs/project-devmon/README.md`: Go automation daemon with macOS menu bar-managed lifecycle controls.
+- `docs/project-public-docs/README.md`: Mintlify-based public documentation app.
+- `docs/project-serde-feather/README.md`: Size-first serde derive scaffolding contracts (core + proc-macro split).
+- `docs/project-dexdex/README.md`: Connect RPC-first orchestration platform contracts (Go main server + Go worker server + Tauri desktop app).
 - `protos/dexdex/v1/dexdex.proto`: Shared DexDex Connect RPC service and enum/message contracts (`dexdex.v1`).
 - `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation (default actor set includes `chatgpt-codex-connector[bot]`).
 
@@ -184,8 +184,10 @@ enum DexDexComponent {
 
 ### Documentation-First Policy
 
-- New project creation requires `docs/project-<id>.md` before runtime implementation.
-- Every structural change to project paths must update the corresponding `docs/project-*.md` in the same change.
+- New project creation requires `docs/project-<id>/README.md` before runtime implementation.
+- Every structural change to project paths must update the corresponding `docs/project-<id>/*.md` in the same change.
+- Project documentation directories must stay flat (no nested directories).
+- Feature-level contracts must use `feature-<kebab-id>.md` naming.
 - Repository and domain policy updates must be written in the appropriate `AGENTS.md` in the same change.
 - Domain-level `AGENTS.md` files must remain aligned with `docs/` contracts.
 
@@ -193,7 +195,7 @@ enum DexDexComponent {
 
 - Reserve a unique `project-id`.
 - Create project path skeleton and add `.gitkeep` if implementation is not started.
-- Add `docs/project-<project-id>.md` using `docs/project-template.md`.
+- Add `docs/project-<project-id>/README.md` and at least one `feature-<kebab-id>.md` using `docs/project-template.md`.
 - Documentation-only phase may mark canonical paths as `planned` before creating path skeletons; create the skeleton in the same change where runtime implementation begins.
 - Update root and domain `AGENTS.md` files when project ownership or contracts change.
 - Ensure path and naming contracts are consistent across docs and AGENTS rules.
@@ -201,7 +203,8 @@ enum DexDexComponent {
 ### Naming Rules
 
 - Use lowercase kebab-case for project IDs and directory names unless runtime conventions require otherwise.
-- Use `project-` prefix for all project docs.
+- Use `project-` prefix for project documentation directories under `docs/`.
+- Keep project documentation directories flat and use `feature-<kebab-id>.md` naming for feature contracts.
 - Use enum-like canonical identifiers in documents where values must remain stable.
 
 ### GitHub Issue Style Contract
@@ -294,7 +297,7 @@ Release automation baseline:
 
 ### Documentation Lifecycle Rules
 
-- Every structural repository change must update relevant `docs/project-*.md` files in the same change set.
+- Every structural repository change must update relevant `docs/project-<id>/*.md` files in the same change set.
 - New project creation is blocked until its project document exists.
 - Documentation-only project onboarding may use `planned` paths, but runtime implementation must not begin before canonical paths are created and documented.
 - Repository-wide and domain rules must be maintained in the appropriate `AGENTS.md`.
@@ -303,4 +306,4 @@ Release automation baseline:
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - After addressing pull request review comments and pushing updates, resolve the corresponding review threads.
 - If a project splits into multiple deployables, the project doc must include path ownership and integration boundaries.
-- `docs/project-devkit-commit-tracker.md` remains the canonical single document for commit tracker UI/API/collector contracts.
+- `docs/project-devkit-commit-tracker/README.md` remains the canonical entrypoint for commit tracker UI/API/collector contracts, with feature-level details in sibling `feature-*.md` files.

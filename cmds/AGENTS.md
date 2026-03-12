@@ -1,6 +1,7 @@
 ### Instructions for `cmds/`
 
-- Follow root `AGENTS.md` and command-specific docs in `docs/project-*.md`.
+- Follow root `AGENTS.md` and command-specific docs in `docs/project-<id>/*.md`.
+- Treat `docs/project-<id>/README.md` as the entrypoint and keep detailed command contracts in sibling `feature-*.md` files.
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.
 - Write all source and comments in English.
 - Prefer enums or typed constants over free-form string values.
@@ -33,9 +34,9 @@
 ### Testing and Validation
 
 - Run relevant Go tests (`go test`) when code in this domain changes.
-- Update `docs/project-devmon.md` whenever devmon command shape or config contracts change.
-- Update `docs/project-derun.md` whenever command shape or config contracts change.
-- Update `docs/project-thenv.md` whenever thenv CLI operations or trust boundaries change.
-- Update `docs/project-devkit-commit-tracker.md` whenever commit-tracker collector contracts change.
-- Update `docs/project-ttl.md` whenever TTL compiler command shape, cache backend, or runtime boundaries change.
-- Update `docs/project-ttl-language.md` whenever TTL syntax/type/invalidation/code-generation contracts change.
+- Update `docs/project-devmon/README.md` and relevant `feature-*.md` files whenever devmon command shape or config contracts change.
+- Update `docs/project-derun/README.md` and relevant `feature-*.md` files whenever command shape or config contracts change.
+- Update `docs/project-thenv/README.md` and relevant `feature-*.md` files whenever thenv CLI operations or trust boundaries change.
+- Update `docs/project-devkit-commit-tracker/README.md` and relevant `feature-*.md` files whenever commit-tracker collector contracts change.
+- Update `docs/project-ttl/README.md` and relevant `feature-*.md` files whenever TTL compiler command shape, cache backend, or runtime boundaries change.
+- Update `docs/project-ttl/feature-language-spec.md` whenever TTL syntax/type/invalidation/code-generation contracts change.

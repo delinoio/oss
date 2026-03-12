@@ -19,5 +19,5 @@ This directory hosts the Devkit mini app with the stable id `remote-file-picker`
 - Client-side image transformation presets
 
 ## References
-- `docs/project-devkit-remote-file-picker.md`
-- `docs/project-devkit.md`
+- `docs/project-devkit-remote-file-picker/README.md`
+- `docs/project-devkit/README.md`

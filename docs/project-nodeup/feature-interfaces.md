@@ -1,0 +1,234 @@
+# Feature: interfaces
+
+## Interfaces
+Canonical nodeup command identifiers:
+
+```ts
+enum NodeupCommand {
+  Toolchain = "toolchain",
+  Default = "default",
+  Show = "show",
+  Update = "update",
+  Check = "check",
+  Override = "override",
+  Which = "which",
+  Run = "run",
+  Self = "self",
+  Completions = "completions",
+}
+```
+
+Canonical toolchain subcommand identifiers:
+
+```ts
+enum NodeupToolchainCommand {
+  List = "list",
+  Install = "install",
+  Uninstall = "uninstall",
+  Link = "link",
+}
+```
+
+Canonical show subcommand identifiers:
+
+```ts
+enum NodeupShowCommand {
+  ActiveRuntime = "active-runtime",
+  Home = "home",
+}
+```
+
+Canonical override subcommand identifiers:
+
+```ts
+enum NodeupOverrideCommand {
+  List = "list",
+  Set = "set",
+  Unset = "unset",
+}
+```
+
+Canonical self subcommand identifiers:
+
+```ts
+enum NodeupSelfCommand {
+  Update = "update",
+  Uninstall = "uninstall",
+  UpgradeData = "upgrade-data",
+}
+```
+
+Canonical channel identifiers:
+
+```ts
+enum NodeupChannel {
+  Lts = "lts",
+  Current = "current",
+  Latest = "latest",
+}
+```
+
+Canonical release tag prefix:
+
+```ts
+enum NodeupReleaseTagPrefix {
+  Stable = "nodeup@v",
+}
+```
+
+Canonical package identifiers:
+
+```ts
+enum NodeupPackageId {
+  HomebrewFormula = "nodeup",
+  Winget = "DelinoIO.Nodeup",
+}
+```
+
+Installer script contract:
+- `scripts/install/nodeup.sh`
+- `scripts/install/nodeup.ps1`
+- Required shared flags:
+: `--version <semver|latest>`
+: `--method package-manager|direct`
+
+CLI entrypoints:
+- `nodeup [--output <human|json>] <command> ...`
+- Shim dispatch path: when the same binary is invoked as `node`, `npm`, or `npx`, nodeup resolves the active runtime and delegates execution directly (without going through the management CLI parser).
+
+Global option contract:
+- `--output <human|json>` is available for all management commands and defaults to `human`.
+- In `--output human` for management commands, default logging uses `tracing` pretty formatting (`level=on`, `target=off`, `time=off`, `ansi=on`) with `nodeup=info`.
+- In managed-alias dispatch mode (`node`, `npm`, `npx`), default logging uses the same `tracing` format but with `nodeup=warn` to keep normal delegated command execution quiet.
+- Log color override:
+: `NODEUP_LOG_COLOR=always|auto|never` controls ANSI color (`always` default).
+: If `NODEUP_LOG_COLOR` is unset or `auto`, `NO_COLOR` disables color; otherwise color remains enabled.
+- In `--output json`, successful command payloads are written to stdout.
+- In `--output json`, handled command and startup failures emit a deterministic stderr JSON envelope with `kind`, `message`, and `exit_code`.
+- In `--output json`, default logging is disabled (`nodeup=off`) so JSON machine output stays parseable unless the operator explicitly sets `RUST_LOG`.
+
+Runtime selector grammar:
+
+```ts
+enum NodeupRuntimeSelectorKind {
+  Version = "semver-with-optional-v-prefix",
+  Channel = "lts|current|latest",
+  LinkedName = "ascii-alnum-first + [ascii-alnum|_|-]*",
+}
+```
+
+- `22.1.0` and `v22.1.0` are equivalent version selectors and normalize to `v22.1.0`.
+- Linked runtime names must start with an ASCII alphanumeric character and may contain `_` or `-` after the first character.
+- Linked runtime names must not use reserved channel tokens: `lts`, `current`, `latest`.
+- Channel selector resolution (`lts|current|latest`) uses release-index disk caching:
+: Cached entries newer than TTL (`NODEUP_RELEASE_INDEX_TTL_SECONDS`, default `600`) are used without network access.
+: Cache entries are bound to the configured release index source (`NODEUP_INDEX_URL`); URL mismatch is treated as cache miss.
+: When cache is missing/expired, nodeup refreshes from `index.json`.
+: If refresh fails and a previous cache exists, nodeup falls back to stale cache entries.
+
+Subcommand contracts:
+- `nodeup toolchain list [--quiet|--verbose]`
+: Input: optional detail flags for human output.
+: Behavior:
+: Default human output prints aggregate counts only (`Installed runtimes: <n> | Linked runtimes: <n>`).
+: `--quiet` prints compact runtime identifiers only in human mode.
+: `--quiet` prints nothing when no runtime identifiers are available.
+: `--verbose` prints detailed runtime metadata (including resolved target paths) in human mode.
+: JSON output remains machine-parseable with the canonical `installed` and `linked` fields regardless of detail flag.
+: Output (human default): aggregate installed/linked counts.
+: Output (`--verbose` human and `--output json`): installed runtime versions plus linked runtime map.
+- `nodeup toolchain install <runtime>...`
+: Input: one or more selectors; empty input is invalid.
+: Allowed selector kinds: `Version`, `Channel` (linked names are rejected for install).
+: Behavior: resolves each selector, downloads/validates runtime when missing, and tracks the original selector.
+: Status field (`--output json`): `installed` or `already-installed`.
+- `nodeup toolchain uninstall <runtime>...`
+: Input: one or more selectors; empty input is invalid.
+: Allowed selector kinds: exact `Version` only (channels/linked names are rejected).
+: Behavior: pre-validates all requested runtimes before deleting anything. Uninstall is atomic for command-level validation: if any requested target is invalid, not installed, or referenced by default selector/overrides, the command fails with no runtime deletions.
+: Behavior: selector spelling is canonicalized so `22.1.0` and `v22.1.0` map to the same runtime, and duplicate canonical targets in the same command are deduplicated.
+: Output: removed runtime list; tracked selectors that canonicalize to removed versions are deleted.
+- `nodeup toolchain link <name> <path>`
+: Input: linked runtime name and local runtime directory path.
+: Behavior: validates name format, rejects reserved channel selector names (`lts`, `current`, `latest`), requires an existing directory target, canonicalizes path, validates the canonicalized path contains `bin/node`, stores it in linked runtimes, and tracks the selector.
+: Failure: returns deterministic `not-found` when the provided path does not exist.
+: Failure: returns deterministic `invalid-input` when the linked runtime name is invalid or reserved, when the provided path is not a directory, or when `bin/node` is missing.
+: Status field (`--output json`): `linked`.
+- `nodeup default [runtime]`
+: With `runtime`: resolves selector, installs if it resolves to a version and is missing, saves selector as global default, and tracks selector.
+: Without `runtime`: returns current default selector and resolved runtime when resolution succeeds.
+: Without `runtime`: when selector resolution fails, command still succeeds and returns persisted selector state with `resolved_runtime: null`.
+: JSON output includes `resolution_error`:
+: `null` when resolution succeeds or no default selector is configured.
+: object with `kind` and `message` when resolution fails during introspection.
+- `nodeup show active-runtime`
+: Output: resolved runtime (`runtime`), selection source (`explicit|override|default`), and canonical selector.
+: Failure: returns deterministic not-found error when neither override nor default selector exists.
+: Failure: returns deterministic not-found error when the resolved runtime is unavailable or missing the delegated `node` executable (for example, when a linked runtime path has been deleted).
+- `nodeup show home`
+: Output: `data_root`, `cache_root`, and `config_root`.
+- `nodeup update [runtime]...`
+: With selectors: processes exactly the provided selectors.
+: Without selectors: uses tracked selectors first; falls back to installed versions when tracked selector list is empty.
+: Status field (`--output json`): `updated`, `already-up-to-date`, or `skipped-linked-runtime`.
+- `nodeup check`
+: Output: one row per installed runtime with `latest_available` and `has_update`.
+- `nodeup override list`
+: Output: configured override entries (`path`, `selector`).
+- `nodeup override set <runtime> [--path <path>]`
+: Input: runtime selector and optional path (defaults to current directory).
+: Behavior: selector is validated and stored in canonical stable form (example: `22.1.0` -> `v22.1.0`), then tracked.
+: Status field (`--output json`): `set`.
+- `nodeup override unset [--path <path>] [--nonexistent]`
+: Input: optional target path and optional cleanup flag for stale paths.
+: Output: removed override entries.
+- `nodeup which [--runtime <runtime>] <command>`
+: Input: delegated command name and optional explicit selector.
+: Behavior: resolves runtime precedence, verifies runtime availability, and prints concrete executable path.
+: Note: unlike `run`, this command does not auto-install missing runtimes.
+- `nodeup run [--install] <runtime> <command>...`
+: Input: explicit runtime selector and delegated argv (at least one command token is required).
+: Input: delegated argv is opaque to nodeup after runtime selection; delegated flags such as `--output` do not alter nodeup global option parsing.
+: Behavior: if resolved runtime version is missing, command fails unless `--install` is provided.
+: Output: delegated command result with runtime, delegated command name, and exit code.
+: Output channels:
+: In `--output human`, delegated stdout/stderr inherit terminal streams.
+: In `--output json`, stdout is reserved for the JSON result object and delegated stdout/stderr are streamed to stderr.
+: Exit code:
+: Returns delegated process exit code on success path.
+: On Unix, when delegated process terminates by signal, returns `128 + signal` (for example `143` for `SIGTERM`) and reports the same mapped value in JSON `exit_code`.
+- `nodeup self update`
+: Behavior: replaces the nodeup binary with the staged binary at `NODEUP_SELF_UPDATE_SOURCE` (target defaults to current executable and can be overridden by `NODEUP_SELF_BIN_PATH`).
+: Status field (`--output json`): `updated` or `already-up-to-date`.
+- `nodeup self uninstall`
+: Behavior: validates all configured `data`, `cache`, and `config` roots before deleting anything, safely removes nodeup-managed roots only, refuses deletion when a configured path is not recognized as nodeup-owned, and reports `already-clean` when only empty bootstrap directories exist.
+: Status field (`--output json`): `removed` or `already-clean`.
+- `nodeup self upgrade-data`
+: Behavior: migrates `settings.toml` and `overrides.toml` schema to the current version, creating defaults when files are missing.
+: Status field (`--output json`): `upgraded` or `already-current`.
+- `nodeup completions <shell> [command]`
+: Input: target shell and optional command scope.
+: Output: deterministic `NotImplemented` error in current phase.
+
+Help output contract:
+- `nodeup --help` must show one-line descriptions for all top-level commands (`toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `self`, `completions`).
+- `nodeup <group> --help` must show one-line descriptions for nested subcommands in grouped command families (`toolchain`, `show`, `override`, `self`).
+- `nodeup <command> --help` should include concise argument descriptions for required and optional inputs.
+
+Resolution precedence contract:
+- Explicit runtime in command invocation (`run`, `which --runtime`) has highest priority.
+- Directory override (`override set`) takes precedence over global default.
+- Global default (`default`) is used when no explicit runtime or override is present.
+- If no selector resolves and auto-install is disabled, command must fail with a deterministic error.
+
+Dispatch contract:
+- If invoked as `node`, `npm`, or `npx`, nodeup resolves target Node.js version and forwards execution.
+- Managed-alias dispatch preserves delegated process exit semantics, including Unix signal mapping (`128 + signal`).
+- If invoked as `nodeup`, nodeup performs management commands.
+
+Symlink contract:
+- Shims point to one nodeup binary.
+- Runtime behavior branches by `argv[0]`.
+- Local setup script `scripts/setup/nodeup-local.sh` must create or refresh `node`, `npm`, and
+  `npx` symlinks in the local install `bin/` directory with `ln -sfn` so reruns are idempotent.
+

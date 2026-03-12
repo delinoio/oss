@@ -85,5 +85,5 @@ cargo test
 
 ## Documentation Links
 
-- Internal contract: [`docs/project-nodeup.md`](../../docs/project-nodeup.md)
+- Internal contract: [`docs/project-nodeup/README.md`](../../docs/project-nodeup/README.md)
 - Public guide: [`apps/public-docs/nodeup.mdx`](../../apps/public-docs/nodeup.mdx)
