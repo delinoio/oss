@@ -1,8 +1,8 @@
-# Project Documentation Template
+# Project Index Template
 
 ## Purpose
-This document defines the mandatory structure for every `docs/project-*.md` file in this monorepo.
-Use this template when creating a new project document.
+This template defines the required structure for every `docs/project-<project-id>.md` file.
+A project index document is the canonical entry point for ownership, domain boundaries, and cross-domain invariants.
 
 ## Required File Naming
 - File name format: `docs/project-<project-id>.md`
@@ -10,60 +10,36 @@ Use this template when creating a new project document.
 - `project-id` must be unique inside this repository.
 
 ## Required Sections
-All project documents must include the sections below in this exact order.
+All project index documents must include the sections below in this exact order.
 
 ## Goal
-State why the project exists and what user problem it solves.
+State why the project exists and what user or operator problem it solves.
 
-## Path
-Declare canonical repository path(s) for the project.
-Include all primary components if the project is split across multiple paths.
+## Project ID
+Declare the stable enum-like project identifier.
 
-## Runtime and Language
-Declare runtime and primary language.
-Examples: `Rust CLI`, `Go CLI`, `Next.js 16 (TypeScript)`, `Expo React Native`.
+## Domain Ownership Map
+Declare canonical repository paths grouped by domain (`apps`, `cmds`, `servers`, `crates`, `protos`, `packages`).
+If the project has multiple deployables, list each component explicitly.
 
-## Users
-List target users or operators.
+## Domain Contract Documents
+List all domain contract documents that define runtime behavior and interfaces.
+Use direct links to `docs/<domain>-<project-or-component>-<contract>.md` files.
 
-## In Scope
-List features that belong to this project now.
+## Cross-Domain Invariants
+Document rules that must remain consistent across domain boundaries.
+Include route IDs, component IDs, protocol ownership, and compatibility rules when relevant.
 
-## Out of Scope
-List features intentionally excluded from this project.
+## Change Policy
+Document which documents must be updated together when contracts, ownership, or interfaces change.
 
-## Architecture
-Describe high-level component boundaries and internal modules.
+## References
+Link to related project index documents, templates, and other canonical contracts.
 
-## Interfaces
-Document public interfaces and contracts.
-Use enum-style identifiers when possible.
-Include route patterns, command shapes, API boundaries, and integration contracts.
-
-## Storage
-Document persistent data, cache, local files, and retention expectations.
-
-## Security
-Document trust boundaries, secrets handling, permissions, and data safety rules.
-
-## Logging
-Document required structured log fields and debugging expectations.
-Include minimum operational logs for troubleshooting.
-Prefer structured logging libraries (Go: `log/slog`, Rust: `tracing`) for operational and business events.
-
-## Build and Test
-Define local build commands, validation commands, and CI expectations.
-
-## Roadmap
-List phased milestones and future expansion directions.
-
-## Open Questions
-Track unresolved items that require explicit product or engineering decisions.
-
-## Checklist for New Project Docs
+## Checklist for New Project Index Docs
 - The file name uses `project-` prefix and kebab-case ID.
-- All required sections are present.
-- Paths in the doc exist or are explicitly marked as planned.
-- Interfaces use stable enum-style identifiers where possible.
-- Integration points reference canonical repository and domain rules in `AGENTS.md` and the relevant domain `AGENTS.md`.
-- The document is updated with every structural project change.
+- All required sections are present and in order.
+- The ownership map uses canonical repository paths.
+- At least one domain contract document exists.
+- Cross-domain invariants use stable enum-like identifiers where possible.
+- The index is updated in the same change set as structural contract changes.

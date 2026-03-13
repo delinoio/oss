@@ -38,21 +38,25 @@
 
 ### Canonical Directory Map
 
-- `docs/project-template.md`: Required structure for new project docs.
-- `docs/project-cargo-mono.md`: Cargo subcommand for Rust monorepo management.
-- `docs/project-nodeup.md`: Rust-based Node.js version manager.
-- `docs/project-derun.md`: Go CLI for terminal-fidelity run execution and MCP output bridge access for AI.
-- `docs/project-ttl.md`: TTL language/compiler project contracts for incremental task execution on Go runtime foundations.
-- `docs/project-ttl-language.md`: TTL language syntax, type, invalidation, and Go code-generation contracts.
-- `docs/project-mpapp.md`: Expo React Native mobile app.
-- `docs/project-devkit.md`: Next.js 16 web micro-app platform.
-- `docs/project-devkit-commit-tracker.md`: Commit Tracker contracts (Web UI + API server + collector).
-- `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app.
-- `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
-- `docs/project-devmon.md`: Go automation daemon with macOS menu bar-managed lifecycle controls.
-- `docs/project-public-docs.md`: Mintlify-based public documentation app.
-- `docs/project-serde-feather.md`: Size-first serde derive scaffolding contracts (core + proc-macro split).
-- `docs/project-dexdex.md`: Connect RPC-first orchestration platform contracts (Go main server + Go worker server + Tauri desktop app).
+- `docs/README.md`: Canonical docs catalog and naming rules.
+- `docs/project-template.md`: Required structure for `project-<id>` index docs.
+- `docs/domain-template.md`: Required structure for domain-level contract docs.
+- `docs/project-<id>.md`: Canonical project index docs (ownership + domain-doc index + cross-domain invariants).
+- `docs/<domain>-<project-or-component>-<contract>.md`: Canonical domain contract docs (`apps`, `cmds`, `servers`, `crates`, `protos`, `packages`).
+- `docs/project-cargo-mono.md`: Cargo subcommand project index.
+- `docs/project-nodeup.md`: Node.js version manager project index.
+- `docs/project-derun.md`: Derun CLI project index.
+- `docs/project-ttl.md`: TTL compiler project index.
+- `docs/project-mpapp.md`: Expo mobile app project index.
+- `docs/project-devkit.md`: Devkit host platform project index.
+- `docs/project-devkit-commit-tracker.md`: Commit Tracker multi-component project index.
+- `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app project index.
+- `docs/project-thenv.md`: Thenv multi-component project index.
+- `docs/project-devmon.md`: Devmon daemon project index.
+- `docs/project-public-docs.md`: Public docs app project index.
+- `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
+- `docs/project-dexdex.md`: DexDex multi-runtime project index.
+- `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
 - `protos/dexdex/v1/dexdex.proto`: Shared DexDex Connect RPC service and enum/message contracts (`dexdex.v1`).
 - `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation (default actor set includes `chatgpt-codex-connector[bot]`).
 
@@ -184,8 +188,8 @@ enum DexDexComponent {
 
 ### Documentation-First Policy
 
-- New project creation requires `docs/project-<id>.md` before runtime implementation.
-- Every structural change to project paths must update the corresponding `docs/project-*.md` in the same change.
+- New project creation requires `docs/project-<id>.md` and at least one `docs/<domain>-<project-or-component>-<contract>.md` before runtime implementation.
+- Every structural change to project paths must update the corresponding project index and relevant domain contract docs in the same change.
 - Repository and domain policy updates must be written in the appropriate `AGENTS.md` in the same change.
 - Domain-level `AGENTS.md` files must remain aligned with `docs/` contracts.
 
@@ -194,6 +198,7 @@ enum DexDexComponent {
 - Reserve a unique `project-id`.
 - Create project path skeleton and add `.gitkeep` if implementation is not started.
 - Add `docs/project-<project-id>.md` using `docs/project-template.md`.
+- Add at least one domain contract doc using `docs/domain-template.md`.
 - Documentation-only phase may mark canonical paths as `planned` before creating path skeletons; create the skeleton in the same change where runtime implementation begins.
 - Update root and domain `AGENTS.md` files when project ownership or contracts change.
 - Ensure path and naming contracts are consistent across docs and AGENTS rules.
@@ -201,7 +206,8 @@ enum DexDexComponent {
 ### Naming Rules
 
 - Use lowercase kebab-case for project IDs and directory names unless runtime conventions require otherwise.
-- Use `project-` prefix for all project docs.
+- Use `project-` prefix for project index docs.
+- Use domain prefixes (`apps-`, `cmds-`, `servers-`, `crates-`, `protos-`, `packages-`) for domain contract docs.
 - Use enum-like canonical identifiers in documents where values must remain stable.
 
 ### GitHub Issue Style Contract
@@ -294,13 +300,12 @@ Release automation baseline:
 
 ### Documentation Lifecycle Rules
 
-- Every structural repository change must update relevant `docs/project-*.md` files in the same change set.
-- New project creation is blocked until its project document exists.
+- Every structural repository change must update relevant project index docs and domain contract docs in the same change set.
+- New project creation is blocked until its project index doc and at least one domain contract doc exist.
 - Documentation-only project onboarding may use `planned` paths, but runtime implementation must not begin before canonical paths are created and documented.
 - Repository-wide and domain rules must be maintained in the appropriate `AGENTS.md`.
 - When user-facing documentation content changes, update relevant pages in `apps/public-docs` in the same change set as needed.
 - Run `git commit` only after `git add`; once files are staged, create the commit without unnecessary delay.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - After addressing pull request review comments and pushing updates, resolve the corresponding review threads.
-- If a project splits into multiple deployables, the project doc must include path ownership and integration boundaries.
-- `docs/project-devkit-commit-tracker.md` remains the canonical single document for commit tracker UI/API/collector contracts.
+- If a project splits into multiple deployables, the project index must include path ownership and integration boundaries, and component-level domain docs must exist.

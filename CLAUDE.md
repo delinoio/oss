@@ -46,21 +46,25 @@ When working in a specific directory, apply the rules from that directory and al
 
 ### Canonical Directory Map
 
-- `docs/project-template.md`: Required structure for new project docs.
-- `docs/project-cargo-mono.md`: Cargo subcommand for Rust monorepo management.
-- `docs/project-nodeup.md`: Rust-based Node.js version manager.
-- `docs/project-derun.md`: Go CLI for terminal-fidelity run execution and MCP output bridge access for AI.
-- `docs/project-ttl.md`: TTL language/compiler project contracts for incremental task execution on Go runtime foundations.
-- `docs/project-ttl-language.md`: TTL language syntax, type, invalidation, and Go code-generation contracts.
-- `docs/project-mpapp.md`: Expo React Native mobile app.
-- `docs/project-devkit.md`: Next.js 16 web micro-app platform.
-- `docs/project-devkit-commit-tracker.md`: Commit Tracker contracts (Web UI + API server + collector).
-- `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app.
-- `docs/project-thenv.md`: Secure `.env` sharing system (CLI + Server + Web).
-- `docs/project-devmon.md`: Go automation daemon with macOS menu bar-managed lifecycle controls.
-- `docs/project-public-docs.md`: Mintlify-based public documentation app.
-- `docs/project-serde-feather.md`: Size-first serde derive scaffolding contracts (core + proc-macro split).
-- `docs/project-dexdex.md`: Connect RPC-first orchestration platform contracts (Go main server + Go worker server + Tauri desktop app).
+- `docs/README.md`: Canonical docs catalog and naming rules.
+- `docs/project-template.md`: Required structure for `project-<id>` index docs.
+- `docs/domain-template.md`: Required structure for domain-level contract docs.
+- `docs/project-<id>.md`: Canonical project index docs (ownership + domain-doc index + cross-domain invariants).
+- `docs/<domain>-<project-or-component>-<contract>.md`: Canonical domain contract docs (`apps`, `cmds`, `servers`, `crates`, `protos`, `packages`).
+- `docs/project-cargo-mono.md`: Cargo subcommand project index.
+- `docs/project-nodeup.md`: Node.js version manager project index.
+- `docs/project-derun.md`: Derun CLI project index.
+- `docs/project-ttl.md`: TTL compiler project index.
+- `docs/project-mpapp.md`: Expo mobile app project index.
+- `docs/project-devkit.md`: Devkit host platform project index.
+- `docs/project-devkit-commit-tracker.md`: Commit Tracker multi-component project index.
+- `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app project index.
+- `docs/project-thenv.md`: Thenv multi-component project index.
+- `docs/project-devmon.md`: Devmon daemon project index.
+- `docs/project-public-docs.md`: Public docs app project index.
+- `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
+- `docs/project-dexdex.md`: DexDex multi-runtime project index.
+- `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
 - `protos/dexdex/v1/dexdex.proto`: Shared DexDex Connect RPC service and enum/message contracts (`dexdex.v1`).
 - `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation (default actor set includes `chatgpt-codex-connector[bot]`).
 
@@ -192,8 +196,8 @@ enum DexDexComponent {
 
 ### Documentation-First Policy
 
-- New project creation requires `docs/project-<id>.md` before runtime implementation.
-- Every structural change to project paths must update the corresponding `docs/project-*.md` in the same change.
+- New project creation requires `docs/project-<id>.md` and at least one `docs/<domain>-<project-or-component>-<contract>.md` before runtime implementation.
+- Every structural change to project paths must update the corresponding project index and relevant domain contract docs in the same change.
 - Repository and domain policy updates must be written in the appropriate `AGENTS.md` in the same change.
 - Domain-level `AGENTS.md` files must remain aligned with `docs/` contracts.
 
@@ -202,6 +206,7 @@ enum DexDexComponent {
 - Reserve a unique `project-id`.
 - Create project path skeleton and add `.gitkeep` if implementation is not started.
 - Add `docs/project-<project-id>.md` using `docs/project-template.md`.
+- Add at least one domain contract doc using `docs/domain-template.md`.
 - Documentation-only phase may mark canonical paths as `planned` before creating path skeletons; create the skeleton in the same change where runtime implementation begins.
 - Update root and domain `AGENTS.md` files when project ownership or contracts change.
 - Ensure path and naming contracts are consistent across docs and AGENTS rules.
@@ -209,7 +214,8 @@ enum DexDexComponent {
 ### Naming Rules
 
 - Use lowercase kebab-case for project IDs and directory names unless runtime conventions require otherwise.
-- Use `project-` prefix for all project docs.
+- Use `project-` prefix for project index docs.
+- Use domain prefixes (`apps-`, `cmds-`, `servers-`, `crates-`, `protos-`, `packages-`) for domain contract docs.
 - Use enum-like canonical identifiers in documents where values must remain stable.
 
 ### GitHub Issue Style Contract
@@ -302,16 +308,15 @@ Release automation baseline:
 
 ### Documentation Lifecycle Rules
 
-- Every structural repository change must update relevant `docs/project-*.md` files in the same change set.
-- New project creation is blocked until its project document exists.
+- Every structural repository change must update relevant project index docs and domain contract docs in the same change set.
+- New project creation is blocked until its project index doc and at least one domain contract doc exist.
 - Documentation-only project onboarding may use `planned` paths, but runtime implementation must not begin before canonical paths are created and documented.
 - Repository-wide and domain rules must be maintained in the appropriate `AGENTS.md`.
 - When user-facing documentation content changes, update relevant pages in `apps/public-docs` in the same change set as needed.
 - Run `git commit` only after `git add`; once files are staged, create the commit without unnecessary delay.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - After addressing pull request review comments and pushing updates, resolve the corresponding review threads.
-- If a project splits into multiple deployables, the project doc must include path ownership and integration boundaries.
-- `docs/project-devkit-commit-tracker.md` remains the canonical single document for commit tracker UI/API/collector contracts.
+- If a project splits into multiple deployables, the project index must include path ownership and integration boundaries, and component-level domain docs must exist.
 
 
 ---
@@ -323,7 +328,7 @@ Release automation baseline:
 ### Instructions for `apps/`
 
 - Follow root `AGENTS.md` and project-specific docs before adding or changing app code.
-- Keep app-specific contracts synchronized in `docs/project-*.md` in the same change.
+- Keep app-specific contracts synchronized in the project index doc (`docs/project-*.md`) and relevant app-domain contract docs (`docs/apps-*.md`) in the same change.
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.
 - Write all source and comments in English.
 - Follow Toss Design Guidelines for frontend UX/UI decisions across web and mobile apps.
@@ -353,17 +358,17 @@ enum DevkitMiniAppId {
 - Mini app identifiers must be stable kebab-case values.
 - Mini app routes must follow `/apps/<id>`.
 - Shared shell concerns belong to Devkit platform modules, not mini app internals.
-- New mini apps require a `docs/project-devkit-<id>.md` document before implementation.
+- New mini apps require a project index doc and an app-domain contract doc before implementation.
 
 ### mpapp Rules
 
 - `mpapp` must remain Expo-based unless a documented architecture decision changes it.
-- Bluetooth capabilities and permissions must be explicitly documented in `docs/project-mpapp.md`.
+- Bluetooth capabilities and permissions must be explicitly documented in `docs/apps-mpapp-foundation.md`.
 
 ### public-docs Rules
 
 - `public-docs` must remain Mintlify-based unless a documented architecture decision changes it.
-- Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/project-public-docs.md`.
+- Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
 
 ### dexdex Rules
@@ -372,7 +377,13 @@ enum DevkitMiniAppId {
 - Tauri bindings are integration/runtime adapters and must not become the primary business contract surface.
 - `LOCAL` and `REMOTE` workspace modes must converge to the same post-resolution UX and business flow behavior.
 - DexDex desktop contract consumption must use shared proto definitions from `protos/dexdex/v1` as the source of truth.
-- Keep DexDex desktop app contracts synchronized with `docs/project-dexdex.md`.
+- Keep DexDex desktop app contracts synchronized with `docs/apps-dexdex-desktop-app-foundation.md` and `docs/project-dexdex.md`.
+
+### Multi-Component Contract Sync
+
+- `devkit-commit-tracker` app changes must update `docs/apps-devkit-commit-tracker-web-app-foundation.md` and `docs/project-devkit-commit-tracker.md`.
+- `thenv` web console changes must update `docs/apps-thenv-web-console-foundation.md` and `docs/project-thenv.md`.
+- `dexdex` desktop app changes must update `docs/apps-dexdex-desktop-app-foundation.md` and `docs/project-dexdex.md`.
 
 ### Testing and Validation
 
@@ -389,7 +400,7 @@ enum DevkitMiniAppId {
 
 ### Instructions for `cmds/`
 
-- Follow root `AGENTS.md` and command-specific docs in `docs/project-*.md`.
+- Follow root `AGENTS.md` and command-specific docs in `docs/project-*.md` plus relevant `docs/cmds-*.md` files.
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.
 - Write all source and comments in English.
 - Prefer enums or typed constants over free-form string values.
@@ -406,6 +417,8 @@ enum DevkitMiniAppId {
 
 - `cmds/commit-tracker` is the `Collector` component for `devkit-commit-tracker`.
 - `cmds/thenv` is the `Cli` component for `thenv`.
+- `cmds/ttlc` command runtime is defined in `docs/cmds-ttl-foundation.md`.
+- TTL language semantics are defined in `docs/cmds-ttl-language-contract.md`.
 
 ### Go Command Rules
 
@@ -422,12 +435,12 @@ enum DevkitMiniAppId {
 ### Testing and Validation
 
 - Run relevant Go tests (`go test`) when code in this domain changes.
-- Update `docs/project-devmon.md` whenever devmon command shape or config contracts change.
-- Update `docs/project-derun.md` whenever command shape or config contracts change.
-- Update `docs/project-thenv.md` whenever thenv CLI operations or trust boundaries change.
-- Update `docs/project-devkit-commit-tracker.md` whenever commit-tracker collector contracts change.
-- Update `docs/project-ttl.md` whenever TTL compiler command shape, cache backend, or runtime boundaries change.
-- Update `docs/project-ttl-language.md` whenever TTL syntax/type/invalidation/code-generation contracts change.
+- Update `docs/project-devmon.md` and `docs/cmds-devmon-foundation.md` whenever devmon command shape or config contracts change.
+- Update `docs/project-derun.md` and `docs/cmds-derun-foundation.md` whenever derun command contracts change.
+- Update `docs/project-thenv.md` and `docs/cmds-thenv-cli-foundation.md` whenever thenv CLI operations or trust boundaries change.
+- Update `docs/project-devkit-commit-tracker.md` and `docs/cmds-devkit-commit-tracker-collector-foundation.md` whenever collector contracts change.
+- Update `docs/project-ttl.md` and `docs/cmds-ttl-foundation.md` whenever TTL compiler command shape, cache backend, or runtime boundaries change.
+- Update `docs/project-ttl.md` and `docs/cmds-ttl-language-contract.md` whenever TTL syntax/type/invalidation/code-generation contracts change.
 
 
 ---
@@ -454,7 +467,7 @@ enum DevkitMiniAppId {
 
 - Add new crates as explicit workspace members in root `Cargo.toml`.
 - Keep crate naming aligned with project IDs when possible.
-- Document CLI behavior contracts in `docs/project-<id>.md` before large implementation changes.
+- Document behavior contracts in project index docs and relevant crate-domain docs before large implementation changes.
 - For new package scaffolding, default `publish = false` until publish contracts are explicitly approved.
 - Prefer minimal default features and keep optional capabilities opt-in for size-sensitive crates.
 - Keep proc-macro crates and runtime crates separated by explicit crate boundaries.
@@ -467,7 +480,7 @@ enum DevkitMiniAppId {
 
 ### cargo-mono-Specific Rules
 
-- Keep command identifiers stable and documented in `docs/project-cargo-mono.md`.
+- Keep command identifiers stable and documented in `docs/project-cargo-mono.md` and `docs/crates-cargo-mono-foundation.md`.
 - Preserve `cargo mono` subcommand compatibility (`cargo-mono` binary naming contract).
 - Ensure release automation (`bump`, `publish`) logs include structured operational context.
 
@@ -475,7 +488,12 @@ enum DevkitMiniAppId {
 
 - Keep `serde-feather` as the runtime-facing crate and `serde-feather-macros` as the proc-macro crate.
 - Keep binary-size-first defaults: minimal default features and no convenience dependencies by default.
-- Keep stable derive macro identifiers (`FeatherSerialize`, `FeatherDeserialize`) aligned with `docs/project-serde-feather.md`.
+- Keep stable derive macro identifiers (`FeatherSerialize`, `FeatherDeserialize`) aligned with `docs/project-serde-feather.md` and crate component docs.
+
+### Multi-Component Contract Sync
+
+- `serde-feather` core crate changes must update `docs/crates-serde-feather-core-foundation.md` and `docs/project-serde-feather.md`.
+- `serde-feather-macros` changes must update `docs/crates-serde-feather-macros-foundation.md` and `docs/project-serde-feather.md`.
 
 ### Testing and Validation
 
@@ -492,7 +510,7 @@ enum DevkitMiniAppId {
 
 ### Instructions for `servers/`
 
-- Follow root `AGENTS.md` and server-specific docs before implementation.
+- Follow root `AGENTS.md`, project index docs, and relevant `docs/servers-*.md` contracts before implementation.
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.
 - Write all source and comments in English.
 - Prefer enums or typed constants over free-form strings for API contracts.
@@ -533,14 +551,20 @@ Stateful server projects under `servers/<service_name>/` should follow this mini
 - `scripts/generate-go-proto.sh`
 - `generate.go` (with `go:generate` directive)
 
-Scaffold-only service projects may start with a smaller structure (`main.go` + `internal/service`) when documented in `docs/project-<id>.md`, but must adopt explicit contract/data/logging subdirectories before persistence and public API rollout.
+Scaffold-only service projects may start with a smaller structure (`main.go` + `internal/service`) when documented in the project index and matching server-domain contract docs, but must adopt explicit contract/data/logging subdirectories before persistence and public API rollout.
 
 ### Integration Rules
 
 - Changes to server interfaces must be synchronized with related CLI and app contracts.
-- Update `docs/project-thenv.md` for every thenv interface or trust model update.
-- Update `docs/project-devkit-commit-tracker.md` for every commit-tracker API contract update.
-- Update `docs/project-dexdex.md` for every DexDex server interface or ownership contract update.
+- Update `docs/project-thenv.md` and `docs/servers-thenv-server-foundation.md` for every thenv interface or trust model update.
+- Update `docs/project-devkit-commit-tracker.md` and `docs/servers-devkit-commit-tracker-api-server-foundation.md` for every commit-tracker API contract update.
+- Update `docs/project-dexdex.md` and relevant DexDex server-domain docs for every server interface or ownership contract update.
+
+### Multi-Component Contract Sync
+
+- `servers/commit-tracker` changes must keep collector and web contracts synchronized.
+- `servers/thenv` changes must keep CLI and web-console contracts synchronized.
+- `servers/dexdex-main-server` and `servers/dexdex-worker-server` changes must keep proto and desktop contracts synchronized.
 
 ### Testing and Validation
 
