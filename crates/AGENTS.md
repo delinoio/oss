@@ -16,7 +16,7 @@
 
 - Add new crates as explicit workspace members in root `Cargo.toml`.
 - Keep crate naming aligned with project IDs when possible.
-- Document CLI behavior contracts in `docs/project-<id>.md` before large implementation changes.
+- Document behavior contracts in project index docs and relevant crate-domain docs before large implementation changes.
 - For new package scaffolding, default `publish = false` until publish contracts are explicitly approved.
 - Prefer minimal default features and keep optional capabilities opt-in for size-sensitive crates.
 - Keep proc-macro crates and runtime crates separated by explicit crate boundaries.
@@ -29,7 +29,7 @@
 
 ### cargo-mono-Specific Rules
 
-- Keep command identifiers stable and documented in `docs/project-cargo-mono.md`.
+- Keep command identifiers stable and documented in `docs/project-cargo-mono.md` and `docs/crates-cargo-mono-foundation.md`.
 - Preserve `cargo mono` subcommand compatibility (`cargo-mono` binary naming contract).
 - Ensure release automation (`bump`, `publish`) logs include structured operational context.
 
@@ -37,7 +37,12 @@
 
 - Keep `serde-feather` as the runtime-facing crate and `serde-feather-macros` as the proc-macro crate.
 - Keep binary-size-first defaults: minimal default features and no convenience dependencies by default.
-- Keep stable derive macro identifiers (`FeatherSerialize`, `FeatherDeserialize`) aligned with `docs/project-serde-feather.md`.
+- Keep stable derive macro identifiers (`FeatherSerialize`, `FeatherDeserialize`) aligned with `docs/project-serde-feather.md` and crate component docs.
+
+### Multi-Component Contract Sync
+
+- `serde-feather` core crate changes must update `docs/crates-serde-feather-core-foundation.md` and `docs/project-serde-feather.md`.
+- `serde-feather-macros` changes must update `docs/crates-serde-feather-macros-foundation.md` and `docs/project-serde-feather.md`.
 
 ### Testing and Validation
 

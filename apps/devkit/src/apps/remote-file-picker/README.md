@@ -20,4 +20,5 @@ This directory hosts the Devkit mini app with the stable id `remote-file-picker`
 
 ## References
 - `docs/project-devkit-remote-file-picker.md`
-- `docs/project-devkit.md`
+- `docs/apps-devkit-remote-file-picker-foundation.md`
+- `docs/apps-devkit-foundation.md`

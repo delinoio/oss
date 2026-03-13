@@ -22,4 +22,5 @@ This directory hosts the Devkit mini app with the stable id `thenv`.
 
 ## References
 - `docs/project-thenv.md`
-- `docs/project-devkit.md`
+- `docs/apps-thenv-web-console-foundation.md`
+- `docs/apps-devkit-foundation.md`

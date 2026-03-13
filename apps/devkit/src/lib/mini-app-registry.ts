@@ -37,7 +37,7 @@ const miniAppRegistrations: readonly MiniAppRegistration[] = [
     route: DevkitRoute.CommitTracker,
     status: MiniAppStatus.Live,
     integrationMode: MiniAppIntegrationMode.BackendCoupled,
-    docsPath: "docs/project-devkit-commit-tracker.md",
+    docsPath: "docs/apps-devkit-commit-tracker-web-app-foundation.md",
   },
   {
     id: DevkitMiniAppId.RemoteFilePicker,
@@ -45,7 +45,7 @@ const miniAppRegistrations: readonly MiniAppRegistration[] = [
     route: DevkitRoute.RemoteFilePicker,
     status: MiniAppStatus.Live,
     integrationMode: MiniAppIntegrationMode.BackendCoupled,
-    docsPath: "docs/project-devkit-remote-file-picker.md",
+    docsPath: "docs/apps-devkit-remote-file-picker-foundation.md",
   },
   {
     id: DevkitMiniAppId.Thenv,
@@ -53,7 +53,7 @@ const miniAppRegistrations: readonly MiniAppRegistration[] = [
     route: DevkitRoute.Thenv,
     status: MiniAppStatus.Live,
     integrationMode: MiniAppIntegrationMode.BackendCoupled,
-    docsPath: "docs/project-thenv.md",
+    docsPath: "docs/apps-thenv-web-console-foundation.md",
   },
 ];
 

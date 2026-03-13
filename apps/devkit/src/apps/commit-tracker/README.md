@@ -27,4 +27,5 @@ This mini app provides a Phase 1 operational dashboard for commit-level engineer
 
 ## References
 - `docs/project-devkit-commit-tracker.md`
-- `docs/project-devkit.md`
+- `docs/apps-devkit-commit-tracker-web-app-foundation.md`
+- `docs/apps-devkit-foundation.md`

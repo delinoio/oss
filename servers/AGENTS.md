@@ -1,6 +1,6 @@
 ### Instructions for `servers/`
 
-- Follow root `AGENTS.md` and server-specific docs before implementation.
+- Follow root `AGENTS.md`, project index docs, and relevant `docs/servers-*.md` contracts before implementation.
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.
 - Write all source and comments in English.
 - Prefer enums or typed constants over free-form strings for API contracts.
@@ -41,14 +41,20 @@ Stateful server projects under `servers/<service_name>/` should follow this mini
 - `scripts/generate-go-proto.sh`
 - `generate.go` (with `go:generate` directive)
 
-Scaffold-only service projects may start with a smaller structure (`main.go` + `internal/service`) when documented in `docs/project-<id>.md`, but must adopt explicit contract/data/logging subdirectories before persistence and public API rollout.
+Scaffold-only service projects may start with a smaller structure (`main.go` + `internal/service`) when documented in the project index and matching server-domain contract docs, but must adopt explicit contract/data/logging subdirectories before persistence and public API rollout.
 
 ### Integration Rules
 
 - Changes to server interfaces must be synchronized with related CLI and app contracts.
-- Update `docs/project-thenv.md` for every thenv interface or trust model update.
-- Update `docs/project-devkit-commit-tracker.md` for every commit-tracker API contract update.
-- Update `docs/project-dexdex.md` for every DexDex server interface or ownership contract update.
+- Update `docs/project-thenv.md` and `docs/servers-thenv-server-foundation.md` for every thenv interface or trust model update.
+- Update `docs/project-devkit-commit-tracker.md` and `docs/servers-devkit-commit-tracker-api-server-foundation.md` for every commit-tracker API contract update.
+- Update `docs/project-dexdex.md` and relevant DexDex server-domain docs for every server interface or ownership contract update.
+
+### Multi-Component Contract Sync
+
+- `servers/commit-tracker` changes must keep collector and web contracts synchronized.
+- `servers/thenv` changes must keep CLI and web-console contracts synchronized.
+- `servers/dexdex-main-server` and `servers/dexdex-worker-server` changes must keep proto and desktop contracts synchronized.
 
 ### Testing and Validation
 
