@@ -3,43 +3,84 @@
 ## Scope
 - Project/component: DexDex main server contract
 - Canonical path: `servers/dexdex-main-server`
+- Role: Connect RPC control-plane boundary for workspace, task, session, PR/review, notification, and event stream orchestration
 
 ## Runtime and Language
-- Runtime: Go server
+- Runtime: Go Connect RPC server
 - Primary language: Go
 
 ## Users and Operators
-- Desktop clients and worker coordination flows consuming control-plane APIs
-- Operators managing orchestration state and control-plane reliability
+- DexDex clients consuming control-plane APIs and stream updates
+- Worker coordination paths routing session-adapter and task orchestration actions
+- Operators maintaining service health, stream reliability, and remediation policy behavior
 
 ## Interfaces and Contracts
 - Stable component identifier: `main-server`.
-- Control-plane interfaces must be defined by shared `protos/dexdex/v1` schemas.
-- Main server orchestration commands and state transitions must remain deterministic.
+- Main server is the canonical business API boundary for clients.
+- Client business flows (task/session/review/notification) are mediated through main-server and not direct worker-server business channels.
+- Connect RPC contract surface includes workspace, repository, task, session, PR management, review assist, review comments, badge theme, notification, and event stream service boundaries.
+- Control-plane responsibilities:
+- workspace and repository-group lifecycle ownership
+- UnitTask/SubTask orchestration state transitions
+- plan-mode decision handling (`APPROVE`, `REVISE`, `REJECT`) and follow-up state transitions
+- PR polling, actionable signal detection, remediation trigger orchestration, and auto-fix guardrails
+- notification trigger generation and workspace-scoped delivery metadata
+- Event stream contract:
+- monotonic sequence per workspace
+- replay and resume from sequence cursor with out-of-range detail handling
+- live fan-out with heartbeat and bounded retention semantics
+- session output payloads are normalized contracts (provider-native formats are not public API)
+- PR management contract:
+- tracked PR lifecycle and status normalization
+- manual remediation trigger path and auto-fix policy enforcement
+- retry budget, cooldown, blocked-state semantics, and explicit resume action expectations
+- Inline comment contract:
+- anchored review comments tied to diff coordinates
+- status transitions with stream updates through inline-comment event family
+- Deployment mode contract:
+- `SINGLE_INSTANCE`: single-process event backbone, local DB option, replay bounded by local retention
+- `SCALE`: Redis-backed propagation/replay and relational DB backbone for multi-instance deployment
+- Configuration contract (normalized to current monorepo/runtime naming):
+- currently implemented envs: `DEXDEX_MAIN_SERVER_ADDR`, `DEXDEX_MAIN_STREAM_RETENTION`, `DEXDEX_MAIN_STREAM_HEARTBEAT_INTERVAL`, `DEXDEX_WORKER_SERVER_URL`
+- planned profile/env extensions from upstream contract (for additive rollout): `DEXDEX_DEPLOYMENT_MODE`, `DEXDEX_DATABASE_URL`, `DEXDEX_REDIS_URL`, `DEXDEX_PR_POLL_INTERVAL_SEC`
+- Implemented-vs-planned alignment:
+- current implementation exposes a subset-focused proto surface with in-process store and stream replay retention controls
+- expanded API behavior from upstream DexDex source docs is treated as target contract and must be rolled out additively
 
 ## Storage
-- Owns control-plane persistence for orchestration metadata and coordination state.
-- Retention and replay behavior must be explicit for operational recovery.
+- Owns control-plane records for workspace scope, task/subtask/session state snapshots, PR/review/notification metadata, and stream sequence progression.
+- Current implementation uses in-process retention-backed workspace store for stream and orchestration state.
+- Target deployment contract supports durable relational storage and Redis-backed stream propagation in scale mode.
+- Retention and replay boundaries must be explicit and observable in operational behavior.
 
 ## Security
-- Authorization boundaries for control-plane operations must remain explicit.
-- Secrets and credentials must remain redacted in logs and diagnostics.
+- Every RPC call is workspace-scoped and must enforce authorization semantics appropriate to workspace type/deployment profile.
+- Non-localhost remote endpoints require token-authenticated Connect RPC transport and secure configuration handling.
+- Sensitive payload fields and credentials must be redacted from logs and stream bodies.
+- Worker coordination endpoints must validate request context and reject cross-workspace task/session misuse.
 
 ## Logging
-- Use structured `log/slog` logs for orchestration lifecycle transitions.
-- Include request ID, workflow ID, actor scope, and sanitized outcome metadata.
+- Use structured `log/slog` logging for request handling, orchestration transitions, stream replay behavior, worker routing outcomes, and remediation decisions.
+- Required correlation fields include workspace/task/subtask/session/request identifiers and PR tracking identifiers where relevant.
+- Emit diagnostics for replay out-of-range, heartbeat send failures, and worker adapter call failures.
+- Notification and PR polling decision reasons must be auditable in server logs.
 
 ## Build and Test
-- Local validation: `go test ./servers/dexdex-main-server/...`
+- Component-local validation: `go test ./servers/dexdex-main-server/...`
 - Repository baseline: `go test ./...`
+- Contract-sensitive tests should cover plan decisions, stream replay ordering/idempotency, worker adapter integration, and error-code semantics.
 
 ## Dependencies and Integrations
-- Integrates with `protos/dexdex/v1` schema contracts.
-- Integrates with desktop app and worker server through Connect RPC.
+- Depends on shared schema contracts in `protos/dexdex/v1`.
+- Integrates upstream with `apps/dexdex` client behavior through Connect RPC and event streaming.
+- Integrates downstream with `servers/dexdex-worker-server` via worker session adapter RPC boundary.
+- Integrates with PR providers and notification consumers through normalized control-plane entities.
 
 ## Change Triggers
-- Update `docs/project-dexdex.md` and this file when control-plane APIs or state contracts change.
-- Synchronize schema-impacting changes with proto and worker/desktop docs.
+- Update this file with `docs/project-dexdex.md` when control-plane responsibilities or deployment-mode guarantees change.
+- Synchronize updates with `docs/protos-dexdex-v1-contract.md` for any service/message/enum or error mapping changes.
+- Update `docs/apps-dexdex-desktop-app-foundation.md` when client-facing behavior for stream, notifications, plan decisions, or PR remediation changes.
+- Update `docs/servers-dexdex-worker-server-foundation.md` when worker-routing boundaries or normalized session contracts change.
 
 ## References
 - `docs/project-dexdex.md`
@@ -47,3 +88,12 @@
 - `docs/servers-dexdex-worker-server-foundation.md`
 - `docs/apps-dexdex-desktop-app-foundation.md`
 - `docs/domain-template.md`
+- Implementation anchors:
+- `servers/dexdex-main-server/main.go`
+- `servers/dexdex-main-server/internal/service/connect_server.go`
+- Upstream source docs merged into this contract:
+- `https://github.com/delinoio/dexdex/blob/main/docs/main-server.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/event-streaming.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/notifications.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/pr-management.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/developer-setup.md`
