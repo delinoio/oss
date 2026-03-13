@@ -14,21 +14,21 @@
 
 ## Interfaces and Contracts
 - Stable component identifier: `desktop-app`.
-- Business contracts must consume `protos/dexdex/v1` schema definitions.
-- Tauri bindings are runtime adapters; Connect RPC contracts remain the primary business interface.
-- `LOCAL` and `REMOTE` modes must converge to equivalent post-resolution UX behavior.
+- Current frontend contract is a React scaffold UI (logo links + local greeting form) without DexDex domain RPC calls.
+- Current scaffold behavior is frontend-local state only and does not expose workspace-mode routing or Connect Query wiring.
+- Connect RPC-first desktop behavior is a planned reintegration target and must consume `protos/dexdex/v1` schemas when restored.
 
 ## Storage
-- Defines local workspace/session persistence for desktop usage.
-- Cached orchestration metadata must include clear invalidation behavior.
+- Current scaffold stores transient in-memory form state only.
+- Reintroduced workspace/session persistence must document cache invalidation behavior.
 
 ## Security
-- Desktop secret material must remain encrypted or OS-protected.
-- Local adapter boundaries must not bypass server-side authorization policies.
+- Current scaffold must avoid collecting or persisting secret material.
+- When RPC contracts return, local adapter boundaries must not bypass server-side authorization policies.
 
 ## Logging
-- Include structured logs for mode transitions, request IDs, and operation outcomes.
-- Avoid logging secret payloads or credential material.
+- Current scaffold keeps logging minimal and must avoid secret payloads.
+- Reintegration phases should restore structured logs for mode transitions, request IDs, and operation outcomes.
 
 ## Build and Test
 - Local validation: `pnpm --filter dexdex test`
@@ -36,12 +36,13 @@
 - CI alignment: `node-dexdex-test` and desktop build workflow
 
 ## Dependencies and Integrations
-- Integrates with `servers/dexdex-main-server` and `servers/dexdex-worker-server` via shared proto contracts.
-- Integrates with Tauri runtime as host adapter.
+- Runtime stack: Tauri host + React frontend scaffold.
+- No active desktop-to-server business integration is enabled in the scaffold phase.
+- Future reintegration target: `servers/dexdex-main-server` and `servers/dexdex-worker-server` via shared proto contracts.
 
 ## Change Triggers
 - Update `docs/project-dexdex.md` and this file when desktop behavior or adapter boundaries change.
-- Synchronize schema-impacting changes with `docs/protos-dexdex-v1-contract.md` and related server contracts.
+- Synchronize schema-impacting changes with `docs/protos-dexdex-v1-contract.md` and related server contracts when desktop RPC integration is reintroduced.
 
 ## References
 - `docs/project-dexdex.md`
