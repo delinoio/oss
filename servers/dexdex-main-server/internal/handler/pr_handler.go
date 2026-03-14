@@ -25,6 +25,21 @@ func NewPrHandler(s store.Store, logger *slog.Logger) *PrHandler {
 	}
 }
 
+// ListPullRequests returns all pull requests for a workspace.
+func (h *PrHandler) ListPullRequests(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ListPullRequestsRequest],
+) (*connect.Response[dexdexv1.ListPullRequestsResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	h.logger.Info("ListPullRequests called", "workspace_id", workspaceID)
+
+	prs := h.store.ListPullRequests(workspaceID)
+
+	return connect.NewResponse(&dexdexv1.ListPullRequestsResponse{
+		PullRequests: prs,
+	}), nil
+}
+
 // GetPullRequest returns a pull request by tracking ID.
 func (h *PrHandler) GetPullRequest(
 	ctx context.Context,

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/handler"
@@ -18,22 +21,36 @@ import (
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	// Initialize in-memory store
-	memStore := store.NewMemoryStore()
+	// Initialize store: PostgreSQL if DEXDEX_DATABASE_URL is set, else in-memory
+	var dataStore store.Store
+	dbURL := strings.TrimSpace(os.Getenv("DEXDEX_DATABASE_URL"))
+	if dbURL != "" {
+		pool, err := pgxpool.New(context.Background(), dbURL)
+		if err != nil {
+			logger.Error("failed to connect to database", "error", err)
+			os.Exit(1)
+		}
+		defer pool.Close()
+		dataStore = store.NewPostgresStore(pool, logger)
+		logger.Info("using PostgreSQL store")
+	} else {
+		memStore := store.NewMemoryStore()
+		dataStore = memStore
 
-	// Seed data if DEXDEX_SEED_DATA=true
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("DEXDEX_SEED_DATA")), "true") {
-		store.SeedData(memStore)
-		logger.Info("seed data loaded")
+		// Seed data if DEXDEX_SEED_DATA=true (only for in-memory store)
+		if strings.EqualFold(strings.TrimSpace(os.Getenv("DEXDEX_SEED_DATA")), "true") {
+			store.SeedData(memStore)
+			logger.Info("seed data loaded")
+		}
 	}
 
 	// Initialize event stream fan-out with 1000-event retention buffer
 	fanOut := stream.NewFanOut(1000, logger)
 
 	// Create handlers
-	workspaceHandler := handler.NewWorkspaceHandler(memStore, logger)
-	taskHandler := handler.NewTaskHandler(memStore, fanOut, logger)
-	notificationHandler := handler.NewNotificationHandler(memStore, fanOut, logger)
+	workspaceHandler := handler.NewWorkspaceHandler(dataStore, logger)
+	taskHandler := handler.NewTaskHandler(dataStore, fanOut, logger)
+	notificationHandler := handler.NewNotificationHandler(dataStore, fanOut, logger)
 	eventStreamHandler := handler.NewEventStreamHandler(fanOut, logger)
 
 	// Register Connect RPC service handlers
@@ -49,26 +66,26 @@ func main() {
 	mux.Handle(notifPath, notifHandler)
 
 	workerClient := worker.NewClient(logger)
-	sessionHandler := handler.NewSessionHandler(memStore, workerClient, fanOut, logger)
+	sessionHandler := handler.NewSessionHandler(dataStore, workerClient, fanOut, logger)
 	sessionPath, sessionHTTPHandler := dexdexv1connect.NewSessionServiceHandler(sessionHandler)
 	mux.Handle(sessionPath, sessionHTTPHandler)
 
 	eventStreamPath, eventStreamHTTPHandler := dexdexv1connect.NewEventStreamServiceHandler(eventStreamHandler)
 	mux.Handle(eventStreamPath, eventStreamHTTPHandler)
 
-	repoHandler := handler.NewRepositoryHandler(memStore, logger)
+	repoHandler := handler.NewRepositoryHandler(dataStore, logger)
 	repoPath, repoHTTPHandler := dexdexv1connect.NewRepositoryServiceHandler(repoHandler)
 	mux.Handle(repoPath, repoHTTPHandler)
 
-	prHandler := handler.NewPrHandler(memStore, logger)
+	prHandler := handler.NewPrHandler(dataStore, logger)
 	prPath, prHTTPHandler := dexdexv1connect.NewPrManagementServiceHandler(prHandler)
 	mux.Handle(prPath, prHTTPHandler)
 
-	reviewAssistHandler := handler.NewReviewAssistHandler(memStore, logger)
+	reviewAssistHandler := handler.NewReviewAssistHandler(dataStore, logger)
 	reviewAssistPath, reviewAssistHTTPHandler := dexdexv1connect.NewReviewAssistServiceHandler(reviewAssistHandler)
 	mux.Handle(reviewAssistPath, reviewAssistHTTPHandler)
 
-	reviewCommentHandler := handler.NewReviewCommentHandler(memStore, logger)
+	reviewCommentHandler := handler.NewReviewCommentHandler(dataStore, logger)
 	reviewCommentPath, reviewCommentHTTPHandler := dexdexv1connect.NewReviewCommentServiceHandler(reviewCommentHandler)
 	mux.Handle(reviewCommentPath, reviewCommentHTTPHandler)
 
