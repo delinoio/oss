@@ -53,6 +53,8 @@ When implementation details differ from documented contracts, follow-up sync wor
 - `AgentCapability` includes `supports_plan_mode`.
 - `SubmitPlanDecision` supports explicit decision actions.
 - Event stream payloads are workspace-scoped and typed.
+- All core enums implemented: `WorkspaceType`, `BadgeColorKey`, `ReviewAssistStatus`, `ReviewInlineCommentStatus`, `DiffSide`.
+- All service methods implemented across `WorkspaceService`, `TaskService`, `SessionService`, `PrManagementService`, `ReviewAssistService`, `BadgeThemeService`, and `EventStreamService`.
 
 ### Main Server (`servers/dexdex-main-server`)
 - Repository and repository-group contracts are normalized and execution-order-aware.
@@ -62,6 +64,12 @@ When implementation details differ from documented contracts, follow-up sync wor
 - Review assist items auto-created from GitHub review comments on CHANGES_REQUESTED.
 - ReviewAssistUpdatedPayload added to event streaming.
 - GitHub client supports CreatePullRequest and ListPullRequestComments.
+- Workspace CRUD operations: `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`, `SetActiveWorkspace`.
+- Task cancellation and subtask management: `CancelUnitTask`, `CancelSubTask`, `CreateSubTask`, `ListSubTaskCommits`, `RetrySubTask`.
+- PR tracking and auto-fix control: `TrackPullRequest`, `RunAutoFixNow`, `SetAutoFixPolicy`.
+- Review assist resolution: `ResolveReviewAssistItem`.
+- Badge theme management: `ListBadgeThemes`, `UpsertBadgeTheme`.
+- Agent session lifecycle: `ListAgentSessions`, `GetAgentSessionLog`, `StopAgentSession`.
 
 ### Worker Server (`servers/dexdex-worker-server`)
 - Agent capability and execution contracts expose plan-mode support boundaries.
@@ -78,6 +86,12 @@ When implementation details differ from documented contracts, follow-up sync wor
 - Review assist Accept action creates auto-fix UnitTask via CreateUnitTask API.
 - Global shortcut navigates to waiting session context with input form auto-focus.
 - Tauri backend implements credential management (file-based) and tray status IPC.
+- Cancel/Stop buttons for running UnitTask and SubTask flows with immediate propagation.
+- Workspace switching with dynamic selector for workspace-scoped navigation.
+- PR management list and detail pages with track/auto-fix controls.
+- Inbox page with real notification data from event stream.
+- Enhanced keyboard shortcuts: `Cmd+T` (new task), `Cmd+W` (close tab), `J`/`K` (navigate list), `A` (approve), `V` (view diff), `Shift+X` (cancel task).
+- Diff viewer component for reviewing commit changes inline.
 
 ## Developer Setup and Validation
 Repository layout for DexDex in this monorepo:
