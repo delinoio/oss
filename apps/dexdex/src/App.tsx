@@ -16,6 +16,7 @@ import { TaskDetail } from "./features/tasks/task-detail";
 import { CreateDialog } from "./features/tasks/create-dialog";
 import { InboxPage } from "./features/inbox/inbox-page";
 import { PrManagementPage } from "./features/prs/pr-management-page";
+import { PrDetailPage } from "./features/prs/pr-detail-page";
 import { SettingsPage } from "./features/settings/settings-page";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useWorkspaceStream } from "./hooks/use-workspace-stream";
@@ -24,11 +25,9 @@ import { useGlobalShortcut } from "./hooks/use-global-shortcut";
 import { useWebNotifications } from "./hooks/use-web-notifications";
 import {
   useListUnitTasks,
-  useListNotifications,
   useListPullRequests,
   useCreateUnitTaskMutation,
   useSubmitPlanDecisionMutation,
-  useMarkNotificationReadMutation,
 } from "./hooks/use-dexdex-queries";
 import {
   type AppState,
@@ -38,13 +37,12 @@ import {
   getPersistedTheme,
   persistTheme,
   applyThemeToDocument,
+  getPersistedActiveWorkspaceId,
+  persistActiveWorkspaceId,
 } from "./stores/app-store";
-import type { Notification } from "./lib/mock-data";
 import { summarizePrompt } from "./lib/adapters";
 import { PlanDecision } from "./lib/status";
 import { AgentCliType, PlanDecision as ProtoPlanDecision } from "./gen/v1/dexdex_pb";
-
-const WORKSPACE_ID = "workspace-default";
 
 interface Tab {
   id: string;
@@ -61,6 +59,7 @@ function App() {
   const initialTheme = getPersistedTheme();
   const [theme, setThemeState] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState(() => getPersistedActiveWorkspaceId());
   const [connectionStatus, setConnectionStatus] = useState<AppState["connectionStatus"]>("connected");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -70,11 +69,9 @@ function App() {
   const [activeTabId, setActiveTabId] = useState("");
 
   // Data state - Connect RPC queries replace mock data
-  const { data: tasks = [], isLoading: tasksLoading } = useListUnitTasks(WORKSPACE_ID);
-  const { data: notifications = [], isLoading: notificationsLoading } = useListNotifications(WORKSPACE_ID);
-  const { data: pullRequestsData, isLoading: prsLoading } = useListPullRequests(WORKSPACE_ID);
+  const { data: tasks = [], isLoading: tasksLoading } = useListUnitTasks(activeWorkspaceId);
+  const { data: pullRequestsData, isLoading: prsLoading } = useListPullRequests(activeWorkspaceId);
   const pullRequests = pullRequestsData?.pullRequests ?? [];
-  const markReadMutation = useMarkNotificationReadMutation();
 
   // Apply initial theme
   useMemo(() => {
@@ -95,20 +92,26 @@ function App() {
     setSidebarOpen((prev) => !prev);
   }, []);
 
+  const setActiveWorkspaceId = useCallback((id: string) => {
+    setActiveWorkspaceIdState(id);
+    persistActiveWorkspaceId(id);
+  }, []);
+
   // Build store
   const store: AppStore = useMemo(
     () => ({
       theme,
       sidebarOpen,
-      activeWorkspaceId: WORKSPACE_ID,
+      activeWorkspaceId,
       connectionStatus,
       toggleTheme,
       setTheme,
       toggleSidebar,
       setSidebarOpen,
+      setActiveWorkspaceId,
       setConnectionStatus,
     }),
-    [theme, sidebarOpen, connectionStatus, toggleTheme, setTheme, toggleSidebar],
+    [theme, sidebarOpen, activeWorkspaceId, connectionStatus, toggleTheme, setTheme, toggleSidebar, setActiveWorkspaceId],
   );
 
   // Web Notifications
@@ -116,13 +119,13 @@ function App() {
 
   // Workspace stream
   useWorkspaceStream({
-    workspaceId: WORKSPACE_ID,
+    workspaceId: activeWorkspaceId,
     onStatusChange: setConnectionStatus,
     onNotification: dispatchNotification,
   });
 
   // Tray status sync
-  useTrayStatus(WORKSPACE_ID);
+  useTrayStatus(activeWorkspaceId);
 
   // Navigation - wraps react-router navigate with tab management
   const navigate = useCallback(
@@ -171,14 +174,14 @@ function App() {
   const handleCreateTask = useCallback(
     (prompt: string, repositoryGroupId: string, agentCliType: AgentCliType, usePlanMode: boolean) => {
       createTaskMutation.mutate({
-        workspaceId: WORKSPACE_ID,
+        workspaceId: activeWorkspaceId,
         prompt,
         repositoryGroupId,
         agentCliType,
         usePlanMode,
       });
     },
-    [createTaskMutation],
+    [createTaskMutation, activeWorkspaceId],
   );
 
   const planDecisionMutation = useSubmitPlanDecisionMutation();
@@ -192,34 +195,18 @@ function App() {
             ? ProtoPlanDecision.REVISE
             : ProtoPlanDecision.REJECT;
       planDecisionMutation.mutate({
-        workspaceId: WORKSPACE_ID,
+        workspaceId: activeWorkspaceId,
         subTaskId,
         decision: protoDecision,
         revisionNote: revisionNote ?? "",
       });
     },
-    [planDecisionMutation],
-  );
-
-  const handleNotificationClick = useCallback(
-    (notification: Notification) => {
-      if (notification.taskId) {
-        navigate(`/tasks/${notification.taskId}`);
-      }
-    },
-    [navigate],
-  );
-
-  const handleMarkRead = useCallback(
-    (notificationId: string) => {
-      markReadMutation.mutate({ workspaceId: WORKSPACE_ID, notificationId });
-    },
-    [markReadMutation],
+    [planDecisionMutation, activeWorkspaceId],
   );
 
   // Global shortcut handler
   useGlobalShortcut({
-    workspaceId: WORKSPACE_ID,
+    workspaceId: activeWorkspaceId,
     onNavigate: navigate,
   });
 
@@ -246,6 +233,21 @@ function App() {
           setActiveTabId("");
         }}
         onPlanDecision={handlePlanDecision}
+      />
+    );
+  }
+
+  // PR detail renderer (used by route)
+  function PrDetailRoute() {
+    const prTrackingId = currentPath.replace("/prs/", "");
+    if (!prTrackingId) {
+      return <Navigate to="/prs" replace />;
+    }
+    return (
+      <PrDetailPage
+        workspaceId={activeWorkspaceId}
+        prTrackingId={prTrackingId}
+        onBack={() => routerNavigate("/prs")}
       />
     );
   }
@@ -298,16 +300,23 @@ function App() {
                 <Route path="/tasks/:taskId" element={<TaskDetailRoute />} />
                 <Route
                   path="/inbox"
+                  element={<InboxPage />}
+                />
+                <Route
+                  path="/prs"
                   element={
-                    <InboxPage
-                      notifications={notifications}
-                      isLoading={notificationsLoading}
-                      onNotificationClick={handleNotificationClick}
-                      onMarkRead={handleMarkRead}
+                    <PrManagementPage
+                      pullRequests={pullRequests}
+                      isLoading={prsLoading}
+                      workspaceId={activeWorkspaceId}
+                      onPrSelect={(prTrackingId) => navigate(`/prs/${prTrackingId}`)}
                     />
                   }
                 />
-                <Route path="/prs" element={<PrManagementPage pullRequests={pullRequests} isLoading={prsLoading} />} />
+                <Route
+                  path="/prs/:prTrackingId"
+                  element={<PrDetailRoute />}
+                />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />
               </Routes>
@@ -327,7 +336,7 @@ function App() {
       />
       <CreateDialog
         isOpen={createDialogOpen}
-        workspaceId={WORKSPACE_ID}
+        workspaceId={activeWorkspaceId}
         onClose={() => setCreateDialogOpen(false)}
         onCreate={handleCreateTask}
       />

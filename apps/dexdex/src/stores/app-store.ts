@@ -19,6 +19,7 @@ export interface AppActions {
   setTheme: (theme: Theme) => void;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
+  setActiveWorkspaceId: (id: string) => void;
   setConnectionStatus: (status: AppState["connectionStatus"]) => void;
 }
 
@@ -55,6 +56,32 @@ export function getPersistedTheme(): Theme {
 export function persistTheme(theme: Theme): void {
   try {
     localStorage.setItem("dexdex-theme", theme);
+  } catch {
+    // localStorage not available
+  }
+}
+
+/**
+ * Get persisted active workspace ID or default.
+ */
+export function getPersistedActiveWorkspaceId(): string {
+  try {
+    const stored = localStorage.getItem("dexdex-active-workspace-id");
+    if (stored) {
+      return stored;
+    }
+  } catch {
+    // localStorage not available
+  }
+  return "workspace-default";
+}
+
+/**
+ * Persist active workspace ID to localStorage.
+ */
+export function persistActiveWorkspaceId(id: string): void {
+  try {
+    localStorage.setItem("dexdex-active-workspace-id", id);
   } catch {
     // localStorage not available
   }

@@ -2,8 +2,9 @@
  * Sidebar navigation component with Linear-style layout.
  */
 
-import type { CSSProperties } from "react";
+import { type CSSProperties, useCallback, useRef, useState } from "react";
 import { useAppStore } from "../stores/app-store";
+import { useListWorkspaces, useSetActiveWorkspaceMutation } from "../hooks/use-dexdex-queries";
 
 interface SidebarProps {
   activePath: string;
@@ -18,7 +19,24 @@ const NAV_ITEMS = [
 ];
 
 export function Sidebar({ activePath, onNavigate }: SidebarProps) {
-  const { sidebarOpen, connectionStatus } = useAppStore();
+  const { sidebarOpen, connectionStatus, activeWorkspaceId, setActiveWorkspaceId } = useAppStore();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const { data: workspacesData } = useListWorkspaces();
+  const setActiveWorkspaceMutation = useSetActiveWorkspaceMutation();
+
+  const workspaces = workspacesData?.workspaces ?? [];
+  const currentWorkspace = workspaces.find((w) => w.workspaceId === activeWorkspaceId);
+  const currentWorkspaceName = currentWorkspace?.name || activeWorkspaceId;
+
+  const handleWorkspaceSwitch = useCallback(
+    (workspaceId: string) => {
+      setActiveWorkspaceId(workspaceId);
+      setActiveWorkspaceMutation.mutate({ workspaceId });
+      setDropdownOpen(false);
+    },
+    [setActiveWorkspaceId, setActiveWorkspaceMutation],
+  );
 
   if (!sidebarOpen) {
     return null;
@@ -66,6 +84,58 @@ export function Sidebar({ activePath, onNavigate }: SidebarProps) {
     flex: 1,
   };
 
+  const workspaceSelectorStyle: CSSProperties = {
+    padding: "0 var(--space-4)",
+    marginBottom: "var(--space-2)",
+    position: "relative",
+  };
+
+  const workspaceButtonStyle: CSSProperties = {
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "var(--space-2)",
+    padding: "var(--space-2) var(--space-3)",
+    borderRadius: "var(--radius-md)",
+    fontSize: "var(--font-size-sm)",
+    fontWeight: 500,
+    color: "var(--color-text-secondary)",
+    backgroundColor: "transparent",
+    cursor: "pointer",
+    border: "1px solid var(--color-border)",
+    transition: "background-color 0.1s",
+    textAlign: "left",
+  };
+
+  const dropdownMenuStyle: CSSProperties = {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    right: 0,
+    marginTop: "var(--space-1)",
+    backgroundColor: "var(--color-bg-sidebar)",
+    border: "1px solid var(--color-border)",
+    borderRadius: "var(--radius-md)",
+    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+    zIndex: 50,
+    maxHeight: "200px",
+    overflowY: "auto",
+  };
+
+  const dropdownItemStyle = (isSelected: boolean): CSSProperties => ({
+    width: "100%",
+    display: "block",
+    padding: "var(--space-2) var(--space-3)",
+    fontSize: "var(--font-size-sm)",
+    color: isSelected ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+    backgroundColor: isSelected ? "var(--color-bg-active)" : "transparent",
+    cursor: "pointer",
+    border: "none",
+    textAlign: "left",
+    transition: "background-color 0.1s",
+  });
+
   return (
     <nav style={containerStyle} data-testid="sidebar" aria-label="Main navigation">
       <div style={headerStyle}>
@@ -75,6 +145,54 @@ export function Sidebar({ activePath, onNavigate }: SidebarProps) {
           data-testid="connection-dot"
         />
         <span>DexDex</span>
+      </div>
+      <div style={workspaceSelectorStyle} ref={dropdownRef} data-testid="workspace-selector">
+        <button
+          style={workspaceButtonStyle}
+          onClick={() => setDropdownOpen((prev) => !prev)}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.backgroundColor = "var(--color-bg-hover)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+          }}
+          data-testid="workspace-selector-button"
+          title={`Current workspace: ${currentWorkspaceName}`}
+        >
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {currentWorkspaceName}
+          </span>
+          <span style={{ fontSize: "var(--font-size-xs)", flexShrink: 0 }}>
+            {dropdownOpen ? "\u25B2" : "\u25BC"}
+          </span>
+        </button>
+        {dropdownOpen && workspaces.length > 0 && (
+          <div style={dropdownMenuStyle} data-testid="workspace-dropdown">
+            {workspaces.map((ws) => {
+              const isSelected = ws.workspaceId === activeWorkspaceId;
+              return (
+                <button
+                  key={ws.workspaceId}
+                  style={dropdownItemStyle(isSelected)}
+                  onClick={() => handleWorkspaceSwitch(ws.workspaceId)}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      (e.currentTarget as HTMLElement).style.backgroundColor = "var(--color-bg-hover)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+                    }
+                  }}
+                  data-testid={`workspace-option-${ws.workspaceId}`}
+                >
+                  {ws.name || ws.workspaceId}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
       <div style={navStyle}>
         {NAV_ITEMS.map((item) => {
