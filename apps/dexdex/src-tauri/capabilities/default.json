@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Default capability for the DexDex desktop window.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-is-registered"
+  ]
 }

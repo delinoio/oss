@@ -52,6 +52,19 @@ export function CommandPalette({ isOpen, onClose, onNavigate, onCreateTask, task
     }
   }, [isOpen]);
 
+  // Global Escape listener to handle cases where focus hasn't settled yet
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleGlobalKeyDown);
+    return () => document.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     setSelectedIndex(0);
   }, [query]);

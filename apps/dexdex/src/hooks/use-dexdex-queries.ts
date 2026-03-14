@@ -17,6 +17,10 @@ import {
   getLatestWaitingSession,
   submitSessionInput,
 } from "../gen/v1/dexdex-SessionService_connectquery";
+import { getRepositoryGroup } from "../gen/v1/dexdex-RepositoryService_connectquery";
+import { getPullRequest, listPullRequests } from "../gen/v1/dexdex-PrManagementService_connectquery";
+import { listReviewAssistItems } from "../gen/v1/dexdex-ReviewAssistService_connectquery";
+import { listReviewComments } from "../gen/v1/dexdex-ReviewCommentService_connectquery";
 import { toViewUnitTask, toViewSubTask, toViewNotification, toViewSessionOutput, toViewSessionSummary, toViewAgentCapability } from "../lib/adapters";
 import type { UnitTask, SubTask, Notification, SessionOutputEvent, SessionSummary, AgentCapability } from "../lib/mock-data";
 
@@ -170,4 +174,55 @@ export function useSubmitSessionInputMutation() {
       queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
     },
   });
+}
+
+/**
+ * Fetch a repository group by ID.
+ */
+export function useGetRepositoryGroup(workspaceId: string, repositoryGroupId: string) {
+  return useQuery(
+    getRepositoryGroup,
+    { workspaceId, repositoryGroupId },
+    { enabled: !!repositoryGroupId },
+  );
+}
+
+/**
+ * Fetch all pull requests for a workspace.
+ */
+export function useListPullRequests(workspaceId: string) {
+  return useQuery(listPullRequests, { workspaceId });
+}
+
+/**
+ * Fetch a pull request by tracking ID.
+ */
+export function useGetPullRequest(workspaceId: string, prTrackingId: string) {
+  return useQuery(
+    getPullRequest,
+    { workspaceId, prTrackingId },
+    { enabled: !!prTrackingId },
+  );
+}
+
+/**
+ * Fetch review assist items for a unit task.
+ */
+export function useListReviewAssistItems(workspaceId: string, unitTaskId: string) {
+  return useQuery(
+    listReviewAssistItems,
+    { workspaceId, unitTaskId },
+    { enabled: !!unitTaskId },
+  );
+}
+
+/**
+ * Fetch review comments for a PR.
+ */
+export function useListReviewComments(workspaceId: string, prTrackingId: string) {
+  return useQuery(
+    listReviewComments,
+    { workspaceId, prTrackingId },
+    { enabled: !!prTrackingId },
+  );
 }

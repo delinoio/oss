@@ -10,6 +10,7 @@ import { useListSubTasks, useGetSessionOutput } from "../../hooks/use-dexdex-que
 import { SubtaskTimeline } from "./subtask-timeline";
 import { PlanDecisions } from "./plan-decisions";
 import { SessionOutputPanel } from "./session-output-panel";
+import { SessionInputForm } from "../sessions/session-input-form";
 
 const WORKSPACE_ID = "workspace-default";
 
@@ -28,7 +29,8 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
     subTasks.find(
       (st) =>
         st.status === SubTaskStatus.IN_PROGRESS ||
-        st.status === SubTaskStatus.WAITING_FOR_PLAN_APPROVAL,
+        st.status === SubTaskStatus.WAITING_FOR_PLAN_APPROVAL ||
+        st.status === SubTaskStatus.WAITING_FOR_USER_INPUT,
     ) ?? subTasks[subTasks.length - 1];
 
   // Fetch session output for the active subtask
@@ -141,6 +143,16 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
             sessionId={activeSubTask.sessionId}
           />
         )}
+
+        {/* Session input form for waiting-for-input subtasks */}
+        {activeSubTask &&
+          activeSubTask.status === SubTaskStatus.WAITING_FOR_USER_INPUT &&
+          activeSubTask.sessionId && (
+            <SessionInputForm
+              workspaceId={WORKSPACE_ID}
+              sessionId={activeSubTask.sessionId}
+            />
+          )}
       </div>
     </div>
   );

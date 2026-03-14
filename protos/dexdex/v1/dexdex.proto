@@ -371,6 +371,14 @@ message GetPullRequestResponse {
   PullRequestRecord pull_request = 1;
 }
 
+message ListPullRequestsRequest {
+  string workspace_id = 1;
+}
+
+message ListPullRequestsResponse {
+  repeated PullRequestRecord pull_requests = 1;
+}
+
 message ListReviewAssistItemsRequest {
   string workspace_id = 1;
   string unit_task_id = 2;
@@ -598,6 +606,7 @@ service SessionService {
 
 service PrManagementService {
   rpc GetPullRequest(GetPullRequestRequest) returns (GetPullRequestResponse);
+  rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
 }
 
 service ReviewAssistService {

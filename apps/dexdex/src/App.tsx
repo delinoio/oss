@@ -1,9 +1,11 @@
 /**
  * Root application component for DexDex desktop app.
  * Provides the Linear-style layout with sidebar, tab bar, and content area.
+ * Uses react-router for page navigation.
  */
 
 import { type CSSProperties, useCallback, useMemo, useState } from "react";
+import { Routes, Route, useNavigate, useLocation, Navigate } from "react-router";
 import "./styles/globals.css";
 import { Sidebar } from "./components/sidebar";
 import { TabBar } from "./components/tab-bar";
@@ -12,12 +14,16 @@ import { TaskList } from "./features/tasks/task-list";
 import { TaskDetail } from "./features/tasks/task-detail";
 import { CreateDialog } from "./features/tasks/create-dialog";
 import { InboxPage } from "./features/inbox/inbox-page";
+import { PrManagementPage } from "./features/prs/pr-management-page";
 import { SettingsPage } from "./features/settings/settings-page";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useWorkspaceStream } from "./hooks/use-workspace-stream";
+import { useTrayStatus } from "./hooks/use-tray-status";
+import { useGlobalShortcut } from "./hooks/use-global-shortcut";
 import {
   useListUnitTasks,
   useListNotifications,
+  useListPullRequests,
   useCreateUnitTaskMutation,
   useSubmitPlanDecisionMutation,
   useMarkNotificationReadMutation,
@@ -31,7 +37,7 @@ import {
   persistTheme,
   applyThemeToDocument,
 } from "./stores/app-store";
-import type { Notification, UnitTask } from "./lib/mock-data";
+import type { Notification } from "./lib/mock-data";
 import { PlanDecision } from "./lib/status";
 import { PlanDecision as ProtoPlanDecision } from "./gen/v1/dexdex_pb";
 
@@ -44,6 +50,10 @@ interface Tab {
 }
 
 function App() {
+  const routerNavigate = useNavigate();
+  const location = useLocation();
+  const currentPath = location.pathname;
+
   // App state
   const initialTheme = getPersistedTheme();
   const [theme, setThemeState] = useState<Theme>(initialTheme);
@@ -52,14 +62,15 @@ function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
-  // Navigation state
-  const [currentPath, setCurrentPath] = useState("/tasks");
+  // Tab state
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState("");
 
   // Data state - Connect RPC queries replace mock data
   const { data: tasks = [] } = useListUnitTasks(WORKSPACE_ID);
   const { data: notifications = [] } = useListNotifications(WORKSPACE_ID);
+  const { data: pullRequestsData } = useListPullRequests(WORKSPACE_ID);
+  const pullRequests = pullRequestsData?.pullRequests ?? [];
   const markReadMutation = useMarkNotificationReadMutation();
 
   // Apply initial theme
@@ -103,10 +114,13 @@ function App() {
     onStatusChange: setConnectionStatus,
   });
 
-  // Navigation
+  // Tray status sync
+  useTrayStatus(WORKSPACE_ID);
+
+  // Navigation - wraps react-router navigate with tab management
   const navigate = useCallback(
     (path: string) => {
-      setCurrentPath(path);
+      routerNavigate(path);
 
       // If navigating to a task detail, open a tab
       if (path.startsWith("/tasks/")) {
@@ -122,26 +136,26 @@ function App() {
         }
       }
     },
-    [tabs, tasks],
+    [routerNavigate, tabs, tasks],
   );
 
   const handleTabClick = useCallback(
     (tab: Tab) => {
       setActiveTabId(tab.id);
-      setCurrentPath(tab.path);
+      routerNavigate(tab.path);
     },
-    [],
+    [routerNavigate],
   );
 
   const handleTabClose = useCallback(
     (tab: Tab) => {
       setTabs((prev) => prev.filter((t) => t.id !== tab.id));
       if (activeTabId === tab.id) {
-        setCurrentPath("/tasks");
+        routerNavigate("/tasks");
         setActiveTabId("");
       }
     },
-    [activeTabId],
+    [activeTabId, routerNavigate],
   );
 
   // Task actions
@@ -195,6 +209,12 @@ function App() {
     [markReadMutation],
   );
 
+  // Global shortcut handler
+  useGlobalShortcut({
+    workspaceId: WORKSPACE_ID,
+    onNavigate: navigate,
+  });
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     onCommandPalette: () => setCommandPaletteOpen(true),
@@ -203,45 +223,21 @@ function App() {
     onCreateTask: () => setCreateDialogOpen(true),
   });
 
-  // Render content based on current path
-  function renderContent() {
-    if (currentPath.startsWith("/tasks/")) {
-      const taskId = currentPath.replace("/tasks/", "");
-      const task = tasks.find((t) => t.unitTaskId === taskId);
-      if (task) {
-        return (
-          <TaskDetail
-            task={task}
-            onBack={() => {
-              setCurrentPath("/tasks");
-              setActiveTabId("");
-            }}
-            onPlanDecision={handlePlanDecision}
-          />
-        );
-      }
+  // Task detail renderer (used by route)
+  function TaskDetailRoute() {
+    const taskId = currentPath.replace("/tasks/", "");
+    const task = tasks.find((t) => t.unitTaskId === taskId);
+    if (!task) {
+      return <Navigate to="/tasks" replace />;
     }
-
-    if (currentPath === "/inbox") {
-      return (
-        <InboxPage
-          notifications={notifications}
-          onNotificationClick={handleNotificationClick}
-          onMarkRead={handleMarkRead}
-        />
-      );
-    }
-
-    if (currentPath === "/settings") {
-      return <SettingsPage />;
-    }
-
-    // Default: task list
     return (
-      <TaskList
-        tasks={tasks}
-        onTaskSelect={(taskId) => navigate(`/tasks/${taskId}`)}
-        onCreateTask={() => setCreateDialogOpen(true)}
+      <TaskDetail
+        task={task}
+        onBack={() => {
+          routerNavigate("/tasks");
+          setActiveTabId("");
+        }}
+        onPlanDecision={handlePlanDecision}
       />
     );
   }
@@ -277,7 +273,34 @@ function App() {
             onTabClick={handleTabClick}
             onTabClose={handleTabClose}
           />
-          <div style={contentAreaStyle}>{renderContent()}</div>
+          <div style={contentAreaStyle}>
+            <Routes>
+              <Route
+                path="/tasks"
+                element={
+                  <TaskList
+                    tasks={tasks}
+                    onTaskSelect={(taskId) => navigate(`/tasks/${taskId}`)}
+                    onCreateTask={() => setCreateDialogOpen(true)}
+                  />
+                }
+              />
+              <Route path="/tasks/:taskId" element={<TaskDetailRoute />} />
+              <Route
+                path="/inbox"
+                element={
+                  <InboxPage
+                    notifications={notifications}
+                    onNotificationClick={handleNotificationClick}
+                    onMarkRead={handleMarkRead}
+                  />
+                }
+              />
+              <Route path="/prs" element={<PrManagementPage pullRequests={pullRequests} />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="*" element={<Navigate to="/tasks" replace />} />
+            </Routes>
+          </div>
         </div>
       </div>
       <CommandPalette

@@ -4,6 +4,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { createRouterTransport } from "@connectrpc/connect";
+import { MemoryRouter } from "react-router";
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import App from "./App";
@@ -13,6 +14,10 @@ import {
   SessionService,
   EventStreamService,
   WorkspaceService,
+  PrManagementService,
+  ReviewAssistService,
+  ReviewCommentService,
+  RepositoryService,
   UnitTaskSchema,
   SubTaskSchema,
   SessionOutputEventSchema,
@@ -23,6 +28,8 @@ import {
   SubTaskCompletionReason,
   SessionOutputKind,
   NotificationType,
+  PrStatus,
+  PullRequestRecordSchema,
 } from "./gen/v1/dexdex_pb";
 
 // Mock localStorage
@@ -71,10 +78,10 @@ const mockUnitTasks = [
     unitTaskId: "task-004",
     title: "Add rate limiting middleware",
     description: "Implement token-bucket rate limiting for public API endpoints.",
-    status: UnitTaskStatus.QUEUED,
+    status: UnitTaskStatus.ACTION_REQUIRED,
     createdAt: timestampFromDate(new Date("2026-03-14T11:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-14T11:00:00Z")),
-    subTaskCount: 0,
+    subTaskCount: 1,
   }),
   create(UnitTaskSchema, {
     unitTaskId: "task-005",
@@ -125,6 +132,20 @@ const mockSubTasksFor002 = [
   }),
 ];
 
+const mockSubTasksFor004 = [
+  create(SubTaskSchema, {
+    subTaskId: "sub-004-1",
+    unitTaskId: "task-004",
+    type: SubTaskType.INITIAL_IMPLEMENTATION,
+    status: SubTaskStatus.WAITING_FOR_USER_INPUT,
+    completionReason: SubTaskCompletionReason.UNSPECIFIED,
+    sessionId: "sess-004-1",
+    createdAt: timestampFromDate(new Date("2026-03-14T11:00:00Z")),
+    updatedAt: timestampFromDate(new Date("2026-03-14T11:30:00Z")),
+    title: "Implement rate limiting logic.",
+  }),
+];
+
 const mockSessionOutput = [
   create(SessionOutputEventSchema, { sessionId: "sess-001-2", kind: SessionOutputKind.TEXT, body: "Starting PR creation for feat/auth-flow..." }),
   create(SessionOutputEventSchema, { sessionId: "sess-001-2", kind: SessionOutputKind.TOOL_CALL, body: "git.createBranch({ name: 'feat/auth-flow', base: 'main' })" }),
@@ -161,6 +182,12 @@ const mockNotifications = [
   }),
 ];
 
+const mockPullRequests = [
+  create(PullRequestRecordSchema, { prTrackingId: "pr-157", status: PrStatus.CI_FAILED }),
+  create(PullRequestRecordSchema, { prTrackingId: "pr-142", status: PrStatus.APPROVED }),
+  create(PullRequestRecordSchema, { prTrackingId: "pr-138", status: PrStatus.MERGED }),
+];
+
 function createTestTransport() {
   return createRouterTransport((router) => {
     router.service(TaskService, {
@@ -168,6 +195,7 @@ function createTestTransport() {
       listSubTasks: (req) => {
         if (req.unitTaskId === "task-001") return { subTasks: mockSubTasksFor001 };
         if (req.unitTaskId === "task-002") return { subTasks: mockSubTasksFor002 };
+        if (req.unitTaskId === "task-004") return { subTasks: mockSubTasksFor004 };
         return { subTasks: [] };
       },
       createUnitTask: (req) => ({
@@ -203,6 +231,19 @@ function createTestTransport() {
       listWorkspaces: () => ({ workspaces: [] }),
       getWorkspaceWorkStatus: () => ({ status: 0 }),
     });
+    router.service(PrManagementService, {
+      getPullRequest: () => ({ pullRequest: undefined }),
+      listPullRequests: () => ({ pullRequests: mockPullRequests }),
+    });
+    router.service(ReviewAssistService, {
+      listReviewAssistItems: () => ({ items: [] }),
+    });
+    router.service(ReviewCommentService, {
+      listReviewComments: () => ({ comments: [] }),
+    });
+    router.service(RepositoryService, {
+      getRepositoryGroup: () => ({ repositoryGroup: undefined }),
+    });
     // EventStreamService is server-streaming; provide a no-op stub
     router.service(EventStreamService, {
       streamWorkspaceEvents: async function* () {
@@ -212,7 +253,7 @@ function createTestTransport() {
   });
 }
 
-function renderWithProviders(ui: React.ReactElement) {
+function renderWithProviders(ui: React.ReactElement, { initialEntries = ["/tasks"] }: { initialEntries?: string[] } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -224,7 +265,9 @@ function renderWithProviders(ui: React.ReactElement) {
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={createTestTransport()}>
-        {ui}
+        <MemoryRouter initialEntries={initialEntries}>
+          {ui}
+        </MemoryRouter>
       </TransportProvider>
     </QueryClientProvider>,
   );
@@ -449,6 +492,38 @@ describe("App", () => {
     expect(screen.getByTestId("task-row-task-003")).toBeTruthy();
     expect(screen.queryByTestId("task-row-task-001")).toBeNull();
     expect(screen.queryByTestId("task-row-task-002")).toBeNull();
+  });
+
+  it("navigates to pull requests page via sidebar", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+    await user.click(screen.getByTestId("nav-prs"));
+    expect(await screen.findByTestId("pr-management-page")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Pull Requests" })).toBeTruthy();
+  });
+
+  it("displays pull requests with status badges", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+    await user.click(screen.getByTestId("nav-prs"));
+    expect(await screen.findByTestId("pr-row-pr-157")).toBeTruthy();
+    expect(screen.getByTestId("pr-row-pr-142")).toBeTruthy();
+    expect(screen.getByTestId("pr-row-pr-138")).toBeTruthy();
+  });
+
+  it("shows session input form for waiting-for-input subtask", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-row-task-004");
+    await user.click(screen.getByTestId("task-row-task-004"));
+    expect(await screen.findByTestId("session-input-form")).toBeTruthy();
+    expect(screen.getByTestId("session-input-textarea")).toBeTruthy();
+    expect(screen.getByTestId("session-input-submit")).toBeTruthy();
   });
 
   it("shows notifications in inbox with unread indicator", async () => {

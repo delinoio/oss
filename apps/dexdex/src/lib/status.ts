@@ -125,6 +125,26 @@ export enum AgentCliType {
   OPENCODE = "OPENCODE",
 }
 
+export enum PrStatus {
+  UNSPECIFIED = "UNSPECIFIED",
+  OPEN = "OPEN",
+  APPROVED = "APPROVED",
+  CHANGES_REQUESTED = "CHANGES_REQUESTED",
+  MERGED = "MERGED",
+  CLOSED = "CLOSED",
+  CI_FAILED = "CI_FAILED",
+}
+
+export const PR_STATUS_CONFIG: Record<PrStatus, StatusConfig> = {
+  [PrStatus.UNSPECIFIED]: { label: "Unknown", color: "var(--color-text-tertiary)", bgColor: "var(--color-bg-tertiary)", icon: "?" },
+  [PrStatus.OPEN]: { label: "Open", color: "var(--color-status-in-progress)", bgColor: "var(--color-status-in-progress-bg)", icon: "\u25CB" },
+  [PrStatus.APPROVED]: { label: "Approved", color: "var(--color-status-completed)", bgColor: "var(--color-status-completed-bg)", icon: "\u2713" },
+  [PrStatus.CHANGES_REQUESTED]: { label: "Changes Requested", color: "var(--color-status-action)", bgColor: "var(--color-status-action-bg)", icon: "!" },
+  [PrStatus.MERGED]: { label: "Merged", color: "var(--color-status-completed)", bgColor: "var(--color-status-completed-bg)", icon: "\u2713" },
+  [PrStatus.CLOSED]: { label: "Closed", color: "var(--color-status-cancelled)", bgColor: "var(--color-status-cancelled-bg)", icon: "\u2014" },
+  [PrStatus.CI_FAILED]: { label: "CI Failed", color: "var(--color-status-failed)", bgColor: "var(--color-status-failed-bg)", icon: "\u2717" },
+};
+
 export interface StatusConfig {
   label: string;
   color: string;

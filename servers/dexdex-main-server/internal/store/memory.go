@@ -41,17 +41,35 @@ type Store interface {
 	ListForkedSessions(workspaceID, parentSessionID string) []*dexdexv1.SessionSummary
 	ArchiveSession(workspaceID, sessionID string) error
 	GetLatestWaitingSession(workspaceID string) (*dexdexv1.SessionSummary, error)
+	// Repository group operations
+	AddRepositoryGroup(workspaceID string, group *dexdexv1.RepositoryGroup)
+	GetRepositoryGroup(workspaceID, groupID string) (*dexdexv1.RepositoryGroup, error)
+	ListRepositoryGroups(workspaceID string) []*dexdexv1.RepositoryGroup
+	// PR operations
+	AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord)
+	GetPullRequest(workspaceID, prTrackingID string) (*dexdexv1.PullRequestRecord, error)
+	ListPullRequests(workspaceID string) []*dexdexv1.PullRequestRecord
+	// Review assist operations (keyed by unitTaskID)
+	AddReviewAssistItem(workspaceID, unitTaskID string, item *dexdexv1.ReviewAssistItem)
+	ListReviewAssistItems(workspaceID, unitTaskID string) []*dexdexv1.ReviewAssistItem
+	// Review comment operations (keyed by prTrackingID)
+	AddReviewComment(workspaceID, prTrackingID string, comment *dexdexv1.ReviewComment)
+	ListReviewComments(workspaceID, prTrackingID string) []*dexdexv1.ReviewComment
 }
 
 // MemoryStore is a thread-safe in-memory implementation of Store.
 type MemoryStore struct {
 	mu               sync.RWMutex
 	workspaces       map[string]*dexdexv1.Workspace
-	unitTasks        map[string]map[string]*dexdexv1.UnitTask       // workspaceID -> taskID -> task
-	subTasks         map[string]map[string]*dexdexv1.SubTask        // workspaceID -> subTaskID -> subTask
-	notifications    map[string][]*dexdexv1.NotificationRecord      // workspaceID -> notifications
-	sessionOutputs   map[string][]*dexdexv1.SessionOutputEvent      // sessionID -> events
-	sessionSummaries map[string]map[string]*dexdexv1.SessionSummary // workspaceID -> sessionID -> summary
+	unitTasks        map[string]map[string]*dexdexv1.UnitTask           // workspaceID -> taskID -> task
+	subTasks         map[string]map[string]*dexdexv1.SubTask            // workspaceID -> subTaskID -> subTask
+	notifications    map[string][]*dexdexv1.NotificationRecord          // workspaceID -> notifications
+	sessionOutputs   map[string][]*dexdexv1.SessionOutputEvent          // sessionID -> events
+	sessionSummaries map[string]map[string]*dexdexv1.SessionSummary     // workspaceID -> sessionID -> summary
+	repoGroups       map[string]map[string]*dexdexv1.RepositoryGroup    // workspaceID -> groupID -> group
+	prRecords        map[string]map[string]*dexdexv1.PullRequestRecord  // workspaceID -> prTrackingID -> pr
+	reviewAssist     map[string]map[string][]*dexdexv1.ReviewAssistItem // workspaceID -> unitTaskID -> items
+	reviewComments   map[string]map[string][]*dexdexv1.ReviewComment    // workspaceID -> prTrackingID -> comments
 }
 
 // NewMemoryStore creates a new empty MemoryStore.
@@ -63,6 +81,10 @@ func NewMemoryStore() *MemoryStore {
 		notifications:    make(map[string][]*dexdexv1.NotificationRecord),
 		sessionOutputs:   make(map[string][]*dexdexv1.SessionOutputEvent),
 		sessionSummaries: make(map[string]map[string]*dexdexv1.SessionSummary),
+		repoGroups:       make(map[string]map[string]*dexdexv1.RepositoryGroup),
+		prRecords:        make(map[string]map[string]*dexdexv1.PullRequestRecord),
+		reviewAssist:     make(map[string]map[string][]*dexdexv1.ReviewAssistItem),
+		reviewComments:   make(map[string]map[string][]*dexdexv1.ReviewComment),
 	}
 }
 
@@ -416,4 +438,136 @@ func (s *MemoryStore) GetLatestWaitingSession(workspaceID string) (*dexdexv1.Ses
 		return nil, fmt.Errorf("no waiting session found: workspace=%s", workspaceID)
 	}
 	return latest, nil
+}
+
+// Repository group methods
+
+func (s *MemoryStore) AddRepositoryGroup(workspaceID string, group *dexdexv1.RepositoryGroup) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.repoGroups[workspaceID] == nil {
+		s.repoGroups[workspaceID] = make(map[string]*dexdexv1.RepositoryGroup)
+	}
+	s.repoGroups[workspaceID][group.RepositoryGroupId] = group
+}
+
+func (s *MemoryStore) GetRepositoryGroup(workspaceID, groupID string) (*dexdexv1.RepositoryGroup, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	groups, ok := s.repoGroups[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("repository group not found: workspace=%s id=%s", workspaceID, groupID)
+	}
+	group, ok := groups[groupID]
+	if !ok {
+		return nil, fmt.Errorf("repository group not found: workspace=%s id=%s", workspaceID, groupID)
+	}
+	return group, nil
+}
+
+func (s *MemoryStore) ListRepositoryGroups(workspaceID string) []*dexdexv1.RepositoryGroup {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	groups, ok := s.repoGroups[workspaceID]
+	if !ok {
+		return nil
+	}
+
+	result := make([]*dexdexv1.RepositoryGroup, 0, len(groups))
+	for _, g := range groups {
+		result = append(result, g)
+	}
+	return result
+}
+
+// Pull request methods
+
+func (s *MemoryStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.prRecords[workspaceID] == nil {
+		s.prRecords[workspaceID] = make(map[string]*dexdexv1.PullRequestRecord)
+	}
+	s.prRecords[workspaceID][pr.PrTrackingId] = pr
+}
+
+func (s *MemoryStore) GetPullRequest(workspaceID, prTrackingID string) (*dexdexv1.PullRequestRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	prs, ok := s.prRecords[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr, ok := prs[prTrackingID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	return pr, nil
+}
+
+func (s *MemoryStore) ListPullRequests(workspaceID string) []*dexdexv1.PullRequestRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	prs, ok := s.prRecords[workspaceID]
+	if !ok {
+		return nil
+	}
+
+	result := make([]*dexdexv1.PullRequestRecord, 0, len(prs))
+	for _, pr := range prs {
+		result = append(result, pr)
+	}
+	return result
+}
+
+// Review assist methods
+
+func (s *MemoryStore) AddReviewAssistItem(workspaceID, unitTaskID string, item *dexdexv1.ReviewAssistItem) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.reviewAssist[workspaceID] == nil {
+		s.reviewAssist[workspaceID] = make(map[string][]*dexdexv1.ReviewAssistItem)
+	}
+	s.reviewAssist[workspaceID][unitTaskID] = append(s.reviewAssist[workspaceID][unitTaskID], item)
+}
+
+func (s *MemoryStore) ListReviewAssistItems(workspaceID, unitTaskID string) []*dexdexv1.ReviewAssistItem {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	items, ok := s.reviewAssist[workspaceID]
+	if !ok {
+		return nil
+	}
+	return items[unitTaskID]
+}
+
+// Review comment methods
+
+func (s *MemoryStore) AddReviewComment(workspaceID, prTrackingID string, comment *dexdexv1.ReviewComment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.reviewComments[workspaceID] == nil {
+		s.reviewComments[workspaceID] = make(map[string][]*dexdexv1.ReviewComment)
+	}
+	s.reviewComments[workspaceID][prTrackingID] = append(s.reviewComments[workspaceID][prTrackingID], comment)
+}
+
+func (s *MemoryStore) ListReviewComments(workspaceID, prTrackingID string) []*dexdexv1.ReviewComment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	comments, ok := s.reviewComments[workspaceID]
+	if !ok {
+		return nil
+	}
+	return comments[prTrackingID]
 }
