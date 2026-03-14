@@ -236,6 +236,8 @@ enum DexDexComponent {
 ### Frontend Design Rules
 
 - Frontend work in `apps/` must follow Toss Design Guidelines for UX/UI decisions across web and mobile surfaces.
+- If a form has a single critical input, that input must receive focus when the form is shown.
+- Dialog UIs must support closing with the `Esc` key.
 
 ### Shell Command Safety Rules
 

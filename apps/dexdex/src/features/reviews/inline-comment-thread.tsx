@@ -3,8 +3,9 @@
  * Renders a thread of comments anchored to a specific file/line position.
  */
 
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 import type { ReviewComment } from "../../lib/mock-data";
+import { useFocusOnShow } from "../../hooks/use-dialog-accessibility";
 
 interface InlineCommentThreadProps {
   filePath: string;
@@ -29,6 +30,9 @@ export function InlineCommentThread({
 }: InlineCommentThreadProps) {
   const [replyText, setReplyText] = useState("");
   const [showReply, setShowReply] = useState(false);
+  const replyInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useFocusOnShow(showReply, replyInputRef);
 
   const isResolved = comments.length > 0 && comments[0].status === "RESOLVED";
 
@@ -116,6 +120,7 @@ export function InlineCommentThread({
         {showReply ? (
           <div>
             <textarea
+              ref={replyInputRef}
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
               onKeyDown={handleKeyDown}

@@ -31,6 +31,8 @@
 - Plan mode default is OFF.
 - Plan mode toggle is shown only for agents where `supports_plan_mode=true`.
 - Repository-group member order in UI maps directly to `display_order` payload sequence.
+- Dialog UI surfaces must close with `Esc`.
+- Forms with a single critical input must focus that input when shown.
 
 ## Build and Test
 - Local tests: `pnpm --filter dexdex test`

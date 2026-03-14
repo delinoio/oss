@@ -2,9 +2,10 @@
  * Plan decision controls for subtasks waiting for plan approval.
  */
 
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useRef, useState } from "react";
 import { PlanDecision, SubTaskStatus } from "../../lib/status";
 import type { SubTask } from "../../lib/mock-data";
+import { useFocusOnShow } from "../../hooks/use-dialog-accessibility";
 
 interface PlanDecisionsProps {
   subtask: SubTask;
@@ -14,6 +15,9 @@ interface PlanDecisionsProps {
 export function PlanDecisions({ subtask, onDecision }: PlanDecisionsProps) {
   const [revisionNote, setRevisionNote] = useState("");
   const [showReviseInput, setShowReviseInput] = useState(false);
+  const revisionInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useFocusOnShow(showReviseInput, revisionInputRef);
 
   if (subtask.status !== SubTaskStatus.WAITING_FOR_PLAN_APPROVAL) {
     return null;
@@ -69,6 +73,7 @@ export function PlanDecisions({ subtask, onDecision }: PlanDecisionsProps) {
       {showReviseInput && (
         <div style={{ marginTop: "var(--space-2)" }}>
           <textarea
+            ref={revisionInputRef}
             style={{
               width: "100%",
               padding: "var(--space-2)",

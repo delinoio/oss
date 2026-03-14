@@ -3,8 +3,9 @@
  * Supports Cmd/Ctrl+Enter to submit and Enter for newline.
  */
 
-import { type CSSProperties, useCallback, useState } from "react";
+import { type CSSProperties, useCallback, useRef, useState } from "react";
 import { useSubmitSessionInputMutation } from "../../hooks/use-dexdex-queries";
+import { useFocusOnShow } from "../../hooks/use-dialog-accessibility";
 
 interface SessionInputFormProps {
   workspaceId: string;
@@ -15,6 +16,9 @@ interface SessionInputFormProps {
 export function SessionInputForm({ workspaceId, sessionId, onSubmitted }: SessionInputFormProps) {
   const [inputText, setInputText] = useState("");
   const submitMutation = useSubmitSessionInputMutation();
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useFocusOnShow(true, inputRef);
 
   const handleSubmit = useCallback(() => {
     if (!inputText.trim()) return;
@@ -96,6 +100,7 @@ export function SessionInputForm({ workspaceId, sessionId, onSubmitted }: Sessio
     <div style={containerStyle} data-testid="session-input-form">
       <label style={labelStyle}>Session Input</label>
       <textarea
+        ref={inputRef}
         value={inputText}
         onChange={(e) => setInputText(e.target.value)}
         onKeyDown={handleKeyDown}
