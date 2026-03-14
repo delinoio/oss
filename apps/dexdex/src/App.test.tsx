@@ -13,6 +13,10 @@ import {
   SessionService,
   EventStreamService,
   WorkspaceService,
+  PrManagementService,
+  ReviewAssistService,
+  ReviewCommentService,
+  RepositoryService,
   UnitTaskSchema,
   SubTaskSchema,
   SessionOutputEventSchema,
@@ -23,6 +27,8 @@ import {
   SubTaskCompletionReason,
   SessionOutputKind,
   NotificationType,
+  PrStatus,
+  PullRequestRecordSchema,
 } from "./gen/v1/dexdex_pb";
 
 // Mock localStorage
@@ -175,6 +181,12 @@ const mockNotifications = [
   }),
 ];
 
+const mockPullRequests = [
+  create(PullRequestRecordSchema, { prTrackingId: "pr-157", status: PrStatus.CI_FAILED }),
+  create(PullRequestRecordSchema, { prTrackingId: "pr-142", status: PrStatus.APPROVED }),
+  create(PullRequestRecordSchema, { prTrackingId: "pr-138", status: PrStatus.MERGED }),
+];
+
 function createTestTransport() {
   return createRouterTransport((router) => {
     router.service(TaskService, {
@@ -217,6 +229,19 @@ function createTestTransport() {
       getWorkspace: () => ({ workspace: undefined }),
       listWorkspaces: () => ({ workspaces: [] }),
       getWorkspaceWorkStatus: () => ({ status: 0 }),
+    });
+    router.service(PrManagementService, {
+      getPullRequest: () => ({ pullRequest: undefined }),
+      listPullRequests: () => ({ pullRequests: mockPullRequests }),
+    });
+    router.service(ReviewAssistService, {
+      listReviewAssistItems: () => ({ items: [] }),
+    });
+    router.service(ReviewCommentService, {
+      listReviewComments: () => ({ comments: [] }),
+    });
+    router.service(RepositoryService, {
+      getRepositoryGroup: () => ({ repositoryGroup: undefined }),
     });
     // EventStreamService is server-streaming; provide a no-op stub
     router.service(EventStreamService, {
@@ -464,6 +489,27 @@ describe("App", () => {
     expect(screen.getByTestId("task-row-task-003")).toBeTruthy();
     expect(screen.queryByTestId("task-row-task-001")).toBeNull();
     expect(screen.queryByTestId("task-row-task-002")).toBeNull();
+  });
+
+  it("navigates to pull requests page via sidebar", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+    await user.click(screen.getByTestId("nav-prs"));
+    expect(await screen.findByTestId("pr-management-page")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Pull Requests" })).toBeTruthy();
+  });
+
+  it("displays pull requests with status badges", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+    await user.click(screen.getByTestId("nav-prs"));
+    expect(await screen.findByTestId("pr-row-pr-157")).toBeTruthy();
+    expect(screen.getByTestId("pr-row-pr-142")).toBeTruthy();
+    expect(screen.getByTestId("pr-row-pr-138")).toBeTruthy();
   });
 
   it("shows session input form for waiting-for-input subtask", async () => {

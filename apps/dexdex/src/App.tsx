@@ -12,6 +12,7 @@ import { TaskList } from "./features/tasks/task-list";
 import { TaskDetail } from "./features/tasks/task-detail";
 import { CreateDialog } from "./features/tasks/create-dialog";
 import { InboxPage } from "./features/inbox/inbox-page";
+import { PrManagementPage } from "./features/prs/pr-management-page";
 import { SettingsPage } from "./features/settings/settings-page";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useWorkspaceStream } from "./hooks/use-workspace-stream";
@@ -20,6 +21,7 @@ import { useGlobalShortcut } from "./hooks/use-global-shortcut";
 import {
   useListUnitTasks,
   useListNotifications,
+  useListPullRequests,
   useCreateUnitTaskMutation,
   useSubmitPlanDecisionMutation,
   useMarkNotificationReadMutation,
@@ -62,6 +64,8 @@ function App() {
   // Data state - Connect RPC queries replace mock data
   const { data: tasks = [] } = useListUnitTasks(WORKSPACE_ID);
   const { data: notifications = [] } = useListNotifications(WORKSPACE_ID);
+  const { data: pullRequestsData } = useListPullRequests(WORKSPACE_ID);
+  const pullRequests = pullRequestsData?.pullRequests ?? [];
   const markReadMutation = useMarkNotificationReadMutation();
 
   // Apply initial theme
@@ -241,6 +245,10 @@ function App() {
           onMarkRead={handleMarkRead}
         />
       );
+    }
+
+    if (currentPath === "/prs") {
+      return <PrManagementPage pullRequests={pullRequests} />;
     }
 
     if (currentPath === "/settings") {

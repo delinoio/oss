@@ -55,6 +55,13 @@ export function useWorkspaceStream({ workspaceId, onStatusChange }: UseWorkspace
             break;
           case StreamEventType.PR_UPDATED:
             queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.PrManagementService"] });
+            break;
+          case StreamEventType.REVIEW_ASSIST_UPDATED:
+            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewAssistService"] });
+            break;
+          case StreamEventType.INLINE_COMMENT_UPDATED:
+            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
             break;
           case StreamEventType.SESSION_FORK_UPDATED:
             queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
