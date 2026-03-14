@@ -389,7 +389,121 @@ func (d *Dispatcher) handleExecutionComplete(workspaceID string, subTask *dexdex
 		d.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_TASK_UPDATED, &stream.TaskPayload{Task: updatedTask})
 	}
 
+	// Auto-detect PRs from commit chain and session output.
+	if len(subTask.CommitChain) > 0 {
+		d.detectAndTrackPRs(workspaceID, subTask, unitTask)
+	}
+
 	d.publishWorkStatusUpdate(workspaceID)
+}
+
+// detectAndTrackPRs scans session output for PR URLs created by agents
+// and registers them for tracking.
+func (d *Dispatcher) detectAndTrackPRs(workspaceID string, subTask *dexdexv1.SubTask, unitTask *dexdexv1.UnitTask) {
+	outputs := d.store.GetSessionOutputs(subTask.SessionId)
+	for _, output := range outputs {
+		prTrackingID := extractPRTrackingID(output.Body)
+		if prTrackingID == "" {
+			continue
+		}
+
+		// Check if already tracked.
+		existing := d.store.ListPullRequests(workspaceID)
+		alreadyTracked := false
+		for _, pr := range existing {
+			if pr.PrTrackingId == prTrackingID {
+				alreadyTracked = true
+				break
+			}
+		}
+		if alreadyTracked {
+			continue
+		}
+
+		d.logger.Info("auto-detected PR from agent output",
+			"workspace_id", workspaceID,
+			"unit_task_id", unitTask.UnitTaskId,
+			"pr_tracking_id", prTrackingID,
+		)
+
+		pr := &dexdexv1.PullRequestRecord{
+			PrTrackingId: prTrackingID,
+			Status:       dexdexv1.PrStatus_PR_STATUS_OPEN,
+		}
+		d.store.AddPullRequest(workspaceID, pr)
+
+		d.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_PR_UPDATED, &stream.PrUpdatedPayload{
+			PrUpdated: &dexdexv1.PrUpdatedEvent{PullRequest: pr},
+		})
+	}
+}
+
+// extractPRTrackingID attempts to find a GitHub PR URL in the text
+// and converts it to a tracking ID like "owner/repo#123".
+func extractPRTrackingID(text string) string {
+	// Match patterns like https://github.com/owner/repo/pull/123
+	const prefix = "github.com/"
+	idx := 0
+	for {
+		pos := indexSubstring(text[idx:], prefix)
+		if pos < 0 {
+			break
+		}
+		start := idx + pos + len(prefix)
+		idx = start
+
+		// Extract owner/repo/pull/number
+		rest := text[start:]
+		parts := splitN(rest, "/", 4)
+		if len(parts) < 4 {
+			continue
+		}
+		if parts[2] != "pull" {
+			continue
+		}
+
+		// Extract the number (may have trailing non-digit chars)
+		numStr := ""
+		for _, ch := range parts[3] {
+			if ch >= '0' && ch <= '9' {
+				numStr += string(ch)
+			} else {
+				break
+			}
+		}
+		if numStr == "" {
+			continue
+		}
+
+		return fmt.Sprintf("%s/%s#%s", parts[0], parts[1], numStr)
+	}
+	return ""
+}
+
+// indexSubstring returns the index of the first occurrence of substr in s,
+// or -1 if not present.
+func indexSubstring(s, substr string) int {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
+}
+
+// splitN splits a string by sep into at most n parts.
+func splitN(s, sep string, n int) []string {
+	var parts []string
+	for i := 0; i < n-1; i++ {
+		idx := indexSubstring(s, sep)
+		if idx < 0 {
+			break
+		}
+		parts = append(parts, s[:idx])
+		s = s[idx+len(sep):]
+	}
+	parts = append(parts, s)
+	return parts
 }
 
 func (d *Dispatcher) handleExecutionFailure(workspaceID string, subTask *dexdexv1.SubTask, unitTask *dexdexv1.UnitTask) {

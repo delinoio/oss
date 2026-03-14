@@ -288,6 +288,15 @@ func (p *WorkspaceWorkStatusUpdatedPayload) setPayload(resp *dexdexv1.StreamWork
 	resp.Payload = &dexdexv1.StreamWorkspaceEventsResponse_WorkspaceWorkStatusUpdated{WorkspaceWorkStatusUpdated: p.WorkspaceWorkStatusUpdated}
 }
 
+// ReviewAssistUpdatedPayload wraps a ReviewAssistUpdatedEvent for publishing.
+type ReviewAssistUpdatedPayload struct {
+	ReviewAssistUpdated *dexdexv1.ReviewAssistUpdatedEvent
+}
+
+func (p *ReviewAssistUpdatedPayload) setPayload(resp *dexdexv1.StreamWorkspaceEventsResponse) {
+	resp.Payload = &dexdexv1.StreamWorkspaceEventsResponse_ReviewAssistUpdated{ReviewAssistUpdated: p.ReviewAssistUpdated}
+}
+
 // InlineCommentUpdatedPayload wraps an InlineCommentUpdatedEvent for publishing.
 type InlineCommentUpdatedPayload struct {
 	InlineCommentUpdated *dexdexv1.InlineCommentUpdatedEvent
