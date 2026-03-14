@@ -8,3 +8,33 @@ import { SessionService } from "./dexdex_pb";
  * @generated from rpc dexdex.v1.SessionService.GetSessionOutput
  */
 export const getSessionOutput = SessionService.method.getSessionOutput;
+
+/**
+ * @generated from rpc dexdex.v1.SessionService.ListSessionCapabilities
+ */
+export const listSessionCapabilities = SessionService.method.listSessionCapabilities;
+
+/**
+ * @generated from rpc dexdex.v1.SessionService.ForkSession
+ */
+export const forkSession = SessionService.method.forkSession;
+
+/**
+ * @generated from rpc dexdex.v1.SessionService.ListForkedSessions
+ */
+export const listForkedSessions = SessionService.method.listForkedSessions;
+
+/**
+ * @generated from rpc dexdex.v1.SessionService.ArchiveForkedSession
+ */
+export const archiveForkedSession = SessionService.method.archiveForkedSession;
+
+/**
+ * @generated from rpc dexdex.v1.SessionService.GetLatestWaitingSession
+ */
+export const getLatestWaitingSession = SessionService.method.getLatestWaitingSession;
+
+/**
+ * @generated from rpc dexdex.v1.SessionService.SubmitSessionInput
+ */
+export const submitSessionInput = SessionService.method.submitSessionInput;

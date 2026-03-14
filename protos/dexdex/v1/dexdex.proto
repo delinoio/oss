@@ -96,6 +96,7 @@ enum NotificationType {
   NOTIFICATION_TYPE_PR_REVIEW_ACTIVITY = 3;
   NOTIFICATION_TYPE_PR_CI_FAILURE = 4;
   NOTIFICATION_TYPE_AGENT_SESSION_FAILED = 5;
+  NOTIFICATION_TYPE_AGENT_INPUT_REQUIRED = 6;
 }
 
 enum StreamEventType {
@@ -108,6 +109,8 @@ enum StreamEventType {
   STREAM_EVENT_TYPE_REVIEW_ASSIST_UPDATED = 6;
   STREAM_EVENT_TYPE_INLINE_COMMENT_UPDATED = 7;
   STREAM_EVENT_TYPE_NOTIFICATION_CREATED = 8;
+  STREAM_EVENT_TYPE_SESSION_FORK_UPDATED = 9;
+  STREAM_EVENT_TYPE_WORKSPACE_WORK_STATUS_UPDATED = 10;
 }
 
 enum PlanDecision {
@@ -115,6 +118,35 @@ enum PlanDecision {
   PLAN_DECISION_APPROVE = 1;
   PLAN_DECISION_REVISE = 2;
   PLAN_DECISION_REJECT = 3;
+}
+
+enum SessionForkIntent {
+  SESSION_FORK_INTENT_UNSPECIFIED = 0;
+  SESSION_FORK_INTENT_EXPLORE_ALTERNATIVE = 1;
+  SESSION_FORK_INTENT_BRANCH_EXPERIMENT = 2;
+}
+
+enum SessionForkStatus {
+  SESSION_FORK_STATUS_UNSPECIFIED = 0;
+  SESSION_FORK_STATUS_ACTIVE = 1;
+  SESSION_FORK_STATUS_ARCHIVED = 2;
+}
+
+enum WorkspaceWorkStatus {
+  WORKSPACE_WORK_STATUS_UNSPECIFIED = 0;
+  WORKSPACE_WORK_STATUS_FAILED = 1;
+  WORKSPACE_WORK_STATUS_ACTION_REQUIRED = 2;
+  WORKSPACE_WORK_STATUS_WAITING_FOR_INPUT = 3;
+  WORKSPACE_WORK_STATUS_RUNNING = 4;
+  WORKSPACE_WORK_STATUS_IDLE = 5;
+  WORKSPACE_WORK_STATUS_DISCONNECTED = 6;
+}
+
+enum AgentCliType {
+  AGENT_CLI_TYPE_UNSPECIFIED = 0;
+  AGENT_CLI_TYPE_CODEX_CLI = 1;
+  AGENT_CLI_TYPE_CLAUDE_CODE = 2;
+  AGENT_CLI_TYPE_OPENCODE = 3;
 }
 
 message Workspace {
@@ -206,6 +238,31 @@ message NotificationCreatedEvent {
   NotificationRecord notification = 1;
 }
 
+message SessionSummary {
+  string session_id = 1;
+  string parent_session_id = 2;
+  string root_session_id = 3;
+  SessionForkStatus fork_status = 4;
+  uint64 forked_from_sequence = 5;
+  AgentSessionStatus agent_session_status = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message AgentCapability {
+  AgentCliType agent_cli_type = 1;
+  bool supports_fork = 2;
+  string display_name = 3;
+}
+
+message SessionForkUpdatedEvent {
+  SessionSummary session_summary = 1;
+}
+
+message WorkspaceWorkStatusUpdatedEvent {
+  string workspace_id = 1;
+  WorkspaceWorkStatus status = 2;
+}
+
 message StreamWorkspaceEventsResponse {
   uint64 sequence = 1;
   string workspace_id = 2;
@@ -229,6 +286,10 @@ message StreamWorkspaceEventsResponse {
     InlineCommentUpdatedEvent inline_comment_updated = 16;
     // STREAM_EVENT_TYPE_NOTIFICATION_CREATED
     NotificationCreatedEvent notification_created = 17;
+    // STREAM_EVENT_TYPE_SESSION_FORK_UPDATED
+    SessionForkUpdatedEvent session_fork_updated = 18;
+    // STREAM_EVENT_TYPE_WORKSPACE_WORK_STATUS_UPDATED
+    WorkspaceWorkStatusUpdatedEvent workspace_work_status_updated = 19;
   }
 }
 
@@ -407,6 +468,94 @@ message ListSubTasksResponse {
   repeated SubTask sub_tasks = 1;
 }
 
+// Session fork and input handoff messages.
+
+message ListSessionCapabilitiesRequest {
+  string workspace_id = 1;
+}
+
+message ListSessionCapabilitiesResponse {
+  repeated AgentCapability capabilities = 1;
+}
+
+message ForkSessionRequest {
+  string workspace_id = 1;
+  string parent_session_id = 2;
+  SessionForkIntent fork_intent = 3;
+  string prompt = 4;
+}
+
+message ForkSessionResponse {
+  SessionSummary forked_session = 1;
+}
+
+message ListForkedSessionsRequest {
+  string workspace_id = 1;
+  string parent_session_id = 2;
+}
+
+message ListForkedSessionsResponse {
+  repeated SessionSummary sessions = 1;
+}
+
+message ArchiveForkedSessionRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+}
+
+message ArchiveForkedSessionResponse {}
+
+message GetLatestWaitingSessionRequest {
+  string workspace_id = 1;
+}
+
+message GetLatestWaitingSessionResponse {
+  SessionSummary session = 1;
+}
+
+message SubmitSessionInputRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+  string input_text = 3;
+}
+
+message SubmitSessionInputResponse {}
+
+message GetWorkspaceWorkStatusRequest {
+  string workspace_id = 1;
+}
+
+message GetWorkspaceWorkStatusResponse {
+  WorkspaceWorkStatus status = 1;
+}
+
+message MarkNotificationReadRequest {
+  string workspace_id = 1;
+  string notification_id = 2;
+}
+
+message MarkNotificationReadResponse {
+  NotificationRecord notification = 1;
+}
+
+// Worker adapter messages.
+
+message GetAgentCapabilitiesRequest {}
+
+message GetAgentCapabilitiesResponse {
+  repeated AgentCapability capabilities = 1;
+}
+
+message ForkSessionAdapterRequest {
+  string session_id = 1;
+  SessionForkIntent fork_intent = 2;
+  string prompt = 3;
+}
+
+message ForkSessionAdapterResponse {
+  string forked_session_id = 1;
+}
+
 message UpdateUnitTaskStatusRequest {
   string workspace_id = 1;
   string unit_task_id = 2;
@@ -420,6 +569,7 @@ message UpdateUnitTaskStatusResponse {
 service WorkspaceService {
   rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
+  rpc GetWorkspaceWorkStatus(GetWorkspaceWorkStatusRequest) returns (GetWorkspaceWorkStatusResponse);
 }
 
 service RepositoryService {
@@ -438,6 +588,12 @@ service TaskService {
 
 service SessionService {
   rpc GetSessionOutput(GetSessionOutputRequest) returns (GetSessionOutputResponse);
+  rpc ListSessionCapabilities(ListSessionCapabilitiesRequest) returns (ListSessionCapabilitiesResponse);
+  rpc ForkSession(ForkSessionRequest) returns (ForkSessionResponse);
+  rpc ListForkedSessions(ListForkedSessionsRequest) returns (ListForkedSessionsResponse);
+  rpc ArchiveForkedSession(ArchiveForkedSessionRequest) returns (ArchiveForkedSessionResponse);
+  rpc GetLatestWaitingSession(GetLatestWaitingSessionRequest) returns (GetLatestWaitingSessionResponse);
+  rpc SubmitSessionInput(SubmitSessionInputRequest) returns (SubmitSessionInputResponse);
 }
 
 service PrManagementService {
@@ -458,6 +614,12 @@ service BadgeThemeService {
 
 service NotificationService {
   rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse);
+  rpc MarkNotificationRead(MarkNotificationReadRequest) returns (MarkNotificationReadResponse);
+}
+
+service WorkerSessionAdapterService {
+  rpc GetAgentCapabilities(GetAgentCapabilitiesRequest) returns (GetAgentCapabilitiesResponse);
+  rpc ForkSessionAdapter(ForkSessionAdapterRequest) returns (ForkSessionAdapterResponse);
 }
 
 service EventStreamService {

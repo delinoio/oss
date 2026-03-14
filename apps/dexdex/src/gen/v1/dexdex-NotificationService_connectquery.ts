@@ -8,3 +8,8 @@ import { NotificationService } from "./dexdex_pb";
  * @generated from rpc dexdex.v1.NotificationService.ListNotifications
  */
 export const listNotifications = NotificationService.method.listNotifications;
+
+/**
+ * @generated from rpc dexdex.v1.NotificationService.MarkNotificationRead
+ */
+export const markNotificationRead = NotificationService.method.markNotificationRead;
