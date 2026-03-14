@@ -17,7 +17,7 @@ import (
 type Dispatcher struct {
 	client *Client
 	store  store.Store
-	fanOut *stream.FanOut
+	fanOut stream.EventBroadcaster
 	logger *slog.Logger
 
 	mu          sync.RWMutex
@@ -26,7 +26,7 @@ type Dispatcher struct {
 }
 
 // NewDispatcher creates a new execution dispatcher.
-func NewDispatcher(client *Client, store store.Store, fanOut *stream.FanOut, logger *slog.Logger) *Dispatcher {
+func NewDispatcher(client *Client, store store.Store, fanOut stream.EventBroadcaster, logger *slog.Logger) *Dispatcher {
 	return &Dispatcher{
 		client:      client,
 		store:       store,

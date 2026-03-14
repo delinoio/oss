@@ -17,7 +17,7 @@ import (
 type TaskHandler struct {
 	dexdexv1connect.UnimplementedTaskServiceHandler
 	store      store.Store
-	fanOut     *stream.FanOut
+	fanOut     stream.EventBroadcaster
 	dispatcher Dispatcher
 	logger     *slog.Logger
 }
@@ -31,7 +31,7 @@ type Dispatcher interface {
 }
 
 // NewTaskHandler creates a new TaskHandler.
-func NewTaskHandler(s store.Store, fanOut *stream.FanOut, dispatcher Dispatcher, logger *slog.Logger) *TaskHandler {
+func NewTaskHandler(s store.Store, fanOut stream.EventBroadcaster, dispatcher Dispatcher, logger *slog.Logger) *TaskHandler {
 	return &TaskHandler{
 		store:      s,
 		fanOut:     fanOut,

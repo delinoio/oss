@@ -287,3 +287,12 @@ type WorkspaceWorkStatusUpdatedPayload struct {
 func (p *WorkspaceWorkStatusUpdatedPayload) setPayload(resp *dexdexv1.StreamWorkspaceEventsResponse) {
 	resp.Payload = &dexdexv1.StreamWorkspaceEventsResponse_WorkspaceWorkStatusUpdated{WorkspaceWorkStatusUpdated: p.WorkspaceWorkStatusUpdated}
 }
+
+// InlineCommentUpdatedPayload wraps an InlineCommentUpdatedEvent for publishing.
+type InlineCommentUpdatedPayload struct {
+	InlineCommentUpdated *dexdexv1.InlineCommentUpdatedEvent
+}
+
+func (p *InlineCommentUpdatedPayload) setPayload(resp *dexdexv1.StreamWorkspaceEventsResponse) {
+	resp.Payload = &dexdexv1.StreamWorkspaceEventsResponse_InlineCommentUpdated{InlineCommentUpdated: p.InlineCommentUpdated}
+}

@@ -17,12 +17,12 @@ const heartbeatInterval = 30 * time.Second
 // EventStreamHandler implements the EventStreamService Connect RPC handler.
 type EventStreamHandler struct {
 	dexdexv1connect.UnimplementedEventStreamServiceHandler
-	fanOut *eventstream.FanOut
+	fanOut eventstream.EventBroadcaster
 	logger *slog.Logger
 }
 
 // NewEventStreamHandler creates a new EventStreamHandler.
-func NewEventStreamHandler(fanOut *eventstream.FanOut, logger *slog.Logger) *EventStreamHandler {
+func NewEventStreamHandler(fanOut eventstream.EventBroadcaster, logger *slog.Logger) *EventStreamHandler {
 	return &EventStreamHandler{
 		fanOut: fanOut,
 		logger: logger,

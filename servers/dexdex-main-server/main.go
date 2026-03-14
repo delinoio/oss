@@ -44,8 +44,21 @@ func main() {
 		}
 	}
 
-	// Initialize event stream fan-out with configurable retention buffer
-	fanOut := stream.NewFanOut(cfg.StreamRetention, logger)
+	// Initialize event stream broadcaster with configurable retention buffer.
+	// Use Redis-backed fan-out in SCALE deployment mode, otherwise in-process.
+	var fanOut stream.EventBroadcaster
+	if cfg.DeploymentMode == "SCALE" && cfg.RedisURL != "" {
+		redisFanOut, err := stream.NewRedisFanOut(cfg.RedisURL, cfg.StreamRetention, logger)
+		if err != nil {
+			logger.Error("failed to initialize redis fan-out", "error", err)
+			os.Exit(1)
+		}
+		fanOut = redisFanOut
+		logger.Info("using Redis-backed event broadcaster")
+	} else {
+		fanOut = stream.NewFanOut(cfg.StreamRetention, logger)
+		logger.Info("using in-process event broadcaster")
+	}
 
 	// Create worker client and dispatcher
 	workerClient := worker.NewClient(cfg.WorkerServerURL, logger)
@@ -87,9 +100,13 @@ func main() {
 	reviewAssistPath, reviewAssistHTTPHandler := dexdexv1connect.NewReviewAssistServiceHandler(reviewAssistHandler)
 	mux.Handle(reviewAssistPath, reviewAssistHTTPHandler)
 
-	reviewCommentHandler := handler.NewReviewCommentHandler(dataStore, logger)
+	reviewCommentHandler := handler.NewReviewCommentHandler(dataStore, fanOut, logger)
 	reviewCommentPath, reviewCommentHTTPHandler := dexdexv1connect.NewReviewCommentServiceHandler(reviewCommentHandler)
 	mux.Handle(reviewCommentPath, reviewCommentHTTPHandler)
+
+	badgeThemeHandler := handler.NewBadgeThemeHandler(dataStore, logger)
+	badgeThemePath, badgeThemeHTTPHandler := dexdexv1connect.NewBadgeThemeServiceHandler(badgeThemeHandler)
+	mux.Handle(badgeThemePath, badgeThemeHTTPHandler)
 
 	// Health check endpoint
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {

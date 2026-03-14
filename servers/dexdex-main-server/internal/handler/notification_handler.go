@@ -15,12 +15,12 @@ import (
 type NotificationHandler struct {
 	dexdexv1connect.UnimplementedNotificationServiceHandler
 	store  store.Store
-	fanOut *stream.FanOut
+	fanOut stream.EventBroadcaster
 	logger *slog.Logger
 }
 
 // NewNotificationHandler creates a new NotificationHandler.
-func NewNotificationHandler(s store.Store, fanOut *stream.FanOut, logger *slog.Logger) *NotificationHandler {
+func NewNotificationHandler(s store.Store, fanOut stream.EventBroadcaster, logger *slog.Logger) *NotificationHandler {
 	return &NotificationHandler{
 		store:  s,
 		fanOut: fanOut,

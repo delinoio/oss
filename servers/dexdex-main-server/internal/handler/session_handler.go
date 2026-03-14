@@ -24,12 +24,12 @@ type SessionHandler struct {
 	store        store.Store
 	workerClient WorkerClientInterface
 	dispatcher   Dispatcher
-	fanOut       *stream.FanOut
+	fanOut       stream.EventBroadcaster
 	logger       *slog.Logger
 }
 
 // NewSessionHandler creates a new SessionHandler.
-func NewSessionHandler(s store.Store, wc WorkerClientInterface, dispatcher Dispatcher, fo *stream.FanOut, logger *slog.Logger) *SessionHandler {
+func NewSessionHandler(s store.Store, wc WorkerClientInterface, dispatcher Dispatcher, fo stream.EventBroadcaster, logger *slog.Logger) *SessionHandler {
 	return &SessionHandler{
 		store:        s,
 		workerClient: wc,

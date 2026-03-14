@@ -17,14 +17,14 @@ import (
 // PRPoller periodically polls GitHub for PR status updates.
 type PRPoller struct {
 	store        store.Store
-	fanOut       *stream.FanOut
+	fanOut       stream.EventBroadcaster
 	githubClient *GitHubClient
 	pollInterval time.Duration
 	logger       *slog.Logger
 }
 
 // NewPRPoller creates a new PR poller.
-func NewPRPoller(s store.Store, fo *stream.FanOut, gh *GitHubClient, pollInterval time.Duration, logger *slog.Logger) *PRPoller {
+func NewPRPoller(s store.Store, fo stream.EventBroadcaster, gh *GitHubClient, pollInterval time.Duration, logger *slog.Logger) *PRPoller {
 	return &PRPoller{
 		store:        s,
 		fanOut:       fo,
