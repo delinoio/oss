@@ -12,6 +12,7 @@ import (
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/handler"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/store"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/stream"
+	"github.com/delinoio/oss/servers/dexdex-main-server/internal/worker"
 )
 
 func main() {
@@ -47,7 +48,8 @@ func main() {
 	notifPath, notifHandler := dexdexv1connect.NewNotificationServiceHandler(notificationHandler)
 	mux.Handle(notifPath, notifHandler)
 
-	sessionHandler := handler.NewSessionHandler(memStore, logger)
+	workerClient := worker.NewClient(logger)
+	sessionHandler := handler.NewSessionHandler(memStore, workerClient, fanOut, logger)
 	sessionPath, sessionHTTPHandler := dexdexv1connect.NewSessionServiceHandler(sessionHandler)
 	mux.Handle(sessionPath, sessionHTTPHandler)
 
