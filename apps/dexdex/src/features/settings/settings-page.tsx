@@ -5,9 +5,14 @@
 import type { CSSProperties } from "react";
 import { useAppStore } from "../../stores/app-store";
 import { CredentialManager } from "./credential-manager";
+import { useGetBadgeTheme } from "../../hooks/use-dexdex-queries";
+
+const WORKSPACE_ID = "workspace-default";
 
 export function SettingsPage() {
   const { theme, setTheme } = useAppStore();
+  const { data: badgeThemeData } = useGetBadgeTheme(WORKSPACE_ID);
+  const currentBadgeTheme = badgeThemeData?.theme?.themeName ?? "Default";
 
   const containerStyle: CSSProperties = {
     height: "100%",
@@ -106,6 +111,28 @@ export function SettingsPage() {
             <ShortcutRow keys={["G", "T"]} description="Go to Tasks" />
             <ShortcutRow keys={["G", "I"]} description="Go to Inbox" />
             <ShortcutRow keys={["C"]} description="Create new task" />
+          </div>
+        </div>
+
+        {/* Badge Theme Section */}
+        <div style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Badge Theme</h2>
+          <div
+            style={{
+              fontSize: "var(--font-size-sm)",
+              color: "var(--color-text-secondary)",
+              marginBottom: "var(--space-2)",
+            }}
+          >
+            Current theme: <strong>{currentBadgeTheme}</strong>
+          </div>
+          <div
+            style={{
+              fontSize: "var(--font-size-xs)",
+              color: "var(--color-text-tertiary)",
+            }}
+          >
+            Badge theme customization is managed by workspace settings.
           </div>
         </div>
 
