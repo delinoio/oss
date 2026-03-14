@@ -56,6 +56,22 @@ func main() {
 	eventStreamPath, eventStreamHTTPHandler := dexdexv1connect.NewEventStreamServiceHandler(eventStreamHandler)
 	mux.Handle(eventStreamPath, eventStreamHTTPHandler)
 
+	repoHandler := handler.NewRepositoryHandler(memStore, logger)
+	repoPath, repoHTTPHandler := dexdexv1connect.NewRepositoryServiceHandler(repoHandler)
+	mux.Handle(repoPath, repoHTTPHandler)
+
+	prHandler := handler.NewPrHandler(memStore, logger)
+	prPath, prHTTPHandler := dexdexv1connect.NewPrManagementServiceHandler(prHandler)
+	mux.Handle(prPath, prHTTPHandler)
+
+	reviewAssistHandler := handler.NewReviewAssistHandler(memStore, logger)
+	reviewAssistPath, reviewAssistHTTPHandler := dexdexv1connect.NewReviewAssistServiceHandler(reviewAssistHandler)
+	mux.Handle(reviewAssistPath, reviewAssistHTTPHandler)
+
+	reviewCommentHandler := handler.NewReviewCommentHandler(memStore, logger)
+	reviewCommentPath, reviewCommentHTTPHandler := dexdexv1connect.NewReviewCommentServiceHandler(reviewCommentHandler)
+	mux.Handle(reviewCommentPath, reviewCommentHTTPHandler)
+
 	// Health check endpoint
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

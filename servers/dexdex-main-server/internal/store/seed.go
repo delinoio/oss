@@ -358,6 +358,70 @@ func SeedData(s Store) {
 		s.AddSessionSummary(defaultWorkspaceID, summary)
 	}
 
+	// Repository groups
+	repoGroups := []*dexdexv1.RepositoryGroup{
+		{
+			RepositoryGroupId: "repo-group-main",
+			Repositories: []*dexdexv1.RepositoryRef{
+				{RepositoryId: "repo-oss", RepositoryUrl: "https://github.com/delinoio/oss", BranchRef: "main"},
+			},
+		},
+		{
+			RepositoryGroupId: "repo-group-multi",
+			Repositories: []*dexdexv1.RepositoryRef{
+				{RepositoryId: "repo-oss", RepositoryUrl: "https://github.com/delinoio/oss", BranchRef: "main"},
+				{RepositoryId: "repo-infra", RepositoryUrl: "https://github.com/delinoio/infra", BranchRef: "main"},
+			},
+		},
+	}
+
+	for _, rg := range repoGroups {
+		s.AddRepositoryGroup(defaultWorkspaceID, rg)
+	}
+
+	// Pull request records
+	prRecords := []*dexdexv1.PullRequestRecord{
+		{PrTrackingId: "pr-157", Status: dexdexv1.PrStatus_PR_STATUS_CI_FAILED},
+		{PrTrackingId: "pr-142", Status: dexdexv1.PrStatus_PR_STATUS_APPROVED},
+		{PrTrackingId: "pr-138", Status: dexdexv1.PrStatus_PR_STATUS_MERGED},
+		{PrTrackingId: "pr-160", Status: dexdexv1.PrStatus_PR_STATUS_OPEN},
+		{PrTrackingId: "pr-145", Status: dexdexv1.PrStatus_PR_STATUS_CHANGES_REQUESTED},
+	}
+
+	for _, pr := range prRecords {
+		s.AddPullRequest(defaultWorkspaceID, pr)
+	}
+
+	// Review assist items (keyed by unitTaskID)
+	type reviewAssistEntry struct {
+		unitTaskID string
+		item       *dexdexv1.ReviewAssistItem
+	}
+	reviewItems := []reviewAssistEntry{
+		{"task-auth", &dexdexv1.ReviewAssistItem{ReviewAssistId: "ra-1", Body: "The authentication middleware should validate token expiry before processing the request."}},
+		{"task-auth", &dexdexv1.ReviewAssistItem{ReviewAssistId: "ra-2", Body: "Consider adding rate limiting to the OAuth callback endpoint to prevent abuse."}},
+		{"task-ci", &dexdexv1.ReviewAssistItem{ReviewAssistId: "ra-3", Body: "The error handling in the serialization layer should use typed error codes instead of string matching."}},
+	}
+
+	for _, entry := range reviewItems {
+		s.AddReviewAssistItem(defaultWorkspaceID, entry.unitTaskID, entry.item)
+	}
+
+	// Review comments (keyed by prTrackingID)
+	type reviewCommentEntry struct {
+		prTrackingID string
+		comment      *dexdexv1.ReviewComment
+	}
+	reviewComments := []reviewCommentEntry{
+		{"pr-157", &dexdexv1.ReviewComment{ReviewCommentId: "rc-1", Body: "This function has a potential nil pointer dereference on line 42. Please add a nil check before accessing the token claims."}},
+		{"pr-157", &dexdexv1.ReviewComment{ReviewCommentId: "rc-2", Body: "The session middleware should use secure cookie settings in production."}},
+		{"pr-145", &dexdexv1.ReviewComment{ReviewCommentId: "rc-3", Body: "Consider using a switch statement here instead of multiple if-else chains for better readability."}},
+	}
+
+	for _, entry := range reviewComments {
+		s.AddReviewComment(defaultWorkspaceID, entry.prTrackingID, entry.comment)
+	}
+
 	// Session output events for sess-auth-2 (PR creation in progress)
 	sessAuth2Events := []*dexdexv1.SessionOutputEvent{
 		{SessionId: "sess-auth-2", Kind: dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_TEXT, Body: "Starting PR creation for authentication flow changes."},
