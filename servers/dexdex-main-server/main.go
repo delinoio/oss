@@ -11,6 +11,7 @@ import (
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/handler"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/store"
+	"github.com/delinoio/oss/servers/dexdex-main-server/internal/stream"
 )
 
 func main() {
@@ -25,10 +26,14 @@ func main() {
 		logger.Info("seed data loaded")
 	}
 
+	// Initialize event stream fan-out with 1000-event retention buffer
+	fanOut := stream.NewFanOut(1000, logger)
+
 	// Create handlers
 	workspaceHandler := handler.NewWorkspaceHandler(memStore, logger)
 	taskHandler := handler.NewTaskHandler(memStore, logger)
 	notificationHandler := handler.NewNotificationHandler(memStore, logger)
+	eventStreamHandler := handler.NewEventStreamHandler(fanOut, logger)
 
 	// Register Connect RPC service handlers
 	mux := http.NewServeMux()
@@ -41,6 +46,9 @@ func main() {
 
 	notifPath, notifHandler := dexdexv1connect.NewNotificationServiceHandler(notificationHandler)
 	mux.Handle(notifPath, notifHandler)
+
+	eventStreamPath, eventStreamHTTPHandler := dexdexv1connect.NewEventStreamServiceHandler(eventStreamHandler)
+	mux.Handle(eventStreamPath, eventStreamHTTPHandler)
 
 	// Health check endpoint
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
