@@ -1,73 +1,113 @@
 # servers-dexdex-main-server-foundation
 
 ## Scope
-- Project/component: DexDex main server contract
+- Project/component: DexDex main server control-plane contract
 - Canonical path: `servers/dexdex-main-server`
-- Role: Connect RPC control-plane for workspace/task/repository/session orchestration
+- Role: Connect RPC business API boundary for workspace/task/session/PR/review/notification orchestration
 
 ## Runtime and Language
 - Runtime: Go Connect RPC server
 - Primary language: Go
 
-## Interface Contracts
-- Main server is the canonical business API boundary for DexDex clients.
-- Workspace settings API:
-- `GetWorkspaceSettings`
-- `UpdateWorkspaceSettings`
-- `default_agent_cli_type` is persisted in `workspace_settings`.
-- Repository API:
-- full CRUD for `Repository`.
-- full CRUD for `RepositoryGroup`.
-- Repository groups persist ordered members in normalized storage.
-- Task create API is prompt-first and requires repository group + agent:
-- `prompt`
-- `repository_group_id`
-- `agent_cli_type`
-- `use_plan_mode`
-- Task create prevalidation:
-- repository group existence is required.
-- unsupported plan mode must return `FAILED_PRECONDITION`.
-- Dispatch contract:
-- task dispatch uses requested/default agent selection.
-- dispatch forwards `use_plan_mode` to worker `StartExecutionRequest`.
+## Users and Operators
+- Client engineers consuming business RPC and stream contracts
+- Backend engineers implementing orchestration, state transitions, and polling
+- Operators running single-instance or scale deployments
 
-## Storage Contract
-- DexDex schema is intentionally breaking and non-backward-compatible for this rollout.
-- Normalized repository model:
-- `repositories`
-- `repository_groups`
-- `repository_group_members`
-- Workspace settings model:
-- `workspace_settings`
-- Unit task persistence stores prompt/agent/plan mode directly.
-- No legacy JSON repository-group blob compatibility layer.
+## Interfaces and Contracts
+Contract alignment note:
+- This contract defines the DexDex server architecture and API behavior target for this repository.
+- Local implementation may diverge temporarily and must be synchronized in follow-up changes.
 
-## Logging Contract
-- Use structured `log/slog`.
-- Log capability checks and plan-mode validation decisions.
-- Log dispatch start/failure with workspace/task/session identifiers.
-- Log repository/group CRUD validation failures with typed outcomes.
+Core responsibilities:
+- workspace endpoint and auth profile management
+- repository and repository-group lifecycle management
+- UnitTask and SubTask orchestration
+- worker dispatch and cancellation propagation
+- PR tracking, polling, and auto-fix control
+- review assist and inline comment lifecycle
+- notification record lifecycle
+- event-stream fan-out and replay handoff
+
+Architecture and deployment contracts:
+- Main server is the canonical client-facing business boundary.
+- Single-instance mode:
+  - SQLite primary store
+  - in-memory event propagation
+- Scale mode:
+  - PostgreSQL primary store
+  - Redis stream/pubsub propagation
+
+Task orchestration contracts:
+- `CreateUnitTask` persists queued top-level work and schedules initial SubTask.
+- Cancellation contracts (`CancelUnitTask`, `CancelSubTask`) propagate quickly to worker runtime.
+- Plan decision contracts enforce explicit state transitions and typed errors.
+
+PR management contracts:
+- Poll provider state and detect actionable signals.
+- Create remediation SubTasks for manual or auto-fix flows.
+- Persist attempt budgets and blocked states.
+
+Normalized session contract:
+- main server consumes only normalized worker output payloads
+- provider-native raw agent payloads are not public contract surface
+
+## Storage
+Main server owns persistence for:
+- workspace, repository, repository group
+- UnitTask, SubTask, AgentSession metadata
+- commit-chain metadata and task lifecycle state
+- PR tracking and review assist data
+- review inline comments and status
+- notification records
+- stream sequence offsets and replay anchors
+
+## Security
+- workspace-scoped authorization on every RPC
+- bearer-token auth for shared/remote deployments
+- strict input validation for repository refs, prompts, and review payloads
+- no secret leakage in logs or stream payloads
+
+## Logging
+Use structured `log/slog` with correlation keys:
+- `request_id`
+- `workspace_id`
+- `unit_task_id`
+- `sub_task_id`
+- `session_id`
+- `pr_tracking_id`
+
+Required log categories:
+- task/subtask/session state transitions
+- worker dispatch/cancel outcomes
+- PR polling snapshots and auto-fix decisions
+- event-stream publish/replay health
+- notification generation reasons
 
 ## Build and Test
 - `go test ./servers/dexdex-main-server/...`
-- Contract-sensitive coverage:
-- repository CRUD + repository-group CRUD handler/store behavior
-- workspace default-agent settings persistence
-- prompt-only task creation validation
-- unsupported plan-mode rejection (`FAILED_PRECONDITION`)
+- Contract-sensitive checks:
+  - workspace/repository/task/session API behavior
+  - plan-decision transition validation
+  - PR polling and remediation workflow behavior
+  - event-stream sequence/replay semantics
 
 ## Dependencies and Integrations
-- Shared proto: `protos/dexdex/v1/dexdex.proto`
-- Worker integration: `servers/dexdex-worker-server` via worker adapter/service RPCs
-- Desktop integration: `apps/dexdex`
+- Shared proto contracts: `protos/dexdex/v1/dexdex.proto`
+- Worker integration contract: `docs/servers-dexdex-worker-server-foundation.md`
+- Event streaming details: `docs/servers-dexdex-event-streaming-contract.md`
+- PR workflow details: `docs/servers-dexdex-pr-management-contract.md`
+- App integration: `docs/apps-dexdex-desktop-app-foundation.md`
 
 ## Change Triggers
-- Update this file with `docs/project-dexdex.md` and `docs/protos-dexdex-v1-contract.md` whenever main-server contract behavior changes.
-- Keep storage/model contract changes synchronized with migrations/sqlc/query docs in the same change.
+- Any server API/state/storage/orchestration contract change must update this file and `docs/project-dexdex.md` in the same change.
+- Stream or PR workflow changes must synchronize with dedicated server-domain contract docs.
+- Proto-facing changes must synchronize with proto-domain contract docs.
 
 ## References
 - `docs/project-dexdex.md`
 - `docs/protos-dexdex-v1-contract.md`
+- `docs/protos-dexdex-api-contract.md`
 - `docs/servers-dexdex-worker-server-foundation.md`
-- `docs/apps-dexdex-desktop-app-foundation.md`
-- `docs/domain-template.md`
+- `docs/servers-dexdex-event-streaming-contract.md`
+- `docs/servers-dexdex-pr-management-contract.md`

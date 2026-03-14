@@ -1,7 +1,10 @@
 # Project: dexdex
 
 ## Goal
-Define DexDex as a Connect RPC-first orchestration platform with a single breaking v1 contract across desktop app, main server, worker server, and shared proto.
+Define DexDex as a Connect RPC-first orchestration platform for CLI coding agents across desktop client, control-plane server, execution-plane server, and shared proto contracts.
+
+This project index is the canonical architecture and behavior contract for DexDex in this repository.
+When implementation details differ from documented contracts, follow-up sync work is required.
 
 ## Project ID
 `dexdex`
@@ -10,82 +13,104 @@ Define DexDex as a Connect RPC-first orchestration platform with a single breaki
 - `apps/dexdex` (`desktop-app`)
 - `servers/dexdex-main-server` (`main-server`)
 - `servers/dexdex-worker-server` (`worker-server`)
-- `protos/dexdex/v1` (`v1` shared contracts)
+- `protos/dexdex/v1` (`shared-v1-contract`)
 
 ## Domain Contract Documents
 - `docs/apps-dexdex-desktop-app-foundation.md`
+- `docs/apps-dexdex-ui-contract.md`
+- `docs/apps-dexdex-user-guide-contract.md`
+- `docs/apps-dexdex-notification-contract.md`
+- `docs/apps-dexdex-workspace-connectivity-contract.md`
 - `docs/servers-dexdex-main-server-foundation.md`
 - `docs/servers-dexdex-worker-server-foundation.md`
+- `docs/servers-dexdex-event-streaming-contract.md`
+- `docs/servers-dexdex-pr-management-contract.md`
 - `docs/protos-dexdex-v1-contract.md`
+- `docs/protos-dexdex-api-contract.md`
+- `docs/protos-dexdex-entities-contract.md`
+- `docs/protos-dexdex-plan-mode-contract.md`
 
 ## Cross-Domain Invariants
-- Connect RPC is the canonical business boundary across all DexDex components.
-- DexDex v1 now intentionally uses a breaking schema with no backward compatibility.
-- Unit task creation contract is prompt-first and requires:
-- `workspace_id`
-- `prompt`
-- `repository_group_id`
-- `agent_cli_type`
-- optional `use_plan_mode` (default `false`)
-- Unit tasks do not accept user-entered title/description fields.
-- Task labels in UI (lists/tabs/detail header) are prompt-derived summaries.
-- Repository modeling is normalized:
-- `Repository` is first-class.
-- `RepositoryGroup` stores ordered `members` referencing repositories.
-- `WorkspaceSettings.default_agent_cli_type` is server-backed and used as the default agent selection.
-- Plan mode capability is explicit per agent via `AgentCapability.supports_plan_mode`.
-- `CLAUDE_CODE` and `CODEX_CLI` support plan mode; `OPENCODE` does not.
-- Unsupported plan mode requests must return `FAILED_PRECONDITION` in both main-server and worker-server flows.
-- Worker execution remains worktree-only and repository-group scoped with deterministic member order.
-- Event streaming stays monotonic and workspace-scoped.
+- Connect RPC is the canonical business contract for DexDex; Tauri-native APIs are integration-only.
+- Main server is the canonical business API boundary for clients; direct client-to-worker business calls are out of scope.
+- Workspace is the top-level scope boundary and supports two connectivity types:
+  - `LOCAL_ENDPOINT`
+  - `REMOTE_ENDPOINT`
+- RepositoryGroup is the execution unit, and repository ordering is deterministic.
+- Execution is worktree-only for task runs; direct local-folder editing is out of scope.
+- Worker output that changes code must produce a real git commit chain.
+- PR creation and commit-to-local flows must use commit-chain metadata as source of truth.
+- Plan mode is explicit and decision-driven (`APPROVE`, `REVISE`, `REJECT`) at SubTask execution boundaries.
+- Event streaming is workspace-scoped, sequence-based, and reconnect-safe within retention policy.
+- Notifications are event-stream driven; the in-app center is authoritative.
+- UI behavior is keyboard-first and includes multiline submit (`Cmd+Enter`) and tab lifecycle shortcuts.
 - Dialog UI surfaces close with `Esc`, and forms with a single critical input auto-focus when shown.
 
 ## Implementation Status (as of 2026-03-15)
 
 ### Proto (`protos/dexdex/v1/dexdex.proto`)
-- `CreateUnitTaskRequest` is prompt-first and no longer includes title/description.
-- `UnitTask` stores prompt, repository group, agent type, and plan-mode flag.
-- `WorkspaceService` includes `GetWorkspaceSettings` and `UpdateWorkspaceSettings`.
-- `RepositoryService` includes full CRUD for repositories and repository groups.
+- `CreateUnitTaskRequest` is prompt-first and uses workspace/repository-group/agent/plan-mode fields.
 - `AgentCapability` includes `supports_plan_mode`.
-- `StartExecutionRequest` includes `use_plan_mode`.
-- Worker streaming response type is `StartExecutionResponse`.
+- `SubmitPlanDecision` supports explicit decision actions.
+- Event stream payloads are workspace-scoped and typed.
 
 ### Main Server (`servers/dexdex-main-server`)
-- Repository persistence is normalized (`repositories`, `repository_groups`, `repository_group_members`).
-- Workspace settings persistence is implemented (`workspace_settings`).
-- Repository and repository-group handlers provide full CRUD.
-- Workspace settings handlers provide read/update for default agent.
-- Task creation validates prompt/repository-group/agent plan-mode compatibility and enforces `FAILED_PRECONDITION` for unsupported plan mode.
+- Repository and repository-group contracts are normalized and execution-order-aware.
+- Workspace settings and task orchestration contracts are Connect RPC-first.
+- Plan-mode and capability validations enforce typed error outcomes.
 
 ### Worker Server (`servers/dexdex-worker-server`)
-- Agent capabilities expose per-agent plan-mode support.
-- Start execution consumes `use_plan_mode`.
-- Unsupported plan mode is rejected with `FAILED_PRECONDITION`.
-- Worktree preparation consumes repository-group members with hydrated repositories.
-- Structured logs include capability checks and plan-mode execution decisions.
+- Agent capability and execution contracts expose plan-mode support boundaries.
+- Execution remains repository-group scoped and worktree-only.
+- Worker logs and outputs are normalized for main-server and client consumption.
 
 ### Desktop App (`apps/dexdex`)
-- Settings is tabbed: `General`, `Agents`, `Repository Groups`, `Repositories`.
-- `Agents` tab manages workspace default coding agent via server settings RPCs.
-- `Repositories` tab supports full CRUD.
-- `Repository Groups` tab supports full CRUD with ordered members.
-- Create Task dialog is prompt-only plus required repository group and agent selection.
-- Plan mode toggle is shown only when the selected agent supports plan mode.
-- Task display labels are prompt-derived summaries.
-- Dialog UI surfaces close with `Esc`.
-- Single critical-input forms auto-focus the input when shown.
+- Task creation and settings flows are aligned with workspace/repository-group/agent contracts.
+- Plan-mode visibility follows capability metadata.
+- Dialog surfaces close with `Esc` and single critical-input forms auto-focus on open.
+
+## Developer Setup and Validation
+Repository layout for DexDex in this monorepo:
+- `apps/dexdex`
+- `servers/dexdex-main-server`
+- `servers/dexdex-worker-server`
+- `protos/dexdex`
+
+Prerequisites:
+- Go (as pinned by repository toolchain)
+- Node.js + pnpm
+- Rust toolchain for Tauri host runtime
+- SQLite for single-instance mode
+- PostgreSQL + Redis for scale mode
+
+Bootstrap and validation checklist:
+- `pnpm install`
+- `go test ./servers/dexdex-main-server/...`
+- `go test ./servers/dexdex-worker-server/...`
+- `cd apps/dexdex && pnpm test`
+- `cd protos/dexdex && buf lint && buf build`
+
+Recommended runtime environment keys:
+- `DEXDEX_DEPLOYMENT_MODE`
+- `DEXDEX_HTTP_ADDR`
+- `DEXDEX_DATABASE_URL`
+- `DEXDEX_REDIS_URL` (`SCALE` mode)
+- `DEXDEX_PR_POLL_INTERVAL_SEC`
+- `DEXDEX_WORKTREE_ROOT`
 
 ## Change Policy
-- Any proto/main-server/worker-server/app contract change must update this file and all DexDex domain docs in the same change.
-- Any repository/data-model structural change must update domain contracts in the same change.
-- Breaking contract updates must be documented explicitly as non-backward-compatible.
+- Any DexDex API, entity, plan-mode, event-streaming, or connectivity contract change must update `docs/project-dexdex.md` and the related domain contract docs in the same change.
+- If remote-source contract behavior is adopted before local proto/code sync, keep an explicit alignment note in the changed docs.
+- Any path ownership or component-boundary change must update this index and `AGENTS.md` files in the same change.
 
 ## References
+- `docs/README.md`
 - `docs/project-template.md`
 - `docs/domain-template.md`
-- `docs/README.md`
+- `docs/protos-dexdex-v1-contract.md`
+- `docs/protos-dexdex-api-contract.md`
+- `docs/protos-dexdex-entities-contract.md`
+- `docs/protos-dexdex-plan-mode-contract.md`
 - `docs/apps-dexdex-desktop-app-foundation.md`
 - `docs/servers-dexdex-main-server-foundation.md`
 - `docs/servers-dexdex-worker-server-foundation.md`
-- `docs/protos-dexdex-v1-contract.md`

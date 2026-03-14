@@ -68,9 +68,18 @@ Each project must have one project index document and one or more domain contrac
 ### dexdex
 - `docs/project-dexdex.md`
 - `docs/apps-dexdex-desktop-app-foundation.md`
+- `docs/apps-dexdex-ui-contract.md`
+- `docs/apps-dexdex-user-guide-contract.md`
+- `docs/apps-dexdex-notification-contract.md`
+- `docs/apps-dexdex-workspace-connectivity-contract.md`
 - `docs/servers-dexdex-main-server-foundation.md`
 - `docs/servers-dexdex-worker-server-foundation.md`
+- `docs/servers-dexdex-event-streaming-contract.md`
+- `docs/servers-dexdex-pr-management-contract.md`
 - `docs/protos-dexdex-v1-contract.md`
+- `docs/protos-dexdex-api-contract.md`
+- `docs/protos-dexdex-entities-contract.md`
+- `docs/protos-dexdex-plan-mode-contract.md`
 
 ### ttl
 - `docs/project-ttl.md`

@@ -1,32 +1,46 @@
 # apps-dexdex-desktop-app-foundation
 
 ## Scope
-- Project/component: DexDex desktop app contract
+- Project/component: DexDex Tauri app contract (desktop-first with mobile-capable contract surface)
 - Canonical path: `apps/dexdex`
-- Product surface: Tauri-hosted React desktop client for DexDex orchestration
+- Product surface: React client hosted in Tauri runtime for task/PR/review orchestration
 
 ## Runtime and Language
-- Runtime: Tauri + React
-- Primary language: TypeScript (UI/data), Rust (host integration)
+- Runtime: Tauri + React + Connect RPC clients
+- Primary language: TypeScript (web client), Rust (Tauri host integration)
 
-## Interface Contracts
-- Desktop business communication is Connect RPC-first through `main-server`.
-- Task creation UI is prompt-first:
-- No title/description inputs.
-- Required: prompt, repository group, coding agent.
-- Optional: plan mode toggle (visible only if selected agent supports it).
-- Task labels in lists/tabs/detail use prompt-derived summaries.
-- Settings page is tabbed:
-- `General`
-- `Agents`
-- `Repository Groups`
-- `Repositories`
-- `Agents` tab manages workspace default coding agent through workspace settings RPC.
-- `Repositories` tab provides full repository CRUD.
-- `Repository Groups` tab provides full repository-group CRUD with ordered members.
-- Existing task/session/review/notification flows remain stream-driven and workspace-scoped.
+## Users and Operators
+- End users running DexDex desktop/mobile clients
+- Product engineers implementing task/PR/review workflows
+- Operators validating stream reliability and workspace connectivity
 
-## Data and UX Invariants
+## Interfaces and Contracts
+Contract alignment note:
+- This contract defines the DexDex app behavior target for this repository.
+- Local implementation may temporarily lag while API/entity contracts are synchronized.
+
+Core app rules:
+- Business communication is Connect RPC-first.
+- Tauri APIs are integration-only (window lifecycle, keychain, file picker, deep links).
+- Client consumes normalized session output contracts only.
+- Client does not call worker business APIs directly.
+
+Client architecture:
+- React UI layer for Workspace, UnitTask, PR Management, PR Review Assist, Settings, Notifications.
+- Data layer with `@connectrpc/connect-query` and `@tanstack/react-query`.
+- Stream subscriber with sequence resume behavior.
+
+Behavior contracts:
+- Workspace switching is first-class and workspace-scoped.
+- Multi-tab UI preserves tab order, active tab, and draft form state by workspace.
+- Event stream subscription reconnects with sequence resume.
+- Plan mode UX supports `Approve`, `Revise`, and `Reject` decision actions.
+- Inline comment UX supports create/edit/resolve/reopen/delete with stream synchronization.
+- Multiline submit contract: `Enter` newline, `Cmd+Enter` submit.
+- Stop actions are immediate for running UnitTask and SubTask flows.
+- Approved diff flow exposes `Create PR` action and uses commit-chain metadata.
+
+Data and UX invariants:
 - `WorkspaceSettings.default_agent_cli_type` is the default agent for new task creation.
 - Plan mode default is OFF.
 - Plan mode toggle is shown only for agents where `supports_plan_mode=true`.
@@ -34,29 +48,57 @@
 - Dialog UI surfaces must close with `Esc`.
 - Forms with a single critical input must focus that input when shown.
 
+Notifications contract:
+- Notification dispatch uses Web Notification API.
+- In-app notification center is authoritative.
+- Duplicate prevention is sequence-driven.
+
+## Storage
+Client-owned state contracts include:
+- workspace list and active workspace pointer
+- workspace-scoped tab state and draft preservation
+- stream sequence checkpoint per workspace
+- notification permission cache and unread/read presentation state
+- local UI preferences (appearance, shortcuts, badge settings)
+
+## Security
+- Non-localhost workspaces use TLS and bearer-token based auth.
+- Workspace credentials stay in platform-secure storage integrations.
+- Business payload rendering uses normalized, validated stream/event contracts.
+
+## Logging
+Client logs should include:
+- stream open/reconnect/resume outcomes
+- notification permission and dispatch outcomes
+- plan decision submissions
+- immediate stop action dispatch and result states
+
 ## Build and Test
-- Local tests: `pnpm --filter dexdex test`
-- Build: `pnpm --filter dexdex build`
-- Packaging: `pnpm --filter dexdex tauri:build`
-- Required behavioral coverage:
-- prompt-only task create submission payload
-- plan mode visibility by agent capability
-- tabbed settings navigation
-- repository CRUD and repository-group CRUD interactions
+- `cd apps/dexdex && pnpm test`
+- `cd apps/dexdex && pnpm build`
+- `cd apps/dexdex && pnpm tauri:build`
 
 ## Dependencies and Integrations
-- Shared RPC/contracts from `protos/dexdex/v1`
-- Server-state with React Query + `@connectrpc/connect-query`
-- Main-server event stream + unary RPC integrations
+- Proto/API/entity contracts:
+  - `docs/protos-dexdex-v1-contract.md`
+  - `docs/protos-dexdex-api-contract.md`
+  - `docs/protos-dexdex-entities-contract.md`
+- Main-server contract: `docs/servers-dexdex-main-server-foundation.md`
+- Worker contract: `docs/servers-dexdex-worker-server-foundation.md`
+- UI detail contracts:
+  - `docs/apps-dexdex-ui-contract.md`
+  - `docs/apps-dexdex-user-guide-contract.md`
+  - `docs/apps-dexdex-notification-contract.md`
+  - `docs/apps-dexdex-workspace-connectivity-contract.md`
 
 ## Change Triggers
-- Update this file with `docs/project-dexdex.md` when desktop UX contracts change.
-- Update this file with `docs/protos-dexdex-v1-contract.md` when proto changes affect desktop behavior.
-- Keep app/server/proto contracts synchronized in the same change.
+- Any client workflow or UX contract change must update this file and `docs/project-dexdex.md` in the same change.
+- API/entity/plan-mode changes must synchronize this file with proto and server docs in the same change.
 
 ## References
 - `docs/project-dexdex.md`
+- `docs/apps-dexdex-ui-contract.md`
+- `docs/apps-dexdex-user-guide-contract.md`
+- `docs/apps-dexdex-notification-contract.md`
+- `docs/apps-dexdex-workspace-connectivity-contract.md`
 - `docs/protos-dexdex-v1-contract.md`
-- `docs/servers-dexdex-main-server-foundation.md`
-- `docs/servers-dexdex-worker-server-foundation.md`
-- `docs/domain-template.md`

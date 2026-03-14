@@ -52,7 +52,13 @@ enum DevkitMiniAppId {
 - Tauri bindings are integration/runtime adapters and must not become the primary business contract surface.
 - `LOCAL` and `REMOTE` workspace modes must converge to the same post-resolution UX and business flow behavior.
 - DexDex desktop contract consumption must use shared proto definitions from `protos/dexdex/v1` as the source of truth.
-- Keep DexDex desktop app contracts synchronized with `docs/apps-dexdex-desktop-app-foundation.md` and `docs/project-dexdex.md`.
+- Keep DexDex desktop app contracts synchronized with:
+  - `docs/apps-dexdex-desktop-app-foundation.md`
+  - `docs/apps-dexdex-ui-contract.md`
+  - `docs/apps-dexdex-user-guide-contract.md`
+  - `docs/apps-dexdex-notification-contract.md`
+  - `docs/apps-dexdex-workspace-connectivity-contract.md`
+  - `docs/project-dexdex.md`
 - Global shortcut question-handoff behavior (default binding, waiting-session routing, empty fallback) must remain aligned with DexDex app/server/proto contracts.
 - Menu bar tray behavior remains status-only unless docs explicitly expand scope; status derivation must use active-workspace contract semantics.
 - Session fork UX must keep parent-session immutability guarantees and remain limited to documented lifecycle actions.
@@ -63,7 +69,7 @@ enum DevkitMiniAppId {
 
 - `devkit-commit-tracker` app changes must update `docs/apps-devkit-commit-tracker-web-app-foundation.md` and `docs/project-devkit-commit-tracker.md`.
 - `thenv` web console changes must update `docs/apps-thenv-web-console-foundation.md` and `docs/project-thenv.md`.
-- `dexdex` desktop app changes must update `docs/apps-dexdex-desktop-app-foundation.md` and `docs/project-dexdex.md`.
+- `dexdex` desktop app changes must update all relevant DexDex app contracts (`docs/apps-dexdex-*.md`) and `docs/project-dexdex.md`.
 
 ### Testing and Validation
 
