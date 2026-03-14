@@ -1,51 +1,282 @@
-import { type FormEvent, useState } from "react";
-import reactLogo from "./assets/react.svg";
-import "./App.css";
+/**
+ * Root application component for DexDex desktop app.
+ * Provides the Linear-style layout with sidebar, tab bar, and content area.
+ */
+
+import { type CSSProperties, useCallback, useMemo, useState } from "react";
+import "./styles/globals.css";
+import { Sidebar } from "./components/sidebar";
+import { TabBar } from "./components/tab-bar";
+import { CommandPalette } from "./components/command-palette";
+import { TaskList } from "./features/tasks/task-list";
+import { TaskDetail } from "./features/tasks/task-detail";
+import { CreateDialog } from "./features/tasks/create-dialog";
+import { InboxPage } from "./features/inbox/inbox-page";
+import { SettingsPage } from "./features/settings/settings-page";
+import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
+import { useWorkspaceStream } from "./hooks/use-workspace-stream";
+import {
+  type AppState,
+  type AppStore,
+  type Theme,
+  AppStoreContext,
+  getPersistedTheme,
+  persistTheme,
+  applyThemeToDocument,
+} from "./stores/app-store";
+import { MOCK_TASKS, MOCK_SESSION_OUTPUT, MOCK_NOTIFICATIONS } from "./lib/mock-data";
+import type { Notification, UnitTask } from "./lib/mock-data";
+import { PlanDecision, UnitTaskStatus } from "./lib/status";
+
+interface Tab {
+  id: string;
+  label: string;
+  path: string;
+}
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  // App state
+  const initialTheme = getPersistedTheme();
+  const [theme, setThemeState] = useState<Theme>(initialTheme);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState<AppState["connectionStatus"]>("connected");
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  // Navigation state
+  const [currentPath, setCurrentPath] = useState("/tasks");
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [activeTabId, setActiveTabId] = useState("");
 
-    const trimmedName = name.trim();
-    if (trimmedName.length === 0) {
-      setGreetMsg("Hello from DexDex scaffold.");
-      return;
+  // Data state
+  const [tasks, setTasks] = useState<UnitTask[]>(MOCK_TASKS);
+  const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
+
+  // Apply initial theme
+  useMemo(() => {
+    applyThemeToDocument(initialTheme);
+  }, [initialTheme]);
+
+  const setTheme = useCallback((newTheme: Theme) => {
+    setThemeState(newTheme);
+    persistTheme(newTheme);
+    applyThemeToDocument(newTheme);
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme(theme === "light" ? "dark" : "light");
+  }, [theme, setTheme]);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((prev) => !prev);
+  }, []);
+
+  // Build store
+  const store: AppStore = useMemo(
+    () => ({
+      theme,
+      sidebarOpen,
+      activeWorkspaceId: "workspace-default",
+      connectionStatus,
+      toggleTheme,
+      setTheme,
+      toggleSidebar,
+      setSidebarOpen,
+      setConnectionStatus,
+    }),
+    [theme, sidebarOpen, connectionStatus, toggleTheme, setTheme, toggleSidebar],
+  );
+
+  // Workspace stream
+  useWorkspaceStream({
+    workspaceId: "workspace-default",
+    onStatusChange: setConnectionStatus,
+  });
+
+  // Navigation
+  const navigate = useCallback(
+    (path: string) => {
+      setCurrentPath(path);
+
+      // If navigating to a task detail, open a tab
+      if (path.startsWith("/tasks/")) {
+        const taskId = path.replace("/tasks/", "");
+        const task = tasks.find((t) => t.unitTaskId === taskId);
+        if (task) {
+          const existingTab = tabs.find((t) => t.id === taskId);
+          if (!existingTab) {
+            const newTab: Tab = { id: taskId, label: task.title, path };
+            setTabs((prev) => [...prev, newTab]);
+          }
+          setActiveTabId(taskId);
+        }
+      }
+    },
+    [tabs, tasks],
+  );
+
+  const handleTabClick = useCallback(
+    (tab: Tab) => {
+      setActiveTabId(tab.id);
+      setCurrentPath(tab.path);
+    },
+    [],
+  );
+
+  const handleTabClose = useCallback(
+    (tab: Tab) => {
+      setTabs((prev) => prev.filter((t) => t.id !== tab.id));
+      if (activeTabId === tab.id) {
+        setCurrentPath("/tasks");
+        setActiveTabId("");
+      }
+    },
+    [activeTabId],
+  );
+
+  // Task actions
+  const handleCreateTask = useCallback(
+    (title: string, description: string) => {
+      const newTask: UnitTask = {
+        unitTaskId: `task-${Date.now()}`,
+        title,
+        description,
+        status: UnitTaskStatus.QUEUED,
+        repositoryUrl: "",
+        branchRef: "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        subTasks: [],
+      };
+      setTasks((prev) => [newTask, ...prev]);
+    },
+    [],
+  );
+
+  const handlePlanDecision = useCallback(
+    (subTaskId: string, decision: PlanDecision, _revisionNote?: string) => {
+      console.log("[App] Plan decision:", { subTaskId, decision, _revisionNote });
+      // In scaffold mode, just log. Real implementation would call TaskService.SubmitPlanDecision.
+    },
+    [],
+  );
+
+  const handleNotificationClick = useCallback(
+    (notification: Notification) => {
+      if (notification.taskId) {
+        navigate(`/tasks/${notification.taskId}`);
+      }
+    },
+    [navigate],
+  );
+
+  const handleMarkRead = useCallback((notificationId: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.notificationId === notificationId ? { ...n, read: true } : n)),
+    );
+  }, []);
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onCommandPalette: () => setCommandPaletteOpen(true),
+    onToggleSidebar: toggleSidebar,
+    onNavigate: navigate,
+    onCreateTask: () => setCreateDialogOpen(true),
+  });
+
+  // Render content based on current path
+  function renderContent() {
+    if (currentPath.startsWith("/tasks/")) {
+      const taskId = currentPath.replace("/tasks/", "");
+      const task = tasks.find((t) => t.unitTaskId === taskId);
+      if (task) {
+        return (
+          <TaskDetail
+            task={task}
+            sessionOutput={MOCK_SESSION_OUTPUT}
+            onBack={() => {
+              setCurrentPath("/tasks");
+              setActiveTabId("");
+            }}
+            onPlanDecision={handlePlanDecision}
+          />
+        );
+      }
     }
 
-    setGreetMsg(`Hello, ${trimmedName}!`);
+    if (currentPath === "/inbox") {
+      return (
+        <InboxPage
+          notifications={notifications}
+          onNotificationClick={handleNotificationClick}
+          onMarkRead={handleMarkRead}
+        />
+      );
+    }
+
+    if (currentPath === "/settings") {
+      return <SettingsPage />;
+    }
+
+    // Default: task list
+    return (
+      <TaskList
+        tasks={tasks}
+        onTaskSelect={(taskId) => navigate(`/tasks/${taskId}`)}
+        onCreateTask={() => setCreateDialogOpen(true)}
+      />
+    );
   }
 
+  const layoutStyle: CSSProperties = {
+    display: "flex",
+    height: "100%",
+    width: "100%",
+    overflow: "hidden",
+  };
+
+  const mainStyle: CSSProperties = {
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    minWidth: 0,
+  };
+
+  const contentAreaStyle: CSSProperties = {
+    flex: 1,
+    overflow: "hidden",
+  };
+
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank" rel="noreferrer">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank" rel="noreferrer">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank" rel="noreferrer">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <AppStoreContext.Provider value={store}>
+      <div style={layoutStyle} data-testid="app-layout">
+        <Sidebar activePath={currentPath} onNavigate={navigate} />
+        <div style={mainStyle}>
+          <TabBar
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onTabClick={handleTabClick}
+            onTabClose={handleTabClose}
+          />
+          <div style={contentAreaStyle}>{renderContent()}</div>
+        </div>
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form className="row" onSubmit={handleSubmit}>
-        <input
-          id="greet-input"
-          onChange={(event) => setName(event.currentTarget.value)}
-          placeholder="Enter a name..."
-          value={name}
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onNavigate={navigate}
+        onCreateTask={() => {
+          setCreateDialogOpen(true);
+          setCommandPaletteOpen(false);
+        }}
+      />
+      <CreateDialog
+        isOpen={createDialogOpen}
+        onClose={() => setCreateDialogOpen(false)}
+        onCreate={handleCreateTask}
+      />
+    </AppStoreContext.Provider>
   );
 }
 
