@@ -34,7 +34,7 @@
 - PR/review/comment operations
 - badge and notification operations
 - workspace event streaming
-- worker session adapter normalization
+- planned worker session adapter normalization
 - Planned additive service methods:
 - `WorkspaceService.GetWorkspaceWorkStatus`
 - `SessionService.ListSessionCapabilities`
@@ -62,7 +62,8 @@
 - enum expansion is allowed with unknown-safe client behavior
 - breaking changes require coordinated rollout across app and servers
 - Implemented-vs-planned alignment (current repo reality):
-- implemented proto currently contains subset-centric RPCs such as `Get*`/`List*`, `SubmitPlanDecision`, `RunSubTaskSessionAdapter`, `NormalizeSessionOutputFixture`, and stream APIs
+- implemented proto currently contains scaffold subset RPCs: `GetWorkspace`, `GetRepositoryGroup`, `GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`, `GetSessionOutput`, `GetPullRequest`, `ListReviewAssistItems`, `ListReviewComments`, `GetBadgeTheme`, `ListNotifications`, and `StreamWorkspaceEvents`
+- worker adapter RPCs (`NormalizeSessionOutputFixture`) and adapter enums/messages (`AgentCliType`, fixture preset/source metadata families) are not implemented in current `dexdex.proto`
 - session-fork, latest-waiting-input, workspace-work-status, and capability/fork-adapter RPCs are planned additive extensions and are not yet implemented in current `dexdex.proto`
 - upstream DexDex source docs define expanded create/update/delete and richer flow contracts that are target scope for additive evolution
 - `protos/dexdex/v1/dexdex.proto` remains the canonical source for what is implemented now; this document records both current contract and planned-compatible expansion direction

@@ -68,33 +68,6 @@ enum SessionOutputKind {
   SESSION_OUTPUT_KIND_ERROR = 7;
 }
 
-enum AgentCliType {
-  AGENT_CLI_TYPE_UNSPECIFIED = 0;
-  AGENT_CLI_TYPE_CODEX_CLI = 1;
-  AGENT_CLI_TYPE_CLAUDE_CODE = 2;
-  AGENT_CLI_TYPE_OPENCODE = 3;
-}
-
-enum SessionAdapterFixturePreset {
-  SESSION_ADAPTER_FIXTURE_PRESET_UNSPECIFIED = 0;
-  SESSION_ADAPTER_FIXTURE_PRESET_CODEX_CLI_FAILURE = 1;
-  SESSION_ADAPTER_FIXTURE_PRESET_CLAUDE_CODE_STREAM = 2;
-  SESSION_ADAPTER_FIXTURE_PRESET_OPENCODE_RUN = 3;
-}
-
-enum SessionOutputSourceEventType {
-  SESSION_OUTPUT_SOURCE_EVENT_TYPE_UNSPECIFIED = 0;
-  SESSION_OUTPUT_SOURCE_EVENT_TYPE_RUN_STARTED = 1;
-  SESSION_OUTPUT_SOURCE_EVENT_TYPE_TURN_STARTED = 2;
-  SESSION_OUTPUT_SOURCE_EVENT_TYPE_TEXT_DELTA = 3;
-  SESSION_OUTPUT_SOURCE_EVENT_TYPE_TEXT_FINAL = 4;
-  SESSION_OUTPUT_SOURCE_EVENT_TYPE_STEP_STARTED = 5;
-  SESSION_OUTPUT_SOURCE_EVENT_TYPE_STEP_FINISHED = 6;
-  SESSION_OUTPUT_SOURCE_EVENT_TYPE_RESULT = 7;
-  SESSION_OUTPUT_SOURCE_EVENT_TYPE_ERROR = 8;
-  SESSION_OUTPUT_SOURCE_EVENT_TYPE_SYSTEM = 9;
-}
-
 enum ActionType {
   ACTION_TYPE_UNSPECIFIED = 0;
   ACTION_TYPE_REVIEW_REQUESTED = 1;
@@ -148,17 +121,6 @@ message Workspace {
   string workspace_id = 1;
 }
 
-message WorkspaceOverview {
-  string workspace_id = 1;
-  uint32 total_unit_task_count = 2;
-  uint32 action_required_unit_task_count = 3;
-  uint32 waiting_plan_sub_task_count = 4;
-  uint32 failed_sub_task_count = 5;
-  uint32 active_session_count = 6;
-  uint32 open_pull_request_count = 7;
-  uint32 notification_count = 8;
-}
-
 message RepositoryRef {
   string repository_id = 1;
   string repository_url = 2;
@@ -204,20 +166,10 @@ message EventStreamCursorOutOfRangeDetail {
   uint64 requested_from_sequence = 2;
 }
 
-// worker-normalized event contract for provider-native CLI output.
-message SessionOutputSourceMetadata {
-  AgentCliType cli_type = 1;
-  SessionOutputSourceEventType source_event_type = 2;
-  uint64 source_sequence = 3;
-  string raw_event_type = 4;
-}
-
 message SessionOutputEvent {
   string session_id = 1;
   SessionOutputKind kind = 2;
   string body = 3;
-  SessionOutputSourceMetadata source = 4;
-  bool is_terminal = 5;
 }
 
 message SessionStateChangedEvent {
@@ -287,44 +239,6 @@ message SubmitPlanDecisionResponse {
   SubTask created_sub_task = 2;
 }
 
-message RunSubTaskSessionAdapterRequest {
-  string workspace_id = 1;
-  string unit_task_id = 2;
-  string sub_task_id = 3;
-  string session_id = 4;
-  AgentCliType cli_type = 5;
-
-  oneof input {
-    SessionAdapterFixturePreset fixture_preset = 6;
-    string raw_jsonl = 7;
-  }
-}
-
-message RunSubTaskSessionAdapterResponse {
-  SubTask updated_sub_task = 1;
-  uint64 emitted_event_count = 2;
-  AgentSessionStatus session_status = 3;
-  string session_id = 4;
-}
-
-message NormalizeSessionOutputFixtureRequest {
-  string workspace_id = 1;
-  string unit_task_id = 2;
-  string sub_task_id = 3;
-  string session_id = 4;
-  AgentCliType cli_type = 5;
-
-  oneof input {
-    SessionAdapterFixturePreset fixture_preset = 6;
-    string raw_jsonl = 7;
-  }
-}
-
-message NormalizeSessionOutputFixtureResponse {
-  repeated SessionOutputEvent events = 1;
-  AgentSessionStatus session_status = 2;
-}
-
 message GetUnitTaskRequest {
   string workspace_id = 1;
   string unit_task_id = 2;
@@ -351,14 +265,6 @@ message GetWorkspaceResponse {
   Workspace workspace = 1;
 }
 
-message GetWorkspaceOverviewRequest {
-  string workspace_id = 1;
-}
-
-message GetWorkspaceOverviewResponse {
-  WorkspaceOverview overview = 1;
-}
-
 message GetRepositoryGroupRequest {
   string workspace_id = 1;
   string repository_group_id = 2;
@@ -368,17 +274,6 @@ message GetRepositoryGroupResponse {
   RepositoryGroup repository_group = 1;
 }
 
-message ListRepositoryGroupsRequest {
-  string workspace_id = 1;
-  int32 page_size = 2;
-  string page_token = 3;
-}
-
-message ListRepositoryGroupsResponse {
-  repeated RepositoryGroup items = 1;
-  string next_page_token = 2;
-}
-
 message GetSessionOutputRequest {
   string workspace_id = 1;
   string session_id = 2;
@@ -386,52 +281,6 @@ message GetSessionOutputRequest {
 
 message GetSessionOutputResponse {
   repeated SessionOutputEvent events = 1;
-}
-
-message SessionSummary {
-  string session_id = 1;
-  AgentSessionStatus status = 2;
-  AgentCliType cli_type = 3;
-  SessionOutputKind last_output_kind = 4;
-  google.protobuf.Timestamp updated_at = 5;
-}
-
-message ListSessionsRequest {
-  string workspace_id = 1;
-  AgentSessionStatus status = 2;
-  AgentCliType cli_type = 3;
-  int32 page_size = 4;
-  string page_token = 5;
-}
-
-message ListSessionsResponse {
-  repeated SessionSummary items = 1;
-  string next_page_token = 2;
-}
-
-message ListUnitTasksRequest {
-  string workspace_id = 1;
-  UnitTaskStatus status = 2;
-  int32 page_size = 3;
-  string page_token = 4;
-}
-
-message ListUnitTasksResponse {
-  repeated UnitTask items = 1;
-  string next_page_token = 2;
-}
-
-message ListSubTasksRequest {
-  string workspace_id = 1;
-  string unit_task_id = 2;
-  SubTaskStatus status = 3;
-  int32 page_size = 4;
-  string page_token = 5;
-}
-
-message ListSubTasksResponse {
-  repeated SubTask items = 1;
-  string next_page_token = 2;
 }
 
 message GetPullRequestRequest {
@@ -446,18 +295,6 @@ message PullRequestRecord {
 
 message GetPullRequestResponse {
   PullRequestRecord pull_request = 1;
-}
-
-message ListPullRequestsRequest {
-  string workspace_id = 1;
-  PrStatus status = 2;
-  int32 page_size = 3;
-  string page_token = 4;
-}
-
-message ListPullRequestsResponse {
-  repeated PullRequestRecord items = 1;
-  string next_page_token = 2;
 }
 
 message ListReviewAssistItemsRequest {
@@ -516,31 +353,24 @@ message ListNotificationsResponse {
 
 service WorkspaceService {
   rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
-  rpc GetWorkspaceOverview(GetWorkspaceOverviewRequest) returns (GetWorkspaceOverviewResponse);
 }
 
 service RepositoryService {
   rpc GetRepositoryGroup(GetRepositoryGroupRequest) returns (GetRepositoryGroupResponse);
-  rpc ListRepositoryGroups(ListRepositoryGroupsRequest) returns (ListRepositoryGroupsResponse);
 }
 
 service TaskService {
   rpc GetUnitTask(GetUnitTaskRequest) returns (GetUnitTaskResponse);
   rpc GetSubTask(GetSubTaskRequest) returns (GetSubTaskResponse);
-  rpc ListUnitTasks(ListUnitTasksRequest) returns (ListUnitTasksResponse);
-  rpc ListSubTasks(ListSubTasksRequest) returns (ListSubTasksResponse);
   rpc SubmitPlanDecision(SubmitPlanDecisionRequest) returns (SubmitPlanDecisionResponse);
-  rpc RunSubTaskSessionAdapter(RunSubTaskSessionAdapterRequest) returns (RunSubTaskSessionAdapterResponse);
 }
 
 service SessionService {
   rpc GetSessionOutput(GetSessionOutputRequest) returns (GetSessionOutputResponse);
-  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
 }
 
 service PrManagementService {
   rpc GetPullRequest(GetPullRequestRequest) returns (GetPullRequestResponse);
-  rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
 }
 
 service ReviewAssistService {
@@ -564,8 +394,4 @@ service EventStreamService {
   // If from_sequence is older than retention, the server returns OutOfRange and
   // includes EventStreamCursorOutOfRangeDetail with earliest_available_sequence.
   rpc StreamWorkspaceEvents(StreamWorkspaceEventsRequest) returns (stream StreamWorkspaceEventsResponse);
-}
-
-service WorkerSessionAdapterService {
-  rpc NormalizeSessionOutputFixture(NormalizeSessionOutputFixtureRequest) returns (NormalizeSessionOutputFixtureResponse);
 }

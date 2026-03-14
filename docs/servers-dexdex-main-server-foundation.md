@@ -57,18 +57,19 @@
 - `SINGLE_INSTANCE`: single-process event backbone, local DB option, replay bounded by local retention
 - `SCALE`: Redis-backed propagation/replay and relational DB backbone for multi-instance deployment
 - Configuration contract (normalized to current monorepo/runtime naming):
-- currently implemented envs: `DEXDEX_MAIN_SERVER_ADDR`, `DEXDEX_MAIN_STREAM_RETENTION`, `DEXDEX_MAIN_STREAM_HEARTBEAT_INTERVAL`, `DEXDEX_WORKER_SERVER_URL`
-- planned profile/env extensions from upstream contract (for additive rollout): `DEXDEX_DEPLOYMENT_MODE`, `DEXDEX_DATABASE_URL`, `DEXDEX_REDIS_URL`, `DEXDEX_PR_POLL_INTERVAL_SEC`
+- current scaffold implementation does not parse runtime env configuration
+- planned envs for Connect runtime rollout: `DEXDEX_MAIN_SERVER_ADDR`, `DEXDEX_MAIN_STREAM_RETENTION`, `DEXDEX_MAIN_STREAM_HEARTBEAT_INTERVAL`, `DEXDEX_WORKER_SERVER_URL`, `DEXDEX_DEPLOYMENT_MODE`, `DEXDEX_DATABASE_URL`, `DEXDEX_REDIS_URL`, `DEXDEX_PR_POLL_INTERVAL_SEC`
 - Implemented-vs-planned alignment:
-- current implementation exposes a subset-focused proto surface with in-process store and stream replay retention controls
-- expanded API behavior from upstream DexDex source docs and this session-fork/work-status extension is treated as target contract and must be rolled out additively
+- current implementation is scaffold-only (`main.go` logger bootstrap plus pure helper logic in `plan_decision` and `stream_replay`)
+- Connect RPC handlers, stream fan-out runtime, worker adapter calls, and control-plane persistence are planned rollout scope
+- expanded API behavior from upstream DexDex source docs and this session-fork/work-status extension remains target contract and must be rolled out additively
 
 ## Storage
-- Owns control-plane records for workspace scope, task/subtask/session state snapshots, PR/review/notification metadata, and stream sequence progression.
-- Owns session-lineage metadata (`parent_session_id`, `root_session_id`, `forked_from_sequence`, `fork_status`) and fork archival state.
-- Owns active-workspace waiting-session index and workspace-work-status snapshots for shortcut/tray read models.
-- Caches worker agent capability snapshots with bounded TTL and invalidation on worker capability refresh failures.
-- Current implementation uses in-process retention-backed workspace store for stream and orchestration state.
+- Target runtime owns control-plane records for workspace scope, task/subtask/session state snapshots, PR/review/notification metadata, and stream sequence progression.
+- Target runtime owns session-lineage metadata (`parent_session_id`, `root_session_id`, `forked_from_sequence`, `fork_status`) and fork archival state.
+- Target runtime owns active-workspace waiting-session index and workspace-work-status snapshots for shortcut/tray read models.
+- Target runtime caches worker agent capability snapshots with bounded TTL and invalidation on worker capability refresh failures.
+- Current scaffold implementation is stateless and does not persist orchestration or stream state.
 - Target deployment contract supports durable relational storage and Redis-backed stream propagation in scale mode.
 - Retention and replay boundaries must be explicit and observable in operational behavior.
 
@@ -94,10 +95,11 @@
 
 ## Dependencies and Integrations
 - Depends on shared schema contracts in `protos/dexdex/v1`.
-- Integrates upstream with `apps/dexdex` client behavior through Connect RPC and event streaming.
-- Integrates downstream with `servers/dexdex-worker-server` via worker session adapter RPC boundary.
-- Consumes worker capability and fork-adapter contracts from `WorkerSessionAdapterService`.
-- Integrates with PR providers and notification consumers through normalized control-plane entities.
+- Current scaffold implementation does not expose live Connect RPC handlers to app or worker components.
+- Target runtime integrates upstream with `apps/dexdex` client behavior through Connect RPC and event streaming.
+- Target runtime integrates downstream with `servers/dexdex-worker-server` via worker session adapter RPC boundary.
+- Target runtime consumes worker capability and fork-adapter contracts from `WorkerSessionAdapterService`.
+- Target runtime integrates with PR providers and notification consumers through normalized control-plane entities.
 
 ## Change Triggers
 - Update this file with `docs/project-dexdex.md` when control-plane responsibilities or deployment-mode guarantees change.
@@ -114,7 +116,8 @@
 - `docs/domain-template.md`
 - Implementation anchors:
 - `servers/dexdex-main-server/main.go`
-- `servers/dexdex-main-server/internal/service/connect_server.go`
+- `servers/dexdex-main-server/internal/service/plan_decision.go`
+- `servers/dexdex-main-server/internal/service/stream_replay.go`
 - Upstream source docs merged into this contract:
 - `https://github.com/delinoio/dexdex/blob/main/docs/main-server.md`
 - `https://github.com/delinoio/dexdex/blob/main/docs/event-streaming.md`

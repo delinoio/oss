@@ -43,17 +43,19 @@
 - normalize provider usage counters into shared token/cost schema
 - support partial/null metrics where provider counters are unavailable
 - Configuration contract (normalized to current monorepo/runtime naming):
-- currently implemented env: `DEXDEX_WORKER_SERVER_ADDR`
-- planned profile/env extensions from upstream contract (for additive rollout): `DEXDEX_WORKER_ID`, `DEXDEX_MAIN_SERVER_URL`, `DEXDEX_WORKTREE_ROOT`, `DEXDEX_REPO_CACHE_ROOT`, `DEXDEX_MAX_PARALLEL_SUBTASKS`, `DEXDEX_AGENT_EXEC_TIMEOUT_SEC`
+- current scaffold implementation does not parse runtime env configuration
+- planned envs for execution runtime rollout: `DEXDEX_WORKER_SERVER_ADDR`, `DEXDEX_WORKER_ID`, `DEXDEX_MAIN_SERVER_URL`, `DEXDEX_WORKTREE_ROOT`, `DEXDEX_REPO_CACHE_ROOT`, `DEXDEX_MAX_PARALLEL_SUBTASKS`, `DEXDEX_AGENT_EXEC_TIMEOUT_SEC`
 - Implemented-vs-planned alignment:
-- current implementation exposes worker session output normalization and commit-chain validation primitives
-- full worktree orchestration, capability discovery, and session-fork adapter flows are documented as target contract behavior
+- current implementation is scaffold-only (`main.go` logger bootstrap plus `commit_chain` validation primitives)
+- worker session output normalization, adapter RPC handlers, and capability/fork flows are planned rollout scope
+- full worktree orchestration is documented as target contract behavior
 
 ## Storage
-- Owns worker-local temporary execution data, adapter parsing buffers, and normalized event artifacts prior to main-server persistence.
+- Target runtime owns worker-local temporary execution data, adapter parsing buffers, and normalized event artifacts prior to main-server persistence.
 - Target path conventions include repository cache and task-scoped worktree roots under user-local DexDex directories.
 - Commit-chain artifact metadata must remain reproducible, ordered, and attributable per subtask/session context.
 - Worker-local capability and fork debug artifacts must be bounded-retention and must not cross public contract boundaries.
+- Current scaffold implementation is stateless and does not expose adapter output persistence.
 
 ## Security
 - Validate repository URLs, branch refs, and runtime inputs before agent execution.
@@ -76,10 +78,11 @@
 
 ## Dependencies and Integrations
 - Depends on shared `protos/dexdex/v1` schemas.
-- Integrates upstream with `servers/dexdex-main-server` through worker session adapter RPC contracts.
-- Provides normalized session output and artifact contracts consumed by main-server for client-facing flows.
-- Adapter fixtures and parser pipelines support multiple coding-agent CLIs.
-- Fork-capability and fork-adapter contracts are consumed by main-server as provider-agnostic orchestration dependencies.
+- Current scaffold implementation does not expose worker session adapter RPC handlers.
+- Target runtime integrates upstream with `servers/dexdex-main-server` through worker session adapter RPC contracts.
+- Target runtime provides normalized session output and artifact contracts consumed by main-server for client-facing flows.
+- Target runtime adapter fixtures and parser pipelines support multiple coding-agent CLIs.
+- Target runtime fork-capability and fork-adapter contracts are consumed by main-server as provider-agnostic orchestration dependencies.
 
 ## Change Triggers
 - Update this file with `docs/project-dexdex.md` when execution policy, worktree rules, or adapter boundaries change.
@@ -96,7 +99,6 @@
 - `docs/domain-template.md`
 - Implementation anchors:
 - `servers/dexdex-worker-server/main.go`
-- `servers/dexdex-worker-server/internal/service/connect_server.go`
 - `servers/dexdex-worker-server/internal/service/commit_chain.go`
 - Upstream source docs merged into this contract:
 - `https://github.com/delinoio/dexdex/blob/main/docs/worker-server.md`
