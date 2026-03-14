@@ -3,43 +3,75 @@
 ## Scope
 - Project/component: DexDex worker server contract
 - Canonical path: `servers/dexdex-worker-server`
+- Role: execution-plane and normalization boundary for coding-agent session output and commit-chain artifacts
 
 ## Runtime and Language
-- Runtime: Go server
+- Runtime: Go Connect RPC server
 - Primary language: Go
 
 ## Users and Operators
-- Control-plane orchestrators dispatching execution tasks
-- Operators running execution-plane capacity and reliability workflows
+- Main-server orchestration paths dispatching worker execution and normalization operations
+- Operators maintaining execution reliability, adapter correctness, and artifact integrity
+- Maintainers extending agent adapters and execution isolation policies
 
 ## Interfaces and Contracts
 - Stable component identifier: `worker-server`.
-- Execution-plane APIs must align with shared `protos/dexdex/v1` definitions.
-- Worker status, result, and error contracts must remain stable for control-plane and desktop consumers.
+- Worker is not a direct client business API target; client-visible business flows are mediated by main-server.
+- Execution-plane contract:
+- worktree-only execution model for SubTask runs
+- repository group ordering preserved and first repository used as primary launch directory
+- non-primary repositories attached via `--add-dir` (or adapter-equivalent flags) in deterministic order
+- real git commit chain required for code-changing subtasks
+- commit metadata ordering and ancestry are authoritative for downstream PR and commit-local actions
+- Normalization contract:
+- provider-native agent output is parsed only in worker adapter/runtime boundaries
+- emitted output to main-server follows normalized `SessionOutputEvent` schema
+- provider-native payloads remain worker-local debug material and are not public business contract
+- Plan-mode execution contract:
+- subtasks can pause for decisions and resume/finalize based on `APPROVE`, `REVISE`, `REJECT`
+- cancellation must terminate active agent processes promptly and emit final cancellation state
+- Usage/cost contract:
+- normalize provider usage counters into shared token/cost schema
+- support partial/null metrics where provider counters are unavailable
+- Configuration contract (normalized to current monorepo/runtime naming):
+- currently implemented env: `DEXDEX_WORKER_SERVER_ADDR`
+- planned profile/env extensions from upstream contract (for additive rollout): `DEXDEX_WORKER_ID`, `DEXDEX_MAIN_SERVER_URL`, `DEXDEX_WORKTREE_ROOT`, `DEXDEX_REPO_CACHE_ROOT`, `DEXDEX_MAX_PARALLEL_SUBTASKS`, `DEXDEX_AGENT_EXEC_TIMEOUT_SEC`
+- Implemented-vs-planned alignment:
+- current implementation exposes worker session output normalization and commit-chain validation primitives
+- full worktree orchestration and multi-subtask runtime flows are documented as target contract behavior
 
 ## Storage
-- Owns worker-local execution metadata and cache contracts.
-- Execution artifact retention and cleanup policies must remain explicit.
+- Owns worker-local temporary execution data, adapter parsing buffers, and normalized event artifacts prior to main-server persistence.
+- Target path conventions include repository cache and task-scoped worktree roots under user-local DexDex directories.
+- Commit-chain artifact metadata must remain reproducible, ordered, and attributable per subtask/session context.
 
 ## Security
-- Worker execution boundaries must enforce least privilege and isolation controls.
-- Sensitive task payloads must be redacted from logs and default diagnostic output.
+- Validate repository URLs, branch refs, and runtime inputs before agent execution.
+- Secrets must be injected with minimal scope and lifetime and never logged in plaintext.
+- Worker-local debug payload retention must avoid exposing provider-native secret material.
+- Execution isolation and least-privilege controls are required for multi-repository operations.
 
 ## Logging
-- Use structured `log/slog` logs for task lifecycle, execution state, and failure diagnostics.
-- Include task ID, worker ID, workflow correlation ID, and sanitized error taxonomy.
+- Use structured `log/slog` logging for adapter normalization lifecycle, validation failures, cancellation checkpoints, and artifact generation.
+- Required diagnostics include primary repository selection, add-dir mapping order, commit-chain validation outcomes, and session status transitions.
+- Include workspace/task/subtask/session correlation fields when available.
 
 ## Build and Test
-- Local validation: `go test ./servers/dexdex-worker-server/...`
+- Component-local validation: `go test ./servers/dexdex-worker-server/...`
 - Repository baseline: `go test ./...`
+- Contract-sensitive tests should cover adapter normalization parity, commit-chain validation rules, and input-validation failures.
 
 ## Dependencies and Integrations
-- Integrates with main server scheduling and orchestration flows.
-- Integrates with shared proto schemas consumed by desktop and server components.
+- Depends on shared `protos/dexdex/v1` schemas.
+- Integrates upstream with `servers/dexdex-main-server` through worker session adapter RPC contracts.
+- Provides normalized session output and artifact contracts consumed by main-server for client-facing flows.
+- Adapter fixtures and parser pipelines support multiple coding-agent CLIs.
 
 ## Change Triggers
-- Update `docs/project-dexdex.md` and this file when execution APIs or runtime boundaries change.
-- Synchronize schema-impacting changes with proto, main-server, and desktop contracts.
+- Update this file with `docs/project-dexdex.md` when execution policy, worktree rules, or adapter boundaries change.
+- Synchronize with `docs/protos-dexdex-v1-contract.md` when normalized event, commit metadata, or plan-related schema contracts change.
+- Synchronize with `docs/servers-dexdex-main-server-foundation.md` for worker-routing and cancellation contract changes.
+- Update app-facing contract docs when worker normalization or artifact guarantees affect user-visible behavior.
 
 ## References
 - `docs/project-dexdex.md`
@@ -47,3 +79,10 @@
 - `docs/servers-dexdex-main-server-foundation.md`
 - `docs/apps-dexdex-desktop-app-foundation.md`
 - `docs/domain-template.md`
+- Implementation anchors:
+- `servers/dexdex-worker-server/main.go`
+- `servers/dexdex-worker-server/internal/service/connect_server.go`
+- `servers/dexdex-worker-server/internal/service/commit_chain.go`
+- Upstream source docs merged into this contract:
+- `https://github.com/delinoio/dexdex/blob/main/docs/worker-server.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/developer-setup.md`

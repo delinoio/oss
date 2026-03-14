@@ -1,7 +1,7 @@
 # Project: dexdex
 
 ## Goal
-Define DexDex multi-component contracts while the desktop app remains on a temporary React scaffold baseline and server/proto contracts continue evolving.
+Define DexDex as a Connect RPC-first, multi-component orchestration platform contract for desktop-first and mobile-ready workflows, while documenting both implemented and planned capabilities in one canonical project index.
 
 ## Project ID
 `dexdex`
@@ -10,7 +10,7 @@ Define DexDex multi-component contracts while the desktop app remains on a tempo
 - `apps/dexdex` (`desktop-app`)
 - `servers/dexdex-main-server` (`main-server`)
 - `servers/dexdex-worker-server` (`worker-server`)
-- `protos/dexdex` (`v1` shared contracts)
+- `protos/dexdex/v1` (`v1` shared contracts)
 
 ## Domain Contract Documents
 - `docs/apps-dexdex-desktop-app-foundation.md`
@@ -19,17 +19,45 @@ Define DexDex multi-component contracts while the desktop app remains on a tempo
 - `docs/protos-dexdex-v1-contract.md`
 
 ## Cross-Domain Invariants
-- Component identifiers remain stable: `desktop-app`, `main-server`, `worker-server`.
-- Shared schemas in `protos/dexdex/v1` are the source of truth for server-side business contracts and future desktop reintegration.
-- `apps/dexdex` is currently a scaffold-phase desktop shell and does not yet consume `dexdex.v1` business RPC contracts.
-- Connect RPC-first desktop integration is planned and must restore Tauri-as-adapter boundaries.
+- Connect RPC is the canonical business contract boundary across all DexDex components.
+- Desktop/mobile clients use `main-server` APIs for business flows and must not call worker business internals directly.
+- Tauri-specific bindings are adapters for platform capabilities only and do not define business contracts.
+- Workspace connectivity is a first-class concept with stable enum-style types: `LOCAL_ENDPOINT`, `REMOTE_ENDPOINT`.
+- Task execution is worktree-only and repository-group scoped.
+- Repository order in a repository group is deterministic; the first repository is the primary execution directory.
+- Multi-repository execution attaches non-primary repositories via `--add-dir` (or agent-equivalent options) while preserving order.
+- Real git commit chain metadata is the authoritative output artifact for PR creation and commit-local flows.
+- Patch artifacts are derived artifacts for diff rendering and are not authoritative execution output.
+- Plan mode uses explicit decisions (`APPROVE`, `REVISE`, `REJECT`) and must preserve decision history linkage to subtask/session records.
+- Event streaming uses monotonic workspace sequence semantics with replay/resume behavior and explicit out-of-range handling.
+- Notification contracts are event-driven; in-app notification state is authoritative while Web Notification API dispatch is permission-dependent.
+- Coding-agent provider-native output is normalized in `worker-server`; only normalized events cross server/client boundaries.
+- Shared enum and message identifiers in `protos/dexdex/v1` remain stable or evolve additively under explicit version policy.
 
 ## Change Policy
-- Interface changes require synchronized updates to this index and all affected domain contract docs.
-- Any proto schema updates must propagate to desktop and both server contracts in the same change set.
-- Desktop reintegration work must update this index and `docs/apps-dexdex-desktop-app-foundation.md` in the same change where RPC contracts are reintroduced.
+- Contract changes across app/server/proto boundaries must update this index and all affected DexDex domain contract docs in the same change set.
+- Schema and enum changes in `protos/dexdex/v1` must synchronize desktop, main-server, and worker-server contracts in the same change set.
+- Repository path or component ownership changes must keep canonical paths aligned with this file and DexDex domain contract docs.
+- Any update that changes execution invariants (worktree policy, repository ordering, commit-chain authority, plan decisions, stream sequencing) must be reflected consistently across all DexDex contract docs.
+- Contract sections may include implemented-vs-planned annotations when runtime/proto coverage lags product contract scope.
+- External DexDex source-doc merges must update traceability references in this file to keep source coverage auditable.
 
 ## References
 - `docs/project-template.md`
 - `docs/domain-template.md`
 - `docs/README.md`
+- DexDex upstream source coverage (`delinoio/dexdex` `main` docs, read on 2026-03-13):
+- `https://github.com/delinoio/dexdex/blob/main/docs/api.md` -> `docs/protos-dexdex-v1-contract.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/design.md` -> this file + all DexDex domain docs
+- `https://github.com/delinoio/dexdex/blob/main/docs/developer-setup.md` -> `docs/apps-dexdex-desktop-app-foundation.md`, `docs/servers-dexdex-main-server-foundation.md`, `docs/servers-dexdex-worker-server-foundation.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/entities.md` -> `docs/protos-dexdex-v1-contract.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/event-streaming.md` -> `docs/servers-dexdex-main-server-foundation.md`, `docs/protos-dexdex-v1-contract.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/main-server.md` -> `docs/servers-dexdex-main-server-foundation.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/notifications.md` -> `docs/apps-dexdex-desktop-app-foundation.md`, `docs/servers-dexdex-main-server-foundation.md`, `docs/protos-dexdex-v1-contract.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/plan-yaml.md` -> `docs/protos-dexdex-v1-contract.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/pr-management.md` -> `docs/servers-dexdex-main-server-foundation.md`, `docs/protos-dexdex-v1-contract.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/tauri-app.md` -> `docs/apps-dexdex-desktop-app-foundation.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/ui.md` -> `docs/apps-dexdex-desktop-app-foundation.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/user-guide.md` -> `docs/apps-dexdex-desktop-app-foundation.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/worker-server.md` -> `docs/servers-dexdex-worker-server-foundation.md`
+- `https://github.com/delinoio/dexdex/blob/main/docs/workspace-connectivity.md` -> `docs/apps-dexdex-desktop-app-foundation.md`
