@@ -162,12 +162,12 @@ function App() {
   const createTaskMutation = useCreateUnitTaskMutation();
 
   const handleCreateTask = useCallback(
-    (title: string, description: string) => {
+    (title: string, description: string, repositoryGroupId: string) => {
       createTaskMutation.mutate({
         workspaceId: WORKSPACE_ID,
         title,
         description,
-        repositoryGroupId: "",
+        repositoryGroupId,
       });
     },
     [createTaskMutation],
@@ -315,6 +315,7 @@ function App() {
       />
       <CreateDialog
         isOpen={createDialogOpen}
+        workspaceId={WORKSPACE_ID}
         onClose={() => setCreateDialogOpen(false)}
         onCreate={handleCreateTask}
       />

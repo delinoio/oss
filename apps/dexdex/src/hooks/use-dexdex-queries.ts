@@ -17,7 +17,7 @@ import {
   getLatestWaitingSession,
   submitSessionInput,
 } from "../gen/v1/dexdex-SessionService_connectquery";
-import { getRepositoryGroup } from "../gen/v1/dexdex-RepositoryService_connectquery";
+import { getRepositoryGroup, listRepositoryGroups } from "../gen/v1/dexdex-RepositoryService_connectquery";
 import { getPullRequest, listPullRequests } from "../gen/v1/dexdex-PrManagementService_connectquery";
 import { listReviewAssistItems } from "../gen/v1/dexdex-ReviewAssistService_connectquery";
 import { listReviewComments } from "../gen/v1/dexdex-ReviewCommentService_connectquery";
@@ -174,6 +174,13 @@ export function useSubmitSessionInputMutation() {
       queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
     },
   });
+}
+
+/**
+ * Fetch all repository groups for a workspace.
+ */
+export function useListRepositoryGroups(workspaceId: string) {
+  return useQuery(listRepositoryGroups, { workspaceId });
 }
 
 /**

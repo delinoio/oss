@@ -3,16 +3,31 @@
  */
 
 import { type CSSProperties, type FormEvent, useState } from "react";
+import { useListRepositoryGroups } from "../../hooks/use-dexdex-queries";
+
+interface RepositoryGroup {
+  repositoryGroupId: string;
+  repositories: Array<{
+    repositoryId: string;
+    repositoryUrl: string;
+    branchRef: string;
+  }>;
+}
 
 interface CreateDialogProps {
   isOpen: boolean;
+  workspaceId: string;
   onClose: () => void;
-  onCreate: (title: string, description: string) => void;
+  onCreate: (title: string, description: string, repositoryGroupId: string) => void;
 }
 
-export function CreateDialog({ isOpen, onClose, onCreate }: CreateDialogProps) {
+export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateDialogProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [selectedRepoGroupId, setSelectedRepoGroupId] = useState("");
+
+  const repoGroupsQuery = useListRepositoryGroups(workspaceId);
+  const repoGroups: RepositoryGroup[] = (repoGroupsQuery.data?.repositoryGroups ?? []) as RepositoryGroup[];
 
   if (!isOpen) return null;
 
@@ -20,9 +35,10 @@ export function CreateDialog({ isOpen, onClose, onCreate }: CreateDialogProps) {
     e.preventDefault();
     const trimmed = title.trim();
     if (!trimmed) return;
-    onCreate(trimmed, description.trim());
+    onCreate(trimmed, description.trim(), selectedRepoGroupId);
     setTitle("");
     setDescription("");
+    setSelectedRepoGroupId("");
     onClose();
   }
 
@@ -63,6 +79,20 @@ export function CreateDialog({ isOpen, onClose, onCreate }: CreateDialogProps) {
     fontSize: "var(--font-size-base)",
   };
 
+  const selectStyle: CSSProperties = {
+    ...inputStyle,
+    fontSize: "var(--font-size-base)",
+    cursor: "pointer",
+  };
+
+  const labelStyle: CSSProperties = {
+    display: "block",
+    fontSize: "var(--font-size-sm)",
+    fontWeight: 500,
+    marginBottom: "var(--space-1)",
+    color: "var(--color-text-secondary)",
+  };
+
   return (
     <div style={overlayStyle} onClick={onClose} data-testid="create-dialog">
       <div style={dialogStyle} onClick={(e) => e.stopPropagation()}>
@@ -77,16 +107,7 @@ export function CreateDialog({ isOpen, onClose, onCreate }: CreateDialogProps) {
         </h2>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: "var(--space-3)" }}>
-            <label
-              htmlFor="task-title"
-              style={{
-                display: "block",
-                fontSize: "var(--font-size-sm)",
-                fontWeight: 500,
-                marginBottom: "var(--space-1)",
-                color: "var(--color-text-secondary)",
-              }}
-            >
+            <label htmlFor="task-title" style={labelStyle}>
               Title
             </label>
             <input
@@ -100,17 +121,8 @@ export function CreateDialog({ isOpen, onClose, onCreate }: CreateDialogProps) {
               data-testid="task-title-input"
             />
           </div>
-          <div style={{ marginBottom: "var(--space-4)" }}>
-            <label
-              htmlFor="task-description"
-              style={{
-                display: "block",
-                fontSize: "var(--font-size-sm)",
-                fontWeight: 500,
-                marginBottom: "var(--space-1)",
-                color: "var(--color-text-secondary)",
-              }}
-            >
+          <div style={{ marginBottom: "var(--space-3)" }}>
+            <label htmlFor="task-description" style={labelStyle}>
               Description
             </label>
             <textarea
@@ -121,6 +133,25 @@ export function CreateDialog({ isOpen, onClose, onCreate }: CreateDialogProps) {
               placeholder="Describe the task..."
               data-testid="task-description-input"
             />
+          </div>
+          <div style={{ marginBottom: "var(--space-4)" }}>
+            <label htmlFor="task-repo-group" style={labelStyle}>
+              Repository Group
+            </label>
+            <select
+              id="task-repo-group"
+              style={selectStyle}
+              value={selectedRepoGroupId}
+              onChange={(e) => setSelectedRepoGroupId(e.target.value)}
+              data-testid="task-repo-group-select"
+            >
+              <option value="">None (no execution)</option>
+              {repoGroups.map((group) => (
+                <option key={group.repositoryGroupId} value={group.repositoryGroupId}>
+                  {group.repositoryGroupId} ({group.repositories.length} repos)
+                </option>
+              ))}
+            </select>
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}>
             <button
