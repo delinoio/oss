@@ -27,6 +27,15 @@
 - provider-native agent output is parsed only in worker adapter/runtime boundaries
 - emitted output to main-server follows normalized `SessionOutputEvent` schema
 - provider-native payloads remain worker-local debug material and are not public business contract
+- Agent capability contract:
+- capability discovery is exposed through `WorkerSessionAdapterService.GetAgentCapabilities`
+- capability response is normalized across `CODEX_CLI`, `CLAUDE_CODE`, and `OPENCODE`
+- fork support is expressed as capability flags and reason codes (not provider-native text)
+- Session fork adapter contract:
+- `WorkerSessionAdapterService.ForkSessionAdapter` performs provider-native fork execution behind worker abstraction
+- fork output is normalized into shared lineage/session references for main-server persistence
+- unsupported fork paths must map to consistent, typed errors consumed by main-server as `FAILED_PRECONDITION`
+- provider-native fork payloads remain worker-local diagnostics and are never exposed to app/main-server APIs
 - Plan-mode execution contract:
 - subtasks can pause for decisions and resume/finalize based on `APPROVE`, `REVISE`, `REJECT`
 - cancellation must terminate active agent processes promptly and emit final cancellation state
@@ -38,40 +47,46 @@
 - planned profile/env extensions from upstream contract (for additive rollout): `DEXDEX_WORKER_ID`, `DEXDEX_MAIN_SERVER_URL`, `DEXDEX_WORKTREE_ROOT`, `DEXDEX_REPO_CACHE_ROOT`, `DEXDEX_MAX_PARALLEL_SUBTASKS`, `DEXDEX_AGENT_EXEC_TIMEOUT_SEC`
 - Implemented-vs-planned alignment:
 - current implementation exposes worker session output normalization and commit-chain validation primitives
-- full worktree orchestration and multi-subtask runtime flows are documented as target contract behavior
+- full worktree orchestration, capability discovery, and session-fork adapter flows are documented as target contract behavior
 
 ## Storage
 - Owns worker-local temporary execution data, adapter parsing buffers, and normalized event artifacts prior to main-server persistence.
 - Target path conventions include repository cache and task-scoped worktree roots under user-local DexDex directories.
 - Commit-chain artifact metadata must remain reproducible, ordered, and attributable per subtask/session context.
+- Worker-local capability and fork debug artifacts must be bounded-retention and must not cross public contract boundaries.
 
 ## Security
 - Validate repository URLs, branch refs, and runtime inputs before agent execution.
 - Secrets must be injected with minimal scope and lifetime and never logged in plaintext.
 - Worker-local debug payload retention must avoid exposing provider-native secret material.
 - Execution isolation and least-privilege controls are required for multi-repository operations.
+- Session-fork provider calls must redact user prompts/session content from error payloads returned outside worker internals.
 
 ## Logging
 - Use structured `log/slog` logging for adapter normalization lifecycle, validation failures, cancellation checkpoints, and artifact generation.
 - Required diagnostics include primary repository selection, add-dir mapping order, commit-chain validation outcomes, and session status transitions.
 - Include workspace/task/subtask/session correlation fields when available.
+- Structured logs must include agent capability-refresh outcomes, fork-attempt decisions, and provider-error normalization mappings.
 
 ## Build and Test
 - Component-local validation: `go test ./servers/dexdex-worker-server/...`
 - Repository baseline: `go test ./...`
 - Contract-sensitive tests should cover adapter normalization parity, commit-chain validation rules, and input-validation failures.
+- Contract-sensitive tests should cover per-agent capability mapping, supported-fork success normalization, and unsupported-fork typed error mapping.
 
 ## Dependencies and Integrations
 - Depends on shared `protos/dexdex/v1` schemas.
 - Integrates upstream with `servers/dexdex-main-server` through worker session adapter RPC contracts.
 - Provides normalized session output and artifact contracts consumed by main-server for client-facing flows.
 - Adapter fixtures and parser pipelines support multiple coding-agent CLIs.
+- Fork-capability and fork-adapter contracts are consumed by main-server as provider-agnostic orchestration dependencies.
 
 ## Change Triggers
 - Update this file with `docs/project-dexdex.md` when execution policy, worktree rules, or adapter boundaries change.
 - Synchronize with `docs/protos-dexdex-v1-contract.md` when normalized event, commit metadata, or plan-related schema contracts change.
 - Synchronize with `docs/servers-dexdex-main-server-foundation.md` for worker-routing and cancellation contract changes.
 - Update app-facing contract docs when worker normalization or artifact guarantees affect user-visible behavior.
+- Synchronize with `servers/AGENTS.md` when worker capability/fork normalization policy changes.
 
 ## References
 - `docs/project-dexdex.md`

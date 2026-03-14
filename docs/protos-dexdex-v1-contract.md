@@ -18,6 +18,16 @@
 - `dexdex.v1` package identifiers are stable enum-style contract language and must evolve additively by default.
 - Canonical enum vocabulary includes workspace connectivity, task/subtask/session states, action badges, PR/review/comment/notification types, stream event families, and plan decisions.
 - Canonical entity vocabulary includes workspace, repository-group scope, unit/sub tasks, session output/state, PR tracking, review assist items, inline comments, badge themes, and notifications.
+- Planned additive enum contracts for session-fork and tray/workspace status:
+- `SessionForkIntent` for fork purpose signaling in session forking flows
+- `SessionForkStatus` for fork lifecycle state (`ACTIVE`, `ARCHIVED`, and additive-safe extensions)
+- `WorkspaceWorkStatus` for active-workspace tray/UI state ordering (`FAILED`, `ACTION_REQUIRED`, `WAITING_FOR_INPUT`, `RUNNING`, `IDLE`, `DISCONNECTED`)
+- `NotificationType` additive extension includes `NOTIFICATION_TYPE_AGENT_INPUT_REQUIRED`
+- `StreamEventType` additive extension includes `STREAM_EVENT_TYPE_SESSION_FORK_UPDATED` and `STREAM_EVENT_TYPE_WORKSPACE_WORK_STATUS_UPDATED`
+- Planned additive message contracts:
+- `SessionSummary` adds lineage fields `parent_session_id`, `root_session_id`, `fork_status`, and `forked_from_sequence`
+- stream payload family adds `SessionForkUpdatedEvent` and `WorkspaceWorkStatusUpdatedEvent`
+- capability payload family adds normalized agent capability records for fork support reporting
 - Service-level contract families include:
 - workspace/repository control-plane queries and lifecycle
 - task/subtask/session orchestration and plan decisions
@@ -25,22 +35,35 @@
 - badge and notification operations
 - workspace event streaming
 - worker session adapter normalization
+- Planned additive service methods:
+- `WorkspaceService.GetWorkspaceWorkStatus`
+- `SessionService.ListSessionCapabilities`
+- `SessionService.ForkSession`
+- `SessionService.ListForkedSessions`
+- `SessionService.ArchiveForkedSession`
+- `SessionService.GetLatestWaitingSession`
+- `SessionService.SubmitSessionInput`
+- `WorkerSessionAdapterService.GetAgentCapabilities`
+- `WorkerSessionAdapterService.ForkSessionAdapter`
 - Event stream envelope semantics:
 - workspace-scoped monotonic `sequence`
 - typed `event_type`
 - timestamped occurrence field
 - oneof payload family for task, subtask, session output/state, PR, review assist, inline comment, and notification events
+- additive payload family includes session-fork and workspace-work-status updates
 - Replay semantics:
 - client resumes from last observed sequence
 - server returns out-of-range detail when requested cursor predates retained envelopes
 - Error semantics:
 - contract expects standard Connect error-code mapping (`INVALID_ARGUMENT`, `UNAUTHENTICATED`, `PERMISSION_DENIED`, `NOT_FOUND`, `FAILED_PRECONDITION`, `RESOURCE_EXHAUSTED`, `INTERNAL`, `UNAVAILABLE`) with request-correlation metadata
+- unsupported session-fork requests must resolve to `FAILED_PRECONDITION` with capability reason metadata
 - API evolution rules:
 - additive fields/endpoints preferred
 - enum expansion is allowed with unknown-safe client behavior
 - breaking changes require coordinated rollout across app and servers
 - Implemented-vs-planned alignment (current repo reality):
 - implemented proto currently contains subset-centric RPCs such as `Get*`/`List*`, `SubmitPlanDecision`, `RunSubTaskSessionAdapter`, `NormalizeSessionOutputFixture`, and stream APIs
+- session-fork, latest-waiting-input, workspace-work-status, and capability/fork-adapter RPCs are planned additive extensions and are not yet implemented in current `dexdex.proto`
 - upstream DexDex source docs define expanded create/update/delete and richer flow contracts that are target scope for additive evolution
 - `protos/dexdex/v1/dexdex.proto` remains the canonical source for what is implemented now; this document records both current contract and planned-compatible expansion direction
 
@@ -63,6 +86,7 @@
 - Validate schema with repository proto generation and compile checks.
 - Run repository baseline tests: `go test ./...`.
 - Contract-sensitive coverage should include stream replay semantics, plan decision transitions, normalized session output shape, and backward-compatible enum handling.
+- Contract-sensitive coverage should include fork parent immutability shape, unsupported-fork `FAILED_PRECONDITION` mapping, latest waiting-session lookup requests, and workspace-work-status event payload compatibility.
 
 ## Dependencies and Integrations
 - Upstream contract consumers: `apps/dexdex`, `servers/dexdex-main-server`, `servers/dexdex-worker-server`.

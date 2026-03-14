@@ -51,6 +51,9 @@ enum DevkitMiniAppId {
 - `LOCAL` and `REMOTE` workspace modes must converge to the same post-resolution UX and business flow behavior.
 - DexDex desktop contract consumption must use shared proto definitions from `protos/dexdex/v1` as the source of truth.
 - Keep DexDex desktop app contracts synchronized with `docs/apps-dexdex-desktop-app-foundation.md` and `docs/project-dexdex.md`.
+- Global shortcut question-handoff behavior (default binding, waiting-session routing, empty fallback) must remain aligned with DexDex app/server/proto contracts.
+- Menu bar tray behavior remains status-only unless docs explicitly expand scope; status derivation must use active-workspace contract semantics.
+- Session fork UX must keep parent-session immutability guarantees and remain limited to documented lifecycle actions.
 
 ### Multi-Component Contract Sync
 
