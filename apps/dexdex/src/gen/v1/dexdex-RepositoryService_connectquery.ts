@@ -5,6 +5,31 @@
 import { RepositoryService } from "./dexdex_pb";
 
 /**
+ * @generated from rpc dexdex.v1.RepositoryService.GetRepository
+ */
+export const getRepository = RepositoryService.method.getRepository;
+
+/**
+ * @generated from rpc dexdex.v1.RepositoryService.ListRepositories
+ */
+export const listRepositories = RepositoryService.method.listRepositories;
+
+/**
+ * @generated from rpc dexdex.v1.RepositoryService.CreateRepository
+ */
+export const createRepository = RepositoryService.method.createRepository;
+
+/**
+ * @generated from rpc dexdex.v1.RepositoryService.UpdateRepository
+ */
+export const updateRepository = RepositoryService.method.updateRepository;
+
+/**
+ * @generated from rpc dexdex.v1.RepositoryService.DeleteRepository
+ */
+export const deleteRepository = RepositoryService.method.deleteRepository;
+
+/**
  * @generated from rpc dexdex.v1.RepositoryService.GetRepositoryGroup
  */
 export const getRepositoryGroup = RepositoryService.method.getRepositoryGroup;
@@ -13,3 +38,18 @@ export const getRepositoryGroup = RepositoryService.method.getRepositoryGroup;
  * @generated from rpc dexdex.v1.RepositoryService.ListRepositoryGroups
  */
 export const listRepositoryGroups = RepositoryService.method.listRepositoryGroups;
+
+/**
+ * @generated from rpc dexdex.v1.RepositoryService.CreateRepositoryGroup
+ */
+export const createRepositoryGroup = RepositoryService.method.createRepositoryGroup;
+
+/**
+ * @generated from rpc dexdex.v1.RepositoryService.UpdateRepositoryGroup
+ */
+export const updateRepositoryGroup = RepositoryService.method.updateRepositoryGroup;
+
+/**
+ * @generated from rpc dexdex.v1.RepositoryService.DeleteRepositoryGroup
+ */
+export const deleteRepositoryGroup = RepositoryService.method.deleteRepositoryGroup;

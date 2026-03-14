@@ -7,7 +7,7 @@ import { useQuery, useMutation } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { listUnitTasks, listSubTasks, createUnitTask, submitPlanDecision } from "../gen/v1/dexdex-TaskService_connectquery";
 import { listNotifications, markNotificationRead } from "../gen/v1/dexdex-NotificationService_connectquery";
-import { getWorkspaceWorkStatus } from "../gen/v1/dexdex-WorkspaceService_connectquery";
+import { getWorkspaceWorkStatus, getWorkspaceSettings, updateWorkspaceSettings } from "../gen/v1/dexdex-WorkspaceService_connectquery";
 import {
   getSessionOutput,
   listSessionCapabilities,
@@ -17,7 +17,18 @@ import {
   getLatestWaitingSession,
   submitSessionInput,
 } from "../gen/v1/dexdex-SessionService_connectquery";
-import { getRepositoryGroup, listRepositoryGroups } from "../gen/v1/dexdex-RepositoryService_connectquery";
+import {
+  getRepository,
+  listRepositories,
+  createRepository,
+  updateRepository,
+  deleteRepository,
+  getRepositoryGroup,
+  listRepositoryGroups,
+  createRepositoryGroup,
+  updateRepositoryGroup,
+  deleteRepositoryGroup,
+} from "../gen/v1/dexdex-RepositoryService_connectquery";
 import { getPullRequest, listPullRequests } from "../gen/v1/dexdex-PrManagementService_connectquery";
 import { listReviewAssistItems } from "../gen/v1/dexdex-ReviewAssistService_connectquery";
 import {
@@ -119,6 +130,25 @@ export function useGetWorkspaceWorkStatus(workspaceId: string) {
 }
 
 /**
+ * Fetch workspace settings.
+ */
+export function useGetWorkspaceSettings(workspaceId: string) {
+  return useQuery(getWorkspaceSettings, { workspaceId });
+}
+
+/**
+ * Mutation to update workspace settings.
+ */
+export function useUpdateWorkspaceSettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(updateWorkspaceSettings, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.WorkspaceService"] });
+    },
+  });
+}
+
+/**
  * Fetch session capabilities for a workspace (fork support, agent type).
  */
 export function useListSessionCapabilities(workspaceId: string) {
@@ -192,6 +222,60 @@ export function useListRepositoryGroups(workspaceId: string) {
 }
 
 /**
+ * Fetch all repositories for a workspace.
+ */
+export function useListRepositories(workspaceId: string) {
+  return useQuery(listRepositories, { workspaceId });
+}
+
+/**
+ * Fetch a repository by ID.
+ */
+export function useGetRepository(workspaceId: string, repositoryId: string) {
+  return useQuery(
+    getRepository,
+    { workspaceId, repositoryId },
+    { enabled: !!repositoryId },
+  );
+}
+
+/**
+ * Mutation to create a repository.
+ */
+export function useCreateRepositoryMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(createRepository, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to update a repository.
+ */
+export function useUpdateRepositoryMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(updateRepository, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to delete a repository.
+ */
+export function useDeleteRepositoryMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(deleteRepository, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+  });
+}
+
+/**
  * Fetch a repository group by ID.
  */
 export function useGetRepositoryGroup(workspaceId: string, repositoryGroupId: string) {
@@ -200,6 +284,42 @@ export function useGetRepositoryGroup(workspaceId: string, repositoryGroupId: st
     { workspaceId, repositoryGroupId },
     { enabled: !!repositoryGroupId },
   );
+}
+
+/**
+ * Mutation to create a repository group.
+ */
+export function useCreateRepositoryGroupMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(createRepositoryGroup, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to update a repository group.
+ */
+export function useUpdateRepositoryGroupMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(updateRepositoryGroup, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to delete a repository group.
+ */
+export function useDeleteRepositoryGroupMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(deleteRepositoryGroup, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+  });
 }
 
 /**

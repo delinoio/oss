@@ -40,8 +40,9 @@ import {
   applyThemeToDocument,
 } from "./stores/app-store";
 import type { Notification } from "./lib/mock-data";
+import { summarizePrompt } from "./lib/adapters";
 import { PlanDecision } from "./lib/status";
-import { PlanDecision as ProtoPlanDecision } from "./gen/v1/dexdex_pb";
+import { AgentCliType, PlanDecision as ProtoPlanDecision } from "./gen/v1/dexdex_pb";
 
 const WORKSPACE_ID = "workspace-default";
 
@@ -135,7 +136,7 @@ function App() {
         if (task) {
           const existingTab = tabs.find((t) => t.id === taskId);
           if (!existingTab) {
-            const newTab: Tab = { id: taskId, label: task.title, path };
+            const newTab: Tab = { id: taskId, label: summarizePrompt(task.prompt ?? task.title), path };
             setTabs((prev) => [...prev, newTab]);
           }
           setActiveTabId(taskId);
@@ -168,12 +169,13 @@ function App() {
   const createTaskMutation = useCreateUnitTaskMutation();
 
   const handleCreateTask = useCallback(
-    (title: string, description: string, repositoryGroupId: string) => {
+    (prompt: string, repositoryGroupId: string, agentCliType: AgentCliType, usePlanMode: boolean) => {
       createTaskMutation.mutate({
         workspaceId: WORKSPACE_ID,
-        title,
-        description,
+        prompt,
         repositoryGroupId,
+        agentCliType,
+        usePlanMode,
       });
     },
     [createTaskMutation],

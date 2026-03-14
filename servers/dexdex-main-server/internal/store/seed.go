@@ -100,15 +100,17 @@ func SeedData(s Store) {
 
 	for _, t := range tasks {
 		ut := &dexdexv1.UnitTask{
-			UnitTaskId:     t.id,
-			Status:         t.status,
-			ActionRequired: t.action,
-			Title:          t.title,
-			Description:    t.description,
-			WorkspaceId:    defaultWorkspaceID,
-			SubTaskCount:   t.subTaskCount,
-			CreatedAt:      timestamppb.New(t.createdAt),
-			UpdatedAt:      timestamppb.New(t.updatedAt),
+			UnitTaskId:        t.id,
+			Status:            t.status,
+			ActionRequired:    t.action,
+			Prompt:            t.description,
+			WorkspaceId:       defaultWorkspaceID,
+			RepositoryGroupId: "repo-group-main",
+			AgentCliType:      dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+			UsePlanMode:       false,
+			SubTaskCount:      t.subTaskCount,
+			CreatedAt:         timestamppb.New(t.createdAt),
+			UpdatedAt:         timestamppb.New(t.updatedAt),
 		}
 		s.AddUnitTask(defaultWorkspaceID, ut)
 	}
@@ -358,19 +360,61 @@ func SeedData(s Store) {
 		s.AddSessionSummary(defaultWorkspaceID, summary)
 	}
 
+	// Workspace settings
+	_, _ = s.UpsertWorkspaceSettings(defaultWorkspaceID, dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE)
+
+	// Repositories
+	repositories := []*dexdexv1.Repository{
+		{
+			RepositoryId:  "repo-oss",
+			WorkspaceId:   defaultWorkspaceID,
+			RepositoryUrl: "https://github.com/delinoio/oss",
+			CreatedAt:     timestamppb.New(baseTime),
+			UpdatedAt:     timestamppb.New(baseTime),
+		},
+		{
+			RepositoryId:  "repo-infra",
+			WorkspaceId:   defaultWorkspaceID,
+			RepositoryUrl: "https://github.com/delinoio/infra",
+			CreatedAt:     timestamppb.New(baseTime),
+			UpdatedAt:     timestamppb.New(baseTime),
+		},
+	}
+
+	for _, repo := range repositories {
+		s.AddRepository(defaultWorkspaceID, repo)
+	}
+
 	// Repository groups
 	repoGroups := []*dexdexv1.RepositoryGroup{
 		{
 			RepositoryGroupId: "repo-group-main",
-			Repositories: []*dexdexv1.RepositoryRef{
-				{RepositoryId: "repo-oss", RepositoryUrl: "https://github.com/delinoio/oss", BranchRef: "main"},
+			WorkspaceId:       defaultWorkspaceID,
+			Members: []*dexdexv1.RepositoryGroupMember{
+				{
+					RepositoryId: "repo-oss",
+					BranchRef:    "main",
+					DisplayOrder: 0,
+					Repository:   repositories[0],
+				},
 			},
 		},
 		{
 			RepositoryGroupId: "repo-group-multi",
-			Repositories: []*dexdexv1.RepositoryRef{
-				{RepositoryId: "repo-oss", RepositoryUrl: "https://github.com/delinoio/oss", BranchRef: "main"},
-				{RepositoryId: "repo-infra", RepositoryUrl: "https://github.com/delinoio/infra", BranchRef: "main"},
+			WorkspaceId:       defaultWorkspaceID,
+			Members: []*dexdexv1.RepositoryGroupMember{
+				{
+					RepositoryId: "repo-oss",
+					BranchRef:    "main",
+					DisplayOrder: 0,
+					Repository:   repositories[0],
+				},
+				{
+					RepositoryId: "repo-infra",
+					BranchRef:    "main",
+					DisplayOrder: 1,
+					Repository:   repositories[1],
+				},
 			},
 		},
 	}

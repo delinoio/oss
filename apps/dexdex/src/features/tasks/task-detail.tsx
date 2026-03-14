@@ -99,21 +99,24 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
               fontSize: "var(--font-size-sm)",
               color: "var(--color-text-secondary)",
               lineHeight: 1.6,
+              whiteSpace: "pre-wrap",
             }}
           >
-            {task.description}
+            {task.prompt || task.description}
           </div>
           <div
             style={{
               display: "flex",
+              flexWrap: "wrap",
               gap: "var(--space-4)",
               marginTop: "var(--space-3)",
               fontSize: "var(--font-size-xs)",
               color: "var(--color-text-tertiary)",
             }}
           >
-            <span>Repository: {task.repositoryUrl}</span>
-            <span>Branch: {task.branchRef}</span>
+            <span>Repository Group: {task.repositoryGroupId || "-"}</span>
+            <span>Agent: {task.agentCliType || "UNSPECIFIED"}</span>
+            <span>Plan Mode: {task.usePlanMode ? "ON" : "OFF"}</span>
           </div>
         </div>
 

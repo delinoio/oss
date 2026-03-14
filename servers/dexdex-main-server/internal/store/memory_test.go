@@ -104,7 +104,7 @@ func TestListUnitTasksWithFilter(t *testing.T) {
 func TestCreateUnitTask(t *testing.T) {
 	s := NewMemoryStore()
 
-	task := s.CreateUnitTask("ws-1", "Test Task", "Description", "rg-1")
+	task := s.CreateUnitTask("ws-1", "Fix migration rollback", "rg-1", dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE, false)
 	if task.UnitTaskId == "" {
 		t.Fatal("expected non-empty task ID")
 	}

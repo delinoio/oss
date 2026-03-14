@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -32,17 +33,30 @@ func buildAgentCommand(
 	prompt string,
 	sessionID string,
 	parentSessionID string,
+	usePlanMode bool,
 ) (*agentCommand, error) {
 	var args []string
+	effectivePrompt := prompt
+
+	if usePlanMode {
+		switch agentType {
+		case dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE:
+			effectivePrompt = "Plan mode enabled. First provide a concrete implementation plan, wait for approval, then execute.\n\n" + prompt
+		case dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI:
+			effectivePrompt = "Plan mode enabled. Output a clear step-by-step plan and wait for explicit approval before modifying files.\n\n" + prompt
+		default:
+			return nil, fmt.Errorf("agent %s does not support plan mode", agentType.String())
+		}
+	}
 
 	switch agentType {
 	case dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE:
 		if parentSessionID != "" {
 			// Fork mode: resume from parent session with new prompt
 			args = []string{"claude", "--json", "--output-format", "stream-json",
-				"--resume", parentSessionID, "-p", prompt}
+				"--resume", parentSessionID, "-p", effectivePrompt}
 		} else {
-			args = []string{"claude", "--json", "--output-format", "stream-json", "-p", prompt}
+			args = []string{"claude", "--json", "--output-format", "stream-json", "-p", effectivePrompt}
 		}
 		for _, dir := range attachedDirs {
 			args = append(args, "--add-dir", dir)
@@ -51,18 +65,27 @@ func buildAgentCommand(
 		if parentSessionID != "" {
 			return nil, fmt.Errorf("agent %s does not support session forking", agentType.String())
 		}
-		args = []string{"codex", "--json", "-p", prompt}
+		args = []string{"codex", "--json", "-p", effectivePrompt}
 	case dexdexv1.AgentCliType_AGENT_CLI_TYPE_OPENCODE:
+		if usePlanMode {
+			return nil, fmt.Errorf("agent %s does not support plan mode", agentType.String())
+		}
 		if parentSessionID != "" {
 			return nil, fmt.Errorf("agent %s does not support session forking", agentType.String())
 		}
-		args = []string{"opencode", "--json", "-p", prompt}
+		args = []string{"opencode", "--json", "-p", effectivePrompt}
 	default:
 		return nil, fmt.Errorf("unsupported agent CLI type: %s", agentType.String())
 	}
 
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = primaryDir
+	if usePlanMode {
+		cmd.Env = append(os.Environ(),
+			"DEXDEX_PLAN_MODE=1",
+			fmt.Sprintf("DEXDEX_PLAN_MODE_AGENT=%s", agentType.String()),
+		)
+	}
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -97,7 +120,7 @@ func runAgentProcess(
 	ac *agentCommand,
 	sessionID string,
 	inputCh chan string,
-	stream *connect.ServerStream[dexdexv1.ExecutionEvent],
+	stream *connect.ServerStream[dexdexv1.StartExecutionResponse],
 	sessionStore *store.SessionStore,
 	usageAccumulator *normalize.UsageAccumulator,
 	logger *slog.Logger,
@@ -158,8 +181,8 @@ func runAgentProcess(
 			sessionStore.AppendOutput(sessionID, event)
 
 			// Stream to caller
-			_ = stream.Send(&dexdexv1.ExecutionEvent{
-				Event: &dexdexv1.ExecutionEvent_SessionOutput{
+			_ = stream.Send(&dexdexv1.StartExecutionResponse{
+				Event: &dexdexv1.StartExecutionResponse_SessionOutput{
 					SessionOutput: event,
 				},
 			})

@@ -25,10 +25,29 @@ type PrRecord struct {
 	Status       int32  `json:"status"`
 }
 
+type Repository struct {
+	RepositoryID  string             `json:"repository_id"`
+	WorkspaceID   string             `json:"workspace_id"`
+	RepositoryUrl string             `json:"repository_url"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
 type RepositoryGroup struct {
-	RepositoryGroupID string `json:"repository_group_id"`
-	WorkspaceID       string `json:"workspace_id"`
-	Repositories      []byte `json:"repositories"`
+	RepositoryGroupID string             `json:"repository_group_id"`
+	WorkspaceID       string             `json:"workspace_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RepositoryGroupMember struct {
+	WorkspaceID       string             `json:"workspace_id"`
+	RepositoryGroupID string             `json:"repository_group_id"`
+	RepositoryID      string             `json:"repository_id"`
+	BranchRef         string             `json:"branch_ref"`
+	DisplayOrder      int32              `json:"display_order"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
 
 type ReviewAssistItem struct {
@@ -76,9 +95,10 @@ type UnitTask struct {
 	WorkspaceID       string             `json:"workspace_id"`
 	Status            int32              `json:"status"`
 	ActionRequired    int32              `json:"action_required"`
-	Title             string             `json:"title"`
-	Description       string             `json:"description"`
+	Prompt            string             `json:"prompt"`
 	RepositoryGroupID string             `json:"repository_group_id"`
+	AgentCliType      int32              `json:"agent_cli_type"`
+	UsePlanMode       bool               `json:"use_plan_mode"`
 	SubTaskCount      int32              `json:"sub_task_count"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
@@ -88,4 +108,10 @@ type Workspace struct {
 	WorkspaceID string             `json:"workspace_id"`
 	Name        string             `json:"name"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+}
+
+type WorkspaceSetting struct {
+	WorkspaceID         string             `json:"workspace_id"`
+	DefaultAgentCliType int32              `json:"default_agent_cli_type"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
 }

@@ -4,9 +4,10 @@ CREATE TABLE unit_tasks (
     workspace_id TEXT NOT NULL REFERENCES workspaces(workspace_id),
     status INTEGER NOT NULL DEFAULT 0,
     action_required INTEGER NOT NULL DEFAULT 0,
-    title TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
+    prompt TEXT NOT NULL DEFAULT '',
     repository_group_id TEXT NOT NULL DEFAULT '',
+    agent_cli_type INTEGER NOT NULL DEFAULT 0,
+    use_plan_mode BOOLEAN NOT NULL DEFAULT FALSE,
     sub_task_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

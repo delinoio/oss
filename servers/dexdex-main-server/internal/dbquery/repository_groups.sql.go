@@ -9,27 +9,119 @@ import (
 	"context"
 )
 
+const countRepositoryReferences = `-- name: CountRepositoryReferences :one
+SELECT COUNT(*) FROM repository_group_members
+WHERE workspace_id = $1 AND repository_id = $2
+`
+
+type CountRepositoryReferencesParams struct {
+	WorkspaceID  string `json:"workspace_id"`
+	RepositoryID string `json:"repository_id"`
+}
+
+func (q *Queries) CountRepositoryReferences(ctx context.Context, arg CountRepositoryReferencesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countRepositoryReferences, arg.WorkspaceID, arg.RepositoryID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createRepositoryGroup = `-- name: CreateRepositoryGroup :one
-INSERT INTO repository_groups (repository_group_id, workspace_id, repositories)
-VALUES ($1, $2, $3)
-RETURNING repository_group_id, workspace_id, repositories
+INSERT INTO repository_groups (repository_group_id, workspace_id, created_at, updated_at)
+VALUES ($1, $2, NOW(), NOW())
+RETURNING repository_group_id, workspace_id, created_at, updated_at
 `
 
 type CreateRepositoryGroupParams struct {
 	RepositoryGroupID string `json:"repository_group_id"`
 	WorkspaceID       string `json:"workspace_id"`
-	Repositories      []byte `json:"repositories"`
 }
 
 func (q *Queries) CreateRepositoryGroup(ctx context.Context, arg CreateRepositoryGroupParams) (RepositoryGroup, error) {
-	row := q.db.QueryRow(ctx, createRepositoryGroup, arg.RepositoryGroupID, arg.WorkspaceID, arg.Repositories)
+	row := q.db.QueryRow(ctx, createRepositoryGroup, arg.RepositoryGroupID, arg.WorkspaceID)
 	var i RepositoryGroup
-	err := row.Scan(&i.RepositoryGroupID, &i.WorkspaceID, &i.Repositories)
+	err := row.Scan(
+		&i.RepositoryGroupID,
+		&i.WorkspaceID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
+const createRepositoryGroupMember = `-- name: CreateRepositoryGroupMember :one
+INSERT INTO repository_group_members (
+    workspace_id,
+    repository_group_id,
+    repository_id,
+    branch_ref,
+    display_order,
+    created_at,
+    updated_at
+)
+VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+RETURNING workspace_id, repository_group_id, repository_id, branch_ref, display_order, created_at, updated_at
+`
+
+type CreateRepositoryGroupMemberParams struct {
+	WorkspaceID       string `json:"workspace_id"`
+	RepositoryGroupID string `json:"repository_group_id"`
+	RepositoryID      string `json:"repository_id"`
+	BranchRef         string `json:"branch_ref"`
+	DisplayOrder      int32  `json:"display_order"`
+}
+
+func (q *Queries) CreateRepositoryGroupMember(ctx context.Context, arg CreateRepositoryGroupMemberParams) (RepositoryGroupMember, error) {
+	row := q.db.QueryRow(ctx, createRepositoryGroupMember,
+		arg.WorkspaceID,
+		arg.RepositoryGroupID,
+		arg.RepositoryID,
+		arg.BranchRef,
+		arg.DisplayOrder,
+	)
+	var i RepositoryGroupMember
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.RepositoryGroupID,
+		&i.RepositoryID,
+		&i.BranchRef,
+		&i.DisplayOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deleteRepositoryGroup = `-- name: DeleteRepositoryGroup :exec
+DELETE FROM repository_groups WHERE workspace_id = $1 AND repository_group_id = $2
+`
+
+type DeleteRepositoryGroupParams struct {
+	WorkspaceID       string `json:"workspace_id"`
+	RepositoryGroupID string `json:"repository_group_id"`
+}
+
+func (q *Queries) DeleteRepositoryGroup(ctx context.Context, arg DeleteRepositoryGroupParams) error {
+	_, err := q.db.Exec(ctx, deleteRepositoryGroup, arg.WorkspaceID, arg.RepositoryGroupID)
+	return err
+}
+
+const deleteRepositoryGroupMembers = `-- name: DeleteRepositoryGroupMembers :exec
+DELETE FROM repository_group_members WHERE workspace_id = $1 AND repository_group_id = $2
+`
+
+type DeleteRepositoryGroupMembersParams struct {
+	WorkspaceID       string `json:"workspace_id"`
+	RepositoryGroupID string `json:"repository_group_id"`
+}
+
+func (q *Queries) DeleteRepositoryGroupMembers(ctx context.Context, arg DeleteRepositoryGroupMembersParams) error {
+	_, err := q.db.Exec(ctx, deleteRepositoryGroupMembers, arg.WorkspaceID, arg.RepositoryGroupID)
+	return err
+}
+
 const getRepositoryGroup = `-- name: GetRepositoryGroup :one
-SELECT repository_group_id, workspace_id, repositories FROM repository_groups WHERE workspace_id = $1 AND repository_group_id = $2
+SELECT repository_group_id, workspace_id, created_at, updated_at FROM repository_groups WHERE workspace_id = $1 AND repository_group_id = $2
 `
 
 type GetRepositoryGroupParams struct {
@@ -40,12 +132,56 @@ type GetRepositoryGroupParams struct {
 func (q *Queries) GetRepositoryGroup(ctx context.Context, arg GetRepositoryGroupParams) (RepositoryGroup, error) {
 	row := q.db.QueryRow(ctx, getRepositoryGroup, arg.WorkspaceID, arg.RepositoryGroupID)
 	var i RepositoryGroup
-	err := row.Scan(&i.RepositoryGroupID, &i.WorkspaceID, &i.Repositories)
+	err := row.Scan(
+		&i.RepositoryGroupID,
+		&i.WorkspaceID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
+const listRepositoryGroupMembers = `-- name: ListRepositoryGroupMembers :many
+SELECT workspace_id, repository_group_id, repository_id, branch_ref, display_order, created_at, updated_at FROM repository_group_members
+WHERE workspace_id = $1 AND repository_group_id = $2
+ORDER BY display_order ASC
+`
+
+type ListRepositoryGroupMembersParams struct {
+	WorkspaceID       string `json:"workspace_id"`
+	RepositoryGroupID string `json:"repository_group_id"`
+}
+
+func (q *Queries) ListRepositoryGroupMembers(ctx context.Context, arg ListRepositoryGroupMembersParams) ([]RepositoryGroupMember, error) {
+	rows, err := q.db.Query(ctx, listRepositoryGroupMembers, arg.WorkspaceID, arg.RepositoryGroupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RepositoryGroupMember
+	for rows.Next() {
+		var i RepositoryGroupMember
+		if err := rows.Scan(
+			&i.WorkspaceID,
+			&i.RepositoryGroupID,
+			&i.RepositoryID,
+			&i.BranchRef,
+			&i.DisplayOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRepositoryGroups = `-- name: ListRepositoryGroups :many
-SELECT repository_group_id, workspace_id, repositories FROM repository_groups WHERE workspace_id = $1
+SELECT repository_group_id, workspace_id, created_at, updated_at FROM repository_groups WHERE workspace_id = $1 ORDER BY created_at DESC
 `
 
 func (q *Queries) ListRepositoryGroups(ctx context.Context, workspaceID string) ([]RepositoryGroup, error) {
@@ -57,7 +193,12 @@ func (q *Queries) ListRepositoryGroups(ctx context.Context, workspaceID string) 
 	var items []RepositoryGroup
 	for rows.Next() {
 		var i RepositoryGroup
-		if err := rows.Scan(&i.RepositoryGroupID, &i.WorkspaceID, &i.Repositories); err != nil {
+		if err := rows.Scan(
+			&i.RepositoryGroupID,
+			&i.WorkspaceID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -66,4 +207,20 @@ func (q *Queries) ListRepositoryGroups(ctx context.Context, workspaceID string) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const touchRepositoryGroup = `-- name: TouchRepositoryGroup :exec
+UPDATE repository_groups
+SET updated_at = NOW()
+WHERE workspace_id = $1 AND repository_group_id = $2
+`
+
+type TouchRepositoryGroupParams struct {
+	WorkspaceID       string `json:"workspace_id"`
+	RepositoryGroupID string `json:"repository_group_id"`
+}
+
+func (q *Queries) TouchRepositoryGroup(ctx context.Context, arg TouchRepositoryGroupParams) error {
+	_, err := q.db.Exec(ctx, touchRepositoryGroup, arg.WorkspaceID, arg.RepositoryGroupID)
+	return err
 }

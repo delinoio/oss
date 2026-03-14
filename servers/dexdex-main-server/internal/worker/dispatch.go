@@ -56,7 +56,7 @@ func (d *Dispatcher) DispatchExecution(
 		UnitTaskId: unitTask.UnitTaskId,
 		Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_INITIAL_IMPLEMENTATION,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
-		Title:      unitTask.Title,
+		Title:      summarizePrompt(unitTask.Prompt),
 		SessionId:  sessionID,
 		CreatedAt:  timestamppb.Now(),
 		UpdatedAt:  timestamppb.Now(),
@@ -163,6 +163,7 @@ func (d *Dispatcher) consumeForkExecutionStream(
 		AgentCliType:    agentCliType,
 		ParentSessionId: parentSessionID,
 		ForkIntent:      forkIntent,
+		UsePlanMode:     false,
 	})
 	if err != nil {
 		d.logger.Error("failed to start fork execution stream",
@@ -178,11 +179,11 @@ func (d *Dispatcher) consumeForkExecutionStream(
 		event := executionStream.Msg()
 
 		switch e := event.Event.(type) {
-		case *dexdexv1.ExecutionEvent_SessionOutput:
+		case *dexdexv1.StartExecutionResponse_SessionOutput:
 			d.store.AddSessionOutput(forkedSessionID, e.SessionOutput)
 			d.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_OUTPUT, &stream.SessionOutputPayload{SessionOutput: e.SessionOutput})
 
-		case *dexdexv1.ExecutionEvent_StateChanged:
+		case *dexdexv1.StartExecutionResponse_StateChanged:
 			d.logger.Info("fork session state changed",
 				"forked_session_id", forkedSessionID,
 				"status", e.StateChanged.Status.String(),
@@ -215,7 +216,7 @@ func (d *Dispatcher) consumeForkExecutionStream(
 				d.publishWorkStatusUpdate(workspaceID)
 			}
 
-		case *dexdexv1.ExecutionEvent_WorktreeStatus:
+		case *dexdexv1.StartExecutionResponse_WorktreeStatus:
 			d.store.UpsertWorktreeAssignment(workspaceID, &store.WorktreeAssignment{
 				SubTaskID:    forkSubKey,
 				SessionID:    forkedSessionID,
@@ -226,7 +227,7 @@ func (d *Dispatcher) consumeForkExecutionStream(
 				UpdatedAt:    time.Now(),
 			})
 
-		case *dexdexv1.ExecutionEvent_Commit:
+		case *dexdexv1.StartExecutionResponse_Commit:
 			d.logger.Info("fork commit received",
 				"forked_session_id", forkedSessionID,
 				"sha", e.Commit.Sha,
@@ -283,8 +284,9 @@ func (d *Dispatcher) consumeExecutionStream(
 		SubTaskId:       subTask.SubTaskId,
 		SessionId:       sessionID,
 		RepositoryGroup: repoGroup,
-		Prompt:          unitTask.Description,
+		Prompt:          unitTask.Prompt,
 		AgentCliType:    agentCliType,
+		UsePlanMode:     unitTask.UsePlanMode,
 	})
 	if err != nil {
 		d.logger.Error("failed to start execution stream",
@@ -301,12 +303,12 @@ func (d *Dispatcher) consumeExecutionStream(
 		event := executionStream.Msg()
 
 		switch e := event.Event.(type) {
-		case *dexdexv1.ExecutionEvent_SessionOutput:
+		case *dexdexv1.StartExecutionResponse_SessionOutput:
 			// Store and publish session output
 			d.store.AddSessionOutput(sessionID, e.SessionOutput)
 			d.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_OUTPUT, &stream.SessionOutputPayload{SessionOutput: e.SessionOutput})
 
-		case *dexdexv1.ExecutionEvent_StateChanged:
+		case *dexdexv1.StartExecutionResponse_StateChanged:
 			d.logger.Info("session state changed",
 				"session_id", sessionID,
 				"status", e.StateChanged.Status.String(),
@@ -332,7 +334,7 @@ func (d *Dispatcher) consumeExecutionStream(
 				d.handleWaitingForInput(workspaceID, subTask, sessionID)
 			}
 
-		case *dexdexv1.ExecutionEvent_Commit:
+		case *dexdexv1.StartExecutionResponse_Commit:
 			d.logger.Info("commit received",
 				"session_id", sessionID,
 				"sha", e.Commit.Sha,
@@ -342,7 +344,7 @@ func (d *Dispatcher) consumeExecutionStream(
 			subTask.CommitChain = append(subTask.CommitChain, e.Commit)
 			d.store.UpsertSubTask(workspaceID, subTask)
 
-		case *dexdexv1.ExecutionEvent_WorktreeStatus:
+		case *dexdexv1.StartExecutionResponse_WorktreeStatus:
 			d.store.UpsertWorktreeAssignment(workspaceID, &store.WorktreeAssignment{
 				SubTaskID:    subTask.SubTaskId,
 				SessionID:    sessionID,
@@ -466,4 +468,12 @@ func (d *Dispatcher) publishWorkStatusUpdate(workspaceID string) {
 			Status:      workStatus,
 		},
 	})
+}
+
+func summarizePrompt(prompt string) string {
+	trimmed := prompt
+	if len(trimmed) > 80 {
+		return trimmed[:80]
+	}
+	return trimmed
 }

@@ -140,6 +140,8 @@ export function TaskList({ tasks, isLoading, onTaskSelect, onCreateTask }: TaskL
 }
 
 function TaskRow({ task, onClick }: { task: UnitTask; onClick: () => void }) {
+  const metadata = task.repositoryGroupId ? `Group: ${task.repositoryGroupId}` : "No repository group";
+
   const rowStyle: CSSProperties = {
     display: "flex",
     alignItems: "center",
@@ -180,7 +182,7 @@ function TaskRow({ task, onClick }: { task: UnitTask; onClick: () => void }) {
     >
       <StatusBadge status={task.status} size="sm" />
       <span style={titleStyle}>{task.title}</span>
-      <span style={metaStyle}>{task.branchRef}</span>
+      <span style={metaStyle}>{metadata}</span>
     </div>
   );
 }
