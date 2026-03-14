@@ -20,6 +20,7 @@ import {
   useListNotifications,
   useCreateUnitTaskMutation,
   useSubmitPlanDecisionMutation,
+  useMarkNotificationReadMutation,
 } from "./hooks/use-dexdex-queries";
 import {
   type AppState,
@@ -59,16 +60,7 @@ function App() {
   // Data state - Connect RPC queries replace mock data
   const { data: tasks = [] } = useListUnitTasks(WORKSPACE_ID);
   const { data: notifications = [] } = useListNotifications(WORKSPACE_ID);
-  const [localReadNotifications, setLocalReadNotifications] = useState<Set<string>>(new Set());
-
-  // Apply local read state to notifications
-  const effectiveNotifications = useMemo(
-    () =>
-      notifications.map((n) =>
-        localReadNotifications.has(n.notificationId) ? { ...n, read: true } : n,
-      ),
-    [notifications, localReadNotifications],
-  );
+  const markReadMutation = useMarkNotificationReadMutation();
 
   // Apply initial theme
   useMemo(() => {
@@ -196,9 +188,12 @@ function App() {
     [navigate],
   );
 
-  const handleMarkRead = useCallback((notificationId: string) => {
-    setLocalReadNotifications((prev) => new Set(prev).add(notificationId));
-  }, []);
+  const handleMarkRead = useCallback(
+    (notificationId: string) => {
+      markReadMutation.mutate({ workspaceId: WORKSPACE_ID, notificationId });
+    },
+    [markReadMutation],
+  );
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
@@ -230,7 +225,7 @@ function App() {
     if (currentPath === "/inbox") {
       return (
         <InboxPage
-          notifications={effectiveNotifications}
+          notifications={notifications}
           onNotificationClick={handleNotificationClick}
           onMarkRead={handleMarkRead}
         />

@@ -6,10 +6,19 @@
 import { useQuery, useMutation } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { listUnitTasks, listSubTasks, createUnitTask, submitPlanDecision } from "../gen/v1/dexdex-TaskService_connectquery";
-import { listNotifications } from "../gen/v1/dexdex-NotificationService_connectquery";
-import { getSessionOutput } from "../gen/v1/dexdex-SessionService_connectquery";
-import { toViewUnitTask, toViewSubTask, toViewNotification, toViewSessionOutput } from "../lib/adapters";
-import type { UnitTask, SubTask, Notification, SessionOutputEvent } from "../lib/mock-data";
+import { listNotifications, markNotificationRead } from "../gen/v1/dexdex-NotificationService_connectquery";
+import { getWorkspaceWorkStatus } from "../gen/v1/dexdex-WorkspaceService_connectquery";
+import {
+  getSessionOutput,
+  listSessionCapabilities,
+  forkSession,
+  listForkedSessions,
+  archiveForkedSession,
+  getLatestWaitingSession,
+  submitSessionInput,
+} from "../gen/v1/dexdex-SessionService_connectquery";
+import { toViewUnitTask, toViewSubTask, toViewNotification, toViewSessionOutput, toViewSessionSummary, toViewAgentCapability } from "../lib/adapters";
+import type { UnitTask, SubTask, Notification, SessionOutputEvent, SessionSummary, AgentCapability } from "../lib/mock-data";
 
 /**
  * Fetch all unit tasks for a workspace, converted to view-model types.
@@ -73,6 +82,92 @@ export function useSubmitPlanDecisionMutation() {
   return useMutation(submitPlanDecision, {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to mark a notification as read on the server.
+ * Invalidates the notifications list on success.
+ */
+export function useMarkNotificationReadMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(markNotificationRead, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.NotificationService"] });
+    },
+  });
+}
+
+/**
+ * Fetch workspace work status for tray/status display.
+ */
+export function useGetWorkspaceWorkStatus(workspaceId: string) {
+  return useQuery(getWorkspaceWorkStatus, { workspaceId });
+}
+
+/**
+ * Fetch session capabilities for a workspace (fork support, agent type).
+ */
+export function useListSessionCapabilities(workspaceId: string) {
+  return useQuery(listSessionCapabilities, { workspaceId });
+}
+
+/**
+ * Mutation to fork a session.
+ * Invalidates session queries on success.
+ */
+export function useForkSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(forkSession, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
+    },
+  });
+}
+
+/**
+ * Fetch forked sessions for a given parent session.
+ */
+export function useListForkedSessions(workspaceId: string, parentSessionId: string) {
+  const query = useQuery(
+    listForkedSessions,
+    { workspaceId, parentSessionId },
+    { enabled: !!parentSessionId },
+  );
+  const sessions: SessionSummary[] = (query.data?.sessions ?? []).map(toViewSessionSummary);
+  return { ...query, data: sessions };
+}
+
+/**
+ * Mutation to archive a forked session.
+ * Invalidates session queries on success.
+ */
+export function useArchiveForkedSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(archiveForkedSession, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
+    },
+  });
+}
+
+/**
+ * Fetch the latest waiting session for a workspace.
+ */
+export function useGetLatestWaitingSession(workspaceId: string) {
+  return useQuery(getLatestWaitingSession, { workspaceId });
+}
+
+/**
+ * Mutation to submit input to a waiting session.
+ * Invalidates session queries on success.
+ */
+export function useSubmitSessionInputMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(submitSessionInput, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
     },
   });
 }

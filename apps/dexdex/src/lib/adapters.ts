@@ -9,6 +9,8 @@ import type {
   SubTask as ProtoSubTask,
   NotificationRecord as ProtoNotification,
   SessionOutputEvent as ProtoSessionOutput,
+  SessionSummary as ProtoSessionSummary,
+  AgentCapability as ProtoAgentCapability,
 } from "../gen/v1/dexdex_pb";
 import {
   UnitTaskStatus as ProtoUnitTaskStatus,
@@ -17,10 +19,13 @@ import {
   SubTaskCompletionReason as ProtoCompletionReason,
   SessionOutputKind as ProtoOutputKind,
   NotificationType as ProtoNotificationType,
+  SessionForkStatus as ProtoSessionForkStatus,
+  AgentSessionStatus as ProtoAgentSessionStatus,
+  AgentCliType as ProtoAgentCliType,
 } from "../gen/v1/dexdex_pb";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import type { UnitTask, SubTask, SessionOutputEvent, Notification } from "./mock-data";
+import type { UnitTask, SubTask, SessionOutputEvent, Notification, SessionSummary, AgentCapability } from "./mock-data";
 import {
   UnitTaskStatus,
   SubTaskType,
@@ -28,6 +33,9 @@ import {
   SubTaskCompletionReason,
   SessionOutputKind,
   NotificationType,
+  SessionForkStatus,
+  AgentSessionStatus,
+  AgentCliType,
 } from "./status";
 
 // Enum mapping helpers: proto numeric -> view string enum
@@ -91,6 +99,30 @@ const NOTIFICATION_TYPE_MAP: Record<number, NotificationType> = {
   [ProtoNotificationType.PR_REVIEW_ACTIVITY]: NotificationType.PR_REVIEW_ACTIVITY,
   [ProtoNotificationType.PR_CI_FAILURE]: NotificationType.PR_CI_FAILURE,
   [ProtoNotificationType.AGENT_SESSION_FAILED]: NotificationType.AGENT_SESSION_FAILED,
+  [ProtoNotificationType.AGENT_INPUT_REQUIRED]: NotificationType.AGENT_INPUT_REQUIRED,
+};
+
+const SESSION_FORK_STATUS_MAP: Record<number, SessionForkStatus> = {
+  [ProtoSessionForkStatus.UNSPECIFIED]: SessionForkStatus.UNSPECIFIED,
+  [ProtoSessionForkStatus.ACTIVE]: SessionForkStatus.ACTIVE,
+  [ProtoSessionForkStatus.ARCHIVED]: SessionForkStatus.ARCHIVED,
+};
+
+const AGENT_SESSION_STATUS_MAP: Record<number, AgentSessionStatus> = {
+  [ProtoAgentSessionStatus.UNSPECIFIED]: AgentSessionStatus.UNSPECIFIED,
+  [ProtoAgentSessionStatus.STARTING]: AgentSessionStatus.STARTING,
+  [ProtoAgentSessionStatus.RUNNING]: AgentSessionStatus.RUNNING,
+  [ProtoAgentSessionStatus.WAITING_FOR_INPUT]: AgentSessionStatus.WAITING_FOR_INPUT,
+  [ProtoAgentSessionStatus.COMPLETED]: AgentSessionStatus.COMPLETED,
+  [ProtoAgentSessionStatus.FAILED]: AgentSessionStatus.FAILED,
+  [ProtoAgentSessionStatus.CANCELLED]: AgentSessionStatus.CANCELLED,
+};
+
+const AGENT_CLI_TYPE_MAP: Record<number, AgentCliType> = {
+  [ProtoAgentCliType.UNSPECIFIED]: AgentCliType.UNSPECIFIED,
+  [ProtoAgentCliType.CODEX_CLI]: AgentCliType.CODEX_CLI,
+  [ProtoAgentCliType.CLAUDE_CODE]: AgentCliType.CLAUDE_CODE,
+  [ProtoAgentCliType.OPENCODE]: AgentCliType.OPENCODE,
 };
 
 /**
@@ -163,5 +195,31 @@ export function toViewSessionOutput(proto: ProtoSessionOutput): SessionOutputEve
     kind: OUTPUT_KIND_MAP[proto.kind] ?? SessionOutputKind.UNSPECIFIED,
     body: proto.body,
     timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * Convert a proto SessionSummary to a view-model SessionSummary.
+ */
+export function toViewSessionSummary(proto: ProtoSessionSummary): SessionSummary {
+  return {
+    sessionId: proto.sessionId,
+    parentSessionId: proto.parentSessionId,
+    rootSessionId: proto.rootSessionId,
+    forkStatus: SESSION_FORK_STATUS_MAP[proto.forkStatus] ?? SessionForkStatus.UNSPECIFIED,
+    forkedFromSequence: Number(proto.forkedFromSequence),
+    agentSessionStatus: AGENT_SESSION_STATUS_MAP[proto.agentSessionStatus] ?? AgentSessionStatus.UNSPECIFIED,
+    createdAt: timestampToISO(proto.createdAt),
+  };
+}
+
+/**
+ * Convert a proto AgentCapability to a view-model AgentCapability.
+ */
+export function toViewAgentCapability(proto: ProtoAgentCapability): AgentCapability {
+  return {
+    agentCliType: AGENT_CLI_TYPE_MAP[proto.agentCliType] ?? AgentCliType.UNSPECIFIED,
+    supportsFork: proto.supportsFork,
+    displayName: proto.displayName,
   };
 }
