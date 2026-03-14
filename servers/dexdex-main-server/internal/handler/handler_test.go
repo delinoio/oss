@@ -12,10 +12,15 @@ import (
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/store"
+	"github.com/delinoio/oss/servers/dexdex-main-server/internal/stream"
 )
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+}
+
+func testFanOut() *stream.FanOut {
+	return stream.NewFanOut(100, testLogger())
 }
 
 func seedStore() store.Store {
@@ -74,10 +79,39 @@ func TestWorkspaceHandler_GetWorkspace_NotFound(t *testing.T) {
 	}
 }
 
+func TestWorkspaceHandler_ListWorkspaces(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewWorkspaceHandler(s, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewWorkspaceServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewWorkspaceServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.ListWorkspaces(context.Background(), connect.NewRequest(&dexdexv1.ListWorkspacesRequest{}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(resp.Msg.Workspaces) != 1 {
+		t.Fatalf("expected 1 workspace, got %d", len(resp.Msg.Workspaces))
+	}
+	if resp.Msg.Workspaces[0].WorkspaceId != "ws-default" {
+		t.Fatalf("expected ws-default, got %s", resp.Msg.Workspaces[0].WorkspaceId)
+	}
+	if resp.Msg.Workspaces[0].Name != "Default Workspace" {
+		t.Fatalf("expected 'Default Workspace', got %s", resp.Msg.Workspaces[0].Name)
+	}
+}
+
 func TestTaskHandler_GetUnitTask(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, logger)
+	h := NewTaskHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -106,7 +140,7 @@ func TestTaskHandler_GetUnitTask(t *testing.T) {
 func TestTaskHandler_GetUnitTask_NotFound(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, logger)
+	h := NewTaskHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -132,7 +166,7 @@ func TestTaskHandler_GetUnitTask_NotFound(t *testing.T) {
 func TestTaskHandler_GetSubTask(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, logger)
+	h := NewTaskHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -155,10 +189,217 @@ func TestTaskHandler_GetSubTask(t *testing.T) {
 	}
 }
 
+func TestTaskHandler_ListUnitTasks(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.ListUnitTasks(context.Background(), connect.NewRequest(&dexdexv1.ListUnitTasksRequest{
+		WorkspaceId: "ws-default",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(resp.Msg.UnitTasks) != 7 {
+		t.Fatalf("expected 7 unit tasks, got %d", len(resp.Msg.UnitTasks))
+	}
+}
+
+func TestTaskHandler_ListUnitTasks_StatusFilter(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.ListUnitTasks(context.Background(), connect.NewRequest(&dexdexv1.ListUnitTasksRequest{
+		WorkspaceId:  "ws-default",
+		StatusFilter: []dexdexv1.UnitTaskStatus{dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_IN_PROGRESS},
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(resp.Msg.UnitTasks) != 2 {
+		t.Fatalf("expected 2 IN_PROGRESS unit tasks, got %d", len(resp.Msg.UnitTasks))
+	}
+	for _, task := range resp.Msg.UnitTasks {
+		if task.Status != dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_IN_PROGRESS {
+			t.Fatalf("expected all tasks IN_PROGRESS, got %s for %s", task.Status.String(), task.UnitTaskId)
+		}
+	}
+}
+
+func TestTaskHandler_ListSubTasks(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.ListSubTasks(context.Background(), connect.NewRequest(&dexdexv1.ListSubTasksRequest{
+		WorkspaceId: "ws-default",
+		UnitTaskId:  "task-auth",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(resp.Msg.SubTasks) != 2 {
+		t.Fatalf("expected 2 sub tasks for task-auth, got %d", len(resp.Msg.SubTasks))
+	}
+}
+
+func TestTaskHandler_CreateUnitTask(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
+		WorkspaceId: "ws-default",
+		Title:       "New test task",
+		Description: "A task created by tests",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if resp.Msg.UnitTask.Title != "New test task" {
+		t.Fatalf("expected title 'New test task', got %s", resp.Msg.UnitTask.Title)
+	}
+	if resp.Msg.UnitTask.Description != "A task created by tests" {
+		t.Fatalf("expected description 'A task created by tests', got %s", resp.Msg.UnitTask.Description)
+	}
+	if resp.Msg.UnitTask.Status != dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED {
+		t.Fatalf("expected QUEUED status, got %s", resp.Msg.UnitTask.Status.String())
+	}
+	if resp.Msg.UnitTask.WorkspaceId != "ws-default" {
+		t.Fatalf("expected workspace_id ws-default, got %s", resp.Msg.UnitTask.WorkspaceId)
+	}
+	if resp.Msg.UnitTask.CreatedAt == nil {
+		t.Fatal("expected created_at to be set")
+	}
+	if resp.Msg.UnitTask.UpdatedAt == nil {
+		t.Fatal("expected updated_at to be set")
+	}
+}
+
+func TestTaskHandler_CreateUnitTask_EmptyTitle(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	_, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
+		WorkspaceId: "ws-default",
+		Title:       "",
+	}))
+	if err == nil {
+		t.Fatal("expected error for empty title")
+	}
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("expected InvalidArgument error code, got %v", connect.CodeOf(err))
+	}
+}
+
+func TestTaskHandler_UpdateUnitTaskStatus(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.UpdateUnitTaskStatus(context.Background(), connect.NewRequest(&dexdexv1.UpdateUnitTaskStatusRequest{
+		WorkspaceId: "ws-default",
+		UnitTaskId:  "task-api-docs",
+		Status:      dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_IN_PROGRESS,
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if resp.Msg.UnitTask.Status != dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_IN_PROGRESS {
+		t.Fatalf("expected IN_PROGRESS, got %s", resp.Msg.UnitTask.Status.String())
+	}
+	if resp.Msg.UnitTask.UpdatedAt == nil {
+		t.Fatal("expected updated_at to be set")
+	}
+}
+
+func TestTaskHandler_UpdateUnitTaskStatus_NotFound(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	_, err := client.UpdateUnitTaskStatus(context.Background(), connect.NewRequest(&dexdexv1.UpdateUnitTaskStatusRequest{
+		WorkspaceId: "ws-default",
+		UnitTaskId:  "nonexistent",
+		Status:      dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_IN_PROGRESS,
+	}))
+	if err == nil {
+		t.Fatal("expected error for nonexistent task")
+	}
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("expected NotFound error code, got %v", connect.CodeOf(err))
+	}
+}
+
 func TestTaskHandler_SubmitPlanDecision_Approve(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, logger)
+	h := NewTaskHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -197,7 +438,7 @@ func TestTaskHandler_SubmitPlanDecision_Revise(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewTaskHandler(s, logger)
+	h := NewTaskHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -244,7 +485,7 @@ func TestTaskHandler_SubmitPlanDecision_Revise_MissingNote(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewTaskHandler(s, logger)
+	h := NewTaskHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -278,7 +519,7 @@ func TestTaskHandler_SubmitPlanDecision_Reject(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewTaskHandler(s, logger)
+	h := NewTaskHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -315,7 +556,7 @@ func TestTaskHandler_SubmitPlanDecision_InvalidStatus(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewTaskHandler(s, logger)
+	h := NewTaskHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -386,5 +627,61 @@ func TestNotificationHandler_ListNotifications_Empty(t *testing.T) {
 	}
 	if len(resp.Msg.Notifications) != 0 {
 		t.Fatalf("expected 0 notifications, got %d", len(resp.Msg.Notifications))
+	}
+}
+
+func TestSessionHandler_GetSessionOutput(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewSessionHandler(s, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewSessionServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.GetSessionOutput(context.Background(), connect.NewRequest(&dexdexv1.GetSessionOutputRequest{
+		WorkspaceId: "ws-default",
+		SessionId:   "sess-auth-2",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(resp.Msg.Events) != 9 {
+		t.Fatalf("expected 9 session output events for sess-auth-2, got %d", len(resp.Msg.Events))
+	}
+	// Verify first event
+	if resp.Msg.Events[0].Kind != dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_TEXT {
+		t.Fatalf("expected first event kind TEXT, got %s", resp.Msg.Events[0].Kind.String())
+	}
+}
+
+func TestSessionHandler_GetSessionOutput_Empty(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewSessionHandler(s, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewSessionServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.GetSessionOutput(context.Background(), connect.NewRequest(&dexdexv1.GetSessionOutputRequest{
+		WorkspaceId: "ws-default",
+		SessionId:   "nonexistent-session",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(resp.Msg.Events) != 0 {
+		t.Fatalf("expected 0 events for nonexistent session, got %d", len(resp.Msg.Events))
 	}
 }

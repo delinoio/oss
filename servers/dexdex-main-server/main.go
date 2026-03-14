@@ -31,7 +31,7 @@ func main() {
 
 	// Create handlers
 	workspaceHandler := handler.NewWorkspaceHandler(memStore, logger)
-	taskHandler := handler.NewTaskHandler(memStore, logger)
+	taskHandler := handler.NewTaskHandler(memStore, fanOut, logger)
 	notificationHandler := handler.NewNotificationHandler(memStore, logger)
 	eventStreamHandler := handler.NewEventStreamHandler(fanOut, logger)
 
@@ -46,6 +46,10 @@ func main() {
 
 	notifPath, notifHandler := dexdexv1connect.NewNotificationServiceHandler(notificationHandler)
 	mux.Handle(notifPath, notifHandler)
+
+	sessionHandler := handler.NewSessionHandler(memStore, logger)
+	sessionPath, sessionHTTPHandler := dexdexv1connect.NewSessionServiceHandler(sessionHandler)
+	mux.Handle(sessionPath, sessionHTTPHandler)
 
 	eventStreamPath, eventStreamHTTPHandler := dexdexv1connect.NewEventStreamServiceHandler(eventStreamHandler)
 	mux.Handle(eventStreamPath, eventStreamHTTPHandler)
