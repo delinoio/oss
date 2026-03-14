@@ -149,6 +149,12 @@ enum AgentCliType {
   AGENT_CLI_TYPE_OPENCODE = 3;
 }
 
+enum ReviewCommentStatus {
+  REVIEW_COMMENT_STATUS_UNSPECIFIED = 0;
+  REVIEW_COMMENT_STATUS_ACTIVE = 1;
+  REVIEW_COMMENT_STATUS_RESOLVED = 2;
+}
+
 enum WorktreeState {
   WORKTREE_STATE_UNSPECIFIED = 0;
   WORKTREE_STATE_PREPARING = 1;
@@ -248,6 +254,12 @@ message NotificationCreatedEvent {
   NotificationRecord notification = 1;
 }
 
+message UsageMetrics {
+  int64 input_tokens = 1;
+  int64 output_tokens = 2;
+  double estimated_cost_usd = 3;
+}
+
 message SessionSummary {
   string session_id = 1;
   string parent_session_id = 2;
@@ -256,6 +268,7 @@ message SessionSummary {
   uint64 forked_from_sequence = 5;
   AgentSessionStatus agent_session_status = 6;
   google.protobuf.Timestamp created_at = 7;
+  UsageMetrics usage = 8;
 }
 
 message AgentCapability {
@@ -418,10 +431,65 @@ message ListReviewCommentsRequest {
 message ReviewComment {
   string review_comment_id = 1;
   string body = 2;
+  string file_path = 3;
+  string side = 4; // "LEFT" or "RIGHT"
+  int32 line_number = 5;
+  ReviewCommentStatus status = 6;
+  string pr_tracking_id = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
 }
 
 message ListReviewCommentsResponse {
   repeated ReviewComment comments = 1;
+}
+
+message CreateReviewCommentRequest {
+  string workspace_id = 1;
+  string pr_tracking_id = 2;
+  string body = 3;
+  string file_path = 4;
+  string side = 5;
+  int32 line_number = 6;
+}
+
+message CreateReviewCommentResponse {
+  ReviewComment comment = 1;
+}
+
+message UpdateReviewCommentRequest {
+  string workspace_id = 1;
+  string review_comment_id = 2;
+  string body = 3;
+}
+
+message UpdateReviewCommentResponse {
+  ReviewComment comment = 1;
+}
+
+message DeleteReviewCommentRequest {
+  string workspace_id = 1;
+  string review_comment_id = 2;
+}
+
+message DeleteReviewCommentResponse {}
+
+message ResolveReviewCommentRequest {
+  string workspace_id = 1;
+  string review_comment_id = 2;
+}
+
+message ResolveReviewCommentResponse {
+  ReviewComment comment = 1;
+}
+
+message ReopenReviewCommentRequest {
+  string workspace_id = 1;
+  string review_comment_id = 2;
+}
+
+message ReopenReviewCommentResponse {
+  ReviewComment comment = 1;
 }
 
 message GetBadgeThemeRequest {
@@ -693,6 +761,11 @@ service ReviewAssistService {
 
 service ReviewCommentService {
   rpc ListReviewComments(ListReviewCommentsRequest) returns (ListReviewCommentsResponse);
+  rpc CreateReviewComment(CreateReviewCommentRequest) returns (CreateReviewCommentResponse);
+  rpc UpdateReviewComment(UpdateReviewCommentRequest) returns (UpdateReviewCommentResponse);
+  rpc DeleteReviewComment(DeleteReviewCommentRequest) returns (DeleteReviewCommentResponse);
+  rpc ResolveReviewComment(ResolveReviewCommentRequest) returns (ResolveReviewCommentResponse);
+  rpc ReopenReviewComment(ReopenReviewCommentRequest) returns (ReopenReviewCommentResponse);
 }
 
 service BadgeThemeService {

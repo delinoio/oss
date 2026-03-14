@@ -8,3 +8,28 @@ import { ReviewCommentService } from "./dexdex_pb";
  * @generated from rpc dexdex.v1.ReviewCommentService.ListReviewComments
  */
 export const listReviewComments = ReviewCommentService.method.listReviewComments;
+
+/**
+ * @generated from rpc dexdex.v1.ReviewCommentService.CreateReviewComment
+ */
+export const createReviewComment = ReviewCommentService.method.createReviewComment;
+
+/**
+ * @generated from rpc dexdex.v1.ReviewCommentService.UpdateReviewComment
+ */
+export const updateReviewComment = ReviewCommentService.method.updateReviewComment;
+
+/**
+ * @generated from rpc dexdex.v1.ReviewCommentService.DeleteReviewComment
+ */
+export const deleteReviewComment = ReviewCommentService.method.deleteReviewComment;
+
+/**
+ * @generated from rpc dexdex.v1.ReviewCommentService.ResolveReviewComment
+ */
+export const resolveReviewComment = ReviewCommentService.method.resolveReviewComment;
+
+/**
+ * @generated from rpc dexdex.v1.ReviewCommentService.ReopenReviewComment
+ */
+export const reopenReviewComment = ReviewCommentService.method.reopenReviewComment;
