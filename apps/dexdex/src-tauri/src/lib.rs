@@ -149,6 +149,31 @@ mod commands {
     pub fn resolve_local_workspace_endpoint() -> Result<LocalWorkspaceEndpoint, String> {
         resolve_local_workspace_endpoint_command()
     }
+
+    #[tauri::command]
+    pub fn update_tray_status(
+        app: tauri::AppHandle,
+        status: String,
+    ) -> Result<(), String> {
+        use tauri::Manager;
+
+        let (tooltip, _icon_label) = match status.as_str() {
+            "FAILED" => ("DexDex: Failed", "!"),
+            "ACTION_REQUIRED" => ("DexDex: Action Required", "!"),
+            "WAITING_FOR_INPUT" => ("DexDex: Waiting for Input", "?"),
+            "RUNNING" => ("DexDex: Running", ">"),
+            "IDLE" => ("DexDex: Idle", "-"),
+            "DISCONNECTED" => ("DexDex: Disconnected", "x"),
+            _ => ("DexDex", "-"),
+        };
+
+        if let Some(tray) = app.tray_by_id("dexdex-tray") {
+            tray.set_tooltip(Some(tooltip)).map_err(|e| e.to_string())?;
+            tracing::info!(status = %status, tooltip = %tooltip, "tray status updated");
+        }
+
+        Ok(())
+    }
 }
 
 fn init_tracing() {
@@ -170,8 +195,53 @@ pub fn run() {
     init_tracing();
 
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        let shortcut_str = shortcut.to_string();
+                        tracing::info!(shortcut = %shortcut_str, "global shortcut triggered");
+                        let _ = app.emit("dexdex://global-shortcut-input", ());
+                    }
+                })
+                .build(),
+        )
+        .setup(|app| {
+            use tauri::Manager;
+
+            // Set up menu bar tray (status-only)
+            let _tray = tauri::tray::TrayIconBuilder::new()
+                .icon(app.default_window_icon().cloned().unwrap())
+                .icon_as_template(true)
+                .tooltip("DexDex: Idle")
+                .menu_on_left_click(false)
+                .id("dexdex-tray")
+                .on_tray_icon_event(|tray, event| {
+                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // Register global shortcut Cmd/Ctrl+Shift+I
+            use tauri_plugin_global_shortcut::GlobalShortcutExt;
+            app.global_shortcut().on_shortcut("CmdOrCtrl+Shift+I", |_app, _shortcut, _event| {
+                // Handled by the plugin-level handler above
+            }).map_err(|e| {
+                tracing::warn!(error = %e, "failed to register global shortcut CmdOrCtrl+Shift+I");
+                e
+            })?;
+
+            tracing::info!("DexDex tray and global shortcut initialized");
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
-            commands::resolve_local_workspace_endpoint
+            commands::resolve_local_workspace_endpoint,
+            commands::update_tray_status
         ])
         .run(tauri::generate_context!())
         .expect("failed to run dexdex desktop app");

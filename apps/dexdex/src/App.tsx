@@ -15,6 +15,8 @@ import { InboxPage } from "./features/inbox/inbox-page";
 import { SettingsPage } from "./features/settings/settings-page";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useWorkspaceStream } from "./hooks/use-workspace-stream";
+import { useTrayStatus } from "./hooks/use-tray-status";
+import { useGlobalShortcut } from "./hooks/use-global-shortcut";
 import {
   useListUnitTasks,
   useListNotifications,
@@ -102,6 +104,9 @@ function App() {
     workspaceId: WORKSPACE_ID,
     onStatusChange: setConnectionStatus,
   });
+
+  // Tray status sync
+  useTrayStatus(WORKSPACE_ID);
 
   // Navigation
   const navigate = useCallback(
@@ -194,6 +199,12 @@ function App() {
     },
     [markReadMutation],
   );
+
+  // Global shortcut handler
+  useGlobalShortcut({
+    workspaceId: WORKSPACE_ID,
+    onNavigate: navigate,
+  });
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
