@@ -38,3 +38,28 @@ export const updateUnitTaskStatus = TaskService.method.updateUnitTaskStatus;
  * @generated from rpc dexdex.v1.TaskService.SubmitPlanDecision
  */
 export const submitPlanDecision = TaskService.method.submitPlanDecision;
+
+/**
+ * @generated from rpc dexdex.v1.TaskService.CancelUnitTask
+ */
+export const cancelUnitTask = TaskService.method.cancelUnitTask;
+
+/**
+ * @generated from rpc dexdex.v1.TaskService.CancelSubTask
+ */
+export const cancelSubTask = TaskService.method.cancelSubTask;
+
+/**
+ * @generated from rpc dexdex.v1.TaskService.CreateSubTask
+ */
+export const createSubTask = TaskService.method.createSubTask;
+
+/**
+ * @generated from rpc dexdex.v1.TaskService.ListSubTaskCommits
+ */
+export const listSubTaskCommits = TaskService.method.listSubTaskCommits;
+
+/**
+ * @generated from rpc dexdex.v1.TaskService.RetrySubTask
+ */
+export const retrySubTask = TaskService.method.retrySubTask;

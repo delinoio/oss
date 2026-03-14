@@ -15,6 +15,26 @@ export const getWorkspace = WorkspaceService.method.getWorkspace;
 export const listWorkspaces = WorkspaceService.method.listWorkspaces;
 
 /**
+ * @generated from rpc dexdex.v1.WorkspaceService.CreateWorkspace
+ */
+export const createWorkspace = WorkspaceService.method.createWorkspace;
+
+/**
+ * @generated from rpc dexdex.v1.WorkspaceService.UpdateWorkspace
+ */
+export const updateWorkspace = WorkspaceService.method.updateWorkspace;
+
+/**
+ * @generated from rpc dexdex.v1.WorkspaceService.DeleteWorkspace
+ */
+export const deleteWorkspace = WorkspaceService.method.deleteWorkspace;
+
+/**
+ * @generated from rpc dexdex.v1.WorkspaceService.SetActiveWorkspace
+ */
+export const setActiveWorkspace = WorkspaceService.method.setActiveWorkspace;
+
+/**
  * @generated from rpc dexdex.v1.WorkspaceService.GetWorkspaceWorkStatus
  */
 export const getWorkspaceWorkStatus = WorkspaceService.method.getWorkspaceWorkStatus;
