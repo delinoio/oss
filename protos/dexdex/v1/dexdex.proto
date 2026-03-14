@@ -119,8 +119,6 @@ enum PlanDecision {
 
 message Workspace {
   string workspace_id = 1;
-  string name = 2;
-  google.protobuf.Timestamp created_at = 3;
 }
 
 message RepositoryRef {
@@ -146,13 +144,6 @@ message UnitTask {
   string unit_task_id = 1;
   UnitTaskStatus status = 2;
   ActionType action_required = 3;
-  string title = 4;
-  string description = 5;
-  string workspace_id = 6;
-  string repository_group_id = 7;
-  google.protobuf.Timestamp created_at = 8;
-  google.protobuf.Timestamp updated_at = 9;
-  int32 sub_task_count = 10;
 }
 
 message SubTask {
@@ -162,10 +153,6 @@ message SubTask {
   SubTaskStatus status = 4;
   SubTaskCompletionReason completion_reason = 5;
   repeated CommitMetadata commit_chain = 6;
-  string title = 7;
-  string session_id = 8;
-  google.protobuf.Timestamp created_at = 9;
-  google.protobuf.Timestamp updated_at = 10;
 }
 
 message StreamWorkspaceEventsRequest {
@@ -358,68 +345,14 @@ message ListNotificationsRequest {
 message NotificationRecord {
   string notification_id = 1;
   NotificationType type = 2;
-  string title = 3;
-  string body = 4;
-  string reference_id = 5;
-  bool read = 6;
-  google.protobuf.Timestamp created_at = 7;
 }
 
 message ListNotificationsResponse {
   repeated NotificationRecord notifications = 1;
 }
 
-// List and Create messages for task management.
-
-message ListWorkspacesRequest {}
-
-message ListWorkspacesResponse {
-  repeated Workspace workspaces = 1;
-}
-
-message ListUnitTasksRequest {
-  string workspace_id = 1;
-  // Optional status filter. Empty means all statuses.
-  repeated UnitTaskStatus status_filter = 2;
-}
-
-message ListUnitTasksResponse {
-  repeated UnitTask unit_tasks = 1;
-}
-
-message CreateUnitTaskRequest {
-  string workspace_id = 1;
-  string title = 2;
-  string description = 3;
-  string repository_group_id = 4;
-}
-
-message CreateUnitTaskResponse {
-  UnitTask unit_task = 1;
-}
-
-message ListSubTasksRequest {
-  string workspace_id = 1;
-  string unit_task_id = 2;
-}
-
-message ListSubTasksResponse {
-  repeated SubTask sub_tasks = 1;
-}
-
-message UpdateUnitTaskStatusRequest {
-  string workspace_id = 1;
-  string unit_task_id = 2;
-  UnitTaskStatus status = 3;
-}
-
-message UpdateUnitTaskStatusResponse {
-  UnitTask unit_task = 1;
-}
-
 service WorkspaceService {
   rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
-  rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
 }
 
 service RepositoryService {
@@ -429,10 +362,6 @@ service RepositoryService {
 service TaskService {
   rpc GetUnitTask(GetUnitTaskRequest) returns (GetUnitTaskResponse);
   rpc GetSubTask(GetSubTaskRequest) returns (GetSubTaskResponse);
-  rpc ListUnitTasks(ListUnitTasksRequest) returns (ListUnitTasksResponse);
-  rpc ListSubTasks(ListSubTasksRequest) returns (ListSubTasksResponse);
-  rpc CreateUnitTask(CreateUnitTaskRequest) returns (CreateUnitTaskResponse);
-  rpc UpdateUnitTaskStatus(UpdateUnitTaskStatusRequest) returns (UpdateUnitTaskStatusResponse);
   rpc SubmitPlanDecision(SubmitPlanDecisionRequest) returns (SubmitPlanDecisionResponse);
 }
 
