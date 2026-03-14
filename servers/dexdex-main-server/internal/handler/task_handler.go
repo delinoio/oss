@@ -10,19 +10,22 @@ import (
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/store"
+	"github.com/delinoio/oss/servers/dexdex-main-server/internal/stream"
 )
 
 // TaskHandler implements the TaskService Connect RPC handler.
 type TaskHandler struct {
 	dexdexv1connect.UnimplementedTaskServiceHandler
 	store  store.Store
+	fanOut *stream.FanOut
 	logger *slog.Logger
 }
 
 // NewTaskHandler creates a new TaskHandler.
-func NewTaskHandler(s store.Store, logger *slog.Logger) *TaskHandler {
+func NewTaskHandler(s store.Store, fanOut *stream.FanOut, logger *slog.Logger) *TaskHandler {
 	return &TaskHandler{
 		store:  s,
+		fanOut: fanOut,
 		logger: logger,
 	}
 }
@@ -64,6 +67,90 @@ func (h *TaskHandler) GetSubTask(
 
 	return connect.NewResponse(&dexdexv1.GetSubTaskResponse{
 		SubTask: subTask,
+	}), nil
+}
+
+// ListUnitTasks returns all unit tasks for a workspace, optionally filtered by status.
+func (h *TaskHandler) ListUnitTasks(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ListUnitTasksRequest],
+) (*connect.Response[dexdexv1.ListUnitTasksResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	h.logger.Info("ListUnitTasks called", "workspace_id", workspaceID, "status_filter_count", len(req.Msg.StatusFilter))
+
+	tasks := h.store.ListUnitTasks(workspaceID, req.Msg.StatusFilter)
+	return connect.NewResponse(&dexdexv1.ListUnitTasksResponse{
+		UnitTasks: tasks,
+	}), nil
+}
+
+// ListSubTasks returns all sub tasks for a unit task in a workspace.
+func (h *TaskHandler) ListSubTasks(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ListSubTasksRequest],
+) (*connect.Response[dexdexv1.ListSubTasksResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	unitTaskID := req.Msg.UnitTaskId
+	h.logger.Info("ListSubTasks called", "workspace_id", workspaceID, "unit_task_id", unitTaskID)
+
+	subTasks := h.store.ListSubTasks(workspaceID, unitTaskID)
+	return connect.NewResponse(&dexdexv1.ListSubTasksResponse{
+		SubTasks: subTasks,
+	}), nil
+}
+
+// CreateUnitTask creates a new unit task in a workspace.
+func (h *TaskHandler) CreateUnitTask(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.CreateUnitTaskRequest],
+) (*connect.Response[dexdexv1.CreateUnitTaskResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	title := strings.TrimSpace(req.Msg.Title)
+	description := req.Msg.Description
+	repoGroupID := req.Msg.RepositoryGroupId
+
+	h.logger.Info("CreateUnitTask called", "workspace_id", workspaceID, "title", title)
+
+	if title == "" {
+		err := fmt.Errorf("title is required")
+		h.logger.Warn("CreateUnitTask validation failed", "workspace_id", workspaceID, "error", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	task := h.store.CreateUnitTask(workspaceID, title, description, repoGroupID)
+
+	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_TASK_UPDATED, &stream.TaskPayload{Task: task})
+
+	h.logger.Info("CreateUnitTask completed", "workspace_id", workspaceID, "unit_task_id", task.UnitTaskId)
+
+	return connect.NewResponse(&dexdexv1.CreateUnitTaskResponse{
+		UnitTask: task,
+	}), nil
+}
+
+// UpdateUnitTaskStatus updates the status of a unit task.
+func (h *TaskHandler) UpdateUnitTaskStatus(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.UpdateUnitTaskStatusRequest],
+) (*connect.Response[dexdexv1.UpdateUnitTaskStatusResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	taskID := req.Msg.UnitTaskId
+	status := req.Msg.Status
+
+	h.logger.Info("UpdateUnitTaskStatus called", "workspace_id", workspaceID, "unit_task_id", taskID, "status", status.String())
+
+	task, err := h.store.UpdateUnitTaskStatus(workspaceID, taskID, status)
+	if err != nil {
+		h.logger.Warn("unit task not found for status update", "workspace_id", workspaceID, "unit_task_id", taskID, "error", err)
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_TASK_UPDATED, &stream.TaskPayload{Task: task})
+
+	h.logger.Info("UpdateUnitTaskStatus completed", "workspace_id", workspaceID, "unit_task_id", taskID, "new_status", status.String())
+
+	return connect.NewResponse(&dexdexv1.UpdateUnitTaskStatusResponse{
+		UnitTask: task,
 	}), nil
 }
 
@@ -112,6 +199,8 @@ func (h *TaskHandler) SubmitPlanDecision(
 		h.store.UpsertSubTask(workspaceID, updated)
 		resp.UpdatedSubTask = updated
 
+		h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: updated})
+
 		h.logger.Info("plan decision approved, sub task resumed",
 			"workspace_id", workspaceID, "sub_task_id", subTaskID)
 
@@ -142,6 +231,9 @@ func (h *TaskHandler) SubmitPlanDecision(
 		h.store.UpsertSubTask(workspaceID, created)
 		resp.CreatedSubTask = created
 
+		h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: updated})
+		h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: created})
+
 		h.logger.Info("plan decision revised, new sub task created",
 			"workspace_id", workspaceID, "sub_task_id", subTaskID,
 			"created_sub_task_id", created.SubTaskId, "revision_note", trimmedNote)
@@ -153,6 +245,8 @@ func (h *TaskHandler) SubmitPlanDecision(
 		updated.CompletionReason = dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_PLAN_REJECTED
 		h.store.UpsertSubTask(workspaceID, updated)
 		resp.UpdatedSubTask = updated
+
+		h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: updated})
 
 		h.logger.Info("plan decision rejected, sub task cancelled",
 			"workspace_id", workspaceID, "sub_task_id", subTaskID)

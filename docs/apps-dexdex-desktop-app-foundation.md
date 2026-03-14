@@ -78,8 +78,11 @@
 - business flows must not use ad-hoc `fetch` calls
 - query keys and cache scopes are workspace-isolated
 - Implemented-vs-planned alignment:
-- current runtime implementation under `apps/dexdex/src` is scaffold-phase UI (logo/greeting form) and does not yet implement the full workflow contract above
-- this document remains the target product contract for staged reintegration work
+- current runtime implementation includes full Linear-style task management UI with Connect RPC server integration via React Query + @connectrpc/connect-query
+- proto-to-view adapter layer converts proto types to view-model types
+- event stream uses real Connect streaming RPC with query cache invalidation
+- task CRUD, plan decisions, notifications, and session output are wired to the main server
+- menu bar tray, global shortcut (Cmd+Shift+I), session fork UI, and credential bridge/import remain planned scope
 
 ## Storage
 - Client-local persisted state includes active workspace pointer, workspace-scoped tab metadata, and user UI preferences (appearance, notification preference, shortcut discoverability).

@@ -4,7 +4,6 @@
  */
 
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import { MOCK_TASKS } from "../lib/mock-data";
 
 export interface CommandAction {
   id: string;
@@ -18,9 +17,10 @@ interface CommandPaletteProps {
   onClose: () => void;
   onNavigate: (path: string) => void;
   onCreateTask: () => void;
+  tasks?: { unitTaskId: string; title: string }[];
 }
 
-export function CommandPalette({ isOpen, onClose, onNavigate, onCreateTask }: CommandPaletteProps) {
+export function CommandPalette({ isOpen, onClose, onNavigate, onCreateTask, tasks = [] }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -31,7 +31,7 @@ export function CommandPalette({ isOpen, onClose, onNavigate, onCreateTask }: Co
     { id: "nav-inbox", label: "Go to Inbox", section: "Navigation", onSelect: () => { onNavigate("/inbox"); onClose(); } },
     { id: "nav-settings", label: "Go to Settings", section: "Navigation", onSelect: () => { onNavigate("/settings"); onClose(); } },
     { id: "create-task", label: "Create new task", section: "Actions", onSelect: () => { onCreateTask(); onClose(); } },
-    ...MOCK_TASKS.map((task) => ({
+    ...tasks.map((task) => ({
       id: `task-${task.unitTaskId}`,
       label: task.title,
       section: "Tasks",

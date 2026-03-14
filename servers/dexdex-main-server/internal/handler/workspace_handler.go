@@ -43,3 +43,16 @@ func (h *WorkspaceHandler) GetWorkspace(
 		Workspace: ws,
 	}), nil
 }
+
+// ListWorkspaces returns all workspaces.
+func (h *WorkspaceHandler) ListWorkspaces(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ListWorkspacesRequest],
+) (*connect.Response[dexdexv1.ListWorkspacesResponse], error) {
+	h.logger.Info("ListWorkspaces called")
+
+	workspaces := h.store.ListWorkspaces()
+	return connect.NewResponse(&dexdexv1.ListWorkspacesResponse{
+		Workspaces: workspaces,
+	}), nil
+}

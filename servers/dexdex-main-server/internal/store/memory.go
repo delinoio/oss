@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // idCounter provides unique IDs for store entities.
@@ -31,24 +32,28 @@ type Store interface {
 	AddUnitTask(workspaceID string, task *dexdexv1.UnitTask)
 	AddSubTask(workspaceID string, subTask *dexdexv1.SubTask)
 	AddNotification(workspaceID string, notif *dexdexv1.NotificationRecord)
+	GetSessionOutputs(sessionID string) []*dexdexv1.SessionOutputEvent
+	AddSessionOutput(sessionID string, event *dexdexv1.SessionOutputEvent)
 }
 
 // MemoryStore is a thread-safe in-memory implementation of Store.
 type MemoryStore struct {
-	mu            sync.RWMutex
-	workspaces    map[string]*dexdexv1.Workspace
-	unitTasks     map[string]map[string]*dexdexv1.UnitTask  // workspaceID -> taskID -> task
-	subTasks      map[string]map[string]*dexdexv1.SubTask   // workspaceID -> subTaskID -> subTask
-	notifications map[string][]*dexdexv1.NotificationRecord // workspaceID -> notifications
+	mu             sync.RWMutex
+	workspaces     map[string]*dexdexv1.Workspace
+	unitTasks      map[string]map[string]*dexdexv1.UnitTask  // workspaceID -> taskID -> task
+	subTasks       map[string]map[string]*dexdexv1.SubTask   // workspaceID -> subTaskID -> subTask
+	notifications  map[string][]*dexdexv1.NotificationRecord // workspaceID -> notifications
+	sessionOutputs map[string][]*dexdexv1.SessionOutputEvent // sessionID -> events
 }
 
 // NewMemoryStore creates a new empty MemoryStore.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		workspaces:    make(map[string]*dexdexv1.Workspace),
-		unitTasks:     make(map[string]map[string]*dexdexv1.UnitTask),
-		subTasks:      make(map[string]map[string]*dexdexv1.SubTask),
-		notifications: make(map[string][]*dexdexv1.NotificationRecord),
+		workspaces:     make(map[string]*dexdexv1.Workspace),
+		unitTasks:      make(map[string]map[string]*dexdexv1.UnitTask),
+		subTasks:       make(map[string]map[string]*dexdexv1.SubTask),
+		notifications:  make(map[string][]*dexdexv1.NotificationRecord),
+		sessionOutputs: make(map[string][]*dexdexv1.SessionOutputEvent),
 	}
 }
 
@@ -132,9 +137,16 @@ func (s *MemoryStore) CreateUnitTask(workspaceID, title, description, repoGroupI
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	now := timestamppb.Now()
 	task := &dexdexv1.UnitTask{
-		UnitTaskId: nextID(),
-		Status:     dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED,
+		UnitTaskId:        nextID(),
+		Status:            dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED,
+		Title:             title,
+		Description:       description,
+		WorkspaceId:       workspaceID,
+		RepositoryGroupId: repoGroupID,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 
 	if s.unitTasks[workspaceID] == nil {
@@ -157,6 +169,7 @@ func (s *MemoryStore) UpdateUnitTaskStatus(workspaceID, id string, status dexdex
 		return nil, fmt.Errorf("unit task not found: workspace=%s id=%s", workspaceID, id)
 	}
 	task.Status = status
+	task.UpdatedAt = timestamppb.Now()
 	return task, nil
 }
 
@@ -228,4 +241,21 @@ func (s *MemoryStore) ListNotifications(workspaceID string) []*dexdexv1.Notifica
 	result := make([]*dexdexv1.NotificationRecord, len(notifs))
 	copy(result, notifs)
 	return result
+}
+
+func (s *MemoryStore) GetSessionOutputs(sessionID string) []*dexdexv1.SessionOutputEvent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	events := s.sessionOutputs[sessionID]
+	result := make([]*dexdexv1.SessionOutputEvent, len(events))
+	copy(result, events)
+	return result
+}
+
+func (s *MemoryStore) AddSessionOutput(sessionID string, event *dexdexv1.SessionOutputEvent) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.sessionOutputs[sessionID] = append(s.sessionOutputs[sessionID], event)
 }

@@ -1,11 +1,15 @@
 /**
  * Hook for managing workspace event stream connection.
  * Starts stream on mount and updates connection status.
+ * Invalidates React Query caches based on received stream events.
  */
 
 import { useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useTransport } from "@connectrpc/connect-query";
 import { EventStreamClient } from "../lib/event-stream";
 import type { EventStreamStatus } from "../lib/event-stream";
+import { StreamEventType } from "../lib/status";
 
 interface UseWorkspaceStreamOptions {
   workspaceId: string;
@@ -15,10 +19,13 @@ interface UseWorkspaceStreamOptions {
 /**
  * Hook that manages the workspace event stream lifecycle.
  * Connects on mount and disconnects on unmount.
- * Updates connection status for UI display.
+ * Updates connection status for UI display and invalidates
+ * React Query caches when server-side data changes.
  */
 export function useWorkspaceStream({ workspaceId, onStatusChange }: UseWorkspaceStreamOptions): void {
   const clientRef = useRef<EventStreamClient | null>(null);
+  const queryClient = useQueryClient();
+  const transport = useTransport();
 
   useEffect(() => {
     const client = new EventStreamClient();
@@ -27,16 +34,39 @@ export function useWorkspaceStream({ workspaceId, onStatusChange }: UseWorkspace
     client.connect(
       workspaceId,
       (event) => {
-        // Handle incoming events - in scaffold mode, no events are received.
-        // Real implementation would update React Query cache or local state here.
         console.log("[WorkspaceStream] Event received:", event.eventType, "seq:", event.sequence);
+
+        // Invalidate relevant query caches based on event type
+        switch (event.eventType) {
+          case StreamEventType.TASK_UPDATED:
+            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+            break;
+          case StreamEventType.SUBTASK_UPDATED:
+            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+            break;
+          case StreamEventType.SESSION_OUTPUT:
+            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
+            break;
+          case StreamEventType.SESSION_STATE_CHANGED:
+            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
+            break;
+          case StreamEventType.NOTIFICATION_CREATED:
+            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.NotificationService"] });
+            break;
+          case StreamEventType.PR_UPDATED:
+            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+            break;
+          default:
+            break;
+        }
       },
       onStatusChange,
+      transport,
     );
 
     return () => {
       client.disconnect();
       clientRef.current = null;
     };
-  }, [workspaceId, onStatusChange]);
+  }, [workspaceId, onStatusChange, queryClient, transport]);
 }
