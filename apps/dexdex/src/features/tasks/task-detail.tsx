@@ -4,20 +4,43 @@
 
 import type { CSSProperties } from "react";
 import { StatusBadge } from "../../components/status-badge";
-import type { UnitTask, SessionOutputEvent } from "../../lib/mock-data";
+import type { UnitTask } from "../../lib/mock-data";
 import { PlanDecision, SubTaskStatus } from "../../lib/status";
+import { useListSubTasks, useGetSessionOutput } from "../../hooks/use-dexdex-queries";
 import { SubtaskTimeline } from "./subtask-timeline";
 import { PlanDecisions } from "./plan-decisions";
 import { SessionOutputPanel } from "./session-output-panel";
 
+const WORKSPACE_ID = "workspace-default";
+
 interface TaskDetailProps {
   task: UnitTask;
-  sessionOutput: SessionOutputEvent[];
   onBack: () => void;
   onPlanDecision: (subTaskId: string, decision: PlanDecision, revisionNote?: string) => void;
 }
 
-export function TaskDetail({ task, sessionOutput, onBack, onPlanDecision }: TaskDetailProps) {
+export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
+  // Fetch subtasks from server
+  const { data: subTasks = [] } = useListSubTasks(WORKSPACE_ID, task.unitTaskId);
+
+  // Find active subtask for session output display
+  const activeSubTask =
+    subTasks.find(
+      (st) =>
+        st.status === SubTaskStatus.IN_PROGRESS ||
+        st.status === SubTaskStatus.WAITING_FOR_PLAN_APPROVAL,
+    ) ?? subTasks[subTasks.length - 1];
+
+  // Fetch session output for the active subtask
+  const { data: sessionOutput = [] } = useGetSessionOutput(
+    WORKSPACE_ID,
+    activeSubTask?.sessionId,
+  );
+
+  const waitingSubtask = subTasks.find(
+    (st) => st.status === SubTaskStatus.WAITING_FOR_PLAN_APPROVAL,
+  );
+
   const containerStyle: CSSProperties = {
     height: "100%",
     display: "flex",
@@ -47,17 +70,11 @@ export function TaskDetail({ task, sessionOutput, onBack, onPlanDecision }: Task
     marginBottom: "var(--space-3)",
   };
 
-  // Find the latest subtask with a session for session output
-  const latestSessionSubtask = [...task.subTasks].reverse().find((st) => st.sessionId);
-  const waitingSubtask = task.subTasks.find(
-    (st) => st.status === SubTaskStatus.WAITING_FOR_PLAN_APPROVAL,
-  );
-
   return (
     <div style={containerStyle} data-testid="task-detail">
       <div style={headerStyle}>
         <button style={backButtonStyle} onClick={onBack} data-testid="back-button">
-          \u2190 Back to Tasks
+          {"\u2190"} Back to Tasks
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
           <StatusBadge status={task.status} />
@@ -114,14 +131,14 @@ export function TaskDetail({ task, sessionOutput, onBack, onPlanDecision }: Task
           >
             Subtasks
           </h2>
-          <SubtaskTimeline subtasks={task.subTasks} />
+          <SubtaskTimeline subtasks={subTasks} />
         </div>
 
         {/* Session output panel */}
-        {latestSessionSubtask && (
+        {activeSubTask && activeSubTask.sessionId && (
           <SessionOutputPanel
             events={sessionOutput}
-            sessionId={latestSessionSubtask.sessionId}
+            sessionId={activeSubTask.sessionId}
           />
         )}
       </div>

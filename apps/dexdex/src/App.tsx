@@ -16,6 +16,12 @@ import { SettingsPage } from "./features/settings/settings-page";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useWorkspaceStream } from "./hooks/use-workspace-stream";
 import {
+  useListUnitTasks,
+  useListNotifications,
+  useCreateUnitTaskMutation,
+  useSubmitPlanDecisionMutation,
+} from "./hooks/use-dexdex-queries";
+import {
   type AppState,
   type AppStore,
   type Theme,
@@ -24,9 +30,11 @@ import {
   persistTheme,
   applyThemeToDocument,
 } from "./stores/app-store";
-import { MOCK_TASKS, MOCK_SESSION_OUTPUT, MOCK_NOTIFICATIONS } from "./lib/mock-data";
 import type { Notification, UnitTask } from "./lib/mock-data";
-import { PlanDecision, UnitTaskStatus } from "./lib/status";
+import { PlanDecision } from "./lib/status";
+import { PlanDecision as ProtoPlanDecision } from "./gen/v1/dexdex_pb";
+
+const WORKSPACE_ID = "workspace-default";
 
 interface Tab {
   id: string;
@@ -48,9 +56,19 @@ function App() {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState("");
 
-  // Data state
-  const [tasks, setTasks] = useState<UnitTask[]>(MOCK_TASKS);
-  const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
+  // Data state - Connect RPC queries replace mock data
+  const { data: tasks = [] } = useListUnitTasks(WORKSPACE_ID);
+  const { data: notifications = [] } = useListNotifications(WORKSPACE_ID);
+  const [localReadNotifications, setLocalReadNotifications] = useState<Set<string>>(new Set());
+
+  // Apply local read state to notifications
+  const effectiveNotifications = useMemo(
+    () =>
+      notifications.map((n) =>
+        localReadNotifications.has(n.notificationId) ? { ...n, read: true } : n,
+      ),
+    [notifications, localReadNotifications],
+  );
 
   // Apply initial theme
   useMemo(() => {
@@ -76,7 +94,7 @@ function App() {
     () => ({
       theme,
       sidebarOpen,
-      activeWorkspaceId: "workspace-default",
+      activeWorkspaceId: WORKSPACE_ID,
       connectionStatus,
       toggleTheme,
       setTheme,
@@ -89,7 +107,7 @@ function App() {
 
   // Workspace stream
   useWorkspaceStream({
-    workspaceId: "workspace-default",
+    workspaceId: WORKSPACE_ID,
     onStatusChange: setConnectionStatus,
   });
 
@@ -135,30 +153,38 @@ function App() {
   );
 
   // Task actions
+  const createTaskMutation = useCreateUnitTaskMutation();
+
   const handleCreateTask = useCallback(
     (title: string, description: string) => {
-      const newTask: UnitTask = {
-        unitTaskId: `task-${Date.now()}`,
+      createTaskMutation.mutate({
+        workspaceId: WORKSPACE_ID,
         title,
         description,
-        status: UnitTaskStatus.QUEUED,
-        repositoryUrl: "",
-        branchRef: "",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        subTasks: [],
-      };
-      setTasks((prev) => [newTask, ...prev]);
+        repositoryGroupId: "",
+      });
     },
-    [],
+    [createTaskMutation],
   );
 
+  const planDecisionMutation = useSubmitPlanDecisionMutation();
+
   const handlePlanDecision = useCallback(
-    (subTaskId: string, decision: PlanDecision, _revisionNote?: string) => {
-      console.log("[App] Plan decision:", { subTaskId, decision, _revisionNote });
-      // In scaffold mode, just log. Real implementation would call TaskService.SubmitPlanDecision.
+    (subTaskId: string, decision: PlanDecision, revisionNote?: string) => {
+      const protoDecision =
+        decision === PlanDecision.APPROVE
+          ? ProtoPlanDecision.APPROVE
+          : decision === PlanDecision.REVISE
+            ? ProtoPlanDecision.REVISE
+            : ProtoPlanDecision.REJECT;
+      planDecisionMutation.mutate({
+        workspaceId: WORKSPACE_ID,
+        subTaskId,
+        decision: protoDecision,
+        revisionNote: revisionNote ?? "",
+      });
     },
-    [],
+    [planDecisionMutation],
   );
 
   const handleNotificationClick = useCallback(
@@ -171,9 +197,7 @@ function App() {
   );
 
   const handleMarkRead = useCallback((notificationId: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.notificationId === notificationId ? { ...n, read: true } : n)),
-    );
+    setLocalReadNotifications((prev) => new Set(prev).add(notificationId));
   }, []);
 
   // Keyboard shortcuts
@@ -193,7 +217,6 @@ function App() {
         return (
           <TaskDetail
             task={task}
-            sessionOutput={MOCK_SESSION_OUTPUT}
             onBack={() => {
               setCurrentPath("/tasks");
               setActiveTabId("");
@@ -207,7 +230,7 @@ function App() {
     if (currentPath === "/inbox") {
       return (
         <InboxPage
-          notifications={notifications}
+          notifications={effectiveNotifications}
           onNotificationClick={handleNotificationClick}
           onMarkRead={handleMarkRead}
         />
