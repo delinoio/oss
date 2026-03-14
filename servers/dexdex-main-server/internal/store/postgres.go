@@ -21,18 +21,24 @@ type PostgresStore struct {
 	q      *dbquery.Queries
 	logger *slog.Logger
 
-	// Session outputs remain in-memory as they are transient streaming data.
-	mu             sync.RWMutex
-	sessionOutputs map[string][]*dexdexv1.SessionOutputEvent
+	// Session outputs, worktree assignments, badge themes, and review comment CRUD remain in-memory as they are transient streaming data.
+	mu                  sync.RWMutex
+	sessionOutputs      map[string][]*dexdexv1.SessionOutputEvent
+	worktreeAssignments map[string]map[string]*WorktreeAssignment       // workspaceID -> sessionID -> assignment
+	badgeThemes         map[string]*dexdexv1.BadgeTheme                 // workspaceID -> theme
+	reviewCommentsStore map[string]map[string][]*dexdexv1.ReviewComment // workspaceID -> prTrackingID -> comments
 }
 
 // NewPostgresStore creates a new PostgresStore from a connection pool.
 func NewPostgresStore(pool *pgxpool.Pool, logger *slog.Logger) *PostgresStore {
 	return &PostgresStore{
-		pool:           pool,
-		q:              dbquery.New(pool),
-		logger:         logger,
-		sessionOutputs: make(map[string][]*dexdexv1.SessionOutputEvent),
+		pool:                pool,
+		q:                   dbquery.New(pool),
+		logger:              logger,
+		sessionOutputs:      make(map[string][]*dexdexv1.SessionOutputEvent),
+		worktreeAssignments: make(map[string]map[string]*WorktreeAssignment),
+		badgeThemes:         make(map[string]*dexdexv1.BadgeTheme),
+		reviewCommentsStore: make(map[string]map[string][]*dexdexv1.ReviewComment),
 	}
 }
 
@@ -621,6 +627,16 @@ func (s *PostgresStore) ListPullRequests(workspaceID string) []*dexdexv1.PullReq
 	return result
 }
 
+func (s *PostgresStore) UpdatePullRequest(workspaceID, prTrackingID string, status dexdexv1.PrStatus) (*dexdexv1.PullRequestRecord, error) {
+	// For PostgreSQL, update the status in-place. Since sqlc queries may not have an update query yet,
+	// use AddPullRequest to upsert (the table should have ON CONFLICT handling).
+	s.AddPullRequest(workspaceID, &dexdexv1.PullRequestRecord{
+		PrTrackingId: prTrackingID,
+		Status:       status,
+	})
+	return s.GetPullRequest(workspaceID, prTrackingID)
+}
+
 // Review assist methods
 
 func (s *PostgresStore) AddReviewAssistItem(workspaceID, unitTaskID string, item *dexdexv1.ReviewAssistItem) {
@@ -687,4 +703,169 @@ func (s *PostgresStore) ListReviewComments(workspaceID, prTrackingID string) []*
 		}
 	}
 	return result
+}
+
+func (s *PostgresStore) FindSubTaskBySessionID(workspaceID, sessionID string) (*dexdexv1.SubTask, error) {
+	// Scan all subtasks for this workspace looking for the session ID match
+	// This is acceptable since subtask counts are bounded per workspace
+	allSubTasks := s.ListSubTasks(workspaceID, "")
+	for _, st := range allSubTasks {
+		if st.SessionId == sessionID {
+			return st, nil
+		}
+	}
+	return nil, fmt.Errorf("no subtask found for session: workspace=%s session=%s", workspaceID, sessionID)
+}
+
+// Worktree tracking methods (in-memory, transient runtime data)
+
+func (s *PostgresStore) UpsertWorktreeAssignment(workspaceID string, assignment *WorktreeAssignment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.worktreeAssignments[workspaceID] == nil {
+		s.worktreeAssignments[workspaceID] = make(map[string]*WorktreeAssignment)
+	}
+	s.worktreeAssignments[workspaceID][assignment.SessionID] = assignment
+}
+
+func (s *PostgresStore) GetWorktreeAssignment(workspaceID, sessionID string) (*WorktreeAssignment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	assignments, ok := s.worktreeAssignments[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("worktree assignment not found: workspace=%s session=%s", workspaceID, sessionID)
+	}
+	assignment, ok := assignments[sessionID]
+	if !ok {
+		return nil, fmt.Errorf("worktree assignment not found: workspace=%s session=%s", workspaceID, sessionID)
+	}
+	return assignment, nil
+}
+
+func (s *PostgresStore) ListActiveWorktrees(workspaceID string) []*WorktreeAssignment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	assignments, ok := s.worktreeAssignments[workspaceID]
+	if !ok {
+		return nil
+	}
+
+	result := make([]*WorktreeAssignment, 0)
+	for _, a := range assignments {
+		switch a.State {
+		case dexdexv1.WorktreeState_WORKTREE_STATE_PREPARING,
+			dexdexv1.WorktreeState_WORKTREE_STATE_READY,
+			dexdexv1.WorktreeState_WORKTREE_STATE_EXECUTING:
+			result = append(result, a)
+		}
+	}
+	return result
+}
+
+// Badge theme methods (in-memory, transient runtime data)
+
+func (s *PostgresStore) GetBadgeTheme(workspaceID string) *dexdexv1.BadgeTheme {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.badgeThemes[workspaceID]
+}
+
+func (s *PostgresStore) SetBadgeTheme(workspaceID string, theme *dexdexv1.BadgeTheme) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.badgeThemes[workspaceID] = theme
+}
+
+// Review comment CRUD methods (in-memory, transient runtime data)
+
+func (s *PostgresStore) GetReviewComment(workspaceID, reviewCommentID string) (*dexdexv1.ReviewComment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	prComments, ok := s.reviewCommentsStore[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+	}
+	for _, comments := range prComments {
+		for _, c := range comments {
+			if c.ReviewCommentId == reviewCommentID {
+				return c, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+}
+
+func (s *PostgresStore) CreateReviewComment(workspaceID, prTrackingID string, comment *dexdexv1.ReviewComment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.reviewCommentsStore[workspaceID] == nil {
+		s.reviewCommentsStore[workspaceID] = make(map[string][]*dexdexv1.ReviewComment)
+	}
+	s.reviewCommentsStore[workspaceID][prTrackingID] = append(s.reviewCommentsStore[workspaceID][prTrackingID], comment)
+}
+
+func (s *PostgresStore) UpdateReviewComment(workspaceID, reviewCommentID, body string) (*dexdexv1.ReviewComment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prComments, ok := s.reviewCommentsStore[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+	}
+	for _, comments := range prComments {
+		for _, c := range comments {
+			if c.ReviewCommentId == reviewCommentID {
+				c.Body = body
+				c.UpdatedAt = timestamppb.Now()
+				return c, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+}
+
+func (s *PostgresStore) DeleteReviewComment(workspaceID, reviewCommentID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prComments, ok := s.reviewCommentsStore[workspaceID]
+	if !ok {
+		return fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+	}
+	for prTrackingID, comments := range prComments {
+		for i, c := range comments {
+			if c.ReviewCommentId == reviewCommentID {
+				s.reviewCommentsStore[workspaceID][prTrackingID] = append(comments[:i], comments[i+1:]...)
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+}
+
+func (s *PostgresStore) UpdateReviewCommentStatus(workspaceID, reviewCommentID string, status dexdexv1.ReviewCommentStatus) (*dexdexv1.ReviewComment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prComments, ok := s.reviewCommentsStore[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+	}
+	for _, comments := range prComments {
+		for _, c := range comments {
+			if c.ReviewCommentId == reviewCommentID {
+				c.Status = status
+				c.UpdatedAt = timestamppb.Now()
+				return c, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
 }

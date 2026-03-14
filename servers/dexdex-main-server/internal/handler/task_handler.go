@@ -16,17 +16,27 @@ import (
 // TaskHandler implements the TaskService Connect RPC handler.
 type TaskHandler struct {
 	dexdexv1connect.UnimplementedTaskServiceHandler
-	store  store.Store
-	fanOut *stream.FanOut
-	logger *slog.Logger
+	store      store.Store
+	fanOut     stream.EventBroadcaster
+	dispatcher Dispatcher
+	logger     *slog.Logger
+}
+
+// Dispatcher is the interface for dispatching task execution.
+type Dispatcher interface {
+	DispatchExecution(ctx context.Context, workspaceID string, unitTask *dexdexv1.UnitTask, repoGroup *dexdexv1.RepositoryGroup, agentCliType dexdexv1.AgentCliType) error
+	DispatchForkExecution(ctx context.Context, workspaceID string, forkedSessionID string, parentSessionID string, forkIntent dexdexv1.SessionForkIntent, prompt string, repoGroup *dexdexv1.RepositoryGroup, agentCliType dexdexv1.AgentCliType) error
+	CancelSubTask(subTaskID string) error
+	SubmitInput(ctx context.Context, sessionID, inputText string) error
 }
 
 // NewTaskHandler creates a new TaskHandler.
-func NewTaskHandler(s store.Store, fanOut *stream.FanOut, logger *slog.Logger) *TaskHandler {
+func NewTaskHandler(s store.Store, fanOut stream.EventBroadcaster, dispatcher Dispatcher, logger *slog.Logger) *TaskHandler {
 	return &TaskHandler{
-		store:  s,
-		fanOut: fanOut,
-		logger: logger,
+		store:      s,
+		fanOut:     fanOut,
+		dispatcher: dispatcher,
+		logger:     logger,
 	}
 }
 
@@ -122,6 +132,22 @@ func (h *TaskHandler) CreateUnitTask(
 	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_TASK_UPDATED, &stream.TaskPayload{Task: task})
 
 	h.logger.Info("CreateUnitTask completed", "workspace_id", workspaceID, "unit_task_id", task.UnitTaskId)
+
+	// Dispatch execution if a repository group is specified and dispatcher is available
+	if repoGroupID != "" && h.dispatcher != nil {
+		repoGroup, err := h.store.GetRepositoryGroup(workspaceID, repoGroupID)
+		if err == nil && repoGroup != nil {
+			go func() {
+				if dispatchErr := h.dispatcher.DispatchExecution(context.Background(), workspaceID, task, repoGroup, dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE); dispatchErr != nil {
+					h.logger.Error("failed to dispatch execution",
+						"workspace_id", workspaceID,
+						"unit_task_id", task.UnitTaskId,
+						"error", dispatchErr,
+					)
+				}
+			}()
+		}
+	}
 
 	return connect.NewResponse(&dexdexv1.CreateUnitTaskResponse{
 		UnitTask: task,

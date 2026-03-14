@@ -43,15 +43,20 @@
 - normalize provider usage counters into shared token/cost schema
 - support partial/null metrics where provider counters are unavailable
 - Configuration contract (normalized to current monorepo/runtime naming):
-- current scaffold implementation does not parse runtime env configuration
-- planned envs for execution runtime rollout: `DEXDEX_WORKER_SERVER_ADDR`, `DEXDEX_WORKER_ID`, `DEXDEX_MAIN_SERVER_URL`, `DEXDEX_WORKTREE_ROOT`, `DEXDEX_REPO_CACHE_ROOT`, `DEXDEX_MAX_PARALLEL_SUBTASKS`, `DEXDEX_AGENT_EXEC_TIMEOUT_SEC`
-- Implemented-vs-planned alignment:
-- current implementation includes Connect RPC server with SessionService (GetSessionOutput) and WorkerSessionAdapterService (GetAgentCapabilities, ForkSessionAdapter)
+- runtime configuration is centrally parsed via `internal/config/config.go` using env vars
+- implemented envs: `DEXDEX_WORKER_SERVER_ADDR`, `DEXDEX_WORKER_ID`, `DEXDEX_MAIN_SERVER_URL`, `DEXDEX_WORKTREE_ROOT`, `DEXDEX_REPO_CACHE_ROOT`, `DEXDEX_MAX_PARALLEL_SUBTASKS`, `DEXDEX_AGENT_EXEC_TIMEOUT_SEC`
+- Implemented-vs-planned alignment (as of 2026-03-14):
+- current implementation includes Connect RPC server with SessionService (GetSessionOutput), WorkerSessionAdapterService (GetAgentCapabilities, ForkSessionAdapter), and WorkerExecutionService (`StartExecution` server-streaming, `SubmitWorkerInput`, `CancelExecution`)
 - `GetAgentCapabilities` returns normalized capability records for `CLAUDE_CODE`, `CODEX_CLI`, and `OPENCODE`
 - `ForkSessionAdapter` implements the fork adapter RPC boundary with lineage-tracked session metadata store
+- worktree orchestration via `internal/worktree/manager.go` is implemented (bare clone/fetch, worktree add/remove, stale cleanup, concurrency semaphore)
+- agent execution via `internal/handler/agent_exec.go` is implemented (spawns Claude Code/Codex CLI/OpenCode processes, parses NDJSON output, normalizes to proto)
+- UsageAccumulator for cost/usage normalization from agent NDJSON output into `UsageMetrics` proto is implemented
+- Plan YAML parser for structured plan rendering from agent output is implemented
 - session output normalization (raw kind → proto enum) and in-memory session store with lineage tracking are implemented
 - commit chain validation primitives are implemented
-- actual coding-agent integration/adapters (real process execution) and worktree orchestration remain planned rollout scope
+- real fork execution is implemented: `StartExecution` accepts `parent_session_id` and `fork_intent` fields; when set, builds Claude Code command with `--resume` flag, creates forked session lineage metadata, and streams output through standard pipeline
+- worktree lifecycle events emitted during execution (PREPARING→READY→EXECUTING→CLEANING_UP→CLEANED, FAILED on error) via `WorktreeStatusEvent` in `ExecutionEvent` oneof
 
 ## Storage
 - Target runtime owns worker-local temporary execution data, adapter parsing buffers, and normalized event artifacts prior to main-server persistence.
@@ -81,7 +86,7 @@
 
 ## Dependencies and Integrations
 - Depends on shared `protos/dexdex/v1` schemas.
-- Current implementation exposes `WorkerSessionAdapterService` RPC handlers (`GetAgentCapabilities`, `ForkSessionAdapter`); real agent process execution and worktree management remain planned.
+- Current implementation exposes `WorkerSessionAdapterService` RPC handlers (`GetAgentCapabilities`, `ForkSessionAdapter`) and `WorkerExecutionService` RPC handlers (`StartExecution`, `SubmitWorkerInput`, `CancelExecution`) with worktree orchestration and agent process execution (Claude Code, Codex CLI, OpenCode).
 - Target runtime integrates upstream with `servers/dexdex-main-server` through worker session adapter RPC contracts.
 - Target runtime provides normalized session output and artifact contracts consumed by main-server for client-facing flows.
 - Target runtime adapter fixtures and parser pipelines support multiple coding-agent CLIs.

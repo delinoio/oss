@@ -18,6 +18,7 @@ type SessionMetadata struct {
 	ForkedFromSequence uint64
 	AgentCliType       dexdexv1.AgentCliType
 	CreatedAt          time.Time
+	Usage              *dexdexv1.UsageMetrics
 }
 
 // SessionStore provides in-memory session output storage keyed by session ID.
@@ -109,6 +110,26 @@ func (s *SessionStore) ListChildSessions(parentSessionID string) []*SessionMetad
 		}
 	}
 	return children
+}
+
+// UpdateUsage sets the usage metrics for a session.
+func (s *SessionStore) UpdateUsage(sessionID string, usage *dexdexv1.UsageMetrics) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	meta, ok := s.metadata[sessionID]
+	if !ok {
+		s.logger.Warn("cannot update usage for unknown session", "session_id", sessionID)
+		return
+	}
+
+	meta.Usage = usage
+	s.logger.Debug("updated session usage",
+		"session_id", sessionID,
+		"input_tokens", usage.GetInputTokens(),
+		"output_tokens", usage.GetOutputTokens(),
+		"estimated_cost_usd", usage.GetEstimatedCostUsd(),
+	)
 }
 
 // ArchiveSession sets the fork status of the given session to ARCHIVED.

@@ -23,15 +23,17 @@ type SessionHandler struct {
 	dexdexv1connect.UnimplementedSessionServiceHandler
 	store        store.Store
 	workerClient WorkerClientInterface
-	fanOut       *stream.FanOut
+	dispatcher   Dispatcher
+	fanOut       stream.EventBroadcaster
 	logger       *slog.Logger
 }
 
 // NewSessionHandler creates a new SessionHandler.
-func NewSessionHandler(s store.Store, wc WorkerClientInterface, fo *stream.FanOut, logger *slog.Logger) *SessionHandler {
+func NewSessionHandler(s store.Store, wc WorkerClientInterface, dispatcher Dispatcher, fo stream.EventBroadcaster, logger *slog.Logger) *SessionHandler {
 	return &SessionHandler{
 		store:        s,
 		workerClient: wc,
+		dispatcher:   dispatcher,
 		fanOut:       fo,
 		logger:       logger,
 	}
@@ -137,6 +139,48 @@ func (h *SessionHandler) ForkSession(
 		"root_session_id", rootSessionID,
 	)
 
+	// Dispatch fork execution: find the parent session's subtask to get repo group and agent type
+	if h.dispatcher != nil {
+		subTask, stErr := h.store.FindSubTaskBySessionID(workspaceID, parentSessionID)
+		if stErr == nil && subTask != nil {
+			unitTask, utErr := h.store.GetUnitTask(workspaceID, subTask.UnitTaskId)
+			if utErr == nil && unitTask != nil && unitTask.RepositoryGroupId != "" {
+				repoGroup, rgErr := h.store.GetRepositoryGroup(workspaceID, unitTask.RepositoryGroupId)
+				if rgErr == nil && repoGroup != nil {
+					// Get agent CLI type from worker capabilities
+					agentCliType := dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE
+					caps, capsErr := h.workerClient.GetAgentCapabilities(ctx)
+					if capsErr == nil {
+						for _, cap := range caps {
+							if cap.SupportsFork {
+								agentCliType = cap.AgentCliType
+								break
+							}
+						}
+					}
+
+					go func() {
+						if dispatchErr := h.dispatcher.DispatchForkExecution(
+							context.Background(),
+							workspaceID,
+							forkedSessionID,
+							parentSessionID,
+							forkIntent,
+							prompt,
+							repoGroup,
+							agentCliType,
+						); dispatchErr != nil {
+							h.logger.Error("failed to dispatch fork execution",
+								"forked_session_id", forkedSessionID,
+								"error", dispatchErr,
+							)
+						}
+					}()
+				}
+			}
+		}
+	}
+
 	return connect.NewResponse(&dexdexv1.ForkSessionResponse{
 		ForkedSession: summary,
 	}), nil
@@ -240,6 +284,17 @@ func (h *SessionHandler) SubmitSessionInput(
 			"error", err,
 		)
 		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	// Relay input to the worker via dispatcher
+	if h.dispatcher != nil {
+		if err := h.dispatcher.SubmitInput(ctx, sessionID, req.Msg.InputText); err != nil {
+			h.logger.Warn("failed to relay input to worker",
+				"workspace_id", workspaceID,
+				"session_id", sessionID,
+				"error", err,
+			)
+		}
 	}
 
 	// Update session status to RUNNING.

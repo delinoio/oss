@@ -11,6 +11,7 @@ import type {
   SessionOutputEvent as ProtoSessionOutput,
   SessionSummary as ProtoSessionSummary,
   AgentCapability as ProtoAgentCapability,
+  ReviewComment as ProtoReviewComment,
 } from "../gen/v1/dexdex_pb";
 import {
   UnitTaskStatus as ProtoUnitTaskStatus,
@@ -22,10 +23,11 @@ import {
   SessionForkStatus as ProtoSessionForkStatus,
   AgentSessionStatus as ProtoAgentSessionStatus,
   AgentCliType as ProtoAgentCliType,
+  ReviewCommentStatus as ProtoReviewCommentStatus,
 } from "../gen/v1/dexdex_pb";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import type { UnitTask, SubTask, SessionOutputEvent, Notification, SessionSummary, AgentCapability } from "./mock-data";
+import type { UnitTask, SubTask, SessionOutputEvent, Notification, SessionSummary, AgentCapability, ReviewComment } from "./mock-data";
 import {
   UnitTaskStatus,
   SubTaskType,
@@ -221,5 +223,28 @@ export function toViewAgentCapability(proto: ProtoAgentCapability): AgentCapabil
     agentCliType: AGENT_CLI_TYPE_MAP[proto.agentCliType] ?? AgentCliType.UNSPECIFIED,
     supportsFork: proto.supportsFork,
     displayName: proto.displayName,
+  };
+}
+
+const REVIEW_COMMENT_STATUS_MAP: Record<number, string> = {
+  [ProtoReviewCommentStatus.UNSPECIFIED]: "UNSPECIFIED",
+  [ProtoReviewCommentStatus.ACTIVE]: "ACTIVE",
+  [ProtoReviewCommentStatus.RESOLVED]: "RESOLVED",
+};
+
+/**
+ * Convert a proto ReviewComment to a view-model ReviewComment.
+ */
+export function toViewReviewComment(proto: ProtoReviewComment): ReviewComment {
+  return {
+    reviewCommentId: proto.reviewCommentId,
+    body: proto.body,
+    filePath: proto.filePath,
+    side: proto.side,
+    lineNumber: proto.lineNumber,
+    status: REVIEW_COMMENT_STATUS_MAP[proto.status] ?? "UNSPECIFIED",
+    prTrackingId: proto.prTrackingId,
+    createdAt: timestampToISO(proto.createdAt),
+    updatedAt: timestampToISO(proto.updatedAt),
   };
 }

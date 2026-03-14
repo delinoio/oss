@@ -13,3 +13,13 @@ export const getAgentCapabilities = WorkerSessionAdapterService.method.getAgentC
  * @generated from rpc dexdex.v1.WorkerSessionAdapterService.ForkSessionAdapter
  */
 export const forkSessionAdapter = WorkerSessionAdapterService.method.forkSessionAdapter;
+
+/**
+ * @generated from rpc dexdex.v1.WorkerSessionAdapterService.SubmitWorkerInput
+ */
+export const submitWorkerInput = WorkerSessionAdapterService.method.submitWorkerInput;
+
+/**
+ * @generated from rpc dexdex.v1.WorkerSessionAdapterService.CancelExecution
+ */
+export const cancelExecution = WorkerSessionAdapterService.method.cancelExecution;

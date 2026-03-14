@@ -14,6 +14,14 @@ import { StreamEventType } from "../lib/status";
 interface UseWorkspaceStreamOptions {
   workspaceId: string;
   onStatusChange: (status: EventStreamStatus) => void;
+  onNotification?: (params: {
+    workspaceId: string;
+    sequence: number;
+    notificationType: string;
+    title: string;
+    body: string;
+    referenceId?: string;
+  }) => void;
 }
 
 /**
@@ -22,7 +30,7 @@ interface UseWorkspaceStreamOptions {
  * Updates connection status for UI display and invalidates
  * React Query caches when server-side data changes.
  */
-export function useWorkspaceStream({ workspaceId, onStatusChange }: UseWorkspaceStreamOptions): void {
+export function useWorkspaceStream({ workspaceId, onStatusChange, onNotification }: UseWorkspaceStreamOptions): void {
   const clientRef = useRef<EventStreamClient | null>(null);
   const queryClient = useQueryClient();
   const transport = useTransport();
@@ -52,6 +60,20 @@ export function useWorkspaceStream({ workspaceId, onStatusChange }: UseWorkspace
             break;
           case StreamEventType.NOTIFICATION_CREATED:
             queryClient.invalidateQueries({ queryKey: ["dexdex.v1.NotificationService"] });
+            // Dispatch Web Notification if handler is provided
+            if (onNotification && event.payload?.case === "notificationCreated") {
+              const notif = event.payload.value.notification;
+              if (notif) {
+                onNotification({
+                  workspaceId,
+                  sequence: Number(event.sequence),
+                  notificationType: String(notif.type),
+                  title: notif.title,
+                  body: notif.body,
+                  referenceId: notif.referenceId || undefined,
+                });
+              }
+            }
             break;
           case StreamEventType.PR_UPDATED:
             queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
@@ -81,5 +103,5 @@ export function useWorkspaceStream({ workspaceId, onStatusChange }: UseWorkspace
       client.disconnect();
       clientRef.current = null;
     };
-  }, [workspaceId, onStatusChange, queryClient, transport]);
+  }, [workspaceId, onStatusChange, onNotification, queryClient, transport]);
 }

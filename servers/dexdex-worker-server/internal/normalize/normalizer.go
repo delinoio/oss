@@ -46,9 +46,14 @@ func (n *OutputNormalizer) Normalize(raw RawAgentOutput) *dexdexv1.SessionOutput
 		kind = dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_UNSPECIFIED
 	}
 
+	body := raw.Text
+	if kind == dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_PLAN_UPDATE {
+		body = ParsePlanContent(body)
+	}
+
 	return &dexdexv1.SessionOutputEvent{
 		SessionId: raw.SessionID,
 		Kind:      kind,
-		Body:      raw.Text,
+		Body:      body,
 	}
 }

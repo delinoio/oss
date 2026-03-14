@@ -150,6 +150,72 @@ mod commands {
         resolve_local_workspace_endpoint_command()
     }
 
+    #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+    pub struct CredentialEntry {
+        pub name: String,
+        pub credential_type: String,
+        pub value: String,
+    }
+
+    #[derive(Clone, Debug, serde::Serialize)]
+    pub struct CredentialListEntry {
+        pub name: String,
+        pub credential_type: String,
+    }
+
+    fn credentials_file_path() -> Result<std::path::PathBuf, String> {
+        let home = dirs::home_dir().ok_or("unable to determine home directory")?;
+        let dir = home.join(".dexdex");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        Ok(dir.join("credentials.json"))
+    }
+
+    fn load_credentials() -> Result<Vec<CredentialEntry>, String> {
+        let path = credentials_file_path()?;
+        if !path.exists() {
+            return Ok(vec![]);
+        }
+        let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+        serde_json::from_str(&data).map_err(|e| e.to_string())
+    }
+
+    fn save_credentials(creds: &[CredentialEntry]) -> Result<(), String> {
+        let path = credentials_file_path()?;
+        let data = serde_json::to_string_pretty(creds).map_err(|e| e.to_string())?;
+        std::fs::write(&path, data).map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn list_credentials() -> Result<Vec<CredentialListEntry>, String> {
+        let creds = load_credentials()?;
+        Ok(creds
+            .into_iter()
+            .map(|c| CredentialListEntry {
+                name: c.name,
+                credential_type: c.credential_type,
+            })
+            .collect())
+    }
+
+    #[tauri::command]
+    pub fn store_credential(name: String, credential_type: String, value: String) -> Result<(), String> {
+        let mut creds = load_credentials()?;
+        creds.retain(|c| c.name != name);
+        creds.push(CredentialEntry {
+            name,
+            credential_type,
+            value,
+        });
+        save_credentials(&creds)
+    }
+
+    #[tauri::command]
+    pub fn delete_credential(name: String) -> Result<(), String> {
+        let mut creds = load_credentials()?;
+        creds.retain(|c| c.name != name);
+        save_credentials(&creds)
+    }
+
     #[tauri::command]
     pub fn update_tray_status(
         app: tauri::AppHandle,
@@ -241,7 +307,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::resolve_local_workspace_endpoint,
-            commands::update_tray_status
+            commands::update_tray_status,
+            commands::list_credentials,
+            commands::store_credential,
+            commands::delete_credential
         ])
         .run(tauri::generate_context!())
         .expect("failed to run dexdex desktop app");

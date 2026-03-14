@@ -111,7 +111,7 @@ func TestWorkspaceHandler_ListWorkspaces(t *testing.T) {
 func TestTaskHandler_GetUnitTask(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -140,7 +140,7 @@ func TestTaskHandler_GetUnitTask(t *testing.T) {
 func TestTaskHandler_GetUnitTask_NotFound(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -166,7 +166,7 @@ func TestTaskHandler_GetUnitTask_NotFound(t *testing.T) {
 func TestTaskHandler_GetSubTask(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -192,7 +192,7 @@ func TestTaskHandler_GetSubTask(t *testing.T) {
 func TestTaskHandler_ListUnitTasks(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -217,7 +217,7 @@ func TestTaskHandler_ListUnitTasks(t *testing.T) {
 func TestTaskHandler_ListUnitTasks_StatusFilter(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -248,7 +248,7 @@ func TestTaskHandler_ListUnitTasks_StatusFilter(t *testing.T) {
 func TestTaskHandler_ListSubTasks(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -274,7 +274,7 @@ func TestTaskHandler_ListSubTasks(t *testing.T) {
 func TestTaskHandler_CreateUnitTask(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -316,7 +316,7 @@ func TestTaskHandler_CreateUnitTask(t *testing.T) {
 func TestTaskHandler_CreateUnitTask_EmptyTitle(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -342,7 +342,7 @@ func TestTaskHandler_CreateUnitTask_EmptyTitle(t *testing.T) {
 func TestTaskHandler_UpdateUnitTaskStatus(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -372,7 +372,7 @@ func TestTaskHandler_UpdateUnitTaskStatus(t *testing.T) {
 func TestTaskHandler_UpdateUnitTaskStatus_NotFound(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -399,7 +399,7 @@ func TestTaskHandler_UpdateUnitTaskStatus_NotFound(t *testing.T) {
 func TestTaskHandler_SubmitPlanDecision_Approve(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -438,7 +438,7 @@ func TestTaskHandler_SubmitPlanDecision_Revise(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -485,7 +485,7 @@ func TestTaskHandler_SubmitPlanDecision_Revise_MissingNote(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -519,7 +519,7 @@ func TestTaskHandler_SubmitPlanDecision_Reject(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -556,7 +556,7 @@ func TestTaskHandler_SubmitPlanDecision_InvalidStatus(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewTaskHandler(s, testFanOut(), logger)
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
@@ -633,7 +633,7 @@ func TestNotificationHandler_ListNotifications_Empty(t *testing.T) {
 func TestSessionHandler_GetSessionOutput(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewSessionHandler(s, nil, testFanOut(), logger)
+	h := NewSessionHandler(s, nil, nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
@@ -663,7 +663,7 @@ func TestSessionHandler_GetSessionOutput(t *testing.T) {
 func TestSessionHandler_GetSessionOutput_Empty(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewSessionHandler(s, nil, testFanOut(), logger)
+	h := NewSessionHandler(s, nil, nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
@@ -719,7 +719,7 @@ func TestSessionHandler_ListSessionCapabilities(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
 	mock := newMockWorkerClient()
-	h := NewSessionHandler(s, mock, testFanOut(), logger)
+	h := NewSessionHandler(s, mock, nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
@@ -758,7 +758,7 @@ func TestSessionHandler_ForkSession_Success(t *testing.T) {
 	logger := testLogger()
 	mock := newMockWorkerClient()
 	mock.forkResult = "forked-sess-1"
-	h := NewSessionHandler(s, mock, testFanOut(), logger)
+	h := NewSessionHandler(s, mock, nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
@@ -804,7 +804,7 @@ func TestSessionHandler_ForkSession_ParentNotFound(t *testing.T) {
 
 	logger := testLogger()
 	mock := newMockWorkerClient()
-	h := NewSessionHandler(s, mock, testFanOut(), logger)
+	h := NewSessionHandler(s, mock, nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
@@ -850,7 +850,7 @@ func TestSessionHandler_ListForkedSessions(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewSessionHandler(s, newMockWorkerClient(), testFanOut(), logger)
+	h := NewSessionHandler(s, newMockWorkerClient(), nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
@@ -883,7 +883,7 @@ func TestSessionHandler_ArchiveForkedSession(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewSessionHandler(s, newMockWorkerClient(), testFanOut(), logger)
+	h := NewSessionHandler(s, newMockWorkerClient(), nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
@@ -921,7 +921,7 @@ func TestSessionHandler_GetLatestWaitingSession_Found(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewSessionHandler(s, newMockWorkerClient(), testFanOut(), logger)
+	h := NewSessionHandler(s, newMockWorkerClient(), nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
@@ -952,7 +952,7 @@ func TestSessionHandler_GetLatestWaitingSession_None(t *testing.T) {
 	// No waiting sessions.
 
 	logger := testLogger()
-	h := NewSessionHandler(s, newMockWorkerClient(), testFanOut(), logger)
+	h := NewSessionHandler(s, newMockWorkerClient(), nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
@@ -983,7 +983,7 @@ func TestSessionHandler_SubmitSessionInput(t *testing.T) {
 	})
 
 	logger := testLogger()
-	h := NewSessionHandler(s, newMockWorkerClient(), testFanOut(), logger)
+	h := NewSessionHandler(s, newMockWorkerClient(), nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)

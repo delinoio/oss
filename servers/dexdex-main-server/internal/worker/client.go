@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -23,15 +22,10 @@ type Client struct {
 	cachedCapsExpiry time.Time
 }
 
-// NewClient creates a new worker client. URL defaults to DEXDEX_WORKER_SERVER_URL env or http://127.0.0.1:7879.
-func NewClient(logger *slog.Logger) *Client {
-	url := os.Getenv("DEXDEX_WORKER_SERVER_URL")
-	if url == "" {
-		url = "http://127.0.0.1:7879"
-	}
-
+// NewClient creates a new worker client with the given worker server URL.
+func NewClient(workerServerURL string, logger *slog.Logger) *Client {
 	return &Client{
-		client: dexdexv1connect.NewWorkerSessionAdapterServiceClient(http.DefaultClient, url),
+		client: dexdexv1connect.NewWorkerSessionAdapterServiceClient(http.DefaultClient, workerServerURL),
 		logger: logger,
 	}
 }
@@ -78,4 +72,39 @@ func (c *Client) ForkSession(ctx context.Context, sessionID string, forkIntent d
 		return "", err
 	}
 	return resp.Msg.ForkedSessionId, nil
+}
+
+// StartExecution calls the worker's StartExecution streaming RPC and returns a stream of events.
+func (c *Client) StartExecution(ctx context.Context, req *dexdexv1.StartExecutionRequest) (*connect.ServerStreamForClient[dexdexv1.ExecutionEvent], error) {
+	stream, err := c.client.StartExecution(ctx, connect.NewRequest(req))
+	if err != nil {
+		c.logger.Error("failed to start execution on worker", "session_id", req.SessionId, "error", err)
+		return nil, err
+	}
+	return stream, nil
+}
+
+// SubmitWorkerInput relays user input to a running session on the worker.
+func (c *Client) SubmitWorkerInput(ctx context.Context, sessionID, inputText string) error {
+	_, err := c.client.SubmitWorkerInput(ctx, connect.NewRequest(&dexdexv1.SubmitWorkerInputRequest{
+		SessionId: sessionID,
+		InputText: inputText,
+	}))
+	if err != nil {
+		c.logger.Error("failed to submit worker input", "session_id", sessionID, "error", err)
+		return err
+	}
+	return nil
+}
+
+// CancelExecution cancels a running session on the worker.
+func (c *Client) CancelExecution(ctx context.Context, sessionID string) error {
+	_, err := c.client.CancelExecution(ctx, connect.NewRequest(&dexdexv1.CancelExecutionRequest{
+		SessionId: sessionID,
+	}))
+	if err != nil {
+		c.logger.Error("failed to cancel execution", "session_id", sessionID, "error", err)
+		return err
+	}
+	return nil
 }

@@ -17,12 +17,20 @@ import {
   getLatestWaitingSession,
   submitSessionInput,
 } from "../gen/v1/dexdex-SessionService_connectquery";
-import { getRepositoryGroup } from "../gen/v1/dexdex-RepositoryService_connectquery";
+import { getRepositoryGroup, listRepositoryGroups } from "../gen/v1/dexdex-RepositoryService_connectquery";
 import { getPullRequest, listPullRequests } from "../gen/v1/dexdex-PrManagementService_connectquery";
 import { listReviewAssistItems } from "../gen/v1/dexdex-ReviewAssistService_connectquery";
-import { listReviewComments } from "../gen/v1/dexdex-ReviewCommentService_connectquery";
-import { toViewUnitTask, toViewSubTask, toViewNotification, toViewSessionOutput, toViewSessionSummary, toViewAgentCapability } from "../lib/adapters";
-import type { UnitTask, SubTask, Notification, SessionOutputEvent, SessionSummary, AgentCapability } from "../lib/mock-data";
+import {
+  listReviewComments,
+  createReviewComment,
+  updateReviewComment,
+  deleteReviewComment,
+  resolveReviewComment,
+  reopenReviewComment,
+} from "../gen/v1/dexdex-ReviewCommentService_connectquery";
+import { getBadgeTheme } from "../gen/v1/dexdex-BadgeThemeService_connectquery";
+import { toViewUnitTask, toViewSubTask, toViewNotification, toViewSessionOutput, toViewSessionSummary, toViewAgentCapability, toViewReviewComment } from "../lib/adapters";
+import type { UnitTask, SubTask, Notification, SessionOutputEvent, SessionSummary, AgentCapability, ReviewComment } from "../lib/mock-data";
 
 /**
  * Fetch all unit tasks for a workspace, converted to view-model types.
@@ -177,6 +185,13 @@ export function useSubmitSessionInputMutation() {
 }
 
 /**
+ * Fetch all repository groups for a workspace.
+ */
+export function useListRepositoryGroups(workspaceId: string) {
+  return useQuery(listRepositoryGroups, { workspaceId });
+}
+
+/**
  * Fetch a repository group by ID.
  */
 export function useGetRepositoryGroup(workspaceId: string, repositoryGroupId: string) {
@@ -217,12 +232,81 @@ export function useListReviewAssistItems(workspaceId: string, unitTaskId: string
 }
 
 /**
- * Fetch review comments for a PR.
+ * Fetch review comments for a PR, converted to view-model types.
  */
 export function useListReviewComments(workspaceId: string, prTrackingId: string) {
-  return useQuery(
+  const query = useQuery(
     listReviewComments,
     { workspaceId, prTrackingId },
     { enabled: !!prTrackingId },
   );
+  const comments: ReviewComment[] = (query.data?.comments ?? []).map(toViewReviewComment);
+  return { ...query, data: { comments } };
+}
+
+/**
+ * Mutation to create a review comment.
+ */
+export function useCreateReviewCommentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(createReviewComment, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to update a review comment body.
+ */
+export function useUpdateReviewCommentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(updateReviewComment, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to delete a review comment.
+ */
+export function useDeleteReviewCommentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(deleteReviewComment, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to resolve a review comment.
+ */
+export function useResolveReviewCommentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(resolveReviewComment, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to reopen a review comment.
+ */
+export function useReopenReviewCommentMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(reopenReviewComment, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+    },
+  });
+}
+
+/**
+ * Fetch badge theme for a workspace.
+ */
+export function useGetBadgeTheme(workspaceId: string) {
+  return useQuery(getBadgeTheme, { workspaceId });
 }

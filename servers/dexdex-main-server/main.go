@@ -6,13 +6,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
+	"github.com/delinoio/oss/servers/dexdex-main-server/internal/config"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/handler"
+	"github.com/delinoio/oss/servers/dexdex-main-server/internal/polling"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/store"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/stream"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/worker"
@@ -20,12 +21,12 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	cfg := config.LoadConfig(logger)
 
 	// Initialize store: PostgreSQL if DEXDEX_DATABASE_URL is set, else in-memory
 	var dataStore store.Store
-	dbURL := strings.TrimSpace(os.Getenv("DEXDEX_DATABASE_URL"))
-	if dbURL != "" {
-		pool, err := pgxpool.New(context.Background(), dbURL)
+	if cfg.DatabaseURL != "" {
+		pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 		if err != nil {
 			logger.Error("failed to connect to database", "error", err)
 			os.Exit(1)
@@ -37,19 +38,35 @@ func main() {
 		memStore := store.NewMemoryStore()
 		dataStore = memStore
 
-		// Seed data if DEXDEX_SEED_DATA=true (only for in-memory store)
-		if strings.EqualFold(strings.TrimSpace(os.Getenv("DEXDEX_SEED_DATA")), "true") {
+		if cfg.SeedData {
 			store.SeedData(memStore)
 			logger.Info("seed data loaded")
 		}
 	}
 
-	// Initialize event stream fan-out with 1000-event retention buffer
-	fanOut := stream.NewFanOut(1000, logger)
+	// Initialize event stream broadcaster with configurable retention buffer.
+	// Use Redis-backed fan-out in SCALE deployment mode, otherwise in-process.
+	var fanOut stream.EventBroadcaster
+	if cfg.DeploymentMode == "SCALE" && cfg.RedisURL != "" {
+		redisFanOut, err := stream.NewRedisFanOut(cfg.RedisURL, cfg.StreamRetention, logger)
+		if err != nil {
+			logger.Error("failed to initialize redis fan-out", "error", err)
+			os.Exit(1)
+		}
+		fanOut = redisFanOut
+		logger.Info("using Redis-backed event broadcaster")
+	} else {
+		fanOut = stream.NewFanOut(cfg.StreamRetention, logger)
+		logger.Info("using in-process event broadcaster")
+	}
+
+	// Create worker client and dispatcher
+	workerClient := worker.NewClient(cfg.WorkerServerURL, logger)
+	dispatcher := worker.NewDispatcher(workerClient, dataStore, fanOut, logger)
 
 	// Create handlers
 	workspaceHandler := handler.NewWorkspaceHandler(dataStore, logger)
-	taskHandler := handler.NewTaskHandler(dataStore, fanOut, logger)
+	taskHandler := handler.NewTaskHandler(dataStore, fanOut, dispatcher, logger)
 	notificationHandler := handler.NewNotificationHandler(dataStore, fanOut, logger)
 	eventStreamHandler := handler.NewEventStreamHandler(fanOut, logger)
 
@@ -64,9 +81,7 @@ func main() {
 
 	notifPath, notifHandler := dexdexv1connect.NewNotificationServiceHandler(notificationHandler)
 	mux.Handle(notifPath, notifHandler)
-
-	workerClient := worker.NewClient(logger)
-	sessionHandler := handler.NewSessionHandler(dataStore, workerClient, fanOut, logger)
+	sessionHandler := handler.NewSessionHandler(dataStore, workerClient, dispatcher, fanOut, logger)
 	sessionPath, sessionHTTPHandler := dexdexv1connect.NewSessionServiceHandler(sessionHandler)
 	mux.Handle(sessionPath, sessionHTTPHandler)
 
@@ -85,9 +100,13 @@ func main() {
 	reviewAssistPath, reviewAssistHTTPHandler := dexdexv1connect.NewReviewAssistServiceHandler(reviewAssistHandler)
 	mux.Handle(reviewAssistPath, reviewAssistHTTPHandler)
 
-	reviewCommentHandler := handler.NewReviewCommentHandler(dataStore, logger)
+	reviewCommentHandler := handler.NewReviewCommentHandler(dataStore, fanOut, logger)
 	reviewCommentPath, reviewCommentHTTPHandler := dexdexv1connect.NewReviewCommentServiceHandler(reviewCommentHandler)
 	mux.Handle(reviewCommentPath, reviewCommentHTTPHandler)
+
+	badgeThemeHandler := handler.NewBadgeThemeHandler(dataStore, logger)
+	badgeThemePath, badgeThemeHTTPHandler := dexdexv1connect.NewBadgeThemeServiceHandler(badgeThemeHandler)
+	mux.Handle(badgeThemePath, badgeThemeHTTPHandler)
 
 	// Health check endpoint
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -95,18 +114,24 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	addr := strings.TrimSpace(os.Getenv("DEXDEX_MAIN_SERVER_ADDR"))
-	if addr == "" {
-		addr = "127.0.0.1:7878"
-	}
+	// Start PR poller in background
+	ghClient := polling.NewGitHubClient(logger)
+	prPoller := polling.NewPRPoller(dataStore, fanOut, ghClient, time.Duration(cfg.PRPollIntervalSec)*time.Second, logger)
+	pollerCtx, pollerCancel := context.WithCancel(context.Background())
+	defer pollerCancel()
+	go prPoller.Start(pollerCtx)
+
+	// Start worktree coordinator for stale cleanup
+	wtCoordinator := worker.NewWorktreeCoordinator(dispatcher, workerClient, dataStore, logger)
+	wtCoordinator.Start(pollerCtx)
 
 	httpServer := &http.Server{
-		Addr:              addr,
+		Addr:              cfg.ServerAddr,
 		Handler:           corsMiddleware(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	logger.Info("dexdex main server starting", "addr", addr)
+	logger.Info("dexdex main server starting", "addr", cfg.ServerAddr)
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("server failed", "error", err)
 		os.Exit(1)

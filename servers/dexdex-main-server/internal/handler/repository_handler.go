@@ -44,3 +44,17 @@ func (h *RepositoryHandler) GetRepositoryGroup(
 		RepositoryGroup: group,
 	}), nil
 }
+
+// ListRepositoryGroups returns all repository groups for a workspace.
+func (h *RepositoryHandler) ListRepositoryGroups(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ListRepositoryGroupsRequest],
+) (*connect.Response[dexdexv1.ListRepositoryGroupsResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	h.logger.Info("ListRepositoryGroups called", "workspace_id", workspaceID)
+
+	groups := h.store.ListRepositoryGroups(workspaceID)
+	return connect.NewResponse(&dexdexv1.ListRepositoryGroupsResponse{
+		RepositoryGroups: groups,
+	}), nil
+}

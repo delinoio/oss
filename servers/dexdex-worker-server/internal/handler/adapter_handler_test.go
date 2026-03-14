@@ -18,7 +18,7 @@ func setupAdapterTestServer(t *testing.T) (dexdexv1connect.WorkerSessionAdapterS
 
 	logger := testLogger()
 	sessionStore := store.NewSessionStore(logger)
-	handler := NewAdapterHandler(sessionStore, logger)
+	handler := NewAdapterHandler(sessionStore, nil, logger)
 
 	mux := http.NewServeMux()
 	path, h := dexdexv1connect.NewWorkerSessionAdapterServiceHandler(handler)

@@ -149,6 +149,22 @@ enum AgentCliType {
   AGENT_CLI_TYPE_OPENCODE = 3;
 }
 
+enum ReviewCommentStatus {
+  REVIEW_COMMENT_STATUS_UNSPECIFIED = 0;
+  REVIEW_COMMENT_STATUS_ACTIVE = 1;
+  REVIEW_COMMENT_STATUS_RESOLVED = 2;
+}
+
+enum WorktreeState {
+  WORKTREE_STATE_UNSPECIFIED = 0;
+  WORKTREE_STATE_PREPARING = 1;
+  WORKTREE_STATE_READY = 2;
+  WORKTREE_STATE_EXECUTING = 3;
+  WORKTREE_STATE_CLEANING_UP = 4;
+  WORKTREE_STATE_CLEANED = 5;
+  WORKTREE_STATE_FAILED = 6;
+}
+
 message Workspace {
   string workspace_id = 1;
   string name = 2;
@@ -238,6 +254,12 @@ message NotificationCreatedEvent {
   NotificationRecord notification = 1;
 }
 
+message UsageMetrics {
+  int64 input_tokens = 1;
+  int64 output_tokens = 2;
+  double estimated_cost_usd = 3;
+}
+
 message SessionSummary {
   string session_id = 1;
   string parent_session_id = 2;
@@ -246,6 +268,7 @@ message SessionSummary {
   uint64 forked_from_sequence = 5;
   AgentSessionStatus agent_session_status = 6;
   google.protobuf.Timestamp created_at = 7;
+  UsageMetrics usage = 8;
 }
 
 message AgentCapability {
@@ -261,6 +284,13 @@ message SessionForkUpdatedEvent {
 message WorkspaceWorkStatusUpdatedEvent {
   string workspace_id = 1;
   WorkspaceWorkStatus status = 2;
+}
+
+message WorktreeStatusEvent {
+  string session_id = 1;
+  WorktreeState state = 2;
+  string primary_dir = 3;
+  string error_message = 4;
 }
 
 message StreamWorkspaceEventsResponse {
@@ -401,10 +431,65 @@ message ListReviewCommentsRequest {
 message ReviewComment {
   string review_comment_id = 1;
   string body = 2;
+  string file_path = 3;
+  string side = 4; // "LEFT" or "RIGHT"
+  int32 line_number = 5;
+  ReviewCommentStatus status = 6;
+  string pr_tracking_id = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
 }
 
 message ListReviewCommentsResponse {
   repeated ReviewComment comments = 1;
+}
+
+message CreateReviewCommentRequest {
+  string workspace_id = 1;
+  string pr_tracking_id = 2;
+  string body = 3;
+  string file_path = 4;
+  string side = 5;
+  int32 line_number = 6;
+}
+
+message CreateReviewCommentResponse {
+  ReviewComment comment = 1;
+}
+
+message UpdateReviewCommentRequest {
+  string workspace_id = 1;
+  string review_comment_id = 2;
+  string body = 3;
+}
+
+message UpdateReviewCommentResponse {
+  ReviewComment comment = 1;
+}
+
+message DeleteReviewCommentRequest {
+  string workspace_id = 1;
+  string review_comment_id = 2;
+}
+
+message DeleteReviewCommentResponse {}
+
+message ResolveReviewCommentRequest {
+  string workspace_id = 1;
+  string review_comment_id = 2;
+}
+
+message ResolveReviewCommentResponse {
+  ReviewComment comment = 1;
+}
+
+message ReopenReviewCommentRequest {
+  string workspace_id = 1;
+  string review_comment_id = 2;
+}
+
+message ReopenReviewCommentResponse {
+  ReviewComment comment = 1;
 }
 
 message GetBadgeThemeRequest {
@@ -574,6 +659,65 @@ message UpdateUnitTaskStatusResponse {
   UnitTask unit_task = 1;
 }
 
+// Repository group listing messages.
+
+message ListRepositoryGroupsRequest {
+  string workspace_id = 1;
+}
+
+message ListRepositoryGroupsResponse {
+  repeated RepositoryGroup repository_groups = 1;
+}
+
+// Worker execution adapter messages.
+
+message StartExecutionRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  string sub_task_id = 3;
+  string session_id = 4;
+  RepositoryGroup repository_group = 5;
+  string prompt = 6;
+  AgentCliType agent_cli_type = 7;
+  // Fork execution fields: non-empty parent_session_id triggers fork mode.
+  string parent_session_id = 8;
+  SessionForkIntent fork_intent = 9;
+}
+
+message ExecutionEvent {
+  oneof event {
+    SessionOutputEvent session_output = 1;
+    SessionStateChangedEvent state_changed = 2;
+    CommitMetadata commit = 3;
+    WorktreeStatusEvent worktree_status = 4;
+  }
+}
+
+message SubmitWorkerInputRequest {
+  string session_id = 1;
+  string input_text = 2;
+}
+
+message SubmitWorkerInputResponse {}
+
+message CancelExecutionRequest {
+  string session_id = 1;
+}
+
+message CancelExecutionResponse {}
+
+// PR update messages.
+
+message UpdatePullRequestRequest {
+  string workspace_id = 1;
+  string pr_tracking_id = 2;
+  PrStatus status = 3;
+}
+
+message UpdatePullRequestResponse {
+  PullRequestRecord pull_request = 1;
+}
+
 service WorkspaceService {
   rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
@@ -582,6 +726,7 @@ service WorkspaceService {
 
 service RepositoryService {
   rpc GetRepositoryGroup(GetRepositoryGroupRequest) returns (GetRepositoryGroupResponse);
+  rpc ListRepositoryGroups(ListRepositoryGroupsRequest) returns (ListRepositoryGroupsResponse);
 }
 
 service TaskService {
@@ -607,6 +752,7 @@ service SessionService {
 service PrManagementService {
   rpc GetPullRequest(GetPullRequestRequest) returns (GetPullRequestResponse);
   rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
+  rpc UpdatePullRequest(UpdatePullRequestRequest) returns (UpdatePullRequestResponse);
 }
 
 service ReviewAssistService {
@@ -615,6 +761,11 @@ service ReviewAssistService {
 
 service ReviewCommentService {
   rpc ListReviewComments(ListReviewCommentsRequest) returns (ListReviewCommentsResponse);
+  rpc CreateReviewComment(CreateReviewCommentRequest) returns (CreateReviewCommentResponse);
+  rpc UpdateReviewComment(UpdateReviewCommentRequest) returns (UpdateReviewCommentResponse);
+  rpc DeleteReviewComment(DeleteReviewCommentRequest) returns (DeleteReviewCommentResponse);
+  rpc ResolveReviewComment(ResolveReviewCommentRequest) returns (ResolveReviewCommentResponse);
+  rpc ReopenReviewComment(ReopenReviewCommentRequest) returns (ReopenReviewCommentResponse);
 }
 
 service BadgeThemeService {
@@ -629,6 +780,9 @@ service NotificationService {
 service WorkerSessionAdapterService {
   rpc GetAgentCapabilities(GetAgentCapabilitiesRequest) returns (GetAgentCapabilitiesResponse);
   rpc ForkSessionAdapter(ForkSessionAdapterRequest) returns (ForkSessionAdapterResponse);
+  rpc StartExecution(StartExecutionRequest) returns (stream ExecutionEvent);
+  rpc SubmitWorkerInput(SubmitWorkerInputRequest) returns (SubmitWorkerInputResponse);
+  rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
 }
 
 service EventStreamService {

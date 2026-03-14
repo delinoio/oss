@@ -5,6 +5,7 @@
 import type { CSSProperties } from "react";
 import { PrStatus as ProtoPrStatus } from "../../gen/v1/dexdex_pb";
 import type { PullRequestRecord } from "../../gen/v1/dexdex_pb";
+import { PrListSkeleton } from "../../components/skeleton-loader";
 import { PrStatus, PR_STATUS_CONFIG } from "../../lib/status";
 
 const PR_STATUS_MAP: Record<number, PrStatus> = {
@@ -19,9 +20,10 @@ const PR_STATUS_MAP: Record<number, PrStatus> = {
 
 interface PrManagementPageProps {
   pullRequests: PullRequestRecord[];
+  isLoading?: boolean;
 }
 
-export function PrManagementPage({ pullRequests }: PrManagementPageProps) {
+export function PrManagementPage({ pullRequests, isLoading }: PrManagementPageProps) {
   const containerStyle: CSSProperties = {
     height: "100%",
     display: "flex",
@@ -47,7 +49,9 @@ export function PrManagementPage({ pullRequests }: PrManagementPageProps) {
         <h1 style={{ fontSize: "var(--font-size-xl)", fontWeight: 600 }}>Pull Requests</h1>
       </div>
       <div style={listStyle}>
-        {pullRequests.length === 0 && (
+        {isLoading ? (
+          <PrListSkeleton />
+        ) : pullRequests.length === 0 ? (
           <div
             style={{
               padding: "var(--space-8)",
@@ -58,8 +62,8 @@ export function PrManagementPage({ pullRequests }: PrManagementPageProps) {
           >
             No pull requests tracked yet.
           </div>
-        )}
-        {pullRequests.map((pr) => {
+        ) : null}
+        {!isLoading && pullRequests.map((pr) => {
           const viewStatus = PR_STATUS_MAP[pr.status] ?? PrStatus.UNSPECIFIED;
           const config = PR_STATUS_CONFIG[viewStatus];
 

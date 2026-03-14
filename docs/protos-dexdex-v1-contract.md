@@ -23,12 +23,16 @@
 - `SessionForkStatus` for fork lifecycle state (`ACTIVE`, `ARCHIVED`, and additive-safe extensions)
 - `WorkspaceWorkStatus` for active-workspace tray/UI state ordering (`FAILED`, `ACTION_REQUIRED`, `WAITING_FOR_INPUT`, `RUNNING`, `IDLE`, `DISCONNECTED`)
 - `AgentCliType` for normalized coding-agent CLI type identifiers (`CLAUDE_CODE`, `CODEX_CLI`, `OPENCODE`)
+- `ReviewCommentStatus` for review comment lifecycle state (`OPEN`, `RESOLVED`, `DISMISSED`)
 - `NotificationType` additive extension includes `NOTIFICATION_TYPE_AGENT_INPUT_REQUIRED`
 - `StreamEventType` additive extension includes `STREAM_EVENT_TYPE_SESSION_FORK_UPDATED` and `STREAM_EVENT_TYPE_WORKSPACE_WORK_STATUS_UPDATED`
 - Implemented additive message contracts:
 - `SessionSummary` adds lineage fields `parent_session_id`, `root_session_id`, `fork_status`, and `forked_from_sequence`
 - `SessionForkUpdatedEvent` and `WorkspaceWorkStatusUpdatedEvent` are part of the stream payload family
 - `AgentCapability` provides normalized capability records for fork support reporting
+- `UsageMetrics` provides normalized token/cost counters for session usage tracking
+- `SessionSummary` includes `usage` field referencing `UsageMetrics`
+- `ReviewComment` message includes anchor fields (`file_path`, `side`, `line_number`) for line-level diff positioning
 - Service-level contract families include:
 - workspace/repository control-plane queries and lifecycle
 - task/subtask/session orchestration and plan decisions
@@ -47,6 +51,11 @@
 - `NotificationService.MarkNotificationRead`
 - `WorkerSessionAdapterService.GetAgentCapabilities`
 - `WorkerSessionAdapterService.ForkSessionAdapter`
+- `ReviewCommentService.CreateReviewComment`
+- `ReviewCommentService.UpdateReviewComment`
+- `ReviewCommentService.DeleteReviewComment`
+- `ReviewCommentService.ResolveReviewComment`
+- `ReviewCommentService.ReopenReviewComment`
 - Event stream envelope semantics:
 - workspace-scoped monotonic `sequence`
 - typed `event_type`
@@ -63,10 +72,16 @@
 - additive fields/endpoints preferred
 - enum expansion is allowed with unknown-safe client behavior
 - breaking changes require coordinated rollout across app and servers
-- Implemented-vs-planned alignment (current repo reality):
-- implemented proto contains full session-fork, input-handoff, workspace-work-status, capability, and notification-read RPCs in addition to the baseline scaffold subset: `GetWorkspace`, `GetRepositoryGroup`, `GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`, `GetSessionOutput`, `GetPullRequest`, `ListReviewAssistItems`, `ListReviewComments`, `GetBadgeTheme`, `ListNotifications`, and `StreamWorkspaceEvents`
+- Implemented-vs-planned alignment (current repo reality, as of 2026-03-14):
+- implemented proto contains full session-fork, input-handoff, workspace-work-status, capability, and notification-read RPCs in addition to the baseline scaffold subset: `GetWorkspace`, `GetRepositoryGroup`, `ListRepositoryGroups`, `GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`, `GetSessionOutput`, `GetPullRequest`, `ListPullRequests`, `UpdatePullRequest`, `ListReviewAssistItems`, `ListReviewComments`, `GetBadgeTheme`, `ListNotifications`, and `StreamWorkspaceEvents`
 - worker adapter service (`WorkerSessionAdapterService`) is implemented with `GetAgentCapabilities` and `ForkSessionAdapter`
+- worker execution service RPCs are implemented: `StartExecution` (server-streaming), `SubmitWorkerInput`, `CancelExecution` with corresponding request/response messages
 - `AgentCliType` enum and `AgentCapability` message are implemented; fixture preset/source metadata families remain out of scope
+- `ReviewCommentStatus` enum and `ReviewComment` anchor fields (`file_path`, `side`, `line_number`) are implemented
+- `UsageMetrics` message and `SessionSummary.usage` field are implemented
+- `ReviewCommentService` CRUD RPCs (`CreateReviewComment`, `UpdateReviewComment`, `DeleteReviewComment`, `ResolveReviewComment`, `ReopenReviewComment`) are implemented
+- `WorktreeState` enum and `WorktreeStatusEvent` message are implemented for worktree lifecycle tracking via `ExecutionEvent` oneof
+- `StartExecutionRequest` extended with `parent_session_id` and `fork_intent` fields for fork execution support
 - all session-fork, latest-waiting-input, workspace-work-status, and capability/fork-adapter RPCs are now implemented in `dexdex.proto`
 - upstream DexDex source docs define expanded create/update/delete and richer flow contracts that remain target scope for further additive evolution
 - `protos/dexdex/v1/dexdex.proto` remains the canonical source for what is implemented now; this document records both current contract and planned-compatible expansion direction

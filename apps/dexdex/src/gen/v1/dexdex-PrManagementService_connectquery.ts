@@ -13,3 +13,8 @@ export const getPullRequest = PrManagementService.method.getPullRequest;
  * @generated from rpc dexdex.v1.PrManagementService.ListPullRequests
  */
 export const listPullRequests = PrManagementService.method.listPullRequests;
+
+/**
+ * @generated from rpc dexdex.v1.PrManagementService.UpdatePullRequest
+ */
+export const updatePullRequest = PrManagementService.method.updatePullRequest;

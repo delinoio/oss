@@ -4,10 +4,22 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// WorktreeAssignment tracks the worktree lifecycle state for a session execution.
+type WorktreeAssignment struct {
+	SubTaskID    string
+	SessionID    string
+	WorkspaceID  string
+	State        dexdexv1.WorktreeState
+	PrimaryDir   string
+	ErrorMessage string
+	UpdatedAt    time.Time
+}
 
 // idCounter provides unique IDs for store entities.
 var idCounter atomic.Uint64
@@ -49,42 +61,62 @@ type Store interface {
 	AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord)
 	GetPullRequest(workspaceID, prTrackingID string) (*dexdexv1.PullRequestRecord, error)
 	ListPullRequests(workspaceID string) []*dexdexv1.PullRequestRecord
+	UpdatePullRequest(workspaceID, prTrackingID string, status dexdexv1.PrStatus) (*dexdexv1.PullRequestRecord, error)
 	// Review assist operations (keyed by unitTaskID)
 	AddReviewAssistItem(workspaceID, unitTaskID string, item *dexdexv1.ReviewAssistItem)
 	ListReviewAssistItems(workspaceID, unitTaskID string) []*dexdexv1.ReviewAssistItem
 	// Review comment operations (keyed by prTrackingID)
 	AddReviewComment(workspaceID, prTrackingID string, comment *dexdexv1.ReviewComment)
 	ListReviewComments(workspaceID, prTrackingID string) []*dexdexv1.ReviewComment
+	// SubTask lookup by session ID
+	FindSubTaskBySessionID(workspaceID, sessionID string) (*dexdexv1.SubTask, error)
+	// Worktree tracking operations
+	UpsertWorktreeAssignment(workspaceID string, assignment *WorktreeAssignment)
+	GetWorktreeAssignment(workspaceID, sessionID string) (*WorktreeAssignment, error)
+	ListActiveWorktrees(workspaceID string) []*WorktreeAssignment
+	// Badge theme operations
+	GetBadgeTheme(workspaceID string) *dexdexv1.BadgeTheme
+	SetBadgeTheme(workspaceID string, theme *dexdexv1.BadgeTheme)
+	// Review comment CRUD operations
+	GetReviewComment(workspaceID, reviewCommentID string) (*dexdexv1.ReviewComment, error)
+	CreateReviewComment(workspaceID, prTrackingID string, comment *dexdexv1.ReviewComment)
+	UpdateReviewComment(workspaceID, reviewCommentID, body string) (*dexdexv1.ReviewComment, error)
+	DeleteReviewComment(workspaceID, reviewCommentID string) error
+	UpdateReviewCommentStatus(workspaceID, reviewCommentID string, status dexdexv1.ReviewCommentStatus) (*dexdexv1.ReviewComment, error)
 }
 
 // MemoryStore is a thread-safe in-memory implementation of Store.
 type MemoryStore struct {
-	mu               sync.RWMutex
-	workspaces       map[string]*dexdexv1.Workspace
-	unitTasks        map[string]map[string]*dexdexv1.UnitTask           // workspaceID -> taskID -> task
-	subTasks         map[string]map[string]*dexdexv1.SubTask            // workspaceID -> subTaskID -> subTask
-	notifications    map[string][]*dexdexv1.NotificationRecord          // workspaceID -> notifications
-	sessionOutputs   map[string][]*dexdexv1.SessionOutputEvent          // sessionID -> events
-	sessionSummaries map[string]map[string]*dexdexv1.SessionSummary     // workspaceID -> sessionID -> summary
-	repoGroups       map[string]map[string]*dexdexv1.RepositoryGroup    // workspaceID -> groupID -> group
-	prRecords        map[string]map[string]*dexdexv1.PullRequestRecord  // workspaceID -> prTrackingID -> pr
-	reviewAssist     map[string]map[string][]*dexdexv1.ReviewAssistItem // workspaceID -> unitTaskID -> items
-	reviewComments   map[string]map[string][]*dexdexv1.ReviewComment    // workspaceID -> prTrackingID -> comments
+	mu                  sync.RWMutex
+	workspaces          map[string]*dexdexv1.Workspace
+	unitTasks           map[string]map[string]*dexdexv1.UnitTask           // workspaceID -> taskID -> task
+	subTasks            map[string]map[string]*dexdexv1.SubTask            // workspaceID -> subTaskID -> subTask
+	notifications       map[string][]*dexdexv1.NotificationRecord          // workspaceID -> notifications
+	sessionOutputs      map[string][]*dexdexv1.SessionOutputEvent          // sessionID -> events
+	sessionSummaries    map[string]map[string]*dexdexv1.SessionSummary     // workspaceID -> sessionID -> summary
+	repoGroups          map[string]map[string]*dexdexv1.RepositoryGroup    // workspaceID -> groupID -> group
+	prRecords           map[string]map[string]*dexdexv1.PullRequestRecord  // workspaceID -> prTrackingID -> pr
+	reviewAssist        map[string]map[string][]*dexdexv1.ReviewAssistItem // workspaceID -> unitTaskID -> items
+	reviewComments      map[string]map[string][]*dexdexv1.ReviewComment    // workspaceID -> prTrackingID -> comments
+	worktreeAssignments map[string]map[string]*WorktreeAssignment          // workspaceID -> sessionID -> assignment
+	badgeThemes         map[string]*dexdexv1.BadgeTheme                    // workspaceID -> theme
 }
 
 // NewMemoryStore creates a new empty MemoryStore.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		workspaces:       make(map[string]*dexdexv1.Workspace),
-		unitTasks:        make(map[string]map[string]*dexdexv1.UnitTask),
-		subTasks:         make(map[string]map[string]*dexdexv1.SubTask),
-		notifications:    make(map[string][]*dexdexv1.NotificationRecord),
-		sessionOutputs:   make(map[string][]*dexdexv1.SessionOutputEvent),
-		sessionSummaries: make(map[string]map[string]*dexdexv1.SessionSummary),
-		repoGroups:       make(map[string]map[string]*dexdexv1.RepositoryGroup),
-		prRecords:        make(map[string]map[string]*dexdexv1.PullRequestRecord),
-		reviewAssist:     make(map[string]map[string][]*dexdexv1.ReviewAssistItem),
-		reviewComments:   make(map[string]map[string][]*dexdexv1.ReviewComment),
+		workspaces:          make(map[string]*dexdexv1.Workspace),
+		unitTasks:           make(map[string]map[string]*dexdexv1.UnitTask),
+		subTasks:            make(map[string]map[string]*dexdexv1.SubTask),
+		notifications:       make(map[string][]*dexdexv1.NotificationRecord),
+		sessionOutputs:      make(map[string][]*dexdexv1.SessionOutputEvent),
+		sessionSummaries:    make(map[string]map[string]*dexdexv1.SessionSummary),
+		repoGroups:          make(map[string]map[string]*dexdexv1.RepositoryGroup),
+		prRecords:           make(map[string]map[string]*dexdexv1.PullRequestRecord),
+		reviewAssist:        make(map[string]map[string][]*dexdexv1.ReviewAssistItem),
+		reviewComments:      make(map[string]map[string][]*dexdexv1.ReviewComment),
+		worktreeAssignments: make(map[string]map[string]*WorktreeAssignment),
+		badgeThemes:         make(map[string]*dexdexv1.BadgeTheme),
 	}
 }
 
@@ -526,6 +558,22 @@ func (s *MemoryStore) ListPullRequests(workspaceID string) []*dexdexv1.PullReque
 	return result
 }
 
+func (s *MemoryStore) UpdatePullRequest(workspaceID, prTrackingID string, status dexdexv1.PrStatus) (*dexdexv1.PullRequestRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prs, ok := s.prRecords[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr, ok := prs[prTrackingID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr.Status = status
+	return pr, nil
+}
+
 // Review assist methods
 
 func (s *MemoryStore) AddReviewAssistItem(workspaceID, unitTaskID string, item *dexdexv1.ReviewAssistItem) {
@@ -570,4 +618,173 @@ func (s *MemoryStore) ListReviewComments(workspaceID, prTrackingID string) []*de
 		return nil
 	}
 	return comments[prTrackingID]
+}
+
+func (s *MemoryStore) FindSubTaskBySessionID(workspaceID, sessionID string) (*dexdexv1.SubTask, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	subs, ok := s.subTasks[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("no subtask found for session: workspace=%s session=%s", workspaceID, sessionID)
+	}
+	for _, st := range subs {
+		if st.SessionId == sessionID {
+			return st, nil
+		}
+	}
+	return nil, fmt.Errorf("no subtask found for session: workspace=%s session=%s", workspaceID, sessionID)
+}
+
+// Worktree tracking methods
+
+func (s *MemoryStore) UpsertWorktreeAssignment(workspaceID string, assignment *WorktreeAssignment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.worktreeAssignments[workspaceID] == nil {
+		s.worktreeAssignments[workspaceID] = make(map[string]*WorktreeAssignment)
+	}
+	s.worktreeAssignments[workspaceID][assignment.SessionID] = assignment
+}
+
+func (s *MemoryStore) GetWorktreeAssignment(workspaceID, sessionID string) (*WorktreeAssignment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	assignments, ok := s.worktreeAssignments[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("worktree assignment not found: workspace=%s session=%s", workspaceID, sessionID)
+	}
+	assignment, ok := assignments[sessionID]
+	if !ok {
+		return nil, fmt.Errorf("worktree assignment not found: workspace=%s session=%s", workspaceID, sessionID)
+	}
+	return assignment, nil
+}
+
+func (s *MemoryStore) ListActiveWorktrees(workspaceID string) []*WorktreeAssignment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	assignments, ok := s.worktreeAssignments[workspaceID]
+	if !ok {
+		return nil
+	}
+
+	result := make([]*WorktreeAssignment, 0)
+	for _, a := range assignments {
+		switch a.State {
+		case dexdexv1.WorktreeState_WORKTREE_STATE_PREPARING,
+			dexdexv1.WorktreeState_WORKTREE_STATE_READY,
+			dexdexv1.WorktreeState_WORKTREE_STATE_EXECUTING:
+			result = append(result, a)
+		}
+	}
+	return result
+}
+
+// Badge theme methods
+
+func (s *MemoryStore) GetBadgeTheme(workspaceID string) *dexdexv1.BadgeTheme {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.badgeThemes[workspaceID]
+}
+
+func (s *MemoryStore) SetBadgeTheme(workspaceID string, theme *dexdexv1.BadgeTheme) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.badgeThemes[workspaceID] = theme
+}
+
+// Review comment CRUD methods
+
+func (s *MemoryStore) GetReviewComment(workspaceID, reviewCommentID string) (*dexdexv1.ReviewComment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	prComments, ok := s.reviewComments[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+	}
+	for _, comments := range prComments {
+		for _, c := range comments {
+			if c.ReviewCommentId == reviewCommentID {
+				return c, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+}
+
+func (s *MemoryStore) CreateReviewComment(workspaceID, prTrackingID string, comment *dexdexv1.ReviewComment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.reviewComments[workspaceID] == nil {
+		s.reviewComments[workspaceID] = make(map[string][]*dexdexv1.ReviewComment)
+	}
+	s.reviewComments[workspaceID][prTrackingID] = append(s.reviewComments[workspaceID][prTrackingID], comment)
+}
+
+func (s *MemoryStore) UpdateReviewComment(workspaceID, reviewCommentID, body string) (*dexdexv1.ReviewComment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prComments, ok := s.reviewComments[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+	}
+	for _, comments := range prComments {
+		for _, c := range comments {
+			if c.ReviewCommentId == reviewCommentID {
+				c.Body = body
+				c.UpdatedAt = timestamppb.Now()
+				return c, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+}
+
+func (s *MemoryStore) DeleteReviewComment(workspaceID, reviewCommentID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prComments, ok := s.reviewComments[workspaceID]
+	if !ok {
+		return fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+	}
+	for prTrackingID, comments := range prComments {
+		for i, c := range comments {
+			if c.ReviewCommentId == reviewCommentID {
+				s.reviewComments[workspaceID][prTrackingID] = append(comments[:i], comments[i+1:]...)
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+}
+
+func (s *MemoryStore) UpdateReviewCommentStatus(workspaceID, reviewCommentID string, status dexdexv1.ReviewCommentStatus) (*dexdexv1.ReviewComment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prComments, ok := s.reviewComments[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+	}
+	for _, comments := range prComments {
+		for _, c := range comments {
+			if c.ReviewCommentId == reviewCommentID {
+				c.Status = status
+				c.UpdatedAt = timestamppb.Now()
+				return c, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
 }
