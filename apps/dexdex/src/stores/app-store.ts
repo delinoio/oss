@@ -1,65 +1,75 @@
 import { create } from "zustand";
 
-export interface Tab {
+export interface OpenTab {
   id: string;
-  label: string;
+  title: string;
   path: string;
 }
 
 interface AppState {
+  // Sidebar
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
 
-  activeWorkspaceId: string | null;
-  setActiveWorkspaceId: (id: string) => void;
-
-  tabs: Tab[];
+  // Tabs
+  openTabs: OpenTab[];
   activeTabId: string | null;
-  openTab: (tab: Tab) => void;
-  closeTab: (tabId: string) => void;
-  setActiveTab: (tabId: string) => void;
+  openTab: (tab: OpenTab) => void;
+  closeTab: (id: string) => void;
+  setActiveTab: (id: string) => void;
 
+  // Theme
   theme: "light" | "dark";
-  setTheme: (theme: "light" | "dark") => void;
+  toggleTheme: () => void;
+
+  // Workspace
+  workspaceId: string;
+  setWorkspaceId: (id: string) => void;
 }
 
-export const useAppStore = create<AppState>((set, get) => ({
+export const useAppStore = create<AppState>((set) => ({
+  // Sidebar
   sidebarCollapsed: false,
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
 
-  activeWorkspaceId: null,
-  setActiveWorkspaceId: (id) => set({ activeWorkspaceId: id }),
-
-  tabs: [],
+  // Tabs
+  openTabs: [],
   activeTabId: null,
-  openTab: (tab) => {
-    const existing = get().tabs.find((t) => t.id === tab.id);
-    if (existing) {
-      set({ activeTabId: tab.id });
-    } else {
-      set((state) => ({
-        tabs: [...state.tabs, tab],
+  openTab: (tab) =>
+    set((state) => {
+      const exists = state.openTabs.find((t) => t.id === tab.id);
+      if (exists) {
+        return { activeTabId: tab.id };
+      }
+      return {
+        openTabs: [...state.openTabs, tab],
         activeTabId: tab.id,
-      }));
-    }
-  },
-  closeTab: (tabId) => {
-    const { tabs, activeTabId } = get();
-    const idx = tabs.findIndex((t) => t.id === tabId);
-    const newTabs = tabs.filter((t) => t.id !== tabId);
-    let newActiveId = activeTabId;
-    if (activeTabId === tabId) {
-      newActiveId =
-        newTabs[Math.min(idx, newTabs.length - 1)]?.id ?? null;
-    }
-    set({ tabs: newTabs, activeTabId: newActiveId });
-  },
-  setActiveTab: (tabId) => set({ activeTabId: tabId }),
+      };
+    }),
+  closeTab: (id) =>
+    set((state) => {
+      const filtered = state.openTabs.filter((t) => t.id !== id);
+      const newActiveId =
+        state.activeTabId === id
+          ? filtered.length > 0
+            ? filtered[filtered.length - 1].id
+            : null
+          : state.activeTabId;
+      return { openTabs: filtered, activeTabId: newActiveId };
+    }),
+  setActiveTab: (id) => set({ activeTabId: id }),
 
+  // Theme
   theme: "light",
-  setTheme: (theme) => {
-    set({ theme });
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  },
+  toggleTheme: () =>
+    set((state) => ({
+      theme: state.theme === "light" ? "dark" : "light",
+    })),
+
+  // Workspace
+  workspaceId: "default",
+  setWorkspaceId: (id) => set({ workspaceId: id }),
 }));

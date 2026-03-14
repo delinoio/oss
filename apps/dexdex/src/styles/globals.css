@@ -1,100 +1,59 @@
 @import "tailwindcss";
 
 @theme {
-  /* Linear-style light mode color palette */
+  /* Linear-inspired color tokens - Light mode */
   --color-bg-primary: #ffffff;
   --color-bg-secondary: #f9fafb;
   --color-bg-sidebar: #f3f4f6;
   --color-bg-hover: #f3f4f6;
-  --color-bg-active: #e5e7eb;
+  --color-bg-active: #eef0f4;
+  --color-bg-accent: #5b5fc7;
+  --color-bg-accent-hover: #4f52b5;
+  --color-bg-dialog-overlay: rgba(0, 0, 0, 0.4);
 
-  --color-text-primary: #111827;
+  --color-text-primary: #1a1a2e;
   --color-text-secondary: #6b7280;
   --color-text-tertiary: #9ca3af;
+  --color-text-accent: #5b5fc7;
+  --color-text-on-accent: #ffffff;
 
-  --color-border: #e5e7eb;
-  --color-border-focus: #5b5fc7;
+  --color-border-default: #e5e7eb;
+  --color-border-subtle: #f3f4f6;
+  --color-border-accent: #5b5fc7;
 
-  --color-accent: #5b5fc7;
-  --color-accent-hover: #4f46e5;
-  --color-accent-light: #ede9fe;
-
-  /* Status colors matching UnitTaskStatus enum */
   --color-status-queued: #9ca3af;
-  --color-status-in-progress: #f59e0b;
-  --color-status-action-required: #f97316;
+  --color-status-in-progress: #3b82f6;
+  --color-status-action-required: #f59e0b;
   --color-status-blocked: #ef4444;
   --color-status-completed: #10b981;
   --color-status-failed: #ef4444;
-  --color-status-cancelled: #d1d5db;
+  --color-status-cancelled: #6b7280;
 
-  /* Spacing and sizing */
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 48px;
-  --tab-bar-height: 40px;
-  --header-height: 48px;
+  --color-approve: #10b981;
+  --color-revise: #f59e0b;
+  --color-reject: #ef4444;
 }
 
-/* Dark mode tokens (opt-in via class) */
-.dark {
-  --color-bg-primary: #0f1117;
-  --color-bg-secondary: #1a1d27;
-  --color-bg-sidebar: #141620;
-  --color-bg-hover: #1e2130;
-  --color-bg-active: #282c3a;
-
-  --color-text-primary: #e5e7eb;
-  --color-text-secondary: #9ca3af;
-  --color-text-tertiary: #6b7280;
-
-  --color-border: #2d3140;
-  --color-border-focus: #7c7ff2;
-
-  --color-accent: #7c7ff2;
-  --color-accent-hover: #6366f1;
-  --color-accent-light: #1e1b4b;
-}
-
-/* Base reset */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  height: 100%;
+* {
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
 }
 
 body {
   font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
-  background-color: var(--color-bg-primary);
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+    Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--color-text-primary);
+  background-color: var(--color-bg-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar styling (Linear-like thin scrollbar) */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: var(--color-border);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-text-tertiary);
+#root {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
 }

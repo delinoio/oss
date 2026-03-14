@@ -7,12 +7,14 @@ interface LocalWorkspaceEndpoint {
   source: string;
 }
 
+const DEFAULT_ENDPOINT = "http://127.0.0.1:7878";
+
 let cachedTransport: ReturnType<typeof createConnectTransport> | null = null;
 
 export async function resolveTransport() {
   if (cachedTransport) return cachedTransport;
 
-  let baseUrl = "http://127.0.0.1:7878";
+  let baseUrl = DEFAULT_ENDPOINT;
 
   try {
     const endpoint = await invoke<LocalWorkspaceEndpoint>(
@@ -27,12 +29,8 @@ export async function resolveTransport() {
   return cachedTransport;
 }
 
-/**
- * Synchronous transport for use in React Query provider.
- * Uses default endpoint; call resolveTransport() for Tauri-resolved endpoint.
- */
 export function createDefaultTransport() {
   return createConnectTransport({
-    baseUrl: "http://127.0.0.1:7878",
+    baseUrl: DEFAULT_ENDPOINT,
   });
 }
