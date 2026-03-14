@@ -5,6 +5,8 @@
 - Keep repository and domain rules in the appropriate `AGENTS.md` files.
 - Write all source and comments in English.
 - Follow Toss Design Guidelines for frontend UX/UI decisions across web and mobile apps.
+- If a form has a single critical input, that input must receive focus when the form is shown.
+- Dialog UIs must support closing with the `Esc` key.
 
 ### Scope in This Domain
 
@@ -60,6 +62,8 @@ enum DevkitMiniAppId {
 - Global shortcut question-handoff behavior (default binding, waiting-session routing, empty fallback) must remain aligned with DexDex app/server/proto contracts.
 - Menu bar tray behavior remains status-only unless docs explicitly expand scope; status derivation must use active-workspace contract semantics.
 - Session fork UX must keep parent-session immutability guarantees and remain limited to documented lifecycle actions.
+- Single critical-input forms in DexDex must auto-focus the input when shown.
+- DexDex dialog UIs must close with `Esc`.
 
 ### Multi-Component Contract Sync
 

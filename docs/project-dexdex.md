@@ -44,6 +44,30 @@ When implementation details differ from documented contracts, follow-up sync wor
 - Event streaming is workspace-scoped, sequence-based, and reconnect-safe within retention policy.
 - Notifications are event-stream driven; the in-app center is authoritative.
 - UI behavior is keyboard-first and includes multiline submit (`Cmd+Enter`) and tab lifecycle shortcuts.
+- Dialog UI surfaces close with `Esc`, and forms with a single critical input auto-focus when shown.
+
+## Implementation Status (as of 2026-03-15)
+
+### Proto (`protos/dexdex/v1/dexdex.proto`)
+- `CreateUnitTaskRequest` is prompt-first and uses workspace/repository-group/agent/plan-mode fields.
+- `AgentCapability` includes `supports_plan_mode`.
+- `SubmitPlanDecision` supports explicit decision actions.
+- Event stream payloads are workspace-scoped and typed.
+
+### Main Server (`servers/dexdex-main-server`)
+- Repository and repository-group contracts are normalized and execution-order-aware.
+- Workspace settings and task orchestration contracts are Connect RPC-first.
+- Plan-mode and capability validations enforce typed error outcomes.
+
+### Worker Server (`servers/dexdex-worker-server`)
+- Agent capability and execution contracts expose plan-mode support boundaries.
+- Execution remains repository-group scoped and worktree-only.
+- Worker logs and outputs are normalized for main-server and client consumption.
+
+### Desktop App (`apps/dexdex`)
+- Task creation and settings flows are aligned with workspace/repository-group/agent contracts.
+- Plan-mode visibility follows capability metadata.
+- Dialog surfaces close with `Esc` and single critical-input forms auto-focus on open.
 
 ## Developer Setup and Validation
 Repository layout for DexDex in this monorepo:

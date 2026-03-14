@@ -3,13 +3,14 @@
  * Supports creating new forks, archiving active forks, and navigating to forked sessions.
  */
 
-import { type CSSProperties, useCallback, useState } from "react";
+import { type CSSProperties, useCallback, useRef, useState } from "react";
 import {
   useListForkedSessions,
   useForkSessionMutation,
   useArchiveForkedSessionMutation,
   useListSessionCapabilities,
 } from "../../hooks/use-dexdex-queries";
+import { useEscapeToClose, useFocusOnShow } from "../../hooks/use-dialog-accessibility";
 import { toViewAgentCapability } from "../../lib/adapters";
 import { SessionForkStatus, SessionForkIntent, AgentSessionStatus } from "../../lib/status";
 import type { AgentCapability } from "../../lib/mock-data";
@@ -44,9 +45,18 @@ export function SessionForkPanel({ workspaceId, parentSessionId, onNavigateToSes
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [forkIntent, setForkIntent] = useState<SessionForkIntent>(SessionForkIntent.EXPLORE_ALTERNATIVE);
   const [forkPrompt, setForkPrompt] = useState("");
+  const forkPromptRef = useRef<HTMLTextAreaElement>(null);
 
   const capabilities: AgentCapability[] = (capabilitiesQuery.data?.capabilities ?? []).map(toViewAgentCapability);
   const supportsFork = capabilities.some((c) => c.supportsFork);
+
+  const closeCreateDialog = useCallback(() => {
+    setShowCreateDialog(false);
+    setForkPrompt("");
+  }, []);
+
+  useEscapeToClose(showCreateDialog, closeCreateDialog);
+  useFocusOnShow(showCreateDialog, forkPromptRef);
 
   const handleCreateFork = useCallback(() => {
     if (!forkPrompt.trim()) return;
@@ -59,13 +69,12 @@ export function SessionForkPanel({ workspaceId, parentSessionId, onNavigateToSes
       },
       {
         onSuccess: () => {
-          setShowCreateDialog(false);
-          setForkPrompt("");
+          closeCreateDialog();
           setForkIntent(SessionForkIntent.EXPLORE_ALTERNATIVE);
         },
       },
     );
-  }, [workspaceId, parentSessionId, forkIntent, forkPrompt, forkMutation]);
+  }, [workspaceId, parentSessionId, forkIntent, forkPrompt, forkMutation, closeCreateDialog]);
 
   const handleArchive = useCallback(
     (sessionId: string) => {
@@ -243,6 +252,7 @@ export function SessionForkPanel({ workspaceId, parentSessionId, onNavigateToSes
             ))}
           </select>
           <textarea
+            ref={forkPromptRef}
             value={forkPrompt}
             onChange={(e) => setForkPrompt(e.target.value)}
             placeholder="Describe what this fork should explore..."
@@ -253,10 +263,7 @@ export function SessionForkPanel({ workspaceId, parentSessionId, onNavigateToSes
           <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)", justifyContent: "flex-end" }}>
             <button
               style={buttonStyle}
-              onClick={() => {
-                setShowCreateDialog(false);
-                setForkPrompt("");
-              }}
+              onClick={closeCreateDialog}
               data-testid="fork-cancel-button"
             >
               Cancel

@@ -40,6 +40,14 @@ Behavior contracts:
 - Stop actions are immediate for running UnitTask and SubTask flows.
 - Approved diff flow exposes `Create PR` action and uses commit-chain metadata.
 
+Data and UX invariants:
+- `WorkspaceSettings.default_agent_cli_type` is the default agent for new task creation.
+- Plan mode default is OFF.
+- Plan mode toggle is shown only for agents where `supports_plan_mode=true`.
+- Repository-group member order in UI maps directly to `display_order` payload sequence.
+- Dialog UI surfaces must close with `Esc`.
+- Forms with a single critical input must focus that input when shown.
+
 Notifications contract:
 - Notification dispatch uses Web Notification API.
 - In-app notification center is authoritative.
