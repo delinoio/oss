@@ -4,6 +4,7 @@ import { describe, expect, it, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { createRouterTransport } from "@connectrpc/connect";
+import { MemoryRouter } from "react-router";
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import App from "./App";
@@ -252,7 +253,7 @@ function createTestTransport() {
   });
 }
 
-function renderWithProviders(ui: React.ReactElement) {
+function renderWithProviders(ui: React.ReactElement, { initialEntries = ["/tasks"] }: { initialEntries?: string[] } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -264,7 +265,9 @@ function renderWithProviders(ui: React.ReactElement) {
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={createTestTransport()}>
-        {ui}
+        <MemoryRouter initialEntries={initialEntries}>
+          {ui}
+        </MemoryRouter>
       </TransportProvider>
     </QueryClientProvider>,
   );
