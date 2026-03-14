@@ -58,16 +58,26 @@ When implementation details differ from documented contracts, follow-up sync wor
 - Repository and repository-group contracts are normalized and execution-order-aware.
 - Workspace settings and task orchestration contracts are Connect RPC-first.
 - Plan-mode and capability validations enforce typed error outcomes.
+- PR auto-detection from agent session output after execution completes.
+- Review assist items auto-created from GitHub review comments on CHANGES_REQUESTED.
+- ReviewAssistUpdatedPayload added to event streaming.
+- GitHub client supports CreatePullRequest and ListPullRequestComments.
 
 ### Worker Server (`servers/dexdex-worker-server`)
 - Agent capability and execution contracts expose plan-mode support boundaries.
 - Execution remains repository-group scoped and worktree-only.
 - Worker logs and outputs are normalized for main-server and client consumption.
+- Agent process execution includes timeout enforcement, idle detection, and stderr capture.
+- Exit codes are mapped to specific error messages for diagnostic clarity.
+- Commit chain extraction from worktree after successful execution with stream delivery.
 
 ### Desktop App (`apps/dexdex`)
 - Task creation and settings flows are aligned with workspace/repository-group/agent contracts.
 - Plan-mode visibility follows capability metadata.
 - Dialog surfaces close with `Esc` and single critical-input forms auto-focus on open.
+- Review assist Accept action creates auto-fix UnitTask via CreateUnitTask API.
+- Global shortcut navigates to waiting session context with input form auto-focus.
+- Tauri backend implements credential management (file-based) and tray status IPC.
 
 ## Developer Setup and Validation
 Repository layout for DexDex in this monorepo:
