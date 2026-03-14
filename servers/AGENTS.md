@@ -48,7 +48,15 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 - Changes to server interfaces must be synchronized with related CLI and app contracts.
 - Update `docs/project-thenv.md` and `docs/servers-thenv-server-foundation.md` for every thenv interface or trust model update.
 - Update `docs/project-devkit-commit-tracker.md` and `docs/servers-devkit-commit-tracker-api-server-foundation.md` for every commit-tracker API contract update.
-- Update `docs/project-dexdex.md` and relevant DexDex server-domain docs for every server interface or ownership contract update.
+- Update `docs/project-dexdex.md` and relevant DexDex server/proto-domain docs for every server interface or ownership contract update:
+  - `docs/servers-dexdex-main-server-foundation.md`
+  - `docs/servers-dexdex-worker-server-foundation.md`
+  - `docs/servers-dexdex-event-streaming-contract.md`
+  - `docs/servers-dexdex-pr-management-contract.md`
+  - `docs/protos-dexdex-v1-contract.md`
+  - `docs/protos-dexdex-api-contract.md`
+  - `docs/protos-dexdex-entities-contract.md`
+  - `docs/protos-dexdex-plan-mode-contract.md`
 - DexDex session-fork support decisions must be capability-driven and normalized by `main-server`/`worker-server`; unsupported fork requests must map to `FAILED_PRECONDITION`.
 - DexDex worker provider-native fork payloads must remain worker-internal diagnostics and must not be exposed through public server/app contracts.
 - DexDex workspace work-status aggregation semantics for tray rendering must stay synchronized with proto and desktop app contracts.
@@ -57,7 +65,7 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 
 - `servers/commit-tracker` changes must keep collector and web contracts synchronized.
 - `servers/thenv` changes must keep CLI and web-console contracts synchronized.
-- `servers/dexdex-main-server` and `servers/dexdex-worker-server` changes must keep proto and desktop contracts synchronized.
+- `servers/dexdex-main-server` and `servers/dexdex-worker-server` changes must keep proto, stream, PR-management, and desktop contracts synchronized.
 
 ### Testing and Validation
 

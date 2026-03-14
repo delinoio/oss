@@ -56,6 +56,19 @@
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-dexdex.md`: DexDex multi-runtime project index.
+- `docs/apps-dexdex-desktop-app-foundation.md`: DexDex app runtime and integration foundation contract.
+- `docs/apps-dexdex-ui-contract.md`: DexDex UI and interaction contract.
+- `docs/apps-dexdex-user-guide-contract.md`: DexDex end-user workflow contract.
+- `docs/apps-dexdex-notification-contract.md`: DexDex notification UX and delivery contract.
+- `docs/apps-dexdex-workspace-connectivity-contract.md`: DexDex workspace connectivity model contract.
+- `docs/servers-dexdex-main-server-foundation.md`: DexDex main-server control-plane contract.
+- `docs/servers-dexdex-worker-server-foundation.md`: DexDex worker-server execution contract.
+- `docs/servers-dexdex-event-streaming-contract.md`: DexDex workspace event-stream contract.
+- `docs/servers-dexdex-pr-management-contract.md`: DexDex PR polling and remediation contract.
+- `docs/protos-dexdex-v1-contract.md`: DexDex v1 proto summary contract.
+- `docs/protos-dexdex-api-contract.md`: DexDex Connect RPC API contract.
+- `docs/protos-dexdex-entities-contract.md`: DexDex entity and enum contract.
+- `docs/protos-dexdex-plan-mode-contract.md`: DexDex plan-mode decision contract.
 - `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
 - `protos/dexdex/v1/dexdex.proto`: Shared DexDex Connect RPC service and enum/message contracts (`dexdex.v1`).
 - `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation (default actor set includes `chatgpt-codex-connector[bot]`).
