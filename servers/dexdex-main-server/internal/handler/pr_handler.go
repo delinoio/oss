@@ -59,3 +59,33 @@ func (h *PrHandler) GetPullRequest(
 		PullRequest: pr,
 	}), nil
 }
+
+// UpdatePullRequest updates the status of a pull request.
+func (h *PrHandler) UpdatePullRequest(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.UpdatePullRequestRequest],
+) (*connect.Response[dexdexv1.UpdatePullRequestResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	prTrackingID := req.Msg.PrTrackingId
+	status := req.Msg.Status
+
+	h.logger.Info("UpdatePullRequest called",
+		"workspace_id", workspaceID,
+		"pr_tracking_id", prTrackingID,
+		"status", status.String(),
+	)
+
+	pr, err := h.store.UpdatePullRequest(workspaceID, prTrackingID, status)
+	if err != nil {
+		h.logger.Warn("pull request not found for update",
+			"workspace_id", workspaceID,
+			"pr_tracking_id", prTrackingID,
+			"error", err,
+		)
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	return connect.NewResponse(&dexdexv1.UpdatePullRequestResponse{
+		PullRequest: pr,
+	}), nil
+}

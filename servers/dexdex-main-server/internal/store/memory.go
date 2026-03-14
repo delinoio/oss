@@ -49,6 +49,7 @@ type Store interface {
 	AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord)
 	GetPullRequest(workspaceID, prTrackingID string) (*dexdexv1.PullRequestRecord, error)
 	ListPullRequests(workspaceID string) []*dexdexv1.PullRequestRecord
+	UpdatePullRequest(workspaceID, prTrackingID string, status dexdexv1.PrStatus) (*dexdexv1.PullRequestRecord, error)
 	// Review assist operations (keyed by unitTaskID)
 	AddReviewAssistItem(workspaceID, unitTaskID string, item *dexdexv1.ReviewAssistItem)
 	ListReviewAssistItems(workspaceID, unitTaskID string) []*dexdexv1.ReviewAssistItem
@@ -524,6 +525,22 @@ func (s *MemoryStore) ListPullRequests(workspaceID string) []*dexdexv1.PullReque
 		result = append(result, pr)
 	}
 	return result
+}
+
+func (s *MemoryStore) UpdatePullRequest(workspaceID, prTrackingID string, status dexdexv1.PrStatus) (*dexdexv1.PullRequestRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prs, ok := s.prRecords[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr, ok := prs[prTrackingID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr.Status = status
+	return pr, nil
 }
 
 // Review assist methods

@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/config"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/handler"
+	"github.com/delinoio/oss/servers/dexdex-main-server/internal/polling"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/store"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/stream"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/worker"
@@ -95,6 +96,13 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+
+	// Start PR poller in background
+	ghClient := polling.NewGitHubClient(logger)
+	prPoller := polling.NewPRPoller(dataStore, fanOut, ghClient, time.Duration(cfg.PRPollIntervalSec)*time.Second, logger)
+	pollerCtx, pollerCancel := context.WithCancel(context.Background())
+	defer pollerCancel()
+	go prPoller.Start(pollerCtx)
 
 	httpServer := &http.Server{
 		Addr:              cfg.ServerAddr,

@@ -270,6 +270,15 @@ func (p *SessionForkUpdatedPayload) setPayload(resp *dexdexv1.StreamWorkspaceEve
 	resp.Payload = &dexdexv1.StreamWorkspaceEventsResponse_SessionForkUpdated{SessionForkUpdated: p.SessionForkUpdated}
 }
 
+// PrUpdatedPayload wraps a PrUpdatedEvent for publishing.
+type PrUpdatedPayload struct {
+	PrUpdated *dexdexv1.PrUpdatedEvent
+}
+
+func (p *PrUpdatedPayload) setPayload(resp *dexdexv1.StreamWorkspaceEventsResponse) {
+	resp.Payload = &dexdexv1.StreamWorkspaceEventsResponse_PrUpdated{PrUpdated: p.PrUpdated}
+}
+
 // WorkspaceWorkStatusUpdatedPayload wraps a WorkspaceWorkStatusUpdatedEvent for publishing.
 type WorkspaceWorkStatusUpdatedPayload struct {
 	WorkspaceWorkStatusUpdated *dexdexv1.WorkspaceWorkStatusUpdatedEvent
