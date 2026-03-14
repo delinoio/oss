@@ -378,6 +378,9 @@ enum DevkitMiniAppId {
 - `LOCAL` and `REMOTE` workspace modes must converge to the same post-resolution UX and business flow behavior.
 - DexDex desktop contract consumption must use shared proto definitions from `protos/dexdex/v1` as the source of truth.
 - Keep DexDex desktop app contracts synchronized with `docs/apps-dexdex-desktop-app-foundation.md` and `docs/project-dexdex.md`.
+- Global shortcut question-handoff behavior (default binding, waiting-session routing, empty fallback) must remain aligned with DexDex app/server/proto contracts.
+- Menu bar tray behavior remains status-only unless docs explicitly expand scope; status derivation must use active-workspace contract semantics.
+- Session fork UX must keep parent-session immutability guarantees and remain limited to documented lifecycle actions.
 
 ### Multi-Component Contract Sync
 
@@ -559,6 +562,9 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 - Update `docs/project-thenv.md` and `docs/servers-thenv-server-foundation.md` for every thenv interface or trust model update.
 - Update `docs/project-devkit-commit-tracker.md` and `docs/servers-devkit-commit-tracker-api-server-foundation.md` for every commit-tracker API contract update.
 - Update `docs/project-dexdex.md` and relevant DexDex server-domain docs for every server interface or ownership contract update.
+- DexDex session-fork support decisions must be capability-driven and normalized by `main-server`/`worker-server`; unsupported fork requests must map to `FAILED_PRECONDITION`.
+- DexDex worker provider-native fork payloads must remain worker-internal diagnostics and must not be exposed through public server/app contracts.
+- DexDex workspace work-status aggregation semantics for tray rendering must stay synchronized with proto and desktop app contracts.
 
 ### Multi-Component Contract Sync
 
