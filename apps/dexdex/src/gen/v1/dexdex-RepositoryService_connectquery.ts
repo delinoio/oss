@@ -8,3 +8,8 @@ import { RepositoryService } from "./dexdex_pb";
  * @generated from rpc dexdex.v1.RepositoryService.GetRepositoryGroup
  */
 export const getRepositoryGroup = RepositoryService.method.getRepositoryGroup;
+
+/**
+ * @generated from rpc dexdex.v1.RepositoryService.ListRepositoryGroups
+ */
+export const listRepositoryGroups = RepositoryService.method.listRepositoryGroups;

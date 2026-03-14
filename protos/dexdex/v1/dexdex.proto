@@ -574,6 +574,61 @@ message UpdateUnitTaskStatusResponse {
   UnitTask unit_task = 1;
 }
 
+// Repository group listing messages.
+
+message ListRepositoryGroupsRequest {
+  string workspace_id = 1;
+}
+
+message ListRepositoryGroupsResponse {
+  repeated RepositoryGroup repository_groups = 1;
+}
+
+// Worker execution adapter messages.
+
+message StartExecutionRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  string sub_task_id = 3;
+  string session_id = 4;
+  RepositoryGroup repository_group = 5;
+  string prompt = 6;
+  AgentCliType agent_cli_type = 7;
+}
+
+message ExecutionEvent {
+  oneof event {
+    SessionOutputEvent session_output = 1;
+    SessionStateChangedEvent state_changed = 2;
+    CommitMetadata commit = 3;
+  }
+}
+
+message SubmitWorkerInputRequest {
+  string session_id = 1;
+  string input_text = 2;
+}
+
+message SubmitWorkerInputResponse {}
+
+message CancelExecutionRequest {
+  string session_id = 1;
+}
+
+message CancelExecutionResponse {}
+
+// PR update messages.
+
+message UpdatePullRequestRequest {
+  string workspace_id = 1;
+  string pr_tracking_id = 2;
+  PrStatus status = 3;
+}
+
+message UpdatePullRequestResponse {
+  PullRequestRecord pull_request = 1;
+}
+
 service WorkspaceService {
   rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
@@ -582,6 +637,7 @@ service WorkspaceService {
 
 service RepositoryService {
   rpc GetRepositoryGroup(GetRepositoryGroupRequest) returns (GetRepositoryGroupResponse);
+  rpc ListRepositoryGroups(ListRepositoryGroupsRequest) returns (ListRepositoryGroupsResponse);
 }
 
 service TaskService {
@@ -607,6 +663,7 @@ service SessionService {
 service PrManagementService {
   rpc GetPullRequest(GetPullRequestRequest) returns (GetPullRequestResponse);
   rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
+  rpc UpdatePullRequest(UpdatePullRequestRequest) returns (UpdatePullRequestResponse);
 }
 
 service ReviewAssistService {
@@ -629,6 +686,9 @@ service NotificationService {
 service WorkerSessionAdapterService {
   rpc GetAgentCapabilities(GetAgentCapabilitiesRequest) returns (GetAgentCapabilitiesResponse);
   rpc ForkSessionAdapter(ForkSessionAdapterRequest) returns (ForkSessionAdapterResponse);
+  rpc StartExecution(StartExecutionRequest) returns (stream ExecutionEvent);
+  rpc SubmitWorkerInput(SubmitWorkerInputRequest) returns (SubmitWorkerInputResponse);
+  rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
 }
 
 service EventStreamService {
