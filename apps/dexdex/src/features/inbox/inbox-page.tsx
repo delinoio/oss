@@ -1,93 +1,155 @@
-import {
-  AlertTriangle,
-  Bell,
-  GitPullRequest,
-  Inbox as InboxIcon,
-} from "lucide-react";
-import { cn } from "../../lib/cn";
-import { NotificationType, notificationTypeLabels } from "../../lib/status";
-import { formatRelativeTime } from "../../lib/time";
-import { mockNotifications } from "../../lib/mock-data";
+/**
+ * Inbox page showing notifications and action items.
+ */
 
-const notificationIcons: Record<
-  NotificationType,
-  React.ComponentType<{ size?: number; className?: string }>
-> = {
-  [NotificationType.UNSPECIFIED]: Bell,
-  [NotificationType.TASK_ACTION_REQUIRED]: AlertTriangle,
-  [NotificationType.PLAN_ACTION_REQUIRED]: AlertTriangle,
-  [NotificationType.PR_REVIEW_ACTIVITY]: GitPullRequest,
-  [NotificationType.PR_CI_FAILURE]: AlertTriangle,
-  [NotificationType.AGENT_SESSION_FAILED]: AlertTriangle,
-};
+import type { CSSProperties } from "react";
+import type { Notification } from "../../lib/mock-data";
+import { NotificationType } from "../../lib/status";
 
-export function InboxPage() {
-  if (mockNotifications.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 text-[var(--color-text-tertiary)]">
-        <InboxIcon size={32} />
-        <span className="text-[13px]">No notifications</span>
-      </div>
-    );
+interface InboxPageProps {
+  notifications: Notification[];
+  onNotificationClick: (notification: Notification) => void;
+  onMarkRead: (notificationId: string) => void;
+}
+
+function getNotificationIcon(type: NotificationType): string {
+  switch (type) {
+    case NotificationType.TASK_ACTION_REQUIRED:
+      return "!";
+    case NotificationType.PLAN_ACTION_REQUIRED:
+      return "\u{1F4CB}";
+    case NotificationType.PR_REVIEW_ACTIVITY:
+      return "\u{1F50D}";
+    case NotificationType.PR_CI_FAILURE:
+      return "\u26A0";
+    case NotificationType.AGENT_SESSION_FAILED:
+      return "\u2717";
+    default:
+      return "\u{1F514}";
   }
+}
+
+export function InboxPage({ notifications, onNotificationClick, onMarkRead }: InboxPageProps) {
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  const containerStyle: CSSProperties = {
+    height: "100%",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+  };
+
+  const headerStyle: CSSProperties = {
+    padding: "var(--space-4) var(--space-6)",
+    borderBottom: "1px solid var(--color-border)",
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--space-2)",
+    flexShrink: 0,
+  };
+
+  const listStyle: CSSProperties = {
+    flex: 1,
+    overflowY: "auto",
+  };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-6 py-3 border-b border-[var(--color-border-default)]">
-        <h1 className="text-[15px] font-semibold text-[var(--color-text-primary)]">
-          Inbox
-        </h1>
+    <div style={containerStyle} data-testid="inbox-page">
+      <div style={headerStyle}>
+        <h1 style={{ fontSize: "var(--font-size-xl)", fontWeight: 600 }}>Inbox</h1>
+        {unreadCount > 0 && (
+          <span
+            style={{
+              padding: "1px 8px",
+              borderRadius: "var(--radius-full)",
+              backgroundColor: "var(--color-accent)",
+              color: "var(--color-text-inverse)",
+              fontSize: "var(--font-size-xs)",
+              fontWeight: 600,
+            }}
+          >
+            {unreadCount}
+          </span>
+        )}
       </div>
-
-      {/* Notification list */}
-      <div className="flex-1 overflow-y-auto">
-        {mockNotifications.map((notification) => {
-          const Icon = notificationIcons[notification.type] || Bell;
-          return (
-            <div
-              key={notification.notificationId}
-              className={cn(
-                "flex items-start gap-3 px-6 py-3 border-b border-[var(--color-border-subtle)] cursor-pointer hover:bg-[var(--color-bg-hover)] transition-colors",
-                !notification.read && "bg-[var(--color-bg-accent)]/[0.03]",
-              )}
-            >
-              <div className="mt-0.5">
-                <Icon
-                  size={16}
-                  className={cn(
-                    notification.read
-                      ? "text-[var(--color-text-tertiary)]"
-                      : "text-[var(--color-text-accent)]",
-                  )}
-                />
+      <div style={listStyle}>
+        {notifications.length === 0 && (
+          <div
+            style={{
+              padding: "var(--space-8)",
+              textAlign: "center",
+              color: "var(--color-text-tertiary)",
+              fontSize: "var(--font-size-sm)",
+            }}
+          >
+            No notifications
+          </div>
+        )}
+        {notifications.map((notification) => (
+          <div
+            key={notification.notificationId}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "var(--space-3)",
+              padding: "var(--space-3) var(--space-6)",
+              borderBottom: "1px solid var(--color-border-subtle)",
+              cursor: "pointer",
+              backgroundColor: notification.read ? "transparent" : "var(--color-accent-subtle)",
+              transition: "background-color 0.1s",
+            }}
+            onClick={() => {
+              onNotificationClick(notification);
+              if (!notification.read) {
+                onMarkRead(notification.notificationId);
+              }
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLElement).style.backgroundColor = "var(--color-bg-hover)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLElement).style.backgroundColor = notification.read
+                ? "transparent"
+                : "var(--color-accent-subtle)";
+            }}
+          >
+            <span style={{ fontSize: "var(--font-size-md)", flexShrink: 0, marginTop: "2px" }}>
+              {getNotificationIcon(notification.type)}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: "var(--font-size-base)",
+                  fontWeight: notification.read ? 400 : 600,
+                  color: "var(--color-text-primary)",
+                }}
+              >
+                {notification.title}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-[11px] font-medium text-[var(--color-text-tertiary)]">
-                    {notificationTypeLabels[notification.type]}
-                  </span>
-                  {!notification.read && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-bg-accent)]" />
-                  )}
-                </div>
-                <p
-                  className={cn(
-                    "text-[13px] truncate",
-                    notification.read
-                      ? "text-[var(--color-text-secondary)]"
-                      : "text-[var(--color-text-primary)] font-medium",
-                  )}
-                >
-                  {notification.title}
-                </p>
-                <span className="text-[11px] text-[var(--color-text-tertiary)]">
-                  {formatRelativeTime(notification.createdAt)}
-                </span>
+              <div
+                style={{
+                  fontSize: "var(--font-size-sm)",
+                  color: "var(--color-text-secondary)",
+                  marginTop: "2px",
+                }}
+              >
+                {notification.body}
               </div>
             </div>
-          );
-        })}
+            {!notification.read && (
+              <div
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "50%",
+                  backgroundColor: "var(--color-accent)",
+                  flexShrink: 0,
+                  marginTop: "6px",
+                }}
+              />
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

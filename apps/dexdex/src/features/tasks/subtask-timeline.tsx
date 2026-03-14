@@ -1,57 +1,157 @@
-import { StatusBadge } from "../../components/status-badge";
-import { SubTaskStatus, subTaskTypeLabels } from "../../lib/status";
-import { formatRelativeTime } from "../../lib/time";
-import type { MockSubTask } from "../../lib/mock-data";
-import { PlanDecisionControls } from "./plan-decision-controls";
+/**
+ * Subtask timeline component displaying the sequence of subtasks for a unit task.
+ */
 
-interface SubTaskTimelineProps {
-  subTasks: MockSubTask[];
+import type { CSSProperties } from "react";
+import type { SubTask } from "../../lib/mock-data";
+import { SubTaskStatus, SUB_TASK_TYPE_LABELS } from "../../lib/status";
+
+interface SubtaskTimelineProps {
+  subtasks: SubTask[];
 }
 
-export function SubTaskTimeline({ subTasks }: SubTaskTimelineProps) {
-  if (subTasks.length === 0) {
+function getSubtaskStatusColor(status: SubTaskStatus): string {
+  switch (status) {
+    case SubTaskStatus.COMPLETED:
+      return "var(--color-status-completed)";
+    case SubTaskStatus.IN_PROGRESS:
+      return "var(--color-status-in-progress)";
+    case SubTaskStatus.WAITING_FOR_PLAN_APPROVAL:
+    case SubTaskStatus.WAITING_FOR_USER_INPUT:
+      return "var(--color-status-action)";
+    case SubTaskStatus.FAILED:
+      return "var(--color-status-failed)";
+    case SubTaskStatus.CANCELLED:
+      return "var(--color-status-cancelled)";
+    default:
+      return "var(--color-text-tertiary)";
+  }
+}
+
+function getSubtaskStatusIcon(status: SubTaskStatus): string {
+  switch (status) {
+    case SubTaskStatus.COMPLETED:
+      return "\u2713";
+    case SubTaskStatus.IN_PROGRESS:
+      return "\u25D4";
+    case SubTaskStatus.WAITING_FOR_PLAN_APPROVAL:
+    case SubTaskStatus.WAITING_FOR_USER_INPUT:
+      return "!";
+    case SubTaskStatus.FAILED:
+      return "\u2717";
+    case SubTaskStatus.CANCELLED:
+      return "\u2014";
+    case SubTaskStatus.QUEUED:
+      return "\u25CB";
+    default:
+      return "?";
+  }
+}
+
+export function SubtaskTimeline({ subtasks }: SubtaskTimelineProps) {
+  if (subtasks.length === 0) {
     return (
-      <div className="text-[13px] text-[var(--color-text-tertiary)] py-4">
+      <div
+        style={{
+          padding: "var(--space-4)",
+          color: "var(--color-text-tertiary)",
+          fontSize: "var(--font-size-sm)",
+        }}
+      >
         No subtasks yet
       </div>
     );
   }
 
   return (
-    <div className="relative pl-4">
-      {/* Vertical line */}
-      <div className="absolute left-[7px] top-2 bottom-2 w-px bg-[var(--color-border-default)]" />
+    <div data-testid="subtask-timeline" style={{ padding: "var(--space-2) 0" }}>
+      {subtasks.map((subtask, index) => {
+        const color = getSubtaskStatusColor(subtask.status);
+        const isLast = index === subtasks.length - 1;
 
-      {subTasks.map((subTask, index) => (
-        <div key={subTask.subTaskId} className="relative flex gap-3 pb-4 last:pb-0">
-          {/* Timeline dot */}
-          <div className="relative z-10 mt-1.5">
-            <div className="w-2.5 h-2.5 rounded-full border-2 border-[var(--color-border-default)] bg-[var(--color-bg-primary)]" />
-          </div>
+        const itemStyle: CSSProperties = {
+          display: "flex",
+          gap: "var(--space-3)",
+          padding: "0 var(--space-4)",
+          minHeight: "48px",
+        };
 
-          {/* Content */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[13px] font-medium text-[var(--color-text-primary)]">
-                {subTaskTypeLabels[subTask.type]}
-              </span>
-              <StatusBadge status={subTask.status} variant="sub" />
+        const lineContainerStyle: CSSProperties = {
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          width: "20px",
+          flexShrink: 0,
+        };
+
+        const dotStyle: CSSProperties = {
+          width: "20px",
+          height: "20px",
+          borderRadius: "50%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "11px",
+          fontWeight: 700,
+          color,
+          backgroundColor: "var(--color-bg-primary)",
+          border: `2px solid ${color}`,
+          flexShrink: 0,
+        };
+
+        const lineStyle: CSSProperties = {
+          flex: 1,
+          width: "2px",
+          backgroundColor: isLast ? "transparent" : "var(--color-border)",
+          margin: "2px 0",
+        };
+
+        const contentStyle: CSSProperties = {
+          flex: 1,
+          paddingBottom: "var(--space-4)",
+        };
+
+        return (
+          <div key={subtask.subTaskId} style={itemStyle}>
+            <div style={lineContainerStyle}>
+              <div style={dotStyle}>{getSubtaskStatusIcon(subtask.status)}</div>
+              <div style={lineStyle} />
             </div>
-
-            <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-tertiary)]">
-              <span>{subTask.subTaskId}</span>
-              <span>{formatRelativeTime(subTask.createdAt)}</span>
-            </div>
-
-            {/* Plan decision controls for waiting approval */}
-            {subTask.status === SubTaskStatus.WAITING_FOR_PLAN_APPROVAL && (
-              <div className="mt-3">
-                <PlanDecisionControls subTaskId={subTask.subTaskId} />
+            <div style={contentStyle}>
+              <div
+                style={{
+                  fontSize: "var(--font-size-base)",
+                  fontWeight: 500,
+                  color: "var(--color-text-primary)",
+                }}
+              >
+                {SUB_TASK_TYPE_LABELS[subtask.type]}
               </div>
-            )}
+              <div
+                style={{
+                  fontSize: "var(--font-size-xs)",
+                  color: "var(--color-text-tertiary)",
+                  marginTop: "2px",
+                }}
+              >
+                {subtask.status.replace(/_/g, " ").toLowerCase()}
+              </div>
+              {subtask.planSummary && (
+                <div
+                  style={{
+                    fontSize: "var(--font-size-sm)",
+                    color: "var(--color-text-secondary)",
+                    marginTop: "var(--space-1)",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {subtask.planSummary}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

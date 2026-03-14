@@ -1,104 +1,129 @@
-import { useEffect } from "react";
-import { useLocation, useNavigate } from "react-router";
-import {
-  CheckSquare,
-  Inbox,
-  Settings,
-  ChevronDown,
-  PanelLeftClose,
-  PanelLeft,
-} from "lucide-react";
-import { cn } from "../lib/cn";
+/**
+ * Sidebar navigation component with Linear-style layout.
+ */
+
+import type { CSSProperties } from "react";
 import { useAppStore } from "../stores/app-store";
 
-interface NavItem {
-  id: string;
-  label: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  path: string;
+interface SidebarProps {
+  activePath: string;
+  onNavigate: (path: string) => void;
 }
 
-const navItems: NavItem[] = [
-  { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/tasks" },
-  { id: "inbox", label: "Inbox", icon: Inbox, path: "/inbox" },
-  { id: "settings", label: "Settings", icon: Settings, path: "/settings" },
+const NAV_ITEMS = [
+  { path: "/inbox", label: "Inbox", icon: "\u{1F4E5}" },
+  { path: "/tasks", label: "Tasks", icon: "\u{1F4CB}" },
+  { path: "/settings", label: "Settings", icon: "\u2699\uFE0F" },
 ];
 
-export function Sidebar() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { sidebarCollapsed, toggleSidebar } = useAppStore();
+export function Sidebar({ activePath, onNavigate }: SidebarProps) {
+  const { sidebarOpen, connectionStatus } = useAppStore();
 
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
-        e.preventDefault();
-        toggleSidebar();
-      }
-    }
+  if (!sidebarOpen) {
+    return null;
+  }
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleSidebar]);
+  const containerStyle: CSSProperties = {
+    width: "var(--sidebar-width)",
+    minWidth: "var(--sidebar-width)",
+    height: "100%",
+    backgroundColor: "var(--color-bg-sidebar)",
+    borderRight: "1px solid var(--color-border)",
+    display: "flex",
+    flexDirection: "column",
+    userSelect: "none",
+  };
+
+  const headerStyle: CSSProperties = {
+    padding: "var(--space-4) var(--space-4) var(--space-3)",
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--space-2)",
+    fontSize: "var(--font-size-md)",
+    fontWeight: 600,
+    color: "var(--color-text-primary)",
+  };
+
+  const connectionDotStyle: CSSProperties = {
+    width: "8px",
+    height: "8px",
+    borderRadius: "50%",
+    backgroundColor:
+      connectionStatus === "connected"
+        ? "var(--color-connected)"
+        : connectionStatus === "reconnecting"
+          ? "var(--color-reconnecting)"
+          : "var(--color-disconnected)",
+    flexShrink: 0,
+  };
+
+  const navStyle: CSSProperties = {
+    padding: "0 var(--space-2)",
+    display: "flex",
+    flexDirection: "column",
+    gap: "1px",
+    flex: 1,
+  };
 
   return (
-    <aside
-      className={cn(
-        "flex flex-col border-r border-[var(--color-border-default)] bg-[var(--color-bg-sidebar)] transition-all duration-200",
-        sidebarCollapsed ? "w-12" : "w-60",
-      )}
-    >
-      {/* Workspace header */}
-      <div
-        className={cn(
-          "flex items-center border-b border-[var(--color-border-default)] px-3 h-12",
-          sidebarCollapsed ? "justify-center" : "justify-between",
-        )}
-      >
-        {!sidebarCollapsed && (
-          <button
-            className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--color-text-primary)] hover:text-[var(--color-text-accent)] transition-colors"
-            type="button"
-          >
-            <span className="truncate">DexDex</span>
-            <ChevronDown size={14} className="text-[var(--color-text-tertiary)]" />
-          </button>
-        )}
-        <button
-          onClick={toggleSidebar}
-          className="flex items-center justify-center w-7 h-7 rounded text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
-          title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-          type="button"
-        >
-          {sidebarCollapsed ? <PanelLeft size={16} /> : <PanelLeftClose size={16} />}
-        </button>
+    <nav style={containerStyle} data-testid="sidebar" aria-label="Main navigation">
+      <div style={headerStyle}>
+        <span
+          style={connectionDotStyle}
+          title={`Connection: ${connectionStatus}`}
+          data-testid="connection-dot"
+        />
+        <span>DexDex</span>
       </div>
+      <div style={navStyle}>
+        {NAV_ITEMS.map((item) => {
+          const isActive = activePath.startsWith(item.path);
+          const itemStyle: CSSProperties = {
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--space-2)",
+            padding: "var(--space-2) var(--space-3)",
+            borderRadius: "var(--radius-md)",
+            fontSize: "var(--font-size-base)",
+            color: isActive ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+            backgroundColor: isActive ? "var(--color-bg-active)" : "transparent",
+            cursor: "pointer",
+            transition: "background-color 0.1s",
+          };
 
-      {/* Navigation */}
-      <nav className="flex-1 py-2 px-1.5">
-        {navItems.map((item) => {
-          const isActive = location.pathname.startsWith(item.path);
-          const Icon = item.icon;
           return (
             <button
-              key={item.id}
-              onClick={() => navigate(item.path)}
-              className={cn(
-                "flex items-center w-full gap-2.5 px-2.5 py-1.5 text-[13px] rounded transition-colors",
-                isActive
-                  ? "bg-[var(--color-bg-active)] text-[var(--color-text-accent)] font-medium border-l-2 border-[var(--color-border-accent)]"
-                  : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]",
-                sidebarCollapsed && "justify-center px-0",
-              )}
-              title={sidebarCollapsed ? item.label : undefined}
-              type="button"
+              key={item.path}
+              style={itemStyle}
+              onClick={() => onNavigate(item.path)}
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = "var(--color-bg-hover)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+                }
+              }}
+              data-testid={`nav-${item.path.slice(1)}`}
             >
-              <Icon size={16} />
-              {!sidebarCollapsed && <span>{item.label}</span>}
+              <span style={{ fontSize: "var(--font-size-md)" }}>{item.icon}</span>
+              {item.label}
             </button>
           );
         })}
-      </nav>
-    </aside>
+      </div>
+      <div
+        style={{
+          padding: "var(--space-3) var(--space-4)",
+          fontSize: "var(--font-size-xs)",
+          color: "var(--color-text-tertiary)",
+          borderTop: "1px solid var(--color-border)",
+        }}
+      >
+        DexDex v0.1.0
+      </div>
+    </nav>
   );
 }

@@ -1,69 +1,37 @@
-import { cn } from "../lib/cn";
-import {
-  type UnitTaskStatus,
-  type SubTaskStatus,
-  unitTaskStatusConfig,
-  subTaskStatusConfig,
-} from "../lib/status";
+/**
+ * Status badge component for displaying task and subtask status.
+ */
+
+import type { CSSProperties } from "react";
+import { UnitTaskStatus, UNIT_TASK_STATUS_CONFIG } from "../lib/status";
 
 interface StatusBadgeProps {
-  status: UnitTaskStatus | SubTaskStatus;
-  variant?: "unit" | "sub";
-  className?: string;
+  status: UnitTaskStatus;
+  size?: "sm" | "md";
 }
 
-export function StatusBadge({
-  status,
-  variant = "unit",
-  className,
-}: StatusBadgeProps) {
-  const config =
-    variant === "unit"
-      ? unitTaskStatusConfig[status as UnitTaskStatus]
-      : subTaskStatusConfig[status as SubTaskStatus];
+export function StatusBadge({ status, size = "md" }: StatusBadgeProps) {
+  const config = UNIT_TASK_STATUS_CONFIG[status];
+  const fontSize = size === "sm" ? "var(--font-size-xs)" : "var(--font-size-sm)";
+  const padding = size === "sm" ? "1px 6px" : "2px 8px";
 
-  if (!config) {
-    return null;
-  }
+  const style: CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "4px",
+    fontSize,
+    fontWeight: 500,
+    padding,
+    borderRadius: "var(--radius-full)",
+    color: config.color,
+    backgroundColor: config.bgColor,
+    whiteSpace: "nowrap",
+  };
 
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 text-[11px] font-medium px-1.5 py-0.5 rounded-sm",
-        config.bgClass,
-        className,
-      )}
-    >
-      <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", config.dotClass)} />
+    <span style={style} data-testid="status-badge">
+      <span style={{ fontSize: "10px" }}>{config.icon}</span>
       {config.label}
     </span>
-  );
-}
-
-interface StatusDotProps {
-  status: UnitTaskStatus | SubTaskStatus;
-  variant?: "unit" | "sub";
-  className?: string;
-}
-
-export function StatusDot({
-  status,
-  variant = "unit",
-  className,
-}: StatusDotProps) {
-  const config =
-    variant === "unit"
-      ? unitTaskStatusConfig[status as UnitTaskStatus]
-      : subTaskStatusConfig[status as SubTaskStatus];
-
-  if (!config) {
-    return null;
-  }
-
-  return (
-    <span
-      className={cn("w-2 h-2 rounded-full shrink-0", config.dotClass, className)}
-      title={config.label}
-    />
   );
 }

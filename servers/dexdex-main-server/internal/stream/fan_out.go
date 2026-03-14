@@ -104,7 +104,7 @@ func (f *FanOut) Publish(workspaceID string, eventType dexdexv1.StreamEventType,
 // Subscribe returns a channel that receives events for the given workspace and
 // an unsubscribe function. The caller must call the unsubscribe function when done.
 func (f *FanOut) Subscribe(workspaceID string) (<-chan *dexdexv1.StreamWorkspaceEventsResponse, func()) {
-	ch := make(chan *dexdexv1.StreamWorkspaceEventsResponse, 64)
+	ch := make(chan *dexdexv1.StreamWorkspaceEventsResponse, 256)
 
 	f.mu.Lock()
 	f.nextSubID++

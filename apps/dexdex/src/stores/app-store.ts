@@ -1,75 +1,74 @@
-import { create } from "zustand";
+/**
+ * Application state store using React context pattern.
+ * Provides theme management, sidebar state, and workspace state.
+ */
 
-export interface OpenTab {
-  id: string;
-  title: string;
-  path: string;
+import { createContext, useContext } from "react";
+
+export type Theme = "light" | "dark";
+
+export interface AppState {
+  theme: Theme;
+  sidebarOpen: boolean;
+  activeWorkspaceId: string;
+  connectionStatus: "connected" | "disconnected" | "reconnecting";
 }
 
-interface AppState {
-  // Sidebar
-  sidebarCollapsed: boolean;
-  toggleSidebar: () => void;
-  setSidebarCollapsed: (collapsed: boolean) => void;
-
-  // Tabs
-  openTabs: OpenTab[];
-  activeTabId: string | null;
-  openTab: (tab: OpenTab) => void;
-  closeTab: (id: string) => void;
-  setActiveTab: (id: string) => void;
-
-  // Theme
-  theme: "light" | "dark";
+export interface AppActions {
   toggleTheme: () => void;
-
-  // Workspace
-  workspaceId: string;
-  setWorkspaceId: (id: string) => void;
+  setTheme: (theme: Theme) => void;
+  toggleSidebar: () => void;
+  setSidebarOpen: (open: boolean) => void;
+  setConnectionStatus: (status: AppState["connectionStatus"]) => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
-  // Sidebar
-  sidebarCollapsed: false,
-  toggleSidebar: () =>
-    set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+export type AppStore = AppState & AppActions;
 
-  // Tabs
-  openTabs: [],
-  activeTabId: null,
-  openTab: (tab) =>
-    set((state) => {
-      const exists = state.openTabs.find((t) => t.id === tab.id);
-      if (exists) {
-        return { activeTabId: tab.id };
-      }
-      return {
-        openTabs: [...state.openTabs, tab],
-        activeTabId: tab.id,
-      };
-    }),
-  closeTab: (id) =>
-    set((state) => {
-      const filtered = state.openTabs.filter((t) => t.id !== id);
-      const newActiveId =
-        state.activeTabId === id
-          ? filtered.length > 0
-            ? filtered[filtered.length - 1].id
-            : null
-          : state.activeTabId;
-      return { openTabs: filtered, activeTabId: newActiveId };
-    }),
-  setActiveTab: (id) => set({ activeTabId: id }),
+export const AppStoreContext = createContext<AppStore | null>(null);
 
-  // Theme
-  theme: "light",
-  toggleTheme: () =>
-    set((state) => ({
-      theme: state.theme === "light" ? "dark" : "light",
-    })),
+export function useAppStore(): AppStore {
+  const store = useContext(AppStoreContext);
+  if (!store) {
+    throw new Error("useAppStore must be used within AppStoreProvider");
+  }
+  return store;
+}
 
-  // Workspace
-  workspaceId: "default",
-  setWorkspaceId: (id) => set({ workspaceId: id }),
-}));
+/**
+ * Get persisted theme or default to light.
+ */
+export function getPersistedTheme(): Theme {
+  try {
+    const stored = localStorage.getItem("dexdex-theme");
+    if (stored === "dark" || stored === "light") {
+      return stored;
+    }
+  } catch {
+    // localStorage not available
+  }
+  return "light";
+}
+
+/**
+ * Persist theme to localStorage.
+ */
+export function persistTheme(theme: Theme): void {
+  try {
+    localStorage.setItem("dexdex-theme", theme);
+  } catch {
+    // localStorage not available
+  }
+}
+
+/**
+ * Apply theme class to document root.
+ */
+export function applyThemeToDocument(theme: Theme): void {
+  if (typeof document !== "undefined") {
+    if (theme === "dark") {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }
+}

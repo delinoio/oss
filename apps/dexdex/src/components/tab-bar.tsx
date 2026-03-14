@@ -1,64 +1,97 @@
-import { useNavigate } from "react-router";
-import { X } from "lucide-react";
-import { cn } from "../lib/cn";
-import { useAppStore } from "../stores/app-store";
+/**
+ * Tab bar component for navigation between open items.
+ */
 
-export function TabBar() {
-  const navigate = useNavigate();
-  const { openTabs, activeTabId, setActiveTab, closeTab } = useAppStore();
+import type { CSSProperties } from "react";
 
-  if (openTabs.length === 0) {
-    return null;
-  }
+interface Tab {
+  id: string;
+  label: string;
+  path: string;
+}
 
-  function handleTabClick(id: string, path: string) {
-    setActiveTab(id);
-    navigate(path);
-  }
+interface TabBarProps {
+  tabs: Tab[];
+  activeTabId: string;
+  onTabClick: (tab: Tab) => void;
+  onTabClose: (tab: Tab) => void;
+}
 
-  function handleClose(e: React.MouseEvent, id: string) {
-    e.stopPropagation();
-    closeTab(id);
-  }
+export function TabBar({ tabs, activeTabId, onTabClick, onTabClose }: TabBarProps) {
+  const containerStyle: CSSProperties = {
+    height: "var(--tab-bar-height)",
+    minHeight: "var(--tab-bar-height)",
+    display: "flex",
+    alignItems: "stretch",
+    backgroundColor: "var(--color-bg-secondary)",
+    borderBottom: "1px solid var(--color-border)",
+    overflow: "hidden",
+  };
 
-  function handleAuxClick(e: React.MouseEvent, id: string) {
-    // Middle mouse button
-    if (e.button === 1) {
-      e.preventDefault();
-      closeTab(id);
-    }
+  if (tabs.length === 0) {
+    return <div style={containerStyle} data-testid="tab-bar" />;
   }
 
   return (
-    <div className="flex items-center border-b border-[var(--color-border-default)] bg-[var(--color-bg-primary)] h-9 overflow-x-auto">
-      {openTabs.map((tab) => {
+    <div style={containerStyle} data-testid="tab-bar" role="tablist">
+      {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
+        const tabStyle: CSSProperties = {
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--space-2)",
+          padding: "0 var(--space-3)",
+          fontSize: "var(--font-size-sm)",
+          color: isActive ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+          backgroundColor: isActive ? "var(--color-bg-primary)" : "transparent",
+          borderRight: "1px solid var(--color-border)",
+          borderBottom: isActive ? "2px solid var(--color-accent)" : "2px solid transparent",
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+          maxWidth: "200px",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        };
+
+        const closeStyle: CSSProperties = {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: "16px",
+          height: "16px",
+          borderRadius: "var(--radius-sm)",
+          fontSize: "10px",
+          color: "var(--color-text-tertiary)",
+          flexShrink: 0,
+        };
+
         return (
-          <button
+          <div
             key={tab.id}
-            onClick={() => handleTabClick(tab.id, tab.path)}
-            onAuxClick={(e) => handleAuxClick(e, tab.id)}
-            className={cn(
-              "flex items-center gap-1.5 px-3 h-full text-[12px] border-r border-[var(--color-border-default)] whitespace-nowrap transition-colors group",
-              isActive
-                ? "text-[var(--color-text-primary)] border-b-2 border-b-[var(--color-border-accent)]"
-                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]",
-            )}
-            type="button"
+            style={tabStyle}
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onTabClick(tab)}
           >
-            <span className="truncate max-w-[160px]">{tab.title}</span>
             <span
-              role="button"
-              tabIndex={-1}
-              onClick={(e) => handleClose(e, tab.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleClose(e as unknown as React.MouseEvent, tab.id);
+              style={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
-              className="flex items-center justify-center w-4 h-4 rounded opacity-0 group-hover:opacity-100 hover:bg-[var(--color-bg-hover)] transition-opacity"
             >
-              <X size={12} />
+              {tab.label}
             </span>
-          </button>
+            <button
+              style={closeStyle}
+              onClick={(e) => {
+                e.stopPropagation();
+                onTabClose(tab);
+              }}
+              aria-label={`Close ${tab.label}`}
+            >
+              \u2715
+            </button>
+          </div>
         );
       })}
     </div>
