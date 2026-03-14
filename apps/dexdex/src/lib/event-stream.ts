@@ -27,6 +27,8 @@ export type StreamEventPayload =
   | { kind: "sessionStateChanged"; sessionId: string; status: string }
   | { kind: "prUpdated"; prTrackingId: string; status: string }
   | { kind: "notificationCreated"; notificationId: string; type: string }
+  | { kind: "sessionForkUpdated"; sessionId: string; forkStatus: string }
+  | { kind: "workspaceWorkStatusUpdated"; workspaceId: string; status: string }
   | { kind: "unknown" };
 
 export type EventStreamStatus = "connected" | "disconnected" | "reconnecting";
@@ -46,6 +48,8 @@ const STREAM_EVENT_TYPE_MAP: Record<number, StreamEventType> = {
   [ProtoStreamEventType.REVIEW_ASSIST_UPDATED]: StreamEventType.REVIEW_ASSIST_UPDATED,
   [ProtoStreamEventType.INLINE_COMMENT_UPDATED]: StreamEventType.INLINE_COMMENT_UPDATED,
   [ProtoStreamEventType.NOTIFICATION_CREATED]: StreamEventType.NOTIFICATION_CREATED,
+  [ProtoStreamEventType.SESSION_FORK_UPDATED]: StreamEventType.SESSION_FORK_UPDATED,
+  [ProtoStreamEventType.WORKSPACE_WORK_STATUS_UPDATED]: StreamEventType.WORKSPACE_WORK_STATUS_UPDATED,
 };
 
 /**
@@ -198,6 +202,18 @@ export class EventStreamClient {
         kind: "notificationCreated",
         notificationId: response.payload.value.notification.notificationId,
         type: String(response.payload.value.notification.type),
+      };
+    } else if (response.payload.case === "sessionForkUpdated" && response.payload.value?.sessionSummary) {
+      payload = {
+        kind: "sessionForkUpdated",
+        sessionId: response.payload.value.sessionSummary.sessionId,
+        forkStatus: String(response.payload.value.sessionSummary.forkStatus),
+      };
+    } else if (response.payload.case === "workspaceWorkStatusUpdated" && response.payload.value) {
+      payload = {
+        kind: "workspaceWorkStatusUpdated",
+        workspaceId: response.payload.value.workspaceId,
+        status: String(response.payload.value.status),
       };
     }
 

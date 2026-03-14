@@ -80,9 +80,12 @@
 - Implemented-vs-planned alignment:
 - current runtime implementation includes full Linear-style task management UI with Connect RPC server integration via React Query + @connectrpc/connect-query
 - proto-to-view adapter layer converts proto types to view-model types
-- event stream uses real Connect streaming RPC with query cache invalidation
-- task CRUD, plan decisions, notifications, and session output are wired to the main server
-- menu bar tray, global shortcut (Cmd+Shift+I), session fork UI, and credential bridge/import remain planned scope
+- event stream uses real Connect streaming RPC with query cache invalidation, including SESSION_FORK_UPDATED and WORKSPACE_WORK_STATUS_UPDATED event handling
+- task CRUD, plan decisions, notifications (with server-side MarkNotificationRead), and session output are wired to the main server
+- new enums `SessionForkStatus`, `SessionForkIntent`, `WorkspaceWorkStatus`, `AgentCliType` are available in the TypeScript layer
+- 8 new React Query hooks are implemented for all new RPCs (ListSessionCapabilities, ForkSession, ListForkedSessions, ArchiveForkedSession, GetLatestWaitingSession, SubmitSessionInput, GetWorkspaceWorkStatus, MarkNotificationRead)
+- `SessionForkPanel` and `SessionInputForm` components are implemented
+- menu bar tray with work status icon (Tauri-side), global shortcut Cmd/Ctrl+Shift+I (Tauri-side), PR management UI, review assist UI, repository group selector UI, and credential bridge/import remain planned scope
 
 ## Storage
 - Client-local persisted state includes active workspace pointer, workspace-scoped tab metadata, and user UI preferences (appearance, notification preference, shortcut discoverability).

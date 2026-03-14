@@ -583,7 +583,7 @@ func TestTaskHandler_SubmitPlanDecision_InvalidStatus(t *testing.T) {
 func TestNotificationHandler_ListNotifications(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewNotificationHandler(s, logger)
+	h := NewNotificationHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewNotificationServiceHandler(h)
@@ -608,7 +608,7 @@ func TestNotificationHandler_ListNotifications(t *testing.T) {
 func TestNotificationHandler_ListNotifications_Empty(t *testing.T) {
 	s := store.NewMemoryStore()
 	logger := testLogger()
-	h := NewNotificationHandler(s, logger)
+	h := NewNotificationHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewNotificationServiceHandler(h)
@@ -633,7 +633,7 @@ func TestNotificationHandler_ListNotifications_Empty(t *testing.T) {
 func TestSessionHandler_GetSessionOutput(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewSessionHandler(s, logger)
+	h := NewSessionHandler(s, nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
@@ -663,7 +663,7 @@ func TestSessionHandler_GetSessionOutput(t *testing.T) {
 func TestSessionHandler_GetSessionOutput_Empty(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewSessionHandler(s, logger)
+	h := NewSessionHandler(s, nil, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
@@ -683,5 +683,332 @@ func TestSessionHandler_GetSessionOutput_Empty(t *testing.T) {
 	}
 	if len(resp.Msg.Events) != 0 {
 		t.Fatalf("expected 0 events for nonexistent session, got %d", len(resp.Msg.Events))
+	}
+}
+
+// mockWorkerClient implements WorkerClientInterface for testing.
+type mockWorkerClient struct {
+	capabilities []*dexdexv1.AgentCapability
+	capError     error
+	forkResult   string
+	forkError    error
+}
+
+func (m *mockWorkerClient) GetAgentCapabilities(_ context.Context) ([]*dexdexv1.AgentCapability, error) {
+	return m.capabilities, m.capError
+}
+
+func (m *mockWorkerClient) ForkSession(_ context.Context, _ string, _ dexdexv1.SessionForkIntent, _ string) (string, error) {
+	return m.forkResult, m.forkError
+}
+
+func newMockWorkerClient() *mockWorkerClient {
+	return &mockWorkerClient{
+		capabilities: []*dexdexv1.AgentCapability{
+			{
+				AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+				SupportsFork: true,
+				DisplayName:  "Claude Code",
+			},
+		},
+		forkResult: "forked-sess-1",
+	}
+}
+
+func TestSessionHandler_ListSessionCapabilities(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	mock := newMockWorkerClient()
+	h := NewSessionHandler(s, mock, testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewSessionServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.ListSessionCapabilities(context.Background(), connect.NewRequest(&dexdexv1.ListSessionCapabilitiesRequest{
+		WorkspaceId: "ws-default",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(resp.Msg.Capabilities) != 1 {
+		t.Fatalf("expected 1 capability, got %d", len(resp.Msg.Capabilities))
+	}
+	if resp.Msg.Capabilities[0].AgentCliType != dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE {
+		t.Fatalf("expected CLAUDE_CODE, got %s", resp.Msg.Capabilities[0].AgentCliType.String())
+	}
+	if !resp.Msg.Capabilities[0].SupportsFork {
+		t.Fatal("expected supports_fork to be true")
+	}
+}
+
+func TestSessionHandler_ForkSession_Success(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.AddWorkspace(&dexdexv1.Workspace{WorkspaceId: "ws-1"})
+	s.AddSessionSummary("ws-1", &dexdexv1.SessionSummary{
+		SessionId:          "parent-sess",
+		AgentSessionStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+	})
+
+	logger := testLogger()
+	mock := newMockWorkerClient()
+	mock.forkResult = "forked-sess-1"
+	h := NewSessionHandler(s, mock, testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewSessionServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.ForkSession(context.Background(), connect.NewRequest(&dexdexv1.ForkSessionRequest{
+		WorkspaceId:     "ws-1",
+		ParentSessionId: "parent-sess",
+		ForkIntent:      dexdexv1.SessionForkIntent_SESSION_FORK_INTENT_EXPLORE_ALTERNATIVE,
+		Prompt:          "try a different approach",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if resp.Msg.ForkedSession.SessionId != "forked-sess-1" {
+		t.Fatalf("expected forked-sess-1, got %s", resp.Msg.ForkedSession.SessionId)
+	}
+	if resp.Msg.ForkedSession.ParentSessionId != "parent-sess" {
+		t.Fatalf("expected parent-sess, got %s", resp.Msg.ForkedSession.ParentSessionId)
+	}
+	if resp.Msg.ForkedSession.RootSessionId != "parent-sess" {
+		t.Fatalf("expected root parent-sess, got %s", resp.Msg.ForkedSession.RootSessionId)
+	}
+	if resp.Msg.ForkedSession.ForkStatus != dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE {
+		t.Fatalf("expected ACTIVE, got %s", resp.Msg.ForkedSession.ForkStatus.String())
+	}
+	if resp.Msg.ForkedSession.AgentSessionStatus != dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_STARTING {
+		t.Fatalf("expected STARTING, got %s", resp.Msg.ForkedSession.AgentSessionStatus.String())
+	}
+	if resp.Msg.ForkedSession.CreatedAt == nil {
+		t.Fatal("expected created_at to be set")
+	}
+}
+
+func TestSessionHandler_ForkSession_ParentNotFound(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.AddWorkspace(&dexdexv1.Workspace{WorkspaceId: "ws-1"})
+
+	logger := testLogger()
+	mock := newMockWorkerClient()
+	h := NewSessionHandler(s, mock, testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewSessionServiceClient(http.DefaultClient, server.URL)
+
+	_, err := client.ForkSession(context.Background(), connect.NewRequest(&dexdexv1.ForkSessionRequest{
+		WorkspaceId:     "ws-1",
+		ParentSessionId: "nonexistent",
+		ForkIntent:      dexdexv1.SessionForkIntent_SESSION_FORK_INTENT_EXPLORE_ALTERNATIVE,
+		Prompt:          "test",
+	}))
+	if err == nil {
+		t.Fatal("expected error for nonexistent parent session")
+	}
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("expected NotFound error code, got %v", connect.CodeOf(err))
+	}
+}
+
+func TestSessionHandler_ListForkedSessions(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.AddWorkspace(&dexdexv1.Workspace{WorkspaceId: "ws-1"})
+	s.AddSessionSummary("ws-1", &dexdexv1.SessionSummary{
+		SessionId:       "parent-sess",
+		ParentSessionId: "",
+	})
+	s.AddSessionSummary("ws-1", &dexdexv1.SessionSummary{
+		SessionId:       "fork-1",
+		ParentSessionId: "parent-sess",
+		RootSessionId:   "parent-sess",
+		ForkStatus:      dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE,
+	})
+	s.AddSessionSummary("ws-1", &dexdexv1.SessionSummary{
+		SessionId:       "fork-2",
+		ParentSessionId: "parent-sess",
+		RootSessionId:   "parent-sess",
+		ForkStatus:      dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE,
+	})
+
+	logger := testLogger()
+	h := NewSessionHandler(s, newMockWorkerClient(), testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewSessionServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.ListForkedSessions(context.Background(), connect.NewRequest(&dexdexv1.ListForkedSessionsRequest{
+		WorkspaceId:     "ws-1",
+		ParentSessionId: "parent-sess",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(resp.Msg.Sessions) != 2 {
+		t.Fatalf("expected 2 forked sessions, got %d", len(resp.Msg.Sessions))
+	}
+}
+
+func TestSessionHandler_ArchiveForkedSession(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.AddWorkspace(&dexdexv1.Workspace{WorkspaceId: "ws-1"})
+	s.AddSessionSummary("ws-1", &dexdexv1.SessionSummary{
+		SessionId:       "fork-1",
+		ParentSessionId: "parent-sess",
+		ForkStatus:      dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE,
+	})
+
+	logger := testLogger()
+	h := NewSessionHandler(s, newMockWorkerClient(), testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewSessionServiceClient(http.DefaultClient, server.URL)
+
+	_, err := client.ArchiveForkedSession(context.Background(), connect.NewRequest(&dexdexv1.ArchiveForkedSessionRequest{
+		WorkspaceId: "ws-1",
+		SessionId:   "fork-1",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Verify session is archived in store.
+	summary, err := s.GetSessionSummary("ws-1", "fork-1")
+	if err != nil {
+		t.Fatalf("expected session to exist, got %v", err)
+	}
+	if summary.ForkStatus != dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ARCHIVED {
+		t.Fatalf("expected ARCHIVED, got %s", summary.ForkStatus.String())
+	}
+}
+
+func TestSessionHandler_GetLatestWaitingSession_Found(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.AddWorkspace(&dexdexv1.Workspace{WorkspaceId: "ws-1"})
+	s.AddSessionSummary("ws-1", &dexdexv1.SessionSummary{
+		SessionId:          "sess-waiting",
+		AgentSessionStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_WAITING_FOR_INPUT,
+	})
+
+	logger := testLogger()
+	h := NewSessionHandler(s, newMockWorkerClient(), testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewSessionServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.GetLatestWaitingSession(context.Background(), connect.NewRequest(&dexdexv1.GetLatestWaitingSessionRequest{
+		WorkspaceId: "ws-1",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if resp.Msg.Session == nil {
+		t.Fatal("expected session to be returned")
+	}
+	if resp.Msg.Session.SessionId != "sess-waiting" {
+		t.Fatalf("expected sess-waiting, got %s", resp.Msg.Session.SessionId)
+	}
+}
+
+func TestSessionHandler_GetLatestWaitingSession_None(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.AddWorkspace(&dexdexv1.Workspace{WorkspaceId: "ws-1"})
+	// No waiting sessions.
+
+	logger := testLogger()
+	h := NewSessionHandler(s, newMockWorkerClient(), testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewSessionServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.GetLatestWaitingSession(context.Background(), connect.NewRequest(&dexdexv1.GetLatestWaitingSessionRequest{
+		WorkspaceId: "ws-1",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error (should return empty, not error), got %v", err)
+	}
+	if resp.Msg.Session != nil {
+		t.Fatalf("expected nil session, got %v", resp.Msg.Session)
+	}
+}
+
+func TestSessionHandler_SubmitSessionInput(t *testing.T) {
+	s := store.NewMemoryStore()
+	s.AddWorkspace(&dexdexv1.Workspace{WorkspaceId: "ws-1"})
+	s.AddSessionSummary("ws-1", &dexdexv1.SessionSummary{
+		SessionId:          "sess-waiting",
+		AgentSessionStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_WAITING_FOR_INPUT,
+	})
+
+	logger := testLogger()
+	h := NewSessionHandler(s, newMockWorkerClient(), testFanOut(), logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewSessionServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewSessionServiceClient(http.DefaultClient, server.URL)
+
+	_, err := client.SubmitSessionInput(context.Background(), connect.NewRequest(&dexdexv1.SubmitSessionInputRequest{
+		WorkspaceId: "ws-1",
+		SessionId:   "sess-waiting",
+		InputText:   "user input here",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Verify session status updated to RUNNING.
+	summary, err := s.GetSessionSummary("ws-1", "sess-waiting")
+	if err != nil {
+		t.Fatalf("expected session to exist, got %v", err)
+	}
+	if summary.AgentSessionStatus != dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING {
+		t.Fatalf("expected RUNNING, got %s", summary.AgentSessionStatus.String())
 	}
 }

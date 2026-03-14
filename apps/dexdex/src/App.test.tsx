@@ -12,6 +12,7 @@ import {
   NotificationService,
   SessionService,
   EventStreamService,
+  WorkspaceService,
   UnitTaskSchema,
   SubTaskSchema,
   SessionOutputEventSchema,
@@ -186,9 +187,21 @@ function createTestTransport() {
     });
     router.service(NotificationService, {
       listNotifications: () => ({ notifications: mockNotifications }),
+      markNotificationRead: () => ({ notification: undefined }),
     });
     router.service(SessionService, {
       getSessionOutput: () => ({ events: mockSessionOutput }),
+      listSessionCapabilities: () => ({ capabilities: [] }),
+      forkSession: () => ({ forkedSession: undefined }),
+      listForkedSessions: () => ({ sessions: [] }),
+      archiveForkedSession: () => ({}),
+      getLatestWaitingSession: () => ({ session: undefined }),
+      submitSessionInput: () => ({}),
+    });
+    router.service(WorkspaceService, {
+      getWorkspace: () => ({ workspace: undefined }),
+      listWorkspaces: () => ({ workspaces: [] }),
+      getWorkspaceWorkStatus: () => ({ status: 0 }),
     });
     // EventStreamService is server-streaming; provide a no-op stub
     router.service(EventStreamService, {

@@ -56,3 +56,18 @@ func (h *WorkspaceHandler) ListWorkspaces(
 		Workspaces: workspaces,
 	}), nil
 }
+
+// GetWorkspaceWorkStatus returns the aggregated work status for a workspace.
+func (h *WorkspaceHandler) GetWorkspaceWorkStatus(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.GetWorkspaceWorkStatusRequest],
+) (*connect.Response[dexdexv1.GetWorkspaceWorkStatusResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	h.logger.Info("GetWorkspaceWorkStatus called", "workspace_id", workspaceID)
+
+	status := h.store.GetWorkspaceWorkStatus(workspaceID)
+
+	return connect.NewResponse(&dexdexv1.GetWorkspaceWorkStatusResponse{
+		Status: status,
+	}), nil
+}

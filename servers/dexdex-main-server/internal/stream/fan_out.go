@@ -260,3 +260,21 @@ type NotificationCreatedPayload struct {
 func (p *NotificationCreatedPayload) setPayload(resp *dexdexv1.StreamWorkspaceEventsResponse) {
 	resp.Payload = &dexdexv1.StreamWorkspaceEventsResponse_NotificationCreated{NotificationCreated: p.NotificationCreated}
 }
+
+// SessionForkUpdatedPayload wraps a SessionForkUpdatedEvent for publishing.
+type SessionForkUpdatedPayload struct {
+	SessionForkUpdated *dexdexv1.SessionForkUpdatedEvent
+}
+
+func (p *SessionForkUpdatedPayload) setPayload(resp *dexdexv1.StreamWorkspaceEventsResponse) {
+	resp.Payload = &dexdexv1.StreamWorkspaceEventsResponse_SessionForkUpdated{SessionForkUpdated: p.SessionForkUpdated}
+}
+
+// WorkspaceWorkStatusUpdatedPayload wraps a WorkspaceWorkStatusUpdatedEvent for publishing.
+type WorkspaceWorkStatusUpdatedPayload struct {
+	WorkspaceWorkStatusUpdated *dexdexv1.WorkspaceWorkStatusUpdatedEvent
+}
+
+func (p *WorkspaceWorkStatusUpdatedPayload) setPayload(resp *dexdexv1.StreamWorkspaceEventsResponse) {
+	resp.Payload = &dexdexv1.StreamWorkspaceEventsResponse_WorkspaceWorkStatusUpdated{WorkspaceWorkStatusUpdated: p.WorkspaceWorkStatusUpdated}
+}

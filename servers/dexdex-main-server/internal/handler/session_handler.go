@@ -8,20 +8,32 @@ import (
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/store"
+	"github.com/delinoio/oss/servers/dexdex-main-server/internal/stream"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// WorkerClientInterface abstracts worker server operations for testing.
+type WorkerClientInterface interface {
+	GetAgentCapabilities(ctx context.Context) ([]*dexdexv1.AgentCapability, error)
+	ForkSession(ctx context.Context, sessionID string, forkIntent dexdexv1.SessionForkIntent, prompt string) (string, error)
+}
 
 // SessionHandler implements the SessionService Connect RPC handler.
 type SessionHandler struct {
 	dexdexv1connect.UnimplementedSessionServiceHandler
-	store  store.Store
-	logger *slog.Logger
+	store        store.Store
+	workerClient WorkerClientInterface
+	fanOut       *stream.FanOut
+	logger       *slog.Logger
 }
 
 // NewSessionHandler creates a new SessionHandler.
-func NewSessionHandler(s store.Store, logger *slog.Logger) *SessionHandler {
+func NewSessionHandler(s store.Store, wc WorkerClientInterface, fo *stream.FanOut, logger *slog.Logger) *SessionHandler {
 	return &SessionHandler{
-		store:  s,
-		logger: logger,
+		store:        s,
+		workerClient: wc,
+		fanOut:       fo,
+		logger:       logger,
 	}
 }
 
@@ -37,4 +49,214 @@ func (h *SessionHandler) GetSessionOutput(
 	return connect.NewResponse(&dexdexv1.GetSessionOutputResponse{
 		Events: events,
 	}), nil
+}
+
+// ListSessionCapabilities returns agent capabilities from the worker server.
+func (h *SessionHandler) ListSessionCapabilities(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ListSessionCapabilitiesRequest],
+) (*connect.Response[dexdexv1.ListSessionCapabilitiesResponse], error) {
+	h.logger.Info("ListSessionCapabilities called", "workspace_id", req.Msg.WorkspaceId)
+
+	caps, err := h.workerClient.GetAgentCapabilities(ctx)
+	if err != nil {
+		h.logger.Error("failed to get agent capabilities", "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&dexdexv1.ListSessionCapabilitiesResponse{
+		Capabilities: caps,
+	}), nil
+}
+
+// ForkSession creates a forked session via the worker server and records it in the store.
+func (h *SessionHandler) ForkSession(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ForkSessionRequest],
+) (*connect.Response[dexdexv1.ForkSessionResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	parentSessionID := req.Msg.ParentSessionId
+	forkIntent := req.Msg.ForkIntent
+	prompt := req.Msg.Prompt
+
+	h.logger.Info("ForkSession called",
+		"workspace_id", workspaceID,
+		"parent_session_id", parentSessionID,
+		"fork_intent", forkIntent.String(),
+	)
+
+	// Validate parent session exists.
+	parentSummary, err := h.store.GetSessionSummary(workspaceID, parentSessionID)
+	if err != nil {
+		h.logger.Warn("parent session not found",
+			"workspace_id", workspaceID,
+			"parent_session_id", parentSessionID,
+			"error", err,
+		)
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	// Call worker to fork the session.
+	forkedSessionID, err := h.workerClient.ForkSession(ctx, parentSessionID, forkIntent, prompt)
+	if err != nil {
+		h.logger.Error("worker ForkSession failed",
+			"parent_session_id", parentSessionID,
+			"error", err,
+		)
+		return nil, err
+	}
+
+	// Compute root session ID: if parent has a root, use that; otherwise parent IS root.
+	rootSessionID := parentSummary.RootSessionId
+	if rootSessionID == "" {
+		rootSessionID = parentSessionID
+	}
+
+	now := timestamppb.Now()
+	summary := &dexdexv1.SessionSummary{
+		SessionId:          forkedSessionID,
+		ParentSessionId:    parentSessionID,
+		RootSessionId:      rootSessionID,
+		ForkStatus:         dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE,
+		AgentSessionStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_STARTING,
+		CreatedAt:          now,
+	}
+
+	h.store.AddSessionSummary(workspaceID, summary)
+
+	// Publish SESSION_FORK_UPDATED stream event.
+	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_FORK_UPDATED, &stream.SessionForkUpdatedPayload{
+		SessionForkUpdated: &dexdexv1.SessionForkUpdatedEvent{
+			SessionSummary: summary,
+		},
+	})
+
+	h.logger.Info("session forked successfully",
+		"forked_session_id", forkedSessionID,
+		"parent_session_id", parentSessionID,
+		"root_session_id", rootSessionID,
+	)
+
+	return connect.NewResponse(&dexdexv1.ForkSessionResponse{
+		ForkedSession: summary,
+	}), nil
+}
+
+// ListForkedSessions returns all forked sessions for a given parent session.
+func (h *SessionHandler) ListForkedSessions(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ListForkedSessionsRequest],
+) (*connect.Response[dexdexv1.ListForkedSessionsResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	parentSessionID := req.Msg.ParentSessionId
+
+	h.logger.Info("ListForkedSessions called",
+		"workspace_id", workspaceID,
+		"parent_session_id", parentSessionID,
+	)
+
+	sessions := h.store.ListForkedSessions(workspaceID, parentSessionID)
+	return connect.NewResponse(&dexdexv1.ListForkedSessionsResponse{
+		Sessions: sessions,
+	}), nil
+}
+
+// ArchiveForkedSession archives a forked session.
+func (h *SessionHandler) ArchiveForkedSession(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ArchiveForkedSessionRequest],
+) (*connect.Response[dexdexv1.ArchiveForkedSessionResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	sessionID := req.Msg.SessionId
+
+	h.logger.Info("ArchiveForkedSession called",
+		"workspace_id", workspaceID,
+		"session_id", sessionID,
+	)
+
+	if err := h.store.ArchiveSession(workspaceID, sessionID); err != nil {
+		h.logger.Warn("session not found for archiving",
+			"workspace_id", workspaceID,
+			"session_id", sessionID,
+			"error", err,
+		)
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	// Get updated session summary for stream event.
+	summary, err := h.store.GetSessionSummary(workspaceID, sessionID)
+	if err == nil {
+		h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_FORK_UPDATED, &stream.SessionForkUpdatedPayload{
+			SessionForkUpdated: &dexdexv1.SessionForkUpdatedEvent{
+				SessionSummary: summary,
+			},
+		})
+	}
+
+	return connect.NewResponse(&dexdexv1.ArchiveForkedSessionResponse{}), nil
+}
+
+// GetLatestWaitingSession returns the latest session in WAITING_FOR_INPUT status.
+// Returns an empty response (not an error) if no waiting session exists.
+func (h *SessionHandler) GetLatestWaitingSession(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.GetLatestWaitingSessionRequest],
+) (*connect.Response[dexdexv1.GetLatestWaitingSessionResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+
+	h.logger.Info("GetLatestWaitingSession called", "workspace_id", workspaceID)
+
+	session, err := h.store.GetLatestWaitingSession(workspaceID)
+	if err != nil {
+		// No waiting session is not an error - return empty response.
+		h.logger.Debug("no waiting session found", "workspace_id", workspaceID)
+		return connect.NewResponse(&dexdexv1.GetLatestWaitingSessionResponse{}), nil
+	}
+
+	return connect.NewResponse(&dexdexv1.GetLatestWaitingSessionResponse{
+		Session: session,
+	}), nil
+}
+
+// SubmitSessionInput submits user input for a waiting session and updates its status.
+func (h *SessionHandler) SubmitSessionInput(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.SubmitSessionInputRequest],
+) (*connect.Response[dexdexv1.SubmitSessionInputResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	sessionID := req.Msg.SessionId
+
+	h.logger.Info("SubmitSessionInput called",
+		"workspace_id", workspaceID,
+		"session_id", sessionID,
+	)
+
+	// Get session summary.
+	summary, err := h.store.GetSessionSummary(workspaceID, sessionID)
+	if err != nil {
+		h.logger.Warn("session not found for input submission",
+			"workspace_id", workspaceID,
+			"session_id", sessionID,
+			"error", err,
+		)
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	// Update session status to RUNNING.
+	summary.AgentSessionStatus = dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING
+
+	// Publish SESSION_STATE_CHANGED stream event.
+	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_STATE_CHANGED, &stream.SessionStateChangedPayload{
+		SessionStateChanged: &dexdexv1.SessionStateChangedEvent{
+			SessionId: sessionID,
+			Status:    dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+		},
+	})
+
+	h.logger.Info("session input submitted, status updated to RUNNING",
+		"workspace_id", workspaceID,
+		"session_id", sessionID,
+	)
+
+	return connect.NewResponse(&dexdexv1.SubmitSessionInputResponse{}), nil
 }

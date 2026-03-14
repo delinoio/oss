@@ -60,10 +60,12 @@
 - current scaffold implementation does not parse runtime env configuration
 - planned envs for Connect runtime rollout: `DEXDEX_MAIN_SERVER_ADDR`, `DEXDEX_MAIN_STREAM_RETENTION`, `DEXDEX_MAIN_STREAM_HEARTBEAT_INTERVAL`, `DEXDEX_WORKER_SERVER_URL`, `DEXDEX_DEPLOYMENT_MODE`, `DEXDEX_DATABASE_URL`, `DEXDEX_REDIS_URL`, `DEXDEX_PR_POLL_INTERVAL_SEC`
 - Implemented-vs-planned alignment:
-- current implementation includes full Connect RPC handlers for WorkspaceService (GetWorkspace, ListWorkspaces), TaskService (CRUD + SubmitPlanDecision with FanOut event publishing), SessionService (GetSessionOutput), NotificationService (ListNotifications), and EventStreamService (streaming with fan-out, replay, heartbeat)
+- current implementation includes full Connect RPC handlers for WorkspaceService (GetWorkspace, ListWorkspaces, GetWorkspaceWorkStatus with priority-based status computation), TaskService (CRUD + SubmitPlanDecision with FanOut event publishing), SessionService (GetSessionOutput, ListSessionCapabilities, ForkSession, ListForkedSessions, ArchiveForkedSession, GetLatestWaitingSession, SubmitSessionInput), NotificationService (ListNotifications, MarkNotificationRead with stream event publishing), and EventStreamService (streaming with fan-out, replay, heartbeat, SESSION_FORK_UPDATED and WORKSPACE_WORK_STATUS_UPDATED events)
+- worker client with agent capability caching (5-minute TTL) is implemented; actual dispatch/routing logic from main-server to worker is not yet wired
+- session summary store for fork orchestration and lineage tracking is implemented in memory
 - in-memory store with session output storage and rich seed data
-- worker adapter calls, control-plane persistence, PR polling, session fork orchestration, and MarkNotificationRead are planned rollout scope
-- expanded API behavior from upstream DexDex source docs and this session-fork/work-status extension remains target contract and must be rolled out additively
+- persistence layer (DB), worker adapter routing logic, and PR polling remain planned rollout scope
+- expanded API behavior from upstream DexDex source docs remains target contract for further additive evolution
 
 ## Storage
 - Target runtime owns control-plane records for workspace scope, task/subtask/session state snapshots, PR/review/notification metadata, and stream sequence progression.
@@ -96,7 +98,7 @@
 
 ## Dependencies and Integrations
 - Depends on shared schema contracts in `protos/dexdex/v1`.
-- Current scaffold implementation does not expose live Connect RPC handlers to app or worker components.
+- Current implementation exposes live Connect RPC handlers to app and has a worker client for capability caching; actual worker routing dispatch is not yet live.
 - Target runtime integrates upstream with `apps/dexdex` client behavior through Connect RPC and event streaming.
 - Target runtime integrates downstream with `servers/dexdex-worker-server` via worker session adapter RPC boundary.
 - Target runtime consumes worker capability and fork-adapter contracts from `WorkerSessionAdapterService`.

@@ -28,32 +28,41 @@ type Store interface {
 	GetSubTask(workspaceID, id string) (*dexdexv1.SubTask, error)
 	UpsertSubTask(workspaceID string, subTask *dexdexv1.SubTask)
 	ListNotifications(workspaceID string) []*dexdexv1.NotificationRecord
+	MarkNotificationRead(workspaceID, notificationID string) (*dexdexv1.NotificationRecord, error)
+	GetWorkspaceWorkStatus(workspaceID string) dexdexv1.WorkspaceWorkStatus
 	AddWorkspace(ws *dexdexv1.Workspace)
 	AddUnitTask(workspaceID string, task *dexdexv1.UnitTask)
 	AddSubTask(workspaceID string, subTask *dexdexv1.SubTask)
 	AddNotification(workspaceID string, notif *dexdexv1.NotificationRecord)
 	GetSessionOutputs(sessionID string) []*dexdexv1.SessionOutputEvent
 	AddSessionOutput(sessionID string, event *dexdexv1.SessionOutputEvent)
+	AddSessionSummary(workspaceID string, summary *dexdexv1.SessionSummary)
+	GetSessionSummary(workspaceID, sessionID string) (*dexdexv1.SessionSummary, error)
+	ListForkedSessions(workspaceID, parentSessionID string) []*dexdexv1.SessionSummary
+	ArchiveSession(workspaceID, sessionID string) error
+	GetLatestWaitingSession(workspaceID string) (*dexdexv1.SessionSummary, error)
 }
 
 // MemoryStore is a thread-safe in-memory implementation of Store.
 type MemoryStore struct {
-	mu             sync.RWMutex
-	workspaces     map[string]*dexdexv1.Workspace
-	unitTasks      map[string]map[string]*dexdexv1.UnitTask  // workspaceID -> taskID -> task
-	subTasks       map[string]map[string]*dexdexv1.SubTask   // workspaceID -> subTaskID -> subTask
-	notifications  map[string][]*dexdexv1.NotificationRecord // workspaceID -> notifications
-	sessionOutputs map[string][]*dexdexv1.SessionOutputEvent // sessionID -> events
+	mu               sync.RWMutex
+	workspaces       map[string]*dexdexv1.Workspace
+	unitTasks        map[string]map[string]*dexdexv1.UnitTask       // workspaceID -> taskID -> task
+	subTasks         map[string]map[string]*dexdexv1.SubTask        // workspaceID -> subTaskID -> subTask
+	notifications    map[string][]*dexdexv1.NotificationRecord      // workspaceID -> notifications
+	sessionOutputs   map[string][]*dexdexv1.SessionOutputEvent      // sessionID -> events
+	sessionSummaries map[string]map[string]*dexdexv1.SessionSummary // workspaceID -> sessionID -> summary
 }
 
 // NewMemoryStore creates a new empty MemoryStore.
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		workspaces:     make(map[string]*dexdexv1.Workspace),
-		unitTasks:      make(map[string]map[string]*dexdexv1.UnitTask),
-		subTasks:       make(map[string]map[string]*dexdexv1.SubTask),
-		notifications:  make(map[string][]*dexdexv1.NotificationRecord),
-		sessionOutputs: make(map[string][]*dexdexv1.SessionOutputEvent),
+		workspaces:       make(map[string]*dexdexv1.Workspace),
+		unitTasks:        make(map[string]map[string]*dexdexv1.UnitTask),
+		subTasks:         make(map[string]map[string]*dexdexv1.SubTask),
+		notifications:    make(map[string][]*dexdexv1.NotificationRecord),
+		sessionOutputs:   make(map[string][]*dexdexv1.SessionOutputEvent),
+		sessionSummaries: make(map[string]map[string]*dexdexv1.SessionSummary),
 	}
 }
 
@@ -258,4 +267,153 @@ func (s *MemoryStore) AddSessionOutput(sessionID string, event *dexdexv1.Session
 	defer s.mu.Unlock()
 
 	s.sessionOutputs[sessionID] = append(s.sessionOutputs[sessionID], event)
+}
+
+func (s *MemoryStore) MarkNotificationRead(workspaceID, notificationID string) (*dexdexv1.NotificationRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	notifs := s.notifications[workspaceID]
+	for _, n := range notifs {
+		if n.NotificationId == notificationID {
+			n.Read = true
+			return n, nil
+		}
+	}
+	return nil, fmt.Errorf("notification not found: workspace=%s id=%s", workspaceID, notificationID)
+}
+
+func (s *MemoryStore) GetWorkspaceWorkStatus(workspaceID string) dexdexv1.WorkspaceWorkStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	subs, ok := s.subTasks[workspaceID]
+	if !ok || len(subs) == 0 {
+		return dexdexv1.WorkspaceWorkStatus_WORKSPACE_WORK_STATUS_IDLE
+	}
+
+	// Priority ordering: FAILED > ACTION_REQUIRED > WAITING_FOR_INPUT > RUNNING > IDLE
+	hasFailed := false
+	hasActionRequired := false
+	hasWaiting := false
+	hasRunning := false
+
+	// Check unit tasks for action required
+	tasks := s.unitTasks[workspaceID]
+	for _, t := range tasks {
+		if t.ActionRequired != dexdexv1.ActionType_ACTION_TYPE_UNSPECIFIED {
+			hasActionRequired = true
+		}
+	}
+
+	for _, st := range subs {
+		switch st.Status {
+		case dexdexv1.SubTaskStatus_SUB_TASK_STATUS_FAILED,
+			dexdexv1.SubTaskStatus_SUB_TASK_STATUS_CANCELLED:
+			hasFailed = true
+		case dexdexv1.SubTaskStatus_SUB_TASK_STATUS_WAITING_FOR_USER_INPUT,
+			dexdexv1.SubTaskStatus_SUB_TASK_STATUS_WAITING_FOR_PLAN_APPROVAL:
+			hasWaiting = true
+		case dexdexv1.SubTaskStatus_SUB_TASK_STATUS_IN_PROGRESS:
+			hasRunning = true
+		}
+	}
+
+	if hasFailed {
+		return dexdexv1.WorkspaceWorkStatus_WORKSPACE_WORK_STATUS_FAILED
+	}
+	if hasActionRequired {
+		return dexdexv1.WorkspaceWorkStatus_WORKSPACE_WORK_STATUS_ACTION_REQUIRED
+	}
+	if hasWaiting {
+		return dexdexv1.WorkspaceWorkStatus_WORKSPACE_WORK_STATUS_WAITING_FOR_INPUT
+	}
+	if hasRunning {
+		return dexdexv1.WorkspaceWorkStatus_WORKSPACE_WORK_STATUS_RUNNING
+	}
+	return dexdexv1.WorkspaceWorkStatus_WORKSPACE_WORK_STATUS_IDLE
+}
+
+func (s *MemoryStore) AddSessionSummary(workspaceID string, summary *dexdexv1.SessionSummary) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.sessionSummaries[workspaceID] == nil {
+		s.sessionSummaries[workspaceID] = make(map[string]*dexdexv1.SessionSummary)
+	}
+	s.sessionSummaries[workspaceID][summary.SessionId] = summary
+}
+
+func (s *MemoryStore) GetSessionSummary(workspaceID, sessionID string) (*dexdexv1.SessionSummary, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sessions, ok := s.sessionSummaries[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("session summary not found: workspace=%s id=%s", workspaceID, sessionID)
+	}
+	summary, ok := sessions[sessionID]
+	if !ok {
+		return nil, fmt.Errorf("session summary not found: workspace=%s id=%s", workspaceID, sessionID)
+	}
+	return summary, nil
+}
+
+func (s *MemoryStore) ListForkedSessions(workspaceID, parentSessionID string) []*dexdexv1.SessionSummary {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sessions, ok := s.sessionSummaries[workspaceID]
+	if !ok {
+		return nil
+	}
+
+	result := make([]*dexdexv1.SessionSummary, 0)
+	for _, ss := range sessions {
+		if ss.ParentSessionId == parentSessionID {
+			result = append(result, ss)
+		}
+	}
+	return result
+}
+
+func (s *MemoryStore) ArchiveSession(workspaceID, sessionID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sessions, ok := s.sessionSummaries[workspaceID]
+	if !ok {
+		return fmt.Errorf("session summary not found: workspace=%s id=%s", workspaceID, sessionID)
+	}
+	summary, ok := sessions[sessionID]
+	if !ok {
+		return fmt.Errorf("session summary not found: workspace=%s id=%s", workspaceID, sessionID)
+	}
+	summary.ForkStatus = dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ARCHIVED
+	return nil
+}
+
+func (s *MemoryStore) GetLatestWaitingSession(workspaceID string) (*dexdexv1.SessionSummary, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sessions, ok := s.sessionSummaries[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("no waiting session found: workspace=%s", workspaceID)
+	}
+
+	var latest *dexdexv1.SessionSummary
+	for _, ss := range sessions {
+		if ss.AgentSessionStatus != dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_WAITING_FOR_INPUT {
+			continue
+		}
+		if latest == nil || ss.CreatedAt.AsTime().After(latest.CreatedAt.AsTime()) {
+			latest = ss
+		}
+	}
+
+	if latest == nil {
+		return nil, fmt.Errorf("no waiting session found: workspace=%s", workspaceID)
+	}
+	return latest, nil
 }

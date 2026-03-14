@@ -10,6 +10,8 @@ import {
   AgentSessionStatus,
   SessionOutputKind,
   NotificationType,
+  SessionForkStatus,
+  AgentCliType,
 } from "./status";
 
 export interface UnitTask {
@@ -51,6 +53,22 @@ export interface Notification {
   taskId?: string;
   read: boolean;
   createdAt: string;
+}
+
+export interface SessionSummary {
+  sessionId: string;
+  parentSessionId: string;
+  rootSessionId: string;
+  forkStatus: SessionForkStatus;
+  forkedFromSequence: number;
+  agentSessionStatus: AgentSessionStatus;
+  createdAt: string;
+}
+
+export interface AgentCapability {
+  agentCliType: AgentCliType;
+  supportsFork: boolean;
+  displayName: string;
 }
 
 export const MOCK_TASKS: UnitTask[] = [

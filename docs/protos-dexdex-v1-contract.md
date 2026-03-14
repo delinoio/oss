@@ -18,24 +18,25 @@
 - `dexdex.v1` package identifiers are stable enum-style contract language and must evolve additively by default.
 - Canonical enum vocabulary includes workspace connectivity, task/subtask/session states, action badges, PR/review/comment/notification types, stream event families, and plan decisions.
 - Canonical entity vocabulary includes workspace, repository-group scope, unit/sub tasks, session output/state, PR tracking, review assist items, inline comments, badge themes, and notifications.
-- Planned additive enum contracts for session-fork and tray/workspace status:
+- Implemented additive enum contracts for session-fork and tray/workspace status:
 - `SessionForkIntent` for fork purpose signaling in session forking flows
 - `SessionForkStatus` for fork lifecycle state (`ACTIVE`, `ARCHIVED`, and additive-safe extensions)
 - `WorkspaceWorkStatus` for active-workspace tray/UI state ordering (`FAILED`, `ACTION_REQUIRED`, `WAITING_FOR_INPUT`, `RUNNING`, `IDLE`, `DISCONNECTED`)
+- `AgentCliType` for normalized coding-agent CLI type identifiers (`CLAUDE_CODE`, `CODEX_CLI`, `OPENCODE`)
 - `NotificationType` additive extension includes `NOTIFICATION_TYPE_AGENT_INPUT_REQUIRED`
 - `StreamEventType` additive extension includes `STREAM_EVENT_TYPE_SESSION_FORK_UPDATED` and `STREAM_EVENT_TYPE_WORKSPACE_WORK_STATUS_UPDATED`
-- Planned additive message contracts:
+- Implemented additive message contracts:
 - `SessionSummary` adds lineage fields `parent_session_id`, `root_session_id`, `fork_status`, and `forked_from_sequence`
-- stream payload family adds `SessionForkUpdatedEvent` and `WorkspaceWorkStatusUpdatedEvent`
-- capability payload family adds normalized agent capability records for fork support reporting
+- `SessionForkUpdatedEvent` and `WorkspaceWorkStatusUpdatedEvent` are part of the stream payload family
+- `AgentCapability` provides normalized capability records for fork support reporting
 - Service-level contract families include:
 - workspace/repository control-plane queries and lifecycle
 - task/subtask/session orchestration and plan decisions
 - PR/review/comment operations
 - badge and notification operations
 - workspace event streaming
-- planned worker session adapter normalization
-- Planned additive service methods:
+- worker session adapter normalization (`WorkerSessionAdapterService`)
+- Implemented additive service methods:
 - `WorkspaceService.GetWorkspaceWorkStatus`
 - `SessionService.ListSessionCapabilities`
 - `SessionService.ForkSession`
@@ -43,6 +44,7 @@
 - `SessionService.ArchiveForkedSession`
 - `SessionService.GetLatestWaitingSession`
 - `SessionService.SubmitSessionInput`
+- `NotificationService.MarkNotificationRead`
 - `WorkerSessionAdapterService.GetAgentCapabilities`
 - `WorkerSessionAdapterService.ForkSessionAdapter`
 - Event stream envelope semantics:
@@ -62,10 +64,11 @@
 - enum expansion is allowed with unknown-safe client behavior
 - breaking changes require coordinated rollout across app and servers
 - Implemented-vs-planned alignment (current repo reality):
-- implemented proto currently contains scaffold subset RPCs: `GetWorkspace`, `GetRepositoryGroup`, `GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`, `GetSessionOutput`, `GetPullRequest`, `ListReviewAssistItems`, `ListReviewComments`, `GetBadgeTheme`, `ListNotifications`, and `StreamWorkspaceEvents`
-- worker adapter RPCs (`NormalizeSessionOutputFixture`) and adapter enums/messages (`AgentCliType`, fixture preset/source metadata families) are not implemented in current `dexdex.proto`
-- session-fork, latest-waiting-input, workspace-work-status, and capability/fork-adapter RPCs are planned additive extensions and are not yet implemented in current `dexdex.proto`
-- upstream DexDex source docs define expanded create/update/delete and richer flow contracts that are target scope for additive evolution
+- implemented proto contains full session-fork, input-handoff, workspace-work-status, capability, and notification-read RPCs in addition to the baseline scaffold subset: `GetWorkspace`, `GetRepositoryGroup`, `GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`, `GetSessionOutput`, `GetPullRequest`, `ListReviewAssistItems`, `ListReviewComments`, `GetBadgeTheme`, `ListNotifications`, and `StreamWorkspaceEvents`
+- worker adapter service (`WorkerSessionAdapterService`) is implemented with `GetAgentCapabilities` and `ForkSessionAdapter`
+- `AgentCliType` enum and `AgentCapability` message are implemented; fixture preset/source metadata families remain out of scope
+- all session-fork, latest-waiting-input, workspace-work-status, and capability/fork-adapter RPCs are now implemented in `dexdex.proto`
+- upstream DexDex source docs define expanded create/update/delete and richer flow contracts that remain target scope for further additive evolution
 - `protos/dexdex/v1/dexdex.proto` remains the canonical source for what is implemented now; this document records both current contract and planned-compatible expansion direction
 
 ## Storage
