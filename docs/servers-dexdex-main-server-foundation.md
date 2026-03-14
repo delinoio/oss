@@ -60,8 +60,9 @@
 - current scaffold implementation does not parse runtime env configuration
 - planned envs for Connect runtime rollout: `DEXDEX_MAIN_SERVER_ADDR`, `DEXDEX_MAIN_STREAM_RETENTION`, `DEXDEX_MAIN_STREAM_HEARTBEAT_INTERVAL`, `DEXDEX_WORKER_SERVER_URL`, `DEXDEX_DEPLOYMENT_MODE`, `DEXDEX_DATABASE_URL`, `DEXDEX_REDIS_URL`, `DEXDEX_PR_POLL_INTERVAL_SEC`
 - Implemented-vs-planned alignment:
-- current implementation is scaffold-only (`main.go` logger bootstrap plus pure helper logic in `plan_decision` and `stream_replay`)
-- Connect RPC handlers, stream fan-out runtime, worker adapter calls, and control-plane persistence are planned rollout scope
+- current implementation includes full Connect RPC handlers for WorkspaceService (GetWorkspace, ListWorkspaces), TaskService (CRUD + SubmitPlanDecision with FanOut event publishing), SessionService (GetSessionOutput), NotificationService (ListNotifications), and EventStreamService (streaming with fan-out, replay, heartbeat)
+- in-memory store with session output storage and rich seed data
+- worker adapter calls, control-plane persistence, PR polling, session fork orchestration, and MarkNotificationRead are planned rollout scope
 - expanded API behavior from upstream DexDex source docs and this session-fork/work-status extension remains target contract and must be rolled out additively
 
 ## Storage
