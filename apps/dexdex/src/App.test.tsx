@@ -71,10 +71,10 @@ const mockUnitTasks = [
     unitTaskId: "task-004",
     title: "Add rate limiting middleware",
     description: "Implement token-bucket rate limiting for public API endpoints.",
-    status: UnitTaskStatus.QUEUED,
+    status: UnitTaskStatus.ACTION_REQUIRED,
     createdAt: timestampFromDate(new Date("2026-03-14T11:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-14T11:00:00Z")),
-    subTaskCount: 0,
+    subTaskCount: 1,
   }),
   create(UnitTaskSchema, {
     unitTaskId: "task-005",
@@ -125,6 +125,20 @@ const mockSubTasksFor002 = [
   }),
 ];
 
+const mockSubTasksFor004 = [
+  create(SubTaskSchema, {
+    subTaskId: "sub-004-1",
+    unitTaskId: "task-004",
+    type: SubTaskType.INITIAL_IMPLEMENTATION,
+    status: SubTaskStatus.WAITING_FOR_USER_INPUT,
+    completionReason: SubTaskCompletionReason.UNSPECIFIED,
+    sessionId: "sess-004-1",
+    createdAt: timestampFromDate(new Date("2026-03-14T11:00:00Z")),
+    updatedAt: timestampFromDate(new Date("2026-03-14T11:30:00Z")),
+    title: "Implement rate limiting logic.",
+  }),
+];
+
 const mockSessionOutput = [
   create(SessionOutputEventSchema, { sessionId: "sess-001-2", kind: SessionOutputKind.TEXT, body: "Starting PR creation for feat/auth-flow..." }),
   create(SessionOutputEventSchema, { sessionId: "sess-001-2", kind: SessionOutputKind.TOOL_CALL, body: "git.createBranch({ name: 'feat/auth-flow', base: 'main' })" }),
@@ -168,6 +182,7 @@ function createTestTransport() {
       listSubTasks: (req) => {
         if (req.unitTaskId === "task-001") return { subTasks: mockSubTasksFor001 };
         if (req.unitTaskId === "task-002") return { subTasks: mockSubTasksFor002 };
+        if (req.unitTaskId === "task-004") return { subTasks: mockSubTasksFor004 };
         return { subTasks: [] };
       },
       createUnitTask: (req) => ({
@@ -449,6 +464,17 @@ describe("App", () => {
     expect(screen.getByTestId("task-row-task-003")).toBeTruthy();
     expect(screen.queryByTestId("task-row-task-001")).toBeNull();
     expect(screen.queryByTestId("task-row-task-002")).toBeNull();
+  });
+
+  it("shows session input form for waiting-for-input subtask", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-row-task-004");
+    await user.click(screen.getByTestId("task-row-task-004"));
+    expect(await screen.findByTestId("session-input-form")).toBeTruthy();
+    expect(screen.getByTestId("session-input-textarea")).toBeTruthy();
+    expect(screen.getByTestId("session-input-submit")).toBeTruthy();
   });
 
   it("shows notifications in inbox with unread indicator", async () => {
