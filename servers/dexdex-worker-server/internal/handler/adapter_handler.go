@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
+	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/normalize"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/store"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/worktree"
 )
@@ -23,9 +24,10 @@ type activeExecution struct {
 // AdapterHandler implements the WorkerSessionAdapterService Connect RPC handler.
 type AdapterHandler struct {
 	dexdexv1connect.UnimplementedWorkerSessionAdapterServiceHandler
-	store     *store.SessionStore
-	wtManager *worktree.Manager
-	logger    *slog.Logger
+	store            *store.SessionStore
+	wtManager        *worktree.Manager
+	usageAccumulator *normalize.UsageAccumulator
+	logger           *slog.Logger
 
 	mu         sync.RWMutex
 	executions map[string]*activeExecution // sessionID -> active execution
@@ -34,10 +36,11 @@ type AdapterHandler struct {
 // NewAdapterHandler creates a new AdapterHandler.
 func NewAdapterHandler(store *store.SessionStore, wtManager *worktree.Manager, logger *slog.Logger) *AdapterHandler {
 	return &AdapterHandler{
-		store:      store,
-		wtManager:  wtManager,
-		logger:     logger,
-		executions: make(map[string]*activeExecution),
+		store:            store,
+		wtManager:        wtManager,
+		usageAccumulator: normalize.NewUsageAccumulator(),
+		logger:           logger,
+		executions:       make(map[string]*activeExecution),
 	}
 }
 
@@ -302,7 +305,18 @@ func (h *AdapterHandler) StartExecution(
 	})
 
 	// Run agent and stream output
-	finalStatus := runAgentProcess(execCtx, agentCmd, sessionID, inputCh, stream, h.store, h.logger)
+	finalStatus := runAgentProcess(execCtx, agentCmd, sessionID, inputCh, stream, h.store, h.usageAccumulator, h.logger)
+
+	// Persist accumulated usage to session metadata.
+	if usage := h.usageAccumulator.GetSessionUsage(sessionID); usage != nil {
+		h.store.UpdateUsage(sessionID, usage)
+		h.logger.Info("session usage recorded",
+			"session_id", sessionID,
+			"input_tokens", usage.InputTokens,
+			"output_tokens", usage.OutputTokens,
+			"estimated_cost_usd", usage.EstimatedCostUsd,
+		)
+	}
 
 	// Emit final state
 	_ = stream.Send(&dexdexv1.ExecutionEvent{

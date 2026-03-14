@@ -12,6 +12,7 @@ import (
 
 	"connectrpc.com/connect"
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
+	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/normalize"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/store"
 )
 
@@ -73,12 +74,19 @@ func buildAgentCommand(
 
 // claudeStreamEvent represents a single NDJSON event from Claude Code's stream output.
 type claudeStreamEvent struct {
-	Type    string `json:"type"`
-	SubType string `json:"subtype,omitempty"`
-	Message string `json:"message,omitempty"`
-	Content string `json:"content,omitempty"`
-	Tool    string `json:"tool,omitempty"`
-	Result  string `json:"result,omitempty"`
+	Type    string            `json:"type"`
+	SubType string            `json:"subtype,omitempty"`
+	Message string            `json:"message,omitempty"`
+	Content string            `json:"content,omitempty"`
+	Tool    string            `json:"tool,omitempty"`
+	Result  string            `json:"result,omitempty"`
+	Usage   *claudeUsageBlock `json:"usage,omitempty"`
+}
+
+// claudeUsageBlock represents the usage block in Claude Code NDJSON output.
+type claudeUsageBlock struct {
+	InputTokens  int64 `json:"input_tokens"`
+	OutputTokens int64 `json:"output_tokens"`
 }
 
 // runAgentProcess starts the agent command, reads its NDJSON stdout, and streams
@@ -91,6 +99,7 @@ func runAgentProcess(
 	inputCh chan string,
 	stream *connect.ServerStream[dexdexv1.ExecutionEvent],
 	sessionStore *store.SessionStore,
+	usageAccumulator *normalize.UsageAccumulator,
 	logger *slog.Logger,
 ) dexdexv1.AgentSessionStatus {
 	stdout, err := ac.cmd.StdoutPipe()
@@ -132,7 +141,18 @@ func runAgentProcess(
 			continue
 		}
 
-		event := parseAgentOutputLine(line, sessionID, logger)
+		event, usage := parseAgentOutputLine(line, sessionID, logger)
+
+		// Track usage if present in this event.
+		if usage != nil && usageAccumulator != nil {
+			usageAccumulator.AccumulateUsage(sessionID, usage.InputTokens, usage.OutputTokens)
+			logger.Debug("accumulated usage from agent output",
+				"session_id", sessionID,
+				"input_tokens", usage.InputTokens,
+				"output_tokens", usage.OutputTokens,
+			)
+		}
+
 		if event != nil {
 			// Store output event
 			sessionStore.AppendOutput(sessionID, event)
@@ -164,7 +184,8 @@ func runAgentProcess(
 }
 
 // parseAgentOutputLine parses a single NDJSON line from agent output.
-func parseAgentOutputLine(line, sessionID string, logger *slog.Logger) *dexdexv1.SessionOutputEvent {
+// Returns the session output event and optional usage data extracted from the line.
+func parseAgentOutputLine(line, sessionID string, logger *slog.Logger) (*dexdexv1.SessionOutputEvent, *claudeUsageBlock) {
 	var evt claudeStreamEvent
 	if err := json.Unmarshal([]byte(line), &evt); err != nil {
 		// Not JSON - treat as plain text output
@@ -172,7 +193,7 @@ func parseAgentOutputLine(line, sessionID string, logger *slog.Logger) *dexdexv1
 			SessionId: sessionID,
 			Kind:      dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_TEXT,
 			Body:      line,
-		}
+		}, nil
 	}
 
 	kind := mapEventTypeToOutputKind(evt.Type, evt.SubType)
@@ -191,7 +212,7 @@ func parseAgentOutputLine(line, sessionID string, logger *slog.Logger) *dexdexv1
 		SessionId: sessionID,
 		Kind:      kind,
 		Body:      body,
-	}
+	}, evt.Usage
 }
 
 // mapEventTypeToOutputKind maps Claude Code stream event types to proto output kinds.
