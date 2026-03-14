@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // Cost rates per token (approximate Claude pricing).
@@ -53,8 +54,7 @@ func (a *UsageAccumulator) GetSessionUsage(sessionID string) *dexdexv1.UsageMetr
 	}
 
 	// Return a copy to prevent external mutation.
-	copied := *metrics
-	return &copied
+	return proto.Clone(metrics).(*dexdexv1.UsageMetrics)
 }
 
 // EstimateCost computes estimated cost based on model pricing.
