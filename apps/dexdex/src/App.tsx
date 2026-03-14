@@ -111,7 +111,7 @@ function App() {
   );
 
   // Web Notifications
-  const { dispatchNotification } = useWebNotifications({ onNavigate: navigate });
+  const { dispatchNotification } = useWebNotifications({ onNavigate: routerNavigate });
 
   // Workspace stream
   useWorkspaceStream({
