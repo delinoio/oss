@@ -46,16 +46,19 @@
 - current scaffold implementation does not parse runtime env configuration
 - planned envs for execution runtime rollout: `DEXDEX_WORKER_SERVER_ADDR`, `DEXDEX_WORKER_ID`, `DEXDEX_MAIN_SERVER_URL`, `DEXDEX_WORKTREE_ROOT`, `DEXDEX_REPO_CACHE_ROOT`, `DEXDEX_MAX_PARALLEL_SUBTASKS`, `DEXDEX_AGENT_EXEC_TIMEOUT_SEC`
 - Implemented-vs-planned alignment:
-- current implementation is scaffold-only (`main.go` logger bootstrap plus `commit_chain` validation primitives)
-- worker session output normalization, adapter RPC handlers, and capability/fork flows are planned rollout scope
-- full worktree orchestration is documented as target contract behavior
+- current implementation includes Connect RPC server with SessionService (GetSessionOutput) and WorkerSessionAdapterService (GetAgentCapabilities, ForkSessionAdapter)
+- `GetAgentCapabilities` returns normalized capability records for `CLAUDE_CODE`, `CODEX_CLI`, and `OPENCODE`
+- `ForkSessionAdapter` implements the fork adapter RPC boundary with lineage-tracked session metadata store
+- session output normalization (raw kind → proto enum) and in-memory session store with lineage tracking are implemented
+- commit chain validation primitives are implemented
+- actual coding-agent integration/adapters (real process execution) and worktree orchestration remain planned rollout scope
 
 ## Storage
 - Target runtime owns worker-local temporary execution data, adapter parsing buffers, and normalized event artifacts prior to main-server persistence.
 - Target path conventions include repository cache and task-scoped worktree roots under user-local DexDex directories.
 - Commit-chain artifact metadata must remain reproducible, ordered, and attributable per subtask/session context.
 - Worker-local capability and fork debug artifacts must be bounded-retention and must not cross public contract boundaries.
-- Current scaffold implementation is stateless and does not expose adapter output persistence.
+- Current implementation maintains an in-memory session metadata store with lineage tracking; no durable adapter output persistence yet.
 
 ## Security
 - Validate repository URLs, branch refs, and runtime inputs before agent execution.
@@ -78,7 +81,7 @@
 
 ## Dependencies and Integrations
 - Depends on shared `protos/dexdex/v1` schemas.
-- Current scaffold implementation does not expose worker session adapter RPC handlers.
+- Current implementation exposes `WorkerSessionAdapterService` RPC handlers (`GetAgentCapabilities`, `ForkSessionAdapter`); real agent process execution and worktree management remain planned.
 - Target runtime integrates upstream with `servers/dexdex-main-server` through worker session adapter RPC contracts.
 - Target runtime provides normalized session output and artifact contracts consumed by main-server for client-facing flows.
 - Target runtime adapter fixtures and parser pipelines support multiple coding-agent CLIs.
