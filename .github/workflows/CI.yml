@@ -50,7 +50,13 @@ jobs:
               - .github/workflows/CI.yml
               - Cargo.toml
               - Cargo.lock
+              - '**/Cargo.toml'
+              - '**/Cargo.lock'
               - rust-toolchain
+              - rust-toolchain.toml
+              - '**/rust-toolchain'
+              - '**/rust-toolchain.toml'
+              - '**/*.rs'
               - crates/**
 
   go-quality:
