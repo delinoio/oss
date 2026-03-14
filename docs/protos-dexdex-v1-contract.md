@@ -68,6 +68,8 @@
 - worker adapter service (`WorkerSessionAdapterService`) is implemented with `GetAgentCapabilities` and `ForkSessionAdapter`
 - worker execution service RPCs are implemented: `StartExecution` (server-streaming), `SubmitWorkerInput`, `CancelExecution` with corresponding request/response messages
 - `AgentCliType` enum and `AgentCapability` message are implemented; fixture preset/source metadata families remain out of scope
+- `WorktreeState` enum and `WorktreeStatusEvent` message are implemented for worktree lifecycle tracking via `ExecutionEvent` oneof
+- `StartExecutionRequest` extended with `parent_session_id` and `fork_intent` fields for fork execution support
 - all session-fork, latest-waiting-input, workspace-work-status, and capability/fork-adapter RPCs are now implemented in `dexdex.proto`
 - upstream DexDex source docs define expanded create/update/delete and richer flow contracts that remain target scope for further additive evolution
 - `protos/dexdex/v1/dexdex.proto` remains the canonical source for what is implemented now; this document records both current contract and planned-compatible expansion direction

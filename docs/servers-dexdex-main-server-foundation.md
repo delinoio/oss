@@ -68,6 +68,11 @@
 - session summary store for fork orchestration and lineage tracking is implemented in memory
 - in-memory store with session output storage and rich seed data
 - PostgreSQL persistence layer via sqlc with conditional store selection (`DEXDEX_DATABASE_URL`) is implemented
+- worktree orchestration via `internal/worker/worktree_coordinator.go` is implemented (periodic stale cleanup, WorktreeAssignment tracking from worker-emitted WorktreeStatusEvent lifecycle events)
+- dispatcher consumes WorktreeStatusEvent and upserts WorktreeAssignment state in store
+- `DispatchForkExecution` dispatches fork execution to worker with parent_session_id and fork_intent fields; consumes execution stream and publishes session/fork events
+- `ForkSession` handler now triggers actual execution dispatch after metadata creation
+- `FindSubTaskBySessionID` added to Store interface for fork-to-subtask relationship resolution
 - expanded API behavior from upstream DexDex source docs remains target contract for further additive evolution
 
 ## Storage

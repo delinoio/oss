@@ -53,7 +53,8 @@
 - agent execution via `internal/handler/agent_exec.go` is implemented (spawns Claude Code/Codex CLI/OpenCode processes, parses NDJSON output, normalizes to proto)
 - session output normalization (raw kind → proto enum) and in-memory session store with lineage tracking are implemented
 - commit chain validation primitives are implemented
-- real fork execution remains planned rollout scope
+- real fork execution is implemented: `StartExecution` accepts `parent_session_id` and `fork_intent` fields; when set, builds Claude Code command with `--resume` flag, creates forked session lineage metadata, and streams output through standard pipeline
+- worktree lifecycle events emitted during execution (PREPARING→READY→EXECUTING→CLEANING_UP→CLEANED, FAILED on error) via `WorktreeStatusEvent` in `ExecutionEvent` oneof
 
 ## Storage
 - Target runtime owns worker-local temporary execution data, adapter parsing buffers, and normalized event artifacts prior to main-server persistence.
