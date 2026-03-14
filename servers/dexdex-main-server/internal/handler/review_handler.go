@@ -17,13 +17,15 @@ import (
 type ReviewAssistHandler struct {
 	dexdexv1connect.UnimplementedReviewAssistServiceHandler
 	store  store.Store
+	fanOut stream.EventBroadcaster
 	logger *slog.Logger
 }
 
 // NewReviewAssistHandler creates a new ReviewAssistHandler.
-func NewReviewAssistHandler(s store.Store, logger *slog.Logger) *ReviewAssistHandler {
+func NewReviewAssistHandler(s store.Store, fanOut stream.EventBroadcaster, logger *slog.Logger) *ReviewAssistHandler {
 	return &ReviewAssistHandler{
 		store:  s,
+		fanOut: fanOut,
 		logger: logger,
 	}
 }
@@ -41,6 +43,35 @@ func (h *ReviewAssistHandler) ListReviewAssistItems(
 
 	return connect.NewResponse(&dexdexv1.ListReviewAssistItemsResponse{
 		Items: items,
+	}), nil
+}
+
+// ResolveReviewAssistItem resolves a review assist item with a status.
+func (h *ReviewAssistHandler) ResolveReviewAssistItem(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ResolveReviewAssistItemRequest],
+) (*connect.Response[dexdexv1.ResolveReviewAssistItemResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	reviewAssistID := req.Msg.ReviewAssistId
+	resolution := req.Msg.Resolution
+
+	h.logger.Info("ResolveReviewAssistItem called",
+		"workspace_id", workspaceID,
+		"review_assist_id", reviewAssistID,
+		"resolution", resolution.String(),
+	)
+
+	item, err := h.store.UpdateReviewAssistItemStatus(workspaceID, reviewAssistID, resolution)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_REVIEW_ASSIST_UPDATED, &stream.ReviewAssistUpdatedPayload{
+		ReviewAssistUpdated: &dexdexv1.ReviewAssistUpdatedEvent{Item: item},
+	})
+
+	return connect.NewResponse(&dexdexv1.ResolveReviewAssistItemResponse{
+		Item: item,
 	}), nil
 }
 

@@ -315,3 +315,77 @@ func (h *SessionHandler) SubmitSessionInput(
 
 	return connect.NewResponse(&dexdexv1.SubmitSessionInputResponse{}), nil
 }
+
+// ListAgentSessions returns session summaries for a workspace, optionally filtered by unit task ID.
+func (h *SessionHandler) ListAgentSessions(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ListAgentSessionsRequest],
+) (*connect.Response[dexdexv1.ListAgentSessionsResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	unitTaskID := req.Msg.UnitTaskId
+
+	h.logger.Info("ListAgentSessions called", "workspace_id", workspaceID, "unit_task_id", unitTaskID)
+
+	sessions := h.store.ListSessionSummaries(workspaceID, unitTaskID)
+	return connect.NewResponse(&dexdexv1.ListAgentSessionsResponse{
+		Sessions: sessions,
+	}), nil
+}
+
+// GetAgentSessionLog returns session output events with session metadata.
+func (h *SessionHandler) GetAgentSessionLog(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.GetAgentSessionLogRequest],
+) (*connect.Response[dexdexv1.GetAgentSessionLogResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	sessionID := req.Msg.SessionId
+
+	h.logger.Info("GetAgentSessionLog called", "workspace_id", workspaceID, "session_id", sessionID)
+
+	events := h.store.GetSessionOutputs(sessionID)
+	summary, _ := h.store.GetSessionSummary(workspaceID, sessionID)
+
+	return connect.NewResponse(&dexdexv1.GetAgentSessionLogResponse{
+		Events:  events,
+		Session: summary,
+	}), nil
+}
+
+// StopAgentSession stops a running agent session.
+func (h *SessionHandler) StopAgentSession(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.StopAgentSessionRequest],
+) (*connect.Response[dexdexv1.StopAgentSessionResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	sessionID := req.Msg.SessionId
+
+	h.logger.Info("StopAgentSession called", "workspace_id", workspaceID, "session_id", sessionID)
+
+	// Find the subtask associated with this session and cancel it
+	subTask, err := h.store.FindSubTaskBySessionID(workspaceID, sessionID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	if h.dispatcher != nil {
+		_ = h.dispatcher.CancelSubTask(subTask.SubTaskId)
+	}
+
+	// Update session status
+	summary, summaryErr := h.store.GetSessionSummary(workspaceID, sessionID)
+	if summaryErr == nil {
+		summary.AgentSessionStatus = dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_CANCELLED
+		h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_STATE_CHANGED, &stream.SessionStateChangedPayload{
+			SessionStateChanged: &dexdexv1.SessionStateChangedEvent{
+				SessionId: sessionID,
+				Status:    dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_CANCELLED,
+			},
+		})
+	}
+
+	h.logger.Info("StopAgentSession completed", "workspace_id", workspaceID, "session_id", sessionID)
+
+	return connect.NewResponse(&dexdexv1.StopAgentSessionResponse{
+		Session: summary,
+	}), nil
+}

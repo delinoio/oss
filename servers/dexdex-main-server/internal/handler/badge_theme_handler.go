@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"connectrpc.com/connect"
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
@@ -43,6 +45,43 @@ func (h *BadgeThemeHandler) GetBadgeTheme(
 	}
 
 	return connect.NewResponse(&dexdexv1.GetBadgeThemeResponse{
+		Theme: theme,
+	}), nil
+}
+
+// ListBadgeThemes returns all badge themes for a workspace.
+func (h *BadgeThemeHandler) ListBadgeThemes(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ListBadgeThemesRequest],
+) (*connect.Response[dexdexv1.ListBadgeThemesResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	h.logger.Info("ListBadgeThemes called", "workspace_id", workspaceID)
+
+	themes := h.store.ListBadgeThemes(workspaceID)
+
+	return connect.NewResponse(&dexdexv1.ListBadgeThemesResponse{
+		Themes: themes,
+	}), nil
+}
+
+// UpsertBadgeTheme creates or updates a badge theme.
+func (h *BadgeThemeHandler) UpsertBadgeTheme(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.UpsertBadgeThemeRequest],
+) (*connect.Response[dexdexv1.UpsertBadgeThemeResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	themeName := strings.TrimSpace(req.Msg.ThemeName)
+	colorKey := req.Msg.ColorKey
+
+	if themeName == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("theme_name is required"))
+	}
+
+	h.logger.Info("UpsertBadgeTheme called", "workspace_id", workspaceID, "theme_name", themeName, "color_key", colorKey.String())
+
+	theme := h.store.UpsertBadgeTheme(workspaceID, themeName, colorKey)
+
+	return connect.NewResponse(&dexdexv1.UpsertBadgeThemeResponse{
 		Theme: theme,
 	}), nil
 }
