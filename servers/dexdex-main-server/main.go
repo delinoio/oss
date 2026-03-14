@@ -6,12 +6,12 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
+	"github.com/delinoio/oss/servers/dexdex-main-server/internal/config"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/handler"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/store"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/stream"
@@ -20,12 +20,12 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	cfg := config.LoadConfig(logger)
 
 	// Initialize store: PostgreSQL if DEXDEX_DATABASE_URL is set, else in-memory
 	var dataStore store.Store
-	dbURL := strings.TrimSpace(os.Getenv("DEXDEX_DATABASE_URL"))
-	if dbURL != "" {
-		pool, err := pgxpool.New(context.Background(), dbURL)
+	if cfg.DatabaseURL != "" {
+		pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
 		if err != nil {
 			logger.Error("failed to connect to database", "error", err)
 			os.Exit(1)
@@ -37,15 +37,14 @@ func main() {
 		memStore := store.NewMemoryStore()
 		dataStore = memStore
 
-		// Seed data if DEXDEX_SEED_DATA=true (only for in-memory store)
-		if strings.EqualFold(strings.TrimSpace(os.Getenv("DEXDEX_SEED_DATA")), "true") {
+		if cfg.SeedData {
 			store.SeedData(memStore)
 			logger.Info("seed data loaded")
 		}
 	}
 
-	// Initialize event stream fan-out with 1000-event retention buffer
-	fanOut := stream.NewFanOut(1000, logger)
+	// Initialize event stream fan-out with configurable retention buffer
+	fanOut := stream.NewFanOut(cfg.StreamRetention, logger)
 
 	// Create handlers
 	workspaceHandler := handler.NewWorkspaceHandler(dataStore, logger)
@@ -65,7 +64,7 @@ func main() {
 	notifPath, notifHandler := dexdexv1connect.NewNotificationServiceHandler(notificationHandler)
 	mux.Handle(notifPath, notifHandler)
 
-	workerClient := worker.NewClient(logger)
+	workerClient := worker.NewClient(cfg.WorkerServerURL, logger)
 	sessionHandler := handler.NewSessionHandler(dataStore, workerClient, fanOut, logger)
 	sessionPath, sessionHTTPHandler := dexdexv1connect.NewSessionServiceHandler(sessionHandler)
 	mux.Handle(sessionPath, sessionHTTPHandler)
@@ -95,18 +94,13 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	addr := strings.TrimSpace(os.Getenv("DEXDEX_MAIN_SERVER_ADDR"))
-	if addr == "" {
-		addr = "127.0.0.1:7878"
-	}
-
 	httpServer := &http.Server{
-		Addr:              addr,
+		Addr:              cfg.ServerAddr,
 		Handler:           corsMiddleware(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	logger.Info("dexdex main server starting", "addr", addr)
+	logger.Info("dexdex main server starting", "addr", cfg.ServerAddr)
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("server failed", "error", err)
 		os.Exit(1)

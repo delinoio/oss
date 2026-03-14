@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
+	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/config"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/handler"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/normalize"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/store"
@@ -20,16 +20,12 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	addr := os.Getenv("DEXDEX_WORKER_SERVER_ADDR")
-	if addr == "" {
-		addr = "127.0.0.1:7879"
-	}
+	cfg := config.LoadConfig(logger)
 
 	sessionStore := store.NewSessionStore(logger)
 
-	// Seed sample data when DEXDEX_SEED_DATA=true.
-	if strings.EqualFold(os.Getenv("DEXDEX_SEED_DATA"), "true") {
+	// Seed sample data when configured.
+	if cfg.SeedData {
 		seedSampleData(sessionStore, logger)
 	}
 
@@ -57,14 +53,14 @@ func main() {
 	corsHandler := corsMiddleware(mux)
 
 	server := &http.Server{
-		Addr:              addr,
+		Addr:              cfg.ServerAddr,
 		Handler:           corsHandler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	logger.Info("dexdex worker server starting",
 		"component", "worker-server",
-		"addr", addr,
+		"addr", cfg.ServerAddr,
 	)
 
 	// Graceful shutdown.

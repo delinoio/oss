@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -23,15 +22,10 @@ type Client struct {
 	cachedCapsExpiry time.Time
 }
 
-// NewClient creates a new worker client. URL defaults to DEXDEX_WORKER_SERVER_URL env or http://127.0.0.1:7879.
-func NewClient(logger *slog.Logger) *Client {
-	url := os.Getenv("DEXDEX_WORKER_SERVER_URL")
-	if url == "" {
-		url = "http://127.0.0.1:7879"
-	}
-
+// NewClient creates a new worker client with the given worker server URL.
+func NewClient(workerServerURL string, logger *slog.Logger) *Client {
 	return &Client{
-		client: dexdexv1connect.NewWorkerSessionAdapterServiceClient(http.DefaultClient, url),
+		client: dexdexv1connect.NewWorkerSessionAdapterServiceClient(http.DefaultClient, workerServerURL),
 		logger: logger,
 	}
 }

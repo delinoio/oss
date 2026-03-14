@@ -8,6 +8,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/delinoio/oss/protos/dexdex v0.0.0
 	github.com/getlantern/systray v1.2.2
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.8.0
 	golang.org/x/sys v0.37.0
 	google.golang.org/protobuf v1.36.11
@@ -23,7 +24,6 @@ require (
 	github.com/getlantern/hidden v0.0.0-20190325191715-f02dbb02be55 // indirect
 	github.com/getlantern/ops v0.0.0-20190325191751-d70cb0d6f85f // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
