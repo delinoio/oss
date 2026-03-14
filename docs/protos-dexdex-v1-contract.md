@@ -63,9 +63,10 @@
 - additive fields/endpoints preferred
 - enum expansion is allowed with unknown-safe client behavior
 - breaking changes require coordinated rollout across app and servers
-- Implemented-vs-planned alignment (current repo reality):
-- implemented proto contains full session-fork, input-handoff, workspace-work-status, capability, and notification-read RPCs in addition to the baseline scaffold subset: `GetWorkspace`, `GetRepositoryGroup`, `GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`, `GetSessionOutput`, `GetPullRequest`, `ListReviewAssistItems`, `ListReviewComments`, `GetBadgeTheme`, `ListNotifications`, and `StreamWorkspaceEvents`
+- Implemented-vs-planned alignment (current repo reality, as of 2026-03-14):
+- implemented proto contains full session-fork, input-handoff, workspace-work-status, capability, and notification-read RPCs in addition to the baseline scaffold subset: `GetWorkspace`, `GetRepositoryGroup`, `ListRepositoryGroups`, `GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`, `GetSessionOutput`, `GetPullRequest`, `ListPullRequests`, `UpdatePullRequest`, `ListReviewAssistItems`, `ListReviewComments`, `GetBadgeTheme`, `ListNotifications`, and `StreamWorkspaceEvents`
 - worker adapter service (`WorkerSessionAdapterService`) is implemented with `GetAgentCapabilities` and `ForkSessionAdapter`
+- worker execution service RPCs are implemented: `StartExecution` (server-streaming), `SubmitWorkerInput`, `CancelExecution` with corresponding request/response messages
 - `AgentCliType` enum and `AgentCapability` message are implemented; fixture preset/source metadata families remain out of scope
 - all session-fork, latest-waiting-input, workspace-work-status, and capability/fork-adapter RPCs are now implemented in `dexdex.proto`
 - upstream DexDex source docs define expanded create/update/delete and richer flow contracts that remain target scope for further additive evolution

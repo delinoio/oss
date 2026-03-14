@@ -57,14 +57,17 @@
 - `SINGLE_INSTANCE`: single-process event backbone, local DB option, replay bounded by local retention
 - `SCALE`: Redis-backed propagation/replay and relational DB backbone for multi-instance deployment
 - Configuration contract (normalized to current monorepo/runtime naming):
-- current scaffold implementation does not parse runtime env configuration
-- planned envs for Connect runtime rollout: `DEXDEX_MAIN_SERVER_ADDR`, `DEXDEX_MAIN_STREAM_RETENTION`, `DEXDEX_MAIN_STREAM_HEARTBEAT_INTERVAL`, `DEXDEX_WORKER_SERVER_URL`, `DEXDEX_DEPLOYMENT_MODE`, `DEXDEX_DATABASE_URL`, `DEXDEX_REDIS_URL`, `DEXDEX_PR_POLL_INTERVAL_SEC`
-- Implemented-vs-planned alignment:
-- current implementation includes full Connect RPC handlers for WorkspaceService (GetWorkspace, ListWorkspaces, GetWorkspaceWorkStatus with priority-based status computation), TaskService (CRUD + SubmitPlanDecision with FanOut event publishing), SessionService (GetSessionOutput, ListSessionCapabilities, ForkSession, ListForkedSessions, ArchiveForkedSession, GetLatestWaitingSession, SubmitSessionInput), NotificationService (ListNotifications, MarkNotificationRead with stream event publishing), and EventStreamService (streaming with fan-out, replay, heartbeat, SESSION_FORK_UPDATED and WORKSPACE_WORK_STATUS_UPDATED events)
-- worker client with agent capability caching (5-minute TTL) is implemented; actual dispatch/routing logic from main-server to worker is not yet wired
+- runtime configuration is centrally parsed via `internal/config/config.go` using env vars
+- implemented envs: `DEXDEX_MAIN_SERVER_ADDR`, `DEXDEX_MAIN_STREAM_RETENTION`, `DEXDEX_MAIN_STREAM_HEARTBEAT_INTERVAL`, `DEXDEX_WORKER_SERVER_URL`, `DEXDEX_DEPLOYMENT_MODE`, `DEXDEX_DATABASE_URL`, `DEXDEX_REDIS_URL`, `DEXDEX_PR_POLL_INTERVAL_SEC`
+- Implemented-vs-planned alignment (as of 2026-03-14):
+- current implementation includes full Connect RPC handlers for WorkspaceService (GetWorkspace, ListWorkspaces, GetWorkspaceWorkStatus with priority-based status computation), TaskService (CRUD + SubmitPlanDecision with FanOut event publishing), SessionService (GetSessionOutput, ListSessionCapabilities, ForkSession, ListForkedSessions, ArchiveForkedSession, GetLatestWaitingSession, SubmitSessionInput), NotificationService (ListNotifications, MarkNotificationRead with stream event publishing), EventStreamService (streaming with fan-out, replay, heartbeat, SESSION_FORK_UPDATED and WORKSPACE_WORK_STATUS_UPDATED events), RepositoryService (GetRepositoryGroup, ListRepositoryGroups), and PrManagementService (GetPullRequest, ListPullRequests, UpdatePullRequest)
+- worker client with agent capability caching (5-minute TTL) is implemented
+- worker dispatch via `internal/worker/dispatch.go` is implemented (Dispatcher manages execution goroutines, dispatches to worker via StartExecution streaming RPC, consumes events, publishes through FanOut)
+- PR polling via `internal/polling/pr_poller.go` is implemented (polls GitHub via `gh api`, detects status changes, creates notifications)
+- `UpdatePullRequest` is added to Store interface
 - session summary store for fork orchestration and lineage tracking is implemented in memory
 - in-memory store with session output storage and rich seed data
-- persistence layer (DB), worker adapter routing logic, and PR polling remain planned rollout scope
+- PostgreSQL persistence layer via sqlc with conditional store selection (`DEXDEX_DATABASE_URL`) is implemented
 - expanded API behavior from upstream DexDex source docs remains target contract for further additive evolution
 
 ## Storage
@@ -98,7 +101,7 @@
 
 ## Dependencies and Integrations
 - Depends on shared schema contracts in `protos/dexdex/v1`.
-- Current implementation exposes live Connect RPC handlers to app and has a worker client for capability caching; actual worker routing dispatch is not yet live.
+- Current implementation exposes live Connect RPC handlers to app, has a worker client for capability caching, worker dispatch via Dispatcher for StartExecution streaming, and PR polling via GitHub CLI integration.
 - Target runtime integrates upstream with `apps/dexdex` client behavior through Connect RPC and event streaming.
 - Target runtime integrates downstream with `servers/dexdex-worker-server` via worker session adapter RPC boundary.
 - Target runtime consumes worker capability and fork-adapter contracts from `WorkerSessionAdapterService`.

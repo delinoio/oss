@@ -85,7 +85,9 @@
 - new enums `SessionForkStatus`, `SessionForkIntent`, `WorkspaceWorkStatus`, `AgentCliType` are available in the TypeScript layer
 - 8 new React Query hooks are implemented for all new RPCs (ListSessionCapabilities, ForkSession, ListForkedSessions, ArchiveForkedSession, GetLatestWaitingSession, SubmitSessionInput, GetWorkspaceWorkStatus, MarkNotificationRead)
 - `SessionForkPanel` and `SessionInputForm` components are implemented
-- menu bar tray with work status icon (Tauri-side), global shortcut Cmd/Ctrl+Shift+I (Tauri-side), PR management UI, review assist UI, repository group selector UI, and credential bridge/import remain planned scope
+- repository group selector in create task dialog (useListRepositoryGroups hook + select dropdown) is implemented
+- credential bridge with Tauri commands (store_credential, list_credentials, delete_credential) and CredentialManager React component in settings page is implemented
+- menu bar tray with work status icon (Tauri-side), global shortcut Cmd/Ctrl+Shift+I (Tauri-side), PR management UI, and review assist UI remain planned scope
 
 ## Storage
 - Client-local persisted state includes active workspace pointer, workspace-scoped tab metadata, and user UI preferences (appearance, notification preference, shortcut discoverability).
