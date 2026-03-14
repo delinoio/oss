@@ -4,11 +4,13 @@
 
 import { type CSSProperties, useState } from "react";
 import { StatusBadge } from "../../components/status-badge";
+import { TaskListSkeleton } from "../../components/skeleton-loader";
 import type { UnitTask } from "../../lib/mock-data";
 import { UnitTaskStatus } from "../../lib/status";
 
 interface TaskListProps {
   tasks: UnitTask[];
+  isLoading?: boolean;
   onTaskSelect: (taskId: string) => void;
   onCreateTask: () => void;
 }
@@ -22,7 +24,7 @@ const FILTER_OPTIONS = [
   { value: UnitTaskStatus.FAILED, label: "Failed" },
 ];
 
-export function TaskList({ tasks, onTaskSelect, onCreateTask }: TaskListProps) {
+export function TaskList({ tasks, isLoading, onTaskSelect, onCreateTask }: TaskListProps) {
   const [filter, setFilter] = useState<string>("all");
 
   const filteredTasks = filter === "all"
@@ -114,7 +116,9 @@ export function TaskList({ tasks, onTaskSelect, onCreateTask }: TaskListProps) {
       </div>
 
       <div style={listStyle}>
-        {filteredTasks.length === 0 && (
+        {isLoading ? (
+          <TaskListSkeleton />
+        ) : filteredTasks.length === 0 ? (
           <div
             style={{
               padding: "var(--space-8)",
@@ -125,10 +129,11 @@ export function TaskList({ tasks, onTaskSelect, onCreateTask }: TaskListProps) {
           >
             No tasks match the current filter
           </div>
+        ) : (
+          filteredTasks.map((task) => (
+            <TaskRow key={task.unitTaskId} task={task} onClick={() => onTaskSelect(task.unitTaskId)} />
+          ))
         )}
-        {filteredTasks.map((task) => (
-          <TaskRow key={task.unitTaskId} task={task} onClick={() => onTaskSelect(task.unitTaskId)} />
-        ))}
       </div>
     </div>
   );

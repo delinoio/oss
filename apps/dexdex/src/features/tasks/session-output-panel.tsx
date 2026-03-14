@@ -98,6 +98,9 @@ function OutputEventRow({ event }: { event: SessionOutputEvent }) {
   };
 
   switch (event.kind) {
+    case SessionOutputKind.PLAN_UPDATE:
+      return <PlanUpdateRow event={event} baseStyle={baseStyle} />;
+
     case SessionOutputKind.TEXT:
       return (
         <div style={{ ...baseStyle, color: "var(--color-text-primary)" }} data-testid="output-text">
@@ -196,4 +199,92 @@ function OutputEventRow({ event }: { event: SessionOutputEvent }) {
         </div>
       );
   }
+}
+
+interface StructuredPlan {
+  title?: string;
+  steps?: Array<{ title: string; description?: string; file_paths?: string[]; status?: string }>;
+  complexity?: string;
+}
+
+function PlanUpdateRow({ event, baseStyle }: { event: SessionOutputEvent; baseStyle: CSSProperties }) {
+  let plan: StructuredPlan | null = null;
+  try {
+    plan = JSON.parse(event.body) as StructuredPlan;
+  } catch {
+    // Not structured JSON, render as plain text
+  }
+
+  if (!plan || !plan.steps) {
+    return (
+      <div
+        style={{
+          ...baseStyle,
+          backgroundColor: "var(--color-output-tool-call-bg)",
+          borderLeft: "3px solid var(--color-accent)",
+        }}
+        data-testid="output-plan-update"
+      >
+        <span style={{ fontWeight: 600, fontSize: "var(--font-size-xs)", opacity: 0.7 }}>PLAN</span>
+        <br />
+        <span style={{ whiteSpace: "pre-wrap" }}>{event.body}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        ...baseStyle,
+        backgroundColor: "var(--color-output-tool-call-bg)",
+        borderLeft: "3px solid var(--color-accent)",
+        padding: "var(--space-3) var(--space-4)",
+      }}
+      data-testid="output-plan-update"
+    >
+      <div style={{ fontWeight: 600, fontSize: "var(--font-size-sm)", marginBottom: "var(--space-2)" }}>
+        {plan.title ?? "Plan"}
+        {plan.complexity && (
+          <span
+            style={{
+              marginLeft: "var(--space-2)",
+              fontSize: "var(--font-size-xs)",
+              color: "var(--color-text-tertiary)",
+              fontWeight: 400,
+            }}
+          >
+            ({plan.complexity})
+          </span>
+        )}
+      </div>
+      <ol style={{ margin: 0, paddingLeft: "var(--space-5)", listStyleType: "decimal" }}>
+        {plan.steps.map((step, i) => (
+          <li key={i} style={{ marginBottom: "var(--space-1)", fontSize: "var(--font-size-sm)" }}>
+            <span style={{ fontWeight: 500 }}>{step.title}</span>
+            {step.status && (
+              <span
+                style={{
+                  marginLeft: "var(--space-1)",
+                  fontSize: "var(--font-size-xs)",
+                  color: step.status === "done" ? "var(--color-status-completed)" : "var(--color-text-tertiary)",
+                }}
+              >
+                [{step.status}]
+              </span>
+            )}
+            {step.description && (
+              <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)" }}>
+                {step.description}
+              </div>
+            )}
+            {step.file_paths && step.file_paths.length > 0 && (
+              <div style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-tertiary)", fontFamily: "var(--font-mono)" }}>
+                {step.file_paths.join(", ")}
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
 }

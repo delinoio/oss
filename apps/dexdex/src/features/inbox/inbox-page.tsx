@@ -3,11 +3,13 @@
  */
 
 import type { CSSProperties } from "react";
+import { InboxSkeleton } from "../../components/skeleton-loader";
 import type { Notification } from "../../lib/mock-data";
 import { NotificationType } from "../../lib/status";
 
 interface InboxPageProps {
   notifications: Notification[];
+  isLoading?: boolean;
   onNotificationClick: (notification: Notification) => void;
   onMarkRead: (notificationId: string) => void;
 }
@@ -29,7 +31,7 @@ function getNotificationIcon(type: NotificationType): string {
   }
 }
 
-export function InboxPage({ notifications, onNotificationClick, onMarkRead }: InboxPageProps) {
+export function InboxPage({ notifications, isLoading, onNotificationClick, onMarkRead }: InboxPageProps) {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const containerStyle: CSSProperties = {
@@ -73,7 +75,9 @@ export function InboxPage({ notifications, onNotificationClick, onMarkRead }: In
         )}
       </div>
       <div style={listStyle}>
-        {notifications.length === 0 && (
+        {isLoading ? (
+          <InboxSkeleton />
+        ) : notifications.length === 0 ? (
           <div
             style={{
               padding: "var(--space-8)",
@@ -84,8 +88,8 @@ export function InboxPage({ notifications, onNotificationClick, onMarkRead }: In
           >
             No notifications
           </div>
-        )}
-        {notifications.map((notification) => (
+        ) : null}
+        {!isLoading && notifications.map((notification) => (
           <div
             key={notification.notificationId}
             style={{

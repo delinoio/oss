@@ -71,6 +71,18 @@ export interface AgentCapability {
   displayName: string;
 }
 
+export interface ReviewComment {
+  reviewCommentId: string;
+  body: string;
+  filePath: string;
+  side: string;
+  lineNumber: number;
+  status: string;
+  prTrackingId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const MOCK_TASKS: UnitTask[] = [
   {
     unitTaskId: "task-001",

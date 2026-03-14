@@ -10,6 +10,7 @@ import "./styles/globals.css";
 import { Sidebar } from "./components/sidebar";
 import { TabBar } from "./components/tab-bar";
 import { CommandPalette } from "./components/command-palette";
+import { ErrorBoundary } from "./components/error-boundary";
 import { TaskList } from "./features/tasks/task-list";
 import { TaskDetail } from "./features/tasks/task-detail";
 import { CreateDialog } from "./features/tasks/create-dialog";
@@ -20,6 +21,7 @@ import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useWorkspaceStream } from "./hooks/use-workspace-stream";
 import { useTrayStatus } from "./hooks/use-tray-status";
 import { useGlobalShortcut } from "./hooks/use-global-shortcut";
+import { useWebNotifications } from "./hooks/use-web-notifications";
 import {
   useListUnitTasks,
   useListNotifications,
@@ -67,9 +69,9 @@ function App() {
   const [activeTabId, setActiveTabId] = useState("");
 
   // Data state - Connect RPC queries replace mock data
-  const { data: tasks = [] } = useListUnitTasks(WORKSPACE_ID);
-  const { data: notifications = [] } = useListNotifications(WORKSPACE_ID);
-  const { data: pullRequestsData } = useListPullRequests(WORKSPACE_ID);
+  const { data: tasks = [], isLoading: tasksLoading } = useListUnitTasks(WORKSPACE_ID);
+  const { data: notifications = [], isLoading: notificationsLoading } = useListNotifications(WORKSPACE_ID);
+  const { data: pullRequestsData, isLoading: prsLoading } = useListPullRequests(WORKSPACE_ID);
   const pullRequests = pullRequestsData?.pullRequests ?? [];
   const markReadMutation = useMarkNotificationReadMutation();
 
@@ -108,10 +110,14 @@ function App() {
     [theme, sidebarOpen, connectionStatus, toggleTheme, setTheme, toggleSidebar],
   );
 
+  // Web Notifications
+  const { dispatchNotification } = useWebNotifications({ onNavigate: navigate });
+
   // Workspace stream
   useWorkspaceStream({
     workspaceId: WORKSPACE_ID,
     onStatusChange: setConnectionStatus,
+    onNotification: dispatchNotification,
   });
 
   // Tray status sync
@@ -274,32 +280,36 @@ function App() {
             onTabClose={handleTabClose}
           />
           <div style={contentAreaStyle}>
-            <Routes>
-              <Route
-                path="/tasks"
-                element={
-                  <TaskList
-                    tasks={tasks}
-                    onTaskSelect={(taskId) => navigate(`/tasks/${taskId}`)}
-                    onCreateTask={() => setCreateDialogOpen(true)}
-                  />
-                }
-              />
-              <Route path="/tasks/:taskId" element={<TaskDetailRoute />} />
-              <Route
-                path="/inbox"
-                element={
-                  <InboxPage
-                    notifications={notifications}
-                    onNotificationClick={handleNotificationClick}
-                    onMarkRead={handleMarkRead}
-                  />
-                }
-              />
-              <Route path="/prs" element={<PrManagementPage pullRequests={pullRequests} />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="*" element={<Navigate to="/tasks" replace />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route
+                  path="/tasks"
+                  element={
+                    <TaskList
+                      tasks={tasks}
+                      isLoading={tasksLoading}
+                      onTaskSelect={(taskId) => navigate(`/tasks/${taskId}`)}
+                      onCreateTask={() => setCreateDialogOpen(true)}
+                    />
+                  }
+                />
+                <Route path="/tasks/:taskId" element={<TaskDetailRoute />} />
+                <Route
+                  path="/inbox"
+                  element={
+                    <InboxPage
+                      notifications={notifications}
+                      isLoading={notificationsLoading}
+                      onNotificationClick={handleNotificationClick}
+                      onMarkRead={handleMarkRead}
+                    />
+                  }
+                />
+                <Route path="/prs" element={<PrManagementPage pullRequests={pullRequests} isLoading={prsLoading} />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="*" element={<Navigate to="/tasks" replace />} />
+              </Routes>
+            </ErrorBoundary>
           </div>
         </div>
       </div>
