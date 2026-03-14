@@ -22,6 +22,7 @@ type agentCommand struct {
 }
 
 // buildAgentCommand creates the agent CLI command based on the agent type.
+// When parentSessionID is non-empty, fork mode is activated (Claude Code --resume).
 func buildAgentCommand(
 	ctx context.Context,
 	agentType dexdexv1.AgentCliType,
@@ -29,18 +30,31 @@ func buildAgentCommand(
 	attachedDirs []string,
 	prompt string,
 	sessionID string,
+	parentSessionID string,
 ) (*agentCommand, error) {
 	var args []string
 
 	switch agentType {
 	case dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE:
-		args = []string{"claude", "--json", "--output-format", "stream-json", "-p", prompt}
+		if parentSessionID != "" {
+			// Fork mode: resume from parent session with new prompt
+			args = []string{"claude", "--json", "--output-format", "stream-json",
+				"--resume", parentSessionID, "-p", prompt}
+		} else {
+			args = []string{"claude", "--json", "--output-format", "stream-json", "-p", prompt}
+		}
 		for _, dir := range attachedDirs {
 			args = append(args, "--add-dir", dir)
 		}
 	case dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI:
+		if parentSessionID != "" {
+			return nil, fmt.Errorf("agent %s does not support session forking", agentType.String())
+		}
 		args = []string{"codex", "--json", "-p", prompt}
 	case dexdexv1.AgentCliType_AGENT_CLI_TYPE_OPENCODE:
+		if parentSessionID != "" {
+			return nil, fmt.Errorf("agent %s does not support session forking", agentType.String())
+		}
 		args = []string{"opencode", "--json", "-p", prompt}
 	default:
 		return nil, fmt.Errorf("unsupported agent CLI type: %s", agentType.String())

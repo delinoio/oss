@@ -106,6 +106,142 @@ func (d *Dispatcher) DispatchExecution(
 	return nil
 }
 
+// DispatchForkExecution starts a forked session execution asynchronously.
+// Unlike DispatchExecution, this does not create a subtask — fork is session-level.
+func (d *Dispatcher) DispatchForkExecution(
+	parentCtx context.Context,
+	workspaceID string,
+	forkedSessionID string,
+	parentSessionID string,
+	forkIntent dexdexv1.SessionForkIntent,
+	prompt string,
+	repoGroup *dexdexv1.RepositoryGroup,
+	agentCliType dexdexv1.AgentCliType,
+) error {
+	ctx, cancel := context.WithCancel(parentCtx)
+	// Use forkedSessionID as the key for tracking (no subtask for forks)
+	forkSubKey := fmt.Sprintf("fork-%s", forkedSessionID)
+	d.mu.Lock()
+	d.activeSubs[forkSubKey] = cancel
+	d.sessionSubs[forkedSessionID] = forkSubKey
+	d.mu.Unlock()
+
+	go d.consumeForkExecutionStream(ctx, workspaceID, forkedSessionID, parentSessionID, forkIntent, prompt, repoGroup, agentCliType, forkSubKey)
+
+	d.logger.Info("fork execution dispatched",
+		"workspace_id", workspaceID,
+		"forked_session_id", forkedSessionID,
+		"parent_session_id", parentSessionID,
+	)
+
+	return nil
+}
+
+func (d *Dispatcher) consumeForkExecutionStream(
+	ctx context.Context,
+	workspaceID string,
+	forkedSessionID string,
+	parentSessionID string,
+	forkIntent dexdexv1.SessionForkIntent,
+	prompt string,
+	repoGroup *dexdexv1.RepositoryGroup,
+	agentCliType dexdexv1.AgentCliType,
+	forkSubKey string,
+) {
+	defer func() {
+		d.mu.Lock()
+		delete(d.activeSubs, forkSubKey)
+		delete(d.sessionSubs, forkedSessionID)
+		d.mu.Unlock()
+	}()
+
+	executionStream, err := d.client.StartExecution(ctx, &dexdexv1.StartExecutionRequest{
+		WorkspaceId:     workspaceID,
+		SessionId:       forkedSessionID,
+		RepositoryGroup: repoGroup,
+		Prompt:          prompt,
+		AgentCliType:    agentCliType,
+		ParentSessionId: parentSessionID,
+		ForkIntent:      forkIntent,
+	})
+	if err != nil {
+		d.logger.Error("failed to start fork execution stream",
+			"workspace_id", workspaceID,
+			"forked_session_id", forkedSessionID,
+			"error", err,
+		)
+		return
+	}
+	defer executionStream.Close()
+
+	for executionStream.Receive() {
+		event := executionStream.Msg()
+
+		switch e := event.Event.(type) {
+		case *dexdexv1.ExecutionEvent_SessionOutput:
+			d.store.AddSessionOutput(forkedSessionID, e.SessionOutput)
+			d.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_OUTPUT, &stream.SessionOutputPayload{SessionOutput: e.SessionOutput})
+
+		case *dexdexv1.ExecutionEvent_StateChanged:
+			d.logger.Info("fork session state changed",
+				"forked_session_id", forkedSessionID,
+				"status", e.StateChanged.Status.String(),
+			)
+			d.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_STATE_CHANGED, &stream.SessionStateChangedPayload{SessionStateChanged: e.StateChanged})
+
+			// Update session summary status
+			summary, sErr := d.store.GetSessionSummary(workspaceID, forkedSessionID)
+			if sErr == nil {
+				summary.AgentSessionStatus = e.StateChanged.Status
+				d.store.AddSessionSummary(workspaceID, summary)
+
+				// Publish fork update event
+				d.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SESSION_FORK_UPDATED, &stream.SessionForkUpdatedPayload{
+					SessionForkUpdated: &dexdexv1.SessionForkUpdatedEvent{
+						SessionSummary: summary,
+					},
+				})
+			}
+
+			// Terminal states end the stream
+			switch e.StateChanged.Status {
+			case dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED,
+				dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_FAILED,
+				dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_CANCELLED:
+				d.publishWorkStatusUpdate(workspaceID)
+				return
+
+			case dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_WAITING_FOR_INPUT:
+				d.publishWorkStatusUpdate(workspaceID)
+			}
+
+		case *dexdexv1.ExecutionEvent_WorktreeStatus:
+			d.store.UpsertWorktreeAssignment(workspaceID, &store.WorktreeAssignment{
+				SubTaskID:    forkSubKey,
+				SessionID:    forkedSessionID,
+				WorkspaceID:  workspaceID,
+				State:        e.WorktreeStatus.State,
+				PrimaryDir:   e.WorktreeStatus.PrimaryDir,
+				ErrorMessage: e.WorktreeStatus.ErrorMessage,
+				UpdatedAt:    time.Now(),
+			})
+
+		case *dexdexv1.ExecutionEvent_Commit:
+			d.logger.Info("fork commit received",
+				"forked_session_id", forkedSessionID,
+				"sha", e.Commit.Sha,
+			)
+		}
+	}
+
+	if err := executionStream.Err(); err != nil {
+		d.logger.Error("fork execution stream error",
+			"forked_session_id", forkedSessionID,
+			"error", err,
+		)
+	}
+}
+
 // CancelSubTask cancels a running subtask execution.
 func (d *Dispatcher) CancelSubTask(subTaskID string) error {
 	d.mu.RLock()
@@ -205,6 +341,22 @@ func (d *Dispatcher) consumeExecutionStream(
 			// Append commit to subtask chain
 			subTask.CommitChain = append(subTask.CommitChain, e.Commit)
 			d.store.UpsertSubTask(workspaceID, subTask)
+
+		case *dexdexv1.ExecutionEvent_WorktreeStatus:
+			d.store.UpsertWorktreeAssignment(workspaceID, &store.WorktreeAssignment{
+				SubTaskID:    subTask.SubTaskId,
+				SessionID:    sessionID,
+				WorkspaceID:  workspaceID,
+				State:        e.WorktreeStatus.State,
+				PrimaryDir:   e.WorktreeStatus.PrimaryDir,
+				ErrorMessage: e.WorktreeStatus.ErrorMessage,
+				UpdatedAt:    time.Now(),
+			})
+			d.logger.Info("worktree status updated",
+				"session_id", sessionID,
+				"state", e.WorktreeStatus.State.String(),
+				"primary_dir", e.WorktreeStatus.PrimaryDir,
+			)
 		}
 	}
 

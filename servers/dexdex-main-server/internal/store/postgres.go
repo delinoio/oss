@@ -21,18 +21,20 @@ type PostgresStore struct {
 	q      *dbquery.Queries
 	logger *slog.Logger
 
-	// Session outputs remain in-memory as they are transient streaming data.
-	mu             sync.RWMutex
-	sessionOutputs map[string][]*dexdexv1.SessionOutputEvent
+	// Session outputs and worktree assignments remain in-memory as they are transient streaming data.
+	mu                  sync.RWMutex
+	sessionOutputs      map[string][]*dexdexv1.SessionOutputEvent
+	worktreeAssignments map[string]map[string]*WorktreeAssignment // workspaceID -> sessionID -> assignment
 }
 
 // NewPostgresStore creates a new PostgresStore from a connection pool.
 func NewPostgresStore(pool *pgxpool.Pool, logger *slog.Logger) *PostgresStore {
 	return &PostgresStore{
-		pool:           pool,
-		q:              dbquery.New(pool),
-		logger:         logger,
-		sessionOutputs: make(map[string][]*dexdexv1.SessionOutputEvent),
+		pool:                pool,
+		q:                   dbquery.New(pool),
+		logger:              logger,
+		sessionOutputs:      make(map[string][]*dexdexv1.SessionOutputEvent),
+		worktreeAssignments: make(map[string]map[string]*WorktreeAssignment),
 	}
 }
 
@@ -694,6 +696,66 @@ func (s *PostgresStore) ListReviewComments(workspaceID, prTrackingID string) []*
 		result[i] = &dexdexv1.ReviewComment{
 			ReviewCommentId: row.ReviewCommentID,
 			Body:            row.Body,
+		}
+	}
+	return result
+}
+
+func (s *PostgresStore) FindSubTaskBySessionID(workspaceID, sessionID string) (*dexdexv1.SubTask, error) {
+	// Scan all subtasks for this workspace looking for the session ID match
+	// This is acceptable since subtask counts are bounded per workspace
+	allSubTasks := s.ListSubTasks(workspaceID, "")
+	for _, st := range allSubTasks {
+		if st.SessionId == sessionID {
+			return st, nil
+		}
+	}
+	return nil, fmt.Errorf("no subtask found for session: workspace=%s session=%s", workspaceID, sessionID)
+}
+
+// Worktree tracking methods (in-memory, transient runtime data)
+
+func (s *PostgresStore) UpsertWorktreeAssignment(workspaceID string, assignment *WorktreeAssignment) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.worktreeAssignments[workspaceID] == nil {
+		s.worktreeAssignments[workspaceID] = make(map[string]*WorktreeAssignment)
+	}
+	s.worktreeAssignments[workspaceID][assignment.SessionID] = assignment
+}
+
+func (s *PostgresStore) GetWorktreeAssignment(workspaceID, sessionID string) (*WorktreeAssignment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	assignments, ok := s.worktreeAssignments[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("worktree assignment not found: workspace=%s session=%s", workspaceID, sessionID)
+	}
+	assignment, ok := assignments[sessionID]
+	if !ok {
+		return nil, fmt.Errorf("worktree assignment not found: workspace=%s session=%s", workspaceID, sessionID)
+	}
+	return assignment, nil
+}
+
+func (s *PostgresStore) ListActiveWorktrees(workspaceID string) []*WorktreeAssignment {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	assignments, ok := s.worktreeAssignments[workspaceID]
+	if !ok {
+		return nil
+	}
+
+	result := make([]*WorktreeAssignment, 0)
+	for _, a := range assignments {
+		switch a.State {
+		case dexdexv1.WorktreeState_WORKTREE_STATE_PREPARING,
+			dexdexv1.WorktreeState_WORKTREE_STATE_READY,
+			dexdexv1.WorktreeState_WORKTREE_STATE_EXECUTING:
+			result = append(result, a)
 		}
 	}
 	return result

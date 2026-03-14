@@ -169,11 +169,30 @@ func (h *AdapterHandler) StartExecution(
 		h.mu.Unlock()
 	}()
 
+	// Emit worktree PREPARING state
+	_ = stream.Send(&dexdexv1.ExecutionEvent{
+		Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+			WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
+				SessionId: sessionID,
+				State:     dexdexv1.WorktreeState_WORKTREE_STATE_PREPARING,
+			},
+		},
+	})
+
 	// Prepare worktree
 	wCtx, err := h.wtManager.PrepareWorktree(execCtx, repoGroup, sessionID)
 	if err != nil {
 		h.logger.Error("failed to prepare worktree",
 			"session_id", sessionID, "error", err)
+		_ = stream.Send(&dexdexv1.ExecutionEvent{
+			Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+				WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
+					SessionId:    sessionID,
+					State:        dexdexv1.WorktreeState_WORKTREE_STATE_FAILED,
+					ErrorMessage: err.Error(),
+				},
+			},
+		})
 		_ = stream.Send(&dexdexv1.ExecutionEvent{
 			Event: &dexdexv1.ExecutionEvent_StateChanged{
 				StateChanged: &dexdexv1.SessionStateChangedEvent{
@@ -185,9 +204,37 @@ func (h *AdapterHandler) StartExecution(
 		return connect.NewError(connect.CodeInternal, fmt.Errorf("worktree preparation failed: %w", err))
 	}
 	defer func() {
+		_ = stream.Send(&dexdexv1.ExecutionEvent{
+			Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+				WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
+					SessionId:  sessionID,
+					State:      dexdexv1.WorktreeState_WORKTREE_STATE_CLEANING_UP,
+					PrimaryDir: wCtx.PrimaryDir,
+				},
+			},
+		})
 		_ = h.wtManager.CleanupWorktree(context.Background(), wCtx)
 		h.wtManager.ReleaseSlot()
+		_ = stream.Send(&dexdexv1.ExecutionEvent{
+			Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+				WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
+					SessionId: sessionID,
+					State:     dexdexv1.WorktreeState_WORKTREE_STATE_CLEANED,
+				},
+			},
+		})
 	}()
+
+	// Emit worktree READY state
+	_ = stream.Send(&dexdexv1.ExecutionEvent{
+		Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+			WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
+				SessionId:  sessionID,
+				State:      dexdexv1.WorktreeState_WORKTREE_STATE_READY,
+				PrimaryDir: wCtx.PrimaryDir,
+			},
+		},
+	})
 
 	// Emit starting state
 	_ = stream.Send(&dexdexv1.ExecutionEvent{
@@ -200,15 +247,26 @@ func (h *AdapterHandler) StartExecution(
 	})
 
 	// Create session metadata
-	h.store.CreateSession(store.SessionMetadata{
+	sessionMeta := store.SessionMetadata{
 		SessionID:    sessionID,
 		ForkStatus:   dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE,
 		AgentCliType: agentType,
 		CreatedAt:    time.Now(),
-	})
+	}
+	if req.Msg.ParentSessionId != "" {
+		sessionMeta.ParentSessionID = req.Msg.ParentSessionId
+		parentMeta, pErr := h.store.GetSessionMetadata(req.Msg.ParentSessionId)
+		if pErr == nil && parentMeta.RootSessionID != "" {
+			sessionMeta.RootSessionID = parentMeta.RootSessionID
+		} else {
+			sessionMeta.RootSessionID = req.Msg.ParentSessionId
+		}
+	}
+	h.store.CreateSession(sessionMeta)
 
 	// Build agent command based on type
-	agentCmd, err := buildAgentCommand(execCtx, agentType, wCtx.PrimaryDir, wCtx.AttachedDirs, prompt, sessionID)
+	parentSessionID := req.Msg.ParentSessionId
+	agentCmd, err := buildAgentCommand(execCtx, agentType, wCtx.PrimaryDir, wCtx.AttachedDirs, prompt, sessionID, parentSessionID)
 	if err != nil {
 		h.logger.Error("failed to build agent command", "session_id", sessionID, "error", err)
 		_ = stream.Send(&dexdexv1.ExecutionEvent{
@@ -221,6 +279,17 @@ func (h *AdapterHandler) StartExecution(
 		})
 		return connect.NewError(connect.CodeInternal, err)
 	}
+
+	// Emit worktree EXECUTING state
+	_ = stream.Send(&dexdexv1.ExecutionEvent{
+		Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+			WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
+				SessionId:  sessionID,
+				State:      dexdexv1.WorktreeState_WORKTREE_STATE_EXECUTING,
+				PrimaryDir: wCtx.PrimaryDir,
+			},
+		},
+	})
 
 	// Emit running state
 	_ = stream.Send(&dexdexv1.ExecutionEvent{

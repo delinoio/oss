@@ -149,6 +149,16 @@ enum AgentCliType {
   AGENT_CLI_TYPE_OPENCODE = 3;
 }
 
+enum WorktreeState {
+  WORKTREE_STATE_UNSPECIFIED = 0;
+  WORKTREE_STATE_PREPARING = 1;
+  WORKTREE_STATE_READY = 2;
+  WORKTREE_STATE_EXECUTING = 3;
+  WORKTREE_STATE_CLEANING_UP = 4;
+  WORKTREE_STATE_CLEANED = 5;
+  WORKTREE_STATE_FAILED = 6;
+}
+
 message Workspace {
   string workspace_id = 1;
   string name = 2;
@@ -261,6 +271,13 @@ message SessionForkUpdatedEvent {
 message WorkspaceWorkStatusUpdatedEvent {
   string workspace_id = 1;
   WorkspaceWorkStatus status = 2;
+}
+
+message WorktreeStatusEvent {
+  string session_id = 1;
+  WorktreeState state = 2;
+  string primary_dir = 3;
+  string error_message = 4;
 }
 
 message StreamWorkspaceEventsResponse {
@@ -594,6 +611,9 @@ message StartExecutionRequest {
   RepositoryGroup repository_group = 5;
   string prompt = 6;
   AgentCliType agent_cli_type = 7;
+  // Fork execution fields: non-empty parent_session_id triggers fork mode.
+  string parent_session_id = 8;
+  SessionForkIntent fork_intent = 9;
 }
 
 message ExecutionEvent {
@@ -601,6 +621,7 @@ message ExecutionEvent {
     SessionOutputEvent session_output = 1;
     SessionStateChangedEvent state_changed = 2;
     CommitMetadata commit = 3;
+    WorktreeStatusEvent worktree_status = 4;
   }
 }
 

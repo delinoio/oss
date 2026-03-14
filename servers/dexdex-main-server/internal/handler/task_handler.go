@@ -25,6 +25,7 @@ type TaskHandler struct {
 // Dispatcher is the interface for dispatching task execution.
 type Dispatcher interface {
 	DispatchExecution(ctx context.Context, workspaceID string, unitTask *dexdexv1.UnitTask, repoGroup *dexdexv1.RepositoryGroup, agentCliType dexdexv1.AgentCliType) error
+	DispatchForkExecution(ctx context.Context, workspaceID string, forkedSessionID string, parentSessionID string, forkIntent dexdexv1.SessionForkIntent, prompt string, repoGroup *dexdexv1.RepositoryGroup, agentCliType dexdexv1.AgentCliType) error
 	CancelSubTask(subTaskID string) error
 	SubmitInput(ctx context.Context, sessionID, inputText string) error
 }

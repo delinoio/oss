@@ -104,6 +104,10 @@ func main() {
 	defer pollerCancel()
 	go prPoller.Start(pollerCtx)
 
+	// Start worktree coordinator for stale cleanup
+	wtCoordinator := worker.NewWorktreeCoordinator(dispatcher, workerClient, dataStore, logger)
+	wtCoordinator.Start(pollerCtx)
+
 	httpServer := &http.Server{
 		Addr:              cfg.ServerAddr,
 		Handler:           corsMiddleware(mux),
