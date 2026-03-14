@@ -17,7 +17,7 @@
 
 ## Interfaces and Contracts
 Contract alignment note:
-- This file prioritizes upstream DexDex entity definitions as target behavior.
+- This file defines DexDex entity definitions as target behavior for this repository.
 - Local field names or payload shapes may temporarily differ until sync work completes.
 
 Conventions:

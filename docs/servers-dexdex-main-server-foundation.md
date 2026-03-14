@@ -16,7 +16,7 @@
 
 ## Interfaces and Contracts
 Contract alignment note:
-- This contract follows upstream DexDex server architecture and API behavior as target state.
+- This contract defines the DexDex server architecture and API behavior target for this repository.
 - Local implementation may diverge temporarily and must be synchronized in follow-up changes.
 
 Core responsibilities:

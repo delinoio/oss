@@ -3,8 +3,8 @@
 ## Goal
 Define DexDex as a Connect RPC-first orchestration platform for CLI coding agents across desktop client, control-plane server, execution-plane server, and shared proto contracts.
 
-This project index prioritizes the architecture and behavior documented in `github.com/delinoio/dexdex` `docs/`.
-When implementation details in this repository differ, this document remains the contract target and follow-up sync work is required.
+This project index is the canonical architecture and behavior contract for DexDex in this repository.
+When implementation details differ from documented contracts, follow-up sync work is required.
 
 ## Project ID
 `dexdex`

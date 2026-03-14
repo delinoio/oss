@@ -17,7 +17,7 @@
 
 ## Interfaces and Contracts
 Contract alignment note:
-- This file adopts the upstream DexDex API reference as the behavior target.
+- This file defines the DexDex API behavior target for this repository.
 - Local proto/code synchronization may lag this document during staged migration windows.
 
 Protocol and design rules:

@@ -16,7 +16,7 @@
 
 ## Interfaces and Contracts
 Contract alignment note:
-- This contract prioritizes upstream DexDex app behavior as target UX.
+- This contract defines the DexDex app behavior target for this repository.
 - Local implementation may temporarily lag while API/entity contracts are synchronized.
 
 Core app rules:

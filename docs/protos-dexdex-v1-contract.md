@@ -16,7 +16,7 @@
 
 ## Interfaces and Contracts
 Contract alignment note:
-- The source-of-truth contract for this document is the DexDex upstream docs set.
+- The source-of-truth contract for this document is the DexDex docs set in this repository.
 - Local proto/code may temporarily diverge while synchronization work is in progress.
 
 Core package and identifiers:

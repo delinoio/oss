@@ -16,7 +16,7 @@
 
 ## Interfaces and Contracts
 Contract alignment note:
-- This contract follows upstream DexDex worker behavior as target execution semantics.
+- This contract defines the DexDex worker behavior target execution semantics for this repository.
 - Local implementation and command builders may lag while synchronization work is ongoing.
 
 Execution principles:
