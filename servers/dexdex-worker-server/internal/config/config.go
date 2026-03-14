@@ -18,6 +18,7 @@ type Config struct {
 	RepoCacheRoot       string
 	MaxParallelSubtasks int
 	AgentExecTimeoutSec int
+	AgentIdleTimeoutSec int
 	SeedData            bool
 }
 
@@ -40,6 +41,7 @@ func LoadConfig(logger *slog.Logger) *Config {
 		RepoCacheRoot:       envOrDefault("DEXDEX_REPO_CACHE_ROOT", defaultRepoCacheRoot),
 		MaxParallelSubtasks: envIntOrDefault("DEXDEX_MAX_PARALLEL_SUBTASKS", 3),
 		AgentExecTimeoutSec: envIntOrDefault("DEXDEX_AGENT_EXEC_TIMEOUT_SEC", 1800),
+		AgentIdleTimeoutSec: envIntOrDefault("DEXDEX_AGENT_IDLE_TIMEOUT_SEC", 300),
 		SeedData:            strings.EqualFold(strings.TrimSpace(os.Getenv("DEXDEX_SEED_DATA")), "true"),
 	}
 
@@ -51,6 +53,7 @@ func LoadConfig(logger *slog.Logger) *Config {
 		"repo_cache_root", cfg.RepoCacheRoot,
 		"max_parallel_subtasks", cfg.MaxParallelSubtasks,
 		"agent_exec_timeout_sec", cfg.AgentExecTimeoutSec,
+		"agent_idle_timeout_sec", cfg.AgentIdleTimeoutSec,
 		"seed_data", cfg.SeedData,
 	)
 

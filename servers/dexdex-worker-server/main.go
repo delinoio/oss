@@ -35,7 +35,7 @@ func main() {
 	}
 
 	sessionHandler := handler.NewSessionServiceHandler(sessionStore, logger)
-	adapterHandler := handler.NewAdapterHandler(sessionStore, wtManager, logger)
+	adapterHandler := handler.NewAdapterHandler(sessionStore, wtManager, cfg, logger)
 
 	mux := http.NewServeMux()
 

@@ -10,6 +10,7 @@ import (
 	"connectrpc.com/connect"
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
+	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/config"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/store"
 )
 
@@ -18,7 +19,11 @@ func setupAdapterTestServer(t *testing.T) (dexdexv1connect.WorkerSessionAdapterS
 
 	logger := testLogger()
 	sessionStore := store.NewSessionStore(logger)
-	handler := NewAdapterHandler(sessionStore, nil, logger)
+	cfg := &config.Config{
+		AgentExecTimeoutSec: 1800,
+		AgentIdleTimeoutSec: 300,
+	}
+	handler := NewAdapterHandler(sessionStore, nil, cfg, logger)
 
 	mux := http.NewServeMux()
 	path, h := dexdexv1connect.NewWorkerSessionAdapterServiceHandler(handler)

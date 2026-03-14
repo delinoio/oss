@@ -4,15 +4,20 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
+	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/config"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/normalize"
+	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/service"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/store"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/worktree"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // activeExecution tracks a running agent execution.
@@ -27,6 +32,7 @@ type AdapterHandler struct {
 	store            *store.SessionStore
 	wtManager        *worktree.Manager
 	usageAccumulator *normalize.UsageAccumulator
+	cfg              *config.Config
 	logger           *slog.Logger
 
 	mu         sync.RWMutex
@@ -34,11 +40,12 @@ type AdapterHandler struct {
 }
 
 // NewAdapterHandler creates a new AdapterHandler.
-func NewAdapterHandler(store *store.SessionStore, wtManager *worktree.Manager, logger *slog.Logger) *AdapterHandler {
+func NewAdapterHandler(store *store.SessionStore, wtManager *worktree.Manager, cfg *config.Config, logger *slog.Logger) *AdapterHandler {
 	return &AdapterHandler{
 		store:            store,
 		wtManager:        wtManager,
 		usageAccumulator: normalize.NewUsageAccumulator(),
+		cfg:              cfg,
 		logger:           logger,
 		executions:       make(map[string]*activeExecution),
 	}
@@ -334,7 +341,10 @@ func (h *AdapterHandler) StartExecution(
 	})
 
 	// Run agent and stream output
-	finalStatus := runAgentProcess(execCtx, agentCmd, sessionID, inputCh, stream, h.store, h.usageAccumulator, h.logger)
+	finalStatus := runAgentProcess(execCtx, agentCmd, sessionID, inputCh, stream, h.store, h.usageAccumulator, h.logger, agentExecOptions{
+		ExecTimeoutSec: h.cfg.AgentExecTimeoutSec,
+		IdleTimeoutSec: h.cfg.AgentIdleTimeoutSec,
+	})
 
 	// Persist accumulated usage to session metadata.
 	if usage := h.usageAccumulator.GetSessionUsage(sessionID); usage != nil {
@@ -345,6 +355,11 @@ func (h *AdapterHandler) StartExecution(
 			"output_tokens", usage.OutputTokens,
 			"estimated_cost_usd", usage.EstimatedCostUsd,
 		)
+	}
+
+	// Extract and stream commit chain from worktree after successful execution.
+	if finalStatus == dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED {
+		h.extractAndStreamCommits(ctx, wCtx, sessionID, stream)
 	}
 
 	// Emit final state
@@ -416,4 +431,69 @@ func (h *AdapterHandler) CancelExecution(
 	h.logger.Info("execution cancelled", "session_id", sessionID)
 
 	return connect.NewResponse(&dexdexv1.CancelExecutionResponse{}), nil
+}
+
+// extractAndStreamCommits extracts the commit chain from the worktree after
+// successful agent execution and streams each commit as an event.
+func (h *AdapterHandler) extractAndStreamCommits(
+	ctx context.Context,
+	wCtx *worktree.WorktreeContext,
+	sessionID string,
+	stream *connect.ServerStream[dexdexv1.StartExecutionResponse],
+) {
+	// Determine the base SHA from the worktree's initial HEAD.
+	baseSHA := h.getWorktreeBaseSHA(ctx, wCtx.PrimaryDir)
+
+	commits, err := service.ExtractCommitChain(ctx, wCtx.PrimaryDir, baseSHA)
+	if err != nil {
+		h.logger.Warn("failed to extract commit chain",
+			"session_id", sessionID,
+			"primary_dir", wCtx.PrimaryDir,
+			"error", err,
+		)
+		return
+	}
+
+	if len(commits) == 0 {
+		h.logger.Info("no new commits found in worktree",
+			"session_id", sessionID,
+			"primary_dir", wCtx.PrimaryDir,
+		)
+		return
+	}
+
+	h.logger.Info("extracted commit chain from worktree",
+		"session_id", sessionID,
+		"commit_count", len(commits),
+	)
+
+	for _, commit := range commits {
+		protoCommit := &dexdexv1.CommitMetadata{
+			Sha:     commit.SHA,
+			Parents: commit.Parents,
+			Message: commit.Message,
+		}
+		if commit.AuthoredAtUnixNS > 0 {
+			protoCommit.AuthoredAt = timestamppb.New(time.Unix(0, commit.AuthoredAtUnixNS))
+		}
+		if commit.CommittedAtUnixNS > 0 {
+			protoCommit.CommittedAt = timestamppb.New(time.Unix(0, commit.CommittedAtUnixNS))
+		}
+
+		_ = stream.Send(&dexdexv1.StartExecutionResponse{
+			Event: &dexdexv1.StartExecutionResponse_Commit{
+				Commit: protoCommit,
+			},
+		})
+	}
+}
+
+// getWorktreeBaseSHA reads the initial commit SHA that the worktree was created from.
+func (h *AdapterHandler) getWorktreeBaseSHA(ctx context.Context, primaryDir string) string {
+	cmd := exec.CommandContext(ctx, "git", "-C", primaryDir, "rev-parse", "HEAD~1")
+	out, err := cmd.Output()
+	if err != nil {
+		return "" // empty baseSHA means all commits
+	}
+	return strings.TrimSpace(string(out))
 }
