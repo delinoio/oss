@@ -23,15 +23,17 @@ type SessionHandler struct {
 	dexdexv1connect.UnimplementedSessionServiceHandler
 	store        store.Store
 	workerClient WorkerClientInterface
+	dispatcher   Dispatcher
 	fanOut       *stream.FanOut
 	logger       *slog.Logger
 }
 
 // NewSessionHandler creates a new SessionHandler.
-func NewSessionHandler(s store.Store, wc WorkerClientInterface, fo *stream.FanOut, logger *slog.Logger) *SessionHandler {
+func NewSessionHandler(s store.Store, wc WorkerClientInterface, dispatcher Dispatcher, fo *stream.FanOut, logger *slog.Logger) *SessionHandler {
 	return &SessionHandler{
 		store:        s,
 		workerClient: wc,
+		dispatcher:   dispatcher,
 		fanOut:       fo,
 		logger:       logger,
 	}
@@ -240,6 +242,17 @@ func (h *SessionHandler) SubmitSessionInput(
 			"error", err,
 		)
 		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	// Relay input to the worker via dispatcher
+	if h.dispatcher != nil {
+		if err := h.dispatcher.SubmitInput(ctx, sessionID, req.Msg.InputText); err != nil {
+			h.logger.Warn("failed to relay input to worker",
+				"workspace_id", workspaceID,
+				"session_id", sessionID,
+				"error", err,
+			)
+		}
 	}
 
 	// Update session status to RUNNING.

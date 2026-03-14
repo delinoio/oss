@@ -46,9 +46,13 @@ func main() {
 	// Initialize event stream fan-out with configurable retention buffer
 	fanOut := stream.NewFanOut(cfg.StreamRetention, logger)
 
+	// Create worker client and dispatcher
+	workerClient := worker.NewClient(cfg.WorkerServerURL, logger)
+	dispatcher := worker.NewDispatcher(workerClient, dataStore, fanOut, logger)
+
 	// Create handlers
 	workspaceHandler := handler.NewWorkspaceHandler(dataStore, logger)
-	taskHandler := handler.NewTaskHandler(dataStore, fanOut, logger)
+	taskHandler := handler.NewTaskHandler(dataStore, fanOut, dispatcher, logger)
 	notificationHandler := handler.NewNotificationHandler(dataStore, fanOut, logger)
 	eventStreamHandler := handler.NewEventStreamHandler(fanOut, logger)
 
@@ -63,9 +67,7 @@ func main() {
 
 	notifPath, notifHandler := dexdexv1connect.NewNotificationServiceHandler(notificationHandler)
 	mux.Handle(notifPath, notifHandler)
-
-	workerClient := worker.NewClient(cfg.WorkerServerURL, logger)
-	sessionHandler := handler.NewSessionHandler(dataStore, workerClient, fanOut, logger)
+	sessionHandler := handler.NewSessionHandler(dataStore, workerClient, dispatcher, fanOut, logger)
 	sessionPath, sessionHTTPHandler := dexdexv1connect.NewSessionServiceHandler(sessionHandler)
 	mux.Handle(sessionPath, sessionHTTPHandler)
 

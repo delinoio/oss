@@ -73,3 +73,38 @@ func (c *Client) ForkSession(ctx context.Context, sessionID string, forkIntent d
 	}
 	return resp.Msg.ForkedSessionId, nil
 }
+
+// StartExecution calls the worker's StartExecution streaming RPC and returns a stream of events.
+func (c *Client) StartExecution(ctx context.Context, req *dexdexv1.StartExecutionRequest) (*connect.ServerStreamForClient[dexdexv1.ExecutionEvent], error) {
+	stream, err := c.client.StartExecution(ctx, connect.NewRequest(req))
+	if err != nil {
+		c.logger.Error("failed to start execution on worker", "session_id", req.SessionId, "error", err)
+		return nil, err
+	}
+	return stream, nil
+}
+
+// SubmitWorkerInput relays user input to a running session on the worker.
+func (c *Client) SubmitWorkerInput(ctx context.Context, sessionID, inputText string) error {
+	_, err := c.client.SubmitWorkerInput(ctx, connect.NewRequest(&dexdexv1.SubmitWorkerInputRequest{
+		SessionId: sessionID,
+		InputText: inputText,
+	}))
+	if err != nil {
+		c.logger.Error("failed to submit worker input", "session_id", sessionID, "error", err)
+		return err
+	}
+	return nil
+}
+
+// CancelExecution cancels a running session on the worker.
+func (c *Client) CancelExecution(ctx context.Context, sessionID string) error {
+	_, err := c.client.CancelExecution(ctx, connect.NewRequest(&dexdexv1.CancelExecutionRequest{
+		SessionId: sessionID,
+	}))
+	if err != nil {
+		c.logger.Error("failed to cancel execution", "session_id", sessionID, "error", err)
+		return err
+	}
+	return nil
+}
