@@ -16,6 +16,7 @@ import (
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/handler"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/normalize"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/store"
+	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/worktree"
 )
 
 func main() {
@@ -24,13 +25,17 @@ func main() {
 
 	sessionStore := store.NewSessionStore(logger)
 
+	// Initialize worktree manager and cleanup stale worktrees from previous runs.
+	wtManager := worktree.NewManager(cfg.WorktreeRoot, cfg.RepoCacheRoot, cfg.MaxParallelSubtasks, logger)
+	wtManager.CleanupStale(context.Background(), time.Duration(cfg.AgentExecTimeoutSec)*time.Second)
+
 	// Seed sample data when configured.
 	if cfg.SeedData {
 		seedSampleData(sessionStore, logger)
 	}
 
 	sessionHandler := handler.NewSessionServiceHandler(sessionStore, logger)
-	adapterHandler := handler.NewAdapterHandler(sessionStore, logger)
+	adapterHandler := handler.NewAdapterHandler(sessionStore, wtManager, logger)
 
 	mux := http.NewServeMux()
 
