@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -103,6 +102,31 @@ func (s *PostgresStore) GetWorkspace(id string) (*dexdexv1.Workspace, error) {
 	}, nil
 }
 
+func (s *PostgresStore) GetWorkspaceSettings(workspaceID string) (*dexdexv1.WorkspaceSettings, error) {
+	row, err := s.q.GetWorkspaceSettings(s.ctx(), workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("workspace settings not found: %s", workspaceID)
+	}
+	return &dexdexv1.WorkspaceSettings{
+		WorkspaceId:         row.WorkspaceID,
+		DefaultAgentCliType: dexdexv1.AgentCliType(row.DefaultAgentCliType),
+	}, nil
+}
+
+func (s *PostgresStore) UpsertWorkspaceSettings(workspaceID string, defaultAgent dexdexv1.AgentCliType) (*dexdexv1.WorkspaceSettings, error) {
+	row, err := s.q.UpsertWorkspaceSettings(s.ctx(), dbquery.UpsertWorkspaceSettingsParams{
+		WorkspaceID:         workspaceID,
+		DefaultAgentCliType: int32(defaultAgent),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &dexdexv1.WorkspaceSettings{
+		WorkspaceId:         row.WorkspaceID,
+		DefaultAgentCliType: dexdexv1.AgentCliType(row.DefaultAgentCliType),
+	}, nil
+}
+
 // UnitTask methods
 
 func (s *PostgresStore) AddUnitTask(workspaceID string, task *dexdexv1.UnitTask) {
@@ -110,9 +134,10 @@ func (s *PostgresStore) AddUnitTask(workspaceID string, task *dexdexv1.UnitTask)
 		UnitTaskID:        task.UnitTaskId,
 		WorkspaceID:       workspaceID,
 		Status:            int32(task.Status),
-		Title:             task.Title,
-		Description:       task.Description,
+		Prompt:            task.Prompt,
 		RepositoryGroupID: task.RepositoryGroupId,
+		AgentCliType:      int32(task.AgentCliType),
+		UsePlanMode:       task.UsePlanMode,
 		CreatedAt:         toPgTimestamp(task.CreatedAt),
 		UpdatedAt:         toPgTimestamp(task.UpdatedAt),
 	})
@@ -142,10 +167,11 @@ func (s *PostgresStore) ListUnitTasks(workspaceID string, statusFilter []dexdexv
 			UnitTaskId:        row.UnitTaskID,
 			Status:            dexdexv1.UnitTaskStatus(row.Status),
 			ActionRequired:    dexdexv1.ActionType(row.ActionRequired),
-			Title:             row.Title,
-			Description:       row.Description,
+			Prompt:            row.Prompt,
 			WorkspaceId:       row.WorkspaceID,
 			RepositoryGroupId: row.RepositoryGroupID,
+			AgentCliType:      dexdexv1.AgentCliType(row.AgentCliType),
+			UsePlanMode:       row.UsePlanMode,
 			SubTaskCount:      row.SubTaskCount,
 			CreatedAt:         pgTimestamp(row.CreatedAt),
 			UpdatedAt:         pgTimestamp(row.UpdatedAt),
@@ -166,26 +192,34 @@ func (s *PostgresStore) GetUnitTask(workspaceID, id string) (*dexdexv1.UnitTask,
 		UnitTaskId:        row.UnitTaskID,
 		Status:            dexdexv1.UnitTaskStatus(row.Status),
 		ActionRequired:    dexdexv1.ActionType(row.ActionRequired),
-		Title:             row.Title,
-		Description:       row.Description,
+		Prompt:            row.Prompt,
 		WorkspaceId:       row.WorkspaceID,
 		RepositoryGroupId: row.RepositoryGroupID,
+		AgentCliType:      dexdexv1.AgentCliType(row.AgentCliType),
+		UsePlanMode:       row.UsePlanMode,
 		SubTaskCount:      row.SubTaskCount,
 		CreatedAt:         pgTimestamp(row.CreatedAt),
 		UpdatedAt:         pgTimestamp(row.UpdatedAt),
 	}, nil
 }
 
-func (s *PostgresStore) CreateUnitTask(workspaceID, title, description, repoGroupID string) *dexdexv1.UnitTask {
+func (s *PostgresStore) CreateUnitTask(
+	workspaceID string,
+	prompt string,
+	repoGroupID string,
+	agentCliType dexdexv1.AgentCliType,
+	usePlanMode bool,
+) *dexdexv1.UnitTask {
 	now := timestamppb.Now()
 	id := nextID()
 	row, err := s.q.CreateUnitTask(s.ctx(), dbquery.CreateUnitTaskParams{
 		UnitTaskID:        id,
 		WorkspaceID:       workspaceID,
 		Status:            int32(dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED),
-		Title:             title,
-		Description:       description,
+		Prompt:            prompt,
 		RepositoryGroupID: repoGroupID,
+		AgentCliType:      int32(agentCliType),
+		UsePlanMode:       usePlanMode,
 		CreatedAt:         toPgTimestamp(now),
 		UpdatedAt:         toPgTimestamp(now),
 	})
@@ -196,10 +230,11 @@ func (s *PostgresStore) CreateUnitTask(workspaceID, title, description, repoGrou
 	return &dexdexv1.UnitTask{
 		UnitTaskId:        row.UnitTaskID,
 		Status:            dexdexv1.UnitTaskStatus(row.Status),
-		Title:             row.Title,
-		Description:       row.Description,
+		Prompt:            row.Prompt,
 		WorkspaceId:       row.WorkspaceID,
 		RepositoryGroupId: row.RepositoryGroupID,
+		AgentCliType:      dexdexv1.AgentCliType(row.AgentCliType),
+		UsePlanMode:       row.UsePlanMode,
 		CreatedAt:         pgTimestamp(row.CreatedAt),
 		UpdatedAt:         pgTimestamp(row.UpdatedAt),
 	}
@@ -217,10 +252,11 @@ func (s *PostgresStore) UpdateUnitTaskStatus(workspaceID, id string, status dexd
 	return &dexdexv1.UnitTask{
 		UnitTaskId:        row.UnitTaskID,
 		Status:            dexdexv1.UnitTaskStatus(row.Status),
-		Title:             row.Title,
-		Description:       row.Description,
+		Prompt:            row.Prompt,
 		WorkspaceId:       row.WorkspaceID,
 		RepositoryGroupId: row.RepositoryGroupID,
+		AgentCliType:      dexdexv1.AgentCliType(row.AgentCliType),
+		UsePlanMode:       row.UsePlanMode,
 		CreatedAt:         pgTimestamp(row.CreatedAt),
 		UpdatedAt:         pgTimestamp(row.UpdatedAt),
 	}, nil
@@ -528,22 +564,180 @@ func (s *PostgresStore) GetLatestWaitingSession(workspaceID string) (*dexdexv1.S
 	}, nil
 }
 
+// Repository methods
+
+func (s *PostgresStore) AddRepository(workspaceID string, repository *dexdexv1.Repository) {
+	_, err := s.q.CreateRepository(s.ctx(), dbquery.CreateRepositoryParams{
+		RepositoryID:  repository.RepositoryId,
+		WorkspaceID:   workspaceID,
+		RepositoryUrl: repository.RepositoryUrl,
+	})
+	if err != nil {
+		s.logger.Error("AddRepository failed", "error", err)
+	}
+}
+
+func (s *PostgresStore) GetRepository(workspaceID, repositoryID string) (*dexdexv1.Repository, error) {
+	row, err := s.q.GetRepository(s.ctx(), dbquery.GetRepositoryParams{
+		WorkspaceID:  workspaceID,
+		RepositoryID: repositoryID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("repository not found: workspace=%s id=%s", workspaceID, repositoryID)
+	}
+	return &dexdexv1.Repository{
+		RepositoryId:  row.RepositoryID,
+		WorkspaceId:   row.WorkspaceID,
+		RepositoryUrl: row.RepositoryUrl,
+		CreatedAt:     pgTimestamp(row.CreatedAt),
+		UpdatedAt:     pgTimestamp(row.UpdatedAt),
+	}, nil
+}
+
+func (s *PostgresStore) ListRepositories(workspaceID string) []*dexdexv1.Repository {
+	rows, err := s.q.ListRepositories(s.ctx(), workspaceID)
+	if err != nil {
+		s.logger.Error("ListRepositories failed", "error", err)
+		return nil
+	}
+	result := make([]*dexdexv1.Repository, len(rows))
+	for i, row := range rows {
+		result[i] = &dexdexv1.Repository{
+			RepositoryId:  row.RepositoryID,
+			WorkspaceId:   row.WorkspaceID,
+			RepositoryUrl: row.RepositoryUrl,
+			CreatedAt:     pgTimestamp(row.CreatedAt),
+			UpdatedAt:     pgTimestamp(row.UpdatedAt),
+		}
+	}
+	return result
+}
+
+func (s *PostgresStore) CreateRepository(workspaceID, repositoryURL string) (*dexdexv1.Repository, error) {
+	repositoryID := fmt.Sprintf("repo-%s", nextID())
+	row, err := s.q.CreateRepository(s.ctx(), dbquery.CreateRepositoryParams{
+		RepositoryID:  repositoryID,
+		WorkspaceID:   workspaceID,
+		RepositoryUrl: repositoryURL,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &dexdexv1.Repository{
+		RepositoryId:  row.RepositoryID,
+		WorkspaceId:   row.WorkspaceID,
+		RepositoryUrl: row.RepositoryUrl,
+		CreatedAt:     pgTimestamp(row.CreatedAt),
+		UpdatedAt:     pgTimestamp(row.UpdatedAt),
+	}, nil
+}
+
+func (s *PostgresStore) UpdateRepository(workspaceID, repositoryID, repositoryURL string) (*dexdexv1.Repository, error) {
+	row, err := s.q.UpdateRepository(s.ctx(), dbquery.UpdateRepositoryParams{
+		WorkspaceID:   workspaceID,
+		RepositoryID:  repositoryID,
+		RepositoryUrl: repositoryURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("repository not found: workspace=%s id=%s", workspaceID, repositoryID)
+	}
+	return &dexdexv1.Repository{
+		RepositoryId:  row.RepositoryID,
+		WorkspaceId:   row.WorkspaceID,
+		RepositoryUrl: row.RepositoryUrl,
+		CreatedAt:     pgTimestamp(row.CreatedAt),
+		UpdatedAt:     pgTimestamp(row.UpdatedAt),
+	}, nil
+}
+
+func (s *PostgresStore) DeleteRepository(workspaceID, repositoryID string) error {
+	refCount, err := s.q.CountRepositoryReferences(s.ctx(), dbquery.CountRepositoryReferencesParams{
+		WorkspaceID:  workspaceID,
+		RepositoryID: repositoryID,
+	})
+	if err != nil {
+		return err
+	}
+	if refCount > 0 {
+		return fmt.Errorf("repository in use by repository group: workspace=%s id=%s", workspaceID, repositoryID)
+	}
+	return s.q.DeleteRepository(s.ctx(), dbquery.DeleteRepositoryParams{
+		WorkspaceID:  workspaceID,
+		RepositoryID: repositoryID,
+	})
+}
+
 // Repository group methods
 
 func (s *PostgresStore) AddRepositoryGroup(workspaceID string, group *dexdexv1.RepositoryGroup) {
-	reposJSON, err := json.Marshal(group.Repositories)
-	if err != nil {
-		s.logger.Error("AddRepositoryGroup: failed to marshal repos", "error", err)
-		return
-	}
-	_, err = s.q.CreateRepositoryGroup(s.ctx(), dbquery.CreateRepositoryGroupParams{
-		RepositoryGroupID: group.RepositoryGroupId,
+	_, _ = s.CreateRepositoryGroup(workspaceID, group.RepositoryGroupId, group.Members)
+}
+
+func (s *PostgresStore) CreateRepositoryGroup(workspaceID, groupID string, members []*dexdexv1.RepositoryGroupMember) (*dexdexv1.RepositoryGroup, error) {
+	_, err := s.q.CreateRepositoryGroup(s.ctx(), dbquery.CreateRepositoryGroupParams{
 		WorkspaceID:       workspaceID,
-		Repositories:      reposJSON,
+		RepositoryGroupID: groupID,
 	})
 	if err != nil {
-		s.logger.Error("AddRepositoryGroup failed", "error", err)
+		return nil, err
 	}
+	for _, member := range members {
+		_, err = s.q.CreateRepositoryGroupMember(s.ctx(), dbquery.CreateRepositoryGroupMemberParams{
+			WorkspaceID:       workspaceID,
+			RepositoryGroupID: groupID,
+			RepositoryID:      member.RepositoryId,
+			BranchRef:         member.BranchRef,
+			DisplayOrder:      member.DisplayOrder,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	_ = s.q.TouchRepositoryGroup(s.ctx(), dbquery.TouchRepositoryGroupParams{
+		WorkspaceID:       workspaceID,
+		RepositoryGroupID: groupID,
+	})
+	return s.GetRepositoryGroup(workspaceID, groupID)
+}
+
+func (s *PostgresStore) UpdateRepositoryGroup(workspaceID, groupID string, members []*dexdexv1.RepositoryGroupMember) (*dexdexv1.RepositoryGroup, error) {
+	_, err := s.q.GetRepositoryGroup(s.ctx(), dbquery.GetRepositoryGroupParams{
+		WorkspaceID:       workspaceID,
+		RepositoryGroupID: groupID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("repository group not found: workspace=%s id=%s", workspaceID, groupID)
+	}
+	if err = s.q.DeleteRepositoryGroupMembers(s.ctx(), dbquery.DeleteRepositoryGroupMembersParams{
+		WorkspaceID:       workspaceID,
+		RepositoryGroupID: groupID,
+	}); err != nil {
+		return nil, err
+	}
+	for _, member := range members {
+		_, err = s.q.CreateRepositoryGroupMember(s.ctx(), dbquery.CreateRepositoryGroupMemberParams{
+			WorkspaceID:       workspaceID,
+			RepositoryGroupID: groupID,
+			RepositoryID:      member.RepositoryId,
+			BranchRef:         member.BranchRef,
+			DisplayOrder:      member.DisplayOrder,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	_ = s.q.TouchRepositoryGroup(s.ctx(), dbquery.TouchRepositoryGroupParams{
+		WorkspaceID:       workspaceID,
+		RepositoryGroupID: groupID,
+	})
+	return s.GetRepositoryGroup(workspaceID, groupID)
+}
+
+func (s *PostgresStore) DeleteRepositoryGroup(workspaceID, groupID string) error {
+	return s.q.DeleteRepositoryGroup(s.ctx(), dbquery.DeleteRepositoryGroupParams{
+		WorkspaceID:       workspaceID,
+		RepositoryGroupID: groupID,
+	})
 }
 
 func (s *PostgresStore) GetRepositoryGroup(workspaceID, groupID string) (*dexdexv1.RepositoryGroup, error) {
@@ -554,13 +748,32 @@ func (s *PostgresStore) GetRepositoryGroup(workspaceID, groupID string) (*dexdex
 	if err != nil {
 		return nil, fmt.Errorf("repository group not found: workspace=%s id=%s", workspaceID, groupID)
 	}
-
-	var repos []*dexdexv1.RepositoryRef
-	_ = json.Unmarshal(row.Repositories, &repos)
-
+	memberRows, err := s.q.ListRepositoryGroupMembers(s.ctx(), dbquery.ListRepositoryGroupMembersParams{
+		WorkspaceID:       workspaceID,
+		RepositoryGroupID: groupID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	members := make([]*dexdexv1.RepositoryGroupMember, 0, len(memberRows))
+	for _, memberRow := range memberRows {
+		repository, rErr := s.GetRepository(workspaceID, memberRow.RepositoryID)
+		if rErr != nil {
+			return nil, rErr
+		}
+		members = append(members, &dexdexv1.RepositoryGroupMember{
+			RepositoryId: memberRow.RepositoryID,
+			BranchRef:    memberRow.BranchRef,
+			DisplayOrder: memberRow.DisplayOrder,
+			Repository:   repository,
+		})
+	}
 	return &dexdexv1.RepositoryGroup{
 		RepositoryGroupId: row.RepositoryGroupID,
-		Repositories:      repos,
+		WorkspaceId:       row.WorkspaceID,
+		Members:           members,
+		CreatedAt:         pgTimestamp(row.CreatedAt),
+		UpdatedAt:         pgTimestamp(row.UpdatedAt),
 	}, nil
 }
 
@@ -570,15 +783,14 @@ func (s *PostgresStore) ListRepositoryGroups(workspaceID string) []*dexdexv1.Rep
 		s.logger.Error("ListRepositoryGroups failed", "error", err)
 		return nil
 	}
-
-	result := make([]*dexdexv1.RepositoryGroup, len(rows))
-	for i, row := range rows {
-		var repos []*dexdexv1.RepositoryRef
-		_ = json.Unmarshal(row.Repositories, &repos)
-		result[i] = &dexdexv1.RepositoryGroup{
-			RepositoryGroupId: row.RepositoryGroupID,
-			Repositories:      repos,
+	result := make([]*dexdexv1.RepositoryGroup, 0, len(rows))
+	for _, row := range rows {
+		group, gErr := s.GetRepositoryGroup(workspaceID, row.RepositoryGroupID)
+		if gErr != nil {
+			s.logger.Error("ListRepositoryGroups hydrate failed", "workspace_id", workspaceID, "repository_group_id", row.RepositoryGroupID, "error", gErr)
+			continue
 		}
+		result = append(result, group)
 	}
 	return result
 }

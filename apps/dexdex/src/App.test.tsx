@@ -20,6 +20,10 @@ import {
   RepositoryService,
   UnitTaskSchema,
   SubTaskSchema,
+  RepositorySchema,
+  RepositoryGroupMemberSchema,
+  RepositoryGroupSchema,
+  WorkspaceSettingsSchema,
   SessionOutputEventSchema,
   NotificationRecordSchema,
   UnitTaskStatus,
@@ -29,6 +33,7 @@ import {
   SessionOutputKind,
   NotificationType,
   PrStatus,
+  AgentCliType,
   PullRequestRecordSchema,
 } from "./gen/v1/dexdex_pb";
 
@@ -49,45 +54,55 @@ Object.defineProperty(window, "localStorage", { value: localStorageMock });
 const mockUnitTasks = [
   create(UnitTaskSchema, {
     unitTaskId: "task-001",
-    title: "Add user authentication flow",
-    description: "Implement OAuth2 login with Google and GitHub providers, including token refresh and session management.",
+    prompt: "Add user authentication flow",
     status: UnitTaskStatus.IN_PROGRESS,
+    repositoryGroupId: "repo-group-main",
+    agentCliType: AgentCliType.CLAUDE_CODE,
+    usePlanMode: false,
     createdAt: timestampFromDate(new Date("2026-03-14T08:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-14T10:30:00Z")),
     subTaskCount: 2,
   }),
   create(UnitTaskSchema, {
     unitTaskId: "task-002",
-    title: "Fix database migration rollback",
-    description: "The migration 20260301_add_profiles fails on rollback due to a missing DOWN statement.",
+    prompt: "Fix database migration rollback",
     status: UnitTaskStatus.ACTION_REQUIRED,
+    repositoryGroupId: "repo-group-main",
+    agentCliType: AgentCliType.CLAUDE_CODE,
+    usePlanMode: true,
     createdAt: timestampFromDate(new Date("2026-03-13T14:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-14T07:00:00Z")),
     subTaskCount: 1,
   }),
   create(UnitTaskSchema, {
     unitTaskId: "task-003",
-    title: "Refactor API response serialization",
-    description: "Move from manual JSON marshaling to typed response builders with consistent error envelope.",
+    prompt: "Refactor API response serialization",
     status: UnitTaskStatus.COMPLETED,
+    repositoryGroupId: "repo-group-main",
+    agentCliType: AgentCliType.CLAUDE_CODE,
+    usePlanMode: false,
     createdAt: timestampFromDate(new Date("2026-03-12T10:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-13T16:00:00Z")),
     subTaskCount: 2,
   }),
   create(UnitTaskSchema, {
     unitTaskId: "task-004",
-    title: "Add rate limiting middleware",
-    description: "Implement token-bucket rate limiting for public API endpoints.",
+    prompt: "Add rate limiting middleware",
     status: UnitTaskStatus.ACTION_REQUIRED,
+    repositoryGroupId: "repo-group-main",
+    agentCliType: AgentCliType.CODEX_CLI,
+    usePlanMode: false,
     createdAt: timestampFromDate(new Date("2026-03-14T11:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-14T11:00:00Z")),
     subTaskCount: 1,
   }),
   create(UnitTaskSchema, {
     unitTaskId: "task-005",
-    title: "Update CI pipeline for monorepo",
-    description: "Configure path-based change detection and parallel job execution.",
+    prompt: "Update CI pipeline for monorepo",
     status: UnitTaskStatus.FAILED,
+    repositoryGroupId: "repo-group-main",
+    agentCliType: AgentCliType.OPENCODE,
+    usePlanMode: false,
     createdAt: timestampFromDate(new Date("2026-03-13T09:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-14T06:00:00Z")),
     subTaskCount: 1,
@@ -188,6 +203,45 @@ const mockPullRequests = [
   create(PullRequestRecordSchema, { prTrackingId: "pr-138", status: PrStatus.MERGED }),
 ];
 
+const mockRepositories = [
+  create(RepositorySchema, {
+    repositoryId: "repo-oss",
+    workspaceId: "workspace-default",
+    repositoryUrl: "https://github.com/example/oss",
+    createdAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
+    updatedAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
+  }),
+  create(RepositorySchema, {
+    repositoryId: "repo-infra",
+    workspaceId: "workspace-default",
+    repositoryUrl: "https://github.com/example/infra",
+    createdAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
+    updatedAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
+  }),
+];
+
+const mockRepositoryGroups = [
+  create(RepositoryGroupSchema, {
+    repositoryGroupId: "repo-group-main",
+    workspaceId: "workspace-default",
+    members: [
+      create(RepositoryGroupMemberSchema, {
+        repositoryId: "repo-oss",
+        branchRef: "main",
+        displayOrder: 0,
+        repository: mockRepositories[0],
+      }),
+    ],
+    createdAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
+    updatedAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
+  }),
+];
+
+const mockWorkspaceSettings = create(WorkspaceSettingsSchema, {
+  workspaceId: "workspace-default",
+  defaultAgentCliType: AgentCliType.CLAUDE_CODE,
+});
+
 function createTestTransport() {
   return createRouterTransport((router) => {
     router.service(TaskService, {
@@ -201,8 +255,10 @@ function createTestTransport() {
       createUnitTask: (req) => ({
         unitTask: create(UnitTaskSchema, {
           unitTaskId: `task-${Date.now()}`,
-          title: req.title,
-          description: req.description,
+          prompt: req.prompt,
+          repositoryGroupId: req.repositoryGroupId,
+          agentCliType: req.agentCliType,
+          usePlanMode: req.usePlanMode,
           status: UnitTaskStatus.QUEUED,
           createdAt: timestampFromDate(new Date()),
           updatedAt: timestampFromDate(new Date()),
@@ -219,7 +275,13 @@ function createTestTransport() {
     });
     router.service(SessionService, {
       getSessionOutput: () => ({ events: mockSessionOutput }),
-      listSessionCapabilities: () => ({ capabilities: [] }),
+      listSessionCapabilities: () => ({
+        capabilities: [
+          { agentCliType: AgentCliType.CLAUDE_CODE, supportsFork: true, displayName: "Claude Code", supportsPlanMode: true },
+          { agentCliType: AgentCliType.CODEX_CLI, supportsFork: false, displayName: "Codex CLI", supportsPlanMode: true },
+          { agentCliType: AgentCliType.OPENCODE, supportsFork: false, displayName: "OpenCode", supportsPlanMode: false },
+        ],
+      }),
       forkSession: () => ({ forkedSession: undefined }),
       listForkedSessions: () => ({ sessions: [] }),
       archiveForkedSession: () => ({}),
@@ -230,6 +292,13 @@ function createTestTransport() {
       getWorkspace: () => ({ workspace: undefined }),
       listWorkspaces: () => ({ workspaces: [] }),
       getWorkspaceWorkStatus: () => ({ status: 0 }),
+      getWorkspaceSettings: () => ({ settings: mockWorkspaceSettings }),
+      updateWorkspaceSettings: (req) => ({
+        settings: create(WorkspaceSettingsSchema, {
+          workspaceId: req.workspaceId,
+          defaultAgentCliType: req.defaultAgentCliType,
+        }),
+      }),
     });
     router.service(PrManagementService, {
       getPullRequest: () => ({ pullRequest: undefined }),
@@ -242,7 +311,62 @@ function createTestTransport() {
       listReviewComments: () => ({ comments: [] }),
     });
     router.service(RepositoryService, {
+      getRepository: () => ({ repository: mockRepositories[0] }),
+      listRepositories: () => ({ repositories: mockRepositories }),
+      createRepository: (req) => ({
+        repository: create(RepositorySchema, {
+          repositoryId: `repo-${Date.now()}`,
+          workspaceId: req.workspaceId,
+          repositoryUrl: req.repositoryUrl,
+          createdAt: timestampFromDate(new Date()),
+          updatedAt: timestampFromDate(new Date()),
+        }),
+      }),
+      updateRepository: (req) => ({
+        repository: create(RepositorySchema, {
+          repositoryId: req.repositoryId,
+          workspaceId: req.workspaceId,
+          repositoryUrl: req.repositoryUrl,
+          createdAt: timestampFromDate(new Date()),
+          updatedAt: timestampFromDate(new Date()),
+        }),
+      }),
+      deleteRepository: () => ({}),
       getRepositoryGroup: () => ({ repositoryGroup: undefined }),
+      listRepositoryGroups: () => ({ repositoryGroups: mockRepositoryGroups }),
+      createRepositoryGroup: (req) => ({
+        repositoryGroup: create(RepositoryGroupSchema, {
+          repositoryGroupId: req.repositoryGroupId,
+          workspaceId: req.workspaceId,
+          members: req.members.map((member, index) =>
+            create(RepositoryGroupMemberSchema, {
+              repositoryId: member.repositoryId,
+              branchRef: member.branchRef,
+              displayOrder: index,
+              repository: mockRepositories.find((repository) => repository.repositoryId === member.repositoryId),
+            }),
+          ),
+          createdAt: timestampFromDate(new Date()),
+          updatedAt: timestampFromDate(new Date()),
+        }),
+      }),
+      updateRepositoryGroup: (req) => ({
+        repositoryGroup: create(RepositoryGroupSchema, {
+          repositoryGroupId: req.repositoryGroupId,
+          workspaceId: req.workspaceId,
+          members: req.members.map((member, index) =>
+            create(RepositoryGroupMemberSchema, {
+              repositoryId: member.repositoryId,
+              branchRef: member.branchRef,
+              displayOrder: index,
+              repository: mockRepositories.find((repository) => repository.repositoryId === member.repositoryId),
+            }),
+          ),
+          createdAt: timestampFromDate(new Date()),
+          updatedAt: timestampFromDate(new Date()),
+        }),
+      }),
+      deleteRepositoryGroup: () => ({}),
     });
     // EventStreamService is server-streaming; provide a no-op stub
     router.service(EventStreamService, {
@@ -370,8 +494,12 @@ describe("App", () => {
     await screen.findByTestId("task-list");
     await user.click(screen.getByTestId("create-task-button"));
 
-    await user.type(screen.getByTestId("task-title-input"), "My new task");
-    await user.type(screen.getByTestId("task-description-input"), "Some description");
+    await user.type(screen.getByTestId("task-prompt-input"), "My new task prompt");
+    await user.selectOptions(screen.getByTestId("task-repo-group-select"), "repo-group-main");
+    await user.selectOptions(screen.getByTestId("task-agent-select"), `${AgentCliType.CLAUDE_CODE}`);
+    if (screen.queryByTestId("task-plan-mode-toggle")) {
+      await user.click(screen.getByTestId("task-plan-mode-toggle"));
+    }
     await user.click(screen.getByTestId("submit-create-task"));
 
     // Dialog should close

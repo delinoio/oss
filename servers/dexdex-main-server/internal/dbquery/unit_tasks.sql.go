@@ -12,18 +12,29 @@ import (
 )
 
 const createUnitTask = `-- name: CreateUnitTask :one
-INSERT INTO unit_tasks (unit_task_id, workspace_id, status, title, description, repository_group_id, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING unit_task_id, workspace_id, status, action_required, title, description, repository_group_id, sub_task_count, created_at, updated_at
+INSERT INTO unit_tasks (
+    unit_task_id,
+    workspace_id,
+    status,
+    prompt,
+    repository_group_id,
+    agent_cli_type,
+    use_plan_mode,
+    created_at,
+    updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING unit_task_id, workspace_id, status, action_required, prompt, repository_group_id, agent_cli_type, use_plan_mode, sub_task_count, created_at, updated_at
 `
 
 type CreateUnitTaskParams struct {
 	UnitTaskID        string             `json:"unit_task_id"`
 	WorkspaceID       string             `json:"workspace_id"`
 	Status            int32              `json:"status"`
-	Title             string             `json:"title"`
-	Description       string             `json:"description"`
+	Prompt            string             `json:"prompt"`
 	RepositoryGroupID string             `json:"repository_group_id"`
+	AgentCliType      int32              `json:"agent_cli_type"`
+	UsePlanMode       bool               `json:"use_plan_mode"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 }
@@ -33,9 +44,10 @@ func (q *Queries) CreateUnitTask(ctx context.Context, arg CreateUnitTaskParams) 
 		arg.UnitTaskID,
 		arg.WorkspaceID,
 		arg.Status,
-		arg.Title,
-		arg.Description,
+		arg.Prompt,
 		arg.RepositoryGroupID,
+		arg.AgentCliType,
+		arg.UsePlanMode,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
@@ -45,9 +57,10 @@ func (q *Queries) CreateUnitTask(ctx context.Context, arg CreateUnitTaskParams) 
 		&i.WorkspaceID,
 		&i.Status,
 		&i.ActionRequired,
-		&i.Title,
-		&i.Description,
+		&i.Prompt,
 		&i.RepositoryGroupID,
+		&i.AgentCliType,
+		&i.UsePlanMode,
 		&i.SubTaskCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -56,7 +69,7 @@ func (q *Queries) CreateUnitTask(ctx context.Context, arg CreateUnitTaskParams) 
 }
 
 const getUnitTask = `-- name: GetUnitTask :one
-SELECT unit_task_id, workspace_id, status, action_required, title, description, repository_group_id, sub_task_count, created_at, updated_at FROM unit_tasks WHERE workspace_id = $1 AND unit_task_id = $2
+SELECT unit_task_id, workspace_id, status, action_required, prompt, repository_group_id, agent_cli_type, use_plan_mode, sub_task_count, created_at, updated_at FROM unit_tasks WHERE workspace_id = $1 AND unit_task_id = $2
 `
 
 type GetUnitTaskParams struct {
@@ -72,9 +85,10 @@ func (q *Queries) GetUnitTask(ctx context.Context, arg GetUnitTaskParams) (UnitT
 		&i.WorkspaceID,
 		&i.Status,
 		&i.ActionRequired,
-		&i.Title,
-		&i.Description,
+		&i.Prompt,
 		&i.RepositoryGroupID,
+		&i.AgentCliType,
+		&i.UsePlanMode,
 		&i.SubTaskCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -83,7 +97,7 @@ func (q *Queries) GetUnitTask(ctx context.Context, arg GetUnitTaskParams) (UnitT
 }
 
 const listUnitTasks = `-- name: ListUnitTasks :many
-SELECT unit_task_id, workspace_id, status, action_required, title, description, repository_group_id, sub_task_count, created_at, updated_at FROM unit_tasks WHERE workspace_id = $1 ORDER BY created_at DESC
+SELECT unit_task_id, workspace_id, status, action_required, prompt, repository_group_id, agent_cli_type, use_plan_mode, sub_task_count, created_at, updated_at FROM unit_tasks WHERE workspace_id = $1 ORDER BY created_at DESC
 `
 
 func (q *Queries) ListUnitTasks(ctx context.Context, workspaceID string) ([]UnitTask, error) {
@@ -100,9 +114,10 @@ func (q *Queries) ListUnitTasks(ctx context.Context, workspaceID string) ([]Unit
 			&i.WorkspaceID,
 			&i.Status,
 			&i.ActionRequired,
-			&i.Title,
-			&i.Description,
+			&i.Prompt,
 			&i.RepositoryGroupID,
+			&i.AgentCliType,
+			&i.UsePlanMode,
 			&i.SubTaskCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -120,7 +135,7 @@ func (q *Queries) ListUnitTasks(ctx context.Context, workspaceID string) ([]Unit
 const updateUnitTaskStatus = `-- name: UpdateUnitTaskStatus :one
 UPDATE unit_tasks SET status = $3, updated_at = NOW()
 WHERE workspace_id = $1 AND unit_task_id = $2
-RETURNING unit_task_id, workspace_id, status, action_required, title, description, repository_group_id, sub_task_count, created_at, updated_at
+RETURNING unit_task_id, workspace_id, status, action_required, prompt, repository_group_id, agent_cli_type, use_plan_mode, sub_task_count, created_at, updated_at
 `
 
 type UpdateUnitTaskStatusParams struct {
@@ -137,9 +152,10 @@ func (q *Queries) UpdateUnitTaskStatus(ctx context.Context, arg UpdateUnitTaskSt
 		&i.WorkspaceID,
 		&i.Status,
 		&i.ActionRequired,
-		&i.Title,
-		&i.Description,
+		&i.Prompt,
 		&i.RepositoryGroupID,
+		&i.AgentCliType,
+		&i.UsePlanMode,
 		&i.SubTaskCount,
 		&i.CreatedAt,
 		&i.UpdatedAt,

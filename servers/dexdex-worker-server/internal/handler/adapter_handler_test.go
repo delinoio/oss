@@ -55,6 +55,9 @@ func TestAdapterHandler_GetAgentCapabilities(t *testing.T) {
 	if !claude.SupportsFork {
 		t.Fatal("expected CLAUDE_CODE to support fork")
 	}
+	if !claude.SupportsPlanMode {
+		t.Fatal("expected CLAUDE_CODE to support plan mode")
+	}
 	if claude.DisplayName != "Claude Code" {
 		t.Fatalf("expected display_name=Claude Code, got=%s", claude.DisplayName)
 	}
@@ -67,6 +70,9 @@ func TestAdapterHandler_GetAgentCapabilities(t *testing.T) {
 	if codex.SupportsFork {
 		t.Fatal("expected CODEX_CLI to not support fork")
 	}
+	if !codex.SupportsPlanMode {
+		t.Fatal("expected CODEX_CLI to support plan mode")
+	}
 
 	// Verify OpenCode capability.
 	opencode := resp.Msg.Capabilities[2]
@@ -75,6 +81,9 @@ func TestAdapterHandler_GetAgentCapabilities(t *testing.T) {
 	}
 	if opencode.SupportsFork {
 		t.Fatal("expected OPENCODE to not support fork")
+	}
+	if opencode.SupportsPlanMode {
+		t.Fatal("expected OPENCODE to not support plan mode")
 	}
 }
 
@@ -161,6 +170,34 @@ func TestAdapterHandler_ForkSessionAdapter_UnsupportedFork(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("expected error for unsupported fork")
+	}
+
+	connectErr, ok := err.(*connect.Error)
+	if !ok {
+		t.Fatalf("expected *connect.Error, got=%T", err)
+	}
+	if connectErr.Code() != connect.CodeFailedPrecondition {
+		t.Fatalf("expected CodeFailedPrecondition, got=%v", connectErr.Code())
+	}
+}
+
+func TestAdapterHandler_StartExecution_UnsupportedPlanMode(t *testing.T) {
+	client, _ := setupAdapterTestServer(t)
+
+	stream, err := client.StartExecution(context.Background(), connect.NewRequest(&dexdexv1.StartExecutionRequest{
+		WorkspaceId:  "ws-1",
+		SessionId:    "sess-unsupported-plan",
+		AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_OPENCODE,
+		UsePlanMode:  true,
+	}))
+	if err == nil {
+		if stream.Receive() {
+			t.Fatal("expected stream to fail before yielding events")
+		}
+		err = stream.Err()
+	}
+	if err == nil {
+		t.Fatal("expected failed precondition when plan mode is unsupported")
 	}
 
 	connectErr, ok := err.(*connect.Error)

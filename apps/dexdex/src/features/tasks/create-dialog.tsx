@@ -2,43 +2,95 @@
  * Create task dialog component.
  */
 
-import { type CSSProperties, type FormEvent, useState } from "react";
-import { useListRepositoryGroups } from "../../hooks/use-dexdex-queries";
-
-interface RepositoryGroup {
-  repositoryGroupId: string;
-  repositories: Array<{
-    repositoryId: string;
-    repositoryUrl: string;
-    branchRef: string;
-  }>;
-}
+import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from "react";
+import { AgentCliType } from "../../gen/v1/dexdex_pb";
+import {
+  useGetWorkspaceSettings,
+  useListRepositoryGroups,
+  useListSessionCapabilities,
+} from "../../hooks/use-dexdex-queries";
 
 interface CreateDialogProps {
   isOpen: boolean;
   workspaceId: string;
   onClose: () => void;
-  onCreate: (title: string, description: string, repositoryGroupId: string) => void;
+  onCreate: (prompt: string, repositoryGroupId: string, agentCliType: AgentCliType, usePlanMode: boolean) => void;
 }
 
+interface AgentOption {
+  agentCliType: AgentCliType;
+  supportsPlanMode: boolean;
+  displayName: string;
+}
+
+const FALLBACK_AGENT_OPTIONS: AgentOption[] = [
+  { agentCliType: AgentCliType.CLAUDE_CODE, supportsPlanMode: true, displayName: "Claude Code" },
+  { agentCliType: AgentCliType.CODEX_CLI, supportsPlanMode: true, displayName: "Codex CLI" },
+  { agentCliType: AgentCliType.OPENCODE, supportsPlanMode: false, displayName: "OpenCode" },
+];
+
 export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateDialogProps) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [prompt, setPrompt] = useState("");
   const [selectedRepoGroupId, setSelectedRepoGroupId] = useState("");
+  const [selectedAgent, setSelectedAgent] = useState<AgentCliType>(AgentCliType.UNSPECIFIED);
+  const [usePlanMode, setUsePlanMode] = useState(false);
 
   const repoGroupsQuery = useListRepositoryGroups(workspaceId);
-  const repoGroups: RepositoryGroup[] = (repoGroupsQuery.data?.repositoryGroups ?? []) as RepositoryGroup[];
+  const capabilitiesQuery = useListSessionCapabilities(workspaceId);
+  const workspaceSettingsQuery = useGetWorkspaceSettings(workspaceId);
+
+  const repositoryGroups = repoGroupsQuery.data?.repositoryGroups ?? [];
+  const agentOptions = useMemo<AgentOption[]>(() => {
+    const capabilities = capabilitiesQuery.data?.capabilities ?? [];
+    if (capabilities.length === 0) {
+      return FALLBACK_AGENT_OPTIONS;
+    }
+    return capabilities
+      .filter((capability) => capability.agentCliType !== AgentCliType.UNSPECIFIED)
+      .map((capability) => ({
+        agentCliType: capability.agentCliType,
+        supportsPlanMode: capability.supportsPlanMode,
+        displayName: capability.displayName || toAgentDisplayName(capability.agentCliType),
+      }));
+  }, [capabilitiesQuery.data?.capabilities]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    if (selectedAgent !== AgentCliType.UNSPECIFIED) {
+      return;
+    }
+
+    const defaultAgent = workspaceSettingsQuery.data?.settings?.defaultAgentCliType ?? AgentCliType.CLAUDE_CODE;
+    const resolvedDefault = agentOptions.find((option) => option.agentCliType === defaultAgent) ?? agentOptions[0];
+    if (resolvedDefault) {
+      setSelectedAgent(resolvedDefault.agentCliType);
+    }
+  }, [isOpen, selectedAgent, workspaceSettingsQuery.data?.settings?.defaultAgentCliType, agentOptions]);
+
+  const selectedAgentOption = agentOptions.find((option) => option.agentCliType === selectedAgent);
+  const selectedAgentSupportsPlanMode = selectedAgentOption?.supportsPlanMode ?? false;
+
+  useEffect(() => {
+    if (!selectedAgentSupportsPlanMode && usePlanMode) {
+      setUsePlanMode(false);
+    }
+  }, [selectedAgentSupportsPlanMode, usePlanMode]);
 
   if (!isOpen) return null;
 
+  const canSubmit = prompt.trim().length > 0 && selectedRepoGroupId.trim().length > 0 && selectedAgent !== AgentCliType.UNSPECIFIED;
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const trimmed = title.trim();
-    if (!trimmed) return;
-    onCreate(trimmed, description.trim(), selectedRepoGroupId);
-    setTitle("");
-    setDescription("");
+    if (!canSubmit) return;
+
+    onCreate(prompt.trim(), selectedRepoGroupId, selectedAgent, selectedAgentSupportsPlanMode && usePlanMode);
+    setPrompt("");
     setSelectedRepoGroupId("");
+    setSelectedAgent(AgentCliType.UNSPECIFIED);
+    setUsePlanMode(false);
     onClose();
   }
 
@@ -53,7 +105,7 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
   };
 
   const dialogStyle: CSSProperties = {
-    width: "min(480px, 90vw)",
+    width: "min(560px, 92vw)",
     backgroundColor: "var(--color-bg-primary)",
     borderRadius: "var(--radius-lg)",
     boxShadow: "var(--shadow-overlay)",
@@ -74,15 +126,10 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
 
   const textareaStyle: CSSProperties = {
     ...inputStyle,
-    minHeight: "80px",
+    minHeight: "120px",
     resize: "vertical",
     fontSize: "var(--font-size-base)",
-  };
-
-  const selectStyle: CSSProperties = {
-    ...inputStyle,
-    fontSize: "var(--font-size-base)",
-    cursor: "pointer",
+    lineHeight: 1.45,
   };
 
   const labelStyle: CSSProperties = {
@@ -105,54 +152,84 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
         >
           Create Task
         </h2>
+
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: "var(--space-3)" }}>
-            <label htmlFor="task-title" style={labelStyle}>
-              Title
-            </label>
-            <input
-              id="task-title"
-              style={inputStyle}
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Task title..."
-              autoFocus
-              data-testid="task-title-input"
-            />
-          </div>
-          <div style={{ marginBottom: "var(--space-3)" }}>
-            <label htmlFor="task-description" style={labelStyle}>
-              Description
+            <label htmlFor="task-prompt" style={labelStyle}>
+              Prompt
             </label>
             <textarea
-              id="task-description"
+              id="task-prompt"
               style={textareaStyle}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe the task..."
-              data-testid="task-description-input"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Describe exactly what the coding agent should do..."
+              autoFocus
+              data-testid="task-prompt-input"
             />
           </div>
-          <div style={{ marginBottom: "var(--space-4)" }}>
+
+          <div style={{ marginBottom: "var(--space-3)" }}>
             <label htmlFor="task-repo-group" style={labelStyle}>
               Repository Group
             </label>
             <select
               id="task-repo-group"
-              style={selectStyle}
+              style={inputStyle}
               value={selectedRepoGroupId}
               onChange={(e) => setSelectedRepoGroupId(e.target.value)}
               data-testid="task-repo-group-select"
             >
-              <option value="">None (no execution)</option>
-              {repoGroups.map((group) => (
+              <option value="">Select a repository group</option>
+              {repositoryGroups.map((group) => (
                 <option key={group.repositoryGroupId} value={group.repositoryGroupId}>
-                  {group.repositoryGroupId} ({group.repositories.length} repos)
+                  {group.repositoryGroupId} ({group.members.length} repos)
                 </option>
               ))}
             </select>
           </div>
+
+          <div style={{ marginBottom: "var(--space-3)" }}>
+            <label htmlFor="task-agent" style={labelStyle}>
+              Coding Agent
+            </label>
+            <select
+              id="task-agent"
+              style={inputStyle}
+              value={selectedAgent}
+              onChange={(e) => setSelectedAgent(Number(e.target.value) as AgentCliType)}
+              data-testid="task-agent-select"
+            >
+              <option value={AgentCliType.UNSPECIFIED}>Select a coding agent</option>
+              {agentOptions.map((option) => (
+                <option key={option.agentCliType} value={option.agentCliType}>
+                  {option.displayName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedAgentSupportsPlanMode && (
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                marginBottom: "var(--space-4)",
+                fontSize: "var(--font-size-sm)",
+                color: "var(--color-text-secondary)",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={usePlanMode}
+                onChange={(e) => setUsePlanMode(e.target.checked)}
+                data-testid="task-plan-mode-toggle"
+              />
+              Use plan mode for this task
+            </label>
+          )}
+
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}>
             <button
               type="button"
@@ -169,15 +246,15 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
             </button>
             <button
               type="submit"
-              disabled={!title.trim()}
+              disabled={!canSubmit}
               style={{
                 padding: "var(--space-2) var(--space-4)",
                 borderRadius: "var(--radius-md)",
                 fontSize: "var(--font-size-sm)",
                 fontWeight: 500,
-                backgroundColor: title.trim() ? "var(--color-accent)" : "var(--color-bg-tertiary)",
-                color: title.trim() ? "var(--color-text-inverse)" : "var(--color-text-tertiary)",
-                cursor: title.trim() ? "pointer" : "not-allowed",
+                backgroundColor: canSubmit ? "var(--color-accent)" : "var(--color-bg-tertiary)",
+                color: canSubmit ? "var(--color-text-inverse)" : "var(--color-text-tertiary)",
+                cursor: canSubmit ? "pointer" : "not-allowed",
               }}
               data-testid="submit-create-task"
             >
@@ -188,4 +265,17 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
       </div>
     </div>
   );
+}
+
+function toAgentDisplayName(agent: AgentCliType): string {
+  switch (agent) {
+    case AgentCliType.CLAUDE_CODE:
+      return "Claude Code";
+    case AgentCliType.CODEX_CLI:
+      return "Codex CLI";
+    case AgentCliType.OPENCODE:
+      return "OpenCode";
+    default:
+      return "Unknown Agent";
+  }
 }

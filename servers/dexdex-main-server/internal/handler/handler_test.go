@@ -108,6 +108,218 @@ func TestWorkspaceHandler_ListWorkspaces(t *testing.T) {
 	}
 }
 
+func TestWorkspaceHandler_GetWorkspaceSettings(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewWorkspaceHandler(s, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewWorkspaceServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewWorkspaceServiceClient(http.DefaultClient, server.URL)
+
+	resp, err := client.GetWorkspaceSettings(context.Background(), connect.NewRequest(&dexdexv1.GetWorkspaceSettingsRequest{
+		WorkspaceId: "ws-default",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if resp.Msg.Settings.WorkspaceId != "ws-default" {
+		t.Fatalf("expected ws-default, got %s", resp.Msg.Settings.WorkspaceId)
+	}
+	if resp.Msg.Settings.DefaultAgentCliType != dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE {
+		t.Fatalf("expected CLAUDE_CODE, got %s", resp.Msg.Settings.DefaultAgentCliType.String())
+	}
+}
+
+func TestWorkspaceHandler_UpdateWorkspaceSettings(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewWorkspaceHandler(s, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewWorkspaceServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewWorkspaceServiceClient(http.DefaultClient, server.URL)
+
+	updateResp, err := client.UpdateWorkspaceSettings(context.Background(), connect.NewRequest(&dexdexv1.UpdateWorkspaceSettingsRequest{
+		WorkspaceId:         "ws-default",
+		DefaultAgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if updateResp.Msg.Settings.DefaultAgentCliType != dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI {
+		t.Fatalf("expected CODEX_CLI, got %s", updateResp.Msg.Settings.DefaultAgentCliType.String())
+	}
+
+	getResp, err := client.GetWorkspaceSettings(context.Background(), connect.NewRequest(&dexdexv1.GetWorkspaceSettingsRequest{
+		WorkspaceId: "ws-default",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if getResp.Msg.Settings.DefaultAgentCliType != dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI {
+		t.Fatalf("expected persisted CODEX_CLI, got %s", getResp.Msg.Settings.DefaultAgentCliType.String())
+	}
+}
+
+func setupRepositoryClient(t *testing.T) dexdexv1connect.RepositoryServiceClient {
+	t.Helper()
+
+	s := seedStore()
+	logger := testLogger()
+	h := NewRepositoryHandler(s, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewRepositoryServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	return dexdexv1connect.NewRepositoryServiceClient(http.DefaultClient, server.URL)
+}
+
+func TestRepositoryHandler_RepositoryCRUD(t *testing.T) {
+	client := setupRepositoryClient(t)
+
+	createResp, err := client.CreateRepository(context.Background(), connect.NewRequest(&dexdexv1.CreateRepositoryRequest{
+		WorkspaceId:   "ws-default",
+		RepositoryUrl: "https://github.com/example/new-repo",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if createResp.Msg.Repository.RepositoryId == "" {
+		t.Fatal("expected repository id")
+	}
+
+	getResp, err := client.GetRepository(context.Background(), connect.NewRequest(&dexdexv1.GetRepositoryRequest{
+		WorkspaceId:  "ws-default",
+		RepositoryId: createResp.Msg.Repository.RepositoryId,
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if getResp.Msg.Repository.RepositoryUrl != "https://github.com/example/new-repo" {
+		t.Fatalf("unexpected repository_url: %s", getResp.Msg.Repository.RepositoryUrl)
+	}
+
+	updateResp, err := client.UpdateRepository(context.Background(), connect.NewRequest(&dexdexv1.UpdateRepositoryRequest{
+		WorkspaceId:   "ws-default",
+		RepositoryId:  createResp.Msg.Repository.RepositoryId,
+		RepositoryUrl: "https://github.com/example/new-repo-renamed",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if updateResp.Msg.Repository.RepositoryUrl != "https://github.com/example/new-repo-renamed" {
+		t.Fatalf("unexpected updated repository_url: %s", updateResp.Msg.Repository.RepositoryUrl)
+	}
+
+	if _, err = client.DeleteRepository(context.Background(), connect.NewRequest(&dexdexv1.DeleteRepositoryRequest{
+		WorkspaceId:  "ws-default",
+		RepositoryId: createResp.Msg.Repository.RepositoryId,
+	})); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if _, err = client.GetRepository(context.Background(), connect.NewRequest(&dexdexv1.GetRepositoryRequest{
+		WorkspaceId:  "ws-default",
+		RepositoryId: createResp.Msg.Repository.RepositoryId,
+	})); err == nil || connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("expected NotFound after delete, got %v", err)
+	}
+}
+
+func TestRepositoryHandler_DeleteRepository_InUse(t *testing.T) {
+	client := setupRepositoryClient(t)
+
+	_, err := client.DeleteRepository(context.Background(), connect.NewRequest(&dexdexv1.DeleteRepositoryRequest{
+		WorkspaceId:  "ws-default",
+		RepositoryId: "repo-oss",
+	}))
+	if err == nil {
+		t.Fatal("expected failed precondition for repository in use")
+	}
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("expected FailedPrecondition, got %v", connect.CodeOf(err))
+	}
+}
+
+func TestRepositoryHandler_RepositoryGroupCRUD(t *testing.T) {
+	client := setupRepositoryClient(t)
+
+	createResp, err := client.CreateRepositoryGroup(context.Background(), connect.NewRequest(&dexdexv1.CreateRepositoryGroupRequest{
+		WorkspaceId:       "ws-default",
+		RepositoryGroupId: "repo-group-test",
+		Members: []*dexdexv1.RepositoryGroupMemberInput{
+			{RepositoryId: "repo-oss", BranchRef: "main", DisplayOrder: 0},
+			{RepositoryId: "repo-infra", BranchRef: "develop", DisplayOrder: 1},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(createResp.Msg.RepositoryGroup.Members) != 2 {
+		t.Fatalf("expected 2 members, got %d", len(createResp.Msg.RepositoryGroup.Members))
+	}
+	if createResp.Msg.RepositoryGroup.Members[1].Repository == nil {
+		t.Fatal("expected hydrated repository on member")
+	}
+
+	getResp, err := client.GetRepositoryGroup(context.Background(), connect.NewRequest(&dexdexv1.GetRepositoryGroupRequest{
+		WorkspaceId:       "ws-default",
+		RepositoryGroupId: "repo-group-test",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(getResp.Msg.RepositoryGroup.Members) != 2 {
+		t.Fatalf("expected 2 members, got %d", len(getResp.Msg.RepositoryGroup.Members))
+	}
+
+	updateResp, err := client.UpdateRepositoryGroup(context.Background(), connect.NewRequest(&dexdexv1.UpdateRepositoryGroupRequest{
+		WorkspaceId:       "ws-default",
+		RepositoryGroupId: "repo-group-test",
+		Members: []*dexdexv1.RepositoryGroupMemberInput{
+			{RepositoryId: "repo-infra", BranchRef: "release", DisplayOrder: 0},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(updateResp.Msg.RepositoryGroup.Members) != 1 {
+		t.Fatalf("expected 1 member after update, got %d", len(updateResp.Msg.RepositoryGroup.Members))
+	}
+	if updateResp.Msg.RepositoryGroup.Members[0].RepositoryId != "repo-infra" {
+		t.Fatalf("unexpected repository_id=%s", updateResp.Msg.RepositoryGroup.Members[0].RepositoryId)
+	}
+
+	if _, err = client.DeleteRepositoryGroup(context.Background(), connect.NewRequest(&dexdexv1.DeleteRepositoryGroupRequest{
+		WorkspaceId:       "ws-default",
+		RepositoryGroupId: "repo-group-test",
+	})); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if _, err = client.GetRepositoryGroup(context.Background(), connect.NewRequest(&dexdexv1.GetRepositoryGroupRequest{
+		WorkspaceId:       "ws-default",
+		RepositoryGroupId: "repo-group-test",
+	})); err == nil || connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("expected NotFound after delete, got %v", err)
+	}
+}
+
 func TestTaskHandler_GetUnitTask(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
@@ -286,18 +498,26 @@ func TestTaskHandler_CreateUnitTask(t *testing.T) {
 	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
 
 	resp, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
-		WorkspaceId: "ws-default",
-		Title:       "New test task",
-		Description: "A task created by tests",
+		WorkspaceId:       "ws-default",
+		Prompt:            "Create a migration safety check and update docs.",
+		RepositoryGroupId: "repo-group-main",
+		AgentCliType:      dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+		UsePlanMode:       true,
 	}))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if resp.Msg.UnitTask.Title != "New test task" {
-		t.Fatalf("expected title 'New test task', got %s", resp.Msg.UnitTask.Title)
+	if resp.Msg.UnitTask.Prompt != "Create a migration safety check and update docs." {
+		t.Fatalf("expected prompt to be set, got %s", resp.Msg.UnitTask.Prompt)
 	}
-	if resp.Msg.UnitTask.Description != "A task created by tests" {
-		t.Fatalf("expected description 'A task created by tests', got %s", resp.Msg.UnitTask.Description)
+	if resp.Msg.UnitTask.RepositoryGroupId != "repo-group-main" {
+		t.Fatalf("expected repository_group_id=repo-group-main, got %s", resp.Msg.UnitTask.RepositoryGroupId)
+	}
+	if resp.Msg.UnitTask.AgentCliType != dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI {
+		t.Fatalf("expected CODEX_CLI, got %s", resp.Msg.UnitTask.AgentCliType.String())
+	}
+	if !resp.Msg.UnitTask.UsePlanMode {
+		t.Fatal("expected use_plan_mode=true")
 	}
 	if resp.Msg.UnitTask.Status != dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED {
 		t.Fatalf("expected QUEUED status, got %s", resp.Msg.UnitTask.Status.String())
@@ -313,7 +533,7 @@ func TestTaskHandler_CreateUnitTask(t *testing.T) {
 	}
 }
 
-func TestTaskHandler_CreateUnitTask_EmptyTitle(t *testing.T) {
+func TestTaskHandler_CreateUnitTask_EmptyPrompt(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
 	h := NewTaskHandler(s, testFanOut(), nil, logger)
@@ -328,14 +548,72 @@ func TestTaskHandler_CreateUnitTask_EmptyTitle(t *testing.T) {
 	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
 
 	_, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
-		WorkspaceId: "ws-default",
-		Title:       "",
+		WorkspaceId:       "ws-default",
+		Prompt:            "",
+		RepositoryGroupId: "repo-group-main",
 	}))
 	if err == nil {
-		t.Fatal("expected error for empty title")
+		t.Fatal("expected error for empty prompt")
 	}
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("expected InvalidArgument error code, got %v", connect.CodeOf(err))
+	}
+}
+
+func TestTaskHandler_CreateUnitTask_UnsupportedPlanMode(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	_, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
+		WorkspaceId:       "ws-default",
+		Prompt:            "run migration checks",
+		RepositoryGroupId: "repo-group-main",
+		AgentCliType:      dexdexv1.AgentCliType_AGENT_CLI_TYPE_OPENCODE,
+		UsePlanMode:       true,
+	}))
+	if err == nil {
+		t.Fatal("expected error for unsupported plan mode")
+	}
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("expected FailedPrecondition error code, got %v", connect.CodeOf(err))
+	}
+}
+
+func TestTaskHandler_CreateUnitTask_RepositoryGroupNotFound(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	_, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
+		WorkspaceId:       "ws-default",
+		Prompt:            "create tests",
+		RepositoryGroupId: "missing-group",
+		AgentCliType:      dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+	}))
+	if err == nil {
+		t.Fatal("expected error for missing repository group")
+	}
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("expected NotFound error code, got %v", connect.CodeOf(err))
 	}
 }
 

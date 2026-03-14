@@ -10,24 +10,34 @@ import (
 
 type Querier interface {
 	ArchiveSession(ctx context.Context, arg ArchiveSessionParams) error
+	CountRepositoryReferences(ctx context.Context, arg CountRepositoryReferencesParams) (int64, error)
 	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
 	CreatePullRequest(ctx context.Context, arg CreatePullRequestParams) (PrRecord, error)
+	CreateRepository(ctx context.Context, arg CreateRepositoryParams) (Repository, error)
 	CreateRepositoryGroup(ctx context.Context, arg CreateRepositoryGroupParams) (RepositoryGroup, error)
+	CreateRepositoryGroupMember(ctx context.Context, arg CreateRepositoryGroupMemberParams) (RepositoryGroupMember, error)
 	CreateReviewAssistItem(ctx context.Context, arg CreateReviewAssistItemParams) (ReviewAssistItem, error)
 	CreateReviewComment(ctx context.Context, arg CreateReviewCommentParams) (ReviewComment, error)
 	CreateSessionSummary(ctx context.Context, arg CreateSessionSummaryParams) (SessionSummary, error)
 	CreateUnitTask(ctx context.Context, arg CreateUnitTaskParams) (UnitTask, error)
 	CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error)
+	DeleteRepository(ctx context.Context, arg DeleteRepositoryParams) error
+	DeleteRepositoryGroup(ctx context.Context, arg DeleteRepositoryGroupParams) error
+	DeleteRepositoryGroupMembers(ctx context.Context, arg DeleteRepositoryGroupMembersParams) error
 	GetLatestWaitingSession(ctx context.Context, arg GetLatestWaitingSessionParams) (SessionSummary, error)
 	GetPullRequest(ctx context.Context, arg GetPullRequestParams) (PrRecord, error)
+	GetRepository(ctx context.Context, arg GetRepositoryParams) (Repository, error)
 	GetRepositoryGroup(ctx context.Context, arg GetRepositoryGroupParams) (RepositoryGroup, error)
 	GetSessionSummary(ctx context.Context, arg GetSessionSummaryParams) (SessionSummary, error)
 	GetSubTask(ctx context.Context, arg GetSubTaskParams) (SubTask, error)
 	GetUnitTask(ctx context.Context, arg GetUnitTaskParams) (UnitTask, error)
 	GetWorkspace(ctx context.Context, workspaceID string) (Workspace, error)
+	GetWorkspaceSettings(ctx context.Context, workspaceID string) (WorkspaceSetting, error)
 	ListForkedSessions(ctx context.Context, arg ListForkedSessionsParams) ([]SessionSummary, error)
 	ListNotifications(ctx context.Context, workspaceID string) ([]Notification, error)
 	ListPullRequests(ctx context.Context, workspaceID string) ([]PrRecord, error)
+	ListRepositories(ctx context.Context, workspaceID string) ([]Repository, error)
+	ListRepositoryGroupMembers(ctx context.Context, arg ListRepositoryGroupMembersParams) ([]RepositoryGroupMember, error)
 	ListRepositoryGroups(ctx context.Context, workspaceID string) ([]RepositoryGroup, error)
 	ListReviewAssistItems(ctx context.Context, arg ListReviewAssistItemsParams) ([]ReviewAssistItem, error)
 	ListReviewComments(ctx context.Context, arg ListReviewCommentsParams) ([]ReviewComment, error)
@@ -35,8 +45,11 @@ type Querier interface {
 	ListUnitTasks(ctx context.Context, workspaceID string) ([]UnitTask, error)
 	ListWorkspaces(ctx context.Context) ([]Workspace, error)
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (Notification, error)
+	TouchRepositoryGroup(ctx context.Context, arg TouchRepositoryGroupParams) error
+	UpdateRepository(ctx context.Context, arg UpdateRepositoryParams) (Repository, error)
 	UpdateUnitTaskStatus(ctx context.Context, arg UpdateUnitTaskStatusParams) (UnitTask, error)
 	UpsertSubTask(ctx context.Context, arg UpsertSubTaskParams) (SubTask, error)
+	UpsertWorkspaceSettings(ctx context.Context, arg UpsertWorkspaceSettingsParams) (WorkspaceSetting, error)
 }
 
 var _ Querier = (*Queries)(nil)

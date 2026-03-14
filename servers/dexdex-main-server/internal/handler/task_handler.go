@@ -115,43 +115,78 @@ func (h *TaskHandler) CreateUnitTask(
 	req *connect.Request[dexdexv1.CreateUnitTaskRequest],
 ) (*connect.Response[dexdexv1.CreateUnitTaskResponse], error) {
 	workspaceID := req.Msg.WorkspaceId
-	title := strings.TrimSpace(req.Msg.Title)
-	description := req.Msg.Description
-	repoGroupID := req.Msg.RepositoryGroupId
+	prompt := strings.TrimSpace(req.Msg.Prompt)
+	repoGroupID := strings.TrimSpace(req.Msg.RepositoryGroupId)
+	agentCliType := req.Msg.AgentCliType
+	usePlanMode := req.Msg.UsePlanMode
 
-	h.logger.Info("CreateUnitTask called", "workspace_id", workspaceID, "title", title)
+	h.logger.Info("CreateUnitTask called", "workspace_id", workspaceID, "agent_cli_type", agentCliType.String())
 
-	if title == "" {
-		err := fmt.Errorf("title is required")
+	if prompt == "" {
+		err := fmt.Errorf("prompt is required")
 		h.logger.Warn("CreateUnitTask validation failed", "workspace_id", workspaceID, "error", err)
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	task := h.store.CreateUnitTask(workspaceID, title, description, repoGroupID)
+	if repoGroupID == "" {
+		err := fmt.Errorf("repository_group_id is required")
+		h.logger.Warn("CreateUnitTask validation failed", "workspace_id", workspaceID, "error", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	repoGroup, repoErr := h.store.GetRepositoryGroup(workspaceID, repoGroupID)
+	if repoErr != nil {
+		h.logger.Warn("CreateUnitTask validation failed",
+			"workspace_id", workspaceID,
+			"repository_group_id", repoGroupID,
+			"error", repoErr,
+		)
+		return nil, connect.NewError(connect.CodeNotFound, repoErr)
+	}
+
+	if agentCliType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_UNSPECIFIED {
+		settings, settingsErr := h.store.GetWorkspaceSettings(workspaceID)
+		if settingsErr == nil {
+			agentCliType = settings.DefaultAgentCliType
+		}
+		if agentCliType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_UNSPECIFIED {
+			agentCliType = dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE
+		}
+	}
+
+	if usePlanMode && !agentSupportsPlanMode(agentCliType) {
+		err := fmt.Errorf("agent_cli_type %s does not support plan mode", agentCliType.String())
+		h.logger.Warn("CreateUnitTask validation failed", "workspace_id", workspaceID, "error", err)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+
+	task := h.store.CreateUnitTask(workspaceID, prompt, repoGroupID, agentCliType, usePlanMode)
 
 	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_TASK_UPDATED, &stream.TaskPayload{Task: task})
 
 	h.logger.Info("CreateUnitTask completed", "workspace_id", workspaceID, "unit_task_id", task.UnitTaskId)
 
-	// Dispatch execution if a repository group is specified and dispatcher is available
-	if repoGroupID != "" && h.dispatcher != nil {
-		repoGroup, err := h.store.GetRepositoryGroup(workspaceID, repoGroupID)
-		if err == nil && repoGroup != nil {
-			go func() {
-				if dispatchErr := h.dispatcher.DispatchExecution(context.Background(), workspaceID, task, repoGroup, dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE); dispatchErr != nil {
-					h.logger.Error("failed to dispatch execution",
-						"workspace_id", workspaceID,
-						"unit_task_id", task.UnitTaskId,
-						"error", dispatchErr,
-					)
-				}
-			}()
-		}
+	// Dispatch execution if dispatcher is available
+	if h.dispatcher != nil {
+		go func() {
+			if dispatchErr := h.dispatcher.DispatchExecution(context.Background(), workspaceID, task, repoGroup, agentCliType); dispatchErr != nil {
+				h.logger.Error("failed to dispatch execution",
+					"workspace_id", workspaceID,
+					"unit_task_id", task.UnitTaskId,
+					"error", dispatchErr,
+				)
+			}
+		}()
 	}
 
 	return connect.NewResponse(&dexdexv1.CreateUnitTaskResponse{
 		UnitTask: task,
 	}), nil
+}
+
+func agentSupportsPlanMode(agentCliType dexdexv1.AgentCliType) bool {
+	return agentCliType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE ||
+		agentCliType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI
 }
 
 // UpdateUnitTaskStatus updates the status of a unit task.

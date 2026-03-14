@@ -16,11 +16,15 @@ import {
 
 export interface UnitTask {
   unitTaskId: string;
+  prompt?: string;
   title: string;
   description: string;
   status: UnitTaskStatus;
-  repositoryUrl: string;
-  branchRef: string;
+  repositoryUrl?: string;
+  branchRef?: string;
+  repositoryGroupId?: string;
+  agentCliType?: AgentCliType;
+  usePlanMode?: boolean;
   createdAt: string;
   updatedAt: string;
   subTasks: SubTask[];
@@ -68,6 +72,7 @@ export interface SessionSummary {
 export interface AgentCapability {
   agentCliType: AgentCliType;
   supportsFork: boolean;
+  supportsPlanMode?: boolean;
   displayName: string;
 }
 

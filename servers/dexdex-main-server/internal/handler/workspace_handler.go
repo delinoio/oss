@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"connectrpc.com/connect"
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
@@ -69,5 +71,68 @@ func (h *WorkspaceHandler) GetWorkspaceWorkStatus(
 
 	return connect.NewResponse(&dexdexv1.GetWorkspaceWorkStatusResponse{
 		Status: status,
+	}), nil
+}
+
+// GetWorkspaceSettings returns workspace-level settings.
+func (h *WorkspaceHandler) GetWorkspaceSettings(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.GetWorkspaceSettingsRequest],
+) (*connect.Response[dexdexv1.GetWorkspaceSettingsResponse], error) {
+	workspaceID := strings.TrimSpace(req.Msg.WorkspaceId)
+	if workspaceID == "" {
+		err := fmt.Errorf("workspace_id is required")
+		h.logger.Warn("GetWorkspaceSettings validation failed", "error", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	h.logger.Info("GetWorkspaceSettings called", "workspace_id", workspaceID)
+	settings, err := h.store.GetWorkspaceSettings(workspaceID)
+	if err != nil {
+		// Default to CLAUDE_CODE for newly initialized workspaces without settings.
+		settings, err = h.store.UpsertWorkspaceSettings(workspaceID, dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE)
+		if err != nil {
+			h.logger.Error("failed to initialize workspace settings", "workspace_id", workspaceID, "error", err)
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+	}
+
+	return connect.NewResponse(&dexdexv1.GetWorkspaceSettingsResponse{
+		Settings: settings,
+	}), nil
+}
+
+// UpdateWorkspaceSettings updates workspace-level settings.
+func (h *WorkspaceHandler) UpdateWorkspaceSettings(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.UpdateWorkspaceSettingsRequest],
+) (*connect.Response[dexdexv1.UpdateWorkspaceSettingsResponse], error) {
+	workspaceID := strings.TrimSpace(req.Msg.WorkspaceId)
+	if workspaceID == "" {
+		err := fmt.Errorf("workspace_id is required")
+		h.logger.Warn("UpdateWorkspaceSettings validation failed", "error", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	defaultAgent := req.Msg.DefaultAgentCliType
+	if defaultAgent == dexdexv1.AgentCliType_AGENT_CLI_TYPE_UNSPECIFIED {
+		err := fmt.Errorf("default_agent_cli_type is required")
+		h.logger.Warn("UpdateWorkspaceSettings validation failed", "workspace_id", workspaceID, "error", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+
+	h.logger.Info("UpdateWorkspaceSettings called",
+		"workspace_id", workspaceID,
+		"default_agent_cli_type", defaultAgent.String(),
+	)
+
+	settings, err := h.store.UpsertWorkspaceSettings(workspaceID, defaultAgent)
+	if err != nil {
+		h.logger.Error("UpdateWorkspaceSettings failed", "workspace_id", workspaceID, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+
+	return connect.NewResponse(&dexdexv1.UpdateWorkspaceSettingsResponse{
+		Settings: settings,
 	}), nil
 }

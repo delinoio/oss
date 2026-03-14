@@ -43,6 +43,10 @@ func NewManager(worktreeRoot, repoCacheRoot string, maxParallel int, logger *slo
 // PrepareWorktree clones/fetches repos and creates worktrees for the given session.
 // First repository in the group becomes the primary directory.
 func (m *Manager) PrepareWorktree(ctx context.Context, repoGroup *dexdexv1.RepositoryGroup, sessionID string) (*WorktreeContext, error) {
+	if repoGroup == nil || len(repoGroup.Members) == 0 {
+		return nil, fmt.Errorf("repository_group must include at least one member")
+	}
+
 	// Acquire semaphore slot
 	select {
 	case m.semaphore <- struct{}{}:
@@ -61,34 +65,46 @@ func (m *Manager) PrepareWorktree(ctx context.Context, repoGroup *dexdexv1.Repos
 		SessionDir: sessionDir,
 	}
 
-	for i, repo := range repoGroup.Repositories {
-		repoName := repoNameFromURL(repo.RepositoryUrl)
-		cachePath := filepath.Join(m.repoCacheRoot, repoCacheKey(repo.RepositoryUrl))
+	for i, member := range repoGroup.Members {
+		if member.Repository == nil {
+			m.CleanupWorktree(ctx, wCtx) //nolint:errcheck
+			<-m.semaphore
+			return nil, fmt.Errorf("repository_group member %d missing repository payload", i)
+		}
+		repositoryURL := member.Repository.RepositoryUrl
+		if repositoryURL == "" {
+			m.CleanupWorktree(ctx, wCtx) //nolint:errcheck
+			<-m.semaphore
+			return nil, fmt.Errorf("repository_group member %d missing repository_url", i)
+		}
+
+		repoName := repoNameFromURL(repositoryURL)
+		cachePath := filepath.Join(m.repoCacheRoot, repoCacheKey(repositoryURL))
 		worktreePath := filepath.Join(sessionDir, repoName)
 
 		m.logger.Info("preparing worktree",
 			"session_id", sessionID,
-			"repo_url", repo.RepositoryUrl,
-			"branch", repo.BranchRef,
+			"repo_url", repositoryURL,
+			"branch", member.BranchRef,
 			"index", i,
 		)
 
 		// Ensure bare clone exists and is up-to-date
-		if err := m.ensureBareClone(ctx, repo.RepositoryUrl, cachePath); err != nil {
+		if err := m.ensureBareClone(ctx, repositoryURL, cachePath); err != nil {
 			m.CleanupWorktree(ctx, wCtx) //nolint:errcheck
 			<-m.semaphore
-			return nil, fmt.Errorf("ensure bare clone for %s: %w", repo.RepositoryUrl, err)
+			return nil, fmt.Errorf("ensure bare clone for %s: %w", repositoryURL, err)
 		}
 
 		// Create worktree
-		branch := repo.BranchRef
+		branch := member.BranchRef
 		if branch == "" {
 			branch = "HEAD"
 		}
 		if err := m.createWorktree(ctx, cachePath, worktreePath, branch); err != nil {
 			m.CleanupWorktree(ctx, wCtx) //nolint:errcheck
 			<-m.semaphore
-			return nil, fmt.Errorf("create worktree for %s: %w", repo.RepositoryUrl, err)
+			return nil, fmt.Errorf("create worktree for %s: %w", repositoryURL, err)
 		}
 
 		if i == 0 {

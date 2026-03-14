@@ -18,3 +18,13 @@ export const listWorkspaces = WorkspaceService.method.listWorkspaces;
  * @generated from rpc dexdex.v1.WorkspaceService.GetWorkspaceWorkStatus
  */
 export const getWorkspaceWorkStatus = WorkspaceService.method.getWorkspaceWorkStatus;
+
+/**
+ * @generated from rpc dexdex.v1.WorkspaceService.GetWorkspaceSettings
+ */
+export const getWorkspaceSettings = WorkspaceService.method.getWorkspaceSettings;
+
+/**
+ * @generated from rpc dexdex.v1.WorkspaceService.UpdateWorkspaceSettings
+ */
+export const updateWorkspaceSettings = WorkspaceService.method.updateWorkspaceSettings;

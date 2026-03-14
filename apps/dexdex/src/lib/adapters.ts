@@ -127,6 +127,8 @@ const AGENT_CLI_TYPE_MAP: Record<number, AgentCliType> = {
   [ProtoAgentCliType.OPENCODE]: AgentCliType.OPENCODE,
 };
 
+const PROMPT_SUMMARY_MAX_LENGTH = 72;
+
 /**
  * Convert a protobuf Timestamp to an ISO string.
  * Returns current time if timestamp is undefined.
@@ -139,17 +141,35 @@ function timestampToISO(ts: Timestamp | undefined): string {
 }
 
 /**
+ * Convert a raw prompt into a compact single-line summary for list/tab labels.
+ */
+export function summarizePrompt(prompt: string | undefined): string {
+  const normalized = (prompt ?? "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "Untitled";
+  }
+  if (normalized.length <= PROMPT_SUMMARY_MAX_LENGTH) {
+    return normalized;
+  }
+  return `${normalized.slice(0, PROMPT_SUMMARY_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
+/**
  * Convert a proto UnitTask to a view-model UnitTask.
  * Proto UnitTask does not contain subTasks - those must be fetched separately.
  */
 export function toViewUnitTask(proto: ProtoUnitTask, subTasks: SubTask[] = []): UnitTask {
+  const summary = summarizePrompt(proto.prompt);
+  const fullPrompt = proto.prompt || "";
   return {
     unitTaskId: proto.unitTaskId,
-    title: proto.title || "Untitled",
-    description: proto.description || "",
+    prompt: fullPrompt,
+    title: summary,
+    description: fullPrompt,
     status: UNIT_TASK_STATUS_MAP[proto.status] ?? UnitTaskStatus.UNSPECIFIED,
-    repositoryUrl: "",
-    branchRef: "",
+    repositoryGroupId: proto.repositoryGroupId,
+    agentCliType: AGENT_CLI_TYPE_MAP[proto.agentCliType] ?? AgentCliType.UNSPECIFIED,
+    usePlanMode: proto.usePlanMode,
     createdAt: timestampToISO(proto.createdAt),
     updatedAt: timestampToISO(proto.updatedAt),
     subTasks,
@@ -222,6 +242,7 @@ export function toViewAgentCapability(proto: ProtoAgentCapability): AgentCapabil
   return {
     agentCliType: AGENT_CLI_TYPE_MAP[proto.agentCliType] ?? AgentCliType.UNSPECIFIED,
     supportsFork: proto.supportsFork,
+    supportsPlanMode: proto.supportsPlanMode,
     displayName: proto.displayName,
   };
 }

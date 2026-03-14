@@ -171,15 +171,27 @@ message Workspace {
   google.protobuf.Timestamp created_at = 3;
 }
 
-message RepositoryRef {
+message Repository {
   string repository_id = 1;
-  string repository_url = 2;
-  string branch_ref = 3;
+  string workspace_id = 2;
+  string repository_url = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message RepositoryGroupMember {
+  string repository_id = 1;
+  string branch_ref = 2;
+  int32 display_order = 3;
+  Repository repository = 4;
 }
 
 message RepositoryGroup {
   string repository_group_id = 1;
-  repeated RepositoryRef repositories = 2;
+  string workspace_id = 2;
+  repeated RepositoryGroupMember members = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
 }
 
 message CommitMetadata {
@@ -194,13 +206,14 @@ message UnitTask {
   string unit_task_id = 1;
   UnitTaskStatus status = 2;
   ActionType action_required = 3;
-  string title = 4;
-  string description = 5;
-  string workspace_id = 6;
-  string repository_group_id = 7;
-  google.protobuf.Timestamp created_at = 8;
-  google.protobuf.Timestamp updated_at = 9;
-  int32 sub_task_count = 10;
+  string prompt = 4;
+  string workspace_id = 5;
+  string repository_group_id = 6;
+  AgentCliType agent_cli_type = 7;
+  bool use_plan_mode = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  int32 sub_task_count = 11;
 }
 
 message SubTask {
@@ -275,6 +288,7 @@ message AgentCapability {
   AgentCliType agent_cli_type = 1;
   bool supports_fork = 2;
   string display_name = 3;
+  bool supports_plan_mode = 4;
 }
 
 message SessionForkUpdatedEvent {
@@ -376,6 +390,15 @@ message GetRepositoryGroupRequest {
 
 message GetRepositoryGroupResponse {
   RepositoryGroup repository_group = 1;
+}
+
+message GetRepositoryRequest {
+  string workspace_id = 1;
+  string repository_id = 2;
+}
+
+message GetRepositoryResponse {
+  Repository repository = 1;
 }
 
 message GetSessionOutputRequest {
@@ -531,6 +554,28 @@ message ListWorkspacesResponse {
   repeated Workspace workspaces = 1;
 }
 
+message WorkspaceSettings {
+  string workspace_id = 1;
+  AgentCliType default_agent_cli_type = 2;
+}
+
+message GetWorkspaceSettingsRequest {
+  string workspace_id = 1;
+}
+
+message GetWorkspaceSettingsResponse {
+  WorkspaceSettings settings = 1;
+}
+
+message UpdateWorkspaceSettingsRequest {
+  string workspace_id = 1;
+  AgentCliType default_agent_cli_type = 2;
+}
+
+message UpdateWorkspaceSettingsResponse {
+  WorkspaceSettings settings = 1;
+}
+
 message ListUnitTasksRequest {
   string workspace_id = 1;
   // Optional status filter. Empty means all statuses.
@@ -543,9 +588,10 @@ message ListUnitTasksResponse {
 
 message CreateUnitTaskRequest {
   string workspace_id = 1;
-  string title = 2;
-  string description = 3;
-  string repository_group_id = 4;
+  string prompt = 2;
+  string repository_group_id = 3;
+  AgentCliType agent_cli_type = 4;
+  bool use_plan_mode = 5;
 }
 
 message CreateUnitTaskResponse {
@@ -669,6 +715,73 @@ message ListRepositoryGroupsResponse {
   repeated RepositoryGroup repository_groups = 1;
 }
 
+message CreateRepositoryRequest {
+  string workspace_id = 1;
+  string repository_url = 2;
+}
+
+message CreateRepositoryResponse {
+  Repository repository = 1;
+}
+
+message UpdateRepositoryRequest {
+  string workspace_id = 1;
+  string repository_id = 2;
+  string repository_url = 3;
+}
+
+message UpdateRepositoryResponse {
+  Repository repository = 1;
+}
+
+message DeleteRepositoryRequest {
+  string workspace_id = 1;
+  string repository_id = 2;
+}
+
+message DeleteRepositoryResponse {}
+
+message ListRepositoriesRequest {
+  string workspace_id = 1;
+}
+
+message ListRepositoriesResponse {
+  repeated Repository repositories = 1;
+}
+
+message RepositoryGroupMemberInput {
+  string repository_id = 1;
+  string branch_ref = 2;
+  int32 display_order = 3;
+}
+
+message CreateRepositoryGroupRequest {
+  string workspace_id = 1;
+  string repository_group_id = 2;
+  repeated RepositoryGroupMemberInput members = 3;
+}
+
+message CreateRepositoryGroupResponse {
+  RepositoryGroup repository_group = 1;
+}
+
+message UpdateRepositoryGroupRequest {
+  string workspace_id = 1;
+  string repository_group_id = 2;
+  repeated RepositoryGroupMemberInput members = 3;
+}
+
+message UpdateRepositoryGroupResponse {
+  RepositoryGroup repository_group = 1;
+}
+
+message DeleteRepositoryGroupRequest {
+  string workspace_id = 1;
+  string repository_group_id = 2;
+}
+
+message DeleteRepositoryGroupResponse {}
+
 // Worker execution adapter messages.
 
 message StartExecutionRequest {
@@ -682,9 +795,10 @@ message StartExecutionRequest {
   // Fork execution fields: non-empty parent_session_id triggers fork mode.
   string parent_session_id = 8;
   SessionForkIntent fork_intent = 9;
+  bool use_plan_mode = 10;
 }
 
-message ExecutionEvent {
+message StartExecutionResponse {
   oneof event {
     SessionOutputEvent session_output = 1;
     SessionStateChangedEvent state_changed = 2;
@@ -722,11 +836,21 @@ service WorkspaceService {
   rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
   rpc GetWorkspaceWorkStatus(GetWorkspaceWorkStatusRequest) returns (GetWorkspaceWorkStatusResponse);
+  rpc GetWorkspaceSettings(GetWorkspaceSettingsRequest) returns (GetWorkspaceSettingsResponse);
+  rpc UpdateWorkspaceSettings(UpdateWorkspaceSettingsRequest) returns (UpdateWorkspaceSettingsResponse);
 }
 
 service RepositoryService {
+  rpc GetRepository(GetRepositoryRequest) returns (GetRepositoryResponse);
+  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+  rpc CreateRepository(CreateRepositoryRequest) returns (CreateRepositoryResponse);
+  rpc UpdateRepository(UpdateRepositoryRequest) returns (UpdateRepositoryResponse);
+  rpc DeleteRepository(DeleteRepositoryRequest) returns (DeleteRepositoryResponse);
   rpc GetRepositoryGroup(GetRepositoryGroupRequest) returns (GetRepositoryGroupResponse);
   rpc ListRepositoryGroups(ListRepositoryGroupsRequest) returns (ListRepositoryGroupsResponse);
+  rpc CreateRepositoryGroup(CreateRepositoryGroupRequest) returns (CreateRepositoryGroupResponse);
+  rpc UpdateRepositoryGroup(UpdateRepositoryGroupRequest) returns (UpdateRepositoryGroupResponse);
+  rpc DeleteRepositoryGroup(DeleteRepositoryGroupRequest) returns (DeleteRepositoryGroupResponse);
 }
 
 service TaskService {
@@ -780,7 +904,7 @@ service NotificationService {
 service WorkerSessionAdapterService {
   rpc GetAgentCapabilities(GetAgentCapabilitiesRequest) returns (GetAgentCapabilitiesResponse);
   rpc ForkSessionAdapter(ForkSessionAdapterRequest) returns (ForkSessionAdapterResponse);
-  rpc StartExecution(StartExecutionRequest) returns (stream ExecutionEvent);
+  rpc StartExecution(StartExecutionRequest) returns (stream StartExecutionResponse);
   rpc SubmitWorkerInput(SubmitWorkerInputRequest) returns (SubmitWorkerInputResponse);
   rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
 }

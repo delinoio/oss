@@ -53,21 +53,28 @@ func (h *AdapterHandler) GetAgentCapabilities(
 
 	capabilities := []*dexdexv1.AgentCapability{
 		{
-			AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
-			SupportsFork: true,
-			DisplayName:  "Claude Code",
+			AgentCliType:     dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+			SupportsFork:     true,
+			DisplayName:      "Claude Code",
+			SupportsPlanMode: true,
 		},
 		{
-			AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
-			SupportsFork: false,
-			DisplayName:  "Codex CLI",
+			AgentCliType:     dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+			SupportsFork:     false,
+			DisplayName:      "Codex CLI",
+			SupportsPlanMode: true,
 		},
 		{
-			AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_OPENCODE,
-			SupportsFork: false,
-			DisplayName:  "OpenCode",
+			AgentCliType:     dexdexv1.AgentCliType_AGENT_CLI_TYPE_OPENCODE,
+			SupportsFork:     false,
+			DisplayName:      "OpenCode",
+			SupportsPlanMode: false,
 		},
 	}
+
+	h.logger.Info("agent capabilities resolved",
+		"capability_count", len(capabilities),
+	)
 
 	return connect.NewResponse(&dexdexv1.GetAgentCapabilitiesResponse{
 		Capabilities: capabilities,
@@ -77,6 +84,12 @@ func (h *AdapterHandler) GetAgentCapabilities(
 // agentSupportsFork returns true if the given agent CLI type supports session forking.
 func agentSupportsFork(agentType dexdexv1.AgentCliType) bool {
 	return agentType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE
+}
+
+// agentSupportsPlanMode returns true when the target agent supports plan mode.
+func agentSupportsPlanMode(agentType dexdexv1.AgentCliType) bool {
+	return agentType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE ||
+		agentType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI
 }
 
 // ForkSessionAdapter creates a forked session from a parent session.
@@ -143,12 +156,13 @@ func (h *AdapterHandler) ForkSessionAdapter(
 func (h *AdapterHandler) StartExecution(
 	ctx context.Context,
 	req *connect.Request[dexdexv1.StartExecutionRequest],
-	stream *connect.ServerStream[dexdexv1.ExecutionEvent],
+	stream *connect.ServerStream[dexdexv1.StartExecutionResponse],
 ) error {
 	sessionID := req.Msg.SessionId
 	repoGroup := req.Msg.RepositoryGroup
 	prompt := req.Msg.Prompt
 	agentType := req.Msg.AgentCliType
+	usePlanMode := req.Msg.UsePlanMode
 
 	h.logger.Info("StartExecution called",
 		"session_id", sessionID,
@@ -156,7 +170,22 @@ func (h *AdapterHandler) StartExecution(
 		"unit_task_id", req.Msg.UnitTaskId,
 		"sub_task_id", req.Msg.SubTaskId,
 		"agent_cli_type", agentType.String(),
+		"use_plan_mode", usePlanMode,
 	)
+
+	supportsPlanMode := agentSupportsPlanMode(agentType)
+	h.logger.Info("plan mode capability check",
+		"session_id", sessionID,
+		"agent_cli_type", agentType.String(),
+		"use_plan_mode", usePlanMode,
+		"supports_plan_mode", supportsPlanMode,
+	)
+	if usePlanMode && !supportsPlanMode {
+		return connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("agent %s does not support plan mode", agentType.String()))
+	}
+	if h.wtManager == nil {
+		return connect.NewError(connect.CodeInternal, fmt.Errorf("worktree manager not configured"))
+	}
 
 	// Create cancellable context and input channel for this execution.
 	execCtx, cancel := context.WithCancel(ctx)
@@ -173,8 +202,8 @@ func (h *AdapterHandler) StartExecution(
 	}()
 
 	// Emit worktree PREPARING state
-	_ = stream.Send(&dexdexv1.ExecutionEvent{
-		Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+	_ = stream.Send(&dexdexv1.StartExecutionResponse{
+		Event: &dexdexv1.StartExecutionResponse_WorktreeStatus{
 			WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
 				SessionId: sessionID,
 				State:     dexdexv1.WorktreeState_WORKTREE_STATE_PREPARING,
@@ -187,8 +216,8 @@ func (h *AdapterHandler) StartExecution(
 	if err != nil {
 		h.logger.Error("failed to prepare worktree",
 			"session_id", sessionID, "error", err)
-		_ = stream.Send(&dexdexv1.ExecutionEvent{
-			Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+		_ = stream.Send(&dexdexv1.StartExecutionResponse{
+			Event: &dexdexv1.StartExecutionResponse_WorktreeStatus{
 				WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
 					SessionId:    sessionID,
 					State:        dexdexv1.WorktreeState_WORKTREE_STATE_FAILED,
@@ -196,8 +225,8 @@ func (h *AdapterHandler) StartExecution(
 				},
 			},
 		})
-		_ = stream.Send(&dexdexv1.ExecutionEvent{
-			Event: &dexdexv1.ExecutionEvent_StateChanged{
+		_ = stream.Send(&dexdexv1.StartExecutionResponse{
+			Event: &dexdexv1.StartExecutionResponse_StateChanged{
 				StateChanged: &dexdexv1.SessionStateChangedEvent{
 					SessionId: sessionID,
 					Status:    dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_FAILED,
@@ -207,8 +236,8 @@ func (h *AdapterHandler) StartExecution(
 		return connect.NewError(connect.CodeInternal, fmt.Errorf("worktree preparation failed: %w", err))
 	}
 	defer func() {
-		_ = stream.Send(&dexdexv1.ExecutionEvent{
-			Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+		_ = stream.Send(&dexdexv1.StartExecutionResponse{
+			Event: &dexdexv1.StartExecutionResponse_WorktreeStatus{
 				WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
 					SessionId:  sessionID,
 					State:      dexdexv1.WorktreeState_WORKTREE_STATE_CLEANING_UP,
@@ -218,8 +247,8 @@ func (h *AdapterHandler) StartExecution(
 		})
 		_ = h.wtManager.CleanupWorktree(context.Background(), wCtx)
 		h.wtManager.ReleaseSlot()
-		_ = stream.Send(&dexdexv1.ExecutionEvent{
-			Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+		_ = stream.Send(&dexdexv1.StartExecutionResponse{
+			Event: &dexdexv1.StartExecutionResponse_WorktreeStatus{
 				WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
 					SessionId: sessionID,
 					State:     dexdexv1.WorktreeState_WORKTREE_STATE_CLEANED,
@@ -229,8 +258,8 @@ func (h *AdapterHandler) StartExecution(
 	}()
 
 	// Emit worktree READY state
-	_ = stream.Send(&dexdexv1.ExecutionEvent{
-		Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+	_ = stream.Send(&dexdexv1.StartExecutionResponse{
+		Event: &dexdexv1.StartExecutionResponse_WorktreeStatus{
 			WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
 				SessionId:  sessionID,
 				State:      dexdexv1.WorktreeState_WORKTREE_STATE_READY,
@@ -240,8 +269,8 @@ func (h *AdapterHandler) StartExecution(
 	})
 
 	// Emit starting state
-	_ = stream.Send(&dexdexv1.ExecutionEvent{
-		Event: &dexdexv1.ExecutionEvent_StateChanged{
+	_ = stream.Send(&dexdexv1.StartExecutionResponse{
+		Event: &dexdexv1.StartExecutionResponse_StateChanged{
 			StateChanged: &dexdexv1.SessionStateChangedEvent{
 				SessionId: sessionID,
 				Status:    dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_STARTING,
@@ -269,11 +298,11 @@ func (h *AdapterHandler) StartExecution(
 
 	// Build agent command based on type
 	parentSessionID := req.Msg.ParentSessionId
-	agentCmd, err := buildAgentCommand(execCtx, agentType, wCtx.PrimaryDir, wCtx.AttachedDirs, prompt, sessionID, parentSessionID)
+	agentCmd, err := buildAgentCommand(execCtx, agentType, wCtx.PrimaryDir, wCtx.AttachedDirs, prompt, sessionID, parentSessionID, usePlanMode)
 	if err != nil {
 		h.logger.Error("failed to build agent command", "session_id", sessionID, "error", err)
-		_ = stream.Send(&dexdexv1.ExecutionEvent{
-			Event: &dexdexv1.ExecutionEvent_StateChanged{
+		_ = stream.Send(&dexdexv1.StartExecutionResponse{
+			Event: &dexdexv1.StartExecutionResponse_StateChanged{
 				StateChanged: &dexdexv1.SessionStateChangedEvent{
 					SessionId: sessionID,
 					Status:    dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_FAILED,
@@ -284,8 +313,8 @@ func (h *AdapterHandler) StartExecution(
 	}
 
 	// Emit worktree EXECUTING state
-	_ = stream.Send(&dexdexv1.ExecutionEvent{
-		Event: &dexdexv1.ExecutionEvent_WorktreeStatus{
+	_ = stream.Send(&dexdexv1.StartExecutionResponse{
+		Event: &dexdexv1.StartExecutionResponse_WorktreeStatus{
 			WorktreeStatus: &dexdexv1.WorktreeStatusEvent{
 				SessionId:  sessionID,
 				State:      dexdexv1.WorktreeState_WORKTREE_STATE_EXECUTING,
@@ -295,8 +324,8 @@ func (h *AdapterHandler) StartExecution(
 	})
 
 	// Emit running state
-	_ = stream.Send(&dexdexv1.ExecutionEvent{
-		Event: &dexdexv1.ExecutionEvent_StateChanged{
+	_ = stream.Send(&dexdexv1.StartExecutionResponse{
+		Event: &dexdexv1.StartExecutionResponse_StateChanged{
 			StateChanged: &dexdexv1.SessionStateChangedEvent{
 				SessionId: sessionID,
 				Status:    dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
@@ -319,8 +348,8 @@ func (h *AdapterHandler) StartExecution(
 	}
 
 	// Emit final state
-	_ = stream.Send(&dexdexv1.ExecutionEvent{
-		Event: &dexdexv1.ExecutionEvent_StateChanged{
+	_ = stream.Send(&dexdexv1.StartExecutionResponse{
+		Event: &dexdexv1.StartExecutionResponse_StateChanged{
 			StateChanged: &dexdexv1.SessionStateChangedEvent{
 				SessionId: sessionID,
 				Status:    finalStatus,

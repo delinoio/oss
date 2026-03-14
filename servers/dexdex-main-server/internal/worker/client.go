@@ -75,7 +75,7 @@ func (c *Client) ForkSession(ctx context.Context, sessionID string, forkIntent d
 }
 
 // StartExecution calls the worker's StartExecution streaming RPC and returns a stream of events.
-func (c *Client) StartExecution(ctx context.Context, req *dexdexv1.StartExecutionRequest) (*connect.ServerStreamForClient[dexdexv1.ExecutionEvent], error) {
+func (c *Client) StartExecution(ctx context.Context, req *dexdexv1.StartExecutionRequest) (*connect.ServerStreamForClient[dexdexv1.StartExecutionResponse], error) {
 	stream, err := c.client.StartExecution(ctx, connect.NewRequest(req))
 	if err != nil {
 		c.logger.Error("failed to start execution on worker", "session_id", req.SessionId, "error", err)
