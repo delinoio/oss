@@ -293,6 +293,7 @@ function App() {
           setCreateDialogOpen(true);
           setCommandPaletteOpen(false);
         }}
+        tasks={tasks}
       />
       <CreateDialog
         isOpen={createDialogOpen}

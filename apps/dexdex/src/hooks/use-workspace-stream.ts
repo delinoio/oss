@@ -6,6 +6,7 @@
 
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTransport } from "@connectrpc/connect-query";
 import { EventStreamClient } from "../lib/event-stream";
 import type { EventStreamStatus } from "../lib/event-stream";
 import { StreamEventType } from "../lib/status";
@@ -24,6 +25,7 @@ interface UseWorkspaceStreamOptions {
 export function useWorkspaceStream({ workspaceId, onStatusChange }: UseWorkspaceStreamOptions): void {
   const clientRef = useRef<EventStreamClient | null>(null);
   const queryClient = useQueryClient();
+  const transport = useTransport();
 
   useEffect(() => {
     const client = new EventStreamClient();
@@ -59,11 +61,12 @@ export function useWorkspaceStream({ workspaceId, onStatusChange }: UseWorkspace
         }
       },
       onStatusChange,
+      transport,
     );
 
     return () => {
       client.disconnect();
       clientRef.current = null;
     };
-  }, [workspaceId, onStatusChange, queryClient]);
+  }, [workspaceId, onStatusChange, queryClient, transport]);
 }

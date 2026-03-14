@@ -4,7 +4,7 @@
  * reconnection with exponential backoff.
  */
 
-import { createClient } from "@connectrpc/connect";
+import { type Transport, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { EventStreamService, StreamEventType as ProtoStreamEventType } from "../gen/v1/dexdex_pb";
 import { StreamEventType, SessionOutputKind } from "./status";
@@ -57,17 +57,21 @@ export class EventStreamClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private backoffMs = INITIAL_BACKOFF_MS;
   private onStatusChange: ((status: EventStreamStatus) => void) | null = null;
+  private transport: Transport | null = null;
 
   /**
    * Connect to workspace event stream via Connect RPC server streaming.
+   * Accepts an optional transport; falls back to default HTTP transport.
    */
   connect(
     workspaceId: string,
     onEvent: (event: StreamWorkspaceEventsResponse) => void,
     onStatus?: (status: EventStreamStatus) => void,
+    transport?: Transport,
   ): void {
     this.disconnect();
     this.onStatusChange = onStatus ?? null;
+    this.transport = transport ?? null;
     this.abortController = new AbortController();
 
     console.log("[EventStream] Connecting to workspace:", workspaceId, "from sequence:", this.lastSequence);
@@ -121,8 +125,8 @@ export class EventStreamClient {
     workspaceId: string,
     onEvent: (event: StreamWorkspaceEventsResponse) => void,
   ): Promise<void> {
-    const transport = createConnectTransport({ baseUrl: DEFAULT_ENDPOINT });
-    const client = createClient(EventStreamService, transport);
+    const streamTransport = this.transport ?? createConnectTransport({ baseUrl: DEFAULT_ENDPOINT });
+    const client = createClient(EventStreamService, streamTransport);
 
     try {
       for await (const response of client.streamWorkspaceEvents(
