@@ -29,8 +29,13 @@ Define DexDex as a Connect RPC-first, multi-component orchestration platform con
 - Real git commit chain metadata is the authoritative output artifact for PR creation and commit-local flows.
 - Patch artifacts are derived artifacts for diff rendering and are not authoritative execution output.
 - Plan mode uses explicit decisions (`APPROVE`, `REVISE`, `REJECT`) and must preserve decision history linkage to subtask/session records.
+- Session fork is additive-only to existing session workflows and must never mutate the parent session context.
+- Session fork v1 scope is fixed to `create`, `list`, `switch`, and `archive`; merge and parent-branch auto-integration are explicitly out of scope.
+- Coding-agent fork support is provider-capability-driven and must be abstracted by `main-server` rather than exposed as provider-native behavior.
 - Event streaming uses monotonic workspace sequence semantics with replay/resume behavior and explicit out-of-range handling.
 - Notification contracts are event-driven; in-app notification state is authoritative while Web Notification API dispatch is permission-dependent.
+- Waiting-for-input handoff is a first-class workflow and must support latest-question routing for global shortcut flows.
+- Menu bar tray state is display-only and is derived from active-workspace work status priority (`FAILED > ACTION_REQUIRED > WAITING_FOR_INPUT > RUNNING > IDLE > DISCONNECTED`).
 - Coding-agent provider-native output is normalized in `worker-server`; only normalized events cross server/client boundaries.
 - Shared enum and message identifiers in `protos/dexdex/v1` remain stable or evolve additively under explicit version policy.
 
@@ -39,6 +44,7 @@ Define DexDex as a Connect RPC-first, multi-component orchestration platform con
 - Schema and enum changes in `protos/dexdex/v1` must synchronize desktop, main-server, and worker-server contracts in the same change set.
 - Repository path or component ownership changes must keep canonical paths aligned with this file and DexDex domain contract docs.
 - Any update that changes execution invariants (worktree policy, repository ordering, commit-chain authority, plan decisions, stream sequencing) must be reflected consistently across all DexDex contract docs.
+- Any update that changes session-fork behavior, waiting-input routing, or workspace work-status priority must be reflected consistently across app/server/proto DexDex contract docs.
 - Contract sections may include implemented-vs-planned annotations when runtime/proto coverage lags product contract scope.
 - External DexDex source-doc merges must update traceability references in this file to keep source coverage auditable.
 
