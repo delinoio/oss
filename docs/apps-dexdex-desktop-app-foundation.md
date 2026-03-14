@@ -87,7 +87,15 @@
 - `SessionForkPanel` and `SessionInputForm` components are implemented
 - repository group selector in create task dialog (useListRepositoryGroups hook + select dropdown) is implemented
 - credential bridge with Tauri commands (store_credential, list_credentials, delete_credential) and CredentialManager React component in settings page is implemented
-- menu bar tray with work status icon (Tauri-side), global shortcut Cmd/Ctrl+Shift+I (Tauri-side), PR management UI, and review assist UI remain planned scope
+- ErrorBoundary component for graceful error recovery is implemented
+- skeleton loaders for async content loading states are implemented
+- enhanced ReviewAssistPanel with accept/dismiss actions, code block rendering, and collapsible sections is implemented
+- InlineCommentThread and DiffCommentView components for line-level comment UI are implemented
+- ReviewComment CRUD mutations (create, update, delete, resolve, reopen) are implemented
+- badge theme query and settings display are implemented
+- structured Plan YAML rendering in SessionOutputPanel is implemented
+- Web Notification API integration with dedup and deep linking is implemented
+- menu bar tray with work status icon (Tauri-side), global shortcut Cmd/Ctrl+Shift+I (Tauri-side), PR management UI, and review assist UI are implemented
 
 ## Storage
 - Client-local persisted state includes active workspace pointer, workspace-scoped tab metadata, and user UI preferences (appearance, notification preference, shortcut discoverability).

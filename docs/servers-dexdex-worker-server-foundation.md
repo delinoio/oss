@@ -51,6 +51,8 @@
 - `ForkSessionAdapter` implements the fork adapter RPC boundary with lineage-tracked session metadata store
 - worktree orchestration via `internal/worktree/manager.go` is implemented (bare clone/fetch, worktree add/remove, stale cleanup, concurrency semaphore)
 - agent execution via `internal/handler/agent_exec.go` is implemented (spawns Claude Code/Codex CLI/OpenCode processes, parses NDJSON output, normalizes to proto)
+- UsageAccumulator for cost/usage normalization from agent NDJSON output into `UsageMetrics` proto is implemented
+- Plan YAML parser for structured plan rendering from agent output is implemented
 - session output normalization (raw kind → proto enum) and in-memory session store with lineage tracking are implemented
 - commit chain validation primitives are implemented
 - real fork execution is implemented: `StartExecution` accepts `parent_session_id` and `fork_intent` fields; when set, builds Claude Code command with `--resume` flag, creates forked session lineage metadata, and streams output through standard pipeline
