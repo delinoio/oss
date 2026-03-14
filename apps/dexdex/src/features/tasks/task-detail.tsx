@@ -5,8 +5,8 @@
 import type { CSSProperties } from "react";
 import { StatusBadge } from "../../components/status-badge";
 import type { UnitTask } from "../../lib/mock-data";
-import { PlanDecision, SubTaskStatus } from "../../lib/status";
-import { useListSubTasks, useGetSessionOutput } from "../../hooks/use-dexdex-queries";
+import { PlanDecision, SubTaskStatus, UnitTaskStatus } from "../../lib/status";
+import { useListSubTasks, useGetSessionOutput, useCancelUnitTaskMutation } from "../../hooks/use-dexdex-queries";
 import { SubtaskTimeline } from "./subtask-timeline";
 import { PlanDecisions } from "./plan-decisions";
 import { SessionOutputPanel } from "./session-output-panel";
@@ -42,6 +42,16 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
   const waitingSubtask = subTasks.find(
     (st) => st.status === SubTaskStatus.WAITING_FOR_PLAN_APPROVAL,
   );
+
+  // Cancel/stop mutation for the unit task
+  const cancelUnitTask = useCancelUnitTaskMutation();
+
+  const handleCancelTask = () => {
+    cancelUnitTask.mutate({ workspaceId: WORKSPACE_ID, unitTaskId: task.unitTaskId });
+  };
+
+  const isStoppable = task.status === UnitTaskStatus.IN_PROGRESS;
+  const isCancellable = task.status === UnitTaskStatus.QUEUED;
 
   const containerStyle: CSSProperties = {
     height: "100%",
@@ -89,6 +99,44 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
           >
             {task.title}
           </h1>
+          {isStoppable && (
+            <button
+              style={{
+                fontSize: "var(--font-size-sm)",
+                padding: "var(--space-1) var(--space-3)",
+                borderRadius: "6px",
+                border: "1px solid var(--color-status-failed)",
+                backgroundColor: "transparent",
+                color: "var(--color-status-failed)",
+                cursor: "pointer",
+                fontWeight: 500,
+              }}
+              onClick={handleCancelTask}
+              disabled={cancelUnitTask.isPending}
+              data-testid="stop-task-button"
+            >
+              {cancelUnitTask.isPending ? "Stopping..." : "Stop Task"}
+            </button>
+          )}
+          {isCancellable && (
+            <button
+              style={{
+                fontSize: "var(--font-size-sm)",
+                padding: "var(--space-1) var(--space-3)",
+                borderRadius: "6px",
+                border: "1px solid var(--color-status-cancelled)",
+                backgroundColor: "transparent",
+                color: "var(--color-status-cancelled)",
+                cursor: "pointer",
+                fontWeight: 500,
+              }}
+              onClick={handleCancelTask}
+              disabled={cancelUnitTask.isPending}
+              data-testid="cancel-task-button"
+            >
+              {cancelUnitTask.isPending ? "Cancelling..." : "Cancel Task"}
+            </button>
+          )}
         </div>
       </div>
       <div style={contentStyle}>
