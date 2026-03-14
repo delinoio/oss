@@ -8,6 +8,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { listUnitTasks, listSubTasks, createUnitTask, submitPlanDecision, cancelUnitTask, cancelSubTask } from "../gen/v1/dexdex-TaskService_connectquery";
 import { listNotifications, markNotificationRead } from "../gen/v1/dexdex-NotificationService_connectquery";
 import {
+  getWorkspace,
   listWorkspaces,
   createWorkspace,
   setActiveWorkspace,
@@ -70,6 +71,14 @@ export function useListSubTasks(workspaceId: string, unitTaskId: string) {
 }
 
 /**
+ * Fetch raw proto subtasks for a specific unit task (includes commitChain).
+ */
+export function useListSubTasksRaw(workspaceId: string, unitTaskId: string) {
+  const query = useQuery(listSubTasks, { workspaceId, unitTaskId }, { enabled: !!unitTaskId });
+  return { ...query, data: query.data?.subTasks ?? [] };
+}
+
+/**
  * Fetch notifications for a workspace, converted to view-model types.
  */
 export function useListNotifications(workspaceId: string) {
@@ -128,6 +137,13 @@ export function useMarkNotificationReadMutation() {
       queryClient.invalidateQueries({ queryKey: ["dexdex.v1.NotificationService"] });
     },
   });
+}
+
+/**
+ * Fetch a single workspace by ID.
+ */
+export function useGetWorkspace(workspaceId: string) {
+  return useQuery(getWorkspace, { workspaceId }, { enabled: !!workspaceId });
 }
 
 /**

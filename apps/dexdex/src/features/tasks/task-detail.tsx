@@ -2,11 +2,11 @@
  * Task detail view showing task information, subtask timeline, plan decisions, and session output.
  */
 
-import type { CSSProperties } from "react";
+import { type CSSProperties, useState } from "react";
 import { StatusBadge } from "../../components/status-badge";
 import type { UnitTask } from "../../lib/mock-data";
 import { PlanDecision, SubTaskStatus, UnitTaskStatus } from "../../lib/status";
-import { useListSubTasks, useGetSessionOutput, useCancelUnitTaskMutation } from "../../hooks/use-dexdex-queries";
+import { useListSubTasks, useListSubTasksRaw, useGetSessionOutput, useCancelUnitTaskMutation, useTrackPullRequestMutation } from "../../hooks/use-dexdex-queries";
 import { SubtaskTimeline } from "./subtask-timeline";
 import { PlanDecisions } from "./plan-decisions";
 import { SessionOutputPanel } from "./session-output-panel";
@@ -43,11 +43,37 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
     (st) => st.status === SubTaskStatus.WAITING_FOR_PLAN_APPROVAL,
   );
 
+  // Fetch raw subtasks to access commitChain
+  const { data: rawSubTasks = [] } = useListSubTasksRaw(WORKSPACE_ID, task.unitTaskId);
+
   // Cancel/stop mutation for the unit task
   const cancelUnitTask = useCancelUnitTaskMutation();
 
+  // Track PR mutation
+  const trackPullRequest = useTrackPullRequestMutation();
+  const [prUrl, setPrUrl] = useState("");
+  const [prCreated, setPrCreated] = useState(false);
+
   const handleCancelTask = () => {
     cancelUnitTask.mutate({ workspaceId: WORKSPACE_ID, unitTaskId: task.unitTaskId });
+  };
+
+  // Check if any subtask has commits in its commit chain
+  const hasCommits = rawSubTasks.some((st) => st.commitChain.length > 0);
+  const showCreatePr = task.status === UnitTaskStatus.ACTION_REQUIRED && hasCommits;
+
+  const handleCreatePr = () => {
+    const url = prUrl.trim();
+    if (!url) return;
+    trackPullRequest.mutate(
+      { workspaceId: WORKSPACE_ID, prUrl: url, unitTaskId: task.unitTaskId },
+      {
+        onSuccess: () => {
+          setPrCreated(true);
+          setPrUrl("");
+        },
+      },
+    );
   };
 
   const isStoppable = task.status === UnitTaskStatus.IN_PROGRESS;
@@ -167,6 +193,79 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
             <span>Plan Mode: {task.usePlanMode ? "ON" : "OFF"}</span>
           </div>
         </div>
+
+        {/* Create PR action */}
+        {showCreatePr && (
+          <div
+            style={{
+              marginBottom: "var(--space-6)",
+              padding: "var(--space-4)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              backgroundColor: "var(--color-bg-secondary)",
+            }}
+            data-testid="create-pr-section"
+          >
+            <h2
+              style={{
+                fontSize: "var(--font-size-md)",
+                fontWeight: 600,
+                marginBottom: "var(--space-3)",
+              }}
+            >
+              Create Pull Request
+            </h2>
+            {prCreated ? (
+              <div
+                style={{
+                  color: "var(--color-status-completed)",
+                  fontSize: "var(--font-size-sm)",
+                  fontWeight: 500,
+                }}
+                data-testid="pr-created-success"
+              >
+                Pull request tracked successfully.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "var(--space-2)", maxWidth: 560 }}>
+                <input
+                  style={{
+                    width: "100%",
+                    padding: "var(--space-2) var(--space-3)",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--color-border)",
+                    fontSize: "var(--font-size-sm)",
+                    backgroundColor: "var(--color-bg-primary)",
+                    color: "var(--color-text-primary)",
+                    outline: "none",
+                  }}
+                  type="text"
+                  value={prUrl}
+                  onChange={(e) => setPrUrl(e.target.value)}
+                  placeholder="https://github.com/org/repo/pull/123"
+                  data-testid="pr-url-input"
+                />
+                <button
+                  style={{
+                    padding: "var(--space-2) var(--space-3)",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--color-accent)",
+                    backgroundColor: "var(--color-accent)",
+                    color: "var(--color-text-inverse)",
+                    fontSize: "var(--font-size-sm)",
+                    fontWeight: 500,
+                    cursor: "pointer",
+                  }}
+                  onClick={handleCreatePr}
+                  disabled={trackPullRequest.isPending || !prUrl.trim()}
+                  data-testid="create-pr-button"
+                >
+                  {trackPullRequest.isPending ? "Creating..." : "Create PR"}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Plan decisions for waiting subtask */}
         {waitingSubtask && (

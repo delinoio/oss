@@ -3,13 +3,14 @@
  */
 
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
-import { AgentCliType } from "../../gen/v1/dexdex_pb";
+import { AgentCliType, WorkspaceType } from "../../gen/v1/dexdex_pb";
 import {
   useCreateRepositoryGroupMutation,
   useCreateRepositoryMutation,
   useDeleteRepositoryGroupMutation,
   useDeleteRepositoryMutation,
   useGetBadgeTheme,
+  useGetWorkspace,
   useGetWorkspaceSettings,
   useListRepositories,
   useListRepositoryGroups,
@@ -46,6 +47,7 @@ export function SettingsPage() {
   const { theme, setTheme } = useAppStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 
+  const workspaceQuery = useGetWorkspace(WORKSPACE_ID);
   const repositoriesQuery = useListRepositories(WORKSPACE_ID);
   const repositoryGroupsQuery = useListRepositoryGroups(WORKSPACE_ID);
   const capabilitiesQuery = useListSessionCapabilities(WORKSPACE_ID);
@@ -334,6 +336,29 @@ export function SettingsPage() {
       <div style={contentStyle}>
         {activeTab === "general" && (
           <>
+            <div style={sectionStyle}>
+              <h2 style={sectionTitleStyle}>Workspace</h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }} data-testid="workspace-info">
+                <InfoRow label="Name" value={workspaceQuery.data?.workspace?.name || WORKSPACE_ID} />
+                <InfoRow label="Type" value={toWorkspaceTypeLabel(workspaceQuery.data?.workspace?.type)} />
+                <InfoRow label="Workspace ID" value={WORKSPACE_ID} />
+              </div>
+            </div>
+
+            <div style={sectionStyle}>
+              <h2 style={sectionTitleStyle}>Server Connection</h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }} data-testid="server-connection-info">
+                <InfoRow
+                  label="Status"
+                  value={workspaceQuery.isError ? "Disconnected" : workspaceQuery.isLoading ? "Connecting..." : "Connected"}
+                />
+                <InfoRow
+                  label="Default Agent"
+                  value={toAgentDisplayName(workspaceSettingsQuery.data?.settings?.defaultAgentCliType ?? AgentCliType.UNSPECIFIED)}
+                />
+              </div>
+            </div>
+
             <div style={sectionStyle}>
               <h2 style={sectionTitleStyle}>Appearance</h2>
               <div style={{ display: "flex", gap: "var(--space-2)" }}>
@@ -659,6 +684,26 @@ const dangerButtonStyle: CSSProperties = {
   border: "1px solid var(--color-status-failed)",
   color: "var(--color-status-failed)",
 };
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", gap: "var(--space-3)", fontSize: "var(--font-size-sm)" }}>
+      <span style={{ color: "var(--color-text-tertiary)", minWidth: 120 }}>{label}</span>
+      <span style={{ color: "var(--color-text-primary)", fontWeight: 500 }}>{value}</span>
+    </div>
+  );
+}
+
+function toWorkspaceTypeLabel(type: WorkspaceType | undefined): string {
+  switch (type) {
+    case WorkspaceType.LOCAL_ENDPOINT:
+      return "Local Endpoint";
+    case WorkspaceType.REMOTE_ENDPOINT:
+      return "Remote Endpoint";
+    default:
+      return "Unknown";
+  }
+}
 
 function toAgentDisplayName(agent: AgentCliType): string {
   switch (agent) {
