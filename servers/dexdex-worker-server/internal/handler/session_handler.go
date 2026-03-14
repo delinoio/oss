@@ -6,11 +6,13 @@ import (
 
 	"connectrpc.com/connect"
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
+	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/store"
 )
 
 // SessionServiceHandler implements the dexdex.v1.SessionService Connect RPC handler.
 type SessionServiceHandler struct {
+	dexdexv1connect.UnimplementedSessionServiceHandler
 	store  *store.SessionStore
 	logger *slog.Logger
 }

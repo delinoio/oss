@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/handler"
 	"github.com/delinoio/oss/servers/dexdex-worker-server/internal/normalize"
@@ -33,12 +34,17 @@ func main() {
 	}
 
 	sessionHandler := handler.NewSessionServiceHandler(sessionStore, logger)
+	adapterHandler := handler.NewAdapterHandler(sessionStore, logger)
 
 	mux := http.NewServeMux()
 
 	// Register SessionService Connect RPC handler.
 	path, h := dexdexv1connect.NewSessionServiceHandler(sessionHandler)
 	mux.Handle(path, h)
+
+	// Register WorkerSessionAdapterService Connect RPC handler.
+	adapterPath, adapterH := dexdexv1connect.NewWorkerSessionAdapterServiceHandler(adapterHandler)
+	mux.Handle(adapterPath, adapterH)
 
 	// Health check endpoint.
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +139,20 @@ func seedSampleData(sessionStore *store.SessionStore, logger *slog.Logger) {
 		event := normalizer.Normalize(raw)
 		sessionStore.AppendOutput(raw.SessionID, event)
 	}
+
+	// Seed session metadata for adapter service.
+	sessionStore.CreateSession(store.SessionMetadata{
+		SessionID:    "seed-session-1",
+		ForkStatus:   dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE,
+		AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+		CreatedAt:    time.Now(),
+	})
+	sessionStore.CreateSession(store.SessionMetadata{
+		SessionID:    "seed-session-2",
+		ForkStatus:   dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE,
+		AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+		CreatedAt:    time.Now(),
+	})
 
 	logger.Info("seeded sample session data",
 		"session_count", 2,

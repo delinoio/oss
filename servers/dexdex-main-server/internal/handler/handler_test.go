@@ -583,7 +583,7 @@ func TestTaskHandler_SubmitPlanDecision_InvalidStatus(t *testing.T) {
 func TestNotificationHandler_ListNotifications(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
-	h := NewNotificationHandler(s, logger)
+	h := NewNotificationHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewNotificationServiceHandler(h)
@@ -608,7 +608,7 @@ func TestNotificationHandler_ListNotifications(t *testing.T) {
 func TestNotificationHandler_ListNotifications_Empty(t *testing.T) {
 	s := store.NewMemoryStore()
 	logger := testLogger()
-	h := NewNotificationHandler(s, logger)
+	h := NewNotificationHandler(s, testFanOut(), logger)
 
 	mux := http.NewServeMux()
 	path, handler := dexdexv1connect.NewNotificationServiceHandler(h)

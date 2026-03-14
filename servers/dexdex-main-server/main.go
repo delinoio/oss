@@ -32,7 +32,7 @@ func main() {
 	// Create handlers
 	workspaceHandler := handler.NewWorkspaceHandler(memStore, logger)
 	taskHandler := handler.NewTaskHandler(memStore, fanOut, logger)
-	notificationHandler := handler.NewNotificationHandler(memStore, logger)
+	notificationHandler := handler.NewNotificationHandler(memStore, fanOut, logger)
 	eventStreamHandler := handler.NewEventStreamHandler(fanOut, logger)
 
 	// Register Connect RPC service handlers

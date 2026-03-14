@@ -296,6 +296,68 @@ func SeedData(s Store) {
 		s.AddNotification(defaultWorkspaceID, n)
 	}
 
+	// Session summaries
+	sessionSummaries := []struct {
+		sessionID   string
+		parentID    string
+		rootID      string
+		forkStatus  dexdexv1.SessionForkStatus
+		forkedSeq   uint64
+		agentStatus dexdexv1.AgentSessionStatus
+		createdAt   time.Time
+	}{
+		{
+			sessionID:   "sess-auth-1",
+			rootID:      "sess-auth-1",
+			forkStatus:  dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE,
+			agentStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED,
+			createdAt:   baseTime.Add(1 * time.Hour),
+		},
+		{
+			sessionID:   "sess-auth-2",
+			rootID:      "sess-auth-2",
+			forkStatus:  dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE,
+			agentStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+			createdAt:   baseTime.Add(4 * time.Hour),
+		},
+		{
+			sessionID:   "sess-db-1",
+			rootID:      "sess-db-1",
+			forkStatus:  dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE,
+			agentStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_WAITING_FOR_INPUT,
+			createdAt:   baseTime.Add(3 * time.Hour),
+		},
+		{
+			sessionID:   "sess-e2e-2",
+			parentID:    "sess-e2e-1",
+			rootID:      "sess-e2e-1",
+			forkStatus:  dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ACTIVE,
+			forkedSeq:   5,
+			agentStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_RUNNING,
+			createdAt:   baseTime.Add(9 * time.Hour),
+		},
+		{
+			sessionID:   "sess-perf-1",
+			rootID:      "sess-perf-1",
+			forkStatus:  dexdexv1.SessionForkStatus_SESSION_FORK_STATUS_ARCHIVED,
+			agentStatus: dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_FAILED,
+			createdAt:   baseTime.Add(5 * time.Hour),
+		},
+	}
+
+	for _, ss := range sessionSummaries {
+		summary := &dexdexv1.SessionSummary{
+			SessionId:          ss.sessionID,
+			ParentSessionId:    ss.parentID,
+			RootSessionId:      ss.rootID,
+			ForkStatus:         ss.forkStatus,
+			ForkedFromSequence: ss.forkedSeq,
+			AgentSessionStatus: ss.agentStatus,
+			CreatedAt:          timestamppb.New(ss.createdAt),
+		}
+		s.AddSessionSummary(defaultWorkspaceID, summary)
+	}
+
 	// Session output events for sess-auth-2 (PR creation in progress)
 	sessAuth2Events := []*dexdexv1.SessionOutputEvent{
 		{SessionId: "sess-auth-2", Kind: dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_TEXT, Body: "Starting PR creation for authentication flow changes."},
