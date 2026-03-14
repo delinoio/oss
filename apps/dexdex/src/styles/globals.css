@@ -1,0 +1,217 @@
+/**
+ * DexDex design tokens and global styles.
+ * Linear-inspired design system with light and dark mode support.
+ */
+
+:root {
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 20px;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
+  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.2);
+
+  /* Light mode colors */
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f9fafb;
+  --color-bg-tertiary: #f3f4f6;
+  --color-bg-sidebar: #f8f9fa;
+  --color-bg-hover: #f3f4f6;
+  --color-bg-active: #e5e7eb;
+  --color-bg-overlay: rgba(0, 0, 0, 0.4);
+
+  --color-border: #e5e7eb;
+  --color-border-subtle: #f0f0f0;
+
+  --color-text-primary: #111827;
+  --color-text-secondary: #6b7280;
+  --color-text-tertiary: #9ca3af;
+  --color-text-inverse: #ffffff;
+
+  --color-accent: #5e6ad2;
+  --color-accent-hover: #4f5bc4;
+  --color-accent-subtle: rgba(94, 106, 210, 0.1);
+
+  /* Status colors */
+  --color-status-queued: #9ca3af;
+  --color-status-queued-bg: #f3f4f6;
+  --color-status-in-progress: #3b82f6;
+  --color-status-in-progress-bg: #eff6ff;
+  --color-status-action: #f59e0b;
+  --color-status-action-bg: #fffbeb;
+  --color-status-blocked: #ef4444;
+  --color-status-blocked-bg: #fef2f2;
+  --color-status-completed: #10b981;
+  --color-status-completed-bg: #ecfdf5;
+  --color-status-failed: #ef4444;
+  --color-status-failed-bg: #fef2f2;
+  --color-status-cancelled: #6b7280;
+  --color-status-cancelled-bg: #f3f4f6;
+
+  /* Connection dot */
+  --color-connected: #10b981;
+  --color-disconnected: #ef4444;
+  --color-reconnecting: #f59e0b;
+
+  /* Session output */
+  --color-output-tool-call-bg: rgba(94, 106, 210, 0.08);
+  --color-output-tool-call-border: rgba(94, 106, 210, 0.25);
+  --color-output-tool-result-bg: rgba(16, 185, 129, 0.06);
+  --color-output-tool-result-border: rgba(16, 185, 129, 0.2);
+  --color-output-warning-bg: #fffbeb;
+  --color-output-warning-text: #92400e;
+  --color-output-error-bg: #fef2f2;
+  --color-output-error-text: #991b1b;
+  --color-output-progress-text: #3b82f6;
+
+  /* Layout */
+  --sidebar-width: 220px;
+  --tab-bar-height: 36px;
+}
+
+/* Dark mode tokens */
+.dark {
+  --color-bg-primary: #1a1a2e;
+  --color-bg-secondary: #16162a;
+  --color-bg-tertiary: #222240;
+  --color-bg-sidebar: #131325;
+  --color-bg-hover: #222240;
+  --color-bg-active: #2a2a4a;
+  --color-bg-overlay: rgba(0, 0, 0, 0.6);
+
+  --color-border: #2a2a4a;
+  --color-border-subtle: #222240;
+
+  --color-text-primary: #e5e7eb;
+  --color-text-secondary: #9ca3af;
+  --color-text-tertiary: #6b7280;
+  --color-text-inverse: #111827;
+
+  --color-accent: #818cf8;
+  --color-accent-hover: #6d78e8;
+  --color-accent-subtle: rgba(129, 140, 248, 0.15);
+
+  --color-status-queued: #6b7280;
+  --color-status-queued-bg: #222240;
+  --color-status-in-progress: #60a5fa;
+  --color-status-in-progress-bg: rgba(59, 130, 246, 0.15);
+  --color-status-action: #fbbf24;
+  --color-status-action-bg: rgba(245, 158, 11, 0.15);
+  --color-status-blocked: #f87171;
+  --color-status-blocked-bg: rgba(239, 68, 68, 0.15);
+  --color-status-completed: #34d399;
+  --color-status-completed-bg: rgba(16, 185, 129, 0.15);
+  --color-status-failed: #f87171;
+  --color-status-failed-bg: rgba(239, 68, 68, 0.15);
+  --color-status-cancelled: #6b7280;
+  --color-status-cancelled-bg: #222240;
+
+  --color-output-tool-call-bg: rgba(129, 140, 248, 0.1);
+  --color-output-tool-call-border: rgba(129, 140, 248, 0.3);
+  --color-output-tool-result-bg: rgba(52, 211, 153, 0.08);
+  --color-output-tool-result-border: rgba(52, 211, 153, 0.25);
+  --color-output-warning-bg: rgba(245, 158, 11, 0.12);
+  --color-output-warning-text: #fbbf24;
+  --color-output-error-bg: rgba(239, 68, 68, 0.12);
+  --color-output-error-text: #f87171;
+  --color-output-progress-text: #60a5fa;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+/* Reset and base */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--font-base);
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-tertiary);
+}
+
+/* Focus styling */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* Button reset */
+button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+/* Input reset */
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+}

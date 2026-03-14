@@ -39,6 +39,24 @@ Define DexDex as a Connect RPC-first, multi-component orchestration platform con
 - Coding-agent provider-native output is normalized in `worker-server`; only normalized events cross server/client boundaries.
 - Shared enum and message identifiers in `protos/dexdex/v1` remain stable or evolve additively under explicit version policy.
 
+## Implementation Status (as of 2026-03-14)
+
+### Proto (`protos/dexdex/v1/dexdex.proto`)
+- **Implemented**: All enums, UnitTask/SubTask/Workspace messages with full fields (title, description, timestamps), List/Create/Update RPCs, EventStreamService streaming RPC.
+- **Generated**: Go code (`protos/dexdex/gen/`), TypeScript code (`apps/dexdex/src/gen/`).
+
+### Main Server (`servers/dexdex-main-server`)
+- **Implemented**: Connect RPC server with WorkspaceService, TaskService (CRUD + SubmitPlanDecision), NotificationService, EventStreamService (fan-out, replay, heartbeat). In-memory store with seed data support (`DEXDEX_SEED_DATA=true`). CORS middleware for dev. Default addr `127.0.0.1:7878`.
+- **Planned**: Persistence layer, worker adapter routing, PR polling, session fork orchestration.
+
+### Worker Server (`servers/dexdex-worker-server`)
+- **Implemented**: Connect RPC server with SessionService (GetSessionOutput). Session output normalization (raw kind → proto enum). In-memory session store. Commit chain validation. Default addr `127.0.0.1:7879`.
+- **Planned**: Worktree orchestration, agent adapters, capability discovery, fork adapter.
+
+### Desktop App (`apps/dexdex`)
+- **Implemented**: Linear-style task management UI with light mode default. Sidebar navigation (collapsible, Cmd+B). Task list with status filters and keyboard navigation. Task detail with subtask timeline, plan decision controls (Approve/Revise/Reject), session output panel. Tab system. Command palette (Cmd+K). Global keyboard shortcuts (G+T, G+I, C). Event stream consumer with reconnect. Dark mode toggle (opt-in). Notification inbox. Create task dialog. 21 UI tests passing.
+- **Planned**: Connect RPC integration (currently uses mock data), menu bar tray, global shortcut (Cmd+Shift+I), session fork UI.
+
 ## Change Policy
 - Contract changes across app/server/proto boundaries must update this index and all affected DexDex domain contract docs in the same change set.
 - Schema and enum changes in `protos/dexdex/v1` must synchronize desktop, main-server, and worker-server contracts in the same change set.
