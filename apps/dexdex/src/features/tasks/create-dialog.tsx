@@ -2,8 +2,9 @@
  * Create task dialog component.
  */
 
-import { type CSSProperties, type FormEvent, useState } from "react";
-import { useListRepositoryGroups } from "../../hooks/use-dexdex-queries";
+import { type CSSProperties, type KeyboardEvent, useState } from "react";
+import { useListRepositoryGroups, useListSessionCapabilities } from "../../hooks/use-dexdex-queries";
+import { AgentCliType as ProtoAgentCliType } from "../../gen/v1/dexdex_pb";
 
 interface RepositoryGroup {
   repositoryGroupId: string;
@@ -18,28 +19,40 @@ interface CreateDialogProps {
   isOpen: boolean;
   workspaceId: string;
   onClose: () => void;
-  onCreate: (title: string, description: string, repositoryGroupId: string) => void;
+  onCreate: (prompt: string, repositoryGroupId: string, agentCliType: number, planMode: boolean) => void;
 }
 
 export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateDialogProps) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [prompt, setPrompt] = useState("");
   const [selectedRepoGroupId, setSelectedRepoGroupId] = useState("");
+  const [selectedAgentCliType, setSelectedAgentCliType] = useState<number>(0);
+  const [planMode, setPlanMode] = useState(false);
 
   const repoGroupsQuery = useListRepositoryGroups(workspaceId);
   const repoGroups: RepositoryGroup[] = (repoGroupsQuery.data?.repositoryGroups ?? []) as RepositoryGroup[];
 
+  const capabilitiesQuery = useListSessionCapabilities(workspaceId);
+  const capabilities = capabilitiesQuery.data?.capabilities ?? [];
+
   if (!isOpen) return null;
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    const trimmed = title.trim();
+  function handleSubmit() {
+    const trimmed = prompt.trim();
     if (!trimmed) return;
-    onCreate(trimmed, description.trim(), selectedRepoGroupId);
-    setTitle("");
-    setDescription("");
+    onCreate(trimmed, selectedRepoGroupId, selectedAgentCliType, planMode);
+    setPrompt("");
     setSelectedRepoGroupId("");
+    setSelectedAgentCliType(0);
+    setPlanMode(false);
     onClose();
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    // Cmd+Enter or Ctrl+Enter submits; plain Enter inserts newline
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      handleSubmit();
+    }
   }
 
   const overlayStyle: CSSProperties = {
@@ -61,27 +74,28 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
     padding: "var(--space-6)",
   };
 
-  const inputStyle: CSSProperties = {
+  const textareaStyle: CSSProperties = {
     width: "100%",
     padding: "var(--space-2) var(--space-3)",
     borderRadius: "var(--radius-md)",
     border: "1px solid var(--color-border)",
-    fontSize: "var(--font-size-md)",
+    fontSize: "var(--font-size-base)",
     backgroundColor: "var(--color-bg-secondary)",
     color: "var(--color-text-primary)",
     outline: "none",
-  };
-
-  const textareaStyle: CSSProperties = {
-    ...inputStyle,
-    minHeight: "80px",
+    minHeight: "120px",
     resize: "vertical",
-    fontSize: "var(--font-size-base)",
   };
 
   const selectStyle: CSSProperties = {
-    ...inputStyle,
+    width: "100%",
+    padding: "var(--space-2) var(--space-3)",
+    borderRadius: "var(--radius-md)",
+    border: "1px solid var(--color-border)",
     fontSize: "var(--font-size-base)",
+    backgroundColor: "var(--color-bg-secondary)",
+    color: "var(--color-text-primary)",
+    outline: "none",
     cursor: "pointer",
   };
 
@@ -105,36 +119,32 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
         >
           Create Task
         </h2>
-        <form onSubmit={handleSubmit}>
+        <div>
           <div style={{ marginBottom: "var(--space-3)" }}>
-            <label htmlFor="task-title" style={labelStyle}>
-              Title
-            </label>
-            <input
-              id="task-title"
-              style={inputStyle}
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Task title..."
-              autoFocus
-              data-testid="task-title-input"
-            />
-          </div>
-          <div style={{ marginBottom: "var(--space-3)" }}>
-            <label htmlFor="task-description" style={labelStyle}>
-              Description
+            <label htmlFor="task-prompt" style={labelStyle}>
+              Prompt
             </label>
             <textarea
-              id="task-description"
+              id="task-prompt"
               style={textareaStyle}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe the task..."
-              data-testid="task-description-input"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Enter your prompt..."
+              autoFocus
+              data-testid="task-prompt-input"
             />
+            <div
+              style={{
+                fontSize: "var(--font-size-xs)",
+                color: "var(--color-text-tertiary)",
+                marginTop: "var(--space-1)",
+              }}
+            >
+              Press Cmd+Enter to submit
+            </div>
           </div>
-          <div style={{ marginBottom: "var(--space-4)" }}>
+          <div style={{ marginBottom: "var(--space-3)" }}>
             <label htmlFor="task-repo-group" style={labelStyle}>
               Repository Group
             </label>
@@ -153,6 +163,45 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
               ))}
             </select>
           </div>
+          <div style={{ marginBottom: "var(--space-3)" }}>
+            <label htmlFor="task-agent-type" style={labelStyle}>
+              Coding Agent
+            </label>
+            <select
+              id="task-agent-type"
+              style={selectStyle}
+              value={selectedAgentCliType}
+              onChange={(e) => setSelectedAgentCliType(Number(e.target.value))}
+              data-testid="task-agent-type-select"
+            >
+              <option value={0}>Default (workspace setting)</option>
+              {capabilities.map((cap) => (
+                <option key={cap.agentCliType} value={cap.agentCliType}>
+                  {cap.displayName}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={{ marginBottom: "var(--space-4)" }}>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                fontSize: "var(--font-size-sm)",
+                color: "var(--color-text-secondary)",
+                cursor: "pointer",
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={planMode}
+                onChange={(e) => setPlanMode(e.target.checked)}
+                data-testid="task-plan-mode-checkbox"
+              />
+              Plan mode (generate plan before execution)
+            </label>
+          </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "var(--space-2)" }}>
             <button
               type="button"
@@ -168,23 +217,24 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
               Cancel
             </button>
             <button
-              type="submit"
-              disabled={!title.trim()}
+              type="button"
+              onClick={handleSubmit}
+              disabled={!prompt.trim()}
               style={{
                 padding: "var(--space-2) var(--space-4)",
                 borderRadius: "var(--radius-md)",
                 fontSize: "var(--font-size-sm)",
                 fontWeight: 500,
-                backgroundColor: title.trim() ? "var(--color-accent)" : "var(--color-bg-tertiary)",
-                color: title.trim() ? "var(--color-text-inverse)" : "var(--color-text-tertiary)",
-                cursor: title.trim() ? "pointer" : "not-allowed",
+                backgroundColor: prompt.trim() ? "var(--color-accent)" : "var(--color-bg-tertiary)",
+                color: prompt.trim() ? "var(--color-text-inverse)" : "var(--color-text-tertiary)",
+                cursor: prompt.trim() ? "pointer" : "not-allowed",
               }}
               data-testid="submit-create-task"
             >
               Create Task
             </button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

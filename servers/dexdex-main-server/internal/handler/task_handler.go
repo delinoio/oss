@@ -24,7 +24,7 @@ type TaskHandler struct {
 
 // Dispatcher is the interface for dispatching task execution.
 type Dispatcher interface {
-	DispatchExecution(ctx context.Context, workspaceID string, unitTask *dexdexv1.UnitTask, repoGroup *dexdexv1.RepositoryGroup, agentCliType dexdexv1.AgentCliType) error
+	DispatchExecution(ctx context.Context, workspaceID string, unitTask *dexdexv1.UnitTask, repoGroup *dexdexv1.RepositoryGroup, agentCliType dexdexv1.AgentCliType, planMode bool) error
 	DispatchForkExecution(ctx context.Context, workspaceID string, forkedSessionID string, parentSessionID string, forkIntent dexdexv1.SessionForkIntent, prompt string, repoGroup *dexdexv1.RepositoryGroup, agentCliType dexdexv1.AgentCliType) error
 	CancelSubTask(subTaskID string) error
 	SubmitInput(ctx context.Context, sessionID, inputText string) error
@@ -115,19 +115,29 @@ func (h *TaskHandler) CreateUnitTask(
 	req *connect.Request[dexdexv1.CreateUnitTaskRequest],
 ) (*connect.Response[dexdexv1.CreateUnitTaskResponse], error) {
 	workspaceID := req.Msg.WorkspaceId
-	title := strings.TrimSpace(req.Msg.Title)
-	description := req.Msg.Description
+	prompt := strings.TrimSpace(req.Msg.Prompt)
 	repoGroupID := req.Msg.RepositoryGroupId
+	agentCliType := req.Msg.AgentCliType
+	planMode := req.Msg.PlanMode
 
-	h.logger.Info("CreateUnitTask called", "workspace_id", workspaceID, "title", title)
+	h.logger.Info("CreateUnitTask called", "workspace_id", workspaceID, "prompt", prompt)
 
-	if title == "" {
-		err := fmt.Errorf("title is required")
+	if prompt == "" {
+		err := fmt.Errorf("prompt is required")
 		h.logger.Warn("CreateUnitTask validation failed", "workspace_id", workspaceID, "error", err)
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	task := h.store.CreateUnitTask(workspaceID, title, description, repoGroupID)
+	// Resolve agent CLI type: request -> workspace settings -> fallback to CLAUDE_CODE
+	resolvedAgentCliType := agentCliType
+	if resolvedAgentCliType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_UNSPECIFIED {
+		resolvedAgentCliType = h.store.GetWorkspaceSettings(workspaceID).DefaultAgentCliType
+		if resolvedAgentCliType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_UNSPECIFIED {
+			resolvedAgentCliType = dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE
+		}
+	}
+
+	task := h.store.CreateUnitTask(workspaceID, prompt, repoGroupID, resolvedAgentCliType, planMode)
 
 	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_TASK_UPDATED, &stream.TaskPayload{Task: task})
 
@@ -138,7 +148,7 @@ func (h *TaskHandler) CreateUnitTask(
 		repoGroup, err := h.store.GetRepositoryGroup(workspaceID, repoGroupID)
 		if err == nil && repoGroup != nil {
 			go func() {
-				if dispatchErr := h.dispatcher.DispatchExecution(context.Background(), workspaceID, task, repoGroup, dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE); dispatchErr != nil {
+				if dispatchErr := h.dispatcher.DispatchExecution(context.Background(), workspaceID, task, repoGroup, resolvedAgentCliType, planMode); dispatchErr != nil {
 					h.logger.Error("failed to dispatch execution",
 						"workspace_id", workspaceID,
 						"unit_task_id", task.UnitTaskId,

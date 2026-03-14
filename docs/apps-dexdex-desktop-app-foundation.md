@@ -82,11 +82,17 @@
 - proto-to-view adapter layer converts proto types to view-model types
 - event stream uses real Connect streaming RPC with query cache invalidation, including SESSION_FORK_UPDATED and WORKSPACE_WORK_STATUS_UPDATED event handling
 - task CRUD, plan decisions, notifications (with server-side MarkNotificationRead), and session output are wired to the main server
+- create task dialog uses prompt-only input with agent type selector and plan mode toggle
+- task list shows truncated prompt text instead of title
 - new enums `SessionForkStatus`, `SessionForkIntent`, `WorkspaceWorkStatus`, `AgentCliType` are available in the TypeScript layer
-- 8 new React Query hooks are implemented for all new RPCs (ListSessionCapabilities, ForkSession, ListForkedSessions, ArchiveForkedSession, GetLatestWaitingSession, SubmitSessionInput, GetWorkspaceWorkStatus, MarkNotificationRead)
+- 8 new React Query hooks are implemented for session/workspace RPCs (ListSessionCapabilities, ForkSession, ListForkedSessions, ArchiveForkedSession, GetLatestWaitingSession, SubmitSessionInput, GetWorkspaceWorkStatus, MarkNotificationRead)
+- new React Query hooks for repository CRUD (useCreateRepositoryGroup, useUpdateRepositoryGroup, useDeleteRepositoryGroup, useListRepositories, useCreateRepository, useUpdateRepository, useDeleteRepository)
+- new React Query hooks for settings (useGetWorkspaceSettings, useUpdateWorkspaceSettings)
 - `SessionForkPanel` and `SessionInputForm` components are implemented
+- `/repositories` and `/repository-groups` sidebar pages with full CRUD management are implemented
+- settings page with tabs (General with default agent setting, Appearance, Shortcuts, Credentials, About) is implemented
 - repository group selector in create task dialog (useListRepositoryGroups hook + select dropdown) is implemented
-- credential bridge with Tauri commands (store_credential, list_credentials, delete_credential) and CredentialManager React component in settings page is implemented
+- credential bridge with Tauri commands (store_credential, list_credentials, delete_credential) and CredentialManager React component in Credentials settings tab is implemented
 - ErrorBoundary component for graceful error recovery is implemented
 - skeleton loaders for async content loading states are implemented
 - enhanced ReviewAssistPanel with accept/dismiss actions, code block rendering, and collapsible sections is implemented
@@ -150,9 +156,3 @@
 - `docs/servers-dexdex-main-server-foundation.md`
 - `docs/servers-dexdex-worker-server-foundation.md`
 - `docs/domain-template.md`
-- Upstream source docs merged into this contract:
-- `https://github.com/delinoio/dexdex/blob/main/docs/tauri-app.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/ui.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/user-guide.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/workspace-connectivity.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/developer-setup.md`

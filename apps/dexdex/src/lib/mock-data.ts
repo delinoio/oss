@@ -16,8 +16,7 @@ import {
 
 export interface UnitTask {
   unitTaskId: string;
-  title: string;
-  description: string;
+  prompt: string;
   status: UnitTaskStatus;
   repositoryUrl: string;
   branchRef: string;
@@ -86,8 +85,7 @@ export interface ReviewComment {
 export const MOCK_TASKS: UnitTask[] = [
   {
     unitTaskId: "task-001",
-    title: "Add user authentication flow",
-    description: "Implement OAuth2 login with Google and GitHub providers, including token refresh and session management.",
+    prompt: "Add user authentication flow: Implement OAuth2 login with Google and GitHub providers, including token refresh and session management.",
     status: UnitTaskStatus.IN_PROGRESS,
     repositoryUrl: "https://github.com/acme/webapp",
     branchRef: "feat/auth-flow",
@@ -119,8 +117,7 @@ export const MOCK_TASKS: UnitTask[] = [
   },
   {
     unitTaskId: "task-002",
-    title: "Fix database migration rollback",
-    description: "The migration 20260301_add_profiles fails on rollback due to a missing DOWN statement.",
+    prompt: "Fix database migration rollback: The migration 20260301_add_profiles fails on rollback due to a missing DOWN statement.",
     status: UnitTaskStatus.ACTION_REQUIRED,
     repositoryUrl: "https://github.com/acme/webapp",
     branchRef: "fix/migration-rollback",
@@ -142,8 +139,7 @@ export const MOCK_TASKS: UnitTask[] = [
   },
   {
     unitTaskId: "task-003",
-    title: "Refactor API response serialization",
-    description: "Move from manual JSON marshaling to typed response builders with consistent error envelope.",
+    prompt: "Refactor API response serialization: Move from manual JSON marshaling to typed response builders with consistent error envelope.",
     status: UnitTaskStatus.COMPLETED,
     repositoryUrl: "https://github.com/acme/api-server",
     branchRef: "refactor/response-builders",
@@ -174,8 +170,7 @@ export const MOCK_TASKS: UnitTask[] = [
   },
   {
     unitTaskId: "task-004",
-    title: "Add rate limiting middleware",
-    description: "Implement token-bucket rate limiting for public API endpoints.",
+    prompt: "Add rate limiting middleware: Implement token-bucket rate limiting for public API endpoints.",
     status: UnitTaskStatus.QUEUED,
     repositoryUrl: "https://github.com/acme/api-server",
     branchRef: "feat/rate-limiting",
@@ -185,8 +180,7 @@ export const MOCK_TASKS: UnitTask[] = [
   },
   {
     unitTaskId: "task-005",
-    title: "Update CI pipeline for monorepo",
-    description: "Configure path-based change detection and parallel job execution.",
+    prompt: "Update CI pipeline for monorepo: Configure path-based change detection and parallel job execution.",
     status: UnitTaskStatus.FAILED,
     repositoryUrl: "https://github.com/acme/infra",
     branchRef: "chore/ci-monorepo",

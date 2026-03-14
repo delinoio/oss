@@ -49,8 +49,8 @@ Object.defineProperty(window, "localStorage", { value: localStorageMock });
 const mockUnitTasks = [
   create(UnitTaskSchema, {
     unitTaskId: "task-001",
-    title: "Add user authentication flow",
-    description: "Implement OAuth2 login with Google and GitHub providers, including token refresh and session management.",
+    title: "Add user authentication flow: Implement OAuth2 login with Google and GitHub providers, including token refresh and session management.",
+    description: "",
     status: UnitTaskStatus.IN_PROGRESS,
     createdAt: timestampFromDate(new Date("2026-03-14T08:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-14T10:30:00Z")),
@@ -58,8 +58,8 @@ const mockUnitTasks = [
   }),
   create(UnitTaskSchema, {
     unitTaskId: "task-002",
-    title: "Fix database migration rollback",
-    description: "The migration 20260301_add_profiles fails on rollback due to a missing DOWN statement.",
+    title: "Fix database migration rollback: The migration 20260301_add_profiles fails on rollback due to a missing DOWN statement.",
+    description: "",
     status: UnitTaskStatus.ACTION_REQUIRED,
     createdAt: timestampFromDate(new Date("2026-03-13T14:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-14T07:00:00Z")),
@@ -67,8 +67,8 @@ const mockUnitTasks = [
   }),
   create(UnitTaskSchema, {
     unitTaskId: "task-003",
-    title: "Refactor API response serialization",
-    description: "Move from manual JSON marshaling to typed response builders with consistent error envelope.",
+    title: "Refactor API response serialization: Move from manual JSON marshaling to typed response builders with consistent error envelope.",
+    description: "",
     status: UnitTaskStatus.COMPLETED,
     createdAt: timestampFromDate(new Date("2026-03-12T10:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-13T16:00:00Z")),
@@ -76,8 +76,8 @@ const mockUnitTasks = [
   }),
   create(UnitTaskSchema, {
     unitTaskId: "task-004",
-    title: "Add rate limiting middleware",
-    description: "Implement token-bucket rate limiting for public API endpoints.",
+    title: "Add rate limiting middleware: Implement token-bucket rate limiting for public API endpoints.",
+    description: "",
     status: UnitTaskStatus.ACTION_REQUIRED,
     createdAt: timestampFromDate(new Date("2026-03-14T11:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-14T11:00:00Z")),
@@ -85,8 +85,8 @@ const mockUnitTasks = [
   }),
   create(UnitTaskSchema, {
     unitTaskId: "task-005",
-    title: "Update CI pipeline for monorepo",
-    description: "Configure path-based change detection and parallel job execution.",
+    title: "Update CI pipeline for monorepo: Configure path-based change detection and parallel job execution.",
+    description: "",
     status: UnitTaskStatus.FAILED,
     createdAt: timestampFromDate(new Date("2026-03-13T09:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-14T06:00:00Z")),
@@ -202,7 +202,7 @@ function createTestTransport() {
         unitTask: create(UnitTaskSchema, {
           unitTaskId: `task-${Date.now()}`,
           title: req.title,
-          description: req.description,
+          description: "",
           status: UnitTaskStatus.QUEUED,
           createdAt: timestampFromDate(new Date()),
           updatedAt: timestampFromDate(new Date()),
@@ -243,6 +243,7 @@ function createTestTransport() {
     });
     router.service(RepositoryService, {
       getRepositoryGroup: () => ({ repositoryGroup: undefined }),
+      listRepositoryGroups: () => ({ repositoryGroups: [] }),
     });
     // EventStreamService is server-streaming; provide a no-op stub
     router.service(EventStreamService, {
@@ -298,9 +299,9 @@ describe("App", () => {
   it("displays tasks from server in the task list", async () => {
     renderWithProviders(<App />);
 
-    expect(await screen.findByText("Add user authentication flow")).toBeTruthy();
-    expect(screen.getByText("Fix database migration rollback")).toBeTruthy();
-    expect(screen.getByText("Refactor API response serialization")).toBeTruthy();
+    expect(await screen.findByText(/Add user authentication flow/)).toBeTruthy();
+    expect(screen.getByText(/Fix database migration rollback/)).toBeTruthy();
+    expect(screen.getByText(/Refactor API response serialization/)).toBeTruthy();
   });
 
   it("navigates to inbox via sidebar", async () => {
@@ -333,7 +334,7 @@ describe("App", () => {
     await screen.findByTestId("task-row-task-001");
     await user.click(screen.getByTestId("task-row-task-001"));
     expect(await screen.findByTestId("task-detail")).toBeTruthy();
-    expect(screen.getAllByText("Add user authentication flow").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Add user authentication flow/).length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows back button in task detail and returns to list", async () => {
@@ -370,8 +371,7 @@ describe("App", () => {
     await screen.findByTestId("task-list");
     await user.click(screen.getByTestId("create-task-button"));
 
-    await user.type(screen.getByTestId("task-title-input"), "My new task");
-    await user.type(screen.getByTestId("task-description-input"), "Some description");
+    await user.type(screen.getByTestId("task-prompt-input"), "My new task prompt");
     await user.click(screen.getByTestId("submit-create-task"));
 
     // Dialog should close
@@ -419,6 +419,7 @@ describe("App", () => {
     await screen.findByTestId("task-list");
     await user.click(screen.getByTestId("nav-settings"));
     await screen.findByTestId("settings-page");
+    await user.click(screen.getByTestId("settings-tab-appearance"));
     await user.click(screen.getByTestId("theme-dark"));
 
     expect(document.documentElement.classList.contains("dark")).toBe(true);
@@ -432,6 +433,7 @@ describe("App", () => {
     await screen.findByTestId("task-list");
     await user.click(screen.getByTestId("nav-settings"));
     await screen.findByTestId("settings-page");
+    await user.click(screen.getByTestId("settings-tab-appearance"));
     await user.click(screen.getByTestId("theme-dark"));
     expect(document.documentElement.classList.contains("dark")).toBe(true);
 
@@ -447,6 +449,7 @@ describe("App", () => {
     await screen.findByTestId("task-list");
     await user.click(screen.getByTestId("nav-settings"));
     await screen.findByTestId("settings-page");
+    await user.click(screen.getByTestId("settings-tab-appearance"));
     await user.click(screen.getByTestId("theme-dark"));
 
     expect(localStorageMock.getItem("dexdex-theme")).toBe("dark");

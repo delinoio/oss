@@ -17,7 +17,7 @@
 ## Interfaces and Contracts
 - `dexdex.v1` package identifiers are stable enum-style contract language and must evolve additively by default.
 - Canonical enum vocabulary includes workspace connectivity, task/subtask/session states, action badges, PR/review/comment/notification types, stream event families, and plan decisions.
-- Canonical entity vocabulary includes workspace, repository-group scope, unit/sub tasks, session output/state, PR tracking, review assist items, inline comments, badge themes, and notifications.
+- Canonical entity vocabulary includes workspace, repository, repository-group scope, unit/sub tasks, session output/state, PR tracking, review assist items, inline comments, badge themes, notifications, and workspace settings.
 - Implemented additive enum contracts for session-fork and tray/workspace status:
 - `SessionForkIntent` for fork purpose signaling in session forking flows
 - `SessionForkStatus` for fork lifecycle state (`ACTIVE`, `ARCHIVED`, and additive-safe extensions)
@@ -29,12 +29,18 @@
 - Implemented additive message contracts:
 - `SessionSummary` adds lineage fields `parent_session_id`, `root_session_id`, `fork_status`, and `forked_from_sequence`
 - `SessionForkUpdatedEvent` and `WorkspaceWorkStatusUpdatedEvent` are part of the stream payload family
-- `AgentCapability` provides normalized capability records for fork support reporting
+- `AgentCapability` provides normalized capability records for fork support reporting, including `supports_plan_mode` field
 - `UsageMetrics` provides normalized token/cost counters for session usage tracking
 - `SessionSummary` includes `usage` field referencing `UsageMetrics`
 - `ReviewComment` message includes anchor fields (`file_path`, `side`, `line_number`) for line-level diff positioning
+- `Repository` entity is an independent message with `repository_id`, `workspace_id`, `repository_url`, `default_branch_ref`, and `display_name`
+- `WorkspaceSettings` message provides workspace-level configuration (default agent type and related settings)
+- `UnitTask` message: `title`/`description` replaced by `prompt`; added `agent_cli_type` and `plan_mode` fields
+- `CreateUnitTaskRequest`: `title`/`description` replaced by `prompt`; added `agent_cli_type` and `plan_mode` fields
+- `StartExecutionRequest`: added `plan_mode` field
 - Service-level contract families include:
-- workspace/repository control-plane queries and lifecycle
+- workspace/repository/repository-group control-plane queries and lifecycle (including full CRUD for `RepositoryService`)
+- workspace settings management (`SettingsService`)
 - task/subtask/session orchestration and plan decisions
 - PR/review/comment operations
 - badge and notification operations
@@ -49,6 +55,15 @@
 - `SessionService.GetLatestWaitingSession`
 - `SessionService.SubmitSessionInput`
 - `NotificationService.MarkNotificationRead`
+- `RepositoryService.CreateRepositoryGroup`
+- `RepositoryService.UpdateRepositoryGroup`
+- `RepositoryService.DeleteRepositoryGroup`
+- `RepositoryService.ListRepositories`
+- `RepositoryService.CreateRepository`
+- `RepositoryService.UpdateRepository`
+- `RepositoryService.DeleteRepository`
+- `SettingsService.GetWorkspaceSettings`
+- `SettingsService.UpdateWorkspaceSettings`
 - `WorkerSessionAdapterService.GetAgentCapabilities`
 - `WorkerSessionAdapterService.ForkSessionAdapter`
 - `ReviewCommentService.CreateReviewComment`
@@ -73,17 +88,21 @@
 - enum expansion is allowed with unknown-safe client behavior
 - breaking changes require coordinated rollout across app and servers
 - Implemented-vs-planned alignment (current repo reality, as of 2026-03-14):
-- implemented proto contains full session-fork, input-handoff, workspace-work-status, capability, and notification-read RPCs in addition to the baseline scaffold subset: `GetWorkspace`, `GetRepositoryGroup`, `ListRepositoryGroups`, `GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`, `GetSessionOutput`, `GetPullRequest`, `ListPullRequests`, `UpdatePullRequest`, `ListReviewAssistItems`, `ListReviewComments`, `GetBadgeTheme`, `ListNotifications`, and `StreamWorkspaceEvents`
-- worker adapter service (`WorkerSessionAdapterService`) is implemented with `GetAgentCapabilities` and `ForkSessionAdapter`
+- implemented proto contains full session-fork, input-handoff, workspace-work-status, capability, notification-read, repository CRUD, and settings RPCs in addition to the baseline scaffold subset: `GetWorkspace`, `GetRepositoryGroup`, `ListRepositoryGroups`, `GetUnitTask`, `GetSubTask`, `SubmitPlanDecision`, `GetSessionOutput`, `GetPullRequest`, `ListPullRequests`, `UpdatePullRequest`, `ListReviewAssistItems`, `ListReviewComments`, `GetBadgeTheme`, `ListNotifications`, and `StreamWorkspaceEvents`
+- `RepositoryService` CRUD RPCs implemented: `CreateRepositoryGroup`, `UpdateRepositoryGroup`, `DeleteRepositoryGroup`, `ListRepositories`, `CreateRepository`, `UpdateRepository`, `DeleteRepository`
+- `SettingsService` implemented: `GetWorkspaceSettings`, `UpdateWorkspaceSettings`
+- `Repository` entity and `WorkspaceSettings` message are implemented
+- `UnitTask`/`CreateUnitTaskRequest` use `prompt` field (replacing `title`/`description`); `agent_cli_type` and `plan_mode` fields are implemented
+- `StartExecutionRequest.plan_mode` field is implemented
+- worker adapter service (`WorkerSessionAdapterService`) is implemented with `GetAgentCapabilities` (returns `supports_plan_mode` per agent: true for CLAUDE_CODE, false for CODEX_CLI/OPENCODE) and `ForkSessionAdapter`
 - worker execution service RPCs are implemented: `StartExecution` (server-streaming), `SubmitWorkerInput`, `CancelExecution` with corresponding request/response messages
-- `AgentCliType` enum and `AgentCapability` message are implemented; fixture preset/source metadata families remain out of scope
+- `AgentCliType` enum and `AgentCapability` message (with `supports_plan_mode`) are implemented
 - `ReviewCommentStatus` enum and `ReviewComment` anchor fields (`file_path`, `side`, `line_number`) are implemented
 - `UsageMetrics` message and `SessionSummary.usage` field are implemented
 - `ReviewCommentService` CRUD RPCs (`CreateReviewComment`, `UpdateReviewComment`, `DeleteReviewComment`, `ResolveReviewComment`, `ReopenReviewComment`) are implemented
 - `WorktreeState` enum and `WorktreeStatusEvent` message are implemented for worktree lifecycle tracking via `ExecutionEvent` oneof
-- `StartExecutionRequest` extended with `parent_session_id` and `fork_intent` fields for fork execution support
-- all session-fork, latest-waiting-input, workspace-work-status, and capability/fork-adapter RPCs are now implemented in `dexdex.proto`
-- upstream DexDex source docs define expanded create/update/delete and richer flow contracts that remain target scope for further additive evolution
+- `StartExecutionRequest` extended with `parent_session_id`, `fork_intent`, and `plan_mode` fields
+- all session-fork, latest-waiting-input, workspace-work-status, capability/fork-adapter, repository CRUD, and settings RPCs are now implemented in `dexdex.proto`
 - `protos/dexdex/v1/dexdex.proto` remains the canonical source for what is implemented now; this document records both current contract and planned-compatible expansion direction
 
 ## Storage
@@ -125,10 +144,3 @@
 - `docs/domain-template.md`
 - Implementation anchor:
 - `protos/dexdex/v1/dexdex.proto`
-- Upstream source docs merged into this contract:
-- `https://github.com/delinoio/dexdex/blob/main/docs/api.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/entities.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/event-streaming.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/plan-yaml.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/pr-management.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/notifications.md`

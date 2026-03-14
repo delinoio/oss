@@ -17,6 +17,8 @@ import { CreateDialog } from "./features/tasks/create-dialog";
 import { InboxPage } from "./features/inbox/inbox-page";
 import { PrManagementPage } from "./features/prs/pr-management-page";
 import { SettingsPage } from "./features/settings/settings-page";
+import { RepositoryPage } from "./features/repositories/repository-page";
+import { RepositoryGroupPage } from "./features/repositories/repository-group-page";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useWorkspaceStream } from "./hooks/use-workspace-stream";
 import { useTrayStatus } from "./hooks/use-tray-status";
@@ -135,7 +137,7 @@ function App() {
         if (task) {
           const existingTab = tabs.find((t) => t.id === taskId);
           if (!existingTab) {
-            const newTab: Tab = { id: taskId, label: task.title, path };
+            const newTab: Tab = { id: taskId, label: task.prompt.split("\n")[0].slice(0, 40) || "Untitled", path };
             setTabs((prev) => [...prev, newTab]);
           }
           setActiveTabId(taskId);
@@ -168,11 +170,11 @@ function App() {
   const createTaskMutation = useCreateUnitTaskMutation();
 
   const handleCreateTask = useCallback(
-    (title: string, description: string, repositoryGroupId: string) => {
+    (prompt: string, repositoryGroupId: string, agentCliType: number, planMode: boolean) => {
       createTaskMutation.mutate({
         workspaceId: WORKSPACE_ID,
-        title,
-        description,
+        title: prompt,
+        description: "",
         repositoryGroupId,
       });
     },
@@ -306,6 +308,8 @@ function App() {
                   }
                 />
                 <Route path="/prs" element={<PrManagementPage pullRequests={pullRequests} isLoading={prsLoading} />} />
+                <Route path="/repositories" element={<RepositoryPage />} />
+                <Route path="/repository-groups" element={<RepositoryGroupPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />
               </Routes>

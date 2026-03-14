@@ -108,6 +108,10 @@ func main() {
 	badgeThemePath, badgeThemeHTTPHandler := dexdexv1connect.NewBadgeThemeServiceHandler(badgeThemeHandler)
 	mux.Handle(badgeThemePath, badgeThemeHTTPHandler)
 
+	settingsHandler := handler.NewSettingsHandler(dataStore, logger)
+	settingsPath, settingsHTTPHandler := dexdexv1connect.NewSettingsServiceHandler(settingsHandler)
+	mux.Handle(settingsPath, settingsHTTPHandler)
+
 	// Health check endpoint
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

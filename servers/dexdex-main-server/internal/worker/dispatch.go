@@ -46,6 +46,7 @@ func (d *Dispatcher) DispatchExecution(
 	unitTask *dexdexv1.UnitTask,
 	repoGroup *dexdexv1.RepositoryGroup,
 	agentCliType dexdexv1.AgentCliType,
+	planMode bool,
 ) error {
 	// Create initial subtask
 	subTaskID := fmt.Sprintf("subtask-%s-%d", unitTask.UnitTaskId, time.Now().UnixNano())
@@ -56,7 +57,7 @@ func (d *Dispatcher) DispatchExecution(
 		UnitTaskId: unitTask.UnitTaskId,
 		Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_INITIAL_IMPLEMENTATION,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
-		Title:      unitTask.Title,
+		Title:      unitTask.Prompt,
 		SessionId:  sessionID,
 		CreatedAt:  timestamppb.Now(),
 		UpdatedAt:  timestamppb.Now(),
@@ -94,7 +95,7 @@ func (d *Dispatcher) DispatchExecution(
 	d.sessionSubs[sessionID] = subTaskID
 	d.mu.Unlock()
 
-	go d.consumeExecutionStream(ctx, workspaceID, subTask, sessionID, unitTask, repoGroup, agentCliType)
+	go d.consumeExecutionStream(ctx, workspaceID, subTask, sessionID, unitTask, repoGroup, agentCliType, planMode)
 
 	d.logger.Info("execution dispatched",
 		"workspace_id", workspaceID,
@@ -269,6 +270,7 @@ func (d *Dispatcher) consumeExecutionStream(
 	unitTask *dexdexv1.UnitTask,
 	repoGroup *dexdexv1.RepositoryGroup,
 	agentCliType dexdexv1.AgentCliType,
+	planMode bool,
 ) {
 	defer func() {
 		d.mu.Lock()
@@ -283,8 +285,9 @@ func (d *Dispatcher) consumeExecutionStream(
 		SubTaskId:       subTask.SubTaskId,
 		SessionId:       sessionID,
 		RepositoryGroup: repoGroup,
-		Prompt:          unitTask.Description,
+		Prompt:          unitTask.Prompt,
 		AgentCliType:    agentCliType,
+		PlanMode:        planMode,
 	})
 	if err != nil {
 		d.logger.Error("failed to start execution stream",

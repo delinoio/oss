@@ -31,6 +31,7 @@
 - capability discovery is exposed through `WorkerSessionAdapterService.GetAgentCapabilities`
 - capability response is normalized across `CODEX_CLI`, `CLAUDE_CODE`, and `OPENCODE`
 - fork support is expressed as capability flags and reason codes (not provider-native text)
+- `supports_plan_mode` capability flag is true for CLAUDE_CODE and false for CODEX_CLI and OPENCODE
 - Session fork adapter contract:
 - `WorkerSessionAdapterService.ForkSessionAdapter` performs provider-native fork execution behind worker abstraction
 - fork output is normalized into shared lineage/session references for main-server persistence
@@ -38,6 +39,8 @@
 - provider-native fork payloads remain worker-local diagnostics and are never exposed to app/main-server APIs
 - Plan-mode execution contract:
 - subtasks can pause for decisions and resume/finalize based on `APPROVE`, `REVISE`, `REJECT`
+- `StartExecutionRequest.plan_mode` field enables plan mode; worker passes `--plan` flag to Claude Code when true
+- plan mode is provider-capability-gated; only CLAUDE_CODE supports plan mode
 - cancellation must terminate active agent processes promptly and emit final cancellation state
 - Usage/cost contract:
 - normalize provider usage counters into shared token/cost schema
@@ -47,15 +50,15 @@
 - implemented envs: `DEXDEX_WORKER_SERVER_ADDR`, `DEXDEX_WORKER_ID`, `DEXDEX_MAIN_SERVER_URL`, `DEXDEX_WORKTREE_ROOT`, `DEXDEX_REPO_CACHE_ROOT`, `DEXDEX_MAX_PARALLEL_SUBTASKS`, `DEXDEX_AGENT_EXEC_TIMEOUT_SEC`
 - Implemented-vs-planned alignment (as of 2026-03-14):
 - current implementation includes Connect RPC server with SessionService (GetSessionOutput), WorkerSessionAdapterService (GetAgentCapabilities, ForkSessionAdapter), and WorkerExecutionService (`StartExecution` server-streaming, `SubmitWorkerInput`, `CancelExecution`)
-- `GetAgentCapabilities` returns normalized capability records for `CLAUDE_CODE`, `CODEX_CLI`, and `OPENCODE`
+- `GetAgentCapabilities` returns normalized capability records for `CLAUDE_CODE`, `CODEX_CLI`, and `OPENCODE`; `supports_plan_mode` is true for CLAUDE_CODE and false for others
 - `ForkSessionAdapter` implements the fork adapter RPC boundary with lineage-tracked session metadata store
 - worktree orchestration via `internal/worktree/manager.go` is implemented (bare clone/fetch, worktree add/remove, stale cleanup, concurrency semaphore)
-- agent execution via `internal/handler/agent_exec.go` is implemented (spawns Claude Code/Codex CLI/OpenCode processes, parses NDJSON output, normalizes to proto)
+- agent execution via `internal/handler/agent_exec.go` is implemented (spawns Claude Code/Codex CLI/OpenCode processes, parses NDJSON output, normalizes to proto; plan mode passes `--plan` flag to Claude Code when `StartExecutionRequest.plan_mode` is true)
 - UsageAccumulator for cost/usage normalization from agent NDJSON output into `UsageMetrics` proto is implemented
 - Plan YAML parser for structured plan rendering from agent output is implemented
 - session output normalization (raw kind → proto enum) and in-memory session store with lineage tracking are implemented
 - commit chain validation primitives are implemented
-- real fork execution is implemented: `StartExecution` accepts `parent_session_id` and `fork_intent` fields; when set, builds Claude Code command with `--resume` flag, creates forked session lineage metadata, and streams output through standard pipeline
+- real fork execution is implemented: `StartExecution` accepts `parent_session_id`, `fork_intent`, and `plan_mode` fields; when parent_session_id is set, builds Claude Code command with `--resume` flag, creates forked session lineage metadata, and streams output through standard pipeline
 - worktree lifecycle events emitted during execution (PREPARING→READY→EXECUTING→CLEANING_UP→CLEANED, FAILED on error) via `WorktreeStatusEvent` in `ExecutionEvent` oneof
 
 ## Storage
@@ -108,6 +111,3 @@
 - Implementation anchors:
 - `servers/dexdex-worker-server/main.go`
 - `servers/dexdex-worker-server/internal/service/commit_chain.go`
-- Upstream source docs merged into this contract:
-- `https://github.com/delinoio/dexdex/blob/main/docs/worker-server.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/developer-setup.md`

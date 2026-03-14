@@ -17,7 +17,7 @@ interface CommandPaletteProps {
   onClose: () => void;
   onNavigate: (path: string) => void;
   onCreateTask: () => void;
-  tasks?: { unitTaskId: string; title: string }[];
+  tasks?: { unitTaskId: string; prompt: string }[];
 }
 
 export function CommandPalette({ isOpen, onClose, onNavigate, onCreateTask, tasks = [] }: CommandPaletteProps) {
@@ -29,11 +29,13 @@ export function CommandPalette({ isOpen, onClose, onNavigate, onCreateTask, task
   const actions: CommandAction[] = [
     { id: "nav-tasks", label: "Go to Tasks", section: "Navigation", onSelect: () => { onNavigate("/tasks"); onClose(); } },
     { id: "nav-inbox", label: "Go to Inbox", section: "Navigation", onSelect: () => { onNavigate("/inbox"); onClose(); } },
+    { id: "nav-repositories", label: "Go to Repositories", section: "Navigation", onSelect: () => { onNavigate("/repositories"); onClose(); } },
+    { id: "nav-repo-groups", label: "Go to Repository Groups", section: "Navigation", onSelect: () => { onNavigate("/repository-groups"); onClose(); } },
     { id: "nav-settings", label: "Go to Settings", section: "Navigation", onSelect: () => { onNavigate("/settings"); onClose(); } },
     { id: "create-task", label: "Create new task", section: "Actions", onSelect: () => { onCreateTask(); onClose(); } },
     ...tasks.map((task) => ({
       id: `task-${task.unitTaskId}`,
-      label: task.title,
+      label: task.prompt.split("\n")[0].slice(0, 80) || "Untitled",
       section: "Tasks",
       onSelect: () => { onNavigate(`/tasks/${task.unitTaskId}`); onClose(); },
     })),

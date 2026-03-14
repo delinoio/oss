@@ -145,8 +145,7 @@ function timestampToISO(ts: Timestamp | undefined): string {
 export function toViewUnitTask(proto: ProtoUnitTask, subTasks: SubTask[] = []): UnitTask {
   return {
     unitTaskId: proto.unitTaskId,
-    title: proto.title || "Untitled",
-    description: proto.description || "",
+    prompt: proto.title || "",
     status: UNIT_TASK_STATUS_MAP[proto.status] ?? UnitTaskStatus.UNSPECIFIED,
     repositoryUrl: "",
     branchRef: "",

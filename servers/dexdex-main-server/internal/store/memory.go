@@ -34,7 +34,7 @@ type Store interface {
 	GetWorkspace(id string) (*dexdexv1.Workspace, error)
 	ListUnitTasks(workspaceID string, statusFilter []dexdexv1.UnitTaskStatus) []*dexdexv1.UnitTask
 	GetUnitTask(workspaceID, id string) (*dexdexv1.UnitTask, error)
-	CreateUnitTask(workspaceID, title, description, repoGroupID string) *dexdexv1.UnitTask
+	CreateUnitTask(workspaceID, prompt, repoGroupID string, agentCliType dexdexv1.AgentCliType, planMode bool) *dexdexv1.UnitTask
 	UpdateUnitTaskStatus(workspaceID, id string, status dexdexv1.UnitTaskStatus) (*dexdexv1.UnitTask, error)
 	ListSubTasks(workspaceID, unitTaskID string) []*dexdexv1.SubTask
 	GetSubTask(workspaceID, id string) (*dexdexv1.SubTask, error)
@@ -54,9 +54,19 @@ type Store interface {
 	ArchiveSession(workspaceID, sessionID string) error
 	GetLatestWaitingSession(workspaceID string) (*dexdexv1.SessionSummary, error)
 	// Repository group operations
-	AddRepositoryGroup(workspaceID string, group *dexdexv1.RepositoryGroup)
+	CreateRepositoryGroup(workspaceID string, group *dexdexv1.RepositoryGroup) *dexdexv1.RepositoryGroup
 	GetRepositoryGroup(workspaceID, groupID string) (*dexdexv1.RepositoryGroup, error)
 	ListRepositoryGroups(workspaceID string) []*dexdexv1.RepositoryGroup
+	UpdateRepositoryGroup(workspaceID, groupID string, repos []*dexdexv1.RepositoryRef) (*dexdexv1.RepositoryGroup, error)
+	DeleteRepositoryGroup(workspaceID, groupID string) error
+	// Repository CRUD operations
+	CreateRepository(workspaceID string, repo *dexdexv1.Repository) *dexdexv1.Repository
+	ListRepositories(workspaceID string) []*dexdexv1.Repository
+	UpdateRepository(workspaceID string, repo *dexdexv1.Repository) (*dexdexv1.Repository, error)
+	DeleteRepository(workspaceID, repoID string) error
+	// Workspace settings operations
+	GetWorkspaceSettings(workspaceID string) *dexdexv1.WorkspaceSettings
+	UpdateWorkspaceSettings(workspaceID string, settings *dexdexv1.WorkspaceSettings)
 	// PR operations
 	AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord)
 	GetPullRequest(workspaceID, prTrackingID string) (*dexdexv1.PullRequestRecord, error)
@@ -100,6 +110,8 @@ type MemoryStore struct {
 	reviewComments      map[string]map[string][]*dexdexv1.ReviewComment    // workspaceID -> prTrackingID -> comments
 	worktreeAssignments map[string]map[string]*WorktreeAssignment          // workspaceID -> sessionID -> assignment
 	badgeThemes         map[string]*dexdexv1.BadgeTheme                    // workspaceID -> theme
+	repositories        map[string]map[string]*dexdexv1.Repository         // workspaceID -> repoID -> repo
+	workspaceSettings   map[string]*dexdexv1.WorkspaceSettings             // workspaceID -> settings
 }
 
 // NewMemoryStore creates a new empty MemoryStore.
@@ -117,6 +129,8 @@ func NewMemoryStore() *MemoryStore {
 		reviewComments:      make(map[string]map[string][]*dexdexv1.ReviewComment),
 		worktreeAssignments: make(map[string]map[string]*WorktreeAssignment),
 		badgeThemes:         make(map[string]*dexdexv1.BadgeTheme),
+		repositories:        make(map[string]map[string]*dexdexv1.Repository),
+		workspaceSettings:   make(map[string]*dexdexv1.WorkspaceSettings),
 	}
 }
 
@@ -196,7 +210,7 @@ func (s *MemoryStore) GetUnitTask(workspaceID, id string) (*dexdexv1.UnitTask, e
 	return task, nil
 }
 
-func (s *MemoryStore) CreateUnitTask(workspaceID, title, description, repoGroupID string) *dexdexv1.UnitTask {
+func (s *MemoryStore) CreateUnitTask(workspaceID, prompt, repoGroupID string, agentCliType dexdexv1.AgentCliType, planMode bool) *dexdexv1.UnitTask {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -204,8 +218,9 @@ func (s *MemoryStore) CreateUnitTask(workspaceID, title, description, repoGroupI
 	task := &dexdexv1.UnitTask{
 		UnitTaskId:        nextID(),
 		Status:            dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED,
-		Title:             title,
-		Description:       description,
+		Prompt:            prompt,
+		AgentCliType:      agentCliType,
+		PlanMode:          planMode,
 		WorkspaceId:       workspaceID,
 		RepositoryGroupId: repoGroupID,
 		CreatedAt:         now,
@@ -474,7 +489,7 @@ func (s *MemoryStore) GetLatestWaitingSession(workspaceID string) (*dexdexv1.Ses
 
 // Repository group methods
 
-func (s *MemoryStore) AddRepositoryGroup(workspaceID string, group *dexdexv1.RepositoryGroup) {
+func (s *MemoryStore) CreateRepositoryGroup(workspaceID string, group *dexdexv1.RepositoryGroup) *dexdexv1.RepositoryGroup {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -482,6 +497,7 @@ func (s *MemoryStore) AddRepositoryGroup(workspaceID string, group *dexdexv1.Rep
 		s.repoGroups[workspaceID] = make(map[string]*dexdexv1.RepositoryGroup)
 	}
 	s.repoGroups[workspaceID][group.RepositoryGroupId] = group
+	return group
 }
 
 func (s *MemoryStore) GetRepositoryGroup(workspaceID, groupID string) (*dexdexv1.RepositoryGroup, error) {
@@ -513,6 +529,126 @@ func (s *MemoryStore) ListRepositoryGroups(workspaceID string) []*dexdexv1.Repos
 		result = append(result, g)
 	}
 	return result
+}
+
+func (s *MemoryStore) UpdateRepositoryGroup(workspaceID, groupID string, repos []*dexdexv1.RepositoryRef) (*dexdexv1.RepositoryGroup, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	groups, ok := s.repoGroups[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("repository group not found: workspace=%s id=%s", workspaceID, groupID)
+	}
+	group, ok := groups[groupID]
+	if !ok {
+		return nil, fmt.Errorf("repository group not found: workspace=%s id=%s", workspaceID, groupID)
+	}
+	group.Repositories = repos
+	return group, nil
+}
+
+func (s *MemoryStore) DeleteRepositoryGroup(workspaceID, groupID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	groups, ok := s.repoGroups[workspaceID]
+	if !ok {
+		return fmt.Errorf("repository group not found: workspace=%s id=%s", workspaceID, groupID)
+	}
+	if _, ok := groups[groupID]; !ok {
+		return fmt.Errorf("repository group not found: workspace=%s id=%s", workspaceID, groupID)
+	}
+	delete(groups, groupID)
+	return nil
+}
+
+// Repository CRUD methods
+
+func (s *MemoryStore) CreateRepository(workspaceID string, repo *dexdexv1.Repository) *dexdexv1.Repository {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	repo.RepositoryId = nextID()
+	repo.WorkspaceId = workspaceID
+
+	if s.repositories[workspaceID] == nil {
+		s.repositories[workspaceID] = make(map[string]*dexdexv1.Repository)
+	}
+	s.repositories[workspaceID][repo.RepositoryId] = repo
+	return repo
+}
+
+func (s *MemoryStore) ListRepositories(workspaceID string) []*dexdexv1.Repository {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	repos, ok := s.repositories[workspaceID]
+	if !ok {
+		return nil
+	}
+
+	result := make([]*dexdexv1.Repository, 0, len(repos))
+	for _, r := range repos {
+		result = append(result, r)
+	}
+	return result
+}
+
+func (s *MemoryStore) UpdateRepository(workspaceID string, repo *dexdexv1.Repository) (*dexdexv1.Repository, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	repos, ok := s.repositories[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("repository not found: workspace=%s id=%s", workspaceID, repo.RepositoryId)
+	}
+	existing, ok := repos[repo.RepositoryId]
+	if !ok {
+		return nil, fmt.Errorf("repository not found: workspace=%s id=%s", workspaceID, repo.RepositoryId)
+	}
+	existing.RepositoryUrl = repo.RepositoryUrl
+	existing.DefaultBranchRef = repo.DefaultBranchRef
+	existing.DisplayName = repo.DisplayName
+	return existing, nil
+}
+
+func (s *MemoryStore) DeleteRepository(workspaceID, repoID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	repos, ok := s.repositories[workspaceID]
+	if !ok {
+		return fmt.Errorf("repository not found: workspace=%s id=%s", workspaceID, repoID)
+	}
+	if _, ok := repos[repoID]; !ok {
+		return fmt.Errorf("repository not found: workspace=%s id=%s", workspaceID, repoID)
+	}
+	delete(repos, repoID)
+	return nil
+}
+
+// Workspace settings methods
+
+func (s *MemoryStore) GetWorkspaceSettings(workspaceID string) *dexdexv1.WorkspaceSettings {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	settings, ok := s.workspaceSettings[workspaceID]
+	if !ok {
+		return &dexdexv1.WorkspaceSettings{
+			WorkspaceId:         workspaceID,
+			DefaultAgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+		}
+	}
+	return settings
+}
+
+func (s *MemoryStore) UpdateWorkspaceSettings(workspaceID string, settings *dexdexv1.WorkspaceSettings) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	settings.WorkspaceId = workspaceID
+	s.workspaceSettings[workspaceID] = settings
 }
 
 // Pull request methods

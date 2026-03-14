@@ -287,17 +287,13 @@ func TestTaskHandler_CreateUnitTask(t *testing.T) {
 
 	resp, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
 		WorkspaceId: "ws-default",
-		Title:       "New test task",
-		Description: "A task created by tests",
+		Prompt:      "New test task",
 	}))
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if resp.Msg.UnitTask.Title != "New test task" {
-		t.Fatalf("expected title 'New test task', got %s", resp.Msg.UnitTask.Title)
-	}
-	if resp.Msg.UnitTask.Description != "A task created by tests" {
-		t.Fatalf("expected description 'A task created by tests', got %s", resp.Msg.UnitTask.Description)
+	if resp.Msg.UnitTask.Prompt != "New test task" {
+		t.Fatalf("expected prompt 'New test task', got %s", resp.Msg.UnitTask.Prompt)
 	}
 	if resp.Msg.UnitTask.Status != dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED {
 		t.Fatalf("expected QUEUED status, got %s", resp.Msg.UnitTask.Status.String())
@@ -329,10 +325,10 @@ func TestTaskHandler_CreateUnitTask_EmptyTitle(t *testing.T) {
 
 	_, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
 		WorkspaceId: "ws-default",
-		Title:       "",
+		Prompt:      "",
 	}))
 	if err == nil {
-		t.Fatal("expected error for empty title")
+		t.Fatal("expected error for empty prompt")
 	}
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("expected InvalidArgument error code, got %v", connect.CodeOf(err))

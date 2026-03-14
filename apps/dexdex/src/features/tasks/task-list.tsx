@@ -179,7 +179,7 @@ function TaskRow({ task, onClick }: { task: UnitTask; onClick: () => void }) {
       data-testid={`task-row-${task.unitTaskId}`}
     >
       <StatusBadge status={task.status} size="sm" />
-      <span style={titleStyle}>{task.title}</span>
+      <span style={titleStyle}>{task.prompt.split("\n")[0].slice(0, 80) || "Untitled"}</span>
       <span style={metaStyle}>{task.branchRef}</span>
     </div>
   );

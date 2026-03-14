@@ -24,6 +24,7 @@ type agentCommand struct {
 
 // buildAgentCommand creates the agent CLI command based on the agent type.
 // When parentSessionID is non-empty, fork mode is activated (Claude Code --resume).
+// When planMode is true and the agent supports it (Claude Code), --plan is added.
 func buildAgentCommand(
 	ctx context.Context,
 	agentType dexdexv1.AgentCliType,
@@ -32,6 +33,7 @@ func buildAgentCommand(
 	prompt string,
 	sessionID string,
 	parentSessionID string,
+	planMode bool,
 ) (*agentCommand, error) {
 	var args []string
 
@@ -43,6 +45,9 @@ func buildAgentCommand(
 				"--resume", parentSessionID, "-p", prompt}
 		} else {
 			args = []string{"claude", "--json", "--output-format", "stream-json", "-p", prompt}
+		}
+		if planMode {
+			args = append(args, "--plan")
 		}
 		for _, dir := range attachedDirs {
 			args = append(args, "--add-dir", dir)

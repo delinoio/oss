@@ -87,21 +87,22 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
               flex: 1,
             }}
           >
-            {task.title}
+            {task.prompt.split("\n")[0].slice(0, 80) || "Untitled"}
           </h1>
         </div>
       </div>
       <div style={contentStyle}>
-        {/* Description */}
+        {/* Prompt */}
         <div style={{ marginBottom: "var(--space-6)" }}>
           <div
             style={{
               fontSize: "var(--font-size-sm)",
               color: "var(--color-text-secondary)",
               lineHeight: 1.6,
+              whiteSpace: "pre-wrap",
             }}
           >
-            {task.description}
+            {task.prompt}
           </div>
           <div
             style={{

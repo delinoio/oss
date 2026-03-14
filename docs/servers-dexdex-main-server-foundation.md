@@ -18,9 +18,10 @@
 - Stable component identifier: `main-server`.
 - Main server is the canonical business API boundary for clients.
 - Client business flows (task/session/review/notification) are mediated through main-server and not direct worker-server business channels.
-- Connect RPC contract surface includes workspace, repository, task, session, PR management, review assist, review comments, badge theme, notification, and event stream service boundaries.
+- Connect RPC contract surface includes workspace, repository, repository-group, task, session, PR management, review assist, review comments, badge theme, notification, settings, and event stream service boundaries.
 - Control-plane responsibilities:
-- workspace and repository-group lifecycle ownership
+- workspace, repository, repository-group lifecycle ownership (including full CRUD)
+- workspace settings management (default agent type and related preferences)
 - UnitTask/SubTask orchestration state transitions
 - plan-mode decision handling (`APPROVE`, `REVISE`, `REJECT`) and follow-up state transitions
 - session fork orchestration (`create`, `list`, `switch`, `archive`) with parent-session immutability guarantees
@@ -60,10 +61,10 @@
 - runtime configuration is centrally parsed via `internal/config/config.go` using env vars
 - implemented envs: `DEXDEX_MAIN_SERVER_ADDR`, `DEXDEX_MAIN_STREAM_RETENTION`, `DEXDEX_MAIN_STREAM_HEARTBEAT_INTERVAL`, `DEXDEX_WORKER_SERVER_URL`, `DEXDEX_DEPLOYMENT_MODE`, `DEXDEX_DATABASE_URL`, `DEXDEX_REDIS_URL`, `DEXDEX_PR_POLL_INTERVAL_SEC`
 - Implemented-vs-planned alignment (as of 2026-03-14):
-- current implementation includes full Connect RPC handlers for WorkspaceService (GetWorkspace, ListWorkspaces, GetWorkspaceWorkStatus with priority-based status computation), TaskService (CRUD + SubmitPlanDecision with FanOut event publishing), SessionService (GetSessionOutput, ListSessionCapabilities, ForkSession, ListForkedSessions, ArchiveForkedSession, GetLatestWaitingSession, SubmitSessionInput), NotificationService (ListNotifications, MarkNotificationRead with stream event publishing), EventStreamService (streaming with fan-out, replay, heartbeat, SESSION_FORK_UPDATED and WORKSPACE_WORK_STATUS_UPDATED events), RepositoryService (GetRepositoryGroup, ListRepositoryGroups), PrManagementService (GetPullRequest, ListPullRequests, UpdatePullRequest), ReviewCommentService (ListReviewComments, CreateReviewComment, UpdateReviewComment, DeleteReviewComment, ResolveReviewComment, ReopenReviewComment), and BadgeThemeService (GetBadgeTheme handler with badge theme store methods)
+- current implementation includes full Connect RPC handlers for WorkspaceService (GetWorkspace, ListWorkspaces, GetWorkspaceWorkStatus with priority-based status computation), TaskService (ListUnitTasks, ListSubTasks, CreateUnitTask with prompt-only input and agent type resolution from request → workspace settings → CLAUDE_CODE fallback, UpdateUnitTaskStatus, GetUnitTask, GetSubTask, SubmitPlanDecision with FanOut event publishing), SessionService (GetSessionOutput, ListSessionCapabilities, ForkSession, ListForkedSessions, ArchiveForkedSession, GetLatestWaitingSession, SubmitSessionInput), NotificationService (ListNotifications, MarkNotificationRead with stream event publishing), EventStreamService (streaming with fan-out, replay, heartbeat, SESSION_FORK_UPDATED and WORKSPACE_WORK_STATUS_UPDATED events), RepositoryService (GetRepositoryGroup, ListRepositoryGroups, CreateRepositoryGroup, UpdateRepositoryGroup, DeleteRepositoryGroup, ListRepositories, CreateRepository, UpdateRepository, DeleteRepository), SettingsService (GetWorkspaceSettings, UpdateWorkspaceSettings), PrManagementService (GetPullRequest, ListPullRequests, UpdatePullRequest), ReviewCommentService (ListReviewComments, CreateReviewComment, UpdateReviewComment, DeleteReviewComment, ResolveReviewComment, ReopenReviewComment), and BadgeThemeService (GetBadgeTheme handler with badge theme store methods)
 - EventBroadcaster interface with Redis-backed `RedisFanOut` implementation for scale-mode deployment is implemented
 - worker client with agent capability caching (5-minute TTL) is implemented
-- worker dispatch via `internal/worker/dispatch.go` is implemented (Dispatcher manages execution goroutines, dispatches to worker via StartExecution streaming RPC, consumes events, publishes through FanOut)
+- worker dispatch via `internal/worker/dispatch.go` is implemented (Dispatcher manages execution goroutines, dispatches to worker via StartExecution streaming RPC with plan_mode field, consumes events, publishes through FanOut)
 - PR polling via `internal/polling/pr_poller.go` is implemented (polls GitHub via `gh api`, detects status changes, creates notifications)
 - `UpdatePullRequest` is added to Store interface
 - session summary store for fork orchestration and lineage tracking is implemented in memory
@@ -74,7 +75,6 @@
 - `DispatchForkExecution` dispatches fork execution to worker with parent_session_id and fork_intent fields; consumes execution stream and publishes session/fork events
 - `ForkSession` handler now triggers actual execution dispatch after metadata creation
 - `FindSubTaskBySessionID` added to Store interface for fork-to-subtask relationship resolution
-- expanded API behavior from upstream DexDex source docs remains target contract for further additive evolution
 
 ## Storage
 - Target runtime owns control-plane records for workspace scope, task/subtask/session state snapshots, PR/review/notification metadata, and stream sequence progression.
@@ -130,9 +130,3 @@
 - `servers/dexdex-main-server/main.go`
 - `servers/dexdex-main-server/internal/service/plan_decision.go`
 - `servers/dexdex-main-server/internal/service/stream_replay.go`
-- Upstream source docs merged into this contract:
-- `https://github.com/delinoio/dexdex/blob/main/docs/main-server.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/event-streaming.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/notifications.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/pr-management.md`
-- `https://github.com/delinoio/dexdex/blob/main/docs/developer-setup.md`

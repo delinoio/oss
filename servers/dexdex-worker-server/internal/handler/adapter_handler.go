@@ -53,19 +53,22 @@ func (h *AdapterHandler) GetAgentCapabilities(
 
 	capabilities := []*dexdexv1.AgentCapability{
 		{
-			AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
-			SupportsFork: true,
-			DisplayName:  "Claude Code",
+			AgentCliType:     dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+			SupportsFork:     true,
+			SupportsPlanMode: true,
+			DisplayName:      "Claude Code",
 		},
 		{
-			AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
-			SupportsFork: false,
-			DisplayName:  "Codex CLI",
+			AgentCliType:     dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI,
+			SupportsFork:     false,
+			SupportsPlanMode: false,
+			DisplayName:      "Codex CLI",
 		},
 		{
-			AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_OPENCODE,
-			SupportsFork: false,
-			DisplayName:  "OpenCode",
+			AgentCliType:     dexdexv1.AgentCliType_AGENT_CLI_TYPE_OPENCODE,
+			SupportsFork:     false,
+			SupportsPlanMode: false,
+			DisplayName:      "OpenCode",
 		},
 	}
 
@@ -156,6 +159,7 @@ func (h *AdapterHandler) StartExecution(
 		"unit_task_id", req.Msg.UnitTaskId,
 		"sub_task_id", req.Msg.SubTaskId,
 		"agent_cli_type", agentType.String(),
+		"plan_mode", req.Msg.PlanMode,
 	)
 
 	// Create cancellable context and input channel for this execution.
@@ -269,7 +273,8 @@ func (h *AdapterHandler) StartExecution(
 
 	// Build agent command based on type
 	parentSessionID := req.Msg.ParentSessionId
-	agentCmd, err := buildAgentCommand(execCtx, agentType, wCtx.PrimaryDir, wCtx.AttachedDirs, prompt, sessionID, parentSessionID)
+	planMode := req.Msg.PlanMode
+	agentCmd, err := buildAgentCommand(execCtx, agentType, wCtx.PrimaryDir, wCtx.AttachedDirs, prompt, sessionID, parentSessionID, planMode)
 	if err != nil {
 		h.logger.Error("failed to build agent command", "session_id", sessionID, "error", err)
 		_ = stream.Send(&dexdexv1.ExecutionEvent{

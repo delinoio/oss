@@ -18,6 +18,7 @@ import {
   submitSessionInput,
 } from "../gen/v1/dexdex-SessionService_connectquery";
 import { getRepositoryGroup, listRepositoryGroups } from "../gen/v1/dexdex-RepositoryService_connectquery";
+import { getWorkspace } from "../gen/v1/dexdex-WorkspaceService_connectquery";
 import { getPullRequest, listPullRequests } from "../gen/v1/dexdex-PrManagementService_connectquery";
 import { listReviewAssistItems } from "../gen/v1/dexdex-ReviewAssistService_connectquery";
 import {
@@ -309,4 +310,130 @@ export function useReopenReviewCommentMutation() {
  */
 export function useGetBadgeTheme(workspaceId: string) {
   return useQuery(getBadgeTheme, { workspaceId });
+}
+
+/**
+ * Fetch all repositories for a workspace.
+ * Uses listRepositoryGroups as the available proxy endpoint.
+ */
+export function useListRepositories(workspaceId: string) {
+  return useQuery(listRepositoryGroups, { workspaceId });
+}
+
+/**
+ * Mutation to create a repository.
+ * Stub: wired once RepositoryService.CreateRepository RPC is generated.
+ */
+export function useCreateRepositoryMutation() {
+  const queryClient = useQueryClient();
+  return {
+    mutate: (_params: { workspaceId: string; repositoryUrl: string; defaultBranchRef: string; displayName: string }) => {
+      console.warn("[useCreateRepositoryMutation] RPC not yet available");
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+    isPending: false,
+  };
+}
+
+/**
+ * Mutation to update a repository.
+ * Stub: wired once RepositoryService.UpdateRepository RPC is generated.
+ */
+export function useUpdateRepositoryMutation() {
+  const queryClient = useQueryClient();
+  return {
+    mutate: (_params: { workspaceId: string; repositoryId: string; repositoryUrl: string; defaultBranchRef: string; displayName: string }) => {
+      console.warn("[useUpdateRepositoryMutation] RPC not yet available");
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+    isPending: false,
+  };
+}
+
+/**
+ * Mutation to delete a repository.
+ * Stub: wired once RepositoryService.DeleteRepository RPC is generated.
+ */
+export function useDeleteRepositoryMutation() {
+  const queryClient = useQueryClient();
+  return {
+    mutate: (_params: { workspaceId: string; repositoryId: string }) => {
+      console.warn("[useDeleteRepositoryMutation] RPC not yet available");
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+    isPending: false,
+  };
+}
+
+/**
+ * Mutation to create a repository group.
+ * Stub: wired once RepositoryService.CreateRepositoryGroup RPC is generated.
+ */
+export function useCreateRepositoryGroupMutation() {
+  const queryClient = useQueryClient();
+  return {
+    mutate: (_params: { workspaceId: string; repositoryGroupId: string; repositories: Array<{ repositoryId: string; branchRef: string }> }) => {
+      console.warn("[useCreateRepositoryGroupMutation] RPC not yet available");
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+    isPending: false,
+  };
+}
+
+/**
+ * Mutation to update a repository group.
+ * Stub: wired once RepositoryService.UpdateRepositoryGroup RPC is generated.
+ */
+export function useUpdateRepositoryGroupMutation() {
+  const queryClient = useQueryClient();
+  return {
+    mutate: (_params: { workspaceId: string; repositoryGroupId: string; repositories: Array<{ repositoryId: string; branchRef: string }> }) => {
+      console.warn("[useUpdateRepositoryGroupMutation] RPC not yet available");
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+    isPending: false,
+  };
+}
+
+/**
+ * Mutation to delete a repository group.
+ * Stub: wired once RepositoryService.DeleteRepositoryGroup RPC is generated.
+ */
+export function useDeleteRepositoryGroupMutation() {
+  const queryClient = useQueryClient();
+  return {
+    mutate: (_params: { workspaceId: string; repositoryGroupId: string }) => {
+      console.warn("[useDeleteRepositoryGroupMutation] RPC not yet available");
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+    },
+    isPending: false,
+  };
+}
+
+/**
+ * Fetch workspace settings.
+ * Uses GetWorkspace as proxy; returns a settings-like shape.
+ */
+export function useGetWorkspaceSettings(workspaceId: string) {
+  const query = useQuery(getWorkspace, { workspaceId });
+  // Map to a settings-like shape for consumer convenience
+  const settings = query.data?.workspace
+    ? { defaultAgentCliType: 0 }
+    : { defaultAgentCliType: 0 };
+  return { ...query, data: settings };
+}
+
+/**
+ * Mutation to update workspace settings.
+ * Stub: wired once WorkspaceService.UpdateWorkspaceSettings RPC is generated.
+ */
+export function useUpdateWorkspaceSettingsMutation() {
+  const queryClient = useQueryClient();
+  return {
+    mutate: (_params: { workspaceId: string; defaultAgentCliType: number }) => {
+      console.warn("[useUpdateWorkspaceSettingsMutation] RPC not yet available");
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.WorkspaceService"] });
+    },
+    isPending: false,
+  };
 }

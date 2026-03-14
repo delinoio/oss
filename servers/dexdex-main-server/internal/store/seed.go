@@ -21,13 +21,14 @@ func SeedData(s Store) {
 	}
 	s.AddWorkspace(ws)
 
-	// 7 UnitTasks with various statuses and realistic titles
+	// 7 UnitTasks with various statuses and realistic prompts
 	tasks := []struct {
 		id           string
 		status       dexdexv1.UnitTaskStatus
 		action       dexdexv1.ActionType
-		title        string
-		description  string
+		prompt       string
+		agentCliType dexdexv1.AgentCliType
+		planMode     bool
 		subTaskCount int32
 		createdAt    time.Time
 		updatedAt    time.Time
@@ -35,8 +36,8 @@ func SeedData(s Store) {
 		{
 			id:           "task-auth",
 			status:       dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_IN_PROGRESS,
-			title:        "Add user authentication flow",
-			description:  "Implement OAuth2 login flow with JWT token management and session persistence.",
+			prompt:       "Implement OAuth2 login flow with JWT token management and session persistence.",
+			agentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
 			subTaskCount: 2,
 			createdAt:    baseTime.Add(1 * time.Hour),
 			updatedAt:    baseTime.Add(6 * time.Hour),
@@ -44,8 +45,8 @@ func SeedData(s Store) {
 		{
 			id:           "task-ci",
 			status:       dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_COMPLETED,
-			title:        "Refactor API response serialization",
-			description:  "Migrate API response layer from manual JSON marshaling to codegen-based serialization for type safety.",
+			prompt:       "Migrate API response layer from manual JSON marshaling to codegen-based serialization for type safety.",
+			agentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
 			subTaskCount: 3,
 			createdAt:    baseTime.Add(2 * time.Hour),
 			updatedAt:    baseTime.Add(12 * time.Hour),
@@ -54,8 +55,9 @@ func SeedData(s Store) {
 			id:           "task-db-refactor",
 			status:       dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_ACTION_REQUIRED,
 			action:       dexdexv1.ActionType_ACTION_TYPE_PLAN_APPROVAL_REQUIRED,
-			title:        "Fix database migration rollback",
-			description:  "Resolve broken rollback logic in migration v23 that causes data loss on failed upgrades.",
+			prompt:       "Resolve broken rollback logic in migration v23 that causes data loss on failed upgrades.",
+			agentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+			planMode:     true,
 			subTaskCount: 2,
 			createdAt:    baseTime.Add(3 * time.Hour),
 			updatedAt:    baseTime.Add(8 * time.Hour),
@@ -63,8 +65,8 @@ func SeedData(s Store) {
 		{
 			id:           "task-api-docs",
 			status:       dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED,
-			title:        "Add rate limiting middleware",
-			description:  "Implement token-bucket rate limiting for public API endpoints with configurable per-client limits.",
+			prompt:       "Implement token-bucket rate limiting for public API endpoints with configurable per-client limits.",
+			agentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
 			subTaskCount: 2,
 			createdAt:    baseTime.Add(4 * time.Hour),
 			updatedAt:    baseTime.Add(4 * time.Hour),
@@ -72,8 +74,8 @@ func SeedData(s Store) {
 		{
 			id:           "task-perf-opt",
 			status:       dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_FAILED,
-			title:        "Update CI pipeline for monorepo",
-			description:  "Restructure CI configuration to support path-based change detection and parallel job execution.",
+			prompt:       "Restructure CI configuration to support path-based change detection and parallel job execution.",
+			agentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
 			subTaskCount: 2,
 			createdAt:    baseTime.Add(5 * time.Hour),
 			updatedAt:    baseTime.Add(10 * time.Hour),
@@ -81,8 +83,8 @@ func SeedData(s Store) {
 		{
 			id:           "task-search",
 			status:       dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_CANCELLED,
-			title:        "Implement full-text search indexing",
-			description:  "Add full-text search capabilities using inverted index for document content queries.",
+			prompt:       "Add full-text search capabilities using inverted index for document content queries.",
+			agentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
 			subTaskCount: 2,
 			createdAt:    baseTime.Add(6 * time.Hour),
 			updatedAt:    baseTime.Add(9 * time.Hour),
@@ -90,8 +92,8 @@ func SeedData(s Store) {
 		{
 			id:           "task-e2e-tests",
 			status:       dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_IN_PROGRESS,
-			title:        "Write end-to-end test suite",
-			description:  "Create comprehensive E2E test coverage for critical user flows including signup, task creation, and workspace management.",
+			prompt:       "Create comprehensive E2E test coverage for critical user flows including signup, task creation, and workspace management.",
+			agentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
 			subTaskCount: 3,
 			createdAt:    baseTime.Add(7 * time.Hour),
 			updatedAt:    baseTime.Add(11 * time.Hour),
@@ -103,8 +105,9 @@ func SeedData(s Store) {
 			UnitTaskId:     t.id,
 			Status:         t.status,
 			ActionRequired: t.action,
-			Title:          t.title,
-			Description:    t.description,
+			Prompt:         t.prompt,
+			AgentCliType:   t.agentCliType,
+			PlanMode:       t.planMode,
 			WorkspaceId:    defaultWorkspaceID,
 			SubTaskCount:   t.subTaskCount,
 			CreatedAt:      timestamppb.New(t.createdAt),
@@ -376,8 +379,26 @@ func SeedData(s Store) {
 	}
 
 	for _, rg := range repoGroups {
-		s.AddRepositoryGroup(defaultWorkspaceID, rg)
+		s.CreateRepositoryGroup(defaultWorkspaceID, rg)
 	}
+
+	// Workspace settings
+	s.UpdateWorkspaceSettings(defaultWorkspaceID, &dexdexv1.WorkspaceSettings{
+		WorkspaceId:         defaultWorkspaceID,
+		DefaultAgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+	})
+
+	// Repositories
+	s.CreateRepository(defaultWorkspaceID, &dexdexv1.Repository{
+		RepositoryUrl:    "https://github.com/delinoio/oss",
+		DefaultBranchRef: "main",
+		DisplayName:      "delinoio/oss",
+	})
+	s.CreateRepository(defaultWorkspaceID, &dexdexv1.Repository{
+		RepositoryUrl:    "https://github.com/delinoio/infra",
+		DefaultBranchRef: "main",
+		DisplayName:      "delinoio/infra",
+	})
 
 	// Pull request records
 	prRecords := []*dexdexv1.PullRequestRecord{

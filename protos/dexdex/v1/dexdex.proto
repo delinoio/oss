@@ -182,6 +182,14 @@ message RepositoryGroup {
   repeated RepositoryRef repositories = 2;
 }
 
+message Repository {
+  string repository_id = 1;
+  string workspace_id = 2;
+  string repository_url = 3;
+  string default_branch_ref = 4;
+  string display_name = 5;
+}
+
 message CommitMetadata {
   string sha = 1;
   repeated string parents = 2;
@@ -194,13 +202,16 @@ message UnitTask {
   string unit_task_id = 1;
   UnitTaskStatus status = 2;
   ActionType action_required = 3;
-  string title = 4;
-  string description = 5;
+  reserved 4, 5;
+  reserved "title", "description";
   string workspace_id = 6;
   string repository_group_id = 7;
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
   int32 sub_task_count = 10;
+  string prompt = 11;
+  AgentCliType agent_cli_type = 12;
+  bool plan_mode = 13;
 }
 
 message SubTask {
@@ -275,6 +286,7 @@ message AgentCapability {
   AgentCliType agent_cli_type = 1;
   bool supports_fork = 2;
   string display_name = 3;
+  bool supports_plan_mode = 4;
 }
 
 message SessionForkUpdatedEvent {
@@ -543,9 +555,12 @@ message ListUnitTasksResponse {
 
 message CreateUnitTaskRequest {
   string workspace_id = 1;
-  string title = 2;
-  string description = 3;
+  reserved 2, 3;
+  reserved "title", "description";
   string repository_group_id = 4;
+  string prompt = 5;
+  AgentCliType agent_cli_type = 6;
+  bool plan_mode = 7;
 }
 
 message CreateUnitTaskResponse {
@@ -659,7 +674,7 @@ message UpdateUnitTaskStatusResponse {
   UnitTask unit_task = 1;
 }
 
-// Repository group listing messages.
+// Repository group messages.
 
 message ListRepositoryGroupsRequest {
   string workspace_id = 1;
@@ -667,6 +682,97 @@ message ListRepositoryGroupsRequest {
 
 message ListRepositoryGroupsResponse {
   repeated RepositoryGroup repository_groups = 1;
+}
+
+message CreateRepositoryGroupRequest {
+  string workspace_id = 1;
+  string repository_group_id = 2;
+  repeated RepositoryRef repositories = 3;
+}
+
+message CreateRepositoryGroupResponse {
+  RepositoryGroup repository_group = 1;
+}
+
+message UpdateRepositoryGroupRequest {
+  string workspace_id = 1;
+  string repository_group_id = 2;
+  repeated RepositoryRef repositories = 3;
+}
+
+message UpdateRepositoryGroupResponse {
+  RepositoryGroup repository_group = 1;
+}
+
+message DeleteRepositoryGroupRequest {
+  string workspace_id = 1;
+  string repository_group_id = 2;
+}
+
+message DeleteRepositoryGroupResponse {}
+
+// Repository CRUD messages.
+
+message ListRepositoriesRequest {
+  string workspace_id = 1;
+}
+
+message ListRepositoriesResponse {
+  repeated Repository repositories = 1;
+}
+
+message CreateRepositoryRequest {
+  string workspace_id = 1;
+  string repository_url = 2;
+  string default_branch_ref = 3;
+  string display_name = 4;
+}
+
+message CreateRepositoryResponse {
+  Repository repository = 1;
+}
+
+message UpdateRepositoryRequest {
+  string workspace_id = 1;
+  string repository_id = 2;
+  string repository_url = 3;
+  string default_branch_ref = 4;
+  string display_name = 5;
+}
+
+message UpdateRepositoryResponse {
+  Repository repository = 1;
+}
+
+message DeleteRepositoryRequest {
+  string workspace_id = 1;
+  string repository_id = 2;
+}
+
+message DeleteRepositoryResponse {}
+
+// Workspace settings messages.
+
+message WorkspaceSettings {
+  string workspace_id = 1;
+  AgentCliType default_agent_cli_type = 2;
+}
+
+message GetWorkspaceSettingsRequest {
+  string workspace_id = 1;
+}
+
+message GetWorkspaceSettingsResponse {
+  WorkspaceSettings settings = 1;
+}
+
+message UpdateWorkspaceSettingsRequest {
+  string workspace_id = 1;
+  AgentCliType default_agent_cli_type = 2;
+}
+
+message UpdateWorkspaceSettingsResponse {
+  WorkspaceSettings settings = 1;
 }
 
 // Worker execution adapter messages.
@@ -682,6 +788,7 @@ message StartExecutionRequest {
   // Fork execution fields: non-empty parent_session_id triggers fork mode.
   string parent_session_id = 8;
   SessionForkIntent fork_intent = 9;
+  bool plan_mode = 10;
 }
 
 message ExecutionEvent {
@@ -727,6 +834,18 @@ service WorkspaceService {
 service RepositoryService {
   rpc GetRepositoryGroup(GetRepositoryGroupRequest) returns (GetRepositoryGroupResponse);
   rpc ListRepositoryGroups(ListRepositoryGroupsRequest) returns (ListRepositoryGroupsResponse);
+  rpc CreateRepositoryGroup(CreateRepositoryGroupRequest) returns (CreateRepositoryGroupResponse);
+  rpc UpdateRepositoryGroup(UpdateRepositoryGroupRequest) returns (UpdateRepositoryGroupResponse);
+  rpc DeleteRepositoryGroup(DeleteRepositoryGroupRequest) returns (DeleteRepositoryGroupResponse);
+  rpc ListRepositories(ListRepositoriesRequest) returns (ListRepositoriesResponse);
+  rpc CreateRepository(CreateRepositoryRequest) returns (CreateRepositoryResponse);
+  rpc UpdateRepository(UpdateRepositoryRequest) returns (UpdateRepositoryResponse);
+  rpc DeleteRepository(DeleteRepositoryRequest) returns (DeleteRepositoryResponse);
+}
+
+service SettingsService {
+  rpc GetWorkspaceSettings(GetWorkspaceSettingsRequest) returns (GetWorkspaceSettingsResponse);
+  rpc UpdateWorkspaceSettings(UpdateWorkspaceSettingsRequest) returns (UpdateWorkspaceSettingsResponse);
 }
 
 service TaskService {
