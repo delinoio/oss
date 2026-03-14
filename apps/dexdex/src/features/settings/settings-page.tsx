@@ -4,6 +4,7 @@
 
 import type { CSSProperties } from "react";
 import { useAppStore } from "../../stores/app-store";
+import { CredentialManager } from "./credential-manager";
 
 export function SettingsPage() {
   const { theme, setTheme } = useAppStore();
@@ -106,6 +107,12 @@ export function SettingsPage() {
             <ShortcutRow keys={["G", "I"]} description="Go to Inbox" />
             <ShortcutRow keys={["C"]} description="Create new task" />
           </div>
+        </div>
+
+        {/* Credentials Section */}
+        <div style={sectionStyle}>
+          <h2 style={sectionTitleStyle}>Credentials</h2>
+          <CredentialManager />
         </div>
 
         {/* About Section */}
