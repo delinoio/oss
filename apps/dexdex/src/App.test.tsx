@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -485,6 +485,22 @@ describe("App", () => {
     await screen.findByTestId("task-list");
     await user.click(screen.getByTestId("create-task-button"));
     expect(screen.getByTestId("create-dialog")).toBeTruthy();
+    const promptInput = screen.getByTestId("task-prompt-input");
+    await waitFor(() => {
+      expect(document.activeElement).toBe(promptInput);
+    });
+  });
+
+  it("closes create task dialog with Escape", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+    await user.click(screen.getByTestId("create-task-button"));
+    expect(screen.getByTestId("create-dialog")).toBeTruthy();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByTestId("create-dialog")).toBeNull();
   });
 
   it("creates a new task via dialog", async () => {
@@ -598,6 +614,34 @@ describe("App", () => {
     expect(await screen.findByTestId("plan-decisions")).toBeTruthy();
     expect(screen.getByTestId("approve-button")).toBeTruthy();
     expect(screen.getByTestId("reject-button")).toBeTruthy();
+  });
+
+  it("auto-focuses the revise input when revise mode opens", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-row-task-002");
+    await user.click(screen.getByTestId("task-row-task-002"));
+    await screen.findByTestId("plan-decisions");
+    await user.click(screen.getByTestId("revise-button"));
+
+    const reviseInput = screen.getByTestId("revision-note-input");
+    await waitFor(() => {
+      expect(document.activeElement).toBe(reviseInput);
+    });
+  });
+
+  it("auto-focuses session input for waiting-for-input subtasks", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-row-task-004");
+    await user.click(screen.getByTestId("task-row-task-004"));
+    const sessionInput = await screen.findByTestId("session-input-textarea");
+
+    await waitFor(() => {
+      expect(document.activeElement).toBe(sessionInput);
+    });
   });
 
   it("shows subtask timeline in task detail", async () => {

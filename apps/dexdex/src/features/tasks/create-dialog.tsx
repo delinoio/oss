@@ -2,13 +2,14 @@
  * Create task dialog component.
  */
 
-import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { AgentCliType } from "../../gen/v1/dexdex_pb";
 import {
   useGetWorkspaceSettings,
   useListRepositoryGroups,
   useListSessionCapabilities,
 } from "../../hooks/use-dexdex-queries";
+import { useEscapeToClose, useFocusOnShow } from "../../hooks/use-dialog-accessibility";
 
 interface CreateDialogProps {
   isOpen: boolean;
@@ -34,6 +35,7 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
   const [selectedRepoGroupId, setSelectedRepoGroupId] = useState("");
   const [selectedAgent, setSelectedAgent] = useState<AgentCliType>(AgentCliType.UNSPECIFIED);
   const [usePlanMode, setUsePlanMode] = useState(false);
+  const promptInputRef = useRef<HTMLTextAreaElement>(null);
 
   const repoGroupsQuery = useListRepositoryGroups(workspaceId);
   const capabilitiesQuery = useListSessionCapabilities(workspaceId);
@@ -77,6 +79,9 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
       setUsePlanMode(false);
     }
   }, [selectedAgentSupportsPlanMode, usePlanMode]);
+
+  useEscapeToClose(isOpen, onClose);
+  useFocusOnShow(isOpen, promptInputRef);
 
   if (!isOpen) return null;
 
@@ -160,11 +165,11 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
             </label>
             <textarea
               id="task-prompt"
+              ref={promptInputRef}
               style={textareaStyle}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Describe exactly what the coding agent should do..."
-              autoFocus
               data-testid="task-prompt-input"
             />
           </div>

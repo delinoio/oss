@@ -38,8 +38,9 @@ Define DexDex as a Connect RPC-first orchestration platform with a single breaki
 - Unsupported plan mode requests must return `FAILED_PRECONDITION` in both main-server and worker-server flows.
 - Worker execution remains worktree-only and repository-group scoped with deterministic member order.
 - Event streaming stays monotonic and workspace-scoped.
+- Dialog UI surfaces close with `Esc`, and forms with a single critical input auto-focus when shown.
 
-## Implementation Status (as of 2026-03-14)
+## Implementation Status (as of 2026-03-15)
 
 ### Proto (`protos/dexdex/v1/dexdex.proto`)
 - `CreateUnitTaskRequest` is prompt-first and no longer includes title/description.
@@ -72,6 +73,8 @@ Define DexDex as a Connect RPC-first orchestration platform with a single breaki
 - Create Task dialog is prompt-only plus required repository group and agent selection.
 - Plan mode toggle is shown only when the selected agent supports plan mode.
 - Task display labels are prompt-derived summaries.
+- Dialog UI surfaces close with `Esc`.
+- Single critical-input forms auto-focus the input when shown.
 
 ## Change Policy
 - Any proto/main-server/worker-server/app contract change must update this file and all DexDex domain docs in the same change.
