@@ -4,10 +4,12 @@
 
 import type { CSSProperties } from "react";
 import type { SubTask } from "../../lib/mock-data";
+import { useCancelSubTaskMutation } from "../../hooks/use-dexdex-queries";
 import { SubTaskStatus, SUB_TASK_TYPE_LABELS } from "../../lib/status";
 
 interface SubtaskTimelineProps {
   subtasks: SubTask[];
+  workspaceId: string;
 }
 
 function getSubtaskStatusColor(status: SubTaskStatus): string {
@@ -48,7 +50,8 @@ function getSubtaskStatusIcon(status: SubTaskStatus): string {
   }
 }
 
-export function SubtaskTimeline({ subtasks }: SubtaskTimelineProps) {
+export function SubtaskTimeline({ subtasks, workspaceId }: SubtaskTimelineProps) {
+  const cancelSubTask = useCancelSubTaskMutation();
   if (subtasks.length === 0) {
     return (
       <div
@@ -149,6 +152,32 @@ export function SubtaskTimeline({ subtasks }: SubtaskTimelineProps) {
                 </div>
               )}
             </div>
+            {(subtask.status === SubTaskStatus.IN_PROGRESS || subtask.status === SubTaskStatus.QUEUED) && (
+              <button
+                style={{
+                  width: "24px",
+                  height: "24px",
+                  borderRadius: "50%",
+                  border: "1px solid var(--color-status-failed)",
+                  backgroundColor: "transparent",
+                  color: "var(--color-status-failed)",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "12px",
+                  flexShrink: 0,
+                  alignSelf: "flex-start",
+                  marginTop: "2px",
+                }}
+                title={subtask.status === SubTaskStatus.IN_PROGRESS ? "Stop subtask" : "Cancel subtask"}
+                onClick={() => cancelSubTask.mutate({ workspaceId: workspaceId, unitTaskId: subtask.unitTaskId, subTaskId: subtask.subTaskId })}
+                disabled={cancelSubTask.isPending}
+                data-testid={`cancel-subtask-${subtask.subTaskId}`}
+              >
+                ✗
+              </button>
+            )}
           </div>
         );
       })}

@@ -20,12 +20,14 @@ Contract alignment note:
 - Local implementation may diverge temporarily and must be synchronized in follow-up changes.
 
 Core responsibilities:
-- workspace endpoint and auth profile management
+- workspace CRUD and auth profile management (`CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`, `SetActiveWorkspace`)
 - repository and repository-group lifecycle management
-- UnitTask and SubTask orchestration
-- worker dispatch and cancellation propagation
-- PR tracking, polling, and auto-fix control
-- review assist and inline comment lifecycle
+- UnitTask and SubTask orchestration (`CreateSubTask`, `ListSubTaskCommits`, `RetrySubTask`)
+- worker dispatch and cancellation propagation (`CancelUnitTask`, `CancelSubTask`, `StopAgentSession`)
+- agent session lifecycle queries (`ListAgentSessions`, `GetAgentSessionLog`)
+- PR tracking, polling, and auto-fix control (`TrackPullRequest`, `RunAutoFixNow`, `SetAutoFixPolicy`)
+- review assist and inline comment lifecycle (`ResolveReviewAssistItem`)
+- badge theme management (`ListBadgeThemes`, `UpsertBadgeTheme`)
 - notification record lifecycle
 - event-stream fan-out and replay handoff
 

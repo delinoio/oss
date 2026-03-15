@@ -2,7 +2,7 @@
  * Task list view displaying all unit tasks with status and filtering.
  */
 
-import { type CSSProperties, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { StatusBadge } from "../../components/status-badge";
 import { TaskListSkeleton } from "../../components/skeleton-loader";
 import type { UnitTask } from "../../lib/mock-data";
@@ -13,6 +13,8 @@ interface TaskListProps {
   isLoading?: boolean;
   onTaskSelect: (taskId: string) => void;
   onCreateTask: () => void;
+  selectedIndex?: number;
+  onSelectIndex?: (index: number) => void;
 }
 
 const FILTER_OPTIONS = [
@@ -24,8 +26,29 @@ const FILTER_OPTIONS = [
   { value: UnitTaskStatus.FAILED, label: "Failed" },
 ];
 
-export function TaskList({ tasks, isLoading, onTaskSelect, onCreateTask }: TaskListProps) {
+export function TaskList({ tasks, isLoading, onTaskSelect, onCreateTask, selectedIndex, onSelectIndex }: TaskListProps) {
   const [filter, setFilter] = useState<string>("all");
+
+  // Enter key handling: when selectedIndex is valid, navigate to the selected task
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Enter") return;
+      const active = document.activeElement;
+      if (active) {
+        const tag = active.tagName.toLowerCase();
+        if (tag === "input" || tag === "textarea" || (active as HTMLElement).isContentEditable) return;
+      }
+      if (selectedIndex != null && selectedIndex >= 0) {
+        const filteredTasks = filter === "all" ? tasks : tasks.filter((t) => t.status === filter);
+        if (selectedIndex < filteredTasks.length) {
+          e.preventDefault();
+          onTaskSelect(filteredTasks[selectedIndex].unitTaskId);
+        }
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [selectedIndex, filter, tasks, onTaskSelect]);
 
   const filteredTasks = filter === "all"
     ? tasks
@@ -130,8 +153,16 @@ export function TaskList({ tasks, isLoading, onTaskSelect, onCreateTask }: TaskL
             No tasks match the current filter
           </div>
         ) : (
-          filteredTasks.map((task) => (
-            <TaskRow key={task.unitTaskId} task={task} onClick={() => onTaskSelect(task.unitTaskId)} />
+          filteredTasks.map((task, index) => (
+            <TaskRow
+              key={task.unitTaskId}
+              task={task}
+              isSelected={index === selectedIndex}
+              onClick={() => {
+                onSelectIndex?.(index);
+                onTaskSelect(task.unitTaskId);
+              }}
+            />
           ))
         )}
       </div>
@@ -139,7 +170,7 @@ export function TaskList({ tasks, isLoading, onTaskSelect, onCreateTask }: TaskL
   );
 }
 
-function TaskRow({ task, onClick }: { task: UnitTask; onClick: () => void }) {
+function TaskRow({ task, isSelected, onClick }: { task: UnitTask; isSelected?: boolean; onClick: () => void }) {
   const metadata = task.repositoryGroupId ? `Group: ${task.repositoryGroupId}` : "No repository group";
 
   const rowStyle: CSSProperties = {
@@ -150,6 +181,7 @@ function TaskRow({ task, onClick }: { task: UnitTask; onClick: () => void }) {
     borderBottom: "1px solid var(--color-border-subtle)",
     cursor: "pointer",
     transition: "background-color 0.1s",
+    backgroundColor: isSelected ? "var(--color-bg-active)" : "transparent",
   };
 
   const titleStyle: CSSProperties = {
@@ -176,7 +208,7 @@ function TaskRow({ task, onClick }: { task: UnitTask; onClick: () => void }) {
         (e.currentTarget as HTMLElement).style.backgroundColor = "var(--color-bg-hover)";
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+        (e.currentTarget as HTMLElement).style.backgroundColor = isSelected ? "var(--color-bg-active)" : "transparent";
       }}
       data-testid={`task-row-${task.unitTaskId}`}
     >

@@ -112,6 +112,11 @@ func (p *PRPoller) pollPR(ctx context.Context, workspaceID string, pr *dexdexv1.
 
 		// Create notifications for actionable status changes
 		p.createNotificationForStatusChange(workspaceID, pr.PrTrackingId, newStatus)
+
+		// Create review assist items when changes are requested.
+		if newStatus == dexdexv1.PrStatus_PR_STATUS_CHANGES_REQUESTED {
+			p.createReviewAssistItems(ctx, workspaceID, pr.PrTrackingId)
+		}
 	}
 }
 
@@ -198,6 +203,71 @@ func (p *PRPoller) createNotificationForStatusChange(workspaceID, prTrackingID s
 			Notification: notif,
 		},
 	})
+}
+
+// createReviewAssistItems fetches review comments from GitHub and creates
+// ReviewAssistItem entries for the PR.
+func (p *PRPoller) createReviewAssistItems(ctx context.Context, workspaceID, prTrackingID string) {
+	owner, repo, number, err := parsePRTrackingID(prTrackingID)
+	if err != nil {
+		return
+	}
+
+	comments, err := p.githubClient.ListPullRequestComments(ctx, owner, repo, number)
+	if err != nil {
+		p.logger.Warn("failed to fetch PR comments for review assist",
+			"pr_tracking_id", prTrackingID,
+			"error", err,
+		)
+		return
+	}
+
+	if len(comments) == 0 {
+		return
+	}
+
+	// Find the unit task ID associated with this PR by searching through all unit tasks.
+	unitTaskID := p.findUnitTaskForPR(workspaceID, prTrackingID)
+
+	for i, comment := range comments {
+		itemID := fmt.Sprintf("ra-%s-%d-%d", prTrackingID, time.Now().UnixNano(), i)
+		bodyWithContext := comment.Body
+		if comment.Path != "" {
+			bodyWithContext = fmt.Sprintf("[%s:%d] %s", comment.Path, comment.Line, comment.Body)
+		}
+		item := &dexdexv1.ReviewAssistItem{
+			ReviewAssistId: itemID,
+			Body:           bodyWithContext,
+		}
+		p.store.AddReviewAssistItem(workspaceID, unitTaskID, item)
+
+		p.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_REVIEW_ASSIST_UPDATED, &stream.ReviewAssistUpdatedPayload{
+			ReviewAssistUpdated: &dexdexv1.ReviewAssistUpdatedEvent{
+				Item: item,
+			},
+		})
+
+		p.logger.Info("created review assist item from PR comment",
+			"pr_tracking_id", prTrackingID,
+			"review_assist_id", itemID,
+			"file_path", comment.Path,
+		)
+	}
+}
+
+// findUnitTaskForPR searches for the unit task associated with a PR tracking ID.
+func (p *PRPoller) findUnitTaskForPR(workspaceID, prTrackingID string) string {
+	// Search through unit tasks' subtask commit chains to find the associated task.
+	tasks := p.store.ListUnitTasks(workspaceID, nil)
+	for _, task := range tasks {
+		subtasks := p.store.ListSubTasks(workspaceID, task.UnitTaskId)
+		for _, st := range subtasks {
+			if len(st.CommitChain) > 0 {
+				return task.UnitTaskId
+			}
+		}
+	}
+	return ""
 }
 
 // parsePRTrackingID extracts owner, repo, and number from a tracking ID like "owner/repo#123".

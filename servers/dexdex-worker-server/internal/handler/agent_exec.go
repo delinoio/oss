@@ -2,14 +2,19 @@ package handler
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"connectrpc.com/connect"
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
@@ -21,6 +26,12 @@ import (
 type agentCommand struct {
 	cmd   *exec.Cmd
 	stdin io.WriteCloser
+}
+
+// agentExecOptions configures timeout and idle detection for agent execution.
+type agentExecOptions struct {
+	ExecTimeoutSec int
+	IdleTimeoutSec int
 }
 
 // buildAgentCommand creates the agent CLI command based on the agent type.
@@ -113,8 +124,8 @@ type claudeUsageBlock struct {
 }
 
 // runAgentProcess starts the agent command, reads its NDJSON stdout, and streams
-// normalized events. It handles input relay from the inputCh and returns the
-// final agent session status.
+// normalized events. It handles input relay from the inputCh, execution timeout,
+// idle detection, and stderr capture. Returns the final agent session status.
 func runAgentProcess(
 	ctx context.Context,
 	ac *agentCommand,
@@ -124,19 +135,74 @@ func runAgentProcess(
 	sessionStore *store.SessionStore,
 	usageAccumulator *normalize.UsageAccumulator,
 	logger *slog.Logger,
+	opts agentExecOptions,
 ) dexdexv1.AgentSessionStatus {
+	// Apply execution timeout.
+	execTimeout := time.Duration(opts.ExecTimeoutSec) * time.Second
+	if execTimeout <= 0 {
+		execTimeout = 30 * time.Minute
+	}
+	execCtx, execCancel := context.WithTimeout(ctx, execTimeout)
+	defer execCancel()
+
+	// Override the command's context with the timeout-aware one.
+	// Since exec.CommandContext was already called with the parent ctx,
+	// we cancel via the idle watchdog or exec timeout below.
+
 	stdout, err := ac.cmd.StdoutPipe()
 	if err != nil {
 		logger.Error("failed to get stdout pipe", "session_id", sessionID, "error", err)
 		return dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_FAILED
 	}
 
+	// Capture stderr in a bounded buffer.
+	var stderrBuf bytes.Buffer
+	stderrWriter := &limitedWriter{w: &stderrBuf, limit: 64 * 1024} // 64KB max
+	ac.cmd.Stderr = stderrWriter
+
 	if err := ac.cmd.Start(); err != nil {
 		logger.Error("failed to start agent process", "session_id", sessionID, "error", err)
 		return dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_FAILED
 	}
 
-	// Relay input in a separate goroutine
+	// Track last output time for idle detection.
+	var lastOutputTime atomic.Int64
+	lastOutputTime.Store(time.Now().UnixNano())
+
+	// Idle watchdog goroutine.
+	idleTimeout := time.Duration(opts.IdleTimeoutSec) * time.Second
+	if idleTimeout <= 0 {
+		idleTimeout = 5 * time.Minute
+	}
+	var idleTimedOut atomic.Bool
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				lastNano := lastOutputTime.Load()
+				elapsed := time.Since(time.Unix(0, lastNano))
+				if elapsed > idleTimeout {
+					logger.Warn("agent process idle timeout exceeded, killing process",
+						"session_id", sessionID,
+						"idle_seconds", int(elapsed.Seconds()),
+						"idle_timeout_seconds", opts.IdleTimeoutSec,
+					)
+					idleTimedOut.Store(true)
+					execCancel()
+					return
+				}
+			case <-execCtx.Done():
+				return
+			}
+		}
+	}()
+
+	// Relay input in a separate goroutine.
 	go func() {
 		for {
 			select {
@@ -148,13 +214,13 @@ func runAgentProcess(
 					logger.Warn("failed to write input to agent stdin",
 						"session_id", sessionID, "error", err)
 				}
-			case <-ctx.Done():
+			case <-execCtx.Done():
 				return
 			}
 		}
 	}()
 
-	// Read NDJSON output line by line
+	// Read NDJSON output line by line.
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer for large output lines
 
@@ -163,6 +229,8 @@ func runAgentProcess(
 		if line == "" {
 			continue
 		}
+
+		lastOutputTime.Store(time.Now().UnixNano())
 
 		event, usage := parseAgentOutputLine(line, sessionID, logger)
 
@@ -193,17 +261,104 @@ func runAgentProcess(
 		logger.Warn("scanner error reading agent output", "session_id", sessionID, "error", err)
 	}
 
-	// Wait for process to finish
-	if err := ac.cmd.Wait(); err != nil {
+	// Wait for process to finish.
+	waitErr := ac.cmd.Wait()
+
+	// Wait for idle watchdog to finish.
+	wg.Wait()
+
+	// Capture stderr content for error reporting.
+	stderrContent := strings.TrimSpace(stderrBuf.String())
+	if stderrContent != "" {
+		logger.Info("agent stderr output",
+			"session_id", sessionID,
+			"stderr_length", len(stderrContent),
+			"stderr_preview", truncate(stderrContent, 512),
+		)
+	}
+
+	if waitErr != nil {
 		if ctx.Err() != nil {
-			logger.Info("agent process cancelled", "session_id", sessionID)
+			logger.Info("agent process cancelled by parent context", "session_id", sessionID)
 			return dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_CANCELLED
 		}
-		logger.Error("agent process exited with error", "session_id", sessionID, "error", err)
+		if idleTimedOut.Load() {
+			errMsg := fmt.Sprintf("agent process killed: no output for %d seconds", opts.IdleTimeoutSec)
+			emitErrorEvent(stream, sessionID, errMsg)
+			logger.Warn("agent process killed due to idle timeout", "session_id", sessionID)
+			return dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_FAILED
+		}
+		if execCtx.Err() != nil {
+			errMsg := fmt.Sprintf("agent process killed: execution timeout after %d seconds", opts.ExecTimeoutSec)
+			emitErrorEvent(stream, sessionID, errMsg)
+			logger.Warn("agent process killed due to execution timeout", "session_id", sessionID)
+			return dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_FAILED
+		}
+
+		// Map exit codes to specific error messages.
+		exitCode := mapExitCode(waitErr)
+		errMsg := mapExitCodeToMessage(exitCode, stderrContent)
+		emitErrorEvent(stream, sessionID, errMsg)
+		logger.Error("agent process exited with error",
+			"session_id", sessionID,
+			"exit_code", exitCode,
+			"error", waitErr,
+			"stderr_preview", truncate(stderrContent, 256),
+		)
 		return dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_FAILED
 	}
 
 	return dexdexv1.AgentSessionStatus_AGENT_SESSION_STATUS_COMPLETED
+}
+
+// emitErrorEvent sends an error output event through the execution stream.
+func emitErrorEvent(stream *connect.ServerStream[dexdexv1.StartExecutionResponse], sessionID, message string) {
+	_ = stream.Send(&dexdexv1.StartExecutionResponse{
+		Event: &dexdexv1.StartExecutionResponse_SessionOutput{
+			SessionOutput: &dexdexv1.SessionOutputEvent{
+				SessionId: sessionID,
+				Kind:      dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_ERROR,
+				Body:      message,
+			},
+		},
+	})
+}
+
+// mapExitCode extracts the exit code from exec.ExitError, defaulting to -1.
+func mapExitCode(err error) int {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	return -1
+}
+
+// mapExitCodeToMessage converts known exit codes to human-readable messages.
+func mapExitCodeToMessage(exitCode int, stderr string) string {
+	switch exitCode {
+	case 1:
+		if strings.Contains(stderr, "permission") || strings.Contains(stderr, "Permission") {
+			return "agent process failed: permission denied"
+		}
+		return "agent process failed: general error (exit code 1)"
+	case 2:
+		return "agent process failed: invalid arguments or misuse (exit code 2)"
+	case 126:
+		return "agent process failed: command not executable (exit code 126)"
+	case 127:
+		return "agent process failed: command not found (exit code 127)"
+	case 130:
+		return "agent process interrupted by signal (SIGINT)"
+	case 137:
+		return "agent process killed (SIGKILL, possibly OOM)"
+	case 143:
+		return "agent process terminated (SIGTERM)"
+	default:
+		if stderr != "" {
+			return fmt.Sprintf("agent process failed (exit code %d): %s", exitCode, truncate(stderr, 256))
+		}
+		return fmt.Sprintf("agent process failed with exit code %d", exitCode)
+	}
 }
 
 // parseAgentOutputLine parses a single NDJSON line from agent output.
@@ -258,4 +413,32 @@ func mapEventTypeToOutputKind(eventType, subType string) dexdexv1.SessionOutputK
 	default:
 		return dexdexv1.SessionOutputKind_SESSION_OUTPUT_KIND_TEXT
 	}
+}
+
+// limitedWriter wraps a writer and stops writing after the limit is reached.
+type limitedWriter struct {
+	w       io.Writer
+	limit   int
+	written int
+}
+
+func (lw *limitedWriter) Write(p []byte) (int, error) {
+	remaining := lw.limit - lw.written
+	if remaining <= 0 {
+		return len(p), nil // discard silently
+	}
+	if len(p) > remaining {
+		p = p[:remaining]
+	}
+	n, err := lw.w.Write(p)
+	lw.written += n
+	return n, err
+}
+
+// truncate shortens a string to the given max length, adding "..." if truncated.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

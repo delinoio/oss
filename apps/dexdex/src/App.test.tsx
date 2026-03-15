@@ -287,6 +287,7 @@ function createTestTransport() {
       archiveForkedSession: () => ({}),
       getLatestWaitingSession: () => ({ session: undefined }),
       submitSessionInput: () => ({}),
+      stopAgentSession: () => ({}),
     });
     router.service(WorkspaceService, {
       getWorkspace: () => ({ workspace: undefined }),
@@ -303,6 +304,7 @@ function createTestTransport() {
     router.service(PrManagementService, {
       getPullRequest: () => ({ pullRequest: undefined }),
       listPullRequests: () => ({ pullRequests: mockPullRequests }),
+      trackPullRequest: () => ({ pullRequest: undefined }),
     });
     router.service(ReviewAssistService, {
       listReviewAssistItems: () => ({ items: [] }),

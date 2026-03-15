@@ -165,10 +165,48 @@ enum WorktreeState {
   WORKTREE_STATE_FAILED = 6;
 }
 
+enum WorkspaceType {
+  WORKSPACE_TYPE_UNSPECIFIED = 0;
+  WORKSPACE_TYPE_LOCAL_ENDPOINT = 1;
+  WORKSPACE_TYPE_REMOTE_ENDPOINT = 2;
+}
+
+enum BadgeColorKey {
+  BADGE_COLOR_KEY_UNSPECIFIED = 0;
+  BADGE_COLOR_KEY_BLUE = 1;
+  BADGE_COLOR_KEY_GREEN = 2;
+  BADGE_COLOR_KEY_YELLOW = 3;
+  BADGE_COLOR_KEY_ORANGE = 4;
+  BADGE_COLOR_KEY_RED = 5;
+  BADGE_COLOR_KEY_GRAY = 6;
+}
+
+enum ReviewAssistStatus {
+  REVIEW_ASSIST_STATUS_UNSPECIFIED = 0;
+  REVIEW_ASSIST_STATUS_OPEN = 1;
+  REVIEW_ASSIST_STATUS_AUTO_FIXING = 2;
+  REVIEW_ASSIST_STATUS_FIXED = 3;
+  REVIEW_ASSIST_STATUS_DISMISSED = 4;
+}
+
+enum ReviewInlineCommentStatus {
+  REVIEW_INLINE_COMMENT_STATUS_UNSPECIFIED = 0;
+  REVIEW_INLINE_COMMENT_STATUS_OPEN = 1;
+  REVIEW_INLINE_COMMENT_STATUS_RESOLVED = 2;
+  REVIEW_INLINE_COMMENT_STATUS_DELETED = 3;
+}
+
+enum DiffSide {
+  DIFF_SIDE_UNSPECIFIED = 0;
+  DIFF_SIDE_OLD = 1;
+  DIFF_SIDE_NEW = 2;
+}
+
 message Workspace {
   string workspace_id = 1;
   string name = 2;
   google.protobuf.Timestamp created_at = 3;
+  WorkspaceType type = 4;
 }
 
 message Repository {
@@ -418,6 +456,14 @@ message GetPullRequestRequest {
 message PullRequestRecord {
   string pr_tracking_id = 1;
   PrStatus status = 2;
+  string pr_url = 3;
+  string workspace_id = 4;
+  string unit_task_id = 5;
+  bool auto_fix_enabled = 6;
+  int32 fix_attempt_count = 7;
+  int32 max_fix_attempts = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
 }
 
 message GetPullRequestResponse {
@@ -440,6 +486,9 @@ message ListReviewAssistItemsRequest {
 message ReviewAssistItem {
   string review_assist_id = 1;
   string body = 2;
+  ReviewAssistStatus status = 3;
+  string pr_tracking_id = 4;
+  string unit_task_id = 5;
 }
 
 message ListReviewAssistItemsResponse {
@@ -455,7 +504,7 @@ message ReviewComment {
   string review_comment_id = 1;
   string body = 2;
   string file_path = 3;
-  string side = 4; // "LEFT" or "RIGHT"
+  DiffSide side = 4;
   int32 line_number = 5;
   ReviewCommentStatus status = 6;
   string pr_tracking_id = 7;
@@ -472,7 +521,7 @@ message CreateReviewCommentRequest {
   string pr_tracking_id = 2;
   string body = 3;
   string file_path = 4;
-  string side = 5;
+  DiffSide side = 5;
   int32 line_number = 6;
 }
 
@@ -522,6 +571,8 @@ message GetBadgeThemeRequest {
 message BadgeTheme {
   string badge_theme_id = 1;
   string theme_name = 2;
+  BadgeColorKey color_key = 3;
+  string workspace_id = 4;
 }
 
 message GetBadgeThemeResponse {
@@ -832,9 +883,189 @@ message UpdatePullRequestResponse {
   PullRequestRecord pull_request = 1;
 }
 
+// Workspace CRUD messages.
+
+message CreateWorkspaceRequest {
+  string name = 1;
+  WorkspaceType type = 2;
+}
+
+message CreateWorkspaceResponse {
+  Workspace workspace = 1;
+}
+
+message UpdateWorkspaceRequest {
+  string workspace_id = 1;
+  string name = 2;
+}
+
+message UpdateWorkspaceResponse {
+  Workspace workspace = 1;
+}
+
+message DeleteWorkspaceRequest {
+  string workspace_id = 1;
+}
+
+message DeleteWorkspaceResponse {}
+
+message SetActiveWorkspaceRequest {
+  string workspace_id = 1;
+}
+
+message SetActiveWorkspaceResponse {
+  Workspace workspace = 1;
+}
+
+// Task cancel and subtask management messages.
+
+message CancelUnitTaskRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+}
+
+message CancelUnitTaskResponse {
+  UnitTask unit_task = 1;
+}
+
+message CancelSubTaskRequest {
+  string workspace_id = 1;
+  string sub_task_id = 2;
+}
+
+message CancelSubTaskResponse {
+  SubTask sub_task = 1;
+}
+
+message CreateSubTaskRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+  SubTaskType type = 3;
+  string prompt = 4;
+}
+
+message CreateSubTaskResponse {
+  SubTask sub_task = 1;
+}
+
+message ListSubTaskCommitsRequest {
+  string workspace_id = 1;
+  string sub_task_id = 2;
+}
+
+message ListSubTaskCommitsResponse {
+  repeated CommitMetadata commits = 1;
+}
+
+message RetrySubTaskRequest {
+  string workspace_id = 1;
+  string sub_task_id = 2;
+}
+
+message RetrySubTaskResponse {
+  SubTask sub_task = 1;
+}
+
+// Session listing and stop messages.
+
+message ListAgentSessionsRequest {
+  string workspace_id = 1;
+  string unit_task_id = 2;
+}
+
+message ListAgentSessionsResponse {
+  repeated SessionSummary sessions = 1;
+}
+
+message GetAgentSessionLogRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+}
+
+message GetAgentSessionLogResponse {
+  repeated SessionOutputEvent events = 1;
+  SessionSummary session = 2;
+}
+
+message StopAgentSessionRequest {
+  string workspace_id = 1;
+  string session_id = 2;
+}
+
+message StopAgentSessionResponse {
+  SessionSummary session = 1;
+}
+
+// PR tracking and auto-fix messages.
+
+message TrackPullRequestRequest {
+  string workspace_id = 1;
+  string pr_url = 2;
+  string unit_task_id = 3;
+}
+
+message TrackPullRequestResponse {
+  PullRequestRecord pull_request = 1;
+}
+
+message RunAutoFixNowRequest {
+  string workspace_id = 1;
+  string pr_tracking_id = 2;
+}
+
+message RunAutoFixNowResponse {
+  SubTask sub_task = 1;
+}
+
+message SetAutoFixPolicyRequest {
+  string workspace_id = 1;
+  string pr_tracking_id = 2;
+  bool auto_fix_enabled = 3;
+}
+
+message SetAutoFixPolicyResponse {
+  PullRequestRecord pull_request = 1;
+}
+
+// Review assist resolution messages.
+
+message ResolveReviewAssistItemRequest {
+  string workspace_id = 1;
+  string review_assist_id = 2;
+  ReviewAssistStatus resolution = 3;
+}
+
+message ResolveReviewAssistItemResponse {
+  ReviewAssistItem item = 1;
+}
+
+// Badge theme list and upsert messages.
+
+message ListBadgeThemesRequest {
+  string workspace_id = 1;
+}
+
+message ListBadgeThemesResponse {
+  repeated BadgeTheme themes = 1;
+}
+
+message UpsertBadgeThemeRequest {
+  string workspace_id = 1;
+  string theme_name = 2;
+  BadgeColorKey color_key = 3;
+}
+
+message UpsertBadgeThemeResponse {
+  BadgeTheme theme = 1;
+}
+
 service WorkspaceService {
   rpc GetWorkspace(GetWorkspaceRequest) returns (GetWorkspaceResponse);
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
+  rpc CreateWorkspace(CreateWorkspaceRequest) returns (CreateWorkspaceResponse);
+  rpc UpdateWorkspace(UpdateWorkspaceRequest) returns (UpdateWorkspaceResponse);
+  rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (DeleteWorkspaceResponse);
+  rpc SetActiveWorkspace(SetActiveWorkspaceRequest) returns (SetActiveWorkspaceResponse);
   rpc GetWorkspaceWorkStatus(GetWorkspaceWorkStatusRequest) returns (GetWorkspaceWorkStatusResponse);
   rpc GetWorkspaceSettings(GetWorkspaceSettingsRequest) returns (GetWorkspaceSettingsResponse);
   rpc UpdateWorkspaceSettings(UpdateWorkspaceSettingsRequest) returns (UpdateWorkspaceSettingsResponse);
@@ -861,6 +1092,11 @@ service TaskService {
   rpc CreateUnitTask(CreateUnitTaskRequest) returns (CreateUnitTaskResponse);
   rpc UpdateUnitTaskStatus(UpdateUnitTaskStatusRequest) returns (UpdateUnitTaskStatusResponse);
   rpc SubmitPlanDecision(SubmitPlanDecisionRequest) returns (SubmitPlanDecisionResponse);
+  rpc CancelUnitTask(CancelUnitTaskRequest) returns (CancelUnitTaskResponse);
+  rpc CancelSubTask(CancelSubTaskRequest) returns (CancelSubTaskResponse);
+  rpc CreateSubTask(CreateSubTaskRequest) returns (CreateSubTaskResponse);
+  rpc ListSubTaskCommits(ListSubTaskCommitsRequest) returns (ListSubTaskCommitsResponse);
+  rpc RetrySubTask(RetrySubTaskRequest) returns (RetrySubTaskResponse);
 }
 
 service SessionService {
@@ -871,16 +1107,23 @@ service SessionService {
   rpc ArchiveForkedSession(ArchiveForkedSessionRequest) returns (ArchiveForkedSessionResponse);
   rpc GetLatestWaitingSession(GetLatestWaitingSessionRequest) returns (GetLatestWaitingSessionResponse);
   rpc SubmitSessionInput(SubmitSessionInputRequest) returns (SubmitSessionInputResponse);
+  rpc ListAgentSessions(ListAgentSessionsRequest) returns (ListAgentSessionsResponse);
+  rpc GetAgentSessionLog(GetAgentSessionLogRequest) returns (GetAgentSessionLogResponse);
+  rpc StopAgentSession(StopAgentSessionRequest) returns (StopAgentSessionResponse);
 }
 
 service PrManagementService {
   rpc GetPullRequest(GetPullRequestRequest) returns (GetPullRequestResponse);
   rpc ListPullRequests(ListPullRequestsRequest) returns (ListPullRequestsResponse);
   rpc UpdatePullRequest(UpdatePullRequestRequest) returns (UpdatePullRequestResponse);
+  rpc TrackPullRequest(TrackPullRequestRequest) returns (TrackPullRequestResponse);
+  rpc RunAutoFixNow(RunAutoFixNowRequest) returns (RunAutoFixNowResponse);
+  rpc SetAutoFixPolicy(SetAutoFixPolicyRequest) returns (SetAutoFixPolicyResponse);
 }
 
 service ReviewAssistService {
   rpc ListReviewAssistItems(ListReviewAssistItemsRequest) returns (ListReviewAssistItemsResponse);
+  rpc ResolveReviewAssistItem(ResolveReviewAssistItemRequest) returns (ResolveReviewAssistItemResponse);
 }
 
 service ReviewCommentService {
@@ -894,6 +1137,8 @@ service ReviewCommentService {
 
 service BadgeThemeService {
   rpc GetBadgeTheme(GetBadgeThemeRequest) returns (GetBadgeThemeResponse);
+  rpc ListBadgeThemes(ListBadgeThemesRequest) returns (ListBadgeThemesResponse);
+  rpc UpsertBadgeTheme(UpsertBadgeThemeRequest) returns (UpsertBadgeThemeResponse);
 }
 
 service NotificationService {

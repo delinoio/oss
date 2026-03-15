@@ -26,6 +26,13 @@ type PostgresStore struct {
 	worktreeAssignments map[string]map[string]*WorktreeAssignment       // workspaceID -> sessionID -> assignment
 	badgeThemes         map[string]*dexdexv1.BadgeTheme                 // workspaceID -> theme
 	reviewCommentsStore map[string]map[string][]*dexdexv1.ReviewComment // workspaceID -> prTrackingID -> comments
+
+	// In-memory caches for operations not yet migrated to SQL queries
+	workspaces       map[string]*dexdexv1.Workspace
+	subTasks         map[string]map[string]*dexdexv1.SubTask
+	reviewAssist     map[string]map[string][]*dexdexv1.ReviewAssistItem
+	prRecords        map[string]map[string]*dexdexv1.PullRequestRecord
+	sessionSummaries map[string]map[string]*dexdexv1.SessionSummary
 }
 
 // NewPostgresStore creates a new PostgresStore from a connection pool.
@@ -38,6 +45,11 @@ func NewPostgresStore(pool *pgxpool.Pool, logger *slog.Logger) *PostgresStore {
 		worktreeAssignments: make(map[string]map[string]*WorktreeAssignment),
 		badgeThemes:         make(map[string]*dexdexv1.BadgeTheme),
 		reviewCommentsStore: make(map[string]map[string][]*dexdexv1.ReviewComment),
+		workspaces:          make(map[string]*dexdexv1.Workspace),
+		subTasks:            make(map[string]map[string]*dexdexv1.SubTask),
+		reviewAssist:        make(map[string]map[string][]*dexdexv1.ReviewAssistItem),
+		prRecords:           make(map[string]map[string]*dexdexv1.PullRequestRecord),
+		sessionSummaries:    make(map[string]map[string]*dexdexv1.SessionSummary),
 	}
 }
 
@@ -1060,6 +1072,146 @@ func (s *PostgresStore) DeleteReviewComment(workspaceID, reviewCommentID string)
 		}
 	}
 	return fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+}
+
+func (s *PostgresStore) CreateWorkspace(name string, wsType dexdexv1.WorkspaceType) *dexdexv1.Workspace {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ws := &dexdexv1.Workspace{
+		WorkspaceId: fmt.Sprintf("ws-%d", len(s.workspaces)+1),
+		Name:        name,
+		Type:        wsType,
+		CreatedAt:   timestamppb.Now(),
+	}
+	s.workspaces[ws.WorkspaceId] = ws
+	return ws
+}
+
+func (s *PostgresStore) UpdateWorkspace(workspaceID, name string) (*dexdexv1.Workspace, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ws, ok := s.workspaces[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+	ws.Name = name
+	return ws, nil
+}
+
+func (s *PostgresStore) DeleteWorkspace(workspaceID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.workspaces[workspaceID]; !ok {
+		return fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+	delete(s.workspaces, workspaceID)
+	return nil
+}
+
+func (s *PostgresStore) ListBadgeThemes(workspaceID string) []*dexdexv1.BadgeTheme {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	theme := s.badgeThemes[workspaceID]
+	if theme == nil {
+		return nil
+	}
+	return []*dexdexv1.BadgeTheme{theme}
+}
+
+func (s *PostgresStore) UpsertBadgeTheme(workspaceID, themeName string, colorKey dexdexv1.BadgeColorKey) *dexdexv1.BadgeTheme {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	theme := &dexdexv1.BadgeTheme{
+		BadgeThemeId: fmt.Sprintf("badge-%s-%s", workspaceID, themeName),
+		ThemeName:    themeName,
+		ColorKey:     colorKey,
+		WorkspaceId:  workspaceID,
+	}
+	s.badgeThemes[workspaceID] = theme
+	return theme
+}
+
+func (s *PostgresStore) GetReviewAssistItem(workspaceID, reviewAssistID string) (*dexdexv1.ReviewAssistItem, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	unitTaskItems, ok := s.reviewAssist[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("review assist item not found: workspace=%s id=%s", workspaceID, reviewAssistID)
+	}
+	for _, items := range unitTaskItems {
+		for _, item := range items {
+			if item.ReviewAssistId == reviewAssistID {
+				return item, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("review assist item not found: workspace=%s id=%s", workspaceID, reviewAssistID)
+}
+
+func (s *PostgresStore) UpdateReviewAssistItemStatus(workspaceID, reviewAssistID string, status dexdexv1.ReviewAssistStatus) (*dexdexv1.ReviewAssistItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	unitTaskItems, ok := s.reviewAssist[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("review assist item not found: workspace=%s id=%s", workspaceID, reviewAssistID)
+	}
+	for _, items := range unitTaskItems {
+		for _, item := range items {
+			if item.ReviewAssistId == reviewAssistID {
+				item.Status = status
+				return item, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("review assist item not found: workspace=%s id=%s", workspaceID, reviewAssistID)
+}
+
+func (s *PostgresStore) SetAutoFixPolicy(workspaceID, prTrackingID string, enabled bool) (*dexdexv1.PullRequestRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prMap, ok := s.prRecords[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr, ok := prMap[prTrackingID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr.AutoFixEnabled = enabled
+	pr.UpdatedAt = timestamppb.Now()
+	return pr, nil
+}
+
+func (s *PostgresStore) ListSessionSummaries(workspaceID, unitTaskID string) []*dexdexv1.SessionSummary {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	wsSessionMap, ok := s.sessionSummaries[workspaceID]
+	if !ok {
+		return nil
+	}
+	var result []*dexdexv1.SessionSummary
+	if unitTaskID == "" {
+		for _, summary := range wsSessionMap {
+			result = append(result, summary)
+		}
+		return result
+	}
+	subTaskMap, ok := s.subTasks[workspaceID]
+	if !ok {
+		return nil
+	}
+	sessionIDs := make(map[string]bool)
+	for _, st := range subTaskMap {
+		if st.UnitTaskId == unitTaskID && st.SessionId != "" {
+			sessionIDs[st.SessionId] = true
+		}
+	}
+	for sessionID, summary := range wsSessionMap {
+		if sessionIDs[sessionID] {
+			result = append(result, summary)
+		}
+	}
+	return result
 }
 
 func (s *PostgresStore) UpdateReviewCommentStatus(workspaceID, reviewCommentID string, status dexdexv1.ReviewCommentStatus) (*dexdexv1.ReviewComment, error) {

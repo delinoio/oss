@@ -11,24 +11,26 @@ import {
   useResolveReviewCommentMutation,
   useReopenReviewCommentMutation,
   useDeleteReviewCommentMutation,
+  useCreateUnitTaskMutation,
 } from "../../hooks/use-dexdex-queries";
 import { DiffCommentView } from "./diff-comment-view";
-
-const WORKSPACE_ID = "workspace-default";
 
 interface ReviewAssistPanelProps {
   unitTaskId: string;
   prTrackingId?: string;
+  repositoryGroupId?: string;
+  workspaceId: string;
 }
 
-export function ReviewAssistPanel({ unitTaskId, prTrackingId }: ReviewAssistPanelProps) {
-  const { data: assistData, isLoading: assistLoading } = useListReviewAssistItems(WORKSPACE_ID, unitTaskId);
-  const { data: commentsData, isLoading: commentsLoading } = useListReviewComments(WORKSPACE_ID, prTrackingId ?? "");
+export function ReviewAssistPanel({ unitTaskId, prTrackingId, repositoryGroupId, workspaceId }: ReviewAssistPanelProps) {
+  const { data: assistData, isLoading: assistLoading } = useListReviewAssistItems(workspaceId, unitTaskId);
+  const { data: commentsData, isLoading: commentsLoading } = useListReviewComments(workspaceId, prTrackingId ?? "");
 
   const createCommentMutation = useCreateReviewCommentMutation();
   const resolveCommentMutation = useResolveReviewCommentMutation();
   const reopenCommentMutation = useReopenReviewCommentMutation();
   const deleteCommentMutation = useDeleteReviewCommentMutation();
+  const createTaskMutation = useCreateUnitTaskMutation();
 
   const [suggestionsCollapsed, setSuggestionsCollapsed] = useState(false);
   const [commentsCollapsed, setCommentsCollapsed] = useState(false);
@@ -49,7 +51,15 @@ export function ReviewAssistPanel({ unitTaskId, prTrackingId }: ReviewAssistPane
   };
 
   const handleAccept = (reviewAssistId: string) => {
-    console.log("[ReviewAssist] Accepted suggestion:", reviewAssistId);
+    const item = items.find((i) => i.reviewAssistId === reviewAssistId);
+    if (item) {
+      const fixPrompt = `Fix the following review feedback:\n\n${item.body}`;
+      createTaskMutation.mutate({
+        workspaceId: workspaceId,
+        prompt: fixPrompt,
+        repositoryGroupId: repositoryGroupId ?? "",
+      });
+    }
     setDismissedItems((prev) => new Set(prev).add(reviewAssistId));
   };
 
@@ -154,7 +164,7 @@ export function ReviewAssistPanel({ unitTaskId, prTrackingId }: ReviewAssistPane
                 comments={comments}
                 onReply={(prId, filePath, side, lineNumber, body) => {
                   createCommentMutation.mutate({
-                    workspaceId: WORKSPACE_ID,
+                    workspaceId: workspaceId,
                     prTrackingId: prId,
                     body,
                     filePath,
@@ -164,19 +174,19 @@ export function ReviewAssistPanel({ unitTaskId, prTrackingId }: ReviewAssistPane
                 }}
                 onResolve={(commentId) => {
                   resolveCommentMutation.mutate({
-                    workspaceId: WORKSPACE_ID,
+                    workspaceId: workspaceId,
                     reviewCommentId: commentId,
                   });
                 }}
                 onReopen={(commentId) => {
                   reopenCommentMutation.mutate({
-                    workspaceId: WORKSPACE_ID,
+                    workspaceId: workspaceId,
                     reviewCommentId: commentId,
                   });
                 }}
                 onDelete={(commentId) => {
                   deleteCommentMutation.mutate({
-                    workspaceId: WORKSPACE_ID,
+                    workspaceId: workspaceId,
                     reviewCommentId: commentId,
                   });
                 }}

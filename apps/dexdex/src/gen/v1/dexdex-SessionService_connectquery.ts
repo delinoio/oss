@@ -38,3 +38,18 @@ export const getLatestWaitingSession = SessionService.method.getLatestWaitingSes
  * @generated from rpc dexdex.v1.SessionService.SubmitSessionInput
  */
 export const submitSessionInput = SessionService.method.submitSessionInput;
+
+/**
+ * @generated from rpc dexdex.v1.SessionService.ListAgentSessions
+ */
+export const listAgentSessions = SessionService.method.listAgentSessions;
+
+/**
+ * @generated from rpc dexdex.v1.SessionService.GetAgentSessionLog
+ */
+export const getAgentSessionLog = SessionService.method.getAgentSessionLog;
+
+/**
+ * @generated from rpc dexdex.v1.SessionService.StopAgentSession
+ */
+export const stopAgentSession = SessionService.method.stopAgentSession;

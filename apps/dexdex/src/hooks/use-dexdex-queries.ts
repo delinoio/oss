@@ -5,9 +5,17 @@
 
 import { useQuery, useMutation } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
-import { listUnitTasks, listSubTasks, createUnitTask, submitPlanDecision } from "../gen/v1/dexdex-TaskService_connectquery";
+import { listUnitTasks, listSubTasks, createUnitTask, submitPlanDecision, cancelUnitTask, cancelSubTask } from "../gen/v1/dexdex-TaskService_connectquery";
 import { listNotifications, markNotificationRead } from "../gen/v1/dexdex-NotificationService_connectquery";
-import { getWorkspaceWorkStatus, getWorkspaceSettings, updateWorkspaceSettings } from "../gen/v1/dexdex-WorkspaceService_connectquery";
+import {
+  getWorkspace,
+  listWorkspaces,
+  createWorkspace,
+  setActiveWorkspace,
+  getWorkspaceWorkStatus,
+  getWorkspaceSettings,
+  updateWorkspaceSettings,
+} from "../gen/v1/dexdex-WorkspaceService_connectquery";
 import {
   getSessionOutput,
   listSessionCapabilities,
@@ -16,6 +24,7 @@ import {
   archiveForkedSession,
   getLatestWaitingSession,
   submitSessionInput,
+  stopAgentSession,
 } from "../gen/v1/dexdex-SessionService_connectquery";
 import {
   getRepository,
@@ -29,8 +38,8 @@ import {
   updateRepositoryGroup,
   deleteRepositoryGroup,
 } from "../gen/v1/dexdex-RepositoryService_connectquery";
-import { getPullRequest, listPullRequests } from "../gen/v1/dexdex-PrManagementService_connectquery";
-import { listReviewAssistItems } from "../gen/v1/dexdex-ReviewAssistService_connectquery";
+import { getPullRequest, listPullRequests, trackPullRequest, runAutoFixNow, setAutoFixPolicy } from "../gen/v1/dexdex-PrManagementService_connectquery";
+import { listReviewAssistItems, resolveReviewAssistItem } from "../gen/v1/dexdex-ReviewAssistService_connectquery";
 import {
   listReviewComments,
   createReviewComment,
@@ -59,6 +68,14 @@ export function useListSubTasks(workspaceId: string, unitTaskId: string) {
   const query = useQuery(listSubTasks, { workspaceId, unitTaskId }, { enabled: !!unitTaskId });
   const subTasks: SubTask[] = (query.data?.subTasks ?? []).map(toViewSubTask);
   return { ...query, data: subTasks };
+}
+
+/**
+ * Fetch raw proto subtasks for a specific unit task (includes commitChain).
+ */
+export function useListSubTasksRaw(workspaceId: string, unitTaskId: string) {
+  const query = useQuery(listSubTasks, { workspaceId, unitTaskId }, { enabled: !!unitTaskId });
+  return { ...query, data: query.data?.subTasks ?? [] };
 }
 
 /**
@@ -118,6 +135,46 @@ export function useMarkNotificationReadMutation() {
   return useMutation(markNotificationRead, {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dexdex.v1.NotificationService"] });
+    },
+  });
+}
+
+/**
+ * Fetch a single workspace by ID.
+ */
+export function useGetWorkspace(workspaceId: string) {
+  return useQuery(getWorkspace, { workspaceId }, { enabled: !!workspaceId });
+}
+
+/**
+ * Fetch all workspaces.
+ */
+export function useListWorkspaces() {
+  return useQuery(listWorkspaces, {});
+}
+
+/**
+ * Mutation to create a new workspace.
+ * Invalidates workspace list on success.
+ */
+export function useCreateWorkspaceMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(createWorkspace, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.WorkspaceService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to set the active workspace.
+ * Invalidates workspace queries on success.
+ */
+export function useSetActiveWorkspaceMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(setActiveWorkspace, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.WorkspaceService"] });
     },
   });
 }
@@ -420,6 +477,99 @@ export function useReopenReviewCommentMutation() {
   return useMutation(reopenReviewComment, {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to track a new pull request.
+ * Invalidates PR list on success.
+ */
+export function useTrackPullRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(trackPullRequest, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.PrManagementService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to run auto-fix immediately on a tracked PR.
+ * Invalidates PR and task queries on success.
+ */
+export function useRunAutoFixNowMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(runAutoFixNow, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.PrManagementService"] });
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to enable or disable auto-fix policy on a tracked PR.
+ * Invalidates PR list on success.
+ */
+export function useSetAutoFixPolicyMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(setAutoFixPolicy, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.PrManagementService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to resolve a review assist item.
+ * Invalidates review assist queries on success.
+ */
+export function useResolveReviewAssistItemMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(resolveReviewAssistItem, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewAssistService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to cancel a unit task (for QUEUED or IN_PROGRESS tasks).
+ * Invalidates the task list on success.
+ */
+export function useCancelUnitTaskMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(cancelUnitTask, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to cancel a subtask.
+ * Invalidates the task list on success.
+ */
+export function useCancelSubTaskMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(cancelSubTask, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+    },
+  });
+}
+
+/**
+ * Mutation to stop an agent session.
+ * Invalidates session and task queries on success.
+ */
+export function useStopAgentSessionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation(stopAgentSession, {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
+      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
     },
   });
 }

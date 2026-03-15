@@ -46,28 +46,55 @@ When implementation details differ from documented contracts, follow-up sync wor
 - UI behavior is keyboard-first and includes multiline submit (`Cmd+Enter`) and tab lifecycle shortcuts.
 - Dialog UI surfaces close with `Esc`, and forms with a single critical input auto-focus when shown.
 
-## Implementation Status (as of 2026-03-15)
+## Implementation Status (as of 2026-03-16)
 
 ### Proto (`protos/dexdex/v1/dexdex.proto`)
 - `CreateUnitTaskRequest` is prompt-first and uses workspace/repository-group/agent/plan-mode fields.
 - `AgentCapability` includes `supports_plan_mode`.
 - `SubmitPlanDecision` supports explicit decision actions.
 - Event stream payloads are workspace-scoped and typed.
+- All core enums implemented: `WorkspaceType`, `BadgeColorKey`, `ReviewAssistStatus`, `ReviewInlineCommentStatus`, `DiffSide`.
+- All service methods implemented across `WorkspaceService`, `TaskService`, `SessionService`, `PrManagementService`, `ReviewAssistService`, `BadgeThemeService`, and `EventStreamService`.
 
 ### Main Server (`servers/dexdex-main-server`)
 - Repository and repository-group contracts are normalized and execution-order-aware.
 - Workspace settings and task orchestration contracts are Connect RPC-first.
 - Plan-mode and capability validations enforce typed error outcomes.
+- PR auto-detection from agent session output after execution completes.
+- Review assist items auto-created from GitHub review comments on CHANGES_REQUESTED.
+- ReviewAssistUpdatedPayload added to event streaming.
+- GitHub client supports CreatePullRequest and ListPullRequestComments.
+- Workspace CRUD operations: `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`, `SetActiveWorkspace`.
+- Task cancellation and subtask management: `CancelUnitTask`, `CancelSubTask`, `CreateSubTask`, `ListSubTaskCommits`, `RetrySubTask`.
+- PR tracking and auto-fix control: `TrackPullRequest`, `RunAutoFixNow`, `SetAutoFixPolicy`.
+- Review assist resolution: `ResolveReviewAssistItem`.
+- Badge theme management: `ListBadgeThemes`, `UpsertBadgeTheme`.
+- Agent session lifecycle: `ListAgentSessions`, `GetAgentSessionLog`, `StopAgentSession`.
 
 ### Worker Server (`servers/dexdex-worker-server`)
 - Agent capability and execution contracts expose plan-mode support boundaries.
 - Execution remains repository-group scoped and worktree-only.
 - Worker logs and outputs are normalized for main-server and client consumption.
+- Agent process execution includes timeout enforcement, idle detection, and stderr capture.
+- Exit codes are mapped to specific error messages for diagnostic clarity.
+- Commit chain extraction from worktree after successful execution with stream delivery.
 
 ### Desktop App (`apps/dexdex`)
 - Task creation and settings flows are aligned with workspace/repository-group/agent contracts.
 - Plan-mode visibility follows capability metadata.
 - Dialog surfaces close with `Esc` and single critical-input forms auto-focus on open.
+- Review assist Accept action creates auto-fix UnitTask via CreateUnitTask API.
+- Global shortcut navigates to waiting session context with input form auto-focus.
+- Tauri backend implements credential management (file-based) and tray status IPC.
+- Cancel/Stop buttons for running UnitTask and SubTask flows with immediate propagation.
+- Workspace switching with dynamic selector for workspace-scoped navigation; all components use active workspace from app store with query invalidation on switch.
+- Sidebar workspace dropdown includes click-outside-to-close and create workspace action.
+- PR management list and detail pages with track/auto-fix controls.
+- PR detail page includes review comment actions (resolve/reopen/delete/edit), new comment form with file/side/line anchoring, and commit chain display from linked subtasks.
+- Inbox page with real notification data from event stream.
+- Enhanced keyboard shortcuts fully wired: `Cmd+T` (new task), `Cmd+W` (close tab), `J`/`K` (navigate list with visual selection), `A` (approve plan), `V` (revise plan), `Shift+X` (reject plan/cancel task), `Cmd+Shift+[`/`]` (switch tabs).
+- Diff viewer component with unified/split view toggle, file-level navigation for multi-file diffs, and line-level comment anchor buttons.
+- Draft form state preservation via Zustand store with localStorage persistence per workspace.
 
 ## Developer Setup and Validation
 Repository layout for DexDex in this monorepo:

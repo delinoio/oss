@@ -89,12 +89,25 @@ type Store interface {
 	// Badge theme operations
 	GetBadgeTheme(workspaceID string) *dexdexv1.BadgeTheme
 	SetBadgeTheme(workspaceID string, theme *dexdexv1.BadgeTheme)
+	ListBadgeThemes(workspaceID string) []*dexdexv1.BadgeTheme
+	UpsertBadgeTheme(workspaceID, themeName string, colorKey dexdexv1.BadgeColorKey) *dexdexv1.BadgeTheme
 	// Review comment CRUD operations
 	GetReviewComment(workspaceID, reviewCommentID string) (*dexdexv1.ReviewComment, error)
 	CreateReviewComment(workspaceID, prTrackingID string, comment *dexdexv1.ReviewComment)
 	UpdateReviewComment(workspaceID, reviewCommentID, body string) (*dexdexv1.ReviewComment, error)
 	DeleteReviewComment(workspaceID, reviewCommentID string) error
 	UpdateReviewCommentStatus(workspaceID, reviewCommentID string, status dexdexv1.ReviewCommentStatus) (*dexdexv1.ReviewComment, error)
+	// Workspace CRUD operations
+	CreateWorkspace(name string, wsType dexdexv1.WorkspaceType) *dexdexv1.Workspace
+	UpdateWorkspace(workspaceID, name string) (*dexdexv1.Workspace, error)
+	DeleteWorkspace(workspaceID string) error
+	// Review assist operations
+	GetReviewAssistItem(workspaceID, reviewAssistID string) (*dexdexv1.ReviewAssistItem, error)
+	UpdateReviewAssistItemStatus(workspaceID, reviewAssistID string, status dexdexv1.ReviewAssistStatus) (*dexdexv1.ReviewAssistItem, error)
+	// PR auto-fix policy operations
+	SetAutoFixPolicy(workspaceID, prTrackingID string, enabled bool) (*dexdexv1.PullRequestRecord, error)
+	// Session listing operations
+	ListSessionSummaries(workspaceID, unitTaskID string) []*dexdexv1.SessionSummary
 }
 
 // MemoryStore is a thread-safe in-memory implementation of Store.
@@ -993,4 +1006,186 @@ func (s *MemoryStore) UpdateReviewCommentStatus(workspaceID, reviewCommentID str
 		}
 	}
 	return nil, fmt.Errorf("review comment not found: workspace=%s id=%s", workspaceID, reviewCommentID)
+}
+
+// CreateWorkspace creates a new workspace with a generated ID.
+func (s *MemoryStore) CreateWorkspace(name string, wsType dexdexv1.WorkspaceType) *dexdexv1.Workspace {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ws := &dexdexv1.Workspace{
+		WorkspaceId: fmt.Sprintf("ws-%d", len(s.workspaces)+1),
+		Name:        name,
+		Type:        wsType,
+		CreatedAt:   timestamppb.Now(),
+	}
+	s.workspaces[ws.WorkspaceId] = ws
+	return ws
+}
+
+// UpdateWorkspace updates the name of a workspace.
+func (s *MemoryStore) UpdateWorkspace(workspaceID, name string) (*dexdexv1.Workspace, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ws, ok := s.workspaces[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+	ws.Name = name
+	return ws, nil
+}
+
+// DeleteWorkspace removes a workspace if it has no active tasks.
+func (s *MemoryStore) DeleteWorkspace(workspaceID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.workspaces[workspaceID]; !ok {
+		return fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+
+	if tasks, ok := s.unitTasks[workspaceID]; ok {
+		for _, t := range tasks {
+			if t.Status == dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_IN_PROGRESS ||
+				t.Status == dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED {
+				return fmt.Errorf("workspace has active tasks, cannot delete: %s", workspaceID)
+			}
+		}
+	}
+
+	delete(s.workspaces, workspaceID)
+	delete(s.unitTasks, workspaceID)
+	delete(s.subTasks, workspaceID)
+	delete(s.notifications, workspaceID)
+	delete(s.sessionSummaries, workspaceID)
+	delete(s.repositories, workspaceID)
+	delete(s.repoGroups, workspaceID)
+	delete(s.workspaceSettings, workspaceID)
+	delete(s.prRecords, workspaceID)
+	delete(s.reviewAssist, workspaceID)
+	delete(s.reviewComments, workspaceID)
+	delete(s.worktreeAssignments, workspaceID)
+	delete(s.badgeThemes, workspaceID)
+	return nil
+}
+
+// ListBadgeThemes returns all badge themes for a workspace.
+func (s *MemoryStore) ListBadgeThemes(workspaceID string) []*dexdexv1.BadgeTheme {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	theme := s.badgeThemes[workspaceID]
+	if theme == nil {
+		return nil
+	}
+	return []*dexdexv1.BadgeTheme{theme}
+}
+
+// UpsertBadgeTheme creates or updates a badge theme.
+func (s *MemoryStore) UpsertBadgeTheme(workspaceID, themeName string, colorKey dexdexv1.BadgeColorKey) *dexdexv1.BadgeTheme {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	theme := &dexdexv1.BadgeTheme{
+		BadgeThemeId: fmt.Sprintf("badge-%s-%s", workspaceID, themeName),
+		ThemeName:    themeName,
+		ColorKey:     colorKey,
+		WorkspaceId:  workspaceID,
+	}
+	s.badgeThemes[workspaceID] = theme
+	return theme
+}
+
+// GetReviewAssistItem returns a review assist item by ID.
+func (s *MemoryStore) GetReviewAssistItem(workspaceID, reviewAssistID string) (*dexdexv1.ReviewAssistItem, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	unitTaskItems, ok := s.reviewAssist[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("review assist item not found: workspace=%s id=%s", workspaceID, reviewAssistID)
+	}
+	for _, items := range unitTaskItems {
+		for _, item := range items {
+			if item.ReviewAssistId == reviewAssistID {
+				return item, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("review assist item not found: workspace=%s id=%s", workspaceID, reviewAssistID)
+}
+
+// UpdateReviewAssistItemStatus updates the status of a review assist item.
+func (s *MemoryStore) UpdateReviewAssistItemStatus(workspaceID, reviewAssistID string, status dexdexv1.ReviewAssistStatus) (*dexdexv1.ReviewAssistItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	unitTaskItems, ok := s.reviewAssist[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("review assist item not found: workspace=%s id=%s", workspaceID, reviewAssistID)
+	}
+	for _, items := range unitTaskItems {
+		for _, item := range items {
+			if item.ReviewAssistId == reviewAssistID {
+				item.Status = status
+				return item, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("review assist item not found: workspace=%s id=%s", workspaceID, reviewAssistID)
+}
+
+// SetAutoFixPolicy updates the auto-fix policy on a pull request record.
+func (s *MemoryStore) SetAutoFixPolicy(workspaceID, prTrackingID string, enabled bool) (*dexdexv1.PullRequestRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prMap, ok := s.prRecords[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr, ok := prMap[prTrackingID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr.AutoFixEnabled = enabled
+	pr.UpdatedAt = timestamppb.Now()
+	return pr, nil
+}
+
+// ListSessionSummaries returns session summaries for a workspace, optionally filtered by unitTaskID.
+func (s *MemoryStore) ListSessionSummaries(workspaceID, unitTaskID string) []*dexdexv1.SessionSummary {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	wsSessionMap, ok := s.sessionSummaries[workspaceID]
+	if !ok {
+		return nil
+	}
+
+	var result []*dexdexv1.SessionSummary
+	if unitTaskID == "" {
+		for _, summary := range wsSessionMap {
+			result = append(result, summary)
+		}
+		return result
+	}
+
+	subTaskMap, ok := s.subTasks[workspaceID]
+	if !ok {
+		return nil
+	}
+	sessionIDs := make(map[string]bool)
+	for _, st := range subTaskMap {
+		if st.UnitTaskId == unitTaskID && st.SessionId != "" {
+			sessionIDs[st.SessionId] = true
+		}
+	}
+	for sessionID, summary := range wsSessionMap {
+		if sessionIDs[sessionID] {
+			result = append(result, summary)
+		}
+	}
+	return result
 }

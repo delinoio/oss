@@ -18,3 +18,18 @@ export const listPullRequests = PrManagementService.method.listPullRequests;
  * @generated from rpc dexdex.v1.PrManagementService.UpdatePullRequest
  */
 export const updatePullRequest = PrManagementService.method.updatePullRequest;
+
+/**
+ * @generated from rpc dexdex.v1.PrManagementService.TrackPullRequest
+ */
+export const trackPullRequest = PrManagementService.method.trackPullRequest;
+
+/**
+ * @generated from rpc dexdex.v1.PrManagementService.RunAutoFixNow
+ */
+export const runAutoFixNow = PrManagementService.method.runAutoFixNow;
+
+/**
+ * @generated from rpc dexdex.v1.PrManagementService.SetAutoFixPolicy
+ */
+export const setAutoFixPolicy = PrManagementService.method.setAutoFixPolicy;

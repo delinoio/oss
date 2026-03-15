@@ -8,3 +8,13 @@ import { BadgeThemeService } from "./dexdex_pb";
  * @generated from rpc dexdex.v1.BadgeThemeService.GetBadgeTheme
  */
 export const getBadgeTheme = BadgeThemeService.method.getBadgeTheme;
+
+/**
+ * @generated from rpc dexdex.v1.BadgeThemeService.ListBadgeThemes
+ */
+export const listBadgeThemes = BadgeThemeService.method.listBadgeThemes;
+
+/**
+ * @generated from rpc dexdex.v1.BadgeThemeService.UpsertBadgeTheme
+ */
+export const upsertBadgeTheme = BadgeThemeService.method.upsertBadgeTheme;

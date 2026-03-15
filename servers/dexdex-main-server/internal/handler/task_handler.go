@@ -334,6 +334,222 @@ func cloneSubTask(src *dexdexv1.SubTask) *dexdexv1.SubTask {
 	}
 }
 
+// CancelUnitTask cancels a unit task and all its active sub tasks.
+func (h *TaskHandler) CancelUnitTask(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.CancelUnitTaskRequest],
+) (*connect.Response[dexdexv1.CancelUnitTaskResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	taskID := req.Msg.UnitTaskId
+
+	h.logger.Info("CancelUnitTask called", "workspace_id", workspaceID, "unit_task_id", taskID)
+
+	task, err := h.store.GetUnitTask(workspaceID, taskID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	// Validate cancellable status
+	switch task.Status {
+	case dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED,
+		dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_IN_PROGRESS,
+		dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_ACTION_REQUIRED,
+		dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_BLOCKED:
+		// OK to cancel
+	default:
+		err := fmt.Errorf("unit task %s cannot be cancelled in status %s", taskID, task.Status.String())
+		h.logger.Warn("cannot cancel unit task", "workspace_id", workspaceID, "unit_task_id", taskID, "status", task.Status.String())
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+
+	// Cancel all active sub tasks
+	subTasks := h.store.ListSubTasks(workspaceID, taskID)
+	for _, st := range subTasks {
+		if st.Status == dexdexv1.SubTaskStatus_SUB_TASK_STATUS_IN_PROGRESS ||
+			st.Status == dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED ||
+			st.Status == dexdexv1.SubTaskStatus_SUB_TASK_STATUS_WAITING_FOR_PLAN_APPROVAL ||
+			st.Status == dexdexv1.SubTaskStatus_SUB_TASK_STATUS_WAITING_FOR_USER_INPUT {
+			if h.dispatcher != nil {
+				_ = h.dispatcher.CancelSubTask(st.SubTaskId)
+			}
+			updated := cloneSubTask(st)
+			updated.Status = dexdexv1.SubTaskStatus_SUB_TASK_STATUS_CANCELLED
+			updated.CompletionReason = dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_CANCELLED_BY_USER
+			h.store.UpsertSubTask(workspaceID, updated)
+			h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: updated})
+		}
+	}
+
+	// Update unit task status to CANCELLED
+	updatedTask, _ := h.store.UpdateUnitTaskStatus(workspaceID, taskID, dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_CANCELLED)
+	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_TASK_UPDATED, &stream.TaskPayload{Task: updatedTask})
+
+	h.logger.Info("CancelUnitTask completed", "workspace_id", workspaceID, "unit_task_id", taskID)
+
+	return connect.NewResponse(&dexdexv1.CancelUnitTaskResponse{
+		UnitTask: updatedTask,
+	}), nil
+}
+
+// CancelSubTask cancels a single sub task.
+func (h *TaskHandler) CancelSubTask(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.CancelSubTaskRequest],
+) (*connect.Response[dexdexv1.CancelSubTaskResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	subTaskID := req.Msg.SubTaskId
+
+	h.logger.Info("CancelSubTask called", "workspace_id", workspaceID, "sub_task_id", subTaskID)
+
+	subTask, err := h.store.GetSubTask(workspaceID, subTaskID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	if subTask.Status != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_IN_PROGRESS &&
+		subTask.Status != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED &&
+		subTask.Status != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_WAITING_FOR_PLAN_APPROVAL &&
+		subTask.Status != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_WAITING_FOR_USER_INPUT {
+		err := fmt.Errorf("sub task %s cannot be cancelled in status %s", subTaskID, subTask.Status.String())
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+
+	if h.dispatcher != nil {
+		_ = h.dispatcher.CancelSubTask(subTaskID)
+	}
+
+	updated := cloneSubTask(subTask)
+	updated.Status = dexdexv1.SubTaskStatus_SUB_TASK_STATUS_CANCELLED
+	updated.CompletionReason = dexdexv1.SubTaskCompletionReason_SUB_TASK_COMPLETION_REASON_CANCELLED_BY_USER
+	h.store.UpsertSubTask(workspaceID, updated)
+	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: updated})
+
+	h.logger.Info("CancelSubTask completed", "workspace_id", workspaceID, "sub_task_id", subTaskID)
+
+	return connect.NewResponse(&dexdexv1.CancelSubTaskResponse{
+		SubTask: updated,
+	}), nil
+}
+
+// CreateSubTask creates a new sub task for an existing unit task.
+func (h *TaskHandler) CreateSubTask(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.CreateSubTaskRequest],
+) (*connect.Response[dexdexv1.CreateSubTaskResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	unitTaskID := req.Msg.UnitTaskId
+	subTaskType := req.Msg.Type
+	prompt := strings.TrimSpace(req.Msg.Prompt)
+
+	h.logger.Info("CreateSubTask called", "workspace_id", workspaceID, "unit_task_id", unitTaskID, "type", subTaskType.String())
+
+	task, err := h.store.GetUnitTask(workspaceID, unitTaskID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	if prompt == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("prompt is required"))
+	}
+
+	subTask := &dexdexv1.SubTask{
+		SubTaskId:  nextHandlerID(),
+		UnitTaskId: unitTaskID,
+		Type:       subTaskType,
+		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+	}
+	h.store.UpsertSubTask(workspaceID, subTask)
+	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: subTask})
+
+	// Dispatch execution
+	if h.dispatcher != nil {
+		repoGroup, repoErr := h.store.GetRepositoryGroup(workspaceID, task.RepositoryGroupId)
+		if repoErr == nil {
+			go func() {
+				if dispatchErr := h.dispatcher.DispatchExecution(context.Background(), workspaceID, task, repoGroup, task.AgentCliType); dispatchErr != nil {
+					h.logger.Error("failed to dispatch sub task execution", "error", dispatchErr)
+				}
+			}()
+		}
+	}
+
+	return connect.NewResponse(&dexdexv1.CreateSubTaskResponse{
+		SubTask: subTask,
+	}), nil
+}
+
+// ListSubTaskCommits returns commit chain metadata for a sub task.
+func (h *TaskHandler) ListSubTaskCommits(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.ListSubTaskCommitsRequest],
+) (*connect.Response[dexdexv1.ListSubTaskCommitsResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	subTaskID := req.Msg.SubTaskId
+
+	h.logger.Info("ListSubTaskCommits called", "workspace_id", workspaceID, "sub_task_id", subTaskID)
+
+	subTask, err := h.store.GetSubTask(workspaceID, subTaskID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	return connect.NewResponse(&dexdexv1.ListSubTaskCommitsResponse{
+		Commits: subTask.CommitChain,
+	}), nil
+}
+
+// RetrySubTask creates a new MANUAL_RETRY sub task for a completed/failed sub task.
+func (h *TaskHandler) RetrySubTask(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.RetrySubTaskRequest],
+) (*connect.Response[dexdexv1.RetrySubTaskResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	subTaskID := req.Msg.SubTaskId
+
+	h.logger.Info("RetrySubTask called", "workspace_id", workspaceID, "sub_task_id", subTaskID)
+
+	origSubTask, err := h.store.GetSubTask(workspaceID, subTaskID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	if origSubTask.Status != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_COMPLETED &&
+		origSubTask.Status != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_FAILED &&
+		origSubTask.Status != dexdexv1.SubTaskStatus_SUB_TASK_STATUS_CANCELLED {
+		err := fmt.Errorf("sub task %s is not in a terminal state", subTaskID)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+
+	task, taskErr := h.store.GetUnitTask(workspaceID, origSubTask.UnitTaskId)
+	if taskErr != nil {
+		return nil, connect.NewError(connect.CodeNotFound, taskErr)
+	}
+
+	retrySubTask := &dexdexv1.SubTask{
+		SubTaskId:  nextHandlerID(),
+		UnitTaskId: origSubTask.UnitTaskId,
+		Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_MANUAL_RETRY,
+		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+	}
+	h.store.UpsertSubTask(workspaceID, retrySubTask)
+	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: retrySubTask})
+
+	if h.dispatcher != nil {
+		repoGroup, repoErr := h.store.GetRepositoryGroup(workspaceID, task.RepositoryGroupId)
+		if repoErr == nil {
+			go func() {
+				if dispatchErr := h.dispatcher.DispatchExecution(context.Background(), workspaceID, task, repoGroup, task.AgentCliType); dispatchErr != nil {
+					h.logger.Error("failed to dispatch retry execution", "error", dispatchErr)
+				}
+			}()
+		}
+	}
+
+	return connect.NewResponse(&dexdexv1.RetrySubTaskResponse{
+		SubTask: retrySubTask,
+	}), nil
+}
+
 var handlerIDCounter uint64
 
 func nextHandlerID() string {

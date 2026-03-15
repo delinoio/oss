@@ -3,13 +3,14 @@
  */
 
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
-import { AgentCliType } from "../../gen/v1/dexdex_pb";
+import { AgentCliType, WorkspaceType } from "../../gen/v1/dexdex_pb";
 import {
   useCreateRepositoryGroupMutation,
   useCreateRepositoryMutation,
   useDeleteRepositoryGroupMutation,
   useDeleteRepositoryMutation,
   useGetBadgeTheme,
+  useGetWorkspace,
   useGetWorkspaceSettings,
   useListRepositories,
   useListRepositoryGroups,
@@ -20,8 +21,6 @@ import {
 } from "../../hooks/use-dexdex-queries";
 import { useAppStore } from "../../stores/app-store";
 import { CredentialManager } from "./credential-manager";
-
-const WORKSPACE_ID = "workspace-default";
 
 type SettingsTab = "general" | "agents" | "repository-groups" | "repositories";
 
@@ -43,14 +42,15 @@ const FALLBACK_AGENT_OPTIONS: AgentOption[] = [
 ];
 
 export function SettingsPage() {
-  const { theme, setTheme } = useAppStore();
+  const { theme, setTheme, activeWorkspaceId } = useAppStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 
-  const repositoriesQuery = useListRepositories(WORKSPACE_ID);
-  const repositoryGroupsQuery = useListRepositoryGroups(WORKSPACE_ID);
-  const capabilitiesQuery = useListSessionCapabilities(WORKSPACE_ID);
-  const workspaceSettingsQuery = useGetWorkspaceSettings(WORKSPACE_ID);
-  const badgeThemeQuery = useGetBadgeTheme(WORKSPACE_ID);
+  const workspaceQuery = useGetWorkspace(activeWorkspaceId);
+  const repositoriesQuery = useListRepositories(activeWorkspaceId);
+  const repositoryGroupsQuery = useListRepositoryGroups(activeWorkspaceId);
+  const capabilitiesQuery = useListSessionCapabilities(activeWorkspaceId);
+  const workspaceSettingsQuery = useGetWorkspaceSettings(activeWorkspaceId);
+  const badgeThemeQuery = useGetBadgeTheme(activeWorkspaceId);
 
   const createRepositoryMutation = useCreateRepositoryMutation();
   const updateRepositoryMutation = useUpdateRepositoryMutation();
@@ -160,7 +160,7 @@ export function SettingsPage() {
     const repositoryUrl = newRepositoryUrl.trim();
     if (!repositoryUrl) return;
     createRepositoryMutation.mutate(
-      { workspaceId: WORKSPACE_ID, repositoryUrl },
+      { workspaceId: activeWorkspaceId, repositoryUrl },
       {
         onSuccess: () => {
           setNewRepositoryUrl("");
@@ -173,7 +173,7 @@ export function SettingsPage() {
     const repositoryUrl = (repositoryEdits[repositoryId] ?? "").trim();
     if (!repositoryUrl) return;
     updateRepositoryMutation.mutate({
-      workspaceId: WORKSPACE_ID,
+      workspaceId: activeWorkspaceId,
       repositoryId,
       repositoryUrl,
     });
@@ -181,7 +181,7 @@ export function SettingsPage() {
 
   function handleDeleteRepository(repositoryId: string) {
     deleteRepositoryMutation.mutate({
-      workspaceId: WORKSPACE_ID,
+      workspaceId: activeWorkspaceId,
       repositoryId,
     });
   }
@@ -189,7 +189,7 @@ export function SettingsPage() {
   function handleSaveDefaultAgent() {
     if (selectedDefaultAgent === AgentCliType.UNSPECIFIED) return;
     updateWorkspaceSettingsMutation.mutate({
-      workspaceId: WORKSPACE_ID,
+      workspaceId: activeWorkspaceId,
       defaultAgentCliType: selectedDefaultAgent,
     });
   }
@@ -232,7 +232,7 @@ export function SettingsPage() {
     if (editingGroupId) {
       updateRepositoryGroupMutation.mutate(
         {
-          workspaceId: WORKSPACE_ID,
+          workspaceId: activeWorkspaceId,
           repositoryGroupId: editingGroupId,
           members,
         },
@@ -247,7 +247,7 @@ export function SettingsPage() {
 
     createRepositoryGroupMutation.mutate(
       {
-        workspaceId: WORKSPACE_ID,
+        workspaceId: activeWorkspaceId,
         repositoryGroupId,
         members,
       },
@@ -261,7 +261,7 @@ export function SettingsPage() {
 
   function handleDeleteRepositoryGroup(repositoryGroupId: string) {
     deleteRepositoryGroupMutation.mutate({
-      workspaceId: WORKSPACE_ID,
+      workspaceId: activeWorkspaceId,
       repositoryGroupId,
     });
     if (editingGroupId === repositoryGroupId) {
@@ -334,6 +334,29 @@ export function SettingsPage() {
       <div style={contentStyle}>
         {activeTab === "general" && (
           <>
+            <div style={sectionStyle}>
+              <h2 style={sectionTitleStyle}>Workspace</h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }} data-testid="workspace-info">
+                <InfoRow label="Name" value={workspaceQuery.data?.workspace?.name || activeWorkspaceId} />
+                <InfoRow label="Type" value={toWorkspaceTypeLabel(workspaceQuery.data?.workspace?.type)} />
+                <InfoRow label="Workspace ID" value={activeWorkspaceId} />
+              </div>
+            </div>
+
+            <div style={sectionStyle}>
+              <h2 style={sectionTitleStyle}>Server Connection</h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }} data-testid="server-connection-info">
+                <InfoRow
+                  label="Status"
+                  value={workspaceQuery.isError ? "Disconnected" : workspaceQuery.isLoading ? "Connecting..." : "Connected"}
+                />
+                <InfoRow
+                  label="Default Agent"
+                  value={toAgentDisplayName(workspaceSettingsQuery.data?.settings?.defaultAgentCliType ?? AgentCliType.UNSPECIFIED)}
+                />
+              </div>
+            </div>
+
             <div style={sectionStyle}>
               <h2 style={sectionTitleStyle}>Appearance</h2>
               <div style={{ display: "flex", gap: "var(--space-2)" }}>
@@ -659,6 +682,26 @@ const dangerButtonStyle: CSSProperties = {
   border: "1px solid var(--color-status-failed)",
   color: "var(--color-status-failed)",
 };
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", gap: "var(--space-3)", fontSize: "var(--font-size-sm)" }}>
+      <span style={{ color: "var(--color-text-tertiary)", minWidth: 120 }}>{label}</span>
+      <span style={{ color: "var(--color-text-primary)", fontWeight: 500 }}>{value}</span>
+    </div>
+  );
+}
+
+function toWorkspaceTypeLabel(type: WorkspaceType | undefined): string {
+  switch (type) {
+    case WorkspaceType.LOCAL_ENDPOINT:
+      return "Local Endpoint";
+    case WorkspaceType.REMOTE_ENDPOINT:
+      return "Remote Endpoint";
+    default:
+      return "Unknown";
+  }
+}
 
 function toAgentDisplayName(agent: AgentCliType): string {
   switch (agent) {

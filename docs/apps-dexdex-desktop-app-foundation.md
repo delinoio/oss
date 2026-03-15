@@ -31,14 +31,24 @@ Client architecture:
 - Stream subscriber with sequence resume behavior.
 
 Behavior contracts:
-- Workspace switching is first-class and workspace-scoped.
+- Workspace switching is first-class and workspace-scoped, with a dynamic selector for switching between workspaces.
 - Multi-tab UI preserves tab order, active tab, and draft form state by workspace.
 - Event stream subscription reconnects with sequence resume.
 - Plan mode UX supports `Approve`, `Revise`, and `Reject` decision actions.
 - Inline comment UX supports create/edit/resolve/reopen/delete with stream synchronization.
 - Multiline submit contract: `Enter` newline, `Cmd+Enter` submit.
-- Stop actions are immediate for running UnitTask and SubTask flows.
+- Cancel/Stop controls provide immediate cancellation for running UnitTask and SubTask flows via `CancelUnitTask` and `CancelSubTask` APIs.
 - Approved diff flow exposes `Create PR` action and uses commit-chain metadata.
+- PR management pages: list view of tracked PRs, detail view with auto-fix controls (`RunAutoFixNow`, `SetAutoFixPolicy`), and `TrackPullRequest` action.
+- Inbox page renders real notification data from the event stream with read/unread state management.
+- Enhanced keyboard shortcuts:
+  - `Cmd+T`: create new task
+  - `Cmd+W`: close active tab
+  - `J` / `K`: navigate up/down in list views
+  - `A`: approve plan or review item
+  - `V`: open diff viewer for selected commit
+  - `Shift+X`: cancel running task
+- Diff viewer component for inline review of commit changes with side-by-side and unified modes.
 
 Data and UX invariants:
 - `WorkspaceSettings.default_agent_cli_type` is the default agent for new task creation.

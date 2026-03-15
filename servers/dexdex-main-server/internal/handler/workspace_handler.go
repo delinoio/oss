@@ -136,3 +136,90 @@ func (h *WorkspaceHandler) UpdateWorkspaceSettings(
 		Settings: settings,
 	}), nil
 }
+
+// CreateWorkspace creates a new workspace.
+func (h *WorkspaceHandler) CreateWorkspace(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.CreateWorkspaceRequest],
+) (*connect.Response[dexdexv1.CreateWorkspaceResponse], error) {
+	name := strings.TrimSpace(req.Msg.Name)
+	if name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("name is required"))
+	}
+
+	wsType := req.Msg.Type
+	if wsType == dexdexv1.WorkspaceType_WORKSPACE_TYPE_UNSPECIFIED {
+		wsType = dexdexv1.WorkspaceType_WORKSPACE_TYPE_LOCAL_ENDPOINT
+	}
+
+	h.logger.Info("CreateWorkspace called", "name", name, "type", wsType.String())
+
+	ws := h.store.CreateWorkspace(name, wsType)
+
+	h.logger.Info("CreateWorkspace completed", "workspace_id", ws.WorkspaceId)
+
+	return connect.NewResponse(&dexdexv1.CreateWorkspaceResponse{
+		Workspace: ws,
+	}), nil
+}
+
+// UpdateWorkspace updates a workspace's name.
+func (h *WorkspaceHandler) UpdateWorkspace(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.UpdateWorkspaceRequest],
+) (*connect.Response[dexdexv1.UpdateWorkspaceResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+	name := strings.TrimSpace(req.Msg.Name)
+	if name == "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("name is required"))
+	}
+
+	h.logger.Info("UpdateWorkspace called", "workspace_id", workspaceID, "name", name)
+
+	ws, err := h.store.UpdateWorkspace(workspaceID, name)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	return connect.NewResponse(&dexdexv1.UpdateWorkspaceResponse{
+		Workspace: ws,
+	}), nil
+}
+
+// DeleteWorkspace removes a workspace.
+func (h *WorkspaceHandler) DeleteWorkspace(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.DeleteWorkspaceRequest],
+) (*connect.Response[dexdexv1.DeleteWorkspaceResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+
+	h.logger.Info("DeleteWorkspace called", "workspace_id", workspaceID)
+
+	if err := h.store.DeleteWorkspace(workspaceID); err != nil {
+		if strings.Contains(err.Error(), "active tasks") {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		}
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	return connect.NewResponse(&dexdexv1.DeleteWorkspaceResponse{}), nil
+}
+
+// SetActiveWorkspace sets the active workspace.
+func (h *WorkspaceHandler) SetActiveWorkspace(
+	ctx context.Context,
+	req *connect.Request[dexdexv1.SetActiveWorkspaceRequest],
+) (*connect.Response[dexdexv1.SetActiveWorkspaceResponse], error) {
+	workspaceID := req.Msg.WorkspaceId
+
+	h.logger.Info("SetActiveWorkspace called", "workspace_id", workspaceID)
+
+	ws, err := h.store.GetWorkspace(workspaceID)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+
+	return connect.NewResponse(&dexdexv1.SetActiveWorkspaceResponse{
+		Workspace: ws,
+	}), nil
+}

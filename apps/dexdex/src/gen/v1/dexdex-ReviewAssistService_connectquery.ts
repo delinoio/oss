@@ -8,3 +8,8 @@ import { ReviewAssistService } from "./dexdex_pb";
  * @generated from rpc dexdex.v1.ReviewAssistService.ListReviewAssistItems
  */
 export const listReviewAssistItems = ReviewAssistService.method.listReviewAssistItems;
+
+/**
+ * @generated from rpc dexdex.v1.ReviewAssistService.ResolveReviewAssistItem
+ */
+export const resolveReviewAssistItem = ReviewAssistService.method.resolveReviewAssistItem;
