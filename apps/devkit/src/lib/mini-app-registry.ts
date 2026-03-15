@@ -13,7 +13,6 @@ export enum DevkitRoute {
 
 export enum MiniAppStatus {
   Placeholder = "placeholder",
-  Live = "live",
 }
 
 export enum MiniAppIntegrationMode {
@@ -51,7 +50,7 @@ const miniAppRegistrations: readonly MiniAppRegistration[] = [
     id: DevkitMiniAppId.Thenv,
     title: "Thenv",
     route: DevkitRoute.Thenv,
-    status: MiniAppStatus.Live,
+    status: MiniAppStatus.Placeholder,
     integrationMode: MiniAppIntegrationMode.BackendCoupled,
     docsPath: "docs/apps-thenv-web-console-foundation.md",
   },

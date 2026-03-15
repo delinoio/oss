@@ -3,19 +3,20 @@ import { render, screen } from "@testing-library/react";
 import HomePage from "./page";
 
 describe("HomePage", () => {
-  it("renders scaffold-first status copy for placeholder and live mixed state", () => {
+  it("renders shell-only bootstrap copy with placeholder-only mini apps", () => {
     render(<HomePage />);
 
-    expect(
-      screen.getByRole("heading", { name: "Scaffold-first rollout is active" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Shell-only bootstrap is active" })).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Devkit keeps canonical routes active at \/apps\/<id> with enum-based registration\. Commit Tracker and Remote File Picker are placeholder routes while Thenv remains live\./,
+        /Devkit routes are now reserved with enum-based registration and static pages for each canonical mini app\./,
       ),
     ).toBeInTheDocument();
 
-    expect(screen.getAllByText("Placeholder")).toHaveLength(2);
-    expect(screen.getAllByText("Live")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Commit Tracker (placeholder)" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Remote File Picker (placeholder)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Thenv (placeholder)" })).toBeInTheDocument();
   });
 });

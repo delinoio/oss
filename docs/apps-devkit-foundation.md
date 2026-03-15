@@ -21,7 +21,8 @@
 - Registration status contract:
   - `commit-tracker`: `placeholder`
   - `remote-file-picker`: `placeholder`
-  - `thenv`: `live`
+  - `thenv`: `placeholder`
+- Current shell contract uses a simple header and inline mini app navigation links.
 - Shared shell modules must remain separate from mini app business logic.
 
 ## Storage
@@ -43,7 +44,7 @@
 
 ## Dependencies and Integrations
 - Integrates with mini app contracts documented in project-specific docs.
-- Integrates with backend APIs via stable contract boundaries when mini apps are live.
+- Backend API integrations for mini apps are deferred during scaffold-only rollout.
 
 ## Change Triggers
 - Update `docs/project-devkit.md` and this file when host routing or mini app registration contracts change.
