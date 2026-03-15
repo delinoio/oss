@@ -51,8 +51,6 @@ Each project must have one project index document and one or more domain contrac
 ### devkit-commit-tracker
 - `docs/project-devkit-commit-tracker.md`
 - `docs/apps-devkit-commit-tracker-web-app-foundation.md`
-- `docs/servers-devkit-commit-tracker-api-server-foundation.md`
-- `docs/cmds-devkit-commit-tracker-collector-foundation.md`
 
 ### thenv
 - `docs/project-thenv.md`

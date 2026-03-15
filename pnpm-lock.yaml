@@ -202,8 +202,6 @@ importers:
         specifier: ^4.2.392
         version: 4.2.392(@radix-ui/react-popover@1.1.15(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.3))(react@19.2.3))(@types/node@24.10.13)(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.3))(ts-node@10.9.2(@types/node@24.10.13)(typescript@5.9.3))(typescript@5.9.3)
 
-  servers/commit-tracker: {}
-
   servers/thenv: {}
 
 packages:

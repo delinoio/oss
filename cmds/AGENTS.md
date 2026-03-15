@@ -10,12 +10,10 @@
 - `cmds/derun`: Go tool for AI coding-agent workflow orchestration.
 - `cmds/devmon`: Go daemon CLI for recurring folder command automation.
 - `cmds/thenv`: Secure `.env` sharing CLI.
-- `cmds/commit-tracker`: Commit Tracker collector component.
 - `cmds/ttlc`: TTL compiler CLI for `.ttl` parsing/type-checking, Go code generation, `run` task execution, and cache-aware task execution contracts.
 
 ### Command Component Contract
 
-- `cmds/commit-tracker` is the `Collector` component for `devkit-commit-tracker`.
 - `cmds/thenv` is the `Cli` component for `thenv`.
 - `cmds/ttlc` command runtime is defined in `docs/cmds-ttl-foundation.md`.
 - TTL language semantics are defined in `docs/cmds-ttl-language-contract.md`.
@@ -38,6 +36,5 @@
 - Update `docs/project-devmon.md` and `docs/cmds-devmon-foundation.md` whenever devmon command shape or config contracts change.
 - Update `docs/project-derun.md` and `docs/cmds-derun-foundation.md` whenever derun command contracts change.
 - Update `docs/project-thenv.md` and `docs/cmds-thenv-cli-foundation.md` whenever thenv CLI operations or trust boundaries change.
-- Update `docs/project-devkit-commit-tracker.md` and `docs/cmds-devkit-commit-tracker-collector-foundation.md` whenever collector contracts change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-foundation.md` whenever TTL compiler command shape, cache backend, or runtime boundaries change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-language-contract.md` whenever TTL syntax/type/invalidation/code-generation contracts change.

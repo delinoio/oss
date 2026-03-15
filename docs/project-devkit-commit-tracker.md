@@ -1,32 +1,29 @@
 # Project: devkit-commit-tracker
 
 ## Goal
-Define the commit-tracker product contract across web UI, API server, and collector components.
+Keep a scaffolded Devkit mini app contract for future commit-tracker feature rollout.
 
 ## Project ID
 `devkit-commit-tracker`
 
 ## Domain Ownership Map
-- `apps/devkit/src/apps/commit-tracker` (`web-app`)
-- `servers/commit-tracker` (`api-server`)
-- `cmds/commit-tracker` (`collector`)
+- `apps/devkit/src/apps/commit-tracker` (`web-app-placeholder`)
 
 ## Domain Contract Documents
 - `docs/apps-devkit-commit-tracker-web-app-foundation.md`
-- `docs/servers-devkit-commit-tracker-api-server-foundation.md`
-- `docs/cmds-devkit-commit-tracker-collector-foundation.md`
 
 ## Cross-Domain Invariants
-- Component identifiers remain stable: `web-app`, `api-server`, `collector`.
-- Event payload shape and timestamp semantics must remain consistent from collector to API to web UI.
-- Query and filtering behavior exposed by the API must remain compatible with web UI expectations.
+- Mini app ID must remain `commit-tracker`.
+- Route contract must remain `/apps/commit-tracker`.
+- Current runtime status is placeholder-only; backend and collector components are deferred.
 
 ## Change Policy
-- Any interface update must include this index plus all impacted component docs in the same change.
-- Cross-component contract updates must keep route, API, and ingestion semantics synchronized.
+- Update this index and `docs/apps-devkit-commit-tracker-web-app-foundation.md` together for route or scaffold behavior changes.
+- Keep `docs/project-devkit.md` and `docs/apps-devkit-foundation.md` synchronized when host registration changes.
 
 ## References
 - `docs/project-devkit.md`
+- `docs/apps-devkit-foundation.md`
 - `docs/project-template.md`
 - `docs/domain-template.md`
 - `docs/README.md`

@@ -8,7 +8,6 @@
 ### Scope in This Domain
 
 - `servers/thenv`: Backend for secure environment sharing.
-- `servers/commit-tracker`: Commit Tracker API server component.
 - `servers/dexdex-main-server`: DexDex control-plane Go server scaffold.
 - `servers/dexdex-worker-server`: DexDex execution-plane Go server scaffold.
 
@@ -47,7 +46,6 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 
 - Changes to server interfaces must be synchronized with related CLI and app contracts.
 - Update `docs/project-thenv.md` and `docs/servers-thenv-server-foundation.md` for every thenv interface or trust model update.
-- Update `docs/project-devkit-commit-tracker.md` and `docs/servers-devkit-commit-tracker-api-server-foundation.md` for every commit-tracker API contract update.
 - Update `docs/project-dexdex.md` and relevant DexDex server/proto-domain docs for every server interface or ownership contract update:
   - `docs/servers-dexdex-main-server-foundation.md`
   - `docs/servers-dexdex-worker-server-foundation.md`
@@ -63,7 +61,6 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 
 ### Multi-Component Contract Sync
 
-- `servers/commit-tracker` changes must keep collector and web contracts synchronized.
 - `servers/thenv` changes must keep CLI and web-console contracts synchronized.
 - `servers/dexdex-main-server` and `servers/dexdex-worker-server` changes must keep proto, stream, PR-management, and desktop contracts synchronized.
 
