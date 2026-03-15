@@ -22,8 +22,6 @@ import {
 import { useAppStore } from "../../stores/app-store";
 import { CredentialManager } from "./credential-manager";
 
-const WORKSPACE_ID = "workspace-default";
-
 type SettingsTab = "general" | "agents" | "repository-groups" | "repositories";
 
 interface EditableGroupMember {
@@ -44,15 +42,15 @@ const FALLBACK_AGENT_OPTIONS: AgentOption[] = [
 ];
 
 export function SettingsPage() {
-  const { theme, setTheme } = useAppStore();
+  const { theme, setTheme, activeWorkspaceId } = useAppStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
 
-  const workspaceQuery = useGetWorkspace(WORKSPACE_ID);
-  const repositoriesQuery = useListRepositories(WORKSPACE_ID);
-  const repositoryGroupsQuery = useListRepositoryGroups(WORKSPACE_ID);
-  const capabilitiesQuery = useListSessionCapabilities(WORKSPACE_ID);
-  const workspaceSettingsQuery = useGetWorkspaceSettings(WORKSPACE_ID);
-  const badgeThemeQuery = useGetBadgeTheme(WORKSPACE_ID);
+  const workspaceQuery = useGetWorkspace(activeWorkspaceId);
+  const repositoriesQuery = useListRepositories(activeWorkspaceId);
+  const repositoryGroupsQuery = useListRepositoryGroups(activeWorkspaceId);
+  const capabilitiesQuery = useListSessionCapabilities(activeWorkspaceId);
+  const workspaceSettingsQuery = useGetWorkspaceSettings(activeWorkspaceId);
+  const badgeThemeQuery = useGetBadgeTheme(activeWorkspaceId);
 
   const createRepositoryMutation = useCreateRepositoryMutation();
   const updateRepositoryMutation = useUpdateRepositoryMutation();
@@ -162,7 +160,7 @@ export function SettingsPage() {
     const repositoryUrl = newRepositoryUrl.trim();
     if (!repositoryUrl) return;
     createRepositoryMutation.mutate(
-      { workspaceId: WORKSPACE_ID, repositoryUrl },
+      { workspaceId: activeWorkspaceId, repositoryUrl },
       {
         onSuccess: () => {
           setNewRepositoryUrl("");
@@ -175,7 +173,7 @@ export function SettingsPage() {
     const repositoryUrl = (repositoryEdits[repositoryId] ?? "").trim();
     if (!repositoryUrl) return;
     updateRepositoryMutation.mutate({
-      workspaceId: WORKSPACE_ID,
+      workspaceId: activeWorkspaceId,
       repositoryId,
       repositoryUrl,
     });
@@ -183,7 +181,7 @@ export function SettingsPage() {
 
   function handleDeleteRepository(repositoryId: string) {
     deleteRepositoryMutation.mutate({
-      workspaceId: WORKSPACE_ID,
+      workspaceId: activeWorkspaceId,
       repositoryId,
     });
   }
@@ -191,7 +189,7 @@ export function SettingsPage() {
   function handleSaveDefaultAgent() {
     if (selectedDefaultAgent === AgentCliType.UNSPECIFIED) return;
     updateWorkspaceSettingsMutation.mutate({
-      workspaceId: WORKSPACE_ID,
+      workspaceId: activeWorkspaceId,
       defaultAgentCliType: selectedDefaultAgent,
     });
   }
@@ -234,7 +232,7 @@ export function SettingsPage() {
     if (editingGroupId) {
       updateRepositoryGroupMutation.mutate(
         {
-          workspaceId: WORKSPACE_ID,
+          workspaceId: activeWorkspaceId,
           repositoryGroupId: editingGroupId,
           members,
         },
@@ -249,7 +247,7 @@ export function SettingsPage() {
 
     createRepositoryGroupMutation.mutate(
       {
-        workspaceId: WORKSPACE_ID,
+        workspaceId: activeWorkspaceId,
         repositoryGroupId,
         members,
       },
@@ -263,7 +261,7 @@ export function SettingsPage() {
 
   function handleDeleteRepositoryGroup(repositoryGroupId: string) {
     deleteRepositoryGroupMutation.mutate({
-      workspaceId: WORKSPACE_ID,
+      workspaceId: activeWorkspaceId,
       repositoryGroupId,
     });
     if (editingGroupId === repositoryGroupId) {
@@ -339,9 +337,9 @@ export function SettingsPage() {
             <div style={sectionStyle}>
               <h2 style={sectionTitleStyle}>Workspace</h2>
               <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }} data-testid="workspace-info">
-                <InfoRow label="Name" value={workspaceQuery.data?.workspace?.name || WORKSPACE_ID} />
+                <InfoRow label="Name" value={workspaceQuery.data?.workspace?.name || activeWorkspaceId} />
                 <InfoRow label="Type" value={toWorkspaceTypeLabel(workspaceQuery.data?.workspace?.type)} />
-                <InfoRow label="Workspace ID" value={WORKSPACE_ID} />
+                <InfoRow label="Workspace ID" value={activeWorkspaceId} />
               </div>
             </div>
 

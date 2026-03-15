@@ -2,7 +2,7 @@
  * Sidebar navigation component with Linear-style layout.
  */
 
-import { type CSSProperties, useCallback, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../stores/app-store";
 import { useListWorkspaces, useSetActiveWorkspaceMutation } from "../hooks/use-dexdex-queries";
 
@@ -37,6 +37,20 @@ export function Sidebar({ activePath, onNavigate }: SidebarProps) {
     },
     [setActiveWorkspaceId, setActiveWorkspaceMutation],
   );
+
+  useEffect(() => {
+    function handleMouseDown(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    if (dropdownOpen) {
+      document.addEventListener("mousedown", handleMouseDown);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+    };
+  }, [dropdownOpen]);
 
   if (!sidebarOpen) {
     return null;
@@ -191,6 +205,35 @@ export function Sidebar({ activePath, onNavigate }: SidebarProps) {
                 </button>
               );
             })}
+            <button
+              style={{
+                width: "100%",
+                display: "block",
+                padding: "var(--space-2) var(--space-3)",
+                fontSize: "var(--font-size-sm)",
+                color: "var(--color-accent)",
+                backgroundColor: "transparent",
+                cursor: "pointer",
+                border: "none",
+                borderTop: "1px solid var(--color-border)",
+                textAlign: "left",
+                fontWeight: 500,
+                transition: "background-color 0.1s",
+              }}
+              onClick={() => {
+                console.log("Create workspace");
+                setDropdownOpen(false);
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = "var(--color-bg-hover)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+              }}
+              data-testid="create-workspace-button"
+            >
+              + Create Workspace
+            </button>
           </div>
         )}
       </div>

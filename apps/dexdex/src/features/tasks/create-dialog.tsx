@@ -10,6 +10,7 @@ import {
   useListSessionCapabilities,
 } from "../../hooks/use-dexdex-queries";
 import { useEscapeToClose, useFocusOnShow } from "../../hooks/use-dialog-accessibility";
+import { useDraftStore } from "../../stores/draft-store";
 
 interface CreateDialogProps {
   isOpen: boolean;
@@ -36,6 +37,8 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
   const [selectedAgent, setSelectedAgent] = useState<AgentCliType>(AgentCliType.UNSPECIFIED);
   const [usePlanMode, setUsePlanMode] = useState(false);
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const { getDraft, setDraft: saveDraft, clearDraft } = useDraftStore();
 
   const repoGroupsQuery = useListRepositoryGroups(workspaceId);
   const capabilitiesQuery = useListSessionCapabilities(workspaceId);
@@ -80,6 +83,32 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
     }
   }, [selectedAgentSupportsPlanMode, usePlanMode]);
 
+  // Restore draft when dialog opens
+  useEffect(() => {
+    if (!isOpen) return;
+    const draft = getDraft(workspaceId);
+    if (draft) {
+      setPrompt(draft.prompt);
+      setSelectedRepoGroupId(draft.repositoryGroupId);
+      setSelectedAgent(draft.agentCliType);
+      setUsePlanMode(draft.usePlanMode);
+    }
+  }, [isOpen, workspaceId, getDraft]);
+
+  // Debounced save of draft on form changes
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(() => {
+      saveDraft(workspaceId, {
+        prompt,
+        repositoryGroupId: selectedRepoGroupId,
+        agentCliType: selectedAgent,
+        usePlanMode,
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [isOpen, workspaceId, prompt, selectedRepoGroupId, selectedAgent, usePlanMode, saveDraft]);
+
   useEscapeToClose(isOpen, onClose);
   useFocusOnShow(isOpen, promptInputRef);
 
@@ -92,6 +121,7 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
     if (!canSubmit) return;
 
     onCreate(prompt.trim(), selectedRepoGroupId, selectedAgent, selectedAgentSupportsPlanMode && usePlanMode);
+    clearDraft(workspaceId);
     setPrompt("");
     setSelectedRepoGroupId("");
     setSelectedAgent(AgentCliType.UNSPECIFIED);

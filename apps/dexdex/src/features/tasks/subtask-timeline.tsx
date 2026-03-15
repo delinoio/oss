@@ -9,6 +9,7 @@ import { SubTaskStatus, SUB_TASK_TYPE_LABELS } from "../../lib/status";
 
 interface SubtaskTimelineProps {
   subtasks: SubTask[];
+  workspaceId: string;
 }
 
 function getSubtaskStatusColor(status: SubTaskStatus): string {
@@ -49,9 +50,7 @@ function getSubtaskStatusIcon(status: SubTaskStatus): string {
   }
 }
 
-const WORKSPACE_ID = "workspace-default";
-
-export function SubtaskTimeline({ subtasks }: SubtaskTimelineProps) {
+export function SubtaskTimeline({ subtasks, workspaceId }: SubtaskTimelineProps) {
   const cancelSubTask = useCancelSubTaskMutation();
   if (subtasks.length === 0) {
     return (
@@ -172,7 +171,7 @@ export function SubtaskTimeline({ subtasks }: SubtaskTimelineProps) {
                   marginTop: "2px",
                 }}
                 title={subtask.status === SubTaskStatus.IN_PROGRESS ? "Stop subtask" : "Cancel subtask"}
-                onClick={() => cancelSubTask.mutate({ workspaceId: WORKSPACE_ID, unitTaskId: subtask.unitTaskId, subTaskId: subtask.subTaskId })}
+                onClick={() => cancelSubTask.mutate({ workspaceId: workspaceId, unitTaskId: subtask.unitTaskId, subTaskId: subtask.subTaskId })}
                 disabled={cancelSubTask.isPending}
                 data-testid={`cancel-subtask-${subtask.subTaskId}`}
               >

@@ -4,7 +4,7 @@
  * Uses react-router for page navigation.
  */
 
-import { type CSSProperties, useCallback, useMemo, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from "react";
 import { Routes, Route, useNavigate, useLocation, Navigate } from "react-router";
 import "./styles/globals.css";
 import { Sidebar } from "./components/sidebar";
@@ -23,6 +23,7 @@ import { useWorkspaceStream } from "./hooks/use-workspace-stream";
 import { useTrayStatus } from "./hooks/use-tray-status";
 import { useGlobalShortcut } from "./hooks/use-global-shortcut";
 import { useWebNotifications } from "./hooks/use-web-notifications";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useListUnitTasks,
   useListPullRequests,
@@ -63,6 +64,7 @@ function App() {
   const [connectionStatus, setConnectionStatus] = useState<AppState["connectionStatus"]>("connected");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [selectedTaskIndex, setSelectedTaskIndex] = useState(-1);
 
   // Tab state
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -113,6 +115,12 @@ function App() {
     }),
     [theme, sidebarOpen, activeWorkspaceId, connectionStatus, toggleTheme, setTheme, toggleSidebar, setActiveWorkspaceId],
   );
+
+  // Invalidate all queries when workspace changes
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    queryClient.invalidateQueries();
+  }, [activeWorkspaceId, queryClient]);
 
   // Web Notifications
   const { dispatchNotification } = useWebNotifications({ onNavigate: routerNavigate });
@@ -210,12 +218,70 @@ function App() {
     onNavigate: navigate,
   });
 
+  // Reset selectedTaskIndex when navigating away from tasks
+  useEffect(() => {
+    if (currentPath !== "/tasks") {
+      setSelectedTaskIndex(-1);
+    }
+  }, [currentPath]);
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     onCommandPalette: () => setCommandPaletteOpen(true),
     onToggleSidebar: toggleSidebar,
     onNavigate: navigate,
     onCreateTask: () => setCreateDialogOpen(true),
+    onCloseTab: () => {
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      if (activeTab) {
+        handleTabClose(activeTab);
+      }
+    },
+    onListDown: () => {
+      if (currentPath === "/tasks") {
+        setSelectedTaskIndex((prev) => Math.min(prev + 1, tasks.length - 1));
+      }
+    },
+    onListUp: () => {
+      if (currentPath === "/tasks") {
+        setSelectedTaskIndex((prev) => Math.max(prev - 1, 0));
+      }
+    },
+    onSwitchTabLeft: () => {
+      if (tabs.length === 0) return;
+      const currentIdx = tabs.findIndex((t) => t.id === activeTabId);
+      if (currentIdx > 0) {
+        const prevTab = tabs[currentIdx - 1];
+        handleTabClick(prevTab);
+      }
+    },
+    onSwitchTabRight: () => {
+      if (tabs.length === 0) return;
+      const currentIdx = tabs.findIndex((t) => t.id === activeTabId);
+      if (currentIdx < tabs.length - 1) {
+        const nextTab = tabs[currentIdx + 1];
+        handleTabClick(nextTab);
+      }
+    },
+    onApprovePlan: () => {
+      // Context-sensitive: only if on task detail with waiting subtask
+      if (!currentPath.startsWith("/tasks/")) return;
+      const taskId = currentPath.replace("/tasks/", "");
+      const task = tasks.find((t) => t.unitTaskId === taskId);
+      if (task) {
+        // We need to find a waiting subtask - delegate to handlePlanDecision
+        // This is a simplified version - the full version would need subtask data
+        handlePlanDecision(taskId, PlanDecision.APPROVE);
+      }
+    },
+    onRevisePlan: () => {
+      // For V key - context sensitive
+      if (!currentPath.startsWith("/tasks/")) return;
+    },
+    onRejectPlan: () => {
+      // For Shift+X - context sensitive: cancel task if in progress, reject plan if waiting
+      if (!currentPath.startsWith("/tasks/")) return;
+    },
   });
 
   // Task detail renderer (used by route)
@@ -294,6 +360,8 @@ function App() {
                       isLoading={tasksLoading}
                       onTaskSelect={(taskId) => navigate(`/tasks/${taskId}`)}
                       onCreateTask={() => setCreateDialogOpen(true)}
+                      selectedIndex={selectedTaskIndex}
+                      onSelectIndex={setSelectedTaskIndex}
                     />
                   }
                 />

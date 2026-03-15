@@ -15,17 +15,16 @@ import {
 } from "../../hooks/use-dexdex-queries";
 import { DiffCommentView } from "./diff-comment-view";
 
-const WORKSPACE_ID = "workspace-default";
-
 interface ReviewAssistPanelProps {
   unitTaskId: string;
   prTrackingId?: string;
   repositoryGroupId?: string;
+  workspaceId: string;
 }
 
-export function ReviewAssistPanel({ unitTaskId, prTrackingId, repositoryGroupId }: ReviewAssistPanelProps) {
-  const { data: assistData, isLoading: assistLoading } = useListReviewAssistItems(WORKSPACE_ID, unitTaskId);
-  const { data: commentsData, isLoading: commentsLoading } = useListReviewComments(WORKSPACE_ID, prTrackingId ?? "");
+export function ReviewAssistPanel({ unitTaskId, prTrackingId, repositoryGroupId, workspaceId }: ReviewAssistPanelProps) {
+  const { data: assistData, isLoading: assistLoading } = useListReviewAssistItems(workspaceId, unitTaskId);
+  const { data: commentsData, isLoading: commentsLoading } = useListReviewComments(workspaceId, prTrackingId ?? "");
 
   const createCommentMutation = useCreateReviewCommentMutation();
   const resolveCommentMutation = useResolveReviewCommentMutation();
@@ -56,7 +55,7 @@ export function ReviewAssistPanel({ unitTaskId, prTrackingId, repositoryGroupId 
     if (item) {
       const fixPrompt = `Fix the following review feedback:\n\n${item.body}`;
       createTaskMutation.mutate({
-        workspaceId: WORKSPACE_ID,
+        workspaceId: workspaceId,
         prompt: fixPrompt,
         repositoryGroupId: repositoryGroupId ?? "",
       });
@@ -165,7 +164,7 @@ export function ReviewAssistPanel({ unitTaskId, prTrackingId, repositoryGroupId 
                 comments={comments}
                 onReply={(prId, filePath, side, lineNumber, body) => {
                   createCommentMutation.mutate({
-                    workspaceId: WORKSPACE_ID,
+                    workspaceId: workspaceId,
                     prTrackingId: prId,
                     body,
                     filePath,
@@ -175,19 +174,19 @@ export function ReviewAssistPanel({ unitTaskId, prTrackingId, repositoryGroupId 
                 }}
                 onResolve={(commentId) => {
                   resolveCommentMutation.mutate({
-                    workspaceId: WORKSPACE_ID,
+                    workspaceId: workspaceId,
                     reviewCommentId: commentId,
                   });
                 }}
                 onReopen={(commentId) => {
                   reopenCommentMutation.mutate({
-                    workspaceId: WORKSPACE_ID,
+                    workspaceId: workspaceId,
                     reviewCommentId: commentId,
                   });
                 }}
                 onDelete={(commentId) => {
                   deleteCommentMutation.mutate({
-                    workspaceId: WORKSPACE_ID,
+                    workspaceId: workspaceId,
                     reviewCommentId: commentId,
                   });
                 }}

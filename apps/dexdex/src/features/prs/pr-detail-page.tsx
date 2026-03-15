@@ -3,8 +3,8 @@
  * inline review comments, and auto-fix controls.
  */
 
-import { type CSSProperties, useCallback } from "react";
-import { PrStatus as ProtoPrStatus, ReviewAssistStatus } from "../../gen/v1/dexdex_pb";
+import { type CSSProperties, useCallback, useState } from "react";
+import { PrStatus as ProtoPrStatus, ReviewAssistStatus, DiffSide } from "../../gen/v1/dexdex_pb";
 import { PrStatus, PR_STATUS_CONFIG } from "../../lib/status";
 import {
   useGetPullRequest,
@@ -13,6 +13,12 @@ import {
   useRunAutoFixNowMutation,
   useSetAutoFixPolicyMutation,
   useResolveReviewAssistItemMutation,
+  useCreateReviewCommentMutation,
+  useResolveReviewCommentMutation,
+  useReopenReviewCommentMutation,
+  useDeleteReviewCommentMutation,
+  useUpdateReviewCommentMutation,
+  useListSubTasksRaw,
 } from "../../hooks/use-dexdex-queries";
 
 const PR_STATUS_MAP: Record<number, PrStatus> = {
@@ -52,6 +58,23 @@ export function PrDetailPage({ workspaceId, prTrackingId, onBack }: PrDetailPage
   const runAutoFixMutation = useRunAutoFixNowMutation();
   const autoFixPolicyMutation = useSetAutoFixPolicyMutation();
   const resolveItemMutation = useResolveReviewAssistItemMutation();
+  const createCommentMutation = useCreateReviewCommentMutation();
+  const resolveCommentMutation = useResolveReviewCommentMutation();
+  const reopenCommentMutation = useReopenReviewCommentMutation();
+  const deleteCommentMutation = useDeleteReviewCommentMutation();
+  const updateCommentMutation = useUpdateReviewCommentMutation();
+
+  const { data: rawSubTasks = [] } = useListSubTasksRaw(workspaceId, pr?.unitTaskId ?? "");
+  const commits = rawSubTasks.flatMap((st) => st.commitChain ?? []);
+
+  const [showNewCommentForm, setShowNewCommentForm] = useState(false);
+  const [newCommentFilePath, setNewCommentFilePath] = useState("");
+  const [newCommentSide, setNewCommentSide] = useState<DiffSide>(DiffSide.NEW);
+  const [newCommentLine, setNewCommentLine] = useState(1);
+  const [newCommentBody, setNewCommentBody] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentBody, setEditingCommentBody] = useState("");
+  const [selectedCommitIndex, setSelectedCommitIndex] = useState(0);
 
   const maxAttemptsReached = pr ? pr.fixAttemptCount >= pr.maxFixAttempts : false;
 
@@ -74,6 +97,69 @@ export function PrDetailPage({ workspaceId, prTrackingId, onBack }: PrDetailPage
       resolveItemMutation.mutate({ workspaceId, reviewAssistId, resolution });
     },
     [workspaceId, resolveItemMutation],
+  );
+
+  const handleCreateComment = useCallback(() => {
+    if (!newCommentBody.trim()) return;
+    createCommentMutation.mutate(
+      {
+        workspaceId,
+        prTrackingId,
+        body: newCommentBody.trim(),
+        filePath: newCommentFilePath,
+        side: newCommentSide,
+        lineNumber: newCommentLine,
+      },
+      {
+        onSuccess: () => {
+          setNewCommentBody("");
+          setNewCommentFilePath("");
+          setNewCommentLine(1);
+          setShowNewCommentForm(false);
+        },
+      },
+    );
+  }, [workspaceId, prTrackingId, newCommentBody, newCommentFilePath, newCommentSide, newCommentLine, createCommentMutation]);
+
+  const handleResolveComment = useCallback(
+    (commentId: string) => {
+      resolveCommentMutation.mutate({ workspaceId, reviewCommentId: commentId });
+    },
+    [workspaceId, resolveCommentMutation],
+  );
+
+  const handleReopenComment = useCallback(
+    (commentId: string) => {
+      reopenCommentMutation.mutate({ workspaceId, reviewCommentId: commentId });
+    },
+    [workspaceId, reopenCommentMutation],
+  );
+
+  const handleDeleteComment = useCallback(
+    (commentId: string) => {
+      deleteCommentMutation.mutate({ workspaceId, reviewCommentId: commentId });
+    },
+    [workspaceId, deleteCommentMutation],
+  );
+
+  const handleSaveCommentEdit = useCallback(
+    (commentId: string) => {
+      if (!editingCommentBody.trim()) return;
+      updateCommentMutation.mutate(
+        {
+          workspaceId,
+          reviewCommentId: commentId,
+          body: editingCommentBody.trim(),
+        },
+        {
+          onSuccess: () => {
+            setEditingCommentId(null);
+            setEditingCommentBody("");
+          },
+        },
+      );
+    },
+    [workspaceId, editingCommentBody, updateCommentMutation],
   );
 
   const viewStatus = pr ? (PR_STATUS_MAP[pr.status] ?? PrStatus.UNSPECIFIED) : PrStatus.UNSPECIFIED;
@@ -345,10 +431,183 @@ export function PrDetailPage({ workspaceId, prTrackingId, onBack }: PrDetailPage
           )}
         </div>
 
+        {/* Changes / Diff Viewer Section */}
+        {commits.length > 0 && (
+          <div style={sectionStyle}>
+            <h2 style={sectionTitleStyle}>Changes</h2>
+            {commits.length > 1 && (
+              <select
+                value={selectedCommitIndex}
+                onChange={(e) => setSelectedCommitIndex(Number(e.target.value))}
+                style={{
+                  padding: "var(--space-2) var(--space-3)",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border)",
+                  backgroundColor: "var(--color-bg-secondary)",
+                  color: "var(--color-text-primary)",
+                  fontSize: "var(--font-size-sm)",
+                  marginBottom: "var(--space-3)",
+                  width: "100%",
+                }}
+                data-testid="commit-selector"
+              >
+                {commits.map((c, i) => (
+                  <option key={i} value={i}>
+                    {c.sha?.slice(0, 7)} - {c.message}
+                  </option>
+                ))}
+              </select>
+            )}
+            {commits[selectedCommitIndex] && (
+              <div
+                style={{
+                  padding: "var(--space-3) var(--space-4)",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border)",
+                  fontSize: "var(--font-size-sm)",
+                }}
+                data-testid="commit-detail"
+              >
+                <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-1)" }}>
+                  <span style={{ color: "var(--color-text-secondary)", fontWeight: 500 }}>SHA:</span>
+                  <code style={{ color: "var(--color-text-primary)", fontFamily: "monospace" }}>
+                    {commits[selectedCommitIndex].sha}
+                  </code>
+                </div>
+                <div style={{ color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>
+                  {commits[selectedCommitIndex].message}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Review Comments Section */}
         <div style={sectionStyle}>
-          <h2 style={sectionTitleStyle}>Inline Comments</h2>
-          {reviewComments.length === 0 ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-3)" }}>
+            <h2 style={{ ...sectionTitleStyle, marginBottom: 0 }}>Inline Comments</h2>
+            <button
+              style={{
+                padding: "var(--space-1) var(--space-3)",
+                borderRadius: "var(--radius-md)",
+                fontSize: "var(--font-size-xs)",
+                fontWeight: 500,
+                cursor: "pointer",
+                backgroundColor: "var(--color-bg-tertiary)",
+                color: "var(--color-text-secondary)",
+                border: "none",
+              }}
+              onClick={() => setShowNewCommentForm(!showNewCommentForm)}
+              data-testid="new-comment-toggle"
+            >
+              {showNewCommentForm ? "Cancel" : "+ New Comment"}
+            </button>
+          </div>
+
+          {/* New Comment Form */}
+          {showNewCommentForm && (
+            <div
+              style={{
+                padding: "var(--space-3) var(--space-4)",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-accent)",
+                marginBottom: "var(--space-3)",
+                backgroundColor: "var(--color-bg-secondary)",
+              }}
+              data-testid="new-comment-form"
+            >
+              <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
+                <input
+                  type="text"
+                  placeholder="File path (optional)"
+                  value={newCommentFilePath}
+                  onChange={(e) => setNewCommentFilePath(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: "var(--space-2)",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--color-border)",
+                    backgroundColor: "var(--color-bg-primary)",
+                    color: "var(--color-text-primary)",
+                    fontSize: "var(--font-size-sm)",
+                  }}
+                  data-testid="new-comment-file-path"
+                />
+                <select
+                  value={newCommentSide}
+                  onChange={(e) => setNewCommentSide(Number(e.target.value) as DiffSide)}
+                  style={{
+                    padding: "var(--space-2)",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--color-border)",
+                    backgroundColor: "var(--color-bg-primary)",
+                    color: "var(--color-text-primary)",
+                    fontSize: "var(--font-size-sm)",
+                  }}
+                  data-testid="new-comment-side"
+                >
+                  <option value={DiffSide.OLD}>Old (left)</option>
+                  <option value={DiffSide.NEW}>New (right)</option>
+                </select>
+                <input
+                  type="number"
+                  min={1}
+                  placeholder="Line"
+                  value={newCommentLine}
+                  onChange={(e) => setNewCommentLine(Number(e.target.value))}
+                  style={{
+                    width: "80px",
+                    padding: "var(--space-2)",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--color-border)",
+                    backgroundColor: "var(--color-bg-primary)",
+                    color: "var(--color-text-primary)",
+                    fontSize: "var(--font-size-sm)",
+                  }}
+                  data-testid="new-comment-line"
+                />
+              </div>
+              <textarea
+                placeholder="Write your comment..."
+                value={newCommentBody}
+                onChange={(e) => setNewCommentBody(e.target.value)}
+                rows={3}
+                style={{
+                  width: "100%",
+                  padding: "var(--space-2)",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--color-border)",
+                  backgroundColor: "var(--color-bg-primary)",
+                  color: "var(--color-text-primary)",
+                  fontSize: "var(--font-size-sm)",
+                  resize: "vertical",
+                  marginBottom: "var(--space-2)",
+                  boxSizing: "border-box",
+                }}
+                data-testid="new-comment-body"
+              />
+              <button
+                onClick={handleCreateComment}
+                disabled={!newCommentBody.trim() || createCommentMutation.isPending}
+                style={{
+                  padding: "var(--space-2) var(--space-3)",
+                  borderRadius: "var(--radius-md)",
+                  fontSize: "var(--font-size-sm)",
+                  fontWeight: 500,
+                  cursor: !newCommentBody.trim() || createCommentMutation.isPending ? "not-allowed" : "pointer",
+                  backgroundColor: "var(--color-accent)",
+                  color: "var(--color-text-inverse)",
+                  opacity: !newCommentBody.trim() || createCommentMutation.isPending ? 0.6 : 1,
+                  border: "none",
+                }}
+                data-testid="submit-new-comment"
+              >
+                {createCommentMutation.isPending ? "Submitting..." : "Submit Comment"}
+              </button>
+            </div>
+          )}
+
+          {reviewComments.length === 0 && !showNewCommentForm ? (
             <div
               style={{
                 padding: "var(--space-4)",
@@ -361,6 +620,7 @@ export function PrDetailPage({ workspaceId, prTrackingId, onBack }: PrDetailPage
           ) : (
             reviewComments.map((comment) => {
               const isResolved = comment.status === "RESOLVED";
+              const isEditing = editingCommentId === comment.reviewCommentId;
               const commentStyle: CSSProperties = {
                 padding: "var(--space-3) var(--space-4)",
                 borderRadius: "var(--radius-md)",
@@ -378,6 +638,16 @@ export function PrDetailPage({ workspaceId, prTrackingId, onBack }: PrDetailPage
                 backgroundColor: isResolved ? "var(--color-status-completed-bg)" : "var(--color-status-action-bg)",
               };
 
+              const commentActionButtonStyle: CSSProperties = {
+                padding: "2px 8px",
+                borderRadius: "var(--radius-sm)",
+                fontSize: "var(--font-size-xs)",
+                cursor: "pointer",
+                border: "none",
+                backgroundColor: "var(--color-bg-tertiary)",
+                color: "var(--color-text-secondary)",
+              };
+
               return (
                 <div key={comment.reviewCommentId} style={commentStyle} data-testid={`review-comment-${comment.reviewCommentId}`}>
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
@@ -390,10 +660,107 @@ export function PrDetailPage({ workspaceId, prTrackingId, onBack }: PrDetailPage
                         {comment.lineNumber ? `:${comment.lineNumber}` : ""}
                       </span>
                     )}
+                    <div style={{ marginLeft: "auto", display: "flex", gap: "var(--space-1)" }}>
+                      {!isResolved && (
+                        <button
+                          style={{ ...commentActionButtonStyle, color: "var(--color-status-completed)" }}
+                          onClick={() => handleResolveComment(comment.reviewCommentId)}
+                          data-testid={`resolve-comment-${comment.reviewCommentId}`}
+                        >
+                          Resolve
+                        </button>
+                      )}
+                      {isResolved && (
+                        <button
+                          style={{ ...commentActionButtonStyle, color: "var(--color-status-action)" }}
+                          onClick={() => handleReopenComment(comment.reviewCommentId)}
+                          data-testid={`reopen-comment-${comment.reviewCommentId}`}
+                        >
+                          Reopen
+                        </button>
+                      )}
+                      <button
+                        style={commentActionButtonStyle}
+                        onClick={() => {
+                          setEditingCommentId(comment.reviewCommentId);
+                          setEditingCommentBody(comment.body);
+                        }}
+                        data-testid={`edit-comment-${comment.reviewCommentId}`}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        style={{ ...commentActionButtonStyle, color: "var(--color-status-error, #e53e3e)" }}
+                        onClick={() => handleDeleteComment(comment.reviewCommentId)}
+                        data-testid={`delete-comment-${comment.reviewCommentId}`}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>
-                    {comment.body}
-                  </div>
+                  {isEditing ? (
+                    <div>
+                      <textarea
+                        value={editingCommentBody}
+                        onChange={(e) => setEditingCommentBody(e.target.value)}
+                        rows={3}
+                        style={{
+                          width: "100%",
+                          padding: "var(--space-2)",
+                          borderRadius: "var(--radius-sm)",
+                          border: "1px solid var(--color-border)",
+                          backgroundColor: "var(--color-bg-primary)",
+                          color: "var(--color-text-primary)",
+                          fontSize: "var(--font-size-sm)",
+                          resize: "vertical",
+                          marginBottom: "var(--space-2)",
+                          boxSizing: "border-box",
+                        }}
+                        data-testid={`edit-comment-body-${comment.reviewCommentId}`}
+                      />
+                      <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                        <button
+                          onClick={() => handleSaveCommentEdit(comment.reviewCommentId)}
+                          disabled={!editingCommentBody.trim() || updateCommentMutation.isPending}
+                          style={{
+                            padding: "2px 8px",
+                            borderRadius: "var(--radius-sm)",
+                            fontSize: "var(--font-size-xs)",
+                            cursor: !editingCommentBody.trim() ? "not-allowed" : "pointer",
+                            border: "none",
+                            backgroundColor: "var(--color-accent)",
+                            color: "var(--color-text-inverse)",
+                            opacity: !editingCommentBody.trim() ? 0.6 : 1,
+                          }}
+                          data-testid={`save-edit-${comment.reviewCommentId}`}
+                        >
+                          {updateCommentMutation.isPending ? "Saving..." : "Save"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingCommentId(null);
+                            setEditingCommentBody("");
+                          }}
+                          style={{
+                            padding: "2px 8px",
+                            borderRadius: "var(--radius-sm)",
+                            fontSize: "var(--font-size-xs)",
+                            cursor: "pointer",
+                            border: "none",
+                            backgroundColor: "var(--color-bg-tertiary)",
+                            color: "var(--color-text-secondary)",
+                          }}
+                          data-testid={`cancel-edit-${comment.reviewCommentId}`}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-primary)", whiteSpace: "pre-wrap" }}>
+                      {comment.body}
+                    </div>
+                  )}
                 </div>
               );
             })

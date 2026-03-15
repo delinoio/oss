@@ -11,8 +11,7 @@ import { SubtaskTimeline } from "./subtask-timeline";
 import { PlanDecisions } from "./plan-decisions";
 import { SessionOutputPanel } from "./session-output-panel";
 import { SessionInputForm } from "../sessions/session-input-form";
-
-const WORKSPACE_ID = "workspace-default";
+import { useAppStore } from "../../stores/app-store";
 
 interface TaskDetailProps {
   task: UnitTask;
@@ -21,8 +20,10 @@ interface TaskDetailProps {
 }
 
 export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
+  const { activeWorkspaceId } = useAppStore();
+
   // Fetch subtasks from server
-  const { data: subTasks = [] } = useListSubTasks(WORKSPACE_ID, task.unitTaskId);
+  const { data: subTasks = [] } = useListSubTasks(activeWorkspaceId, task.unitTaskId);
 
   // Find active subtask for session output display
   const activeSubTask =
@@ -35,7 +36,7 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
 
   // Fetch session output for the active subtask
   const { data: sessionOutput = [] } = useGetSessionOutput(
-    WORKSPACE_ID,
+    activeWorkspaceId,
     activeSubTask?.sessionId,
   );
 
@@ -44,7 +45,7 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
   );
 
   // Fetch raw subtasks to access commitChain
-  const { data: rawSubTasks = [] } = useListSubTasksRaw(WORKSPACE_ID, task.unitTaskId);
+  const { data: rawSubTasks = [] } = useListSubTasksRaw(activeWorkspaceId, task.unitTaskId);
 
   // Cancel/stop mutation for the unit task
   const cancelUnitTask = useCancelUnitTaskMutation();
@@ -55,7 +56,7 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
   const [prCreated, setPrCreated] = useState(false);
 
   const handleCancelTask = () => {
-    cancelUnitTask.mutate({ workspaceId: WORKSPACE_ID, unitTaskId: task.unitTaskId });
+    cancelUnitTask.mutate({ workspaceId: activeWorkspaceId, unitTaskId: task.unitTaskId });
   };
 
   // Check if any subtask has commits in its commit chain
@@ -66,7 +67,7 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
     const url = prUrl.trim();
     if (!url) return;
     trackPullRequest.mutate(
-      { workspaceId: WORKSPACE_ID, prUrl: url, unitTaskId: task.unitTaskId },
+      { workspaceId: activeWorkspaceId, prUrl: url, unitTaskId: task.unitTaskId },
       {
         onSuccess: () => {
           setPrCreated(true);
@@ -283,7 +284,7 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
           >
             Subtasks
           </h2>
-          <SubtaskTimeline subtasks={subTasks} />
+          <SubtaskTimeline subtasks={subTasks} workspaceId={activeWorkspaceId} />
         </div>
 
         {/* Session output panel */}
@@ -299,7 +300,7 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
           activeSubTask.status === SubTaskStatus.WAITING_FOR_USER_INPUT &&
           activeSubTask.sessionId && (
             <SessionInputForm
-              workspaceId={WORKSPACE_ID}
+              workspaceId={activeWorkspaceId}
               sessionId={activeSubTask.sessionId}
             />
           )}
