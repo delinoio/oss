@@ -9,37 +9,38 @@
 - Primary language: TypeScript
 
 ## Users and Operators
-- Developers operating environment secret workflows through UI
-- Maintainers ensuring secure, auditable secret operations UX
+- Developers validating canonical Devkit mini app routing
+- Maintainers preserving scaffold contracts before web-console reactivation
 
 ## Interfaces and Contracts
 - Stable component identifier: `web-console`.
 - Route contract: `/apps/thenv`.
-- UI actions must align with thenv CLI and server trust model semantics.
+- Registration status contract: `placeholder`.
+- Current UI contract renders the shared Devkit placeholder view only.
+- Devkit local API surface under `/api/thenv/*` is not active during scaffold phase.
 
 ## Storage
-- Uses transient form/session state and query caches.
-- Does not persist plaintext secrets in browser storage.
+- Uses no component-specific persistence while scaffold-only.
 
 ## Security
-- Secret values must be redacted in UI logs and error messages.
-- UI flows must enforce explicit trust and authorization checks before operations.
+- Placeholder route must not process or render secret values.
+- Error and diagnostic output must remain free of sensitive payloads.
 
 ## Logging
-- Include structured diagnostics for operation type, target environment, and sanitized status.
-- Avoid sensitive payload logging in frontend telemetry.
+- Route-level diagnostics should include mini app id and route context.
+- Placeholder logs must avoid backend or secret-specific fields.
 
 ## Build and Test
 - Local validation: `pnpm --filter devkit... test`
 - Build validation: `pnpm --filter devkit... build`
 
 ## Dependencies and Integrations
-- Integrates with `servers/thenv` API contracts.
-- Must remain behaviorally aligned with `cmds/thenv` CLI workflows.
+- Planned integration targets remain `servers/thenv` and `cmds/thenv`.
+- Active Devkit behavior is shell-only and does not call thenv backend APIs.
 
 ## Change Triggers
-- Update `docs/project-thenv.md` and this file for web console behavior or route changes.
-- Synchronize trust model changes with CLI and server thenv contracts.
+- Update `docs/project-thenv.md` and this file when web-console behavior changes.
+- If `/api/thenv/*` routes are reintroduced, synchronize this contract with server and CLI docs in the same change.
 
 ## References
 - `docs/project-thenv.md`

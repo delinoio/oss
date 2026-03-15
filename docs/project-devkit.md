@@ -1,7 +1,7 @@
 # Project: devkit
 
 ## Goal
-Provide the Next.js micro-app host platform that serves mini apps with shared shell contracts and route conventions.
+Provide the Next.js micro-app host platform that serves mini apps with shared shell contracts and scaffold-first route conventions.
 
 ## Project ID
 `devkit`
@@ -16,6 +16,7 @@ Provide the Next.js micro-app host platform that serves mini apps with shared sh
 - Mini app identifiers must remain stable enum-style values.
 - Mini app routes must keep the `/apps/<id>` contract.
 - Shared shell behavior must remain separated from mini app business logic.
+- Current host rollout remains shell-only bootstrap with placeholder mini apps.
 
 ## Change Policy
 - Update this index and `docs/apps-devkit-foundation.md` together whenever host routing, shell behavior, or mini app registration contracts change.

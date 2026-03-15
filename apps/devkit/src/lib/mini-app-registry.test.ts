@@ -24,21 +24,12 @@ describe("mini-app-registry", () => {
     ]);
   });
 
-  it("keeps thenv live while commit-tracker and remote-file-picker stay placeholder", () => {
-    const thenvRegistration = MINI_APP_REGISTRATIONS.find(
-      (registration) => registration.id === DevkitMiniAppId.Thenv,
-    );
-    expect(thenvRegistration?.status).toBe(MiniAppStatus.Live);
-
-    const remoteFilePickerRegistration = MINI_APP_REGISTRATIONS.find(
-      (registration) => registration.id === DevkitMiniAppId.RemoteFilePicker,
-    );
-    expect(remoteFilePickerRegistration?.status).toBe(MiniAppStatus.Placeholder);
-
-    const commitTrackerRegistration = MINI_APP_REGISTRATIONS.find(
-      (registration) => registration.id === DevkitMiniAppId.CommitTracker,
-    );
-    expect(commitTrackerRegistration?.status).toBe(MiniAppStatus.Placeholder);
+  it("contains only placeholder mini apps during shell-only bootstrap", () => {
+    expect(
+      MINI_APP_REGISTRATIONS.every(
+        (registration) => registration.status === MiniAppStatus.Placeholder,
+      ),
+    ).toBe(true);
   });
 
   it("validates unique ids and routes", () => {
