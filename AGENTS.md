@@ -49,7 +49,7 @@
 - `docs/project-ttl.md`: TTL compiler project index.
 - `docs/project-mpapp.md`: Expo mobile app project index.
 - `docs/project-devkit.md`: Devkit host platform project index.
-- `docs/project-devkit-commit-tracker.md`: Commit Tracker multi-component project index.
+- `docs/project-devkit-commit-tracker.md`: Commit Tracker scaffold project index.
 - `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app project index.
 - `docs/project-thenv.md`: Thenv multi-component project index.
 - `docs/project-devmon.md`: Devmon daemon project index.
@@ -104,7 +104,7 @@ enum ProjectId {
 - `devmon` -> `cmds/devmon`
 - `mpapp` -> `apps/mpapp`
 - `devkit` -> `apps/devkit`
-- `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`, `servers/commit-tracker`, `cmds/commit-tracker`
+- `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`
 - `devkit-remote-file-picker` -> `apps/devkit/src/apps/remote-file-picker`
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
@@ -129,7 +129,7 @@ enum DevkitMiniAppId {
 
 ### Commit Tracker Component Contract
 
-`devkit-commit-tracker` is a single project with three active components:
+`devkit-commit-tracker` is currently scaffold-only in the Devkit app, while backend and collector components remain reserved for future reactivation:
 
 ```ts
 enum CommitTrackerComponent {
@@ -141,8 +141,8 @@ enum CommitTrackerComponent {
 
 Component mapping:
 - `WebApp` -> `apps/devkit/src/apps/commit-tracker`
-- `ApiServer` -> `servers/commit-tracker`
-- `Collector` -> `cmds/commit-tracker`
+- `ApiServer` -> planned (no active canonical path)
+- `Collector` -> planned (no active canonical path)
 
 ### Devkit Routing Contract
 

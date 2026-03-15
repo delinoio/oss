@@ -1,6 +1,14 @@
-import { CommitTrackerApp } from "@/apps/commit-tracker/commit-tracker-app";
 import { DevkitShell } from "@/components/devkit-shell";
-import { DevkitMiniAppId, DevkitRoute } from "@/lib/mini-app-registry";
+import { MiniAppPlaceholder } from "@/components/mini-app-placeholder";
+import {
+  DevkitMiniAppId,
+  DevkitRoute,
+  getRequiredMiniAppRegistrationById,
+} from "@/lib/mini-app-registry";
+
+const commitTracker = getRequiredMiniAppRegistrationById(
+  DevkitMiniAppId.CommitTracker,
+);
 
 export default function CommitTrackerPage() {
   return (
@@ -9,7 +17,7 @@ export default function CommitTrackerPage() {
       currentRoute={DevkitRoute.CommitTracker}
       miniAppId={DevkitMiniAppId.CommitTracker}
     >
-      <CommitTrackerApp />
+      <MiniAppPlaceholder app={commitTracker} />
     </DevkitShell>
   );
 }

@@ -18,7 +18,7 @@ main() {
 	log "running go generate for server protobuf contracts"
 	(
 		cd "${REPO_ROOT}"
-		go generate ./servers/thenv ./servers/commit-tracker
+		go generate ./servers/thenv
 	)
 
 	log "running buf generate for shared dexdex protobuf contracts"

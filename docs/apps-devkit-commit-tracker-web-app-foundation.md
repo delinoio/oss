@@ -1,7 +1,7 @@
 # apps-devkit-commit-tracker-web-app-foundation
 
 ## Scope
-- Project/component: commit-tracker web app contract
+- Project/component: commit-tracker web mini app scaffold contract
 - Canonical path: `apps/devkit/src/apps/commit-tracker`
 
 ## Runtime and Language
@@ -9,40 +9,36 @@
 - Primary language: TypeScript
 
 ## Users and Operators
-- Developers and engineering managers reviewing commit activity
-- Maintainers evolving dashboards, filters, and commit timeline UX
+- Developers navigating reserved Devkit mini app routes
+- Maintainers controlling rollout sequencing for commit-tracker features
 
 ## Interfaces and Contracts
-- Stable component identifier: `web-app`.
+- Stable mini app identifier: `commit-tracker`.
 - Route contract: `/apps/commit-tracker`.
-- UI query/filter contracts must remain compatible with API server endpoints.
+- Page contract: renders Devkit `MiniAppPlaceholder` content and contract document reference.
 
 ## Storage
-- Uses client-side query cache and transient UI state.
-- Long-term persistence of commit data is owned by API server contracts.
+- No feature-specific persistence in scaffold mode.
 
 ## Security
-- Query requests must respect backend authorization boundaries.
-- UI rendering must sanitize untrusted commit metadata.
+- Placeholder rendering must not expose secrets or backend credentials.
 
 ## Logging
-- Frontend diagnostics should include query params, pagination context, and failure reasons.
-- Must not log credentials or sensitive auth headers.
+- Route render diagnostics should remain available through shared Devkit shell logging.
 
 ## Build and Test
 - Local validation: `pnpm --filter devkit... test`
 - Build validation: `pnpm --filter devkit... build`
 
 ## Dependencies and Integrations
-- Upstream host integration: Devkit route and mini app registration contracts.
-- Downstream API integration: `servers/commit-tracker` query contracts.
+- Integrates with Devkit host routing and mini app registration contracts.
+- Does not depend on active commit-tracker API or collector components in scaffold mode.
 
 ## Change Triggers
-- Update `docs/project-devkit-commit-tracker.md` and this file for web UI interface or route changes.
-- Keep API compatibility synchronized with `docs/servers-devkit-commit-tracker-api-server-foundation.md`.
+- Update `docs/project-devkit-commit-tracker.md` and this file for route, status, or placeholder behavior changes.
+- Synchronize host-level registration behavior with `docs/apps-devkit-foundation.md`.
 
 ## References
 - `docs/project-devkit-commit-tracker.md`
-- `docs/servers-devkit-commit-tracker-api-server-foundation.md`
 - `docs/apps-devkit-foundation.md`
 - `docs/domain-template.md`

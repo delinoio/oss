@@ -18,6 +18,10 @@
   - `remote-file-picker`
   - `thenv`
 - Route pattern contract: `/apps/<id>`.
+- Registration status contract:
+  - `commit-tracker`: `placeholder`
+  - `remote-file-picker`: `placeholder`
+  - `thenv`: `live`
 - Shared shell modules must remain separate from mini app business logic.
 
 ## Storage
@@ -39,11 +43,11 @@
 
 ## Dependencies and Integrations
 - Integrates with mini app contracts documented in project-specific docs.
-- Integrates with backend APIs via stable contract boundaries.
+- Integrates with backend APIs via stable contract boundaries when mini apps are live.
 
 ## Change Triggers
 - Update `docs/project-devkit.md` and this file when host routing or mini app registration contracts change.
-- Keep related mini app project indexes synchronized when IDs/routes/integration behavior changes.
+- Keep related mini app project indexes synchronized when IDs/routes/status/integration behavior changes.
 
 ## References
 - `docs/project-devkit.md`

@@ -1,7 +1,7 @@
 # apps-devkit-remote-file-picker-foundation
 
 ## Scope
-- Project/component: Remote File Picker web mini app contract
+- Project/component: remote-file-picker web mini app scaffold contract
 - Canonical path: `apps/devkit/src/apps/remote-file-picker`
 
 ## Runtime and Language
@@ -9,37 +9,34 @@
 - Primary language: TypeScript
 
 ## Users and Operators
-- Developers selecting remote repository files and paths
-- Maintainers of mini app integration behavior
+- Developers navigating reserved Devkit mini app routes
+- Maintainers sequencing remote-file-picker feature rollout
 
 ## Interfaces and Contracts
 - Stable mini app identifier: `remote-file-picker`.
 - Route contract: `/apps/remote-file-picker`.
-- Selection, filtering, and path result contracts must remain deterministic for host consumers.
+- Page contract: renders Devkit `MiniAppPlaceholder` content and contract document reference.
 
 ## Storage
-- Uses transient UI state and optional local preference cache.
-- Remote source metadata cache must define expiration and invalidation behavior.
+- No feature-specific persistence in scaffold mode.
 
 ## Security
-- Remote path requests must enforce workspace/tenant authorization boundaries.
-- UI must avoid rendering untrusted input without sanitization.
+- Placeholder rendering must not expose signed URL data, callback tokens, or credentials.
 
 ## Logging
-- Include structured client diagnostics for query params, selection flow, and response status.
-- Avoid logging repository credentials or sensitive path tokens.
+- Route render diagnostics should remain available through shared Devkit shell logging.
 
 ## Build and Test
 - Local validation: `pnpm --filter devkit... test`
 - Build validation: `pnpm --filter devkit... build`
 
 ## Dependencies and Integrations
-- Integrates with Devkit host routing and registration contracts.
-- Integrates with remote listing backend APIs through explicit request/response contracts.
+- Integrates with Devkit host routing and mini app registration contracts.
+- Does not depend on active upload orchestration or remote-source adapters in scaffold mode.
 
 ## Change Triggers
-- Update `docs/project-devkit-remote-file-picker.md` and this file for interface or behavior updates.
-- Synchronize route/ID changes with `docs/apps-devkit-foundation.md`.
+- Update `docs/project-devkit-remote-file-picker.md` and this file for route, status, or placeholder behavior changes.
+- Synchronize host-level registration behavior with `docs/apps-devkit-foundation.md`.
 
 ## References
 - `docs/project-devkit-remote-file-picker.md`
