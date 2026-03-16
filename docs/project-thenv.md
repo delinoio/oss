@@ -20,7 +20,7 @@ Define secure `.env` sharing workflows across CLI and server components, with a 
 - Component identifiers remain stable: `cli`, `server`, `web-console`.
 - Trust boundaries and redaction rules must remain consistent across all components.
 - Secret lifecycle operations must use shared semantic contracts for create, read, rotate, and revoke flows.
-- Devkit web-console component remains scaffold-only until reactivation is documented.
+- Devkit web-console component is active with full Connect RPC integration to the thenv server.
 
 ## Change Policy
 - Security or interface changes require synchronized updates to this index and all affected component docs.

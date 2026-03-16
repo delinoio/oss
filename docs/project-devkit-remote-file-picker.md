@@ -1,13 +1,14 @@
 # Project: devkit-remote-file-picker
 
 ## Goal
-Keep a scaffolded Devkit mini app contract for future remote file-picker workflows.
+Provide a signed-URL upload mini app for local file/camera input with direct S3/GCS upload and result callback.
 
 ## Project ID
 `devkit-remote-file-picker`
 
 ## Domain Ownership Map
-- `apps/devkit/src/apps/remote-file-picker`
+- `apps/devkit/src/apps/remote-file-picker` (`web-app`)
+- `servers/remote-file-picker` (`api-server`)
 
 ## Domain Contract Documents
 - `docs/apps-devkit-remote-file-picker-foundation.md`
@@ -15,7 +16,7 @@ Keep a scaffolded Devkit mini app contract for future remote file-picker workflo
 ## Cross-Domain Invariants
 - Mini app ID must remain `remote-file-picker`.
 - Route contract must remain `/apps/remote-file-picker`.
-- Current runtime status is placeholder-only; signed-URL and source-adapter behaviors are deferred.
+- Web app and API server are active. Real S3/GCS storage adapter integration uses mock signed URLs; production adapter is deferred.
 
 ## Change Policy
 - Update this index and `docs/apps-devkit-remote-file-picker-foundation.md` together for route or scaffold behavior changes.

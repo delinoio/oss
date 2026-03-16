@@ -16,7 +16,7 @@ Provide the Next.js micro-app host platform that serves mini apps with shared sh
 - Mini app identifiers must remain stable enum-style values.
 - Mini app routes must keep the `/apps/<id>` contract.
 - Shared shell behavior must remain separated from mini app business logic.
-- Current host rollout remains shell-only bootstrap with placeholder mini apps.
+- All three mini apps (commit-tracker, remote-file-picker, thenv) are active with full frontend implementations and Connect RPC backend integration.
 
 ## Change Policy
 - Update this index and `docs/apps-devkit-foundation.md` together whenever host routing, shell behavior, or mini app registration contracts change.

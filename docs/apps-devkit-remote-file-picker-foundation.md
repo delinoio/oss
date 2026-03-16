@@ -15,7 +15,7 @@
 ## Interfaces and Contracts
 - Stable mini app identifier: `remote-file-picker`.
 - Route contract: `/apps/remote-file-picker`.
-- Page contract: renders Devkit `MiniAppPlaceholder` content and contract document reference.
+- Page contract: renders the RemoteFilePickerApp component with file input (drag-and-drop + camera), upload progress, and result view with public URL.
 
 ## Storage
 - No feature-specific persistence in scaffold mode.

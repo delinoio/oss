@@ -15,9 +15,9 @@
 ## Interfaces and Contracts
 - Stable component identifier: `web-console`.
 - Route contract: `/apps/thenv`.
-- Registration status contract: `placeholder`.
-- Current UI contract renders the shared Devkit placeholder view only.
-- Devkit local API surface under `/api/thenv/*` is not active during scaffold phase.
+- Registration status contract: `active`.
+- UI contract renders ThenvApp with scope selector, bundle management (list/detail/activate/rotate), policy editor, and audit viewer.
+- Devkit API proxy: `/api/thenv/*` routes to `http://127.0.0.1:8087/*` via Next.js rewrites.
 
 ## Storage
 - Uses no component-specific persistence while scaffold-only.
@@ -35,8 +35,8 @@
 - Build validation: `pnpm --filter devkit... build`
 
 ## Dependencies and Integrations
-- Planned integration targets remain `servers/thenv` and `cmds/thenv`.
-- Active Devkit behavior is shell-only and does not call thenv backend APIs.
+- Integrates with `servers/thenv` via Connect RPC (BundleService, PolicyService, AuditService).
+- Uses `@connectrpc/connect-query` hooks with React Query for server-state management.
 
 ## Change Triggers
 - Update `docs/project-thenv.md` and this file when web-console behavior changes.
