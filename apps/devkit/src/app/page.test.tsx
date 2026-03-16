@@ -17,6 +17,6 @@ describe("HomePage", () => {
     expect(
       screen.getByRole("link", { name: "Remote File Picker (placeholder)" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Thenv (placeholder)" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Thenv (active)" })).toBeInTheDocument();
   });
 });

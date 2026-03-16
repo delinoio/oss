@@ -51,7 +51,7 @@ const miniAppRegistrations: readonly MiniAppRegistration[] = [
     id: DevkitMiniAppId.Thenv,
     title: "Thenv",
     route: DevkitRoute.Thenv,
-    status: MiniAppStatus.Placeholder,
+    status: MiniAppStatus.Active,
     integrationMode: MiniAppIntegrationMode.BackendCoupled,
     docsPath: "docs/apps-thenv-web-console-foundation.md",
   },
