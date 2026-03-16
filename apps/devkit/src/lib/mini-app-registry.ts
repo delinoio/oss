@@ -13,6 +13,7 @@ export enum DevkitRoute {
 
 export enum MiniAppStatus {
   Placeholder = "placeholder",
+  Active = "active",
 }
 
 export enum MiniAppIntegrationMode {
@@ -34,7 +35,7 @@ const miniAppRegistrations: readonly MiniAppRegistration[] = [
     id: DevkitMiniAppId.CommitTracker,
     title: "Commit Tracker",
     route: DevkitRoute.CommitTracker,
-    status: MiniAppStatus.Placeholder,
+    status: MiniAppStatus.Active,
     integrationMode: MiniAppIntegrationMode.BackendCoupled,
     docsPath: "docs/project-devkit-commit-tracker.md",
   },
@@ -42,7 +43,7 @@ const miniAppRegistrations: readonly MiniAppRegistration[] = [
     id: DevkitMiniAppId.RemoteFilePicker,
     title: "Remote File Picker",
     route: DevkitRoute.RemoteFilePicker,
-    status: MiniAppStatus.Placeholder,
+    status: MiniAppStatus.Active,
     integrationMode: MiniAppIntegrationMode.BackendCoupled,
     docsPath: "docs/project-devkit-remote-file-picker.md",
   },
@@ -50,7 +51,7 @@ const miniAppRegistrations: readonly MiniAppRegistration[] = [
     id: DevkitMiniAppId.Thenv,
     title: "Thenv",
     route: DevkitRoute.Thenv,
-    status: MiniAppStatus.Placeholder,
+    status: MiniAppStatus.Active,
     integrationMode: MiniAppIntegrationMode.BackendCoupled,
     docsPath: "docs/apps-thenv-web-console-foundation.md",
   },

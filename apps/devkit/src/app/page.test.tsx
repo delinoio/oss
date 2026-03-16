@@ -13,10 +13,10 @@ describe("HomePage", () => {
       ),
     ).toBeInTheDocument();
 
-    expect(screen.getByRole("link", { name: "Commit Tracker (placeholder)" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Commit Tracker (active)" })).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: "Remote File Picker (placeholder)" }),
+      screen.getByRole("link", { name: "Remote File Picker (active)" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Thenv (placeholder)" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Thenv (active)" })).toBeInTheDocument();
   });
 });

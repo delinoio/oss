@@ -1,12 +1,9 @@
 import { DevkitShell } from "@/components/devkit-shell";
-import { MiniAppPlaceholder } from "@/components/mini-app-placeholder";
+import { ThenvApp } from "@/apps/thenv/components/thenv-app";
 import {
   DevkitMiniAppId,
   DevkitRoute,
-  getRequiredMiniAppRegistrationById,
 } from "@/lib/mini-app-registry";
-
-const thenv = getRequiredMiniAppRegistrationById(DevkitMiniAppId.Thenv);
 
 export default function ThenvPage() {
   return (
@@ -15,7 +12,7 @@ export default function ThenvPage() {
       currentRoute={DevkitRoute.Thenv}
       miniAppId={DevkitMiniAppId.Thenv}
     >
-      <MiniAppPlaceholder app={thenv} />
+      <ThenvApp />
     </DevkitShell>
   );
 }

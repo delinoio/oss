@@ -24,12 +24,13 @@ describe("mini-app-registry", () => {
     ]);
   });
 
-  it("contains only placeholder mini apps during shell-only bootstrap", () => {
-    expect(
-      MINI_APP_REGISTRATIONS.every(
-        (registration) => registration.status === MiniAppStatus.Placeholder,
-      ),
-    ).toBe(true);
+  it("contains expected mini app statuses", () => {
+    const statusMap = Object.fromEntries(
+      MINI_APP_REGISTRATIONS.map((r) => [r.id, r.status]),
+    );
+    expect(statusMap["commit-tracker"]).toBe(MiniAppStatus.Active);
+    expect(statusMap["remote-file-picker"]).toBe(MiniAppStatus.Active);
+    expect(statusMap["thenv"]).toBe(MiniAppStatus.Active);
   });
 
   it("validates unique ids and routes", () => {

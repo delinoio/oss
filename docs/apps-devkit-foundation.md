@@ -19,11 +19,13 @@
   - `thenv`
 - Route pattern contract: `/apps/<id>`.
 - Registration status contract:
-  - `commit-tracker`: `placeholder`
-  - `remote-file-picker`: `placeholder`
-  - `thenv`: `placeholder`
+  - `commit-tracker`: `active`
+  - `remote-file-picker`: `active`
+  - `thenv`: `active`
 - Current shell contract uses a simple header and inline mini app navigation links.
 - Shared shell modules must remain separate from mini app business logic.
+- Connect RPC transport is proxied via Next.js rewrites (`/api/{service}` -> backend).
+- React Query + connect-query provide server-state management for all mini apps.
 
 ## Storage
 - Defines browser/session storage usage for host shell preferences.
@@ -44,7 +46,11 @@
 
 ## Dependencies and Integrations
 - Integrates with mini app contracts documented in project-specific docs.
-- Backend API integrations for mini apps are deferred during scaffold-only rollout.
+- `@bufbuild/protobuf`, `@connectrpc/connect`, `@connectrpc/connect-query`, `@connectrpc/connect-web` for Connect RPC transport.
+- `@tanstack/react-query` for server-state caching.
+- Thenv backend: `servers/thenv` (port 8087).
+- Commit Tracker backend: `servers/commit-tracker` (port 8088).
+- Remote File Picker backend: `servers/remote-file-picker` (port 8089).
 
 ## Change Triggers
 - Update `docs/project-devkit.md` and this file when host routing or mini app registration contracts change.

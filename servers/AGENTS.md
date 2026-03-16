@@ -8,6 +8,8 @@
 ### Scope in This Domain
 
 - `servers/thenv`: Backend for secure environment sharing.
+- `servers/commit-tracker`: Commit Tracker API server for metric ingestion, querying, and PR comparison.
+- `servers/remote-file-picker`: Remote File Picker API server for signed-URL upload orchestration.
 - `servers/dexdex-main-server`: DexDex control-plane Go server scaffold.
 - `servers/dexdex-worker-server`: DexDex execution-plane Go server scaffold.
 

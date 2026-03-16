@@ -4,7 +4,6 @@ go 1.25.7
 
 require (
 	connectrpc.com/connect v1.19.1
-	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/creack/pty v1.1.24
 	github.com/delinoio/oss/protos/dexdex v0.0.0
 	github.com/getlantern/systray v1.2.2

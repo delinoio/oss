@@ -15,7 +15,7 @@
 ## Interfaces and Contracts
 - Stable mini app identifier: `commit-tracker`.
 - Route contract: `/apps/commit-tracker`.
-- Page contract: renders Devkit `MiniAppPlaceholder` content and contract document reference.
+- Page contract: renders the CommitTrackerApp component with repo selector, metric series chart, and PR comparison table.
 
 ## Storage
 - No feature-specific persistence in scaffold mode.
