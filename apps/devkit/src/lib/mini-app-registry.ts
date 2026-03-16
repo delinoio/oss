@@ -13,6 +13,7 @@ export enum DevkitRoute {
 
 export enum MiniAppStatus {
   Placeholder = "placeholder",
+  Active = "active",
 }
 
 export enum MiniAppIntegrationMode {
