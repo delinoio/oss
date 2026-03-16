@@ -1,14 +1,9 @@
 import { DevkitShell } from "@/components/devkit-shell";
-import { MiniAppPlaceholder } from "@/components/mini-app-placeholder";
+import { RemoteFilePickerApp } from "@/apps/remote-file-picker/components/remote-file-picker-app";
 import {
   DevkitMiniAppId,
   DevkitRoute,
-  getRequiredMiniAppRegistrationById,
 } from "@/lib/mini-app-registry";
-
-const remoteFilePicker = getRequiredMiniAppRegistrationById(
-  DevkitMiniAppId.RemoteFilePicker,
-);
 
 export default function RemoteFilePickerPage() {
   return (
@@ -17,7 +12,7 @@ export default function RemoteFilePickerPage() {
       currentRoute={DevkitRoute.RemoteFilePicker}
       miniAppId={DevkitMiniAppId.RemoteFilePicker}
     >
-      <MiniAppPlaceholder app={remoteFilePicker} />
+      <RemoteFilePickerApp />
     </DevkitShell>
   );
 }

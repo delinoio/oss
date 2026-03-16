@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package remotefilepicker.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/servers/remote-file-picker/gen/proto/remotefilepicker/v1;remotefilepickerv1";
+
+enum StorageProvider {
+  STORAGE_PROVIDER_UNSPECIFIED = 0;
+  STORAGE_PROVIDER_S3 = 1;
+  STORAGE_PROVIDER_GCS = 2;
+}
+
+enum UploadStatus {
+  UPLOAD_STATUS_UNSPECIFIED = 0;
+  UPLOAD_STATUS_PENDING = 1;
+  UPLOAD_STATUS_COMPLETED = 2;
+  UPLOAD_STATUS_FAILED = 3;
+  UPLOAD_STATUS_EXPIRED = 4;
+}
+
+message CreateSignedUploadUrlRequest {
+  string file_name = 1;
+  string content_type = 2;
+  int64 content_length = 3;
+  StorageProvider provider = 4;
+  string bucket = 5;
+  string key_prefix = 6;
+  map<string, string> metadata = 7;
+}
+
+message CreateSignedUploadUrlResponse {
+  string upload_id = 1;
+  string signed_url = 2;
+  string object_key = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+message ConfirmUploadRequest {
+  string upload_id = 1;
+}
+
+message ConfirmUploadResponse {
+  string upload_id = 1;
+  UploadStatus status = 2;
+  string public_url = 3;
+  int64 content_length = 4;
+}
+
+message GetUploadStatusRequest {
+  string upload_id = 1;
+}
+
+message GetUploadStatusResponse {
+  string upload_id = 1;
+  UploadStatus status = 2;
+  string file_name = 3;
+  string content_type = 4;
+  int64 content_length = 5;
+  string object_key = 6;
+  string public_url = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp completed_at = 9;
+}
+
+service UploadService {
+  rpc CreateSignedUploadUrl(CreateSignedUploadUrlRequest) returns (CreateSignedUploadUrlResponse);
+  rpc ConfirmUpload(ConfirmUploadRequest) returns (ConfirmUploadResponse);
+  rpc GetUploadStatus(GetUploadStatusRequest) returns (GetUploadStatusResponse);
+}

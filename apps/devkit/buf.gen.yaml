@@ -10,3 +10,5 @@ plugins:
       - target=ts
 inputs:
   - directory: ../../servers/thenv/proto
+  - directory: ../../servers/commit-tracker/proto
+  - directory: ../../servers/remote-file-picker/proto

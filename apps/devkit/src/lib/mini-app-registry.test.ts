@@ -28,8 +28,8 @@ describe("mini-app-registry", () => {
     const statusMap = Object.fromEntries(
       MINI_APP_REGISTRATIONS.map((r) => [r.id, r.status]),
     );
-    expect(statusMap["commit-tracker"]).toBe(MiniAppStatus.Placeholder);
-    expect(statusMap["remote-file-picker"]).toBe(MiniAppStatus.Placeholder);
+    expect(statusMap["commit-tracker"]).toBe(MiniAppStatus.Active);
+    expect(statusMap["remote-file-picker"]).toBe(MiniAppStatus.Active);
     expect(statusMap["thenv"]).toBe(MiniAppStatus.Active);
   });
 
