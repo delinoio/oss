@@ -5,6 +5,6 @@ SELECT * FROM workspaces WHERE workspace_id = $1;
 SELECT * FROM workspaces ORDER BY created_at;
 
 -- name: CreateWorkspace :one
-INSERT INTO workspaces (workspace_id, name, created_at)
-VALUES ($1, $2, $3)
+INSERT INTO workspaces (workspace_id, name, type, created_at)
+VALUES ($1, $2, $3, $4)
 RETURNING *;

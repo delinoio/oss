@@ -107,6 +107,7 @@ type UnitTask struct {
 type Workspace struct {
 	WorkspaceID string             `json:"workspace_id"`
 	Name        string             `json:"name"`
+	Type        int32              `json:"type"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 

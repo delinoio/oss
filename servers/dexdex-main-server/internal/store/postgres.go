@@ -77,6 +77,7 @@ func (s *PostgresStore) AddWorkspace(ws *dexdexv1.Workspace) {
 	_, err := s.q.CreateWorkspace(s.ctx(), dbquery.CreateWorkspaceParams{
 		WorkspaceID: ws.WorkspaceId,
 		Name:        ws.Name,
+		Type:        int32(ws.Type),
 		CreatedAt:   toPgTimestamp(ws.CreatedAt),
 	})
 	if err != nil {
@@ -97,17 +98,10 @@ func (s *PostgresStore) ListWorkspaces() []*dexdexv1.Workspace {
 
 	result := make([]*dexdexv1.Workspace, len(rows))
 	for i, row := range rows {
-		wsType := dexdexv1.WorkspaceType_WORKSPACE_TYPE_UNSPECIFIED
-		s.mu.RLock()
-		if cached, ok := s.workspaces[row.WorkspaceID]; ok {
-			wsType = cached.Type
-		}
-		s.mu.RUnlock()
-
 		result[i] = &dexdexv1.Workspace{
 			WorkspaceId: row.WorkspaceID,
 			Name:        row.Name,
-			Type:        wsType,
+			Type:        dexdexv1.WorkspaceType(row.Type),
 			CreatedAt:   pgTimestamp(row.CreatedAt),
 		}
 	}
@@ -119,18 +113,10 @@ func (s *PostgresStore) GetWorkspace(id string) (*dexdexv1.Workspace, error) {
 	if err != nil {
 		return nil, fmt.Errorf("workspace not found: %s", id)
 	}
-
-	wsType := dexdexv1.WorkspaceType_WORKSPACE_TYPE_UNSPECIFIED
-	s.mu.RLock()
-	if cached, ok := s.workspaces[id]; ok {
-		wsType = cached.Type
-	}
-	s.mu.RUnlock()
-
 	return &dexdexv1.Workspace{
 		WorkspaceId: row.WorkspaceID,
 		Name:        row.Name,
-		Type:        wsType,
+		Type:        dexdexv1.WorkspaceType(row.Type),
 		CreatedAt:   pgTimestamp(row.CreatedAt),
 	}, nil
 }
@@ -1101,6 +1087,7 @@ func (s *PostgresStore) CreateWorkspace(name string, wsType dexdexv1.WorkspaceTy
 	row, err := s.q.CreateWorkspace(s.ctx(), dbquery.CreateWorkspaceParams{
 		WorkspaceID: workspaceID,
 		Name:        name,
+		Type:        int32(wsType),
 		CreatedAt:   toPgTimestamp(createdAt),
 	})
 	if err != nil {
@@ -1111,7 +1098,7 @@ func (s *PostgresStore) CreateWorkspace(name string, wsType dexdexv1.WorkspaceTy
 	ws := &dexdexv1.Workspace{
 		WorkspaceId: row.WorkspaceID,
 		Name:        row.Name,
-		Type:        wsType,
+		Type:        dexdexv1.WorkspaceType(row.Type),
 		CreatedAt:   pgTimestamp(row.CreatedAt),
 	}
 
@@ -1135,17 +1122,10 @@ func (s *PostgresStore) UpdateWorkspace(workspaceID, name string) (*dexdexv1.Wor
 		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
 	}
 
-	wsType := dexdexv1.WorkspaceType_WORKSPACE_TYPE_UNSPECIFIED
-	s.mu.RLock()
-	if cached, ok := s.workspaces[workspaceID]; ok {
-		wsType = cached.Type
-	}
-	s.mu.RUnlock()
-
 	ws := &dexdexv1.Workspace{
 		WorkspaceId: row.WorkspaceID,
 		Name:        row.Name,
-		Type:        wsType,
+		Type:        dexdexv1.WorkspaceType(row.Type),
 		CreatedAt:   pgTimestamp(row.CreatedAt),
 	}
 
