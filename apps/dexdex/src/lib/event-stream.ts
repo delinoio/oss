@@ -73,9 +73,11 @@ export class EventStreamClient {
     onStatus?: (status: EventStreamStatus) => void,
     transport?: Transport,
   ): void {
-    this.disconnect();
+    this.cleanup(false);
     this.onStatusChange = onStatus ?? null;
-    this.transport = transport ?? null;
+    if (transport !== undefined) {
+      this.transport = transport;
+    }
     this.abortController = new AbortController();
 
     console.log("[EventStream] Connecting to workspace:", workspaceId, "from sequence:", this.lastSequence);
@@ -87,6 +89,10 @@ export class EventStreamClient {
    * Disconnect from the event stream.
    */
   disconnect(): void {
+    this.cleanup(true);
+  }
+
+  private cleanup(notifyDisconnected: boolean): void {
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
@@ -95,8 +101,10 @@ export class EventStreamClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.notifyStatus("disconnected");
-    console.log("[EventStream] Disconnected");
+    if (notifyDisconnected) {
+      this.notifyStatus("disconnected");
+      console.log("[EventStream] Disconnected");
+    }
   }
 
   /**
@@ -117,7 +125,7 @@ export class EventStreamClient {
     this.notifyStatus("reconnecting");
     console.log("[EventStream] Reconnecting in", this.backoffMs, "ms");
     this.reconnectTimer = setTimeout(() => {
-      this.connect(workspaceId, onEvent, this.onStatusChange ?? undefined);
+      this.connect(workspaceId, onEvent, this.onStatusChange ?? undefined, this.transport ?? undefined);
     }, this.backoffMs);
     this.backoffMs = Math.min(this.backoffMs * 2, MAX_BACKOFF_MS);
   }
@@ -133,6 +141,8 @@ export class EventStreamClient {
     const client = createClient(EventStreamService, streamTransport);
 
     try {
+      // Treat stream open as connected even when there are no events yet.
+      this.notifyStatus("connected");
       for await (const response of client.streamWorkspaceEvents(
         {
           workspaceId,
@@ -145,8 +155,11 @@ export class EventStreamClient {
         onEvent(event);
         this.backoffMs = INITIAL_BACKOFF_MS;
       }
-      // Stream ended normally
-      this.notifyStatus("connected");
+      // Unexpected stream end: reconnect unless we were explicitly aborted.
+      if (this.abortController?.signal.aborted) {
+        return;
+      }
+      this.scheduleReconnect(workspaceId, onEvent);
     } catch (err) {
       if (this.abortController?.signal.aborted) return;
       console.error("[EventStream] Stream error:", err);
