@@ -111,7 +111,7 @@ func (h *PrHandler) TrackPullRequest(
 
 	h.logger.Info("TrackPullRequest called", "workspace_id", workspaceID, "pr_url", prURL)
 
-	prTrackingID := fmt.Sprintf("pr-%d", nextHandlerSequence())
+	prTrackingID := nextPRTrackingID()
 
 	pr := &dexdexv1.PullRequestRecord{
 		PrTrackingId:   prTrackingID,
@@ -158,7 +158,7 @@ func (h *PrHandler) RunAutoFixNow(
 
 	// Create a remediation sub task placeholder
 	subTask := &dexdexv1.SubTask{
-		SubTaskId:  nextHandlerID(),
+		SubTaskId:  nextSubTaskID(),
 		UnitTaskId: pr.UnitTaskId,
 		Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_PR_REVIEW_FIX,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,

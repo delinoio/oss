@@ -46,6 +46,7 @@ type Querier interface {
 	ListWorkspaces(ctx context.Context) ([]Workspace, error)
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (Notification, error)
 	TouchRepositoryGroup(ctx context.Context, arg TouchRepositoryGroupParams) error
+	UpdatePullRequestStatus(ctx context.Context, arg UpdatePullRequestStatusParams) (PrRecord, error)
 	UpdateRepository(ctx context.Context, arg UpdateRepositoryParams) (Repository, error)
 	UpdateUnitTaskStatus(ctx context.Context, arg UpdateUnitTaskStatusParams) (UnitTask, error)
 	UpsertSubTask(ctx context.Context, arg UpsertSubTaskParams) (SubTask, error)

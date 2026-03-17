@@ -119,7 +119,7 @@ func (h *ReviewCommentHandler) CreateReviewComment(
 
 	now := timestamppb.Now()
 	comment := &dexdexv1.ReviewComment{
-		ReviewCommentId: nextHandlerID(),
+		ReviewCommentId: nextReviewCommentID(),
 		Body:            req.Msg.Body,
 		FilePath:        req.Msg.FilePath,
 		Side:            req.Msg.Side,

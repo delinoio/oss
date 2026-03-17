@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync/atomic"
 
 	"connectrpc.com/connect"
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
@@ -290,7 +289,7 @@ func (h *TaskHandler) SubmitPlanDecision(
 
 		// Create a new REQUEST_CHANGES sub task
 		created := &dexdexv1.SubTask{
-			SubTaskId:  nextHandlerID(),
+			SubTaskId:  nextSubTaskID(),
 			UnitTaskId: currentSubTask.UnitTaskId,
 			Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_REQUEST_CHANGES,
 			Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
@@ -459,7 +458,7 @@ func (h *TaskHandler) CreateSubTask(
 	}
 
 	subTask := &dexdexv1.SubTask{
-		SubTaskId:  nextHandlerID(),
+		SubTaskId:  nextSubTaskID(),
 		UnitTaskId: unitTaskID,
 		Type:       subTaskType,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
@@ -532,7 +531,7 @@ func (h *TaskHandler) RetrySubTask(
 	}
 
 	retrySubTask := &dexdexv1.SubTask{
-		SubTaskId:  nextHandlerID(),
+		SubTaskId:  nextSubTaskID(),
 		UnitTaskId: origSubTask.UnitTaskId,
 		Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_MANUAL_RETRY,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
@@ -554,14 +553,4 @@ func (h *TaskHandler) RetrySubTask(
 	return connect.NewResponse(&dexdexv1.RetrySubTaskResponse{
 		SubTask: retrySubTask,
 	}), nil
-}
-
-var handlerIDCounter uint64
-
-func nextHandlerSequence() uint64 {
-	return atomic.AddUint64(&handlerIDCounter, 1)
-}
-
-func nextHandlerID() string {
-	return fmt.Sprintf("sub-gen-%d", nextHandlerSequence())
 }

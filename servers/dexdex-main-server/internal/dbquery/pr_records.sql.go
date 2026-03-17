@@ -67,3 +67,23 @@ func (q *Queries) ListPullRequests(ctx context.Context, workspaceID string) ([]P
 	}
 	return items, nil
 }
+
+const updatePullRequestStatus = `-- name: UpdatePullRequestStatus :one
+UPDATE pr_records
+SET status = $3
+WHERE workspace_id = $1 AND pr_tracking_id = $2
+RETURNING pr_tracking_id, workspace_id, status
+`
+
+type UpdatePullRequestStatusParams struct {
+	WorkspaceID  string `json:"workspace_id"`
+	PrTrackingID string `json:"pr_tracking_id"`
+	Status       int32  `json:"status"`
+}
+
+func (q *Queries) UpdatePullRequestStatus(ctx context.Context, arg UpdatePullRequestStatusParams) (PrRecord, error) {
+	row := q.db.QueryRow(ctx, updatePullRequestStatus, arg.WorkspaceID, arg.PrTrackingID, arg.Status)
+	var i PrRecord
+	err := row.Scan(&i.PrTrackingID, &i.WorkspaceID, &i.Status)
+	return i, err
+}

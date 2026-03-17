@@ -859,13 +859,18 @@ func (s *PostgresStore) ListPullRequests(workspaceID string) []*dexdexv1.PullReq
 }
 
 func (s *PostgresStore) UpdatePullRequest(workspaceID, prTrackingID string, status dexdexv1.PrStatus) (*dexdexv1.PullRequestRecord, error) {
-	// For PostgreSQL, update the status in-place. Since sqlc queries may not have an update query yet,
-	// use AddPullRequest to upsert (the table should have ON CONFLICT handling).
-	s.AddPullRequest(workspaceID, &dexdexv1.PullRequestRecord{
-		PrTrackingId: prTrackingID,
-		Status:       status,
+	row, err := s.q.UpdatePullRequestStatus(s.ctx(), dbquery.UpdatePullRequestStatusParams{
+		WorkspaceID:  workspaceID,
+		PrTrackingID: prTrackingID,
+		Status:       int32(status),
 	})
-	return s.GetPullRequest(workspaceID, prTrackingID)
+	if err != nil {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	return &dexdexv1.PullRequestRecord{
+		PrTrackingId: row.PrTrackingID,
+		Status:       dexdexv1.PrStatus(row.Status),
+	}, nil
 }
 
 // Review assist methods
