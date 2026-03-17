@@ -9,7 +9,3 @@ func nextSubTaskID() string {
 func nextReviewCommentID() string {
 	return "rc-" + uuid.NewString()
 }
-
-func nextPRTrackingID() string {
-	return "pr-" + uuid.NewString()
-}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -111,7 +113,15 @@ func (h *PrHandler) TrackPullRequest(
 
 	h.logger.Info("TrackPullRequest called", "workspace_id", workspaceID, "pr_url", prURL)
 
-	prTrackingID := nextPRTrackingID()
+	prTrackingID, trackingErr := trackingIDFromPRURL(prURL)
+	if trackingErr != nil {
+		h.logger.Warn("TrackPullRequest validation failed",
+			"workspace_id", workspaceID,
+			"pr_url", prURL,
+			"error", trackingErr,
+		)
+		return nil, connect.NewError(connect.CodeInvalidArgument, trackingErr)
+	}
 
 	pr := &dexdexv1.PullRequestRecord{
 		PrTrackingId:   prTrackingID,
@@ -226,4 +236,34 @@ func (h *PrHandler) SetAutoFixPolicy(
 	return connect.NewResponse(&dexdexv1.SetAutoFixPolicyResponse{
 		PullRequest: pr,
 	}), nil
+}
+
+func trackingIDFromPRURL(prURL string) (string, error) {
+	parsedURL, err := url.Parse(prURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid pr_url: %w", err)
+	}
+
+	host := strings.ToLower(parsedURL.Hostname())
+	if host != "github.com" && host != "www.github.com" {
+		return "", fmt.Errorf("pr_url must be a GitHub pull request URL")
+	}
+
+	segments := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
+	if len(segments) < 4 || segments[2] != "pull" {
+		return "", fmt.Errorf("pr_url must be in the format https://github.com/<owner>/<repo>/pull/<number>")
+	}
+
+	owner := strings.TrimSpace(segments[0])
+	repo := strings.TrimSpace(segments[1])
+	prNumber := strings.TrimSpace(segments[3])
+	if owner == "" || repo == "" || prNumber == "" {
+		return "", fmt.Errorf("pr_url must include owner, repo, and pull request number")
+	}
+
+	if _, err := strconv.Atoi(prNumber); err != nil {
+		return "", fmt.Errorf("pull request number must be numeric")
+	}
+
+	return fmt.Sprintf("%s/%s#%s", owner, repo, prNumber), nil
 }
