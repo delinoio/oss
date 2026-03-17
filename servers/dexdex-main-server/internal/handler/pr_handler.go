@@ -111,8 +111,7 @@ func (h *PrHandler) TrackPullRequest(
 
 	h.logger.Info("TrackPullRequest called", "workspace_id", workspaceID, "pr_url", prURL)
 
-	prTrackingID := fmt.Sprintf("pr-%d", handlerIDCounter+1)
-	handlerIDCounter++
+	prTrackingID := fmt.Sprintf("pr-%d", nextHandlerSequence())
 
 	pr := &dexdexv1.PullRequestRecord{
 		PrTrackingId:   prTrackingID,

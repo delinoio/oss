@@ -137,17 +137,21 @@ export function InboxPage() {
         ) : null}
         {!isLoading &&
           notifications.map((notification) => (
-            <div
+            <button
+              type="button"
               key={notification.notificationId}
               style={{
                 display: "flex",
                 alignItems: "flex-start",
                 gap: "var(--space-3)",
+                width: "100%",
                 padding: "var(--space-3) var(--space-6)",
+                border: "none",
                 borderBottom: "1px solid var(--color-border-subtle)",
                 cursor: "pointer",
                 backgroundColor: notification.read ? "transparent" : "var(--color-accent-subtle)",
                 transition: "background-color 0.1s",
+                textAlign: "left",
               }}
               onClick={() => handleNotificationClick(notification)}
               onMouseEnter={(e) => {
@@ -172,7 +176,6 @@ export function InboxPage() {
                   borderRadius: "var(--radius-sm)",
                   backgroundColor: getNotificationBadgeColor(notification.type),
                   color: "var(--color-text-inverse)",
-                  fontSize: "var(--font-size-xs)",
                   fontWeight: 700,
                 }}
               >
@@ -230,7 +233,7 @@ export function InboxPage() {
                   }}
                 />
               )}
-            </div>
+            </button>
           ))}
       </div>
     </div>

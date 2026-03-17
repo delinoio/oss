@@ -13,6 +13,7 @@ import {
   useDeleteReviewCommentMutation,
   useCreateUnitTaskMutation,
 } from "../../hooks/use-dexdex-queries";
+import { DiffSide } from "../../gen/v1/dexdex_pb";
 import { DiffCommentView } from "./diff-comment-view";
 
 interface ReviewAssistPanelProps {
@@ -20,6 +21,16 @@ interface ReviewAssistPanelProps {
   prTrackingId?: string;
   repositoryGroupId?: string;
   workspaceId: string;
+}
+
+function toProtoDiffSide(side: string): DiffSide {
+  if (side === "LEFT") {
+    return DiffSide.OLD;
+  }
+  if (side === "RIGHT") {
+    return DiffSide.NEW;
+  }
+  return DiffSide.UNSPECIFIED;
 }
 
 export function ReviewAssistPanel({ unitTaskId, prTrackingId, repositoryGroupId, workspaceId }: ReviewAssistPanelProps) {
@@ -168,7 +179,7 @@ export function ReviewAssistPanel({ unitTaskId, prTrackingId, repositoryGroupId,
                     prTrackingId: prId,
                     body,
                     filePath,
-                    side,
+                    side: toProtoDiffSide(side),
                     lineNumber,
                   });
                 }}

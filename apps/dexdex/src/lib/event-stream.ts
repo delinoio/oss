@@ -26,7 +26,7 @@ export type StreamEventPayload =
   | { kind: "sessionOutput"; sessionId: string; outputKind: SessionOutputKind; body: string }
   | { kind: "sessionStateChanged"; sessionId: string; status: string }
   | { kind: "prUpdated"; prTrackingId: string; status: string }
-  | { kind: "notificationCreated"; notificationId: string; type: string }
+  | { kind: "notificationCreated"; notificationId: string; type: string; title: string; body: string; referenceId?: string }
   | { kind: "sessionForkUpdated"; sessionId: string; forkStatus: string }
   | { kind: "workspaceWorkStatusUpdated"; workspaceId: string; status: string }
   | { kind: "unknown" };
@@ -202,6 +202,9 @@ export class EventStreamClient {
         kind: "notificationCreated",
         notificationId: response.payload.value.notification.notificationId,
         type: String(response.payload.value.notification.type),
+        title: response.payload.value.notification.title,
+        body: response.payload.value.notification.body,
+        referenceId: response.payload.value.notification.referenceId || undefined,
       };
     } else if (response.payload.case === "sessionForkUpdated" && response.payload.value?.sessionSummary) {
       payload = {

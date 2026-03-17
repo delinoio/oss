@@ -4,7 +4,8 @@
 
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../stores/app-store";
-import { useListWorkspaces, useSetActiveWorkspaceMutation } from "../hooks/use-dexdex-queries";
+import { useCreateWorkspaceMutation, useListWorkspaces, useSetActiveWorkspaceMutation } from "../hooks/use-dexdex-queries";
+import { WorkspaceType } from "../gen/v1/dexdex_pb";
 
 interface SidebarProps {
   activePath: string;
@@ -18,12 +19,21 @@ const NAV_ITEMS = [
   { path: "/settings", label: "Settings", icon: "\u2699\uFE0F" },
 ];
 
+function formatMutationError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
 export function Sidebar({ activePath, onNavigate }: SidebarProps) {
   const { sidebarOpen, connectionStatus, activeWorkspaceId, setActiveWorkspaceId } = useAppStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [createWorkspaceError, setCreateWorkspaceError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { data: workspacesData } = useListWorkspaces();
   const setActiveWorkspaceMutation = useSetActiveWorkspaceMutation();
+  const createWorkspaceMutation = useCreateWorkspaceMutation();
 
   const workspaces = workspacesData?.workspaces ?? [];
   const currentWorkspace = workspaces.find((w) => w.workspaceId === activeWorkspaceId);
@@ -31,12 +41,51 @@ export function Sidebar({ activePath, onNavigate }: SidebarProps) {
 
   const handleWorkspaceSwitch = useCallback(
     (workspaceId: string) => {
+      setCreateWorkspaceError(null);
       setActiveWorkspaceId(workspaceId);
       setActiveWorkspaceMutation.mutate({ workspaceId });
       setDropdownOpen(false);
     },
     [setActiveWorkspaceId, setActiveWorkspaceMutation],
   );
+
+  const handleCreateWorkspace = useCallback(() => {
+    setCreateWorkspaceError(null);
+
+    const existingNames = new Set(
+      workspaces
+        .map((workspace) => workspace.name.trim())
+        .filter((workspaceName) => workspaceName.length > 0),
+    );
+    let workspaceIndex = workspaces.length + 1;
+    let workspaceName = `Workspace ${workspaceIndex}`;
+    while (existingNames.has(workspaceName)) {
+      workspaceIndex += 1;
+      workspaceName = `Workspace ${workspaceIndex}`;
+    }
+
+    createWorkspaceMutation.mutate(
+      {
+        name: workspaceName,
+        type: WorkspaceType.LOCAL_ENDPOINT,
+      },
+      {
+        onSuccess: (response) => {
+          const createdWorkspaceId = response.workspace?.workspaceId;
+          if (!createdWorkspaceId) {
+            setCreateWorkspaceError("Workspace created but response was missing workspace_id.");
+            return;
+          }
+          setActiveWorkspaceId(createdWorkspaceId);
+          setActiveWorkspaceMutation.mutate({ workspaceId: createdWorkspaceId });
+          setDropdownOpen(false);
+        },
+        onError: (error) => {
+          setCreateWorkspaceError(`Failed to create workspace: ${formatMutationError(error)}`);
+        },
+      },
+    );
+  }, [createWorkspaceMutation, setActiveWorkspaceId, setActiveWorkspaceMutation, workspaces]);
 
   useEffect(() => {
     function handleMouseDown(event: MouseEvent) {
@@ -163,7 +212,10 @@ export function Sidebar({ activePath, onNavigate }: SidebarProps) {
       <div style={workspaceSelectorStyle} ref={dropdownRef} data-testid="workspace-selector">
         <button
           style={workspaceButtonStyle}
-          onClick={() => setDropdownOpen((prev) => !prev)}
+          onClick={() => {
+            setCreateWorkspaceError(null);
+            setDropdownOpen((prev) => !prev);
+          }}
           onMouseEnter={(e) => {
             (e.currentTarget as HTMLElement).style.backgroundColor = "var(--color-bg-hover)";
           }}
@@ -180,8 +232,19 @@ export function Sidebar({ activePath, onNavigate }: SidebarProps) {
             {dropdownOpen ? "\u25B2" : "\u25BC"}
           </span>
         </button>
-        {dropdownOpen && workspaces.length > 0 && (
+        {dropdownOpen && (
           <div style={dropdownMenuStyle} data-testid="workspace-dropdown">
+            {workspaces.length === 0 && (
+              <div
+                style={{
+                  padding: "var(--space-2) var(--space-3)",
+                  fontSize: "var(--font-size-sm)",
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
+                No workspaces yet.
+              </div>
+            )}
             {workspaces.map((ws) => {
               const isSelected = ws.workspaceId === activeWorkspaceId;
               return (
@@ -220,10 +283,7 @@ export function Sidebar({ activePath, onNavigate }: SidebarProps) {
                 fontWeight: 500,
                 transition: "background-color 0.1s",
               }}
-              onClick={() => {
-                console.log("Create workspace");
-                setDropdownOpen(false);
-              }}
+              onClick={handleCreateWorkspace}
               onMouseEnter={(e) => {
                 (e.currentTarget as HTMLElement).style.backgroundColor = "var(--color-bg-hover)";
               }}
@@ -231,10 +291,25 @@ export function Sidebar({ activePath, onNavigate }: SidebarProps) {
                 (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
               }}
               data-testid="create-workspace-button"
+              disabled={createWorkspaceMutation.isPending}
             >
-              + Create Workspace
+              {createWorkspaceMutation.isPending ? "Creating workspace..." : "+ Create Workspace"}
             </button>
           </div>
+        )}
+        {createWorkspaceError && (
+          <p
+            style={{
+              marginTop: "var(--space-2)",
+              marginBottom: 0,
+              fontSize: "var(--font-size-xs)",
+              color: "var(--color-status-failed)",
+            }}
+            data-testid="create-workspace-error"
+            role="alert"
+          >
+            {createWorkspaceError}
+          </p>
         )}
       </div>
       <div style={navStyle}>

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 
 	"connectrpc.com/connect"
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
@@ -552,7 +553,10 @@ func (h *TaskHandler) RetrySubTask(
 
 var handlerIDCounter uint64
 
+func nextHandlerSequence() uint64 {
+	return atomic.AddUint64(&handlerIDCounter, 1)
+}
+
 func nextHandlerID() string {
-	handlerIDCounter++
-	return fmt.Sprintf("sub-gen-%d", handlerIDCounter)
+	return fmt.Sprintf("sub-gen-%d", nextHandlerSequence())
 }
