@@ -452,6 +452,28 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
   });
 
+  it("navigates to repository groups via sidebar", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+
+    await user.click(screen.getByTestId("nav-repository-groups"));
+    expect(await screen.findByTestId("repository-groups-page")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Repository Groups", level: 1 })).toBeTruthy();
+  });
+
+  it("navigates to repositories via sidebar", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+
+    await user.click(screen.getByTestId("nav-repositories"));
+    expect(await screen.findByTestId("repositories-page")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Repositories", level: 1 })).toBeTruthy();
+  });
+
   it("navigates to task detail when clicking a task row", async () => {
     const user = userEvent.setup();
     renderWithProviders(<App />);
@@ -556,6 +578,29 @@ describe("App", () => {
 
     const palette = screen.getByTestId("command-palette");
     expect(palette.textContent).toContain("Add user authentication flow");
+  });
+
+  it("shows repository navigation actions in command palette", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+    await user.keyboard("{Meta>}k{/Meta}");
+
+    expect(screen.getByText("Go to Repository Groups")).toBeTruthy();
+    expect(screen.getByText("Go to Repositories")).toBeTruthy();
+  });
+
+  it("navigates to repository groups via command palette", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+    await user.keyboard("{Meta>}k{/Meta}");
+
+    await user.click(screen.getByText("Go to Repository Groups"));
+    expect(await screen.findByTestId("repository-groups-page")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Repository Groups", level: 1 })).toBeTruthy();
   });
 
   it("toggles dark mode in settings", async () => {

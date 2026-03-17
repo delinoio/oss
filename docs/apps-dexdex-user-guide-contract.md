@@ -17,7 +17,7 @@
 ## Interfaces and Contracts
 User workflow sequence:
 1. create/select workspace
-2. add repositories and create ordered repository groups
+2. open sidebar `Repositories` and `Repository Groups` pages to add repositories and create ordered repository groups
 3. create UnitTask
 4. monitor SubTask and AgentSession execution
 5. use multi-tab workflows for parallel triage
@@ -32,6 +32,7 @@ User workflow sequence:
 Mandatory behavior contracts:
 - UnitTask execution is repository-group scoped.
 - Repository order affects execution directory mapping.
+- Repository and Repository Group management are first-class sidebar flows, while Settings focuses on workspace/agent/preferences.
 - `Cmd+Enter` submits multiline forms.
 - stop actions transition to `CANCELLED` through stream updates.
 - PR creation and commit-to-local depend on real commit chains.

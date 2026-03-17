@@ -25,12 +25,15 @@ Layout and navigation contracts:
 - desktop layout supports workspace rail, tab bar, list pane, detail pane
 - mobile layout uses segmented navigation and stacked detail surfaces
 - multi-tab workspace supports open/reorder/close with draft preservation
+- repository administration uses dedicated sidebar destinations (`Repository Groups`, `Repositories`) instead of Settings-internal tabs
 
 Primary screens:
 - Workspace Home
 - UnitTask Detail
 - PR Management
 - PR Review Assist
+- Repository Groups
+- Repositories
 - Settings
 - Notifications Center
 
