@@ -80,6 +80,11 @@ func (h *BadgeThemeHandler) UpsertBadgeTheme(
 	h.logger.Info("UpsertBadgeTheme called", "workspace_id", workspaceID, "theme_name", themeName, "color_key", colorKey.String())
 
 	theme := h.store.UpsertBadgeTheme(workspaceID, themeName, colorKey)
+	if theme == nil {
+		err := fmt.Errorf("failed to upsert badge theme")
+		h.logger.Error("UpsertBadgeTheme failed", "workspace_id", workspaceID, "theme_name", themeName, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
 
 	return connect.NewResponse(&dexdexv1.UpsertBadgeThemeResponse{
 		Theme: theme,

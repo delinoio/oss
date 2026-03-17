@@ -81,7 +81,11 @@ func (s *PostgresStore) AddWorkspace(ws *dexdexv1.Workspace) {
 	})
 	if err != nil {
 		s.logger.Error("AddWorkspace failed", "error", err)
+		return
 	}
+	s.mu.Lock()
+	s.workspaces[ws.WorkspaceId] = ws
+	s.mu.Unlock()
 }
 
 func (s *PostgresStore) ListWorkspaces() []*dexdexv1.Workspace {
@@ -93,9 +97,17 @@ func (s *PostgresStore) ListWorkspaces() []*dexdexv1.Workspace {
 
 	result := make([]*dexdexv1.Workspace, len(rows))
 	for i, row := range rows {
+		wsType := dexdexv1.WorkspaceType_WORKSPACE_TYPE_UNSPECIFIED
+		s.mu.RLock()
+		if cached, ok := s.workspaces[row.WorkspaceID]; ok {
+			wsType = cached.Type
+		}
+		s.mu.RUnlock()
+
 		result[i] = &dexdexv1.Workspace{
 			WorkspaceId: row.WorkspaceID,
 			Name:        row.Name,
+			Type:        wsType,
 			CreatedAt:   pgTimestamp(row.CreatedAt),
 		}
 	}
@@ -107,9 +119,18 @@ func (s *PostgresStore) GetWorkspace(id string) (*dexdexv1.Workspace, error) {
 	if err != nil {
 		return nil, fmt.Errorf("workspace not found: %s", id)
 	}
+
+	wsType := dexdexv1.WorkspaceType_WORKSPACE_TYPE_UNSPECIFIED
+	s.mu.RLock()
+	if cached, ok := s.workspaces[id]; ok {
+		wsType = cached.Type
+	}
+	s.mu.RUnlock()
+
 	return &dexdexv1.Workspace{
 		WorkspaceId: row.WorkspaceID,
 		Name:        row.Name,
+		Type:        wsType,
 		CreatedAt:   pgTimestamp(row.CreatedAt),
 	}, nil
 }
@@ -1075,36 +1096,132 @@ func (s *PostgresStore) DeleteReviewComment(workspaceID, reviewCommentID string)
 }
 
 func (s *PostgresStore) CreateWorkspace(name string, wsType dexdexv1.WorkspaceType) *dexdexv1.Workspace {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ws := &dexdexv1.Workspace{
-		WorkspaceId: fmt.Sprintf("ws-%d", len(s.workspaces)+1),
+	workspaceID := fmt.Sprintf("ws-%s", nextID())
+	createdAt := timestamppb.Now()
+	row, err := s.q.CreateWorkspace(s.ctx(), dbquery.CreateWorkspaceParams{
+		WorkspaceID: workspaceID,
 		Name:        name,
-		Type:        wsType,
-		CreatedAt:   timestamppb.Now(),
+		CreatedAt:   toPgTimestamp(createdAt),
+	})
+	if err != nil {
+		s.logger.Error("CreateWorkspace failed", "workspace_id", workspaceID, "error", err)
+		return nil
 	}
+
+	ws := &dexdexv1.Workspace{
+		WorkspaceId: row.WorkspaceID,
+		Name:        row.Name,
+		Type:        wsType,
+		CreatedAt:   pgTimestamp(row.CreatedAt),
+	}
+
+	s.mu.Lock()
 	s.workspaces[ws.WorkspaceId] = ws
+	s.mu.Unlock()
 	return ws
 }
 
 func (s *PostgresStore) UpdateWorkspace(workspaceID, name string) (*dexdexv1.Workspace, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ws, ok := s.workspaces[workspaceID]
-	if !ok {
+	tag, err := s.pool.Exec(s.ctx(), "UPDATE workspaces SET name = $2 WHERE workspace_id = $1", workspaceID, name)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
 		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
 	}
-	ws.Name = name
+
+	row, err := s.q.GetWorkspace(s.ctx(), workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+
+	wsType := dexdexv1.WorkspaceType_WORKSPACE_TYPE_UNSPECIFIED
+	s.mu.RLock()
+	if cached, ok := s.workspaces[workspaceID]; ok {
+		wsType = cached.Type
+	}
+	s.mu.RUnlock()
+
+	ws := &dexdexv1.Workspace{
+		WorkspaceId: row.WorkspaceID,
+		Name:        row.Name,
+		Type:        wsType,
+		CreatedAt:   pgTimestamp(row.CreatedAt),
+	}
+
+	s.mu.Lock()
+	s.workspaces[workspaceID] = ws
+	s.mu.Unlock()
 	return ws, nil
 }
 
 func (s *PostgresStore) DeleteWorkspace(workspaceID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.workspaces[workspaceID]; !ok {
+	rows, err := s.q.ListUnitTasks(s.ctx(), workspaceID)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if row.Status == int32(dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED) ||
+			row.Status == int32(dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_IN_PROGRESS) {
+			return fmt.Errorf("workspace has active tasks, cannot delete: %s", workspaceID)
+		}
+	}
+
+	ctx := s.ctx()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	deleteStatements := []string{
+		"DELETE FROM repository_group_members WHERE workspace_id = $1",
+		"DELETE FROM repository_groups WHERE workspace_id = $1",
+		"DELETE FROM repositories WHERE workspace_id = $1",
+		"DELETE FROM review_comments WHERE workspace_id = $1",
+		"DELETE FROM review_assist_items WHERE workspace_id = $1",
+		"DELETE FROM sub_tasks WHERE workspace_id = $1",
+		"DELETE FROM session_summaries WHERE workspace_id = $1",
+		"DELETE FROM notifications WHERE workspace_id = $1",
+		"DELETE FROM pr_records WHERE workspace_id = $1",
+		"DELETE FROM workspace_settings WHERE workspace_id = $1",
+		"DELETE FROM unit_tasks WHERE workspace_id = $1",
+	}
+	for _, statement := range deleteStatements {
+		if _, execErr := tx.Exec(ctx, statement, workspaceID); execErr != nil {
+			return execErr
+		}
+	}
+
+	tag, err := tx.Exec(ctx, "DELETE FROM workspaces WHERE workspace_id = $1", workspaceID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("workspace not found: %s", workspaceID)
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	committed = true
+
+	s.mu.Lock()
 	delete(s.workspaces, workspaceID)
+	delete(s.subTasks, workspaceID)
+	delete(s.reviewAssist, workspaceID)
+	delete(s.prRecords, workspaceID)
+	delete(s.sessionSummaries, workspaceID)
+	delete(s.worktreeAssignments, workspaceID)
+	delete(s.badgeThemes, workspaceID)
+	delete(s.reviewCommentsStore, workspaceID)
+	s.mu.Unlock()
+
 	return nil
 }
 

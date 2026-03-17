@@ -155,6 +155,11 @@ func (h *WorkspaceHandler) CreateWorkspace(
 	h.logger.Info("CreateWorkspace called", "name", name, "type", wsType.String())
 
 	ws := h.store.CreateWorkspace(name, wsType)
+	if ws == nil {
+		err := fmt.Errorf("failed to create workspace")
+		h.logger.Error("CreateWorkspace failed", "name", name, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
 
 	h.logger.Info("CreateWorkspace completed", "workspace_id", ws.WorkspaceId)
 

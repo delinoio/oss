@@ -162,6 +162,11 @@ func (h *TaskHandler) CreateUnitTask(
 	}
 
 	task := h.store.CreateUnitTask(workspaceID, prompt, repoGroupID, agentCliType, usePlanMode)
+	if task == nil {
+		err := fmt.Errorf("failed to create unit task")
+		h.logger.Error("CreateUnitTask failed", "workspace_id", workspaceID, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
 
 	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_TASK_UPDATED, &stream.TaskPayload{Task: task})
 

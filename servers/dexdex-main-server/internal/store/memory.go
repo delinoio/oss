@@ -3,10 +3,10 @@ package store
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -21,11 +21,8 @@ type WorktreeAssignment struct {
 	UpdatedAt    time.Time
 }
 
-// idCounter provides unique IDs for store entities.
-var idCounter atomic.Uint64
-
 func nextID() string {
-	return fmt.Sprintf("id-%d", idCounter.Add(1))
+	return fmt.Sprintf("id-%s", uuid.NewString())
 }
 
 // Store defines the in-memory storage interface for DexDex main server entities.
