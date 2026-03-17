@@ -433,7 +433,7 @@ func SeedData(s Store) {
 	}
 
 	for _, pr := range prRecords {
-		s.AddPullRequest(defaultWorkspaceID, pr)
+		_ = s.AddPullRequest(defaultWorkspaceID, pr)
 	}
 
 	// Review assist items (keyed by unitTaskID)

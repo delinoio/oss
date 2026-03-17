@@ -67,10 +67,11 @@ type Store interface {
 	GetRepositoryGroup(workspaceID, groupID string) (*dexdexv1.RepositoryGroup, error)
 	ListRepositoryGroups(workspaceID string) []*dexdexv1.RepositoryGroup
 	// PR operations
-	AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord)
+	AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord) error
 	GetPullRequest(workspaceID, prTrackingID string) (*dexdexv1.PullRequestRecord, error)
 	ListPullRequests(workspaceID string) []*dexdexv1.PullRequestRecord
 	UpdatePullRequest(workspaceID, prTrackingID string, status dexdexv1.PrStatus) (*dexdexv1.PullRequestRecord, error)
+	UpdatePullRequestFixAttemptCount(workspaceID, prTrackingID string, fixAttemptCount int32) (*dexdexv1.PullRequestRecord, error)
 	// Review assist operations (keyed by unitTaskID)
 	AddReviewAssistItem(workspaceID, unitTaskID string, item *dexdexv1.ReviewAssistItem)
 	ListReviewAssistItems(workspaceID, unitTaskID string) []*dexdexv1.ReviewAssistItem
@@ -733,14 +734,32 @@ func (s *MemoryStore) ListRepositoryGroups(workspaceID string) []*dexdexv1.Repos
 
 // Pull request methods
 
-func (s *MemoryStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord) {
+func (s *MemoryStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if pr == nil {
+		return fmt.Errorf("pull request is nil")
+	}
+
+	if pr.WorkspaceId == "" {
+		pr.WorkspaceId = workspaceID
+	}
+	if pr.MaxFixAttempts <= 0 {
+		pr.MaxFixAttempts = 3
+	}
+	if pr.CreatedAt == nil {
+		pr.CreatedAt = timestamppb.Now()
+	}
+	if pr.UpdatedAt == nil {
+		pr.UpdatedAt = pr.CreatedAt
+	}
 
 	if s.prRecords[workspaceID] == nil {
 		s.prRecords[workspaceID] = make(map[string]*dexdexv1.PullRequestRecord)
 	}
 	s.prRecords[workspaceID][pr.PrTrackingId] = pr
+	return nil
 }
 
 func (s *MemoryStore) GetPullRequest(workspaceID, prTrackingID string) (*dexdexv1.PullRequestRecord, error) {
@@ -787,6 +806,24 @@ func (s *MemoryStore) UpdatePullRequest(workspaceID, prTrackingID string, status
 		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
 	}
 	pr.Status = status
+	pr.UpdatedAt = timestamppb.Now()
+	return pr, nil
+}
+
+func (s *MemoryStore) UpdatePullRequestFixAttemptCount(workspaceID, prTrackingID string, fixAttemptCount int32) (*dexdexv1.PullRequestRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prs, ok := s.prRecords[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr, ok := prs[prTrackingID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr.FixAttemptCount = fixAttemptCount
+	pr.UpdatedAt = timestamppb.Now()
 	return pr, nil
 }
 
@@ -1147,6 +1184,9 @@ func (s *MemoryStore) SetAutoFixPolicy(workspaceID, prTrackingID string, enabled
 		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
 	}
 	pr.AutoFixEnabled = enabled
+	if pr.MaxFixAttempts <= 0 {
+		pr.MaxFixAttempts = 3
+	}
 	pr.UpdatedAt = timestamppb.Now()
 	return pr, nil
 }

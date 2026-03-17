@@ -427,10 +427,23 @@ func (d *Dispatcher) detectAndTrackPRs(workspaceID string, subTask *dexdexv1.Sub
 		)
 
 		pr := &dexdexv1.PullRequestRecord{
-			PrTrackingId: prTrackingID,
-			Status:       dexdexv1.PrStatus_PR_STATUS_OPEN,
+			PrTrackingId:   prTrackingID,
+			Status:         dexdexv1.PrStatus_PR_STATUS_OPEN,
+			WorkspaceId:    workspaceID,
+			UnitTaskId:     unitTask.UnitTaskId,
+			MaxFixAttempts: 3,
+			CreatedAt:      timestamppb.Now(),
+			UpdatedAt:      timestamppb.Now(),
 		}
-		d.store.AddPullRequest(workspaceID, pr)
+		if err := d.store.AddPullRequest(workspaceID, pr); err != nil {
+			d.logger.Error("failed to persist auto-detected PR",
+				"workspace_id", workspaceID,
+				"unit_task_id", unitTask.UnitTaskId,
+				"pr_tracking_id", prTrackingID,
+				"error", err,
+			)
+			continue
+		}
 
 		d.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_PR_UPDATED, &stream.PrUpdatedPayload{
 			PrUpdated: &dexdexv1.PrUpdatedEvent{PullRequest: pr},

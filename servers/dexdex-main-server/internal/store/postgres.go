@@ -74,8 +74,6 @@ func (s *PostgresStore) ctx() context.Context {
 }
 
 func (s *PostgresStore) hydrateCachedPullRequest(row dbquery.PrRecord) *dexdexv1.PullRequestRecord {
-	now := timestamppb.Now()
-
 	if s.prRecords[row.WorkspaceID] == nil {
 		s.prRecords[row.WorkspaceID] = make(map[string]*dexdexv1.PullRequestRecord)
 	}
@@ -83,32 +81,41 @@ func (s *PostgresStore) hydrateCachedPullRequest(row dbquery.PrRecord) *dexdexv1
 	cached, ok := s.prRecords[row.WorkspaceID][row.PrTrackingID]
 	if !ok {
 		cached = &dexdexv1.PullRequestRecord{
-			PrTrackingId:   row.PrTrackingID,
-			Status:         dexdexv1.PrStatus(row.Status),
-			WorkspaceId:    row.WorkspaceID,
-			MaxFixAttempts: defaultPRMaxFixAttempts,
-			CreatedAt:      now,
-			UpdatedAt:      now,
+			PrTrackingId: row.PrTrackingID,
 		}
 		s.prRecords[row.WorkspaceID][row.PrTrackingID] = cached
-		return cached
 	}
 
 	cached.PrTrackingId = row.PrTrackingID
 	cached.Status = dexdexv1.PrStatus(row.Status)
-	if cached.WorkspaceId == "" {
-		cached.WorkspaceId = row.WorkspaceID
-	}
+	cached.PrUrl = row.PrUrl
+	cached.WorkspaceId = row.WorkspaceID
+	cached.UnitTaskId = row.UnitTaskID
+	cached.AutoFixEnabled = row.AutoFixEnabled
+	cached.FixAttemptCount = row.FixAttemptCount
+	cached.MaxFixAttempts = row.MaxFixAttempts
 	if cached.MaxFixAttempts <= 0 {
 		cached.MaxFixAttempts = defaultPRMaxFixAttempts
 	}
-	if cached.CreatedAt == nil {
-		cached.CreatedAt = now
-	}
-	if cached.UpdatedAt == nil {
-		cached.UpdatedAt = now
-	}
+	cached.CreatedAt = pgTimestamp(row.CreatedAt)
+	cached.UpdatedAt = pgTimestamp(row.UpdatedAt)
 	return cached
+}
+
+func copyPullRequestFields(dst, src *dexdexv1.PullRequestRecord) {
+	if dst == nil || src == nil {
+		return
+	}
+	dst.PrTrackingId = src.PrTrackingId
+	dst.Status = src.Status
+	dst.PrUrl = src.PrUrl
+	dst.WorkspaceId = src.WorkspaceId
+	dst.UnitTaskId = src.UnitTaskId
+	dst.AutoFixEnabled = src.AutoFixEnabled
+	dst.FixAttemptCount = src.FixAttemptCount
+	dst.MaxFixAttempts = src.MaxFixAttempts
+	dst.CreatedAt = src.CreatedAt
+	dst.UpdatedAt = src.UpdatedAt
 }
 
 // Workspace methods
@@ -856,26 +863,12 @@ func (s *PostgresStore) ListRepositoryGroups(workspaceID string) []*dexdexv1.Rep
 
 // Pull request methods
 
-func (s *PostgresStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord) {
+func (s *PostgresStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord) error {
 	if pr == nil {
-		s.logger.Error("AddPullRequest failed", "workspace_id", workspaceID, "error", "pull request is nil")
-		return
+		return fmt.Errorf("pull request is nil")
 	}
 
-	_, err := s.q.CreatePullRequest(s.ctx(), dbquery.CreatePullRequestParams{
-		PrTrackingID: pr.PrTrackingId,
-		WorkspaceID:  workspaceID,
-		Status:       int32(pr.Status),
-	})
-	if err != nil {
-		s.logger.Error("AddPullRequest failed", "error", err)
-		return
-	}
-
-	s.mu.Lock()
-	if s.prRecords[workspaceID] == nil {
-		s.prRecords[workspaceID] = make(map[string]*dexdexv1.PullRequestRecord)
-	}
+	now := timestamppb.Now()
 	if pr.WorkspaceId == "" {
 		pr.WorkspaceId = workspaceID
 	}
@@ -883,13 +876,34 @@ func (s *PostgresStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequ
 		pr.MaxFixAttempts = defaultPRMaxFixAttempts
 	}
 	if pr.CreatedAt == nil {
-		pr.CreatedAt = timestamppb.Now()
+		pr.CreatedAt = now
 	}
 	if pr.UpdatedAt == nil {
-		pr.UpdatedAt = pr.CreatedAt
+		pr.UpdatedAt = now
 	}
-	s.prRecords[workspaceID][pr.PrTrackingId] = pr
+
+	row, err := s.q.CreatePullRequest(s.ctx(), dbquery.CreatePullRequestParams{
+		PrTrackingID:    pr.PrTrackingId,
+		WorkspaceID:     pr.WorkspaceId,
+		Status:          int32(pr.Status),
+		PrUrl:           pr.PrUrl,
+		UnitTaskID:      pr.UnitTaskId,
+		AutoFixEnabled:  pr.AutoFixEnabled,
+		FixAttemptCount: pr.FixAttemptCount,
+		MaxFixAttempts:  pr.MaxFixAttempts,
+		CreatedAt:       toPgTimestamp(pr.CreatedAt),
+		UpdatedAt:       toPgTimestamp(pr.UpdatedAt),
+	})
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	stored := s.hydrateCachedPullRequest(row)
 	s.mu.Unlock()
+
+	copyPullRequestFields(pr, stored)
+	return nil
 }
 
 func (s *PostgresStore) GetPullRequest(workspaceID, prTrackingID string) (*dexdexv1.PullRequestRecord, error) {
@@ -938,6 +952,21 @@ func (s *PostgresStore) UpdatePullRequest(workspaceID, prTrackingID string, stat
 	pr := s.hydrateCachedPullRequest(row)
 	pr.UpdatedAt = timestamppb.Now()
 	return pr, nil
+}
+
+func (s *PostgresStore) UpdatePullRequestFixAttemptCount(workspaceID, prTrackingID string, fixAttemptCount int32) (*dexdexv1.PullRequestRecord, error) {
+	row, err := s.q.UpdatePullRequestFixAttemptCount(s.ctx(), dbquery.UpdatePullRequestFixAttemptCountParams{
+		WorkspaceID:     workspaceID,
+		PrTrackingID:    prTrackingID,
+		FixAttemptCount: fixAttemptCount,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hydrateCachedPullRequest(row), nil
 }
 
 // Review assist methods
@@ -1336,19 +1365,18 @@ func (s *PostgresStore) UpdateReviewAssistItemStatus(workspaceID, reviewAssistID
 }
 
 func (s *PostgresStore) SetAutoFixPolicy(workspaceID, prTrackingID string, enabled bool) (*dexdexv1.PullRequestRecord, error) {
-	pr, err := s.GetPullRequest(workspaceID, prTrackingID)
+	row, err := s.q.UpdatePullRequestAutoFixPolicy(s.ctx(), dbquery.UpdatePullRequestAutoFixPolicyParams{
+		WorkspaceID:    workspaceID,
+		PrTrackingID:   prTrackingID,
+		AutoFixEnabled: enabled,
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	pr.AutoFixEnabled = enabled
-	if pr.MaxFixAttempts <= 0 {
-		pr.MaxFixAttempts = defaultPRMaxFixAttempts
-	}
-	pr.UpdatedAt = timestamppb.Now()
-	return pr, nil
+	return s.hydrateCachedPullRequest(row), nil
 }
 
 func (s *PostgresStore) ListSessionSummaries(workspaceID, unitTaskID string) []*dexdexv1.SessionSummary {
