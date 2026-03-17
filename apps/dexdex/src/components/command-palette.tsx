@@ -29,6 +29,8 @@ export function CommandPalette({ isOpen, onClose, onNavigate, onCreateTask, task
   const actions: CommandAction[] = [
     { id: "nav-tasks", label: "Go to Tasks", section: "Navigation", onSelect: () => { onNavigate("/tasks"); onClose(); } },
     { id: "nav-inbox", label: "Go to Inbox", section: "Navigation", onSelect: () => { onNavigate("/inbox"); onClose(); } },
+    { id: "nav-repository-groups", label: "Go to Repository Groups", section: "Navigation", onSelect: () => { onNavigate("/repository-groups"); onClose(); } },
+    { id: "nav-repositories", label: "Go to Repositories", section: "Navigation", onSelect: () => { onNavigate("/repositories"); onClose(); } },
     { id: "nav-settings", label: "Go to Settings", section: "Navigation", onSelect: () => { onNavigate("/settings"); onClose(); } },
     { id: "create-task", label: "Create new task", section: "Actions", onSelect: () => { onCreateTask(); onClose(); } },
     ...tasks.map((task) => ({
@@ -74,8 +76,8 @@ export function CommandPalette({ isOpen, onClose, onNavigate, onCreateTask, task
     if (!listRef.current) return;
     const items = listRef.current.querySelectorAll("[data-command-item]");
     const target = items[selectedIndex];
-    if (target) {
-      target.scrollIntoView({ block: "nearest" });
+    if (target && typeof (target as HTMLElement).scrollIntoView === "function") {
+      (target as HTMLElement).scrollIntoView({ block: "nearest" });
     }
   }, [selectedIndex]);
 

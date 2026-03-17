@@ -4,7 +4,7 @@
  */
 
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { AgentCliType } from "../gen/v1/dexdex_pb";
 
 interface CreateTaskDraft {
@@ -19,6 +19,28 @@ interface DraftState {
   setDraft: (workspaceId: string, draft: CreateTaskDraft) => void;
   clearDraft: (workspaceId: string) => void;
   getDraft: (workspaceId: string) => CreateTaskDraft | null;
+}
+
+const inMemoryStorage: StateStorage = {
+  getItem: () => null,
+  setItem: () => undefined,
+  removeItem: () => undefined,
+};
+
+function getDraftStorage(): StateStorage {
+  if (typeof window === "undefined") {
+    return inMemoryStorage;
+  }
+  const candidate = window.localStorage as Partial<StateStorage> | undefined;
+  if (
+    candidate &&
+    typeof candidate.getItem === "function" &&
+    typeof candidate.setItem === "function" &&
+    typeof candidate.removeItem === "function"
+  ) {
+    return candidate as StateStorage;
+  }
+  return inMemoryStorage;
 }
 
 export const useDraftStore = create<DraftState>()(
@@ -42,6 +64,7 @@ export const useDraftStore = create<DraftState>()(
     }),
     {
       name: "dexdex-draft-forms",
+      storage: createJSONStorage(getDraftStorage),
     },
   ),
 );

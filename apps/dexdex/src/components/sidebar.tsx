@@ -16,6 +16,8 @@ const NAV_ITEMS = [
   { path: "/inbox", label: "Inbox", icon: "\u{1F4E5}" },
   { path: "/tasks", label: "Tasks", icon: "\u{1F4CB}" },
   { path: "/prs", label: "Pull Requests", icon: "\u{1F500}" },
+  { path: "/repository-groups", label: "Repository Groups", icon: "\u{1F5C2}" },
+  { path: "/repositories", label: "Repositories", icon: "\u{1F4C1}" },
   { path: "/settings", label: "Settings", icon: "\u2699\uFE0F" },
 ];
 

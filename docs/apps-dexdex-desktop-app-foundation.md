@@ -26,7 +26,7 @@ Core app rules:
 - Client does not call worker business APIs directly.
 
 Client architecture:
-- React UI layer for Workspace, UnitTask, PR Management, PR Review Assist, Settings, Notifications.
+- React UI layer for Workspace, UnitTask, PR Management, PR Review Assist, Repository Groups, Repositories, Settings, Notifications.
 - Data layer with `@connectrpc/connect-query` and `@tanstack/react-query`.
 - Stream subscriber with sequence resume behavior.
 
@@ -40,6 +40,7 @@ Behavior contracts:
 - Cancel/Stop controls provide immediate cancellation for running UnitTask and SubTask flows via `CancelUnitTask` and `CancelSubTask` APIs.
 - Approved diff flow exposes `Create PR` action and uses commit-chain metadata.
 - PR management pages: list view of tracked PRs, detail view with auto-fix controls (`RunAutoFixNow`, `SetAutoFixPolicy`), and `TrackPullRequest` action.
+- Repository administration pages are first-class sidebar routes (`/repository-groups`, `/repositories`) and are not nested under Settings tabs.
 - Inbox page renders real notification data from the event stream with read/unread state management.
 - Enhanced keyboard shortcuts:
   - `Cmd+T`: create new task

@@ -18,6 +18,8 @@ import { InboxPage } from "./features/inbox/inbox-page";
 import { PrManagementPage } from "./features/prs/pr-management-page";
 import { PrDetailPage } from "./features/prs/pr-detail-page";
 import { SettingsPage } from "./features/settings/settings-page";
+import { RepositoryGroupsPage } from "./features/repositories/repository-groups-page";
+import { RepositoriesPage } from "./features/repositories/repositories-page";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useWorkspaceStream } from "./hooks/use-workspace-stream";
 import { useTrayStatus } from "./hooks/use-tray-status";
@@ -385,6 +387,8 @@ function App() {
                   path="/prs/:prTrackingId"
                   element={<PrDetailRoute />}
                 />
+                <Route path="/repository-groups" element={<RepositoryGroupsPage />} />
+                <Route path="/repositories" element={<RepositoriesPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />
               </Routes>

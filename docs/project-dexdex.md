@@ -80,7 +80,7 @@ When implementation details differ from documented contracts, follow-up sync wor
 - Commit chain extraction from worktree after successful execution with stream delivery.
 
 ### Desktop App (`apps/dexdex`)
-- Task creation and settings flows are aligned with workspace/repository-group/agent contracts.
+- Task creation flows and sidebar-first repository administration (`/repository-groups`, `/repositories`) are aligned with workspace/repository-group/agent contracts.
 - Plan-mode visibility follows capability metadata.
 - Dialog surfaces close with `Esc` and single critical-input forms auto-focus on open.
 - Review assist Accept action creates auto-fix UnitTask via CreateUnitTask API.
