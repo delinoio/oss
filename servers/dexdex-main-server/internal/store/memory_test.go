@@ -42,6 +42,33 @@ func TestListWorkspaces(t *testing.T) {
 	}
 }
 
+func TestCreateWorkspaceDoesNotReuseIDsAfterDeletion(t *testing.T) {
+	s := NewMemoryStore()
+
+	first := s.CreateWorkspace("Workspace One", dexdexv1.WorkspaceType_WORKSPACE_TYPE_LOCAL_ENDPOINT)
+	second := s.CreateWorkspace("Workspace Two", dexdexv1.WorkspaceType_WORKSPACE_TYPE_LOCAL_ENDPOINT)
+	if first.WorkspaceId == second.WorkspaceId {
+		t.Fatalf("expected unique workspace IDs, got duplicate %s", first.WorkspaceId)
+	}
+
+	if err := s.DeleteWorkspace(first.WorkspaceId); err != nil {
+		t.Fatalf("expected delete to succeed, got %v", err)
+	}
+
+	third := s.CreateWorkspace("Workspace Three", dexdexv1.WorkspaceType_WORKSPACE_TYPE_LOCAL_ENDPOINT)
+	if third.WorkspaceId == second.WorkspaceId {
+		t.Fatalf("expected fresh workspace ID after deletion, got reused ID %s", third.WorkspaceId)
+	}
+
+	gotSecond, err := s.GetWorkspace(second.WorkspaceId)
+	if err != nil {
+		t.Fatalf("expected original second workspace to remain, got %v", err)
+	}
+	if gotSecond.Name != "Workspace Two" {
+		t.Fatalf("expected second workspace name to remain unchanged, got %s", gotSecond.Name)
+	}
+}
+
 func TestAddAndGetUnitTask(t *testing.T) {
 	s := NewMemoryStore()
 

@@ -1011,7 +1011,7 @@ func (s *MemoryStore) CreateWorkspace(name string, wsType dexdexv1.WorkspaceType
 	defer s.mu.Unlock()
 
 	ws := &dexdexv1.Workspace{
-		WorkspaceId: fmt.Sprintf("ws-%d", len(s.workspaces)+1),
+		WorkspaceId: fmt.Sprintf("ws-%s", nextID()),
 		Name:        name,
 		Type:        wsType,
 		CreatedAt:   timestamppb.Now(),
