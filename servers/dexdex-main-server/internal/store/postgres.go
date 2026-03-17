@@ -2,10 +2,13 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -868,6 +871,53 @@ func (s *PostgresStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequ
 		return fmt.Errorf("pull request is nil")
 	}
 
+	existingRow, existingErr := s.q.GetPullRequest(s.ctx(), dbquery.GetPullRequestParams{
+		WorkspaceID:  workspaceID,
+		PrTrackingID: pr.PrTrackingId,
+	})
+	if existingErr != nil && !errors.Is(existingErr, pgx.ErrNoRows) {
+		return existingErr
+	}
+
+	if existingErr == nil {
+		existing := &dexdexv1.PullRequestRecord{
+			PrTrackingId:    existingRow.PrTrackingID,
+			Status:          dexdexv1.PrStatus(existingRow.Status),
+			PrUrl:           existingRow.PrUrl,
+			WorkspaceId:     existingRow.WorkspaceID,
+			UnitTaskId:      existingRow.UnitTaskID,
+			AutoFixEnabled:  existingRow.AutoFixEnabled,
+			FixAttemptCount: existingRow.FixAttemptCount,
+			MaxFixAttempts:  existingRow.MaxFixAttempts,
+			CreatedAt:       pgTimestamp(existingRow.CreatedAt),
+			UpdatedAt:       pgTimestamp(existingRow.UpdatedAt),
+		}
+
+		// Preserve existing tracking state when the same PR is tracked repeatedly.
+		// Status/auto-fix counters are updated via dedicated APIs, so duplicate add should not reset them.
+		if strings.TrimSpace(pr.PrUrl) == "" {
+			pr.PrUrl = existing.PrUrl
+		}
+		if strings.TrimSpace(pr.UnitTaskId) == "" {
+			pr.UnitTaskId = existing.UnitTaskId
+		}
+		if pr.Status == dexdexv1.PrStatus_PR_STATUS_OPEN && existing.Status != dexdexv1.PrStatus_PR_STATUS_OPEN {
+			pr.Status = existing.Status
+		}
+		if existing.AutoFixEnabled {
+			pr.AutoFixEnabled = true
+		}
+		if existing.FixAttemptCount > pr.FixAttemptCount {
+			pr.FixAttemptCount = existing.FixAttemptCount
+		}
+		if pr.MaxFixAttempts <= 0 {
+			pr.MaxFixAttempts = existing.MaxFixAttempts
+		}
+		if pr.CreatedAt == nil {
+			pr.CreatedAt = existing.CreatedAt
+		}
+	}
+
 	now := timestamppb.Now()
 	if pr.WorkspaceId == "" {
 		pr.WorkspaceId = workspaceID
@@ -878,9 +928,7 @@ func (s *PostgresStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequ
 	if pr.CreatedAt == nil {
 		pr.CreatedAt = now
 	}
-	if pr.UpdatedAt == nil {
-		pr.UpdatedAt = now
-	}
+	pr.UpdatedAt = now
 
 	row, err := s.q.CreatePullRequest(s.ctx(), dbquery.CreatePullRequestParams{
 		PrTrackingID:    pr.PrTrackingId,

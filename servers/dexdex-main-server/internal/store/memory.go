@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -758,6 +759,41 @@ func (s *MemoryStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullReques
 	if s.prRecords[workspaceID] == nil {
 		s.prRecords[workspaceID] = make(map[string]*dexdexv1.PullRequestRecord)
 	}
+
+	if existing, ok := s.prRecords[workspaceID][pr.PrTrackingId]; ok {
+		// Preserve existing tracking state when a duplicate tracking request is created.
+		// This avoids resetting auto-fix attempts/policy when the same PR is registered again.
+		if strings.TrimSpace(existing.PrUrl) == "" && strings.TrimSpace(pr.PrUrl) != "" {
+			existing.PrUrl = pr.PrUrl
+		}
+		if strings.TrimSpace(existing.UnitTaskId) == "" && strings.TrimSpace(pr.UnitTaskId) != "" {
+			existing.UnitTaskId = pr.UnitTaskId
+		}
+		if existing.Status == dexdexv1.PrStatus_PR_STATUS_UNSPECIFIED {
+			existing.Status = pr.Status
+		}
+		if pr.AutoFixEnabled {
+			existing.AutoFixEnabled = true
+		}
+		if pr.FixAttemptCount > existing.FixAttemptCount {
+			existing.FixAttemptCount = pr.FixAttemptCount
+		}
+		if existing.MaxFixAttempts <= 0 {
+			existing.MaxFixAttempts = pr.MaxFixAttempts
+		}
+		if existing.MaxFixAttempts <= 0 {
+			existing.MaxFixAttempts = 3
+		}
+		if existing.CreatedAt == nil {
+			existing.CreatedAt = pr.CreatedAt
+		}
+		if existing.CreatedAt == nil {
+			existing.CreatedAt = timestamppb.Now()
+		}
+		existing.UpdatedAt = timestamppb.Now()
+		return nil
+	}
+
 	s.prRecords[workspaceID][pr.PrTrackingId] = pr
 	return nil
 }

@@ -22,6 +22,7 @@ Scope and entities:
 - `ReviewAssistItem`
 - `ReviewInlineComment`
 - remediation SubTasks (`PR_CREATE`, `PR_REVIEW_FIX`, `PR_CI_FIX`)
+- PR tracking identifier format must be `owner/repo#number` derived from canonical GitHub PR URLs
 
 Polling loop contract:
 1. select active PR tracking entries
