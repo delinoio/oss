@@ -5,6 +5,47 @@ SELECT * FROM pr_records WHERE workspace_id = $1 AND pr_tracking_id = $2;
 SELECT * FROM pr_records WHERE workspace_id = $1;
 
 -- name: CreatePullRequest :one
-INSERT INTO pr_records (pr_tracking_id, workspace_id, status)
-VALUES ($1, $2, $3)
+INSERT INTO pr_records (
+    pr_tracking_id,
+    workspace_id,
+    status,
+    pr_url,
+    unit_task_id,
+    auto_fix_enabled,
+    fix_attempt_count,
+    max_fix_attempts,
+    created_at,
+    updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (workspace_id, pr_tracking_id)
+DO UPDATE SET
+    status = CASE
+        WHEN EXCLUDED.status = 1 AND pr_records.status <> 1 THEN pr_records.status
+        ELSE EXCLUDED.status
+    END,
+    pr_url = COALESCE(NULLIF(EXCLUDED.pr_url, ''), pr_records.pr_url),
+    unit_task_id = COALESCE(NULLIF(EXCLUDED.unit_task_id, ''), pr_records.unit_task_id),
+    auto_fix_enabled = pr_records.auto_fix_enabled OR EXCLUDED.auto_fix_enabled,
+    fix_attempt_count = GREATEST(pr_records.fix_attempt_count, EXCLUDED.fix_attempt_count),
+    max_fix_attempts = GREATEST(pr_records.max_fix_attempts, EXCLUDED.max_fix_attempts),
+    updated_at = EXCLUDED.updated_at
+RETURNING *;
+
+-- name: UpdatePullRequestStatus :one
+UPDATE pr_records
+SET status = $3, updated_at = NOW()
+WHERE workspace_id = $1 AND pr_tracking_id = $2
+RETURNING *;
+
+-- name: UpdatePullRequestAutoFixPolicy :one
+UPDATE pr_records
+SET auto_fix_enabled = $3, updated_at = NOW()
+WHERE workspace_id = $1 AND pr_tracking_id = $2
+RETURNING *;
+
+-- name: UpdatePullRequestFixAttemptCount :one
+UPDATE pr_records
+SET fix_attempt_count = $3, updated_at = NOW()
+WHERE workspace_id = $1 AND pr_tracking_id = $2
 RETURNING *;

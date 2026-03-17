@@ -94,14 +94,15 @@ func (p *PRPoller) pollPR(ctx context.Context, workspaceID string, pr *dexdexv1.
 			"new_status", newStatus.String(),
 		)
 
-		// Update the stored PR
-		updatedPR := &dexdexv1.PullRequestRecord{
-			PrTrackingId: pr.PrTrackingId,
-			Status:       newStatus,
+		updatedPR, updateErr := p.store.UpdatePullRequest(workspaceID, pr.PrTrackingId, newStatus)
+		if updateErr != nil {
+			p.logger.Error("failed to persist PR status update",
+				"workspace_id", workspaceID,
+				"pr_tracking_id", pr.PrTrackingId,
+				"error", updateErr,
+			)
+			return
 		}
-
-		// Update in store (replace existing)
-		p.store.AddPullRequest(workspaceID, updatedPR)
 
 		// Publish PR_UPDATED event
 		p.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_PR_UPDATED, &stream.PrUpdatedPayload{

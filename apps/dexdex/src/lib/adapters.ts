@@ -24,6 +24,7 @@ import {
   AgentSessionStatus as ProtoAgentSessionStatus,
   AgentCliType as ProtoAgentCliType,
   ReviewCommentStatus as ProtoReviewCommentStatus,
+  DiffSide as ProtoDiffSide,
 } from "../gen/v1/dexdex_pb";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
@@ -253,6 +254,12 @@ const REVIEW_COMMENT_STATUS_MAP: Record<number, string> = {
   [ProtoReviewCommentStatus.RESOLVED]: "RESOLVED",
 };
 
+const DIFF_SIDE_MAP: Record<number, string> = {
+  [ProtoDiffSide.UNSPECIFIED]: "RIGHT",
+  [ProtoDiffSide.OLD]: "LEFT",
+  [ProtoDiffSide.NEW]: "RIGHT",
+};
+
 /**
  * Convert a proto ReviewComment to a view-model ReviewComment.
  */
@@ -261,7 +268,7 @@ export function toViewReviewComment(proto: ProtoReviewComment): ReviewComment {
     reviewCommentId: proto.reviewCommentId,
     body: proto.body,
     filePath: proto.filePath,
-    side: proto.side,
+    side: DIFF_SIDE_MAP[proto.side] ?? "RIGHT",
     lineNumber: proto.lineNumber,
     status: REVIEW_COMMENT_STATUS_MAP[proto.status] ?? "UNSPECIFIED",
     prTrackingId: proto.prTrackingId,

@@ -7,29 +7,83 @@ package dbquery
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createPullRequest = `-- name: CreatePullRequest :one
-INSERT INTO pr_records (pr_tracking_id, workspace_id, status)
-VALUES ($1, $2, $3)
-RETURNING pr_tracking_id, workspace_id, status
+INSERT INTO pr_records (
+    pr_tracking_id,
+    workspace_id,
+    status,
+    pr_url,
+    unit_task_id,
+    auto_fix_enabled,
+    fix_attempt_count,
+    max_fix_attempts,
+    created_at,
+    updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+ON CONFLICT (workspace_id, pr_tracking_id)
+DO UPDATE SET
+    status = CASE
+        WHEN EXCLUDED.status = 1 AND pr_records.status <> 1 THEN pr_records.status
+        ELSE EXCLUDED.status
+    END,
+    pr_url = COALESCE(NULLIF(EXCLUDED.pr_url, ''), pr_records.pr_url),
+    unit_task_id = COALESCE(NULLIF(EXCLUDED.unit_task_id, ''), pr_records.unit_task_id),
+    auto_fix_enabled = pr_records.auto_fix_enabled OR EXCLUDED.auto_fix_enabled,
+    fix_attempt_count = GREATEST(pr_records.fix_attempt_count, EXCLUDED.fix_attempt_count),
+    max_fix_attempts = GREATEST(pr_records.max_fix_attempts, EXCLUDED.max_fix_attempts),
+    updated_at = EXCLUDED.updated_at
+RETURNING pr_tracking_id, workspace_id, status, pr_url, unit_task_id, auto_fix_enabled, fix_attempt_count, max_fix_attempts, created_at, updated_at
 `
 
 type CreatePullRequestParams struct {
-	PrTrackingID string `json:"pr_tracking_id"`
-	WorkspaceID  string `json:"workspace_id"`
-	Status       int32  `json:"status"`
+	PrTrackingID    string             `json:"pr_tracking_id"`
+	WorkspaceID     string             `json:"workspace_id"`
+	Status          int32              `json:"status"`
+	PrUrl           string             `json:"pr_url"`
+	UnitTaskID      string             `json:"unit_task_id"`
+	AutoFixEnabled  bool               `json:"auto_fix_enabled"`
+	FixAttemptCount int32              `json:"fix_attempt_count"`
+	MaxFixAttempts  int32              `json:"max_fix_attempts"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 func (q *Queries) CreatePullRequest(ctx context.Context, arg CreatePullRequestParams) (PrRecord, error) {
-	row := q.db.QueryRow(ctx, createPullRequest, arg.PrTrackingID, arg.WorkspaceID, arg.Status)
+	row := q.db.QueryRow(ctx, createPullRequest,
+		arg.PrTrackingID,
+		arg.WorkspaceID,
+		arg.Status,
+		arg.PrUrl,
+		arg.UnitTaskID,
+		arg.AutoFixEnabled,
+		arg.FixAttemptCount,
+		arg.MaxFixAttempts,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
 	var i PrRecord
-	err := row.Scan(&i.PrTrackingID, &i.WorkspaceID, &i.Status)
+	err := row.Scan(
+		&i.PrTrackingID,
+		&i.WorkspaceID,
+		&i.Status,
+		&i.PrUrl,
+		&i.UnitTaskID,
+		&i.AutoFixEnabled,
+		&i.FixAttemptCount,
+		&i.MaxFixAttempts,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
 const getPullRequest = `-- name: GetPullRequest :one
-SELECT pr_tracking_id, workspace_id, status FROM pr_records WHERE workspace_id = $1 AND pr_tracking_id = $2
+SELECT pr_tracking_id, workspace_id, status, pr_url, unit_task_id, auto_fix_enabled, fix_attempt_count, max_fix_attempts, created_at, updated_at FROM pr_records WHERE workspace_id = $1 AND pr_tracking_id = $2
 `
 
 type GetPullRequestParams struct {
@@ -40,12 +94,23 @@ type GetPullRequestParams struct {
 func (q *Queries) GetPullRequest(ctx context.Context, arg GetPullRequestParams) (PrRecord, error) {
 	row := q.db.QueryRow(ctx, getPullRequest, arg.WorkspaceID, arg.PrTrackingID)
 	var i PrRecord
-	err := row.Scan(&i.PrTrackingID, &i.WorkspaceID, &i.Status)
+	err := row.Scan(
+		&i.PrTrackingID,
+		&i.WorkspaceID,
+		&i.Status,
+		&i.PrUrl,
+		&i.UnitTaskID,
+		&i.AutoFixEnabled,
+		&i.FixAttemptCount,
+		&i.MaxFixAttempts,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
 	return i, err
 }
 
 const listPullRequests = `-- name: ListPullRequests :many
-SELECT pr_tracking_id, workspace_id, status FROM pr_records WHERE workspace_id = $1
+SELECT pr_tracking_id, workspace_id, status, pr_url, unit_task_id, auto_fix_enabled, fix_attempt_count, max_fix_attempts, created_at, updated_at FROM pr_records WHERE workspace_id = $1
 `
 
 func (q *Queries) ListPullRequests(ctx context.Context, workspaceID string) ([]PrRecord, error) {
@@ -57,7 +122,18 @@ func (q *Queries) ListPullRequests(ctx context.Context, workspaceID string) ([]P
 	var items []PrRecord
 	for rows.Next() {
 		var i PrRecord
-		if err := rows.Scan(&i.PrTrackingID, &i.WorkspaceID, &i.Status); err != nil {
+		if err := rows.Scan(
+			&i.PrTrackingID,
+			&i.WorkspaceID,
+			&i.Status,
+			&i.PrUrl,
+			&i.UnitTaskID,
+			&i.AutoFixEnabled,
+			&i.FixAttemptCount,
+			&i.MaxFixAttempts,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -66,4 +142,97 @@ func (q *Queries) ListPullRequests(ctx context.Context, workspaceID string) ([]P
 		return nil, err
 	}
 	return items, nil
+}
+
+const updatePullRequestAutoFixPolicy = `-- name: UpdatePullRequestAutoFixPolicy :one
+UPDATE pr_records
+SET auto_fix_enabled = $3, updated_at = NOW()
+WHERE workspace_id = $1 AND pr_tracking_id = $2
+RETURNING pr_tracking_id, workspace_id, status, pr_url, unit_task_id, auto_fix_enabled, fix_attempt_count, max_fix_attempts, created_at, updated_at
+`
+
+type UpdatePullRequestAutoFixPolicyParams struct {
+	WorkspaceID    string `json:"workspace_id"`
+	PrTrackingID   string `json:"pr_tracking_id"`
+	AutoFixEnabled bool   `json:"auto_fix_enabled"`
+}
+
+func (q *Queries) UpdatePullRequestAutoFixPolicy(ctx context.Context, arg UpdatePullRequestAutoFixPolicyParams) (PrRecord, error) {
+	row := q.db.QueryRow(ctx, updatePullRequestAutoFixPolicy, arg.WorkspaceID, arg.PrTrackingID, arg.AutoFixEnabled)
+	var i PrRecord
+	err := row.Scan(
+		&i.PrTrackingID,
+		&i.WorkspaceID,
+		&i.Status,
+		&i.PrUrl,
+		&i.UnitTaskID,
+		&i.AutoFixEnabled,
+		&i.FixAttemptCount,
+		&i.MaxFixAttempts,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updatePullRequestFixAttemptCount = `-- name: UpdatePullRequestFixAttemptCount :one
+UPDATE pr_records
+SET fix_attempt_count = $3, updated_at = NOW()
+WHERE workspace_id = $1 AND pr_tracking_id = $2
+RETURNING pr_tracking_id, workspace_id, status, pr_url, unit_task_id, auto_fix_enabled, fix_attempt_count, max_fix_attempts, created_at, updated_at
+`
+
+type UpdatePullRequestFixAttemptCountParams struct {
+	WorkspaceID     string `json:"workspace_id"`
+	PrTrackingID    string `json:"pr_tracking_id"`
+	FixAttemptCount int32  `json:"fix_attempt_count"`
+}
+
+func (q *Queries) UpdatePullRequestFixAttemptCount(ctx context.Context, arg UpdatePullRequestFixAttemptCountParams) (PrRecord, error) {
+	row := q.db.QueryRow(ctx, updatePullRequestFixAttemptCount, arg.WorkspaceID, arg.PrTrackingID, arg.FixAttemptCount)
+	var i PrRecord
+	err := row.Scan(
+		&i.PrTrackingID,
+		&i.WorkspaceID,
+		&i.Status,
+		&i.PrUrl,
+		&i.UnitTaskID,
+		&i.AutoFixEnabled,
+		&i.FixAttemptCount,
+		&i.MaxFixAttempts,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updatePullRequestStatus = `-- name: UpdatePullRequestStatus :one
+UPDATE pr_records
+SET status = $3, updated_at = NOW()
+WHERE workspace_id = $1 AND pr_tracking_id = $2
+RETURNING pr_tracking_id, workspace_id, status, pr_url, unit_task_id, auto_fix_enabled, fix_attempt_count, max_fix_attempts, created_at, updated_at
+`
+
+type UpdatePullRequestStatusParams struct {
+	WorkspaceID  string `json:"workspace_id"`
+	PrTrackingID string `json:"pr_tracking_id"`
+	Status       int32  `json:"status"`
+}
+
+func (q *Queries) UpdatePullRequestStatus(ctx context.Context, arg UpdatePullRequestStatusParams) (PrRecord, error) {
+	row := q.db.QueryRow(ctx, updatePullRequestStatus, arg.WorkspaceID, arg.PrTrackingID, arg.Status)
+	var i PrRecord
+	err := row.Scan(
+		&i.PrTrackingID,
+		&i.WorkspaceID,
+		&i.Status,
+		&i.PrUrl,
+		&i.UnitTaskID,
+		&i.AutoFixEnabled,
+		&i.FixAttemptCount,
+		&i.MaxFixAttempts,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

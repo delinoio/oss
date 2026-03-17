@@ -2,11 +2,12 @@ package store
 
 import (
 	"fmt"
+	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -21,11 +22,8 @@ type WorktreeAssignment struct {
 	UpdatedAt    time.Time
 }
 
-// idCounter provides unique IDs for store entities.
-var idCounter atomic.Uint64
-
 func nextID() string {
-	return fmt.Sprintf("id-%d", idCounter.Add(1))
+	return fmt.Sprintf("id-%s", uuid.NewString())
 }
 
 // Store defines the in-memory storage interface for DexDex main server entities.
@@ -70,10 +68,11 @@ type Store interface {
 	GetRepositoryGroup(workspaceID, groupID string) (*dexdexv1.RepositoryGroup, error)
 	ListRepositoryGroups(workspaceID string) []*dexdexv1.RepositoryGroup
 	// PR operations
-	AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord)
+	AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord) error
 	GetPullRequest(workspaceID, prTrackingID string) (*dexdexv1.PullRequestRecord, error)
 	ListPullRequests(workspaceID string) []*dexdexv1.PullRequestRecord
 	UpdatePullRequest(workspaceID, prTrackingID string, status dexdexv1.PrStatus) (*dexdexv1.PullRequestRecord, error)
+	UpdatePullRequestFixAttemptCount(workspaceID, prTrackingID string, fixAttemptCount int32) (*dexdexv1.PullRequestRecord, error)
 	// Review assist operations (keyed by unitTaskID)
 	AddReviewAssistItem(workspaceID, unitTaskID string, item *dexdexv1.ReviewAssistItem)
 	ListReviewAssistItems(workspaceID, unitTaskID string) []*dexdexv1.ReviewAssistItem
@@ -736,14 +735,67 @@ func (s *MemoryStore) ListRepositoryGroups(workspaceID string) []*dexdexv1.Repos
 
 // Pull request methods
 
-func (s *MemoryStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord) {
+func (s *MemoryStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if pr == nil {
+		return fmt.Errorf("pull request is nil")
+	}
+
+	if pr.WorkspaceId == "" {
+		pr.WorkspaceId = workspaceID
+	}
+	if pr.MaxFixAttempts <= 0 {
+		pr.MaxFixAttempts = 3
+	}
+	if pr.CreatedAt == nil {
+		pr.CreatedAt = timestamppb.Now()
+	}
+	if pr.UpdatedAt == nil {
+		pr.UpdatedAt = pr.CreatedAt
+	}
 
 	if s.prRecords[workspaceID] == nil {
 		s.prRecords[workspaceID] = make(map[string]*dexdexv1.PullRequestRecord)
 	}
+
+	if existing, ok := s.prRecords[workspaceID][pr.PrTrackingId]; ok {
+		// Preserve existing tracking state when a duplicate tracking request is created.
+		// This avoids resetting auto-fix attempts/policy when the same PR is registered again.
+		if strings.TrimSpace(existing.PrUrl) == "" && strings.TrimSpace(pr.PrUrl) != "" {
+			existing.PrUrl = pr.PrUrl
+		}
+		if strings.TrimSpace(existing.UnitTaskId) == "" && strings.TrimSpace(pr.UnitTaskId) != "" {
+			existing.UnitTaskId = pr.UnitTaskId
+		}
+		if existing.Status == dexdexv1.PrStatus_PR_STATUS_UNSPECIFIED {
+			existing.Status = pr.Status
+		}
+		if pr.AutoFixEnabled {
+			existing.AutoFixEnabled = true
+		}
+		if pr.FixAttemptCount > existing.FixAttemptCount {
+			existing.FixAttemptCount = pr.FixAttemptCount
+		}
+		if existing.MaxFixAttempts <= 0 {
+			existing.MaxFixAttempts = pr.MaxFixAttempts
+		}
+		if existing.MaxFixAttempts <= 0 {
+			existing.MaxFixAttempts = 3
+		}
+		if existing.CreatedAt == nil {
+			existing.CreatedAt = pr.CreatedAt
+		}
+		if existing.CreatedAt == nil {
+			existing.CreatedAt = timestamppb.Now()
+		}
+		existing.UpdatedAt = timestamppb.Now()
+		return nil
+	}
+
 	s.prRecords[workspaceID][pr.PrTrackingId] = pr
+	return nil
 }
 
 func (s *MemoryStore) GetPullRequest(workspaceID, prTrackingID string) (*dexdexv1.PullRequestRecord, error) {
@@ -790,6 +842,24 @@ func (s *MemoryStore) UpdatePullRequest(workspaceID, prTrackingID string, status
 		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
 	}
 	pr.Status = status
+	pr.UpdatedAt = timestamppb.Now()
+	return pr, nil
+}
+
+func (s *MemoryStore) UpdatePullRequestFixAttemptCount(workspaceID, prTrackingID string, fixAttemptCount int32) (*dexdexv1.PullRequestRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	prs, ok := s.prRecords[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr, ok := prs[prTrackingID]
+	if !ok {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+	pr.FixAttemptCount = fixAttemptCount
+	pr.UpdatedAt = timestamppb.Now()
 	return pr, nil
 }
 
@@ -1014,7 +1084,7 @@ func (s *MemoryStore) CreateWorkspace(name string, wsType dexdexv1.WorkspaceType
 	defer s.mu.Unlock()
 
 	ws := &dexdexv1.Workspace{
-		WorkspaceId: fmt.Sprintf("ws-%d", len(s.workspaces)+1),
+		WorkspaceId: fmt.Sprintf("ws-%s", nextID()),
 		Name:        name,
 		Type:        wsType,
 		CreatedAt:   timestamppb.Now(),
@@ -1150,6 +1220,9 @@ func (s *MemoryStore) SetAutoFixPolicy(workspaceID, prTrackingID string, enabled
 		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
 	}
 	pr.AutoFixEnabled = enabled
+	if pr.MaxFixAttempts <= 0 {
+		pr.MaxFixAttempts = 3
+	}
 	pr.UpdatedAt = timestamppb.Now()
 	return pr, nil
 }

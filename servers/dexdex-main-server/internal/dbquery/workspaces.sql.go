@@ -12,37 +12,53 @@ import (
 )
 
 const createWorkspace = `-- name: CreateWorkspace :one
-INSERT INTO workspaces (workspace_id, name, created_at)
-VALUES ($1, $2, $3)
-RETURNING workspace_id, name, created_at
+INSERT INTO workspaces (workspace_id, name, type, created_at)
+VALUES ($1, $2, $3, $4)
+RETURNING workspace_id, name, created_at, type
 `
 
 type CreateWorkspaceParams struct {
 	WorkspaceID string             `json:"workspace_id"`
 	Name        string             `json:"name"`
+	Type        int32              `json:"type"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 func (q *Queries) CreateWorkspace(ctx context.Context, arg CreateWorkspaceParams) (Workspace, error) {
-	row := q.db.QueryRow(ctx, createWorkspace, arg.WorkspaceID, arg.Name, arg.CreatedAt)
+	row := q.db.QueryRow(ctx, createWorkspace,
+		arg.WorkspaceID,
+		arg.Name,
+		arg.Type,
+		arg.CreatedAt,
+	)
 	var i Workspace
-	err := row.Scan(&i.WorkspaceID, &i.Name, &i.CreatedAt)
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.Type,
+	)
 	return i, err
 }
 
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT workspace_id, name, created_at FROM workspaces WHERE workspace_id = $1
+SELECT workspace_id, name, created_at, type FROM workspaces WHERE workspace_id = $1
 `
 
 func (q *Queries) GetWorkspace(ctx context.Context, workspaceID string) (Workspace, error) {
 	row := q.db.QueryRow(ctx, getWorkspace, workspaceID)
 	var i Workspace
-	err := row.Scan(&i.WorkspaceID, &i.Name, &i.CreatedAt)
+	err := row.Scan(
+		&i.WorkspaceID,
+		&i.Name,
+		&i.CreatedAt,
+		&i.Type,
+	)
 	return i, err
 }
 
 const listWorkspaces = `-- name: ListWorkspaces :many
-SELECT workspace_id, name, created_at FROM workspaces ORDER BY created_at
+SELECT workspace_id, name, created_at, type FROM workspaces ORDER BY created_at
 `
 
 func (q *Queries) ListWorkspaces(ctx context.Context) ([]Workspace, error) {
@@ -54,7 +70,12 @@ func (q *Queries) ListWorkspaces(ctx context.Context) ([]Workspace, error) {
 	var items []Workspace
 	for rows.Next() {
 		var i Workspace
-		if err := rows.Scan(&i.WorkspaceID, &i.Name, &i.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&i.WorkspaceID,
+			&i.Name,
+			&i.CreatedAt,
+			&i.Type,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

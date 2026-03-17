@@ -171,7 +171,7 @@ export function SubtaskTimeline({ subtasks, workspaceId }: SubtaskTimelineProps)
                   marginTop: "2px",
                 }}
                 title={subtask.status === SubTaskStatus.IN_PROGRESS ? "Stop subtask" : "Cancel subtask"}
-                onClick={() => cancelSubTask.mutate({ workspaceId: workspaceId, unitTaskId: subtask.unitTaskId, subTaskId: subtask.subTaskId })}
+                onClick={() => cancelSubTask.mutate({ workspaceId: workspaceId, subTaskId: subtask.subTaskId })}
                 disabled={cancelSubTask.isPending}
                 data-testid={`cancel-subtask-${subtask.subTaskId}`}
               >

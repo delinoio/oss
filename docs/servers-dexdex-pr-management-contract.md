@@ -22,6 +22,7 @@ Scope and entities:
 - `ReviewAssistItem`
 - `ReviewInlineComment`
 - remediation SubTasks (`PR_CREATE`, `PR_REVIEW_FIX`, `PR_CI_FIX`)
+- PR tracking identifier format must be `owner/repo#number` derived from canonical GitHub PR URLs
 
 Polling loop contract:
 1. select active PR tracking entries
@@ -57,6 +58,11 @@ Automatic remediation flow:
 
 ## Storage
 - PR tracking snapshots and poll metadata
+- persisted PR tracking fields:
+  - `pr_tracking_id`, `workspace_id`, `status`
+  - `pr_url`, `unit_task_id`
+  - `auto_fix_enabled`, `fix_attempt_count`, `max_fix_attempts`
+  - `created_at`, `updated_at`
 - remediation attempt budget counters
 - review assist records and inline-comment states
 - links between UnitTask/SubTask and PR tracking records

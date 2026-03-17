@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -111,8 +113,15 @@ func (h *PrHandler) TrackPullRequest(
 
 	h.logger.Info("TrackPullRequest called", "workspace_id", workspaceID, "pr_url", prURL)
 
-	prTrackingID := fmt.Sprintf("pr-%d", handlerIDCounter+1)
-	handlerIDCounter++
+	prTrackingID, trackingErr := trackingIDFromPRURL(prURL)
+	if trackingErr != nil {
+		h.logger.Warn("TrackPullRequest validation failed",
+			"workspace_id", workspaceID,
+			"pr_url", prURL,
+			"error", trackingErr,
+		)
+		return nil, connect.NewError(connect.CodeInvalidArgument, trackingErr)
+	}
 
 	pr := &dexdexv1.PullRequestRecord{
 		PrTrackingId:   prTrackingID,
@@ -125,7 +134,14 @@ func (h *PrHandler) TrackPullRequest(
 		UpdatedAt:      timestamppb.Now(),
 	}
 
-	h.store.AddPullRequest(workspaceID, pr)
+	if err := h.store.AddPullRequest(workspaceID, pr); err != nil {
+		h.logger.Error("TrackPullRequest failed to persist",
+			"workspace_id", workspaceID,
+			"pr_tracking_id", prTrackingID,
+			"error", err,
+		)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to persist pull request: %w", err))
+	}
 
 	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_PR_UPDATED, &stream.PrUpdatedPayload{
 		PrUpdated: &dexdexv1.PrUpdatedEvent{PullRequest: pr},
@@ -153,23 +169,42 @@ func (h *PrHandler) RunAutoFixNow(
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
 
-	if pr.FixAttemptCount >= pr.MaxFixAttempts {
+	maxFixAttempts := pr.MaxFixAttempts
+	if maxFixAttempts <= 0 {
+		maxFixAttempts = 3
+	}
+
+	if pr.FixAttemptCount >= maxFixAttempts {
 		return nil, connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("max fix attempts reached for PR %s", prTrackingID))
+	}
+
+	updatedPR, err := h.store.UpdatePullRequestFixAttemptCount(workspaceID, prTrackingID, pr.FixAttemptCount+1)
+	if err != nil {
+		h.logger.Error("RunAutoFixNow failed to update fix attempt count",
+			"workspace_id", workspaceID,
+			"pr_tracking_id", prTrackingID,
+			"error", err,
+		)
+		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("failed to update fix attempts: %w", err))
+	}
+
+	if strings.TrimSpace(updatedPR.UnitTaskId) == "" {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("pull request %s is not linked to a unit task", prTrackingID))
 	}
 
 	// Create a remediation sub task placeholder
 	subTask := &dexdexv1.SubTask{
-		SubTaskId:  nextHandlerID(),
-		UnitTaskId: pr.UnitTaskId,
+		SubTaskId:  nextSubTaskID(),
+		UnitTaskId: updatedPR.UnitTaskId,
 		Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_PR_REVIEW_FIX,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
 	}
 	h.store.UpsertSubTask(workspaceID, subTask)
 
-	pr.FixAttemptCount++
-	pr.UpdatedAt = timestamppb.Now()
-
 	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: subTask})
+	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_PR_UPDATED, &stream.PrUpdatedPayload{
+		PrUpdated: &dexdexv1.PrUpdatedEvent{PullRequest: updatedPR},
+	})
 
 	h.logger.Info("RunAutoFixNow completed", "workspace_id", workspaceID, "sub_task_id", subTask.SubTaskId)
 
@@ -201,4 +236,34 @@ func (h *PrHandler) SetAutoFixPolicy(
 	return connect.NewResponse(&dexdexv1.SetAutoFixPolicyResponse{
 		PullRequest: pr,
 	}), nil
+}
+
+func trackingIDFromPRURL(prURL string) (string, error) {
+	parsedURL, err := url.Parse(prURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid pr_url: %w", err)
+	}
+
+	host := strings.ToLower(parsedURL.Hostname())
+	if host != "github.com" && host != "www.github.com" {
+		return "", fmt.Errorf("pr_url must be a GitHub pull request URL")
+	}
+
+	segments := strings.Split(strings.Trim(parsedURL.Path, "/"), "/")
+	if len(segments) < 4 || segments[2] != "pull" {
+		return "", fmt.Errorf("pr_url must be in the format https://github.com/<owner>/<repo>/pull/<number>")
+	}
+
+	owner := strings.TrimSpace(segments[0])
+	repo := strings.TrimSpace(segments[1])
+	prNumber := strings.TrimSpace(segments[3])
+	if owner == "" || repo == "" || prNumber == "" {
+		return "", fmt.Errorf("pr_url must include owner, repo, and pull request number")
+	}
+
+	if _, err := strconv.Atoi(prNumber); err != nil {
+		return "", fmt.Errorf("pull request number must be numeric")
+	}
+
+	return fmt.Sprintf("%s/%s#%s", owner, repo, prNumber), nil
 }

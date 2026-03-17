@@ -61,18 +61,15 @@ export function useWorkspaceStream({ workspaceId, onStatusChange, onNotification
           case StreamEventType.NOTIFICATION_CREATED:
             queryClient.invalidateQueries({ queryKey: ["dexdex.v1.NotificationService"] });
             // Dispatch Web Notification if handler is provided
-            if (onNotification && event.payload?.case === "notificationCreated") {
-              const notif = event.payload.value.notification;
-              if (notif) {
-                onNotification({
-                  workspaceId,
-                  sequence: Number(event.sequence),
-                  notificationType: String(notif.type),
-                  title: notif.title,
-                  body: notif.body,
-                  referenceId: notif.referenceId || undefined,
-                });
-              }
+            if (onNotification && event.payload.kind === "notificationCreated") {
+              onNotification({
+                workspaceId,
+                sequence: Number(event.sequence),
+                notificationType: event.payload.type,
+                title: event.payload.title,
+                body: event.payload.body,
+                referenceId: event.payload.referenceId,
+              });
             }
             break;
           case StreamEventType.PR_UPDATED:

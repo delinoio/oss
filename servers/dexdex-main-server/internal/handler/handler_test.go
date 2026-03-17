@@ -29,6 +29,28 @@ func seedStore() store.Store {
 	return s
 }
 
+type nilWorkspaceCreateStore struct {
+	store.Store
+}
+
+func (s nilWorkspaceCreateStore) CreateWorkspace(name string, wsType dexdexv1.WorkspaceType) *dexdexv1.Workspace {
+	return nil
+}
+
+type nilUnitTaskCreateStore struct {
+	store.Store
+}
+
+func (s nilUnitTaskCreateStore) CreateUnitTask(
+	workspaceID string,
+	prompt string,
+	repoGroupID string,
+	agentCliType dexdexv1.AgentCliType,
+	usePlanMode bool,
+) *dexdexv1.UnitTask {
+	return nil
+}
+
 func TestWorkspaceHandler_GetWorkspace(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
@@ -169,6 +191,22 @@ func TestWorkspaceHandler_UpdateWorkspaceSettings(t *testing.T) {
 	}
 	if getResp.Msg.Settings.DefaultAgentCliType != dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI {
 		t.Fatalf("expected persisted CODEX_CLI, got %s", getResp.Msg.Settings.DefaultAgentCliType.String())
+	}
+}
+
+func TestWorkspaceHandler_CreateWorkspace_InternalErrorWhenStoreReturnsNil(t *testing.T) {
+	base := seedStore()
+	h := NewWorkspaceHandler(nilWorkspaceCreateStore{Store: base}, testLogger())
+
+	_, err := h.CreateWorkspace(context.Background(), connect.NewRequest(&dexdexv1.CreateWorkspaceRequest{
+		Name: "Failure Case",
+		Type: dexdexv1.WorkspaceType_WORKSPACE_TYPE_LOCAL_ENDPOINT,
+	}))
+	if err == nil {
+		t.Fatal("expected error when store returns nil workspace")
+	}
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("expected Internal error code, got %v", connect.CodeOf(err))
 	}
 }
 
@@ -530,6 +568,24 @@ func TestTaskHandler_CreateUnitTask(t *testing.T) {
 	}
 	if resp.Msg.UnitTask.UpdatedAt == nil {
 		t.Fatal("expected updated_at to be set")
+	}
+}
+
+func TestTaskHandler_CreateUnitTask_InternalErrorWhenStoreReturnsNil(t *testing.T) {
+	base := seedStore()
+	h := NewTaskHandler(nilUnitTaskCreateStore{Store: base}, testFanOut(), nil, testLogger())
+
+	_, err := h.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
+		WorkspaceId:       "ws-default",
+		Prompt:            "Create a task",
+		RepositoryGroupId: "repo-group-main",
+		AgentCliType:      dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+	}))
+	if err == nil {
+		t.Fatal("expected error when store returns nil unit task")
+	}
+	if connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("expected Internal error code, got %v", connect.CodeOf(err))
 	}
 }
 

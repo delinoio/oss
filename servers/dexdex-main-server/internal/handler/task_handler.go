@@ -161,6 +161,11 @@ func (h *TaskHandler) CreateUnitTask(
 	}
 
 	task := h.store.CreateUnitTask(workspaceID, prompt, repoGroupID, agentCliType, usePlanMode)
+	if task == nil {
+		err := fmt.Errorf("failed to create unit task")
+		h.logger.Error("CreateUnitTask failed", "workspace_id", workspaceID, "error", err)
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
 
 	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_TASK_UPDATED, &stream.TaskPayload{Task: task})
 
@@ -284,7 +289,7 @@ func (h *TaskHandler) SubmitPlanDecision(
 
 		// Create a new REQUEST_CHANGES sub task
 		created := &dexdexv1.SubTask{
-			SubTaskId:  nextHandlerID(),
+			SubTaskId:  nextSubTaskID(),
 			UnitTaskId: currentSubTask.UnitTaskId,
 			Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_REQUEST_CHANGES,
 			Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
@@ -453,7 +458,7 @@ func (h *TaskHandler) CreateSubTask(
 	}
 
 	subTask := &dexdexv1.SubTask{
-		SubTaskId:  nextHandlerID(),
+		SubTaskId:  nextSubTaskID(),
 		UnitTaskId: unitTaskID,
 		Type:       subTaskType,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
@@ -526,7 +531,7 @@ func (h *TaskHandler) RetrySubTask(
 	}
 
 	retrySubTask := &dexdexv1.SubTask{
-		SubTaskId:  nextHandlerID(),
+		SubTaskId:  nextSubTaskID(),
 		UnitTaskId: origSubTask.UnitTaskId,
 		Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_MANUAL_RETRY,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
@@ -548,11 +553,4 @@ func (h *TaskHandler) RetrySubTask(
 	return connect.NewResponse(&dexdexv1.RetrySubTaskResponse{
 		SubTask: retrySubTask,
 	}), nil
-}
-
-var handlerIDCounter uint64
-
-func nextHandlerID() string {
-	handlerIDCounter++
-	return fmt.Sprintf("sub-gen-%d", handlerIDCounter)
 }

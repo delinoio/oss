@@ -2,10 +2,13 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -13,6 +16,8 @@ import (
 	dexdexv1 "github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/dbquery"
 )
+
+const defaultPRMaxFixAttempts int32 = 3
 
 // PostgresStore implements Store backed by PostgreSQL via sqlc-generated queries.
 type PostgresStore struct {
@@ -71,17 +76,67 @@ func (s *PostgresStore) ctx() context.Context {
 	return context.Background()
 }
 
+func (s *PostgresStore) hydrateCachedPullRequest(row dbquery.PrRecord) *dexdexv1.PullRequestRecord {
+	if s.prRecords[row.WorkspaceID] == nil {
+		s.prRecords[row.WorkspaceID] = make(map[string]*dexdexv1.PullRequestRecord)
+	}
+
+	cached, ok := s.prRecords[row.WorkspaceID][row.PrTrackingID]
+	if !ok {
+		cached = &dexdexv1.PullRequestRecord{
+			PrTrackingId: row.PrTrackingID,
+		}
+		s.prRecords[row.WorkspaceID][row.PrTrackingID] = cached
+	}
+
+	cached.PrTrackingId = row.PrTrackingID
+	cached.Status = dexdexv1.PrStatus(row.Status)
+	cached.PrUrl = row.PrUrl
+	cached.WorkspaceId = row.WorkspaceID
+	cached.UnitTaskId = row.UnitTaskID
+	cached.AutoFixEnabled = row.AutoFixEnabled
+	cached.FixAttemptCount = row.FixAttemptCount
+	cached.MaxFixAttempts = row.MaxFixAttempts
+	if cached.MaxFixAttempts <= 0 {
+		cached.MaxFixAttempts = defaultPRMaxFixAttempts
+	}
+	cached.CreatedAt = pgTimestamp(row.CreatedAt)
+	cached.UpdatedAt = pgTimestamp(row.UpdatedAt)
+	return cached
+}
+
+func copyPullRequestFields(dst, src *dexdexv1.PullRequestRecord) {
+	if dst == nil || src == nil {
+		return
+	}
+	dst.PrTrackingId = src.PrTrackingId
+	dst.Status = src.Status
+	dst.PrUrl = src.PrUrl
+	dst.WorkspaceId = src.WorkspaceId
+	dst.UnitTaskId = src.UnitTaskId
+	dst.AutoFixEnabled = src.AutoFixEnabled
+	dst.FixAttemptCount = src.FixAttemptCount
+	dst.MaxFixAttempts = src.MaxFixAttempts
+	dst.CreatedAt = src.CreatedAt
+	dst.UpdatedAt = src.UpdatedAt
+}
+
 // Workspace methods
 
 func (s *PostgresStore) AddWorkspace(ws *dexdexv1.Workspace) {
 	_, err := s.q.CreateWorkspace(s.ctx(), dbquery.CreateWorkspaceParams{
 		WorkspaceID: ws.WorkspaceId,
 		Name:        ws.Name,
+		Type:        int32(ws.Type),
 		CreatedAt:   toPgTimestamp(ws.CreatedAt),
 	})
 	if err != nil {
 		s.logger.Error("AddWorkspace failed", "error", err)
+		return
 	}
+	s.mu.Lock()
+	s.workspaces[ws.WorkspaceId] = ws
+	s.mu.Unlock()
 }
 
 func (s *PostgresStore) ListWorkspaces() []*dexdexv1.Workspace {
@@ -96,6 +151,7 @@ func (s *PostgresStore) ListWorkspaces() []*dexdexv1.Workspace {
 		result[i] = &dexdexv1.Workspace{
 			WorkspaceId: row.WorkspaceID,
 			Name:        row.Name,
+			Type:        dexdexv1.WorkspaceType(row.Type),
 			CreatedAt:   pgTimestamp(row.CreatedAt),
 		}
 	}
@@ -110,6 +166,7 @@ func (s *PostgresStore) GetWorkspace(id string) (*dexdexv1.Workspace, error) {
 	return &dexdexv1.Workspace{
 		WorkspaceId: row.WorkspaceID,
 		Name:        row.Name,
+		Type:        dexdexv1.WorkspaceType(row.Type),
 		CreatedAt:   pgTimestamp(row.CreatedAt),
 	}, nil
 }
@@ -809,15 +866,92 @@ func (s *PostgresStore) ListRepositoryGroups(workspaceID string) []*dexdexv1.Rep
 
 // Pull request methods
 
-func (s *PostgresStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord) {
-	_, err := s.q.CreatePullRequest(s.ctx(), dbquery.CreatePullRequestParams{
-		PrTrackingID: pr.PrTrackingId,
+func (s *PostgresStore) AddPullRequest(workspaceID string, pr *dexdexv1.PullRequestRecord) error {
+	if pr == nil {
+		return fmt.Errorf("pull request is nil")
+	}
+
+	existingRow, existingErr := s.q.GetPullRequest(s.ctx(), dbquery.GetPullRequestParams{
 		WorkspaceID:  workspaceID,
-		Status:       int32(pr.Status),
+		PrTrackingID: pr.PrTrackingId,
+	})
+	if existingErr != nil && !errors.Is(existingErr, pgx.ErrNoRows) {
+		return existingErr
+	}
+
+	if existingErr == nil {
+		existing := &dexdexv1.PullRequestRecord{
+			PrTrackingId:    existingRow.PrTrackingID,
+			Status:          dexdexv1.PrStatus(existingRow.Status),
+			PrUrl:           existingRow.PrUrl,
+			WorkspaceId:     existingRow.WorkspaceID,
+			UnitTaskId:      existingRow.UnitTaskID,
+			AutoFixEnabled:  existingRow.AutoFixEnabled,
+			FixAttemptCount: existingRow.FixAttemptCount,
+			MaxFixAttempts:  existingRow.MaxFixAttempts,
+			CreatedAt:       pgTimestamp(existingRow.CreatedAt),
+			UpdatedAt:       pgTimestamp(existingRow.UpdatedAt),
+		}
+
+		// Preserve existing tracking state when the same PR is tracked repeatedly.
+		// Status/auto-fix counters are updated via dedicated APIs, so duplicate add should not reset them.
+		if strings.TrimSpace(pr.PrUrl) == "" {
+			pr.PrUrl = existing.PrUrl
+		}
+		if strings.TrimSpace(pr.UnitTaskId) == "" {
+			pr.UnitTaskId = existing.UnitTaskId
+		}
+		if pr.Status == dexdexv1.PrStatus_PR_STATUS_OPEN && existing.Status != dexdexv1.PrStatus_PR_STATUS_OPEN {
+			pr.Status = existing.Status
+		}
+		if existing.AutoFixEnabled {
+			pr.AutoFixEnabled = true
+		}
+		if existing.FixAttemptCount > pr.FixAttemptCount {
+			pr.FixAttemptCount = existing.FixAttemptCount
+		}
+		if pr.MaxFixAttempts <= 0 {
+			pr.MaxFixAttempts = existing.MaxFixAttempts
+		}
+		if pr.CreatedAt == nil {
+			pr.CreatedAt = existing.CreatedAt
+		}
+	}
+
+	now := timestamppb.Now()
+	if pr.WorkspaceId == "" {
+		pr.WorkspaceId = workspaceID
+	}
+	if pr.MaxFixAttempts <= 0 {
+		pr.MaxFixAttempts = defaultPRMaxFixAttempts
+	}
+	if pr.CreatedAt == nil {
+		pr.CreatedAt = now
+	}
+	pr.UpdatedAt = now
+
+	row, err := s.q.CreatePullRequest(s.ctx(), dbquery.CreatePullRequestParams{
+		PrTrackingID:    pr.PrTrackingId,
+		WorkspaceID:     pr.WorkspaceId,
+		Status:          int32(pr.Status),
+		PrUrl:           pr.PrUrl,
+		UnitTaskID:      pr.UnitTaskId,
+		AutoFixEnabled:  pr.AutoFixEnabled,
+		FixAttemptCount: pr.FixAttemptCount,
+		MaxFixAttempts:  pr.MaxFixAttempts,
+		CreatedAt:       toPgTimestamp(pr.CreatedAt),
+		UpdatedAt:       toPgTimestamp(pr.UpdatedAt),
 	})
 	if err != nil {
-		s.logger.Error("AddPullRequest failed", "error", err)
+		return err
 	}
+
+	s.mu.Lock()
+	stored := s.hydrateCachedPullRequest(row)
+	s.mu.Unlock()
+
+	copyPullRequestFields(pr, stored)
+	return nil
 }
 
 func (s *PostgresStore) GetPullRequest(workspaceID, prTrackingID string) (*dexdexv1.PullRequestRecord, error) {
@@ -828,10 +962,10 @@ func (s *PostgresStore) GetPullRequest(workspaceID, prTrackingID string) (*dexde
 	if err != nil {
 		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
 	}
-	return &dexdexv1.PullRequestRecord{
-		PrTrackingId: row.PrTrackingID,
-		Status:       dexdexv1.PrStatus(row.Status),
-	}, nil
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hydrateCachedPullRequest(row), nil
 }
 
 func (s *PostgresStore) ListPullRequests(workspaceID string) []*dexdexv1.PullRequestRecord {
@@ -841,24 +975,46 @@ func (s *PostgresStore) ListPullRequests(workspaceID string) []*dexdexv1.PullReq
 		return nil
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	result := make([]*dexdexv1.PullRequestRecord, len(rows))
 	for i, row := range rows {
-		result[i] = &dexdexv1.PullRequestRecord{
-			PrTrackingId: row.PrTrackingID,
-			Status:       dexdexv1.PrStatus(row.Status),
-		}
+		result[i] = s.hydrateCachedPullRequest(row)
 	}
 	return result
 }
 
 func (s *PostgresStore) UpdatePullRequest(workspaceID, prTrackingID string, status dexdexv1.PrStatus) (*dexdexv1.PullRequestRecord, error) {
-	// For PostgreSQL, update the status in-place. Since sqlc queries may not have an update query yet,
-	// use AddPullRequest to upsert (the table should have ON CONFLICT handling).
-	s.AddPullRequest(workspaceID, &dexdexv1.PullRequestRecord{
-		PrTrackingId: prTrackingID,
-		Status:       status,
+	row, err := s.q.UpdatePullRequestStatus(s.ctx(), dbquery.UpdatePullRequestStatusParams{
+		WorkspaceID:  workspaceID,
+		PrTrackingID: prTrackingID,
+		Status:       int32(status),
 	})
-	return s.GetPullRequest(workspaceID, prTrackingID)
+	if err != nil {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pr := s.hydrateCachedPullRequest(row)
+	pr.UpdatedAt = timestamppb.Now()
+	return pr, nil
+}
+
+func (s *PostgresStore) UpdatePullRequestFixAttemptCount(workspaceID, prTrackingID string, fixAttemptCount int32) (*dexdexv1.PullRequestRecord, error) {
+	row, err := s.q.UpdatePullRequestFixAttemptCount(s.ctx(), dbquery.UpdatePullRequestFixAttemptCountParams{
+		WorkspaceID:     workspaceID,
+		PrTrackingID:    prTrackingID,
+		FixAttemptCount: fixAttemptCount,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hydrateCachedPullRequest(row), nil
 }
 
 // Review assist methods
@@ -1075,36 +1231,126 @@ func (s *PostgresStore) DeleteReviewComment(workspaceID, reviewCommentID string)
 }
 
 func (s *PostgresStore) CreateWorkspace(name string, wsType dexdexv1.WorkspaceType) *dexdexv1.Workspace {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ws := &dexdexv1.Workspace{
-		WorkspaceId: fmt.Sprintf("ws-%d", len(s.workspaces)+1),
+	workspaceID := fmt.Sprintf("ws-%s", nextID())
+	createdAt := timestamppb.Now()
+	row, err := s.q.CreateWorkspace(s.ctx(), dbquery.CreateWorkspaceParams{
+		WorkspaceID: workspaceID,
 		Name:        name,
-		Type:        wsType,
-		CreatedAt:   timestamppb.Now(),
+		Type:        int32(wsType),
+		CreatedAt:   toPgTimestamp(createdAt),
+	})
+	if err != nil {
+		s.logger.Error("CreateWorkspace failed", "workspace_id", workspaceID, "error", err)
+		return nil
 	}
+
+	ws := &dexdexv1.Workspace{
+		WorkspaceId: row.WorkspaceID,
+		Name:        row.Name,
+		Type:        dexdexv1.WorkspaceType(row.Type),
+		CreatedAt:   pgTimestamp(row.CreatedAt),
+	}
+
+	s.mu.Lock()
 	s.workspaces[ws.WorkspaceId] = ws
+	s.mu.Unlock()
 	return ws
 }
 
 func (s *PostgresStore) UpdateWorkspace(workspaceID, name string) (*dexdexv1.Workspace, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ws, ok := s.workspaces[workspaceID]
-	if !ok {
+	tag, err := s.pool.Exec(s.ctx(), "UPDATE workspaces SET name = $2 WHERE workspace_id = $1", workspaceID, name)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
 		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
 	}
-	ws.Name = name
+
+	row, err := s.q.GetWorkspace(s.ctx(), workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("workspace not found: %s", workspaceID)
+	}
+
+	ws := &dexdexv1.Workspace{
+		WorkspaceId: row.WorkspaceID,
+		Name:        row.Name,
+		Type:        dexdexv1.WorkspaceType(row.Type),
+		CreatedAt:   pgTimestamp(row.CreatedAt),
+	}
+
+	s.mu.Lock()
+	s.workspaces[workspaceID] = ws
+	s.mu.Unlock()
 	return ws, nil
 }
 
 func (s *PostgresStore) DeleteWorkspace(workspaceID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.workspaces[workspaceID]; !ok {
+	rows, err := s.q.ListUnitTasks(s.ctx(), workspaceID)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if row.Status == int32(dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_QUEUED) ||
+			row.Status == int32(dexdexv1.UnitTaskStatus_UNIT_TASK_STATUS_IN_PROGRESS) {
+			return fmt.Errorf("workspace has active tasks, cannot delete: %s", workspaceID)
+		}
+	}
+
+	ctx := s.ctx()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	deleteStatements := []string{
+		"DELETE FROM repository_group_members WHERE workspace_id = $1",
+		"DELETE FROM repository_groups WHERE workspace_id = $1",
+		"DELETE FROM repositories WHERE workspace_id = $1",
+		"DELETE FROM review_comments WHERE workspace_id = $1",
+		"DELETE FROM review_assist_items WHERE workspace_id = $1",
+		"DELETE FROM sub_tasks WHERE workspace_id = $1",
+		"DELETE FROM session_summaries WHERE workspace_id = $1",
+		"DELETE FROM notifications WHERE workspace_id = $1",
+		"DELETE FROM pr_records WHERE workspace_id = $1",
+		"DELETE FROM workspace_settings WHERE workspace_id = $1",
+		"DELETE FROM unit_tasks WHERE workspace_id = $1",
+	}
+	for _, statement := range deleteStatements {
+		if _, execErr := tx.Exec(ctx, statement, workspaceID); execErr != nil {
+			return execErr
+		}
+	}
+
+	tag, err := tx.Exec(ctx, "DELETE FROM workspaces WHERE workspace_id = $1", workspaceID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("workspace not found: %s", workspaceID)
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	committed = true
+
+	s.mu.Lock()
 	delete(s.workspaces, workspaceID)
+	delete(s.subTasks, workspaceID)
+	delete(s.reviewAssist, workspaceID)
+	delete(s.prRecords, workspaceID)
+	delete(s.sessionSummaries, workspaceID)
+	delete(s.worktreeAssignments, workspaceID)
+	delete(s.badgeThemes, workspaceID)
+	delete(s.reviewCommentsStore, workspaceID)
+	s.mu.Unlock()
+
 	return nil
 }
 
@@ -1167,19 +1413,18 @@ func (s *PostgresStore) UpdateReviewAssistItemStatus(workspaceID, reviewAssistID
 }
 
 func (s *PostgresStore) SetAutoFixPolicy(workspaceID, prTrackingID string, enabled bool) (*dexdexv1.PullRequestRecord, error) {
+	row, err := s.q.UpdatePullRequestAutoFixPolicy(s.ctx(), dbquery.UpdatePullRequestAutoFixPolicyParams{
+		WorkspaceID:    workspaceID,
+		PrTrackingID:   prTrackingID,
+		AutoFixEnabled: enabled,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	prMap, ok := s.prRecords[workspaceID]
-	if !ok {
-		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
-	}
-	pr, ok := prMap[prTrackingID]
-	if !ok {
-		return nil, fmt.Errorf("pull request not found: workspace=%s id=%s", workspaceID, prTrackingID)
-	}
-	pr.AutoFixEnabled = enabled
-	pr.UpdatedAt = timestamppb.Now()
-	return pr, nil
+	return s.hydrateCachedPullRequest(row), nil
 }
 
 func (s *PostgresStore) ListSessionSummaries(workspaceID, unitTaskID string) []*dexdexv1.SessionSummary {

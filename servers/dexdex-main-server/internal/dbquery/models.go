@@ -20,9 +20,16 @@ type Notification struct {
 }
 
 type PrRecord struct {
-	PrTrackingID string `json:"pr_tracking_id"`
-	WorkspaceID  string `json:"workspace_id"`
-	Status       int32  `json:"status"`
+	PrTrackingID    string             `json:"pr_tracking_id"`
+	WorkspaceID     string             `json:"workspace_id"`
+	Status          int32              `json:"status"`
+	PrUrl           string             `json:"pr_url"`
+	UnitTaskID      string             `json:"unit_task_id"`
+	AutoFixEnabled  bool               `json:"auto_fix_enabled"`
+	FixAttemptCount int32              `json:"fix_attempt_count"`
+	MaxFixAttempts  int32              `json:"max_fix_attempts"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 }
 
 type Repository struct {
@@ -108,6 +115,7 @@ type Workspace struct {
 	WorkspaceID string             `json:"workspace_id"`
 	Name        string             `json:"name"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	Type        int32              `json:"type"`
 }
 
 type WorkspaceSetting struct {
