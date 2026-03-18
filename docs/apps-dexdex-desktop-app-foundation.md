@@ -34,6 +34,9 @@ Behavior contracts:
 - Workspace switching is first-class and workspace-scoped, with a dynamic selector for switching between workspaces.
 - Multi-tab UI preserves tab order, active tab, and draft form state by workspace.
 - Event stream subscription reconnects with sequence resume.
+- Create Task uses a unified repository-target selector that includes both Repository Groups and Repositories.
+- Repository-target submission must send exactly one selector field to `CreateUnitTask` (`repository_group_id` or `repository_id`).
+- Tasks created from repository selector must render repository-friendly metadata instead of internal singleton-group IDs.
 - Plan mode UX supports `Approve`, `Revise`, and `Reject` decision actions.
 - Inline comment UX supports create/edit/resolve/reopen/delete with stream synchronization.
 - Multiline submit contract: `Enter` newline, `Cmd+Enter` submit.
@@ -56,6 +59,7 @@ Data and UX invariants:
 - Plan mode default is OFF.
 - Plan mode toggle is shown only for agents where `supports_plan_mode=true`.
 - Repository-group member order in UI maps directly to `display_order` payload sequence.
+- System-managed singleton repository groups (`auto-repo-singleton-*`) are hidden from Repository Groups management screens.
 - Dialog UI surfaces must close with `Esc`.
 - Forms with a single critical input must focus that input when shown.
 

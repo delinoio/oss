@@ -37,6 +37,7 @@ When implementation details differ from documented contracts, follow-up sync wor
   - `LOCAL_ENDPOINT`
   - `REMOTE_ENDPOINT`
 - RepositoryGroup is the execution unit, and repository ordering is deterministic.
+- `CreateUnitTask` accepts a repository-group selector or repository selector; repository selector resolves to a deterministic singleton RepositoryGroup.
 - Execution is worktree-only for task runs; direct local-folder editing is out of scope.
 - Worker output that changes code must produce a real git commit chain.
 - PR creation and commit-to-local flows must use commit-chain metadata as source of truth.
@@ -46,10 +47,10 @@ When implementation details differ from documented contracts, follow-up sync wor
 - UI behavior is keyboard-first and includes multiline submit (`Cmd+Enter`) and tab lifecycle shortcuts.
 - Dialog UI surfaces close with `Esc`, and forms with a single critical input auto-focus when shown.
 
-## Implementation Status (as of 2026-03-16)
+## Implementation Status (as of 2026-03-18)
 
 ### Proto (`protos/dexdex/v1/dexdex.proto`)
-- `CreateUnitTaskRequest` is prompt-first and uses workspace/repository-group/agent/plan-mode fields.
+- `CreateUnitTaskRequest` is prompt-first and supports repository-group or repository selectors (`repository_group_id` / `repository_id`) with exactly-one validation.
 - `AgentCapability` includes `supports_plan_mode`.
 - `SubmitPlanDecision` supports explicit decision actions.
 - Event stream payloads are workspace-scoped and typed.
@@ -58,6 +59,8 @@ When implementation details differ from documented contracts, follow-up sync wor
 
 ### Main Server (`servers/dexdex-main-server`)
 - Repository and repository-group contracts are normalized and execution-order-aware.
+- Repository selector requests create/reuse deterministic system-managed singleton groups (`auto-repo-singleton-<repository_id>`) and enforce singleton-group invariants.
+- System-managed singleton groups are reserved for internal orchestration and blocked from user update/delete APIs.
 - Workspace settings and task orchestration contracts are Connect RPC-first.
 - Plan-mode and capability validations enforce typed error outcomes.
 - PR auto-detection from agent session output after execution completes.
@@ -81,6 +84,9 @@ When implementation details differ from documented contracts, follow-up sync wor
 
 ### Desktop App (`apps/dexdex`)
 - Task creation flows and sidebar-first repository administration (`/repository-groups`, `/repositories`) are aligned with workspace/repository-group/agent contracts.
+- Create Task dialog uses a unified repository-target selector (Repository Groups + Repositories) and sends selector-specific fields to `CreateUnitTask`.
+- System-managed singleton groups are hidden in Repository Groups management views.
+- Task list/detail metadata renders repository labels for singleton-group-backed tasks.
 - Plan-mode visibility follows capability metadata.
 - Dialog surfaces close with `Esc` and single critical-input forms auto-focus on open.
 - Review assist Accept action creates auto-fix UnitTask via CreateUnitTask API.

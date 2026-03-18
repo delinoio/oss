@@ -44,6 +44,7 @@ import {
   persistActiveWorkspaceId,
 } from "./stores/app-store";
 import { summarizePrompt } from "./lib/adapters";
+import type { RepositoryTargetSelection } from "./lib/repository-target";
 import { PlanDecision } from "./lib/status";
 import { AgentCliType, PlanDecision as ProtoPlanDecision } from "./gen/v1/dexdex_pb";
 
@@ -182,11 +183,12 @@ function App() {
   const createTaskMutation = useCreateUnitTaskMutation();
 
   const handleCreateTask = useCallback(
-    (prompt: string, repositoryGroupId: string, agentCliType: AgentCliType, usePlanMode: boolean) => {
+    (prompt: string, target: RepositoryTargetSelection, agentCliType: AgentCliType, usePlanMode: boolean) => {
       createTaskMutation.mutate({
         workspaceId: activeWorkspaceId,
         prompt,
-        repositoryGroupId,
+        repositoryGroupId: target.kind === "group" ? target.repositoryGroupId : "",
+        repositoryId: target.kind === "repository" ? target.repositoryId : "",
         agentCliType,
         usePlanMode,
       });

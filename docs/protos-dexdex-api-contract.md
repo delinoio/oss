@@ -54,6 +54,10 @@ Key API behavior contracts:
   - group must contain at least one repository
   - order is preserved and execution-significant
   - first repository is the primary execution repository
+- Task creation selector rules:
+  - `CreateUnitTask` requires exactly one of `repository_group_id` or `repository_id`
+  - `repository_id` input resolves to a system-managed singleton group (`auto-repo-singleton-<repository_id>`)
+  - system-managed singleton groups are reserved and cannot be updated/deleted through repository-group user APIs
 - Task cancellation rules:
   - `CancelUnitTask` and `CancelSubTask` are fast user-stop endpoints
   - status transition target is `CANCELLED`

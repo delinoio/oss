@@ -130,6 +130,26 @@ func (h *RepositoryHandler) DeleteRepository(
 	}
 
 	h.logger.Info("DeleteRepository called", "workspace_id", workspaceID, "repository_id", repositoryID)
+	autoGroupID := buildAutoRepositoryGroupID(repositoryID)
+	if cleanupErr := h.store.DeleteRepositoryGroup(workspaceID, autoGroupID); cleanupErr != nil {
+		if !isNotFoundError(cleanupErr) {
+			err := fmt.Errorf("failed to delete auto repository group %s: %w", autoGroupID, cleanupErr)
+			h.logger.Error("DeleteRepository auto-group cleanup failed",
+				"workspace_id", workspaceID,
+				"repository_id", repositoryID,
+				"repository_group_id", autoGroupID,
+				"error", cleanupErr,
+			)
+			return nil, connect.NewError(connect.CodeInternal, err)
+		}
+	} else {
+		h.logger.Info("DeleteRepository removed auto repository group before deleting repository",
+			"workspace_id", workspaceID,
+			"repository_id", repositoryID,
+			"repository_group_id", autoGroupID,
+		)
+	}
+
 	if err := h.store.DeleteRepository(workspaceID, repositoryID); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "in use") {
 			return nil, connect.NewError(connect.CodeFailedPrecondition, err)
@@ -197,6 +217,11 @@ func (h *RepositoryHandler) CreateRepositoryGroup(
 		h.logger.Warn("CreateRepositoryGroup validation failed", "error", err)
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
+	if isAutoRepositoryGroupID(groupID) {
+		err := fmt.Errorf("repository_group_id with prefix %q is reserved for system-managed groups", autoRepositoryGroupPrefix)
+		h.logger.Warn("CreateRepositoryGroup validation failed", "workspace_id", workspaceID, "repository_group_id", groupID, "error", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
 
 	members, err := h.normalizeGroupMembers(workspaceID, req.Msg.Members)
 	if err != nil {
@@ -225,6 +250,15 @@ func (h *RepositoryHandler) UpdateRepositoryGroup(
 		err := fmt.Errorf("workspace_id and repository_group_id are required")
 		h.logger.Warn("UpdateRepositoryGroup validation failed", "error", err)
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if isAutoRepositoryGroupID(groupID) {
+		err := fmt.Errorf("repository group %s is system-managed and cannot be updated", groupID)
+		h.logger.Warn("UpdateRepositoryGroup blocked for auto group",
+			"workspace_id", workspaceID,
+			"repository_group_id", groupID,
+			"error", err,
+		)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	}
 
 	members, err := h.normalizeGroupMembers(workspaceID, req.Msg.Members)
@@ -255,12 +289,25 @@ func (h *RepositoryHandler) DeleteRepositoryGroup(
 		h.logger.Warn("DeleteRepositoryGroup validation failed", "error", err)
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
+	if isAutoRepositoryGroupID(groupID) {
+		err := fmt.Errorf("repository group %s is system-managed and cannot be deleted", groupID)
+		h.logger.Warn("DeleteRepositoryGroup blocked for auto group",
+			"workspace_id", workspaceID,
+			"repository_group_id", groupID,
+			"error", err,
+		)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
 
 	h.logger.Info("DeleteRepositoryGroup called", "workspace_id", workspaceID, "repository_group_id", groupID)
 	if err := h.store.DeleteRepositoryGroup(workspaceID, groupID); err != nil {
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
 	return connect.NewResponse(&dexdexv1.DeleteRepositoryGroupResponse{}), nil
+}
+
+func isNotFoundError(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "not found")
 }
 
 func (h *RepositoryHandler) normalizeGroupMembers(

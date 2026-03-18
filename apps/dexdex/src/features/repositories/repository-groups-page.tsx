@@ -10,6 +10,7 @@ import {
   useListRepositoryGroups,
   useUpdateRepositoryGroupMutation,
 } from "../../hooks/use-dexdex-queries";
+import { isAutoRepositoryGroupId } from "../../lib/repository-target";
 import { useAppStore } from "../../stores/app-store";
 
 interface EditableGroupMember {
@@ -32,7 +33,9 @@ export function RepositoryGroupsPage() {
   const [groupFormError, setGroupFormError] = useState("");
 
   const repositories = repositoriesQuery.data?.repositories ?? [];
-  const repositoryGroups = repositoryGroupsQuery.data?.repositoryGroups ?? [];
+  const repositoryGroups = (repositoryGroupsQuery.data?.repositoryGroups ?? []).filter(
+    (group) => !isAutoRepositoryGroupId(group.repositoryGroupId),
+  );
 
   function selectGroupForEdit(repositoryGroupId: string) {
     setEditingGroupId(repositoryGroupId);

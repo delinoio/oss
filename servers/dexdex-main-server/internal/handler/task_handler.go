@@ -117,10 +117,22 @@ func (h *TaskHandler) CreateUnitTask(
 	workspaceID := req.Msg.WorkspaceId
 	prompt := strings.TrimSpace(req.Msg.Prompt)
 	repoGroupID := strings.TrimSpace(req.Msg.RepositoryGroupId)
+	repositoryID := strings.TrimSpace(req.Msg.RepositoryId)
 	agentCliType := req.Msg.AgentCliType
 	usePlanMode := req.Msg.UsePlanMode
 
-	h.logger.Info("CreateUnitTask called", "workspace_id", workspaceID, "agent_cli_type", agentCliType.String())
+	selectorKind := "repository_group_id"
+	selectorValue := repoGroupID
+	if repositoryID != "" {
+		selectorKind = "repository_id"
+		selectorValue = repositoryID
+	}
+	h.logger.Info("CreateUnitTask called",
+		"workspace_id", workspaceID,
+		"agent_cli_type", agentCliType.String(),
+		"selector_kind", selectorKind,
+		"selector_value", selectorValue,
+	)
 
 	if prompt == "" {
 		err := fmt.Errorf("prompt is required")
@@ -128,21 +140,22 @@ func (h *TaskHandler) CreateUnitTask(
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	if repoGroupID == "" {
-		err := fmt.Errorf("repository_group_id is required")
+	if repoGroupID == "" && repositoryID == "" {
+		err := fmt.Errorf("exactly one of repository_group_id or repository_id is required")
+		h.logger.Warn("CreateUnitTask validation failed", "workspace_id", workspaceID, "error", err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if repoGroupID != "" && repositoryID != "" {
+		err := fmt.Errorf("exactly one of repository_group_id or repository_id is required")
 		h.logger.Warn("CreateUnitTask validation failed", "workspace_id", workspaceID, "error", err)
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	repoGroup, repoErr := h.store.GetRepositoryGroup(workspaceID, repoGroupID)
+	repoGroup, repoErr := h.resolveTaskRepositoryGroup(workspaceID, repoGroupID, repositoryID)
 	if repoErr != nil {
-		h.logger.Warn("CreateUnitTask validation failed",
-			"workspace_id", workspaceID,
-			"repository_group_id", repoGroupID,
-			"error", repoErr,
-		)
-		return nil, connect.NewError(connect.CodeNotFound, repoErr)
+		return nil, repoErr
 	}
+	repoGroupID = repoGroup.RepositoryGroupId
 
 	if agentCliType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_UNSPECIFIED {
 		settings, settingsErr := h.store.GetWorkspaceSettings(workspaceID)
@@ -192,6 +205,116 @@ func (h *TaskHandler) CreateUnitTask(
 func agentSupportsPlanMode(agentCliType dexdexv1.AgentCliType) bool {
 	return agentCliType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE ||
 		agentCliType == dexdexv1.AgentCliType_AGENT_CLI_TYPE_CODEX_CLI
+}
+
+func (h *TaskHandler) resolveTaskRepositoryGroup(
+	workspaceID string,
+	repositoryGroupID string,
+	repositoryID string,
+) (*dexdexv1.RepositoryGroup, error) {
+	if repositoryGroupID != "" {
+		repoGroup, repoErr := h.store.GetRepositoryGroup(workspaceID, repositoryGroupID)
+		if repoErr != nil {
+			h.logger.Warn("CreateUnitTask validation failed",
+				"workspace_id", workspaceID,
+				"repository_group_id", repositoryGroupID,
+				"error", repoErr,
+			)
+			return nil, connect.NewError(connect.CodeNotFound, repoErr)
+		}
+		return repoGroup, nil
+	}
+
+	repository, repositoryErr := h.store.GetRepository(workspaceID, repositoryID)
+	if repositoryErr != nil {
+		h.logger.Warn("CreateUnitTask validation failed",
+			"workspace_id", workspaceID,
+			"repository_id", repositoryID,
+			"error", repositoryErr,
+		)
+		return nil, connect.NewError(connect.CodeNotFound, repositoryErr)
+	}
+
+	autoGroupID := buildAutoRepositoryGroupID(repositoryID)
+	repoGroup, getErr := h.store.GetRepositoryGroup(workspaceID, autoGroupID)
+	if getErr != nil {
+		h.logger.Info("CreateUnitTask auto repository group not found; creating",
+			"workspace_id", workspaceID,
+			"repository_id", repositoryID,
+			"repository_group_id", autoGroupID,
+		)
+		createdGroup, createErr := h.store.CreateRepositoryGroup(
+			workspaceID,
+			autoGroupID,
+			[]*dexdexv1.RepositoryGroupMember{
+				{
+					RepositoryId: repositoryID,
+					BranchRef:    "HEAD",
+					DisplayOrder: 0,
+					Repository:   repository,
+				},
+			},
+		)
+		if createErr != nil {
+			// A concurrent request may have created the group first.
+			h.logger.Warn("CreateUnitTask auto repository group create failed; retrying fetch",
+				"workspace_id", workspaceID,
+				"repository_id", repositoryID,
+				"repository_group_id", autoGroupID,
+				"error", createErr,
+			)
+			repoGroup, getErr = h.store.GetRepositoryGroup(workspaceID, autoGroupID)
+			if getErr != nil {
+				return nil, connect.NewError(
+					connect.CodeInternal,
+					fmt.Errorf("failed to create or fetch auto repository group: %w", createErr),
+				)
+			}
+			h.logger.Info("CreateUnitTask auto repository group reused after create race",
+				"workspace_id", workspaceID,
+				"repository_id", repositoryID,
+				"repository_group_id", autoGroupID,
+			)
+		} else {
+			repoGroup = createdGroup
+			h.logger.Info("CreateUnitTask auto repository group created",
+				"workspace_id", workspaceID,
+				"repository_id", repositoryID,
+				"repository_group_id", autoGroupID,
+			)
+		}
+	} else {
+		h.logger.Info("CreateUnitTask auto repository group reused",
+			"workspace_id", workspaceID,
+			"repository_id", repositoryID,
+			"repository_group_id", autoGroupID,
+		)
+	}
+
+	if len(repoGroup.Members) != 1 || strings.TrimSpace(repoGroup.Members[0].RepositoryId) != repositoryID {
+		err := fmt.Errorf(
+			"auto repository group %s must include exactly one member for repository_id=%s",
+			autoGroupID,
+			repositoryID,
+		)
+		h.logger.Warn("CreateUnitTask auto repository group validation failed",
+			"workspace_id", workspaceID,
+			"repository_id", repositoryID,
+			"repository_group_id", autoGroupID,
+			"member_count", len(repoGroup.Members),
+			"error", err,
+		)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	}
+
+	if repoGroup.Members[0].Repository == nil {
+		repoGroup.Members[0].Repository = repository
+	}
+	if strings.TrimSpace(repoGroup.Members[0].BranchRef) == "" {
+		repoGroup.Members[0].BranchRef = "HEAD"
+	}
+
+	return repoGroup, nil
 }
 
 // UpdateUnitTaskStatus updates the status of a unit task.
