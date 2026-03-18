@@ -6,6 +6,7 @@ import { type CSSProperties, useEffect, useState } from "react";
 import { StatusBadge } from "../../components/status-badge";
 import { TaskListSkeleton } from "../../components/skeleton-loader";
 import type { UnitTask } from "../../lib/mock-data";
+import { formatTaskRepositoryScope } from "../../lib/repository-target";
 import { UnitTaskStatus } from "../../lib/status";
 
 interface TaskListProps {
@@ -171,7 +172,7 @@ export function TaskList({ tasks, isLoading, onTaskSelect, onCreateTask, selecte
 }
 
 function TaskRow({ task, isSelected, onClick }: { task: UnitTask; isSelected?: boolean; onClick: () => void }) {
-  const metadata = task.repositoryGroupId ? `Group: ${task.repositoryGroupId}` : "No repository group";
+  const metadata = formatTaskRepositoryScope(task.repositoryGroupId);
 
   const rowStyle: CSSProperties = {
     display: "flex",

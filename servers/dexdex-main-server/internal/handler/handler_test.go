@@ -358,6 +358,107 @@ func TestRepositoryHandler_RepositoryGroupCRUD(t *testing.T) {
 	}
 }
 
+func TestRepositoryHandler_AutoRepositoryGroupIsReserved(t *testing.T) {
+	client := setupRepositoryClient(t)
+	autoGroupID := buildAutoRepositoryGroupID("repo-oss")
+
+	_, err := client.CreateRepositoryGroup(context.Background(), connect.NewRequest(&dexdexv1.CreateRepositoryGroupRequest{
+		WorkspaceId:       "ws-default",
+		RepositoryGroupId: autoGroupID,
+		Members: []*dexdexv1.RepositoryGroupMemberInput{
+			{RepositoryId: "repo-oss", BranchRef: "main", DisplayOrder: 0},
+		},
+	}))
+	if err == nil {
+		t.Fatal("expected create to fail for reserved auto group prefix")
+	}
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("expected InvalidArgument, got %v", connect.CodeOf(err))
+	}
+
+	_, err = client.UpdateRepositoryGroup(context.Background(), connect.NewRequest(&dexdexv1.UpdateRepositoryGroupRequest{
+		WorkspaceId:       "ws-default",
+		RepositoryGroupId: autoGroupID,
+		Members: []*dexdexv1.RepositoryGroupMemberInput{
+			{RepositoryId: "repo-oss", BranchRef: "main", DisplayOrder: 0},
+		},
+	}))
+	if err == nil {
+		t.Fatal("expected update to fail for reserved auto group")
+	}
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("expected FailedPrecondition, got %v", connect.CodeOf(err))
+	}
+
+	_, err = client.DeleteRepositoryGroup(context.Background(), connect.NewRequest(&dexdexv1.DeleteRepositoryGroupRequest{
+		WorkspaceId:       "ws-default",
+		RepositoryGroupId: autoGroupID,
+	}))
+	if err == nil {
+		t.Fatal("expected delete to fail for reserved auto group")
+	}
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("expected FailedPrecondition, got %v", connect.CodeOf(err))
+	}
+}
+
+func TestRepositoryHandler_DeleteRepository_CleansAutoGroup(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewRepositoryHandler(s, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewRepositoryServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewRepositoryServiceClient(http.DefaultClient, server.URL)
+
+	createResp, err := client.CreateRepository(context.Background(), connect.NewRequest(&dexdexv1.CreateRepositoryRequest{
+		WorkspaceId:   "ws-default",
+		RepositoryUrl: "https://github.com/example/temporary-delete-target",
+	}))
+	if err != nil {
+		t.Fatalf("expected no error creating repository, got %v", err)
+	}
+	repositoryID := createResp.Msg.Repository.RepositoryId
+	autoGroupID := buildAutoRepositoryGroupID(repositoryID)
+	s.AddRepositoryGroup("ws-default", &dexdexv1.RepositoryGroup{
+		RepositoryGroupId: autoGroupID,
+		WorkspaceId:       "ws-default",
+		Members: []*dexdexv1.RepositoryGroupMember{
+			{
+				RepositoryId: repositoryID,
+				BranchRef:    "HEAD",
+				DisplayOrder: 0,
+				Repository:   createResp.Msg.Repository,
+			},
+		},
+	})
+
+	if _, err := client.DeleteRepository(context.Background(), connect.NewRequest(&dexdexv1.DeleteRepositoryRequest{
+		WorkspaceId:  "ws-default",
+		RepositoryId: repositoryID,
+	})); err != nil {
+		t.Fatalf("expected no error deleting repository with auto group, got %v", err)
+	}
+
+	if _, err := client.GetRepository(context.Background(), connect.NewRequest(&dexdexv1.GetRepositoryRequest{
+		WorkspaceId:  "ws-default",
+		RepositoryId: repositoryID,
+	})); err == nil || connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("expected repository to be deleted, got %v", err)
+	}
+	if _, err := client.GetRepositoryGroup(context.Background(), connect.NewRequest(&dexdexv1.GetRepositoryGroupRequest{
+		WorkspaceId:       "ws-default",
+		RepositoryGroupId: autoGroupID,
+	})); err == nil || connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("expected auto group to be deleted, got %v", err)
+	}
+}
+
 func TestTaskHandler_GetUnitTask(t *testing.T) {
 	s := seedStore()
 	logger := testLogger()
@@ -670,6 +771,194 @@ func TestTaskHandler_CreateUnitTask_RepositoryGroupNotFound(t *testing.T) {
 	}
 	if connect.CodeOf(err) != connect.CodeNotFound {
 		t.Fatalf("expected NotFound error code, got %v", connect.CodeOf(err))
+	}
+}
+
+func TestTaskHandler_CreateUnitTask_RepositorySelectorRequired(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	_, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
+		WorkspaceId:  "ws-default",
+		Prompt:       "create tests",
+		AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+	}))
+	if err == nil {
+		t.Fatal("expected error when no repository selector is provided")
+	}
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("expected InvalidArgument error code, got %v", connect.CodeOf(err))
+	}
+}
+
+func TestTaskHandler_CreateUnitTask_RepositoryAndGroupSelectorMutuallyExclusive(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	_, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
+		WorkspaceId:       "ws-default",
+		Prompt:            "create tests",
+		RepositoryGroupId: "repo-group-main",
+		RepositoryId:      "repo-oss",
+		AgentCliType:      dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+	}))
+	if err == nil {
+		t.Fatal("expected error when both repository selectors are provided")
+	}
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("expected InvalidArgument error code, got %v", connect.CodeOf(err))
+	}
+}
+
+func TestTaskHandler_CreateUnitTask_RepositorySelectorCreatesAutoGroup(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	autoGroupID := buildAutoRepositoryGroupID("repo-oss")
+	initialGroups := s.ListRepositoryGroups("ws-default")
+
+	resp, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
+		WorkspaceId:  "ws-default",
+		Prompt:       "create tests",
+		RepositoryId: "repo-oss",
+		AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+	}))
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if resp.Msg.UnitTask.RepositoryGroupId != autoGroupID {
+		t.Fatalf("expected auto repository_group_id=%s, got %s", autoGroupID, resp.Msg.UnitTask.RepositoryGroupId)
+	}
+
+	autoGroup, getErr := s.GetRepositoryGroup("ws-default", autoGroupID)
+	if getErr != nil {
+		t.Fatalf("expected auto group to exist, got %v", getErr)
+	}
+	if len(autoGroup.Members) != 1 {
+		t.Fatalf("expected 1 member in auto group, got %d", len(autoGroup.Members))
+	}
+	if autoGroup.Members[0].RepositoryId != "repo-oss" {
+		t.Fatalf("expected repository_id repo-oss, got %s", autoGroup.Members[0].RepositoryId)
+	}
+	if autoGroup.Members[0].BranchRef != "HEAD" {
+		t.Fatalf("expected branch_ref HEAD, got %s", autoGroup.Members[0].BranchRef)
+	}
+
+	_, err = client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
+		WorkspaceId:  "ws-default",
+		Prompt:       "create more tests",
+		RepositoryId: "repo-oss",
+		AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+	}))
+	if err != nil {
+		t.Fatalf("expected no error on second create, got %v", err)
+	}
+	updatedGroups := s.ListRepositoryGroups("ws-default")
+	if len(updatedGroups) != len(initialGroups)+1 {
+		t.Fatalf("expected exactly one auto group creation, got initial=%d updated=%d", len(initialGroups), len(updatedGroups))
+	}
+}
+
+func TestTaskHandler_CreateUnitTask_RepositorySelectorRepositoryNotFound(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	_, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
+		WorkspaceId:  "ws-default",
+		Prompt:       "create tests",
+		RepositoryId: "missing-repository",
+		AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+	}))
+	if err == nil {
+		t.Fatal("expected error for missing repository")
+	}
+	if connect.CodeOf(err) != connect.CodeNotFound {
+		t.Fatalf("expected NotFound error code, got %v", connect.CodeOf(err))
+	}
+}
+
+func TestTaskHandler_CreateUnitTask_RepositorySelectorAutoGroupInvariant(t *testing.T) {
+	s := seedStore()
+	logger := testLogger()
+	autoGroupID := buildAutoRepositoryGroupID("repo-oss")
+	s.AddRepositoryGroup("ws-default", &dexdexv1.RepositoryGroup{
+		RepositoryGroupId: autoGroupID,
+		WorkspaceId:       "ws-default",
+		Members: []*dexdexv1.RepositoryGroupMember{
+			{
+				RepositoryId: "repo-oss",
+				BranchRef:    "HEAD",
+				DisplayOrder: 0,
+			},
+			{
+				RepositoryId: "repo-infra",
+				BranchRef:    "main",
+				DisplayOrder: 1,
+			},
+		},
+	})
+	h := NewTaskHandler(s, testFanOut(), nil, logger)
+
+	mux := http.NewServeMux()
+	path, handler := dexdexv1connect.NewTaskServiceHandler(h)
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	client := dexdexv1connect.NewTaskServiceClient(http.DefaultClient, server.URL)
+
+	_, err := client.CreateUnitTask(context.Background(), connect.NewRequest(&dexdexv1.CreateUnitTaskRequest{
+		WorkspaceId:  "ws-default",
+		Prompt:       "create tests",
+		RepositoryId: "repo-oss",
+		AgentCliType: dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE,
+	}))
+	if err == nil {
+		t.Fatal("expected error for invalid auto group")
+	}
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("expected FailedPrecondition error code, got %v", connect.CodeOf(err))
 	}
 }
 

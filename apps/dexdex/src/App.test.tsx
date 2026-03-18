@@ -38,6 +38,7 @@ import {
   WorkspaceType,
   PullRequestRecordSchema,
 } from "./gen/v1/dexdex_pb";
+import { AUTO_REPOSITORY_GROUP_PREFIX } from "./lib/repository-target";
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -105,7 +106,7 @@ const mockUnitTasks = [
     unitTaskId: "task-005",
     prompt: "Update CI pipeline for monorepo",
     status: UnitTaskStatus.FAILED,
-    repositoryGroupId: "repo-group-main",
+    repositoryGroupId: `${AUTO_REPOSITORY_GROUP_PREFIX}repo-oss`,
     agentCliType: AgentCliType.OPENCODE,
     usePlanMode: false,
     createdAt: timestampFromDate(new Date("2026-03-13T09:00:00Z")),
@@ -240,12 +241,33 @@ const mockRepositoryGroups = [
     createdAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
   }),
+  create(RepositoryGroupSchema, {
+    repositoryGroupId: `${AUTO_REPOSITORY_GROUP_PREFIX}repo-oss`,
+    workspaceId: DEFAULT_WORKSPACE_ID,
+    members: [
+      create(RepositoryGroupMemberSchema, {
+        repositoryId: "repo-oss",
+        branchRef: "HEAD",
+        displayOrder: 0,
+        repository: mockRepositories[0],
+      }),
+    ],
+    createdAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
+    updatedAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
+  }),
 ];
 
 const mockWorkspaceSettings = create(WorkspaceSettingsSchema, {
   workspaceId: DEFAULT_WORKSPACE_ID,
   defaultAgentCliType: AgentCliType.CLAUDE_CODE,
 });
+
+let lastCreateUnitTaskRequest:
+  | {
+      repositoryGroupId?: string;
+      repositoryId?: string;
+    }
+  | null = null;
 
 interface TestTransportOptions {
   workspaces?: Array<{
@@ -271,7 +293,6 @@ function createTestTransport(options: TestTransportOptions = {}) {
       createdAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
     }),
   );
-
   return createRouterTransport((router) => {
     router.service(TaskService, {
       listUnitTasks: () => ({ unitTasks: mockUnitTasks }),
@@ -281,18 +302,25 @@ function createTestTransport(options: TestTransportOptions = {}) {
         if (req.unitTaskId === "task-004") return { subTasks: mockSubTasksFor004 };
         return { subTasks: [] };
       },
-      createUnitTask: (req) => ({
-        unitTask: create(UnitTaskSchema, {
-          unitTaskId: `task-${Date.now()}`,
-          prompt: req.prompt,
+      createUnitTask: (req) => {
+        lastCreateUnitTaskRequest = {
           repositoryGroupId: req.repositoryGroupId,
-          agentCliType: req.agentCliType,
-          usePlanMode: req.usePlanMode,
-          status: UnitTaskStatus.QUEUED,
-          createdAt: timestampFromDate(new Date()),
-          updatedAt: timestampFromDate(new Date()),
-        }),
-      }),
+          repositoryId: req.repositoryId,
+        };
+        return {
+          unitTask: create(UnitTaskSchema, {
+            unitTaskId: `task-${Date.now()}`,
+            prompt: req.prompt,
+            repositoryGroupId:
+              req.repositoryGroupId || (req.repositoryId ? `${AUTO_REPOSITORY_GROUP_PREFIX}${req.repositoryId}` : ""),
+            agentCliType: req.agentCliType,
+            usePlanMode: req.usePlanMode,
+            status: UnitTaskStatus.QUEUED,
+            createdAt: timestampFromDate(new Date()),
+            updatedAt: timestampFromDate(new Date()),
+          }),
+        };
+      },
       submitPlanDecision: () => ({
         updatedSubTask: undefined,
         createdSubTask: undefined,
@@ -460,6 +488,7 @@ function renderWithProviders(
 
 beforeEach(() => {
   localStorageMock.clear();
+  lastCreateUnitTaskRequest = null;
   document.documentElement.classList.remove("dark");
   localStorageMock.setItem("dexdex-active-workspace-id", DEFAULT_WORKSPACE_ID);
 });
@@ -521,6 +550,7 @@ describe("App", () => {
     await user.click(screen.getByTestId("nav-repository-groups"));
     expect(await screen.findByTestId("repository-groups-page")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Repository Groups", level: 1 })).toBeTruthy();
+    expect(screen.queryByText(`${AUTO_REPOSITORY_GROUP_PREFIX}repo-oss`)).toBeNull();
   });
 
   it("navigates to repositories via sidebar", async () => {
@@ -595,7 +625,7 @@ describe("App", () => {
     await user.click(screen.getByTestId("create-task-button"));
 
     await user.type(screen.getByTestId("task-prompt-input"), "My new task prompt");
-    await user.selectOptions(screen.getByTestId("task-repo-group-select"), "repo-group-main");
+    await user.selectOptions(screen.getByTestId("task-repo-group-select"), "group:repo-group-main");
     await user.selectOptions(screen.getByTestId("task-agent-select"), `${AgentCliType.CLAUDE_CODE}`);
     if (screen.queryByTestId("task-plan-mode-toggle")) {
       await user.click(screen.getByTestId("task-plan-mode-toggle"));
@@ -604,6 +634,31 @@ describe("App", () => {
 
     // Dialog should close
     expect(screen.queryByTestId("create-dialog")).toBeNull();
+    expect(lastCreateUnitTaskRequest?.repositoryGroupId).toBe("repo-group-main");
+    expect(lastCreateUnitTaskRequest?.repositoryId).toBe("");
+  });
+
+  it("creates a new task via repository selector", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+    await user.click(screen.getByTestId("create-task-button"));
+
+    await user.type(screen.getByTestId("task-prompt-input"), "Fix CI for repo target");
+    await user.selectOptions(screen.getByTestId("task-repo-group-select"), "repository:repo-oss");
+    await user.selectOptions(screen.getByTestId("task-agent-select"), `${AgentCliType.CLAUDE_CODE}`);
+    await user.click(screen.getByTestId("submit-create-task"));
+
+    expect(screen.queryByTestId("create-dialog")).toBeNull();
+    expect(lastCreateUnitTaskRequest?.repositoryId).toBe("repo-oss");
+    expect(lastCreateUnitTaskRequest?.repositoryGroupId).toBe("");
+  });
+
+  it("renders repository-based metadata instead of internal auto group id", async () => {
+    renderWithProviders(<App />);
+    expect(await screen.findByTestId("task-row-task-005")).toBeTruthy();
+    expect(screen.getByText("Repository: repo-oss")).toBeTruthy();
   });
 
   it("opens command palette with keyboard shortcut", async () => {

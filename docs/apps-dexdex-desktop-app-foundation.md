@@ -38,6 +38,9 @@ Behavior contracts:
   - if no workspaces exist, active workspace remains empty and the UI must show a workspace creation hint
 - Multi-tab UI preserves tab order, active tab, and draft form state by workspace.
 - Event stream subscription reconnects with sequence resume.
+- Create Task uses a unified repository-target selector that includes both Repository Groups and Repositories.
+- Repository-target submission must send exactly one selector field to `CreateUnitTask` (`repository_group_id` or `repository_id`).
+- Tasks created from repository selector must render repository-friendly metadata instead of internal singleton-group IDs.
 - Workspace-scoped query/stream/tray/global-shortcut flows must not execute workspace RPC calls when active workspace ID is empty.
 - Plan mode UX supports `Approve`, `Revise`, and `Reject` decision actions.
 - Inline comment UX supports create/edit/resolve/reopen/delete with stream synchronization.
@@ -62,6 +65,7 @@ Data and UX invariants:
 - Plan mode default is OFF.
 - Plan mode toggle is shown only for agents where `supports_plan_mode=true`.
 - Repository-group member order in UI maps directly to `display_order` payload sequence.
+- System-managed singleton repository groups (`auto-repo-singleton-*`) are hidden from Repository Groups management screens.
 - Dialog UI surfaces must close with `Esc`.
 - Forms with a single critical input must focus that input when shown.
 

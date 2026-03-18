@@ -6,9 +6,16 @@ import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useStat
 import { AgentCliType } from "../../gen/v1/dexdex_pb";
 import {
   useGetWorkspaceSettings,
+  useListRepositories,
   useListRepositoryGroups,
   useListSessionCapabilities,
 } from "../../hooks/use-dexdex-queries";
+import {
+  decodeRepositoryTargetSelection,
+  encodeRepositoryTargetSelection,
+  isAutoRepositoryGroupId,
+  type RepositoryTargetSelection,
+} from "../../lib/repository-target";
 import { useEscapeToClose, useFocusOnShow } from "../../hooks/use-dialog-accessibility";
 import { useDraftStore } from "../../stores/draft-store";
 
@@ -16,7 +23,7 @@ interface CreateDialogProps {
   isOpen: boolean;
   workspaceId: string;
   onClose: () => void;
-  onCreate: (prompt: string, repositoryGroupId: string, agentCliType: AgentCliType, usePlanMode: boolean) => void;
+  onCreate: (prompt: string, target: RepositoryTargetSelection, agentCliType: AgentCliType, usePlanMode: boolean) => void;
 }
 
 interface AgentOption {
@@ -33,18 +40,22 @@ const FALLBACK_AGENT_OPTIONS: AgentOption[] = [
 
 export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateDialogProps) {
   const [prompt, setPrompt] = useState("");
-  const [selectedRepoGroupId, setSelectedRepoGroupId] = useState("");
+  const [selectedTarget, setSelectedTarget] = useState("");
   const [selectedAgent, setSelectedAgent] = useState<AgentCliType>(AgentCliType.UNSPECIFIED);
   const [usePlanMode, setUsePlanMode] = useState(false);
   const promptInputRef = useRef<HTMLTextAreaElement>(null);
 
   const { getDraft, setDraft: saveDraft, clearDraft } = useDraftStore();
 
+  const repositoriesQuery = useListRepositories(workspaceId);
   const repoGroupsQuery = useListRepositoryGroups(workspaceId);
   const capabilitiesQuery = useListSessionCapabilities(workspaceId);
   const workspaceSettingsQuery = useGetWorkspaceSettings(workspaceId);
 
-  const repositoryGroups = repoGroupsQuery.data?.repositoryGroups ?? [];
+  const repositories = repositoriesQuery.data?.repositories ?? [];
+  const repositoryGroups = (repoGroupsQuery.data?.repositoryGroups ?? []).filter(
+    (group) => !isAutoRepositoryGroupId(group.repositoryGroupId),
+  );
   const agentOptions = useMemo<AgentOption[]>(() => {
     const capabilities = capabilitiesQuery.data?.capabilities ?? [];
     if (capabilities.length === 0) {
@@ -89,7 +100,17 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
     const draft = getDraft(workspaceId);
     if (draft) {
       setPrompt(draft.prompt);
-      setSelectedRepoGroupId(draft.repositoryGroupId);
+      const parsedTarget = decodeRepositoryTargetSelection(draft.repositoryGroupId);
+      if (parsedTarget) {
+        setSelectedTarget(draft.repositoryGroupId);
+      } else if (draft.repositoryGroupId.trim().length > 0) {
+        setSelectedTarget(
+          encodeRepositoryTargetSelection({
+            kind: "group",
+            repositoryGroupId: draft.repositoryGroupId.trim(),
+          }),
+        );
+      }
       setSelectedAgent(draft.agentCliType);
       setUsePlanMode(draft.usePlanMode);
     }
@@ -101,29 +122,30 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
     const timer = setTimeout(() => {
       saveDraft(workspaceId, {
         prompt,
-        repositoryGroupId: selectedRepoGroupId,
+        repositoryGroupId: selectedTarget,
         agentCliType: selectedAgent,
         usePlanMode,
       });
     }, 300);
     return () => clearTimeout(timer);
-  }, [isOpen, workspaceId, prompt, selectedRepoGroupId, selectedAgent, usePlanMode, saveDraft]);
+  }, [isOpen, workspaceId, prompt, selectedTarget, selectedAgent, usePlanMode, saveDraft]);
 
   useEscapeToClose(isOpen, onClose);
   useFocusOnShow(isOpen, promptInputRef);
 
   if (!isOpen) return null;
 
-  const canSubmit = prompt.trim().length > 0 && selectedRepoGroupId.trim().length > 0 && selectedAgent !== AgentCliType.UNSPECIFIED;
+  const selectedTargetValue = decodeRepositoryTargetSelection(selectedTarget);
+  const canSubmit = prompt.trim().length > 0 && selectedTargetValue !== null && selectedAgent !== AgentCliType.UNSPECIFIED;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || !selectedTargetValue) return;
 
-    onCreate(prompt.trim(), selectedRepoGroupId, selectedAgent, selectedAgentSupportsPlanMode && usePlanMode);
+    onCreate(prompt.trim(), selectedTargetValue, selectedAgent, selectedAgentSupportsPlanMode && usePlanMode);
     clearDraft(workspaceId);
     setPrompt("");
-    setSelectedRepoGroupId("");
+    setSelectedTarget("");
     setSelectedAgent(AgentCliType.UNSPECIFIED);
     setUsePlanMode(false);
     onClose();
@@ -205,22 +227,41 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
           </div>
 
           <div style={{ marginBottom: "var(--space-3)" }}>
-            <label htmlFor="task-repo-group" style={labelStyle}>
-              Repository Group
+            <label htmlFor="task-repository-target" style={labelStyle}>
+              Repository Target
             </label>
             <select
-              id="task-repo-group"
+              id="task-repository-target"
               style={inputStyle}
-              value={selectedRepoGroupId}
-              onChange={(e) => setSelectedRepoGroupId(e.target.value)}
+              value={selectedTarget}
+              onChange={(e) => setSelectedTarget(e.target.value)}
               data-testid="task-repo-group-select"
             >
-              <option value="">Select a repository group</option>
-              {repositoryGroups.map((group) => (
-                <option key={group.repositoryGroupId} value={group.repositoryGroupId}>
-                  {group.repositoryGroupId} ({group.members.length} repos)
-                </option>
-              ))}
+              <option value="">Select repository group or repository</option>
+              {repositoryGroups.length > 0 && (
+                <optgroup label="Repository Groups">
+                  {repositoryGroups.map((group) => (
+                    <option
+                      key={`group-${group.repositoryGroupId}`}
+                      value={encodeRepositoryTargetSelection({ kind: "group", repositoryGroupId: group.repositoryGroupId })}
+                    >
+                      {group.repositoryGroupId} ({group.members.length} repos)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {repositories.length > 0 && (
+                <optgroup label="Repositories">
+                  {repositories.map((repository) => (
+                    <option
+                      key={`repository-${repository.repositoryId}`}
+                      value={encodeRepositoryTargetSelection({ kind: "repository", repositoryId: repository.repositoryId })}
+                    >
+                      {repository.repositoryId}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 

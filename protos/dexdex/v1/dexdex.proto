@@ -643,6 +643,7 @@ message CreateUnitTaskRequest {
   string repository_group_id = 3;
   AgentCliType agent_cli_type = 4;
   bool use_plan_mode = 5;
+  string repository_id = 6;
 }
 
 message CreateUnitTaskResponse {

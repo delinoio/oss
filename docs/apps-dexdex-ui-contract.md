@@ -40,6 +40,9 @@ Primary screens:
 
 Task and PR interaction contracts:
 - UnitTask detail includes timeline, logs, diff, commit-chain, and stop controls
+- Create Task uses a unified repository-target selector (Repository Groups + Repositories).
+- Repository-target selection by repository ID maps to a system-managed singleton group on the server.
+- System-managed singleton groups are hidden from Repository Groups management UI and shown as repository labels in task metadata surfaces.
 - AI diff approval gates `Create PR` action
 - PR review includes line-level inline comments anchored by file/side/line
 - unresolved inline-comment count is surfaced in summary contexts

@@ -40,12 +40,14 @@ Service surface summary:
 V1 behavior priorities adopted from upstream contracts:
 - Workspace connectivity supports local and remote endpoint modes.
 - RepositoryGroup is ordered and execution-significant.
+- `CreateUnitTask` selector accepts either `repository_group_id` or `repository_id` with exactly-one validation.
+- `repository_id` selector maps to a deterministic system-managed singleton group (`auto-repo-singleton-<repository_id>`).
 - Task orchestration uses UnitTask -> SubTask -> AgentSession hierarchy.
 - Session output is normalized and provider-agnostic.
 - Event stream is sequence-based and workspace-scoped.
 
 Known alignment hotspots requiring explicit sync tracking:
-- `CreateUnitTask` request shape and optional title/branch fields in upstream API docs versus local prompt-first schema.
+- `CreateUnitTask` selector parity (`repository_group_id` / `repository_id`, exactly-one rule) across app/server contracts.
 - Stream envelope naming and payload grouping.
 - Workspace connectivity and entity field expansion.
 

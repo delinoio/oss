@@ -42,8 +42,16 @@ Architecture and deployment contracts:
 
 Task orchestration contracts:
 - `CreateUnitTask` persists queued top-level work and schedules initial SubTask.
+- `CreateUnitTask` accepts exactly one selector (`repository_group_id` or `repository_id`) and rejects zero/two-selector requests with `INVALID_ARGUMENT`.
+- `repository_id` selector resolves to a deterministic singleton repository group (`auto-repo-singleton-<repository_id>`) via create-or-reuse.
+- System-managed singleton groups must satisfy the invariant: exactly one member and matching `repository_id`; invariant violations fail with `FAILED_PRECONDITION`.
 - Cancellation contracts (`CancelUnitTask`, `CancelSubTask`) propagate quickly to worker runtime.
 - Plan decision contracts enforce explicit state transitions and typed errors.
+
+Repository-group lifecycle contracts:
+- Repository-group IDs with the `auto-repo-singleton-` prefix are reserved for system use and cannot be user-created.
+- System-managed singleton groups cannot be updated or deleted through user-facing repository-group APIs.
+- Repository deletion must clean up its system-managed singleton group (if present) before deleting repository records.
 
 PR management contracts:
 - Poll provider state and detect actionable signals.
@@ -81,6 +89,8 @@ Use structured `log/slog` with correlation keys:
 
 Required log categories:
 - task/subtask/session state transitions
+- selector resolution (`repository_group_id` vs `repository_id`) and singleton-group create/reuse decisions
+- singleton-group lock-policy rejections (create/update/delete guardrails)
 - worker dispatch/cancel outcomes
 - PR polling snapshots and auto-fix decisions
 - event-stream publish/replay health

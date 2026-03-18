@@ -5,6 +5,7 @@
 import { type CSSProperties, useState } from "react";
 import { StatusBadge } from "../../components/status-badge";
 import type { UnitTask } from "../../lib/mock-data";
+import { formatTaskRepositoryScopeDetail } from "../../lib/repository-target";
 import { PlanDecision, SubTaskStatus, UnitTaskStatus } from "../../lib/status";
 import { useListSubTasks, useListSubTasksRaw, useGetSessionOutput, useCancelUnitTaskMutation, useTrackPullRequestMutation } from "../../hooks/use-dexdex-queries";
 import { SubtaskTimeline } from "./subtask-timeline";
@@ -189,7 +190,7 @@ export function TaskDetail({ task, onBack, onPlanDecision }: TaskDetailProps) {
               color: "var(--color-text-tertiary)",
             }}
           >
-            <span>Repository Group: {task.repositoryGroupId || "-"}</span>
+            <span>Repository Scope: {formatTaskRepositoryScopeDetail(task.repositoryGroupId)}</span>
             <span>Agent: {task.agentCliType || "UNSPECIFIED"}</span>
             <span>Plan Mode: {task.usePlanMode ? "ON" : "OFF"}</span>
           </div>
