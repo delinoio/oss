@@ -26,6 +26,7 @@ Layout and navigation contracts:
 - mobile layout uses segmented navigation and stacked detail surfaces
 - multi-tab workspace supports open/reorder/close with draft preservation
 - repository administration uses dedicated sidebar destinations (`Repository Groups`, `Repositories`) instead of Settings-internal tabs
+- active workspace may be empty when no workspace exists; workspace-dependent screens must show a clear setup hint instead of firing mutations
 
 Primary screens:
 - Workspace Home
@@ -45,6 +46,7 @@ Task and PR interaction contracts:
 - AI diff approval gates `Create PR` action
 - PR review includes line-level inline comments anchored by file/side/line
 - unresolved inline-comment count is surfaced in summary contexts
+- Repositories screen validates URL format before create (`http://` or `https://`) and must surface inline error feedback for create/update/delete failures.
 
 Keyboard contracts:
 - global navigation shortcuts (`Cmd+K`, `Cmd+N`, `Cmd+1..3`, `Cmd+,`)

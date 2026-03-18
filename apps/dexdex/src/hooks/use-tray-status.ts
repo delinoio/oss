@@ -28,13 +28,19 @@ async function invokeTrayUpdate(status: string): Promise<void> {
 export function useTrayStatus(workspaceId: string): void {
   const { data } = useGetWorkspaceWorkStatus(workspaceId);
   const prevStatusRef = useRef<number | null>(null);
+  const normalizedWorkspaceId = workspaceId.trim();
 
   useEffect(() => {
+    if (!normalizedWorkspaceId) {
+      prevStatusRef.current = null;
+      return;
+    }
+
     const status = data?.status ?? ProtoWorkspaceWorkStatus.IDLE;
     if (prevStatusRef.current === status) return;
     prevStatusRef.current = status;
 
     const statusStr = STATUS_TO_STRING[status] ?? "IDLE";
     invokeTrayUpdate(statusStr);
-  }, [data?.status]);
+  }, [data?.status, normalizedWorkspaceId]);
 }

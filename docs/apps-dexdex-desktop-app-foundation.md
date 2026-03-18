@@ -32,11 +32,16 @@ Client architecture:
 
 Behavior contracts:
 - Workspace switching is first-class and workspace-scoped, with a dynamic selector for switching between workspaces.
+- Active workspace selection is reconciled against the fetched workspace list at startup and refresh time:
+  - legacy persisted ID `workspace-default` must be migrated to canonical `ws-default` when present
+  - invalid persisted IDs must fall back to the first available workspace
+  - if no workspaces exist, active workspace remains empty and the UI must show a workspace creation hint
 - Multi-tab UI preserves tab order, active tab, and draft form state by workspace.
 - Event stream subscription reconnects with sequence resume.
 - Create Task uses a unified repository-target selector that includes both Repository Groups and Repositories.
 - Repository-target submission must send exactly one selector field to `CreateUnitTask` (`repository_group_id` or `repository_id`).
 - Tasks created from repository selector must render repository-friendly metadata instead of internal singleton-group IDs.
+- Workspace-scoped query/stream/tray/global-shortcut flows must not execute workspace RPC calls when active workspace ID is empty.
 - Plan mode UX supports `Approve`, `Revise`, and `Reject` decision actions.
 - Inline comment UX supports create/edit/resolve/reopen/delete with stream synchronization.
 - Multiline submit contract: `Enter` newline, `Cmd+Enter` submit.
@@ -44,6 +49,7 @@ Behavior contracts:
 - Approved diff flow exposes `Create PR` action and uses commit-chain metadata.
 - PR management pages: list view of tracked PRs, detail view with auto-fix controls (`RunAutoFixNow`, `SetAutoFixPolicy`), and `TrackPullRequest` action.
 - Repository administration pages are first-class sidebar routes (`/repository-groups`, `/repositories`) and are not nested under Settings tabs.
+- Repositories screen must block create/update/delete actions when no active workspace is selected and display inline validation/mutation errors for failed actions.
 - Inbox page renders real notification data from the event stream with read/unread state management.
 - Enhanced keyboard shortcuts:
   - `Cmd+T`: create new task
@@ -70,7 +76,7 @@ Notifications contract:
 
 ## Storage
 Client-owned state contracts include:
-- workspace list and active workspace pointer
+- workspace list and active workspace pointer (active pointer may be empty when no workspaces exist)
 - workspace-scoped tab state and draft preservation
 - stream sequence checkpoint per workspace
 - notification permission cache and unread/read presentation state

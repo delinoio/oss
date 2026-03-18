@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportProvider } from "@connectrpc/connect-query";
-import { createRouterTransport } from "@connectrpc/connect";
+import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { MemoryRouter } from "react-router";
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
@@ -18,6 +18,7 @@ import {
   ReviewAssistService,
   ReviewCommentService,
   RepositoryService,
+  WorkspaceSchema,
   UnitTaskSchema,
   SubTaskSchema,
   RepositorySchema,
@@ -34,6 +35,7 @@ import {
   NotificationType,
   PrStatus,
   AgentCliType,
+  WorkspaceType,
   PullRequestRecordSchema,
 } from "./gen/v1/dexdex_pb";
 import { AUTO_REPOSITORY_GROUP_PREFIX } from "./lib/repository-target";
@@ -50,6 +52,9 @@ const localStorageMock = (() => {
 })();
 
 Object.defineProperty(window, "localStorage", { value: localStorageMock });
+
+const DEFAULT_WORKSPACE_ID = "ws-default";
+const LEGACY_DEFAULT_WORKSPACE_ID = "workspace-default";
 
 // Mock proto data matching the old MOCK_TASKS shape
 const mockUnitTasks = [
@@ -207,14 +212,14 @@ const mockPullRequests = [
 const mockRepositories = [
   create(RepositorySchema, {
     repositoryId: "repo-oss",
-    workspaceId: "workspace-default",
+    workspaceId: DEFAULT_WORKSPACE_ID,
     repositoryUrl: "https://github.com/example/oss",
     createdAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
   }),
   create(RepositorySchema, {
     repositoryId: "repo-infra",
-    workspaceId: "workspace-default",
+    workspaceId: DEFAULT_WORKSPACE_ID,
     repositoryUrl: "https://github.com/example/infra",
     createdAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
     updatedAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
@@ -224,7 +229,7 @@ const mockRepositories = [
 const mockRepositoryGroups = [
   create(RepositoryGroupSchema, {
     repositoryGroupId: "repo-group-main",
-    workspaceId: "workspace-default",
+    workspaceId: DEFAULT_WORKSPACE_ID,
     members: [
       create(RepositoryGroupMemberSchema, {
         repositoryId: "repo-oss",
@@ -238,7 +243,7 @@ const mockRepositoryGroups = [
   }),
   create(RepositoryGroupSchema, {
     repositoryGroupId: `${AUTO_REPOSITORY_GROUP_PREFIX}repo-oss`,
-    workspaceId: "workspace-default",
+    workspaceId: DEFAULT_WORKSPACE_ID,
     members: [
       create(RepositoryGroupMemberSchema, {
         repositoryId: "repo-oss",
@@ -253,7 +258,7 @@ const mockRepositoryGroups = [
 ];
 
 const mockWorkspaceSettings = create(WorkspaceSettingsSchema, {
-  workspaceId: "workspace-default",
+  workspaceId: DEFAULT_WORKSPACE_ID,
   defaultAgentCliType: AgentCliType.CLAUDE_CODE,
 });
 
@@ -264,7 +269,30 @@ let lastCreateUnitTaskRequest:
     }
   | null = null;
 
-function createTestTransport() {
+interface TestTransportOptions {
+  workspaces?: Array<{
+    workspaceId: string;
+    name: string;
+    type?: WorkspaceType;
+  }>;
+  createRepositoryErrorMessage?: string;
+}
+
+function createTestTransport(options: TestTransportOptions = {}) {
+  const workspaces = (options.workspaces ?? [
+    {
+      workspaceId: DEFAULT_WORKSPACE_ID,
+      name: "Default Workspace",
+      type: WorkspaceType.LOCAL_ENDPOINT,
+    },
+  ]).map((workspace) =>
+    create(WorkspaceSchema, {
+      workspaceId: workspace.workspaceId,
+      name: workspace.name,
+      type: workspace.type ?? WorkspaceType.LOCAL_ENDPOINT,
+      createdAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
+    }),
+  );
   return createRouterTransport((router) => {
     router.service(TaskService, {
       listUnitTasks: () => ({ unitTasks: mockUnitTasks }),
@@ -319,8 +347,27 @@ function createTestTransport() {
       stopAgentSession: () => ({}),
     });
     router.service(WorkspaceService, {
-      getWorkspace: () => ({ workspace: undefined }),
-      listWorkspaces: () => ({ workspaces: [] }),
+      getWorkspace: (req) => ({
+        workspace: workspaces.find((workspace) => workspace.workspaceId === req.workspaceId),
+      }),
+      listWorkspaces: () => ({ workspaces }),
+      createWorkspace: (req) => {
+        const createdWorkspace = create(WorkspaceSchema, {
+          workspaceId: `ws-${Date.now()}`,
+          name: req.name,
+          type: req.type,
+          createdAt: timestampFromDate(new Date()),
+        });
+        workspaces.push(createdWorkspace);
+        return { workspace: createdWorkspace };
+      },
+      setActiveWorkspace: (req) => {
+        const workspace = workspaces.find((item) => item.workspaceId === req.workspaceId);
+        if (!workspace) {
+          throw new Error(`workspace not found: ${req.workspaceId}`);
+        }
+        return { workspace };
+      },
       getWorkspaceWorkStatus: () => ({ status: 0 }),
       getWorkspaceSettings: () => ({ settings: mockWorkspaceSettings }),
       updateWorkspaceSettings: (req) => ({
@@ -344,15 +391,20 @@ function createTestTransport() {
     router.service(RepositoryService, {
       getRepository: () => ({ repository: mockRepositories[0] }),
       listRepositories: () => ({ repositories: mockRepositories }),
-      createRepository: (req) => ({
-        repository: create(RepositorySchema, {
-          repositoryId: `repo-${Date.now()}`,
-          workspaceId: req.workspaceId,
-          repositoryUrl: req.repositoryUrl,
-          createdAt: timestampFromDate(new Date()),
-          updatedAt: timestampFromDate(new Date()),
-        }),
-      }),
+      createRepository: async (req) => {
+        if (options.createRepositoryErrorMessage) {
+          throw new ConnectError(options.createRepositoryErrorMessage, Code.Internal);
+        }
+        return {
+          repository: create(RepositorySchema, {
+            repositoryId: `repo-${Date.now()}`,
+            workspaceId: req.workspaceId,
+            repositoryUrl: req.repositoryUrl,
+            createdAt: timestampFromDate(new Date()),
+            updatedAt: timestampFromDate(new Date()),
+          }),
+        };
+      },
       updateRepository: (req) => ({
         repository: create(RepositorySchema, {
           repositoryId: req.repositoryId,
@@ -408,7 +460,13 @@ function createTestTransport() {
   });
 }
 
-function renderWithProviders(ui: React.ReactElement, { initialEntries = ["/tasks"] }: { initialEntries?: string[] } = {}) {
+function renderWithProviders(
+  ui: React.ReactElement,
+  {
+    initialEntries = ["/tasks"],
+    transportOptions,
+  }: { initialEntries?: string[]; transportOptions?: TestTransportOptions } = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -419,7 +477,7 @@ function renderWithProviders(ui: React.ReactElement, { initialEntries = ["/tasks
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={createTestTransport()}>
+      <TransportProvider transport={createTestTransport(transportOptions)}>
         <MemoryRouter initialEntries={initialEntries}>
           {ui}
         </MemoryRouter>
@@ -432,6 +490,7 @@ beforeEach(() => {
   localStorageMock.clear();
   lastCreateUnitTaskRequest = null;
   document.documentElement.classList.remove("dark");
+  localStorageMock.setItem("dexdex-active-workspace-id", DEFAULT_WORKSPACE_ID);
 });
 
 describe("App", () => {
@@ -810,5 +869,76 @@ describe("App", () => {
 
     expect(await screen.findByText("Plan approval needed")).toBeTruthy();
     expect(screen.getByText("CI failure on PR #42")).toBeTruthy();
+  });
+
+  it("migrates legacy persisted workspace id to canonical workspace id", async () => {
+    localStorageMock.setItem("dexdex-active-workspace-id", LEGACY_DEFAULT_WORKSPACE_ID);
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+    await waitFor(() => {
+      expect(localStorageMock.getItem("dexdex-active-workspace-id")).toBe(DEFAULT_WORKSPACE_ID);
+    });
+  });
+
+  it("blocks repository creation when no workspace exists", async () => {
+    localStorageMock.removeItem("dexdex-active-workspace-id");
+    renderWithProviders(<App />, {
+      initialEntries: ["/repositories"],
+      transportOptions: { workspaces: [] },
+    });
+
+    expect(await screen.findByTestId("repositories-page")).toBeTruthy();
+    expect(screen.getByTestId("repository-workspace-hint")).toBeTruthy();
+
+    const createInput = screen.getByTestId("create-repository-url") as HTMLInputElement;
+    const createButton = screen.getByRole("button", { name: "Add Repository" }) as HTMLButtonElement;
+    expect(createInput.disabled).toBe(true);
+    expect(createButton.disabled).toBe(true);
+  });
+
+  it("shows repository create validation errors", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />, { initialEntries: ["/repositories"] });
+
+    expect(await screen.findByTestId("repositories-page")).toBeTruthy();
+    const createInput = screen.getByTestId("create-repository-url") as HTMLInputElement;
+    const createButton = screen.getByRole("button", { name: "Add Repository" }) as HTMLButtonElement;
+
+    await waitFor(() => {
+      expect(createInput.disabled).toBe(false);
+      expect(createButton.disabled).toBe(false);
+    });
+
+    await user.clear(createInput);
+    await user.type(createInput, "github.com/example/new-repo");
+    await user.click(createButton);
+
+    const mutationError = await screen.findByTestId("repository-mutation-error");
+    expect(mutationError.textContent).toBe("Repository URL must start with http:// or https://.");
+  });
+
+  it("shows repository create mutation errors", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />, {
+      initialEntries: ["/repositories"],
+      transportOptions: { createRepositoryErrorMessage: "rpc create failed" },
+    });
+
+    expect(await screen.findByTestId("repositories-page")).toBeTruthy();
+    const createInput = screen.getByTestId("create-repository-url") as HTMLInputElement;
+    const createButton = screen.getByRole("button", { name: "Add Repository" }) as HTMLButtonElement;
+
+    await waitFor(() => {
+      expect(createInput.disabled).toBe(false);
+      expect(createButton.disabled).toBe(false);
+    });
+
+    await user.type(createInput, "https://github.com/example/new-repo");
+    await user.click(createButton);
+
+    const mutationError = await screen.findByTestId("repository-mutation-error");
+    expect(mutationError.textContent?.includes("Failed to add repository:")).toBe(true);
+    expect(mutationError.textContent?.includes("rpc create failed")).toBe(true);
   });
 });

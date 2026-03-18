@@ -2,8 +2,8 @@
  * Sidebar navigation component with Linear-style layout.
  */
 
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import { useAppStore } from "../stores/app-store";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CANONICAL_DEFAULT_WORKSPACE_ID, LEGACY_DEFAULT_WORKSPACE_ID, useAppStore } from "../stores/app-store";
 import { useCreateWorkspaceMutation, useListWorkspaces, useSetActiveWorkspaceMutation } from "../hooks/use-dexdex-queries";
 import { WorkspaceType } from "../gen/v1/dexdex_pb";
 
@@ -28,18 +28,57 @@ function formatMutationError(error: unknown): string {
   return String(error);
 }
 
+function resolveValidWorkspaceId(activeWorkspaceId: string, workspaceIds: string[]): string {
+  if (workspaceIds.length === 0) {
+    return "";
+  }
+
+  const normalizedActiveWorkspaceId = activeWorkspaceId.trim();
+  if (normalizedActiveWorkspaceId && workspaceIds.includes(normalizedActiveWorkspaceId)) {
+    return normalizedActiveWorkspaceId;
+  }
+
+  if (
+    normalizedActiveWorkspaceId === LEGACY_DEFAULT_WORKSPACE_ID &&
+    workspaceIds.includes(CANONICAL_DEFAULT_WORKSPACE_ID)
+  ) {
+    return CANONICAL_DEFAULT_WORKSPACE_ID;
+  }
+
+  return workspaceIds[0];
+}
+
 export function Sidebar({ activePath, onNavigate }: SidebarProps) {
   const { sidebarOpen, connectionStatus, activeWorkspaceId, setActiveWorkspaceId } = useAppStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [createWorkspaceError, setCreateWorkspaceError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { data: workspacesData } = useListWorkspaces();
+  const workspacesQuery = useListWorkspaces();
   const setActiveWorkspaceMutation = useSetActiveWorkspaceMutation();
   const createWorkspaceMutation = useCreateWorkspaceMutation();
 
-  const workspaces = workspacesData?.workspaces ?? [];
+  const workspaces = workspacesQuery.data?.workspaces ?? [];
+  const workspaceIds = useMemo(() => workspaces.map((workspace) => workspace.workspaceId), [workspaces]);
+  const hasWorkspaces = workspaceIds.length > 0;
   const currentWorkspace = workspaces.find((w) => w.workspaceId === activeWorkspaceId);
-  const currentWorkspaceName = currentWorkspace?.name || activeWorkspaceId;
+  const currentWorkspaceName = currentWorkspace?.name || activeWorkspaceId || "No workspace selected";
+
+  useEffect(() => {
+    if (!workspacesQuery.isSuccess) {
+      return;
+    }
+
+    const resolvedWorkspaceId = resolveValidWorkspaceId(activeWorkspaceId, workspaceIds);
+    if (resolvedWorkspaceId === activeWorkspaceId) {
+      return;
+    }
+
+    setCreateWorkspaceError(null);
+    setActiveWorkspaceId(resolvedWorkspaceId);
+    if (resolvedWorkspaceId) {
+      setActiveWorkspaceMutation.mutate({ workspaceId: resolvedWorkspaceId });
+    }
+  }, [activeWorkspaceId, setActiveWorkspaceId, setActiveWorkspaceMutation, workspaceIds, workspacesQuery.isSuccess]);
 
   const handleWorkspaceSwitch = useCallback(
     (workspaceId: string) => {
@@ -311,6 +350,19 @@ export function Sidebar({ activePath, onNavigate }: SidebarProps) {
             role="alert"
           >
             {createWorkspaceError}
+          </p>
+        )}
+        {!createWorkspaceError && !hasWorkspaces && (
+          <p
+            style={{
+              marginTop: "var(--space-2)",
+              marginBottom: 0,
+              fontSize: "var(--font-size-xs)",
+              color: "var(--color-text-tertiary)",
+            }}
+            data-testid="workspace-required-hint"
+          >
+            Create a workspace to enable repositories, repository groups, and task workflows.
           </p>
         )}
       </div>

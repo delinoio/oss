@@ -14,7 +14,8 @@ interface UseGlobalShortcutOptions {
 }
 
 export function useGlobalShortcut({ workspaceId, onNavigate, onFocusInput }: UseGlobalShortcutOptions): void {
-  const { data, refetch } = useGetLatestWaitingSession(workspaceId);
+  const { refetch } = useGetLatestWaitingSession(workspaceId);
+  const normalizedWorkspaceId = workspaceId.trim();
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -23,6 +24,11 @@ export function useGlobalShortcut({ workspaceId, onNavigate, onFocusInput }: Use
       try {
         const { listen } = await import("@tauri-apps/api/event");
         unlisten = await listen("dexdex://global-shortcut-input", async () => {
+          if (!normalizedWorkspaceId) {
+            onNavigate("/inbox");
+            return;
+          }
+
           // Refetch to get the latest waiting session
           const result = await refetch();
           const session = result.data?.session;
@@ -51,5 +57,5 @@ export function useGlobalShortcut({ workspaceId, onNavigate, onFocusInput }: Use
     return () => {
       unlisten?.();
     };
-  }, [workspaceId, onNavigate, onFocusInput, refetch]);
+  }, [normalizedWorkspaceId, onNavigate, onFocusInput, refetch]);
 }
