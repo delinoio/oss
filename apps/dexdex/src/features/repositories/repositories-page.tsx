@@ -11,6 +11,13 @@ import {
 } from "../../hooks/use-dexdex-queries";
 import { useAppStore } from "../../stores/app-store";
 
+function formatMutationError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
 export function RepositoriesPage() {
   const { activeWorkspaceId } = useAppStore();
 
@@ -21,8 +28,10 @@ export function RepositoriesPage() {
 
   const [newRepositoryUrl, setNewRepositoryUrl] = useState("");
   const [repositoryEdits, setRepositoryEdits] = useState<Record<string, string>>({});
+  const [repositoryMutationError, setRepositoryMutationError] = useState("");
 
   const repositories = repositoriesQuery.data?.repositories ?? [];
+  const hasActiveWorkspace = activeWorkspaceId.trim().length > 0;
 
   useEffect(() => {
     if (repositories.length === 0) return;
@@ -38,33 +47,69 @@ export function RepositoriesPage() {
   }, [repositories]);
 
   function handleCreateRepository() {
+    if (!hasActiveWorkspace) {
+      setRepositoryMutationError("Create or select a workspace before adding repositories.");
+      return;
+    }
+
     const repositoryUrl = newRepositoryUrl.trim();
     if (!repositoryUrl) return;
-    createRepositoryMutation.mutate(
-      { workspaceId: activeWorkspaceId, repositoryUrl },
-      {
-        onSuccess: () => {
-          setNewRepositoryUrl("");
-        },
-      },
-    );
+    if (!/^https?:\/\//.test(repositoryUrl)) {
+      setRepositoryMutationError("Repository URL must start with http:// or https://.");
+      return;
+    }
+
+    void createRepositoryMutation
+      .mutateAsync({ workspaceId: activeWorkspaceId, repositoryUrl })
+      .then(() => {
+        setRepositoryMutationError("");
+        setNewRepositoryUrl("");
+      })
+      .catch((error) => {
+        setRepositoryMutationError(`Failed to add repository: ${formatMutationError(error)}`);
+      });
   }
 
   function handleUpdateRepository(repositoryId: string) {
+    if (!hasActiveWorkspace) {
+      setRepositoryMutationError("Create or select a workspace before editing repositories.");
+      return;
+    }
+
     const repositoryUrl = (repositoryEdits[repositoryId] ?? "").trim();
     if (!repositoryUrl) return;
-    updateRepositoryMutation.mutate({
-      workspaceId: activeWorkspaceId,
-      repositoryId,
-      repositoryUrl,
-    });
+
+    void updateRepositoryMutation
+      .mutateAsync({
+        workspaceId: activeWorkspaceId,
+        repositoryId,
+        repositoryUrl,
+      })
+      .then(() => {
+        setRepositoryMutationError("");
+      })
+      .catch((error) => {
+        setRepositoryMutationError(`Failed to update repository: ${formatMutationError(error)}`);
+      });
   }
 
   function handleDeleteRepository(repositoryId: string) {
-    deleteRepositoryMutation.mutate({
-      workspaceId: activeWorkspaceId,
-      repositoryId,
-    });
+    if (!hasActiveWorkspace) {
+      setRepositoryMutationError("Create or select a workspace before deleting repositories.");
+      return;
+    }
+
+    void deleteRepositoryMutation
+      .mutateAsync({
+        workspaceId: activeWorkspaceId,
+        repositoryId,
+      })
+      .then(() => {
+        setRepositoryMutationError("");
+      })
+      .catch((error) => {
+        setRepositoryMutationError(`Failed to delete repository: ${formatMutationError(error)}`);
+      });
   }
 
   const containerStyle: CSSProperties = {
@@ -117,16 +162,43 @@ export function RepositoriesPage() {
       <div style={contentStyle}>
         <div style={sectionStyle}>
           <h2 style={sectionTitleStyle}>Create Repository</h2>
+          {!hasActiveWorkspace && (
+            <div
+              style={{ marginBottom: "var(--space-2)", color: "var(--color-text-tertiary)", fontSize: "var(--font-size-sm)" }}
+              data-testid="repository-workspace-hint"
+            >
+              Create a workspace from the sidebar first, then add repositories.
+            </div>
+          )}
+          {repositoryMutationError && (
+            <div
+              style={{ marginBottom: "var(--space-2)", color: "var(--color-status-failed)", fontSize: "var(--font-size-sm)" }}
+              data-testid="repository-mutation-error"
+              role="alert"
+            >
+              {repositoryMutationError}
+            </div>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "var(--space-2)", maxWidth: 700 }}>
             <input
               style={inputStyle}
               type="text"
               value={newRepositoryUrl}
-              onChange={(e) => setNewRepositoryUrl(e.target.value)}
+              onChange={(e) => {
+                setNewRepositoryUrl(e.target.value);
+                if (repositoryMutationError) {
+                  setRepositoryMutationError("");
+                }
+              }}
               placeholder="https://github.com/org/repo"
               data-testid="create-repository-url"
+              disabled={!hasActiveWorkspace}
             />
-            <button style={primaryButtonStyle} onClick={handleCreateRepository} disabled={createRepositoryMutation.isPending}>
+            <button
+              style={primaryButtonStyle}
+              onClick={handleCreateRepository}
+              disabled={!hasActiveWorkspace || createRepositoryMutation.isPending}
+            >
               Add Repository
             </button>
           </div>
@@ -158,15 +230,27 @@ export function RepositoriesPage() {
                       [repository.repositoryId]: e.target.value,
                     }))
                   }
+                  disabled={!hasActiveWorkspace}
                 />
-                <button style={secondaryButtonStyle} onClick={() => handleUpdateRepository(repository.repositoryId)}>
+                <button
+                  style={secondaryButtonStyle}
+                  onClick={() => handleUpdateRepository(repository.repositoryId)}
+                  disabled={!hasActiveWorkspace}
+                >
                   Save
                 </button>
-                <button style={dangerButtonStyle} onClick={() => handleDeleteRepository(repository.repositoryId)}>
+                <button
+                  style={dangerButtonStyle}
+                  onClick={() => handleDeleteRepository(repository.repositoryId)}
+                  disabled={!hasActiveWorkspace}
+                >
                   Delete
                 </button>
               </div>
             ))}
+            {repositories.length === 0 && (
+              <div style={{ color: "var(--color-text-tertiary)", fontSize: "var(--font-size-sm)" }}>No repositories yet.</div>
+            )}
           </div>
         </div>
       </div>

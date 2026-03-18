@@ -34,13 +34,21 @@ export function useWorkspaceStream({ workspaceId, onStatusChange, onNotification
   const clientRef = useRef<EventStreamClient | null>(null);
   const queryClient = useQueryClient();
   const transport = useTransport();
+  const normalizedWorkspaceId = workspaceId.trim();
 
   useEffect(() => {
+    if (!normalizedWorkspaceId) {
+      clientRef.current?.disconnect();
+      clientRef.current = null;
+      onStatusChange("disconnected");
+      return;
+    }
+
     const client = new EventStreamClient();
     clientRef.current = client;
 
     client.connect(
-      workspaceId,
+      normalizedWorkspaceId,
       (event) => {
         console.log("[WorkspaceStream] Event received:", event.eventType, "seq:", event.sequence);
 
@@ -63,7 +71,7 @@ export function useWorkspaceStream({ workspaceId, onStatusChange, onNotification
             // Dispatch Web Notification if handler is provided
             if (onNotification && event.payload.kind === "notificationCreated") {
               onNotification({
-                workspaceId,
+                workspaceId: normalizedWorkspaceId,
                 sequence: Number(event.sequence),
                 notificationType: event.payload.type,
                 title: event.payload.title,
@@ -100,5 +108,5 @@ export function useWorkspaceStream({ workspaceId, onStatusChange, onNotification
       client.disconnect();
       clientRef.current = null;
     };
-  }, [workspaceId, onStatusChange, onNotification, queryClient, transport]);
+  }, [normalizedWorkspaceId, onStatusChange, onNotification, queryClient, transport]);
 }

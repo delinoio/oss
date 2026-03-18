@@ -27,6 +27,7 @@ Shared behavior across connectivity types:
 - same event-stream contract
 - same task/PR/review workflows
 - same notification model
+- same active-workspace reconciliation rules (legacy ID migration, invalid-ID fallback, empty state when no workspaces)
 
 Expected differences:
 - network latency and availability profile
@@ -40,13 +41,20 @@ Workspace setup flow:
 4. verify connectivity
 5. save and activate workspace profile
 
+Active workspace reconciliation contract:
+1. read persisted active workspace ID
+2. if value is legacy `workspace-default`, migrate it to canonical `ws-default`
+3. if active ID is not in fetched workspace list, fallback to first workspace
+4. if fetched workspace list is empty, keep active ID empty and render workspace creation guidance
+5. workspace-scoped RPC queries, stream subscriptions, tray updates, and waiting-session shortcuts must be skipped until a non-empty active workspace exists
+
 Mobile parity contract:
 - mobile uses same workspace model and contracts
 - feature rollout is phased by interaction constraints, not by platform priority
 
 ## Storage
 - workspace profile records (name, type, endpoint, auth profile)
-- active workspace pointer
+- active workspace pointer (nullable/empty when no workspace exists)
 - per-workspace stream checkpoint and tab state
 
 ## Security
