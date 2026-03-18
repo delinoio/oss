@@ -7,6 +7,9 @@ import { createContext, useContext } from "react";
 
 export type Theme = "light" | "dark";
 
+export const LEGACY_DEFAULT_WORKSPACE_ID = "workspace-default";
+export const CANONICAL_DEFAULT_WORKSPACE_ID = "ws-default";
+
 export interface AppState {
   theme: Theme;
   sidebarOpen: boolean;
@@ -68,12 +71,17 @@ export function getPersistedActiveWorkspaceId(): string {
   try {
     const stored = localStorage.getItem("dexdex-active-workspace-id");
     if (stored) {
-      return stored;
+      const workspaceId = stored.trim();
+      if (workspaceId === LEGACY_DEFAULT_WORKSPACE_ID) {
+        localStorage.setItem("dexdex-active-workspace-id", CANONICAL_DEFAULT_WORKSPACE_ID);
+        return CANONICAL_DEFAULT_WORKSPACE_ID;
+      }
+      return workspaceId;
     }
   } catch {
     // localStorage not available
   }
-  return "workspace-default";
+  return "";
 }
 
 /**

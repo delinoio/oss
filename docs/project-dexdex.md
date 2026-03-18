@@ -46,7 +46,7 @@ When implementation details differ from documented contracts, follow-up sync wor
 - UI behavior is keyboard-first and includes multiline submit (`Cmd+Enter`) and tab lifecycle shortcuts.
 - Dialog UI surfaces close with `Esc`, and forms with a single critical input auto-focus when shown.
 
-## Implementation Status (as of 2026-03-16)
+## Implementation Status (as of 2026-03-18)
 
 ### Proto (`protos/dexdex/v1/dexdex.proto`)
 - `CreateUnitTaskRequest` is prompt-first and uses workspace/repository-group/agent/plan-mode fields.
@@ -88,10 +88,13 @@ When implementation details differ from documented contracts, follow-up sync wor
 - Tauri backend implements credential management (file-based) and tray status IPC.
 - Cancel/Stop buttons for running UnitTask and SubTask flows with immediate propagation.
 - Workspace switching with dynamic selector for workspace-scoped navigation; all components use active workspace from app store with query invalidation on switch.
+- Startup workspace reconciliation migrates persisted legacy workspace ID `workspace-default` to canonical `ws-default`, falls back to the first available workspace when persisted data is invalid, and keeps active workspace empty when no workspace exists.
+- Workspace-scoped query/stream/tray/global-shortcut flows are guarded and skip RPC calls when active workspace is empty.
 - Sidebar workspace dropdown includes click-outside-to-close and create workspace action.
 - PR management list and detail pages with track/auto-fix controls.
 - PR detail page includes review comment actions (resolve/reopen/delete/edit), new comment form with file/side/line anchoring, and commit chain display from linked subtasks.
 - Inbox page with real notification data from event stream.
+- Repositories page blocks create/update/delete actions when no active workspace is selected and renders inline validation/mutation error messages.
 - Enhanced keyboard shortcuts fully wired: `Cmd+T` (new task), `Cmd+W` (close tab), `J`/`K` (navigate list with visual selection), `A` (approve plan), `V` (revise plan), `Shift+X` (reject plan/cancel task), `Cmd+Shift+[`/`]` (switch tabs).
 - Diff viewer component with unified/split view toggle, file-level navigation for multi-file diffs, and line-level comment anchor buttons.
 - Draft form state preservation via Zustand store with localStorage persistence per workspace.

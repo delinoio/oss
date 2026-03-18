@@ -51,7 +51,7 @@ function getNotificationBadgeColor(type: NotificationType): string {
 export function InboxPage() {
   const navigate = useNavigate();
   const store = useContext(AppStoreContext);
-  const workspaceId = store?.activeWorkspaceId ?? "workspace-default";
+  const workspaceId = store?.activeWorkspaceId ?? "";
 
   const { data: notifications = [], isLoading } = useListNotifications(workspaceId);
   const markReadMutation = useMarkNotificationReadMutation();

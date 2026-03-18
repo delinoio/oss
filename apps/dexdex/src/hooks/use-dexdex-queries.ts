@@ -52,11 +52,15 @@ import { getBadgeTheme } from "../gen/v1/dexdex-BadgeThemeService_connectquery";
 import { toViewUnitTask, toViewSubTask, toViewNotification, toViewSessionOutput, toViewSessionSummary, toViewAgentCapability, toViewReviewComment } from "../lib/adapters";
 import type { UnitTask, SubTask, Notification, SessionOutputEvent, SessionSummary, AgentCapability, ReviewComment } from "../lib/mock-data";
 
+function hasWorkspaceId(workspaceId: string): boolean {
+  return workspaceId.trim().length > 0;
+}
+
 /**
  * Fetch all unit tasks for a workspace, converted to view-model types.
  */
 export function useListUnitTasks(workspaceId: string) {
-  const query = useQuery(listUnitTasks, { workspaceId });
+  const query = useQuery(listUnitTasks, { workspaceId }, { enabled: hasWorkspaceId(workspaceId) });
   const tasks: UnitTask[] = (query.data?.unitTasks ?? []).map((t) => toViewUnitTask(t));
   return { ...query, data: tasks };
 }
@@ -65,7 +69,7 @@ export function useListUnitTasks(workspaceId: string) {
  * Fetch subtasks for a specific unit task, converted to view-model types.
  */
 export function useListSubTasks(workspaceId: string, unitTaskId: string) {
-  const query = useQuery(listSubTasks, { workspaceId, unitTaskId }, { enabled: !!unitTaskId });
+  const query = useQuery(listSubTasks, { workspaceId, unitTaskId }, { enabled: hasWorkspaceId(workspaceId) && !!unitTaskId });
   const subTasks: SubTask[] = (query.data?.subTasks ?? []).map(toViewSubTask);
   return { ...query, data: subTasks };
 }
@@ -74,7 +78,7 @@ export function useListSubTasks(workspaceId: string, unitTaskId: string) {
  * Fetch raw proto subtasks for a specific unit task (includes commitChain).
  */
 export function useListSubTasksRaw(workspaceId: string, unitTaskId: string) {
-  const query = useQuery(listSubTasks, { workspaceId, unitTaskId }, { enabled: !!unitTaskId });
+  const query = useQuery(listSubTasks, { workspaceId, unitTaskId }, { enabled: hasWorkspaceId(workspaceId) && !!unitTaskId });
   return { ...query, data: query.data?.subTasks ?? [] };
 }
 
@@ -82,7 +86,7 @@ export function useListSubTasksRaw(workspaceId: string, unitTaskId: string) {
  * Fetch notifications for a workspace, converted to view-model types.
  */
 export function useListNotifications(workspaceId: string) {
-  const query = useQuery(listNotifications, { workspaceId });
+  const query = useQuery(listNotifications, { workspaceId }, { enabled: hasWorkspaceId(workspaceId) });
   const notifications: Notification[] = (query.data?.notifications ?? []).map(toViewNotification);
   return { ...query, data: notifications };
 }
@@ -94,7 +98,7 @@ export function useGetSessionOutput(workspaceId: string, sessionId: string | und
   const query = useQuery(
     getSessionOutput,
     { workspaceId, sessionId: sessionId ?? "" },
-    { enabled: !!sessionId },
+    { enabled: hasWorkspaceId(workspaceId) && !!sessionId },
   );
   const events: SessionOutputEvent[] = (query.data?.events ?? []).map(toViewSessionOutput);
   return { ...query, data: events };
@@ -143,7 +147,7 @@ export function useMarkNotificationReadMutation() {
  * Fetch a single workspace by ID.
  */
 export function useGetWorkspace(workspaceId: string) {
-  return useQuery(getWorkspace, { workspaceId }, { enabled: !!workspaceId });
+  return useQuery(getWorkspace, { workspaceId }, { enabled: hasWorkspaceId(workspaceId) });
 }
 
 /**
@@ -183,14 +187,14 @@ export function useSetActiveWorkspaceMutation() {
  * Fetch workspace work status for tray/status display.
  */
 export function useGetWorkspaceWorkStatus(workspaceId: string) {
-  return useQuery(getWorkspaceWorkStatus, { workspaceId });
+  return useQuery(getWorkspaceWorkStatus, { workspaceId }, { enabled: hasWorkspaceId(workspaceId) });
 }
 
 /**
  * Fetch workspace settings.
  */
 export function useGetWorkspaceSettings(workspaceId: string) {
-  return useQuery(getWorkspaceSettings, { workspaceId });
+  return useQuery(getWorkspaceSettings, { workspaceId }, { enabled: hasWorkspaceId(workspaceId) });
 }
 
 /**
@@ -209,7 +213,7 @@ export function useUpdateWorkspaceSettingsMutation() {
  * Fetch session capabilities for a workspace (fork support, agent type).
  */
 export function useListSessionCapabilities(workspaceId: string) {
-  return useQuery(listSessionCapabilities, { workspaceId });
+  return useQuery(listSessionCapabilities, { workspaceId }, { enabled: hasWorkspaceId(workspaceId) });
 }
 
 /**
@@ -232,7 +236,7 @@ export function useListForkedSessions(workspaceId: string, parentSessionId: stri
   const query = useQuery(
     listForkedSessions,
     { workspaceId, parentSessionId },
-    { enabled: !!parentSessionId },
+    { enabled: hasWorkspaceId(workspaceId) && !!parentSessionId },
   );
   const sessions: SessionSummary[] = (query.data?.sessions ?? []).map(toViewSessionSummary);
   return { ...query, data: sessions };
@@ -255,7 +259,7 @@ export function useArchiveForkedSessionMutation() {
  * Fetch the latest waiting session for a workspace.
  */
 export function useGetLatestWaitingSession(workspaceId: string) {
-  return useQuery(getLatestWaitingSession, { workspaceId });
+  return useQuery(getLatestWaitingSession, { workspaceId }, { enabled: hasWorkspaceId(workspaceId) });
 }
 
 /**
@@ -275,14 +279,14 @@ export function useSubmitSessionInputMutation() {
  * Fetch all repository groups for a workspace.
  */
 export function useListRepositoryGroups(workspaceId: string) {
-  return useQuery(listRepositoryGroups, { workspaceId });
+  return useQuery(listRepositoryGroups, { workspaceId }, { enabled: hasWorkspaceId(workspaceId) });
 }
 
 /**
  * Fetch all repositories for a workspace.
  */
 export function useListRepositories(workspaceId: string) {
-  return useQuery(listRepositories, { workspaceId });
+  return useQuery(listRepositories, { workspaceId }, { enabled: hasWorkspaceId(workspaceId) });
 }
 
 /**
@@ -292,7 +296,7 @@ export function useGetRepository(workspaceId: string, repositoryId: string) {
   return useQuery(
     getRepository,
     { workspaceId, repositoryId },
-    { enabled: !!repositoryId },
+    { enabled: hasWorkspaceId(workspaceId) && !!repositoryId },
   );
 }
 
@@ -339,7 +343,7 @@ export function useGetRepositoryGroup(workspaceId: string, repositoryGroupId: st
   return useQuery(
     getRepositoryGroup,
     { workspaceId, repositoryGroupId },
-    { enabled: !!repositoryGroupId },
+    { enabled: hasWorkspaceId(workspaceId) && !!repositoryGroupId },
   );
 }
 
@@ -383,7 +387,7 @@ export function useDeleteRepositoryGroupMutation() {
  * Fetch all pull requests for a workspace.
  */
 export function useListPullRequests(workspaceId: string) {
-  return useQuery(listPullRequests, { workspaceId });
+  return useQuery(listPullRequests, { workspaceId }, { enabled: hasWorkspaceId(workspaceId) });
 }
 
 /**
@@ -393,7 +397,7 @@ export function useGetPullRequest(workspaceId: string, prTrackingId: string) {
   return useQuery(
     getPullRequest,
     { workspaceId, prTrackingId },
-    { enabled: !!prTrackingId },
+    { enabled: hasWorkspaceId(workspaceId) && !!prTrackingId },
   );
 }
 
@@ -404,7 +408,7 @@ export function useListReviewAssistItems(workspaceId: string, unitTaskId: string
   return useQuery(
     listReviewAssistItems,
     { workspaceId, unitTaskId },
-    { enabled: !!unitTaskId },
+    { enabled: hasWorkspaceId(workspaceId) && !!unitTaskId },
   );
 }
 
@@ -415,7 +419,7 @@ export function useListReviewComments(workspaceId: string, prTrackingId: string)
   const query = useQuery(
     listReviewComments,
     { workspaceId, prTrackingId },
-    { enabled: !!prTrackingId },
+    { enabled: hasWorkspaceId(workspaceId) && !!prTrackingId },
   );
   const comments: ReviewComment[] = (query.data?.comments ?? []).map(toViewReviewComment);
   return { ...query, data: { comments } };
@@ -578,5 +582,5 @@ export function useStopAgentSessionMutation() {
  * Fetch badge theme for a workspace.
  */
 export function useGetBadgeTheme(workspaceId: string) {
-  return useQuery(getBadgeTheme, { workspaceId });
+  return useQuery(getBadgeTheme, { workspaceId }, { enabled: hasWorkspaceId(workspaceId) });
 }
