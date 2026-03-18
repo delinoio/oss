@@ -54,6 +54,10 @@ Key API behavior contracts:
   - group must contain at least one repository
   - order is preserved and execution-significant
   - first repository is the primary execution repository
+- CreateUnitTask repository selector rules:
+  - `repository_group_id` accepts an explicit repository-group ID
+  - when no explicit repository group matches, `repository_group_id` may reference a repository ID and is resolved as an implicit single-member repository group
+  - explicit repository-group resolution takes precedence over repository-ID fallback when IDs collide
 - Task cancellation rules:
   - `CancelUnitTask` and `CancelSubTask` are fast user-stop endpoints
   - status transition target is `CANCELLED`

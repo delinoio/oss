@@ -38,6 +38,7 @@ Primary screens:
 - Notifications Center
 
 Task and PR interaction contracts:
+- Create Task repository selector supports both explicit Repository Groups and single Repositories (implicit single-member group resolution).
 - UnitTask detail includes timeline, logs, diff, commit-chain, and stop controls
 - AI diff approval gates `Create PR` action
 - PR review includes line-level inline comments anchored by file/side/line

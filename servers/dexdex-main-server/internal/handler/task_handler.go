@@ -134,7 +134,7 @@ func (h *TaskHandler) CreateUnitTask(
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 
-	repoGroup, repoErr := h.store.GetRepositoryGroup(workspaceID, repoGroupID)
+	repoGroup, repoErr := resolveRepositoryGroupForExecution(h.store, workspaceID, repoGroupID)
 	if repoErr != nil {
 		h.logger.Warn("CreateUnitTask validation failed",
 			"workspace_id", workspaceID,
@@ -468,13 +468,21 @@ func (h *TaskHandler) CreateSubTask(
 
 	// Dispatch execution
 	if h.dispatcher != nil {
-		repoGroup, repoErr := h.store.GetRepositoryGroup(workspaceID, task.RepositoryGroupId)
+		repoGroup, repoErr := resolveRepositoryGroupForExecution(h.store, workspaceID, task.RepositoryGroupId)
 		if repoErr == nil {
 			go func() {
 				if dispatchErr := h.dispatcher.DispatchExecution(context.Background(), workspaceID, task, repoGroup, task.AgentCliType); dispatchErr != nil {
 					h.logger.Error("failed to dispatch sub task execution", "error", dispatchErr)
 				}
 			}()
+		} else {
+			h.logger.Warn(
+				"failed to resolve repository group for sub task execution",
+				"workspace_id", workspaceID,
+				"unit_task_id", task.UnitTaskId,
+				"repository_group_id", task.RepositoryGroupId,
+				"error", repoErr,
+			)
 		}
 	}
 
@@ -540,13 +548,21 @@ func (h *TaskHandler) RetrySubTask(
 	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: retrySubTask})
 
 	if h.dispatcher != nil {
-		repoGroup, repoErr := h.store.GetRepositoryGroup(workspaceID, task.RepositoryGroupId)
+		repoGroup, repoErr := resolveRepositoryGroupForExecution(h.store, workspaceID, task.RepositoryGroupId)
 		if repoErr == nil {
 			go func() {
 				if dispatchErr := h.dispatcher.DispatchExecution(context.Background(), workspaceID, task, repoGroup, task.AgentCliType); dispatchErr != nil {
 					h.logger.Error("failed to dispatch retry execution", "error", dispatchErr)
 				}
 			}()
+		} else {
+			h.logger.Warn(
+				"failed to resolve repository group for retry execution",
+				"workspace_id", workspaceID,
+				"unit_task_id", task.UnitTaskId,
+				"repository_group_id", task.RepositoryGroupId,
+				"error", repoErr,
+			)
 		}
 	}
 

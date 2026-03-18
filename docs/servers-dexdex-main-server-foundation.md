@@ -42,6 +42,8 @@ Architecture and deployment contracts:
 
 Task orchestration contracts:
 - `CreateUnitTask` persists queued top-level work and schedules initial SubTask.
+- `CreateUnitTask.repository_group_id` accepts explicit repository-group IDs, and may fall back to repository IDs resolved as implicit single-member repository groups.
+- When repository-group and repository IDs collide, explicit repository-group resolution takes precedence.
 - Cancellation contracts (`CancelUnitTask`, `CancelSubTask`) propagate quickly to worker runtime.
 - Plan decision contracts enforce explicit state transitions and typed errors.
 

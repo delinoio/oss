@@ -18,7 +18,7 @@
 User workflow sequence:
 1. create/select workspace
 2. open sidebar `Repositories` and `Repository Groups` pages to add repositories and create ordered repository groups
-3. create UnitTask
+3. create UnitTask by selecting either a Repository Group or a single Repository
 4. monitor SubTask and AgentSession execution
 5. use multi-tab workflows for parallel triage
 6. stop running UnitTask/SubTask when needed
@@ -32,6 +32,7 @@ User workflow sequence:
 Mandatory behavior contracts:
 - UnitTask execution is repository-group scoped.
 - Repository order affects execution directory mapping.
+- Selecting a Repository in Create Task resolves to an implicit single-member repository group without creating a persisted Repository Group record.
 - Repository and Repository Group management are first-class sidebar flows, while Settings focuses on workspace/agent/preferences.
 - `Cmd+Enter` submits multiline forms.
 - stop actions transition to `CANCELLED` through stream updates.

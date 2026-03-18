@@ -40,6 +40,7 @@ Service surface summary:
 V1 behavior priorities adopted from upstream contracts:
 - Workspace connectivity supports local and remote endpoint modes.
 - RepositoryGroup is ordered and execution-significant.
+- `CreateUnitTaskRequest.repository_group_id` accepts explicit repository-group IDs and repository IDs that resolve to implicit single-member repository groups.
 - Task orchestration uses UnitTask -> SubTask -> AgentSession hierarchy.
 - Session output is normalized and provider-agnostic.
 - Event stream is sequence-based and workspace-scoped.

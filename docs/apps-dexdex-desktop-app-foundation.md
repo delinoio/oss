@@ -55,6 +55,7 @@ Data and UX invariants:
 - `WorkspaceSettings.default_agent_cli_type` is the default agent for new task creation.
 - Plan mode default is OFF.
 - Plan mode toggle is shown only for agents where `supports_plan_mode=true`.
+- Create Task repository selector accepts both explicit repository groups and single repositories (sent via `repository_group_id` for implicit single-member resolution).
 - Repository-group member order in UI maps directly to `display_order` payload sequence.
 - Dialog UI surfaces must close with `Esc`.
 - Forms with a single critical input must focus that input when shown.

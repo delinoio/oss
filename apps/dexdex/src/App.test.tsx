@@ -242,6 +242,8 @@ const mockWorkspaceSettings = create(WorkspaceSettingsSchema, {
   defaultAgentCliType: AgentCliType.CLAUDE_CODE,
 });
 
+let lastCreateUnitTaskRepositoryGroupId = "";
+
 function createTestTransport() {
   return createRouterTransport((router) => {
     router.service(TaskService, {
@@ -252,18 +254,21 @@ function createTestTransport() {
         if (req.unitTaskId === "task-004") return { subTasks: mockSubTasksFor004 };
         return { subTasks: [] };
       },
-      createUnitTask: (req) => ({
-        unitTask: create(UnitTaskSchema, {
-          unitTaskId: `task-${Date.now()}`,
-          prompt: req.prompt,
-          repositoryGroupId: req.repositoryGroupId,
-          agentCliType: req.agentCliType,
-          usePlanMode: req.usePlanMode,
-          status: UnitTaskStatus.QUEUED,
-          createdAt: timestampFromDate(new Date()),
-          updatedAt: timestampFromDate(new Date()),
-        }),
-      }),
+      createUnitTask: (req) => {
+        lastCreateUnitTaskRepositoryGroupId = req.repositoryGroupId;
+        return {
+          unitTask: create(UnitTaskSchema, {
+            unitTaskId: `task-${Date.now()}`,
+            prompt: req.prompt,
+            repositoryGroupId: req.repositoryGroupId,
+            agentCliType: req.agentCliType,
+            usePlanMode: req.usePlanMode,
+            status: UnitTaskStatus.QUEUED,
+            createdAt: timestampFromDate(new Date()),
+            updatedAt: timestampFromDate(new Date()),
+          }),
+        };
+      },
       submitPlanDecision: () => ({
         updatedSubTask: undefined,
         createdSubTask: undefined,
@@ -402,6 +407,7 @@ function renderWithProviders(ui: React.ReactElement, { initialEntries = ["/tasks
 beforeEach(() => {
   localStorageMock.clear();
   document.documentElement.classList.remove("dark");
+  lastCreateUnitTaskRepositoryGroupId = "";
 });
 
 describe("App", () => {
@@ -544,6 +550,34 @@ describe("App", () => {
 
     // Dialog should close
     expect(screen.queryByTestId("create-dialog")).toBeNull();
+  });
+
+  it("shows repository group and repository options in create task dialog", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+    await user.click(screen.getByTestId("create-task-button"));
+
+    expect(screen.getByRole("option", { name: "repo-group-main (1 repos)" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "repo-oss (single repo)" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "repo-infra (single repo)" })).toBeTruthy();
+  });
+
+  it("creates a new task with repository fallback selection", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-list");
+    await user.click(screen.getByTestId("create-task-button"));
+
+    await user.type(screen.getByTestId("task-prompt-input"), "Run checks for a single repository");
+    await user.selectOptions(screen.getByTestId("task-repo-group-select"), "repo-oss");
+    await user.selectOptions(screen.getByTestId("task-agent-select"), `${AgentCliType.CLAUDE_CODE}`);
+    await user.click(screen.getByTestId("submit-create-task"));
+
+    expect(screen.queryByTestId("create-dialog")).toBeNull();
+    expect(lastCreateUnitTaskRepositoryGroupId).toBe("repo-oss");
   });
 
   it("opens command palette with keyboard shortcut", async () => {

@@ -6,6 +6,7 @@ import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useStat
 import { AgentCliType } from "../../gen/v1/dexdex_pb";
 import {
   useGetWorkspaceSettings,
+  useListRepositories,
   useListRepositoryGroups,
   useListSessionCapabilities,
 } from "../../hooks/use-dexdex-queries";
@@ -41,10 +42,12 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
   const { getDraft, setDraft: saveDraft, clearDraft } = useDraftStore();
 
   const repoGroupsQuery = useListRepositoryGroups(workspaceId);
+  const repositoriesQuery = useListRepositories(workspaceId);
   const capabilitiesQuery = useListSessionCapabilities(workspaceId);
   const workspaceSettingsQuery = useGetWorkspaceSettings(workspaceId);
 
   const repositoryGroups = repoGroupsQuery.data?.repositoryGroups ?? [];
+  const repositories = repositoriesQuery.data?.repositories ?? [];
   const agentOptions = useMemo<AgentOption[]>(() => {
     const capabilities = capabilitiesQuery.data?.capabilities ?? [];
     if (capabilities.length === 0) {
@@ -206,7 +209,7 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
 
           <div style={{ marginBottom: "var(--space-3)" }}>
             <label htmlFor="task-repo-group" style={labelStyle}>
-              Repository Group
+              Repository / Group
             </label>
             <select
               id="task-repo-group"
@@ -215,12 +218,21 @@ export function CreateDialog({ isOpen, workspaceId, onClose, onCreate }: CreateD
               onChange={(e) => setSelectedRepoGroupId(e.target.value)}
               data-testid="task-repo-group-select"
             >
-              <option value="">Select a repository group</option>
-              {repositoryGroups.map((group) => (
-                <option key={group.repositoryGroupId} value={group.repositoryGroupId}>
-                  {group.repositoryGroupId} ({group.members.length} repos)
-                </option>
-              ))}
+              <option value="">Select a repository group or repository</option>
+              <optgroup label="Repository Groups">
+                {repositoryGroups.map((group) => (
+                  <option key={group.repositoryGroupId} value={group.repositoryGroupId}>
+                    {group.repositoryGroupId} ({group.members.length} repos)
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Repositories (single repo)">
+                {repositories.map((repository) => (
+                  <option key={repository.repositoryId} value={repository.repositoryId}>
+                    {repository.repositoryId} (single repo)
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </div>
 

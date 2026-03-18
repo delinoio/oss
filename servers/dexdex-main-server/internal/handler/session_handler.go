@@ -145,7 +145,7 @@ func (h *SessionHandler) ForkSession(
 		if stErr == nil && subTask != nil {
 			unitTask, utErr := h.store.GetUnitTask(workspaceID, subTask.UnitTaskId)
 			if utErr == nil && unitTask != nil && unitTask.RepositoryGroupId != "" {
-				repoGroup, rgErr := h.store.GetRepositoryGroup(workspaceID, unitTask.RepositoryGroupId)
+				repoGroup, rgErr := resolveRepositoryGroupForExecution(h.store, workspaceID, unitTask.RepositoryGroupId)
 				if rgErr == nil && repoGroup != nil {
 					// Get agent CLI type from worker capabilities
 					agentCliType := dexdexv1.AgentCliType_AGENT_CLI_TYPE_CLAUDE_CODE
@@ -176,6 +176,14 @@ func (h *SessionHandler) ForkSession(
 							)
 						}
 					}()
+				} else {
+					h.logger.Warn(
+						"failed to resolve repository group for fork execution",
+						"workspace_id", workspaceID,
+						"unit_task_id", unitTask.UnitTaskId,
+						"repository_group_id", unitTask.RepositoryGroupId,
+						"error", rgErr,
+					)
 				}
 			}
 		}

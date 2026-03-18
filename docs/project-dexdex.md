@@ -37,6 +37,7 @@ When implementation details differ from documented contracts, follow-up sync wor
   - `LOCAL_ENDPOINT`
   - `REMOTE_ENDPOINT`
 - RepositoryGroup is the execution unit, and repository ordering is deterministic.
+- `CreateUnitTaskRequest.repository_group_id` accepts either an explicit repository-group ID or a repository ID resolved as an implicit single-member repository group.
 - Execution is worktree-only for task runs; direct local-folder editing is out of scope.
 - Worker output that changes code must produce a real git commit chain.
 - PR creation and commit-to-local flows must use commit-chain metadata as source of truth.
@@ -49,7 +50,7 @@ When implementation details differ from documented contracts, follow-up sync wor
 ## Implementation Status (as of 2026-03-16)
 
 ### Proto (`protos/dexdex/v1/dexdex.proto`)
-- `CreateUnitTaskRequest` is prompt-first and uses workspace/repository-group/agent/plan-mode fields.
+- `CreateUnitTaskRequest` is prompt-first and uses workspace/repository-group-or-repository/agent/plan-mode fields.
 - `AgentCapability` includes `supports_plan_mode`.
 - `SubmitPlanDecision` supports explicit decision actions.
 - Event stream payloads are workspace-scoped and typed.
@@ -80,7 +81,7 @@ When implementation details differ from documented contracts, follow-up sync wor
 - Commit chain extraction from worktree after successful execution with stream delivery.
 
 ### Desktop App (`apps/dexdex`)
-- Task creation flows and sidebar-first repository administration (`/repository-groups`, `/repositories`) are aligned with workspace/repository-group/agent contracts.
+- Task creation flows and sidebar-first repository administration (`/repository-groups`, `/repositories`) are aligned with workspace/repository-group-or-repository/agent contracts.
 - Plan-mode visibility follows capability metadata.
 - Dialog surfaces close with `Esc` and single critical-input forms auto-focus on open.
 - Review assist Accept action creates auto-fix UnitTask via CreateUnitTask API.

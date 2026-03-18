@@ -70,6 +70,7 @@ Entity relationship invariants:
 Execution and commit invariants:
 - RepositoryGroup ordering is deterministic and execution-significant.
 - First repository is the primary execution directory.
+- `UnitTask.repository_group_id` may reference either an explicit `RepositoryGroup` ID or a `Repository` ID resolved as an implicit single-member repository group at execution time.
 - SubTask code changes produce ordered real git commit metadata.
 - Patch references are derived artifacts; commit chain is authoritative.
 
