@@ -1,0 +1,13 @@
+package main
+
+import "./import_lib.ttl"
+
+type Result struct {
+    Name string
+    Version string
+}
+
+task func Build(name string) Vc[Result] {
+    meta := read(GetMetadata())
+    return vc(Result{Name: name, Version: meta.Version})
+}

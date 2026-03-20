@@ -454,6 +454,71 @@ task func Build() Vc[Artifact] {
 	}
 }
 
+func TestExecuteWithFuncHelper(t *testing.T) {
+	module := parseModuleForTest(t, `package helpers
+
+type Result struct {
+    Value string
+    Label string
+}
+
+func makeLabel(prefix string) string {
+    return prefix
+}
+
+task func Process(input string) Vc[Result] {
+    label := makeLabel("processed")
+    return vc(Result{Value: input, Label: label})
+}
+`)
+
+	program, err := BuildProgram(module, "Process", map[string]any{"input": "test"})
+	if err != nil {
+		t.Fatalf("build program: %v", err)
+	}
+	if len(program.Funcs) != 1 {
+		t.Fatalf("expected 1 func, got=%d", len(program.Funcs))
+	}
+
+	source, err := GenerateGoSource(program)
+	if err != nil {
+		t.Fatalf("generate source: %v", err)
+	}
+
+	result, err := Execute(context.Background(), t.TempDir(), source)
+	if err != nil {
+		t.Fatalf("execute runner: %v", err)
+	}
+
+	resultObj, ok := result.Result.(map[string]any)
+	if !ok {
+		t.Fatalf("expected object result, got=%T", result.Result)
+	}
+	if resultObj["Value"] != "test" {
+		t.Fatalf("unexpected Value: %v", resultObj["Value"])
+	}
+	if resultObj["Label"] != "processed" {
+		t.Fatalf("unexpected Label: %v", resultObj["Label"])
+	}
+
+	// func calls should NOT appear in executed_tasks
+	for _, taskName := range result.ExecutedTasks {
+		if taskName == "makeLabel" {
+			t.Fatal("func makeLabel should not appear in executed_tasks")
+		}
+	}
+	found := false
+	for _, taskName := range result.ExecutedTasks {
+		if taskName == "Process" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected Process in executed_tasks, got=%+v", result.ExecutedTasks)
+	}
+}
+
 func parseModuleForTest(t *testing.T, source string) *ast.Module {
 	t.Helper()
 	tokens, lexDiagnostics := lexer.Lex(source)

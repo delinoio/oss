@@ -312,6 +312,126 @@ task func Build(target string, target string) Vc[Artifact] {
 	}
 }
 
+func TestCheckValidFuncDeclaration(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+func helper(x string) string {
+    return x
+}
+
+task func Build(target string) Vc[string] {
+    val := helper(target)
+    return vc(val)
+}
+`)
+	result := Check(module)
+	if len(result.Diagnostics) != 0 {
+		t.Fatalf("expected no diagnostics, got=%+v", result.Diagnostics)
+	}
+	if len(result.Funcs) != 1 {
+		t.Fatalf("expected 1 func, got=%d", len(result.Funcs))
+	}
+	if result.Funcs[0].ID != "helper" {
+		t.Fatalf("unexpected func id: %s", result.Funcs[0].ID)
+	}
+	if result.Funcs[0].ReturnType != "string" {
+		t.Fatalf("unexpected func return type: %s", result.Funcs[0].ReturnType)
+	}
+}
+
+func TestCheckRejectsDuplicateFuncDeclarations(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+func helper() string {
+    return "a"
+}
+
+func helper() string {
+    return "b"
+}
+
+task func Build() Vc[string] {
+    return vc(helper())
+}
+`)
+	result := Check(module)
+	found := false
+	for _, issue := range result.Diagnostics {
+		if issue.Message == "duplicate func declaration: helper" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected duplicate func diagnostic, got=%+v", result.Diagnostics)
+	}
+}
+
+func TestCheckRejectsFuncTaskNameCollision(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+task func Build() Vc[string] {
+    return vc("done")
+}
+
+func Build() string {
+    return "conflict"
+}
+`)
+	result := Check(module)
+	found := false
+	for _, issue := range result.Diagnostics {
+		if issue.Message == "func name collides with task name: Build" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected name collision diagnostic, got=%+v", result.Diagnostics)
+	}
+}
+
+func TestCheckFuncDoesNotRequireVcReturn(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+func helper() string {
+    return "plain"
+}
+
+task func Build() Vc[string] {
+    return vc(helper())
+}
+`)
+	result := Check(module)
+	if len(result.Diagnostics) != 0 {
+		t.Fatalf("expected no diagnostics for func with non-Vc return, got=%+v", result.Diagnostics)
+	}
+}
+
+func TestCheckRejectsDuplicateFuncParameters(t *testing.T) {
+	module := parseModuleForTest(t, `package build
+
+func helper(x string, x string) string {
+    return x
+}
+
+task func Build() Vc[string] {
+    return vc(helper("a", "b"))
+}
+`)
+	result := Check(module)
+	found := false
+	for _, issue := range result.Diagnostics {
+		if issue.Message == "duplicate func parameter name: helper.x" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected duplicate func parameter diagnostic, got=%+v", result.Diagnostics)
+	}
+}
+
 func parseModuleForTest(t *testing.T, source string) *ast.Module {
 	t.Helper()
 	tokens, lexDiagnostics := lexer.Lex(source)

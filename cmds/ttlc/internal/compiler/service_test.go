@@ -1051,6 +1051,131 @@ task func Build(target string) Vc[Artifact] {
 	})
 }
 
+func TestImportResolvesAndMergesDeclarations(t *testing.T) {
+	workspace := t.TempDir()
+	libContent := `package lib
+
+type Metadata struct {
+    Version string
+}
+
+task func GetMetadata() Vc[Metadata] {
+    return vc(Metadata{Version: "1.0"})
+}
+`
+	mainContent := `package main
+
+import "./lib.ttl"
+
+type Result struct {
+    Name string
+    Version string
+}
+
+task func Build(name string) Vc[Result] {
+    meta := read(GetMetadata())
+    return vc(Result{Name: name, Version: meta.Version})
+}
+`
+	if err := os.WriteFile(filepath.Join(workspace, "lib.ttl"), []byte(libContent), 0o600); err != nil {
+		t.Fatalf("write lib.ttl: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "main.ttl"), []byte(mainContent), 0o600); err != nil {
+		t.Fatalf("write main.ttl: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args:  map[string]any{"name": "myapp"},
+		})
+		if err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+		if len(result.Diagnostics) != 0 {
+			t.Fatalf("expected no diagnostics, got=%+v", result.Diagnostics)
+		}
+		resultObj, ok := result.RunResult.(map[string]any)
+		if !ok {
+			t.Fatalf("expected object result, got=%T", result.RunResult)
+		}
+		if resultObj["Name"] != "myapp" {
+			t.Fatalf("unexpected Name: %v", resultObj["Name"])
+		}
+		if resultObj["Version"] != "1.0" {
+			t.Fatalf("unexpected Version: %v", resultObj["Version"])
+		}
+	})
+}
+
+func TestImportDetectsCycle(t *testing.T) {
+	workspace := t.TempDir()
+	content := `package cycle
+
+import "./main.ttl"
+
+task func Loop() Vc[string] {
+    return vc("unreachable")
+}
+`
+	if err := os.WriteFile(filepath.Join(workspace, "main.ttl"), []byte(content), 0o600); err != nil {
+		t.Fatalf("write main.ttl: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Check(context.Background(), CheckOptions{Entry: "./main.ttl"})
+		if err != nil {
+			t.Fatalf("check returned error: %v", err)
+		}
+		foundCycleDiag := false
+		for _, d := range result.Diagnostics {
+			if d.Kind == contracts.DiagnosticKindImportCycle {
+				foundCycleDiag = true
+				break
+			}
+		}
+		if !foundCycleDiag {
+			t.Fatalf("expected import_cycle diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
+func TestImportNotFoundReportsDiagnostic(t *testing.T) {
+	workspace := t.TempDir()
+	content := `package main
+
+import "./nonexistent.ttl"
+
+task func Build() Vc[string] {
+    return vc("ok")
+}
+`
+	if err := os.WriteFile(filepath.Join(workspace, "main.ttl"), []byte(content), 0o600); err != nil {
+		t.Fatalf("write main.ttl: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		service := New()
+		result, err := service.Check(context.Background(), CheckOptions{Entry: "./main.ttl"})
+		if err != nil {
+			t.Fatalf("check returned error: %v", err)
+		}
+		foundNotFoundDiag := false
+		for _, d := range result.Diagnostics {
+			if d.Kind == contracts.DiagnosticKindImportNotFound {
+				foundNotFoundDiag = true
+				break
+			}
+		}
+		if !foundNotFoundDiag {
+			t.Fatalf("expected import_not_found diagnostic, got=%+v", result.Diagnostics)
+		}
+	})
+}
+
 func withWorkingDirectory(t *testing.T, directory string, run func()) {
 	t.Helper()
 	currentDirectory, err := os.Getwd()
