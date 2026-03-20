@@ -9,6 +9,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTransport } from "@connectrpc/connect-query";
 import { EventStreamClient } from "../lib/event-stream";
 import type { EventStreamStatus } from "../lib/event-stream";
+import {
+  TaskService,
+  SessionService,
+  NotificationService,
+  PrManagementService,
+  ReviewAssistService,
+  ReviewCommentService,
+  WorkspaceService,
+} from "../gen/v1/dexdex_pb";
+import { invalidateConnectQueryServiceQueries } from "../lib/connect-query-invalidation";
 import { StreamEventType } from "../lib/status";
 
 interface UseWorkspaceStreamOptions {
@@ -55,19 +65,19 @@ export function useWorkspaceStream({ workspaceId, onStatusChange, onNotification
         // Invalidate relevant query caches based on event type
         switch (event.eventType) {
           case StreamEventType.TASK_UPDATED:
-            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+            void invalidateConnectQueryServiceQueries(queryClient, TaskService);
             break;
           case StreamEventType.SUBTASK_UPDATED:
-            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+            void invalidateConnectQueryServiceQueries(queryClient, TaskService);
             break;
           case StreamEventType.SESSION_OUTPUT:
-            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
+            void invalidateConnectQueryServiceQueries(queryClient, SessionService);
             break;
           case StreamEventType.SESSION_STATE_CHANGED:
-            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
+            void invalidateConnectQueryServiceQueries(queryClient, SessionService);
             break;
           case StreamEventType.NOTIFICATION_CREATED:
-            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.NotificationService"] });
+            void invalidateConnectQueryServiceQueries(queryClient, NotificationService);
             // Dispatch Web Notification if handler is provided
             if (onNotification && event.payload.kind === "notificationCreated") {
               onNotification({
@@ -81,20 +91,20 @@ export function useWorkspaceStream({ workspaceId, onStatusChange, onNotification
             }
             break;
           case StreamEventType.PR_UPDATED:
-            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
-            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.PrManagementService"] });
+            void invalidateConnectQueryServiceQueries(queryClient, TaskService);
+            void invalidateConnectQueryServiceQueries(queryClient, PrManagementService);
             break;
           case StreamEventType.REVIEW_ASSIST_UPDATED:
-            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewAssistService"] });
+            void invalidateConnectQueryServiceQueries(queryClient, ReviewAssistService);
             break;
           case StreamEventType.INLINE_COMMENT_UPDATED:
-            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+            void invalidateConnectQueryServiceQueries(queryClient, ReviewCommentService);
             break;
           case StreamEventType.SESSION_FORK_UPDATED:
-            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
+            void invalidateConnectQueryServiceQueries(queryClient, SessionService);
             break;
           case StreamEventType.WORKSPACE_WORK_STATUS_UPDATED:
-            queryClient.invalidateQueries({ queryKey: ["dexdex.v1.WorkspaceService"] });
+            void invalidateConnectQueryServiceQueries(queryClient, WorkspaceService);
             break;
           default:
             break;

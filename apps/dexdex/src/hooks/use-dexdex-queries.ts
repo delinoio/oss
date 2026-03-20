@@ -48,8 +48,19 @@ import {
   resolveReviewComment,
   reopenReviewComment,
 } from "../gen/v1/dexdex-ReviewCommentService_connectquery";
+import {
+  TaskService,
+  NotificationService,
+  WorkspaceService,
+  SessionService,
+  RepositoryService,
+  PrManagementService,
+  ReviewAssistService,
+  ReviewCommentService,
+} from "../gen/v1/dexdex_pb";
 import { getBadgeTheme } from "../gen/v1/dexdex-BadgeThemeService_connectquery";
 import { toViewUnitTask, toViewSubTask, toViewNotification, toViewSessionOutput, toViewSessionSummary, toViewAgentCapability, toViewReviewComment } from "../lib/adapters";
+import { invalidateConnectQueryServiceQueries } from "../lib/connect-query-invalidation";
 import type { UnitTask, SubTask, Notification, SessionOutputEvent, SessionSummary, AgentCapability, ReviewComment } from "../lib/mock-data";
 
 function hasWorkspaceId(workspaceId: string): boolean {
@@ -112,7 +123,7 @@ export function useCreateUnitTaskMutation() {
   const queryClient = useQueryClient();
   return useMutation(createUnitTask, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, TaskService);
     },
   });
 }
@@ -125,7 +136,7 @@ export function useSubmitPlanDecisionMutation() {
   const queryClient = useQueryClient();
   return useMutation(submitPlanDecision, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, TaskService);
     },
   });
 }
@@ -138,7 +149,7 @@ export function useMarkNotificationReadMutation() {
   const queryClient = useQueryClient();
   return useMutation(markNotificationRead, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.NotificationService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, NotificationService);
     },
   });
 }
@@ -165,7 +176,7 @@ export function useCreateWorkspaceMutation() {
   const queryClient = useQueryClient();
   return useMutation(createWorkspace, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.WorkspaceService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, WorkspaceService);
     },
   });
 }
@@ -178,7 +189,7 @@ export function useSetActiveWorkspaceMutation() {
   const queryClient = useQueryClient();
   return useMutation(setActiveWorkspace, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.WorkspaceService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, WorkspaceService);
     },
   });
 }
@@ -204,7 +215,7 @@ export function useUpdateWorkspaceSettingsMutation() {
   const queryClient = useQueryClient();
   return useMutation(updateWorkspaceSettings, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.WorkspaceService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, WorkspaceService);
     },
   });
 }
@@ -224,7 +235,7 @@ export function useForkSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation(forkSession, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, SessionService);
     },
   });
 }
@@ -250,7 +261,7 @@ export function useArchiveForkedSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation(archiveForkedSession, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, SessionService);
     },
   });
 }
@@ -270,7 +281,7 @@ export function useSubmitSessionInputMutation() {
   const queryClient = useQueryClient();
   return useMutation(submitSessionInput, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, SessionService);
     },
   });
 }
@@ -307,7 +318,7 @@ export function useCreateRepositoryMutation() {
   const queryClient = useQueryClient();
   return useMutation(createRepository, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, RepositoryService);
     },
   });
 }
@@ -319,7 +330,7 @@ export function useUpdateRepositoryMutation() {
   const queryClient = useQueryClient();
   return useMutation(updateRepository, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, RepositoryService);
     },
   });
 }
@@ -331,7 +342,7 @@ export function useDeleteRepositoryMutation() {
   const queryClient = useQueryClient();
   return useMutation(deleteRepository, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, RepositoryService);
     },
   });
 }
@@ -354,7 +365,7 @@ export function useCreateRepositoryGroupMutation() {
   const queryClient = useQueryClient();
   return useMutation(createRepositoryGroup, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, RepositoryService);
     },
   });
 }
@@ -366,7 +377,7 @@ export function useUpdateRepositoryGroupMutation() {
   const queryClient = useQueryClient();
   return useMutation(updateRepositoryGroup, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, RepositoryService);
     },
   });
 }
@@ -378,7 +389,7 @@ export function useDeleteRepositoryGroupMutation() {
   const queryClient = useQueryClient();
   return useMutation(deleteRepositoryGroup, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.RepositoryService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, RepositoryService);
     },
   });
 }
@@ -432,7 +443,7 @@ export function useCreateReviewCommentMutation() {
   const queryClient = useQueryClient();
   return useMutation(createReviewComment, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, ReviewCommentService);
     },
   });
 }
@@ -444,7 +455,7 @@ export function useUpdateReviewCommentMutation() {
   const queryClient = useQueryClient();
   return useMutation(updateReviewComment, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, ReviewCommentService);
     },
   });
 }
@@ -456,7 +467,7 @@ export function useDeleteReviewCommentMutation() {
   const queryClient = useQueryClient();
   return useMutation(deleteReviewComment, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, ReviewCommentService);
     },
   });
 }
@@ -468,7 +479,7 @@ export function useResolveReviewCommentMutation() {
   const queryClient = useQueryClient();
   return useMutation(resolveReviewComment, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, ReviewCommentService);
     },
   });
 }
@@ -480,7 +491,7 @@ export function useReopenReviewCommentMutation() {
   const queryClient = useQueryClient();
   return useMutation(reopenReviewComment, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewCommentService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, ReviewCommentService);
     },
   });
 }
@@ -493,7 +504,7 @@ export function useTrackPullRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation(trackPullRequest, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.PrManagementService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, PrManagementService);
     },
   });
 }
@@ -506,8 +517,8 @@ export function useRunAutoFixNowMutation() {
   const queryClient = useQueryClient();
   return useMutation(runAutoFixNow, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.PrManagementService"] });
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, PrManagementService);
+      void invalidateConnectQueryServiceQueries(queryClient, TaskService);
     },
   });
 }
@@ -520,7 +531,7 @@ export function useSetAutoFixPolicyMutation() {
   const queryClient = useQueryClient();
   return useMutation(setAutoFixPolicy, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.PrManagementService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, PrManagementService);
     },
   });
 }
@@ -533,7 +544,7 @@ export function useResolveReviewAssistItemMutation() {
   const queryClient = useQueryClient();
   return useMutation(resolveReviewAssistItem, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.ReviewAssistService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, ReviewAssistService);
     },
   });
 }
@@ -546,7 +557,7 @@ export function useCancelUnitTaskMutation() {
   const queryClient = useQueryClient();
   return useMutation(cancelUnitTask, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, TaskService);
     },
   });
 }
@@ -559,7 +570,7 @@ export function useCancelSubTaskMutation() {
   const queryClient = useQueryClient();
   return useMutation(cancelSubTask, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, TaskService);
     },
   });
 }
@@ -572,8 +583,8 @@ export function useStopAgentSessionMutation() {
   const queryClient = useQueryClient();
   return useMutation(stopAgentSession, {
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.SessionService"] });
-      queryClient.invalidateQueries({ queryKey: ["dexdex.v1.TaskService"] });
+      void invalidateConnectQueryServiceQueries(queryClient, SessionService);
+      void invalidateConnectQueryServiceQueries(queryClient, TaskService);
     },
   });
 }

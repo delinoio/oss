@@ -18,6 +18,29 @@ function formatMutationError(error: unknown): string {
   return String(error);
 }
 
+function logRepositoryCreateStart(workspaceId: string, repositoryUrl: string) {
+  console.info("[RepositoriesPage] create_repository:start", {
+    workspaceId,
+    repositoryUrl,
+  });
+}
+
+function logRepositoryCreateSuccess(workspaceId: string, repositoryUrl: string, repositoryId: string) {
+  console.info("[RepositoriesPage] create_repository:success", {
+    workspaceId,
+    repositoryUrl,
+    repositoryId,
+  });
+}
+
+function logRepositoryCreateFailure(workspaceId: string, repositoryUrl: string, errorMessage: string) {
+  console.error("[RepositoriesPage] create_repository:failed", {
+    workspaceId,
+    repositoryUrl,
+    error: errorMessage,
+  });
+}
+
 export function RepositoriesPage() {
   const { activeWorkspaceId } = useAppStore();
 
@@ -47,26 +70,37 @@ export function RepositoriesPage() {
   }, [repositories]);
 
   function handleCreateRepository() {
+    if (createRepositoryMutation.isPending) {
+      return;
+    }
+
     if (!hasActiveWorkspace) {
       setRepositoryMutationError("Create or select a workspace before adding repositories.");
       return;
     }
 
     const repositoryUrl = newRepositoryUrl.trim();
-    if (!repositoryUrl) return;
+    if (!repositoryUrl) {
+      setRepositoryMutationError("Repository URL is required.");
+      return;
+    }
     if (!/^https?:\/\//.test(repositoryUrl)) {
       setRepositoryMutationError("Repository URL must start with http:// or https://.");
       return;
     }
 
+    logRepositoryCreateStart(activeWorkspaceId, repositoryUrl);
     void createRepositoryMutation
       .mutateAsync({ workspaceId: activeWorkspaceId, repositoryUrl })
-      .then(() => {
+      .then((response) => {
+        logRepositoryCreateSuccess(activeWorkspaceId, repositoryUrl, response.repository?.repositoryId ?? "");
         setRepositoryMutationError("");
         setNewRepositoryUrl("");
       })
       .catch((error) => {
-        setRepositoryMutationError(`Failed to add repository: ${formatMutationError(error)}`);
+        const errorMessage = formatMutationError(error);
+        logRepositoryCreateFailure(activeWorkspaceId, repositoryUrl, errorMessage);
+        setRepositoryMutationError(`Failed to add repository: ${errorMessage}`);
       });
   }
 
@@ -199,7 +233,7 @@ export function RepositoriesPage() {
               onClick={handleCreateRepository}
               disabled={!hasActiveWorkspace || createRepositoryMutation.isPending}
             >
-              Add Repository
+              {createRepositoryMutation.isPending ? "Adding..." : "Add Repository"}
             </button>
           </div>
         </div>

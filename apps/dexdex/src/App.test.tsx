@@ -293,6 +293,17 @@ function createTestTransport(options: TestTransportOptions = {}) {
       createdAt: timestampFromDate(new Date("2026-03-10T00:00:00Z")),
     }),
   );
+  const repositories = mockRepositories.map((repository) =>
+    create(RepositorySchema, {
+      repositoryId: repository.repositoryId,
+      workspaceId: repository.workspaceId,
+      repositoryUrl: repository.repositoryUrl,
+      createdAt: repository.createdAt,
+      updatedAt: repository.updatedAt,
+    }),
+  );
+  let nextCreatedRepositoryIndex = 1;
+
   return createRouterTransport((router) => {
     router.service(TaskService, {
       listUnitTasks: () => ({ unitTasks: mockUnitTasks }),
@@ -390,31 +401,45 @@ function createTestTransport(options: TestTransportOptions = {}) {
     });
     router.service(RepositoryService, {
       getRepository: () => ({ repository: mockRepositories[0] }),
-      listRepositories: () => ({ repositories: mockRepositories }),
+      listRepositories: () => ({ repositories }),
       createRepository: async (req) => {
         if (options.createRepositoryErrorMessage) {
           throw new ConnectError(options.createRepositoryErrorMessage, Code.Internal);
         }
+        const repository = create(RepositorySchema, {
+          repositoryId: `repo-created-${nextCreatedRepositoryIndex}`,
+          workspaceId: req.workspaceId,
+          repositoryUrl: req.repositoryUrl,
+          createdAt: timestampFromDate(new Date()),
+          updatedAt: timestampFromDate(new Date()),
+        });
+        nextCreatedRepositoryIndex += 1;
+        repositories.unshift(repository);
         return {
-          repository: create(RepositorySchema, {
-            repositoryId: `repo-${Date.now()}`,
-            workspaceId: req.workspaceId,
-            repositoryUrl: req.repositoryUrl,
-            createdAt: timestampFromDate(new Date()),
-            updatedAt: timestampFromDate(new Date()),
-          }),
+          repository,
         };
       },
-      updateRepository: (req) => ({
-        repository: create(RepositorySchema, {
+      updateRepository: (req) => {
+        const repository = create(RepositorySchema, {
           repositoryId: req.repositoryId,
           workspaceId: req.workspaceId,
           repositoryUrl: req.repositoryUrl,
           createdAt: timestampFromDate(new Date()),
           updatedAt: timestampFromDate(new Date()),
-        }),
-      }),
-      deleteRepository: () => ({}),
+        });
+        const targetIndex = repositories.findIndex((item) => item.repositoryId === req.repositoryId);
+        if (targetIndex >= 0) {
+          repositories[targetIndex] = repository;
+        }
+        return { repository };
+      },
+      deleteRepository: (req) => {
+        const targetIndex = repositories.findIndex((item) => item.repositoryId === req.repositoryId);
+        if (targetIndex >= 0) {
+          repositories.splice(targetIndex, 1);
+        }
+        return {};
+      },
       getRepositoryGroup: () => ({ repositoryGroup: undefined }),
       listRepositoryGroups: () => ({ repositoryGroups: mockRepositoryGroups }),
       createRepositoryGroup: (req) => ({
@@ -897,6 +922,26 @@ describe("App", () => {
     expect(createButton.disabled).toBe(true);
   });
 
+  it("shows repository create validation error when URL is empty", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />, { initialEntries: ["/repositories"] });
+
+    expect(await screen.findByTestId("repositories-page")).toBeTruthy();
+    const createInput = screen.getByTestId("create-repository-url") as HTMLInputElement;
+    const createButton = screen.getByRole("button", { name: "Add Repository" }) as HTMLButtonElement;
+
+    await waitFor(() => {
+      expect(createInput.disabled).toBe(false);
+      expect(createButton.disabled).toBe(false);
+    });
+
+    await user.clear(createInput);
+    await user.click(createButton);
+
+    const mutationError = await screen.findByTestId("repository-mutation-error");
+    expect(mutationError.textContent).toBe("Repository URL is required.");
+  });
+
   it("shows repository create validation errors", async () => {
     const user = userEvent.setup();
     renderWithProviders(<App />, { initialEntries: ["/repositories"] });
@@ -916,6 +961,29 @@ describe("App", () => {
 
     const mutationError = await screen.findByTestId("repository-mutation-error");
     expect(mutationError.textContent).toBe("Repository URL must start with http:// or https://.");
+  });
+
+  it("adds repository and refreshes repository list after create", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />, { initialEntries: ["/repositories"] });
+
+    expect(await screen.findByTestId("repositories-page")).toBeTruthy();
+    expect(screen.queryByText("repo-created-1")).toBeNull();
+    const createInput = screen.getByTestId("create-repository-url") as HTMLInputElement;
+    const createButton = screen.getByRole("button", { name: "Add Repository" }) as HTMLButtonElement;
+
+    await waitFor(() => {
+      expect(createInput.disabled).toBe(false);
+      expect(createButton.disabled).toBe(false);
+    });
+
+    await user.type(createInput, "https://github.com/example/new-repo");
+    await user.click(createButton);
+
+    await waitFor(() => {
+      expect(createInput.value).toBe("");
+    });
+    expect(await screen.findByText("repo-created-1")).toBeTruthy();
   });
 
   it("shows repository create mutation errors", async () => {
