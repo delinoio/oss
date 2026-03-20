@@ -20,15 +20,6 @@
         ]
       },
       {
-        "tab": "Devmon",
-        "groups": [
-          {
-            "group": "Automation Daemon",
-            "pages": ["devmon"]
-          }
-        ]
-      },
-      {
         "tab": "Nodeup",
         "groups": [
           {

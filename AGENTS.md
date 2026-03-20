@@ -53,7 +53,6 @@
 - `docs/project-devkit-commit-tracker.md`: Commit Tracker scaffold project index.
 - `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app project index.
 - `docs/project-thenv.md`: Thenv multi-component project index.
-- `docs/project-devmon.md`: Devmon daemon project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-dexdex.md`: DexDex multi-runtime project index.
@@ -84,7 +83,6 @@ enum ProjectId {
   Nodeup = "nodeup",
   Derun = "derun",
   Ttl = "ttl",
-  Devmon = "devmon",
   Mpapp = "mpapp",
   Devkit = "devkit",
   DevkitCommitTracker = "devkit-commit-tracker",
@@ -102,7 +100,6 @@ enum ProjectId {
 - `cargo-mono` -> `crates/cargo-mono`
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
-- `devmon` -> `cmds/devmon`
 - `mpapp` -> `apps/mpapp`
 - `devkit` -> `apps/devkit`
 - `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`

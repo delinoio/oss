@@ -60,7 +60,6 @@ When working in a specific directory, apply the rules from that directory and al
 - `docs/project-devkit-commit-tracker.md`: Commit Tracker multi-component project index.
 - `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app project index.
 - `docs/project-thenv.md`: Thenv multi-component project index.
-- `docs/project-devmon.md`: Devmon daemon project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-dexdex.md`: DexDex multi-runtime project index.
@@ -78,7 +77,6 @@ enum ProjectId {
   Nodeup = "nodeup",
   Derun = "derun",
   Ttl = "ttl",
-  Devmon = "devmon",
   Mpapp = "mpapp",
   Devkit = "devkit",
   DevkitCommitTracker = "devkit-commit-tracker",
@@ -96,7 +94,6 @@ enum ProjectId {
 - `cargo-mono` -> `crates/cargo-mono`
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
-- `devmon` -> `cmds/devmon`
 - `mpapp` -> `apps/mpapp`
 - `devkit` -> `apps/devkit`
 - `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`, `servers/commit-tracker`, `cmds/commit-tracker`
@@ -411,7 +408,6 @@ enum DevkitMiniAppId {
 ### Scope in This Domain
 
 - `cmds/derun`: Go tool for AI coding-agent workflow orchestration.
-- `cmds/devmon`: Go daemon CLI for recurring folder command automation.
 - `cmds/thenv`: Secure `.env` sharing CLI.
 - `cmds/commit-tracker`: Commit Tracker collector component.
 - `cmds/ttlc`: TTL compiler CLI for `.ttl` parsing/type-checking, Go code generation, `run` task execution, and cache-aware task execution contracts.
@@ -438,7 +434,6 @@ enum DevkitMiniAppId {
 ### Testing and Validation
 
 - Run relevant Go tests (`go test`) when code in this domain changes.
-- Update `docs/project-devmon.md` and `docs/cmds-devmon-foundation.md` whenever devmon command shape or config contracts change.
 - Update `docs/project-derun.md` and `docs/cmds-derun-foundation.md` whenever derun command contracts change.
 - Update `docs/project-thenv.md` and `docs/cmds-thenv-cli-foundation.md` whenever thenv CLI operations or trust boundaries change.
 - Update `docs/project-devkit-commit-tracker.md` and `docs/cmds-devkit-commit-tracker-collector-foundation.md` whenever collector contracts change.

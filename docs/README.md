@@ -28,10 +28,6 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-derun.md`
 - `docs/cmds-derun-foundation.md`
 
-### devmon
-- `docs/project-devmon.md`
-- `docs/cmds-devmon-foundation.md`
-
 ### mpapp
 - `docs/project-mpapp.md`
 - `docs/apps-mpapp-foundation.md`
