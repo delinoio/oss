@@ -8,7 +8,6 @@
 ### Scope in This Domain
 
 - `cmds/derun`: Go tool for AI coding-agent workflow orchestration.
-- `cmds/devmon`: Go daemon CLI for recurring folder command automation.
 - `cmds/thenv`: Secure `.env` sharing CLI.
 - `cmds/ttlc`: TTL compiler CLI for `.ttl` parsing/type-checking, Go code generation, `run` task execution, and cache-aware task execution contracts.
 
@@ -33,7 +32,6 @@
 ### Testing and Validation
 
 - Run relevant Go tests (`go test`) when code in this domain changes.
-- Update `docs/project-devmon.md` and `docs/cmds-devmon-foundation.md` whenever devmon command shape or config contracts change.
 - Update `docs/project-derun.md` and `docs/cmds-derun-foundation.md` whenever derun command contracts change.
 - Update `docs/project-thenv.md` and `docs/cmds-thenv-cli-foundation.md` whenever thenv CLI operations or trust boundaries change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-foundation.md` whenever TTL compiler command shape, cache backend, or runtime boundaries change.
