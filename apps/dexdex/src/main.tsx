@@ -6,8 +6,10 @@ import { BrowserRouter } from "react-router";
 import App from "./App";
 import { queryClient } from "./lib/query-client";
 import { createDefaultTransport } from "./lib/transport";
+import { initDevConsoleTerminalBridge } from "./lib/dev-console-terminal-bridge";
 
 const transport = createDefaultTransport();
+initDevConsoleTerminalBridge();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

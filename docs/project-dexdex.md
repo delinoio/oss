@@ -92,6 +92,7 @@ When implementation details differ from documented contracts, follow-up sync wor
 - Review assist Accept action creates auto-fix UnitTask via CreateUnitTask API.
 - Global shortcut navigates to waiting session context with input form auto-focus.
 - Tauri backend implements credential management (file-based) and tray status IPC.
+- Tauri development runtime forwards WebView `console.*` logs to terminal output through the log plugin bridge.
 - Cancel/Stop buttons for running UnitTask and SubTask flows with immediate propagation.
 - Workspace switching with dynamic selector for workspace-scoped navigation; all components use active workspace from app store with query invalidation on switch.
 - Startup workspace reconciliation migrates persisted legacy workspace ID `workspace-default` to canonical `ws-default`, falls back to the first available workspace when persisted data is invalid, and keeps active workspace empty when no workspace exists.

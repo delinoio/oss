@@ -93,6 +93,7 @@ Client logs should include:
 - notification permission and dispatch outcomes
 - plan decision submissions
 - immediate stop action dispatch and result states
+- Tauri development runtime forwards WebView `console.*` logs to terminal output for local debugging.
 
 ## Build and Test
 - `cd apps/dexdex && pnpm test`
