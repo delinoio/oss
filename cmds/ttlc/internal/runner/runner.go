@@ -14,61 +14,14 @@ import (
 	"strings"
 
 	"github.com/delinoio/oss/cmds/ttlc/internal/ast"
+	"github.com/delinoio/oss/cmds/ttlc/internal/ir"
 )
 
 type Program struct {
 	Module    string         `json:"module"`
 	EntryTask string         `json:"entry_task"`
 	Args      map[string]any `json:"args"`
-	Tasks     []Task         `json:"tasks"`
-}
-
-type Task struct {
-	Name   string   `json:"name"`
-	Params []string `json:"params"`
-	Body   []Stmt   `json:"body"`
-}
-
-type StmtKind string
-
-const (
-	StmtKindAssign StmtKind = "assign"
-	StmtKindExpr   StmtKind = "expr"
-	StmtKindReturn StmtKind = "return"
-)
-
-type Stmt struct {
-	Kind     StmtKind `json:"kind"`
-	Name     string   `json:"name,omitempty"`
-	Operator string   `json:"operator,omitempty"`
-	Value    *Expr    `json:"value,omitempty"`
-}
-
-type ExprKind string
-
-const (
-	ExprKindIdentifier       ExprKind = "identifier"
-	ExprKindStringLiteral    ExprKind = "string_literal"
-	ExprKindNumberLiteral    ExprKind = "number_literal"
-	ExprKindCall             ExprKind = "call"
-	ExprKindSelector         ExprKind = "selector"
-	ExprKindCompositeLiteral ExprKind = "composite_literal"
-)
-
-type Field struct {
-	Name  string `json:"name"`
-	Value Expr   `json:"value"`
-}
-
-type Expr struct {
-	Kind     ExprKind `json:"kind"`
-	Name     string   `json:"name,omitempty"`
-	Value    string   `json:"value,omitempty"`
-	TypeName string   `json:"type_name,omitempty"`
-	Callee   *Expr    `json:"callee,omitempty"`
-	Target   *Expr    `json:"target,omitempty"`
-	Args     []Expr   `json:"args,omitempty"`
-	Fields   []Field  `json:"fields,omitempty"`
+	Tasks     []ir.TaskDef   `json:"tasks"`
 }
 
 type ExecutionResult struct {
@@ -87,14 +40,14 @@ func BuildProgram(module *ast.Module, entryTask string, args map[string]any) (Pr
 		return Program{}, fmt.Errorf("entry task is required")
 	}
 
-	tasks := make([]Task, 0, len(module.Decls))
+	tasks := make([]ir.TaskDef, 0, len(module.Decls))
 	entryExists := false
 	for _, declaration := range module.Decls {
 		taskDeclaration, ok := declaration.(*ast.TaskDecl)
 		if !ok {
 			continue
 		}
-		serializedTask, err := taskFromDecl(taskDeclaration)
+		serializedTask, err := ir.TaskFromDecl(taskDeclaration)
 		if err != nil {
 			return Program{}, err
 		}
@@ -591,125 +544,6 @@ func Execute(ctx context.Context, outDir string, source []byte) (ExecutionResult
 		decodedResult.ExecutedTasks = make([]string, 0)
 	}
 	return decodedResult, nil
-}
-
-func taskFromDecl(declaration *ast.TaskDecl) (Task, error) {
-	if declaration == nil {
-		return Task{}, fmt.Errorf("task declaration is nil")
-	}
-	parameters := make([]string, 0, len(declaration.Parameters))
-	for _, parameter := range declaration.Parameters {
-		parameters = append(parameters, parameter.Name)
-	}
-
-	body := make([]Stmt, 0, len(declaration.Body))
-	for _, statement := range declaration.Body {
-		serializedStatement, err := stmtFromAST(statement)
-		if err != nil {
-			return Task{}, err
-		}
-		body = append(body, serializedStatement)
-	}
-
-	return Task{Name: declaration.Name, Params: parameters, Body: body}, nil
-}
-
-func stmtFromAST(statement ast.Stmt) (Stmt, error) {
-	switch typed := statement.(type) {
-	case *ast.AssignStmt:
-		value, err := exprFromAST(typed.Value)
-		if err != nil {
-			return Stmt{}, err
-		}
-		return Stmt{
-			Kind:     StmtKindAssign,
-			Name:     typed.Name,
-			Operator: string(typed.Operator),
-			Value:    &value,
-		}, nil
-	case *ast.ExprStmt:
-		value, err := exprFromAST(typed.Value)
-		if err != nil {
-			return Stmt{}, err
-		}
-		return Stmt{
-			Kind:  StmtKindExpr,
-			Value: &value,
-		}, nil
-	case *ast.ReturnStmt:
-		if typed.Value == nil {
-			return Stmt{Kind: StmtKindReturn}, nil
-		}
-		value, err := exprFromAST(typed.Value)
-		if err != nil {
-			return Stmt{}, err
-		}
-		return Stmt{
-			Kind:  StmtKindReturn,
-			Value: &value,
-		}, nil
-	default:
-		return Stmt{}, fmt.Errorf("unsupported statement type: %T", statement)
-	}
-}
-
-func exprFromAST(expression ast.Expr) (Expr, error) {
-	switch typed := expression.(type) {
-	case *ast.IdentifierExpr:
-		return Expr{Kind: ExprKindIdentifier, Name: typed.Name}, nil
-	case *ast.StringLiteralExpr:
-		return Expr{Kind: ExprKindStringLiteral, Value: typed.Value}, nil
-	case *ast.NumberLiteralExpr:
-		return Expr{Kind: ExprKindNumberLiteral, Value: typed.Value}, nil
-	case *ast.CallExpr:
-		callee, err := exprFromAST(typed.Callee)
-		if err != nil {
-			return Expr{}, err
-		}
-		args := make([]Expr, 0, len(typed.Args))
-		for _, argument := range typed.Args {
-			convertedArgument, err := exprFromAST(argument)
-			if err != nil {
-				return Expr{}, err
-			}
-			args = append(args, convertedArgument)
-		}
-		return Expr{
-			Kind:   ExprKindCall,
-			Callee: &callee,
-			Args:   args,
-		}, nil
-	case *ast.SelectorExpr:
-		target, err := exprFromAST(typed.Target)
-		if err != nil {
-			return Expr{}, err
-		}
-		return Expr{
-			Kind:   ExprKindSelector,
-			Name:   typed.Name,
-			Target: &target,
-		}, nil
-	case *ast.CompositeLiteralExpr:
-		typeName := typed.Type.Name
-		if typed.Type.Package != "" {
-			typeName = typed.Type.Package + "." + typed.Type.Name
-		}
-		fields := make([]Field, 0, len(typed.Fields))
-		for _, field := range typed.Fields {
-			value, err := exprFromAST(field.Value)
-			if err != nil {
-				return Expr{}, err
-			}
-			fields = append(fields, Field{Name: field.Name, Value: value})
-		}
-		return Expr{
-			Kind:     ExprKindCompositeLiteral,
-			TypeName: typeName,
-			Fields:   fields,
-		}, nil
-	default:
-		return Expr{}, fmt.Errorf("unsupported expression type: %T", expression)
-	}
 }
 
 func decodeRunnerError(payload []byte) string {
