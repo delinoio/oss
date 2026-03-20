@@ -1294,7 +1294,23 @@ fn json_show_home_remains_parseable_without_rust_log_env() {
 
 #[test]
 #[serial]
-fn json_completions_failure_emits_stderr_error_envelope() {
+fn completions_generates_script_for_valid_shell() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "zsh"])
+        .output()
+        .expect("completions zsh");
+
+    assert!(output.status.success());
+    assert!(!output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn json_completions_success_outputs_raw_script() {
     let env = TestEnv::new();
 
     let output = env
@@ -1303,17 +1319,72 @@ fn json_completions_failure_emits_stderr_error_envelope() {
         .output()
         .expect("completions --output json");
 
-    assert_eq!(output.status.code(), Some(7));
+    assert!(output.status.success());
+    assert!(!output.stdout.is_empty());
+    assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completions_accepts_valid_top_level_scope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "show"])
+        .output()
+        .expect("completions bash show");
+
+    assert!(output.status.success());
+    assert!(!output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn json_completions_invalid_shell_emits_invalid_input_error_envelope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "completions", "bad-shell"])
+        .output()
+        .expect("completions --output json invalid shell");
+
+    assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
 
     let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(payload["kind"], "not-implemented");
-    assert_eq!(
-        payload["message"],
-        "nodeup completions for shell 'zsh' and scope '<all-commands>' is planned for the next \
-         phase"
-    );
-    assert_eq!(payload["exit_code"], 7);
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported shell"));
+}
+
+#[test]
+#[serial]
+fn json_completions_invalid_scope_emits_invalid_input_error_envelope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "completions", "bash", "invalid-scope"])
+        .output()
+        .expect("completions --output json invalid scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope"));
 }
 
 #[test]
@@ -1572,12 +1643,12 @@ fn completions_logs_action_and_outcome() {
     env.command_with_info_logs()
         .args(["completions", "zsh"])
         .assert()
-        .failure()
+        .success()
         .stdout(predicates::str::contains(
             "command_path: \"nodeup.completions\"",
         ))
         .stdout(predicates::str::contains("action: \"generate\""))
-        .stdout(predicates::str::contains("outcome: \"not-implemented\""));
+        .stdout(predicates::str::contains("outcome: \"generated\""));
 }
 
 #[cfg(unix)]
