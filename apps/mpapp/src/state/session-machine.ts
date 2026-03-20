@@ -4,8 +4,10 @@ import {
   MpappErrorCode,
   MpappMode,
 } from "../contracts/enums";
+import type { MpappSessionSnapshot } from "../contracts/types";
 
 export enum MpappSessionEventType {
+  HydrateSnapshot = "hydrate-snapshot",
   StartPermissionCheck = "start-permission-check",
   PermissionGranted = "permission-granted",
   PermissionDenied = "permission-denied",
@@ -19,6 +21,10 @@ export enum MpappSessionEventType {
 }
 
 export type MpappSessionEvent =
+  | {
+      type: MpappSessionEventType.HydrateSnapshot;
+      snapshot: MpappSessionSnapshot | null;
+    }
   | { type: MpappSessionEventType.StartPermissionCheck }
   | { type: MpappSessionEventType.PermissionGranted }
   | { type: MpappSessionEventType.PermissionDenied }
@@ -60,6 +66,19 @@ export function reduceSessionState(
   event: MpappSessionEvent,
 ): MpappSessionState {
   switch (event.type) {
+    case MpappSessionEventType.HydrateSnapshot:
+      if (!event.snapshot) {
+        return state;
+      }
+
+      return {
+        mode: MpappMode.Idle,
+        errorCode: event.snapshot.errorCode,
+        errorMessage: event.snapshot.errorMessage,
+        lastConnectionEvent: event.snapshot.lastConnectionEvent,
+        lastDisconnectReason: event.snapshot.lastDisconnectReason,
+      };
+
     case MpappSessionEventType.StartPermissionCheck:
       return {
         mode: MpappMode.PermissionCheck,

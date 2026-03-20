@@ -14,7 +14,8 @@ Provide an Expo React Native application for mobile workflows with stable platfo
 
 ## Cross-Domain Invariants
 - Bluetooth permissions and capability behavior must be explicitly documented and versioned.
-- App route and screen contracts must remain backward compatible across incremental releases.
+- App route and screen contracts must remain backward compatible across incremental releases, including stable `screenId` values and route/deep-link mappings.
+- Session snapshot restore must always start in `Idle` mode and must not auto-reconnect previously connected sessions.
 
 ## Change Policy
 - Update this index and `docs/apps-mpapp-foundation.md` together whenever app capabilities, routes, or runtime assumptions change.

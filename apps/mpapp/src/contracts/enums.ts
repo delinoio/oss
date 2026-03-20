@@ -81,3 +81,7 @@ export enum MpappActionType {
   RightClick = "right-click",
   Transport = "transport",
 }
+
+export enum MpappScreenId {
+  MainConsole = "main-console",
+}

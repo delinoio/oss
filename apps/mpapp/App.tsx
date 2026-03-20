@@ -18,6 +18,7 @@ import {
   MpappErrorCode,
   MpappLogEventFamily,
   MpappMode,
+  MpappScreenId,
 } from "./src/contracts/enums";
 import { resolveMpappRuntimeConfig } from "./src/config/mpapp-runtime-config";
 import {
@@ -50,6 +51,11 @@ import {
 } from "./src/state/session-machine";
 import { resolveDisconnectReasonFromFailure } from "./src/state/disconnect-reason";
 import { createHidAdapter } from "./src/transport/hid-adapter-factory";
+import {
+  buildSessionSnapshot,
+  AsyncStorageSessionSnapshotStore,
+  type SessionSnapshotStore,
+} from "./src/state/session-snapshot-store";
 import { ClickControls } from "./src/components/click-controls";
 import { SessionStatus } from "./src/components/session-status";
 import { TouchpadSurface } from "./src/components/touchpad-surface";
@@ -62,6 +68,7 @@ import {
   mergeHydratedInputPreferences,
   MpappInputPreferenceKey,
 } from "./src/preferences/merge-hydrated-input-preferences";
+import { resolveMpappScreenContract } from "./src/navigation/screen-contract";
 
 const SENSITIVITY_STEP = 0.1;
 const SENSITIVITY_MIN = 0.5;
@@ -106,9 +113,15 @@ export default function App() {
     DEFAULT_MPAPP_INPUT_PREFERENCES,
   );
   const [canPersistPreferences, setCanPersistPreferences] = useState(false);
+  const [canPersistSessionSnapshot, setCanPersistSessionSnapshot] =
+    useState(false);
   const editedPreferenceKeysRef = useRef<Set<MpappInputPreferenceKey>>(new Set());
 
   const runtimeConfig = useMemo(() => resolveMpappRuntimeConfig(), []);
+  const activeScreenContract = useMemo(
+    () => resolveMpappScreenContract(runtimeConfig.screenId),
+    [runtimeConfig.screenId],
+  );
   const adapter = useMemo(
     () =>
       createHidAdapter({
@@ -118,6 +131,9 @@ export default function App() {
   );
   const diagnosticsStoreRef = useRef<DiagnosticsStore>(
     new AsyncStorageDiagnosticsStore(),
+  );
+  const sessionSnapshotStoreRef = useRef<SessionSnapshotStore>(
+    new AsyncStorageSessionSnapshotStore(),
   );
   const inputPreferencesStoreRef = useRef<InputPreferencesStore>(
     new AsyncStorageInputPreferencesStore(),
@@ -165,6 +181,81 @@ export default function App() {
   useEffect(() => {
     sessionStateRef.current = sessionState;
   }, [sessionState]);
+
+  useEffect(() => {
+    let active = true;
+
+    void sessionSnapshotStoreRef.current
+      .load()
+      .then((snapshot) => {
+        if (!active) {
+          return;
+        }
+
+        if (!snapshot) {
+          console.info("[mpapp][session-snapshot] no snapshot found");
+          setCanPersistSessionSnapshot(true);
+          return;
+        }
+
+        if (sessionStateRef.current.mode !== MpappMode.Idle) {
+          console.info("[mpapp][session-snapshot] hydrate skipped", {
+            currentMode: sessionStateRef.current.mode,
+          });
+          setCanPersistSessionSnapshot(true);
+          return;
+        }
+
+        dispatchSessionEvent({
+          type: MpappSessionEventType.HydrateSnapshot,
+          snapshot,
+        });
+        console.info("[mpapp][session-snapshot] hydrated", {
+          snapshot,
+        });
+        setCanPersistSessionSnapshot(true);
+      })
+      .catch((error: unknown) => {
+        if (!active) {
+          return;
+        }
+
+        console.warn("[mpapp][session-snapshot] hydration failed", {
+          error,
+        });
+        setCanPersistSessionSnapshot(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [dispatchSessionEvent]);
+
+  useEffect(() => {
+    if (!canPersistSessionSnapshot) {
+      return;
+    }
+
+    const snapshot = buildSessionSnapshot({
+      lastConnectionEvent: sessionState.lastConnectionEvent,
+      lastDisconnectReason: sessionState.lastDisconnectReason,
+      errorCode: sessionState.errorCode,
+      errorMessage: sessionState.errorMessage,
+    });
+
+    void sessionSnapshotStoreRef.current.save(snapshot).catch((error: unknown) => {
+      console.error("[mpapp][session-snapshot] persist failed", {
+        error,
+        snapshot,
+      });
+    });
+  }, [
+    canPersistSessionSnapshot,
+    sessionState.errorCode,
+    sessionState.errorMessage,
+    sessionState.lastConnectionEvent,
+    sessionState.lastDisconnectReason,
+  ]);
 
   useEffect(() => {
     if (sessionState.mode === MpappMode.Connected) {
@@ -636,122 +727,132 @@ export default function App() {
     sessionState.mode !== MpappMode.PermissionCheck;
   const canDisconnect = sessionState.mode === MpappMode.Connected;
 
+  let screenBody: JSX.Element;
+  switch (activeScreenContract.id) {
+    case MpappScreenId.MainConsole:
+    default:
+      screenBody = (
+        <View style={styles.container}>
+          <Text style={styles.heading}>{activeScreenContract.title}</Text>
+
+          <SessionStatus state={sessionState} />
+
+          <View style={styles.actions}>
+            <Pressable
+              disabled={!canConnect}
+              onPress={handleConnect}
+              style={[styles.actionButton, !canConnect ? styles.actionDisabled : null]}
+            >
+              <Text style={styles.actionText}>Pair and Connect</Text>
+            </Pressable>
+
+            <Pressable
+              disabled={!canDisconnect}
+              onPress={handleDisconnect}
+              style={[
+                styles.actionButton,
+                styles.actionDisconnect,
+                !canDisconnect ? styles.actionDisabled : null,
+              ]}
+            >
+              <Text style={styles.actionText}>Disconnect</Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.sensitivityRow}>
+            <Text style={styles.sensitivityLabel}>
+              Sensitivity: {inputPreferences.sensitivity.toFixed(1)}
+            </Text>
+
+            <View style={styles.sensitivityControls}>
+              <Pressable
+                onPress={() => {
+                  updateSensitivity(-SENSITIVITY_STEP);
+                }}
+                style={styles.sensitivityButton}
+              >
+                <Text style={styles.sensitivityButtonText}>-</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  updateSensitivity(SENSITIVITY_STEP);
+                }}
+                style={styles.sensitivityButton}
+              >
+                <Text style={styles.sensitivityButtonText}>+</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.inversionRow}>
+            <Text style={styles.sensitivityLabel}>Axis inversion</Text>
+
+            <View style={styles.inversionControls}>
+              <Pressable
+                onPress={() => {
+                  toggleAxisInversion(MpappAxisPreference.X);
+                }}
+                style={[
+                  styles.inversionButton,
+                  inputPreferences.invertX ? styles.inversionButtonActive : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.inversionButtonText,
+                    inputPreferences.invertX ? styles.inversionButtonTextActive : null,
+                  ]}
+                >
+                  Invert X
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  toggleAxisInversion(MpappAxisPreference.Y);
+                }}
+                style={[
+                  styles.inversionButton,
+                  inputPreferences.invertY ? styles.inversionButtonActive : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.inversionButtonText,
+                    inputPreferences.invertY ? styles.inversionButtonTextActive : null,
+                  ]}
+                >
+                  Invert Y
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <TouchpadSurface
+            disabled={sessionState.mode !== MpappMode.Connected}
+            onMove={handleMove}
+            onGestureEnd={handleMoveGestureEnd}
+          />
+
+          <ClickControls
+            disabled={sessionState.mode !== MpappMode.Connected}
+            onLeftClick={() => {
+              handleClick(MpappClickButton.Left);
+            }}
+            onRightClick={() => {
+              handleClick(MpappClickButton.Right);
+            }}
+          />
+        </View>
+      );
+      break;
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" />
-      <View style={styles.container}>
-        <Text style={styles.heading}>mpapp Android MVP</Text>
-
-        <SessionStatus state={sessionState} />
-
-        <View style={styles.actions}>
-          <Pressable
-            disabled={!canConnect}
-            onPress={handleConnect}
-            style={[styles.actionButton, !canConnect ? styles.actionDisabled : null]}
-          >
-            <Text style={styles.actionText}>Pair and Connect</Text>
-          </Pressable>
-
-          <Pressable
-            disabled={!canDisconnect}
-            onPress={handleDisconnect}
-            style={[
-              styles.actionButton,
-              styles.actionDisconnect,
-              !canDisconnect ? styles.actionDisabled : null,
-            ]}
-          >
-            <Text style={styles.actionText}>Disconnect</Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.sensitivityRow}>
-          <Text style={styles.sensitivityLabel}>
-            Sensitivity: {inputPreferences.sensitivity.toFixed(1)}
-          </Text>
-
-          <View style={styles.sensitivityControls}>
-            <Pressable
-              onPress={() => {
-                updateSensitivity(-SENSITIVITY_STEP);
-              }}
-              style={styles.sensitivityButton}
-            >
-              <Text style={styles.sensitivityButtonText}>-</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => {
-                updateSensitivity(SENSITIVITY_STEP);
-              }}
-              style={styles.sensitivityButton}
-            >
-              <Text style={styles.sensitivityButtonText}>+</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <View style={styles.inversionRow}>
-          <Text style={styles.sensitivityLabel}>Axis inversion</Text>
-
-          <View style={styles.inversionControls}>
-            <Pressable
-              onPress={() => {
-                toggleAxisInversion(MpappAxisPreference.X);
-              }}
-              style={[
-                styles.inversionButton,
-                inputPreferences.invertX ? styles.inversionButtonActive : null,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.inversionButtonText,
-                  inputPreferences.invertX ? styles.inversionButtonTextActive : null,
-                ]}
-              >
-                Invert X
-              </Text>
-            </Pressable>
-
-            <Pressable
-              onPress={() => {
-                toggleAxisInversion(MpappAxisPreference.Y);
-              }}
-              style={[
-                styles.inversionButton,
-                inputPreferences.invertY ? styles.inversionButtonActive : null,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.inversionButtonText,
-                  inputPreferences.invertY ? styles.inversionButtonTextActive : null,
-                ]}
-              >
-                Invert Y
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <TouchpadSurface
-          disabled={sessionState.mode !== MpappMode.Connected}
-          onMove={handleMove}
-          onGestureEnd={handleMoveGestureEnd}
-        />
-
-        <ClickControls
-          disabled={sessionState.mode !== MpappMode.Connected}
-          onLeftClick={() => {
-            handleClick(MpappClickButton.Left);
-          }}
-          onRightClick={() => {
-            handleClick(MpappClickButton.Right);
-          }}
-        />
-      </View>
+      {screenBody}
     </SafeAreaView>
   );
 }
