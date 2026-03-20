@@ -2,6 +2,8 @@ package compiler
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"math/big"
 	"math/bits"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -118,7 +121,8 @@ func NewWithLogger(logger *slog.Logger) *Service {
 }
 
 func (s *Service) Check(ctx context.Context, options CheckOptions) (Result, error) {
-	analysisResult, err := s.analyze(ctx, options.Entry, ".ttl/gen", "")
+	traceID := newTraceID()
+	analysisResult, err := s.analyze(ctx, traceID, options.Entry, ".ttl/gen", "")
 	if err != nil {
 		return Result{}, err
 	}
@@ -126,7 +130,8 @@ func (s *Service) Check(ctx context.Context, options CheckOptions) (Result, erro
 }
 
 func (s *Service) Explain(ctx context.Context, options ExplainOptions) (Result, error) {
-	analysisResult, err := s.analyze(ctx, options.Entry, ".ttl/gen", options.Task)
+	traceID := newTraceID()
+	analysisResult, err := s.analyze(ctx, traceID, options.Entry, ".ttl/gen", options.Task)
 	if err != nil {
 		return Result{}, err
 	}
@@ -136,10 +141,10 @@ func (s *Service) Explain(ctx context.Context, options ExplainOptions) (Result, 
 	}
 
 	cacheStart := time.Now()
-	s.logStageStart(contracts.CompileStageCache)
+	s.logStageStart(traceID, contracts.CompileStageCache, "")
 	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
 	if err != nil {
-		s.logStageFailure(contracts.CompileStageCache, time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
+		s.logStageFailure(traceID, contracts.CompileStageCache, "", time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
 		result.CacheAnalysis = make([]CacheAnalysis, 0)
 		return result, nil
 	}
@@ -160,7 +165,7 @@ func (s *Service) Explain(ctx context.Context, options ExplainOptions) (Result, 
 
 		taskAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, analysisResult.moduleName, taskFingerprint, false)
 		if lookupErr != nil {
-			s.logTaskCacheEvent(task.ID, taskFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(taskStart))
+			s.logTaskCacheEvent(traceID, "", task.ID, taskFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(taskStart))
 			analysisRecords = append(analysisRecords, CacheAnalysis{
 				TaskID:             taskFingerprint.Task.ID,
 				CacheKey:           taskFingerprint.CacheKey,
@@ -170,16 +175,17 @@ func (s *Service) Explain(ctx context.Context, options ExplainOptions) (Result, 
 			continue
 		}
 		analysisRecords = append(analysisRecords, taskAnalysis)
-		s.logTaskCacheEvent(taskAnalysis.TaskID, taskAnalysis.CacheKey, taskAnalysis.CacheHit, taskAnalysis.InvalidationReason, errorKind, time.Since(taskStart))
+		s.logTaskCacheEvent(traceID, "", taskAnalysis.TaskID, taskAnalysis.CacheKey, taskAnalysis.CacheHit, taskAnalysis.InvalidationReason, errorKind, time.Since(taskStart))
 	}
 
 	result.CacheAnalysis = analysisRecords
-	s.logStageEnd(contracts.CompileStageCache, time.Since(cacheStart))
+	s.logStageEnd(traceID, contracts.CompileStageCache, "", time.Since(cacheStart))
 	return result, nil
 }
 
 func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
-	analysisResult, err := s.analyze(ctx, options.Entry, ".ttl/gen", options.Task)
+	traceID := newTraceID()
+	analysisResult, err := s.analyze(ctx, traceID, options.Entry, ".ttl/gen", options.Task)
 	if err != nil {
 		return Result{}, err
 	}
@@ -222,37 +228,39 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	rootFingerprint.CacheKey = fingerprint.CacheKey(rootFingerprint.Components)
 	result.FingerprintComponents = rootFingerprint.Components
 	runCacheModuleName := composeRunCacheModuleName(analysisResult.moduleName)
+	executionTraceID := ""
 
 	cacheStart := time.Now()
-	s.logStageStart(contracts.CompileStageCache)
+	s.logStageStart(traceID, contracts.CompileStageCache, executionTraceID)
 	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
 	if err != nil {
-		s.logStageFailure(contracts.CompileStageCache, time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
+		s.logStageFailure(traceID, contracts.CompileStageCache, executionTraceID, time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
 		return Result{}, fmt.Errorf("open cache store: %w", err)
 	}
 	defer store.Close()
 
 	cacheAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, runCacheModuleName, rootFingerprint, true)
 	if lookupErr != nil {
-		s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
+		s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
 		return Result{}, fmt.Errorf("analyze task cache state for %s: %w", rootFingerprint.Task.ID, lookupErr)
 	}
 
 	if cacheAnalysis.CacheHit {
 		cachedState, stateFound, stateErr := store.GetTaskStateByTaskKey(rootFingerprint.CacheKey)
 		if stateErr != nil {
-			s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
+			s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
 			return Result{}, fmt.Errorf("read cache state for %s by task key: %w", rootFingerprint.Task.ID, stateErr)
 		}
 		if stateFound {
 			cachedResult, cachedRunTrace, ok := decodeRunMetadata(cachedState.Metadata)
 			if ok {
+				executionTraceID = buildExecutionTraceID(cachedRunTrace)
 				result.RunResult = cachedResult
 				result.RunTrace = cachedRunTrace
 				result.CacheDBPath = analysisResult.paths.CacheDBPath
 				result.CacheAnalysis = []CacheAnalysis{cacheAnalysis}
-				s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, true, cacheAnalysis.InvalidationReason, errorKind, time.Since(cacheStart))
-				s.logStageEnd(contracts.CompileStageCache, time.Since(cacheStart))
+				s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, true, cacheAnalysis.InvalidationReason, errorKind, time.Since(cacheStart))
+				s.logStageEnd(traceID, contracts.CompileStageCache, executionTraceID, time.Since(cacheStart))
 				return result, nil
 			}
 		}
@@ -261,23 +269,24 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	}
 
 	runStart := time.Now()
-	s.logStageStart(contracts.CompileStageRun)
+	s.logStageStart(traceID, contracts.CompileStageRun, executionTraceID)
 	runProgram, err := runner.BuildProgram(analysisResult.module, rootTask.ID, options.Args)
 	if err != nil {
-		s.logStageFailure(contracts.CompileStageRun, time.Since(runStart), contracts.DiagnosticKindTypeError, err)
+		s.logStageFailure(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart), contracts.DiagnosticKindTypeError, err)
 		return Result{}, fmt.Errorf("build run program: %w", err)
 	}
 	runnerSource, err := runner.GenerateGoSource(runProgram)
 	if err != nil {
-		s.logStageFailure(contracts.CompileStageRun, time.Since(runStart), contracts.DiagnosticKindIOError, err)
+		s.logStageFailure(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart), contracts.DiagnosticKindIOError, err)
 		return Result{}, fmt.Errorf("generate runner source: %w", err)
 	}
 	runExecutionResult, err := runner.Execute(ctx, analysisResult.paths.OutDir, runnerSource)
 	if err != nil {
-		s.logStageFailure(contracts.CompileStageRun, time.Since(runStart), contracts.DiagnosticKindIOError, err)
+		s.logStageFailure(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart), contracts.DiagnosticKindIOError, err)
 		return Result{}, fmt.Errorf("execute generated runner: %w", err)
 	}
-	s.logStageEnd(contracts.CompileStageRun, time.Since(runStart))
+	executionTraceID = buildExecutionTraceID(runExecutionResult.ExecutedTasks)
+	s.logStageEnd(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart))
 
 	record := cache.TaskRecord{
 		TaskKey:                 rootFingerprint.CacheKey,
@@ -300,12 +309,12 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 		UpdatedAt: time.Now().UTC(),
 	}
 	if err := store.UpsertTask(record); err != nil {
-		s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
+		s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
 		return Result{}, fmt.Errorf("upsert run cache row for %s: %w", rootTask.ID, err)
 	}
 
-	s.logTaskCacheEvent(rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, cacheAnalysis.InvalidationReason, errorKind, time.Since(cacheStart))
-	s.logStageEnd(contracts.CompileStageCache, time.Since(cacheStart))
+	s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, cacheAnalysis.InvalidationReason, errorKind, time.Since(cacheStart))
+	s.logStageEnd(traceID, contracts.CompileStageCache, executionTraceID, time.Since(cacheStart))
 
 	result.RunResult = runExecutionResult.Result
 	result.RunTrace = runExecutionResult.ExecutedTasks
@@ -315,7 +324,8 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 }
 
 func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, error) {
-	analysisResult, err := s.analyze(ctx, options.Entry, options.OutDir, "")
+	traceID := newTraceID()
+	analysisResult, err := s.analyze(ctx, traceID, options.Entry, options.OutDir, "")
 	if err != nil {
 		return Result{}, err
 	}
@@ -325,7 +335,7 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 	}
 
 	emitStart := time.Now()
-	s.logStageStart(contracts.CompileStageEmit)
+	s.logStageStart(traceID, contracts.CompileStageEmit, "")
 	emitResult, err := emitter.EmitGoWithAST(
 		analysisResult.moduleName,
 		analysisResult.typeDeclarations,
@@ -335,17 +345,23 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 		analysisResult.paths.OutDir,
 	)
 	if err != nil {
-		s.logStageFailure(contracts.CompileStageEmit, time.Since(emitStart), contracts.DiagnosticKindIOError, err)
+		s.logDiagnosticEvent(traceID, contracts.CompileStageEmit, analysisResult.paths.EntryPath, diagnostic.Diagnostic{
+			Kind:    contracts.DiagnosticKindIOError,
+			Message: err.Error(),
+			Line:    1,
+			Column:  1,
+		})
+		s.logStageFailure(traceID, contracts.CompileStageEmit, "", time.Since(emitStart), contracts.DiagnosticKindIOError, err)
 		return Result{}, fmt.Errorf("emit go source: %w", err)
 	}
-	s.logStageEnd(contracts.CompileStageEmit, time.Since(emitStart))
+	s.logStageEnd(traceID, contracts.CompileStageEmit, "", time.Since(emitStart))
 	result.GeneratedFiles = []string{emitResult.Path}
 
 	cacheStart := time.Now()
-	s.logStageStart(contracts.CompileStageCache)
+	s.logStageStart(traceID, contracts.CompileStageCache, "")
 	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
 	if err != nil {
-		s.logStageFailure(contracts.CompileStageCache, time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
+		s.logStageFailure(traceID, contracts.CompileStageCache, "", time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
 		return Result{}, fmt.Errorf("open cache store: %w", err)
 	}
 	defer store.Close()
@@ -356,7 +372,7 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 
 		cacheAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, analysisResult.moduleName, fingerprintedTask, true)
 		if lookupErr != nil {
-			s.logTaskCacheEvent(fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(taskStart))
+			s.logTaskCacheEvent(traceID, "", fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(taskStart))
 			return Result{}, fmt.Errorf("analyze task cache state for %s: %w", fingerprintedTask.Task.ID, lookupErr)
 		}
 
@@ -378,14 +394,14 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 			UpdatedAt: time.Now().UTC(),
 		}
 		if err := store.UpsertTask(record); err != nil {
-			s.logTaskCacheEvent(fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheAnalysis.CacheHit, cacheAnalysis.InvalidationReason, contracts.DiagnosticKindIOError, time.Since(taskStart))
+			s.logTaskCacheEvent(traceID, "", fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheAnalysis.CacheHit, cacheAnalysis.InvalidationReason, contracts.DiagnosticKindIOError, time.Since(taskStart))
 			return Result{}, fmt.Errorf("upsert cache row for %s: %w", fingerprintedTask.Task.ID, err)
 		}
-		s.logTaskCacheEvent(fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheAnalysis.CacheHit, cacheAnalysis.InvalidationReason, errorKind, time.Since(taskStart))
+		s.logTaskCacheEvent(traceID, "", fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheAnalysis.CacheHit, cacheAnalysis.InvalidationReason, errorKind, time.Since(taskStart))
 		analysisRecords = append(analysisRecords, cacheAnalysis)
 	}
 
-	s.logStageEnd(contracts.CompileStageCache, time.Since(cacheStart))
+	s.logStageEnd(traceID, contracts.CompileStageCache, "", time.Since(cacheStart))
 	result.CacheDBPath = analysisResult.paths.CacheDBPath
 	result.CacheAnalysis = analysisRecords
 	return result, nil
@@ -439,47 +455,49 @@ func composeInputFingerprint(components fingerprint.Components) string {
 	return components.InputContentHash + ":" + components.ParameterHash + ":" + components.EnvironmentSnapshotHash
 }
 
-func (s *Service) analyze(_ context.Context, entry string, outDir string, taskFilter string) (analysis, error) {
+func (s *Service) analyze(_ context.Context, traceID string, entry string, outDir string, taskFilter string) (analysis, error) {
 	result := analysis{}
 
 	loadStart := time.Now()
-	s.logStageStart(contracts.CompileStageLoad)
+	s.logStageStart(traceID, contracts.CompileStageLoad, "")
 	paths, err := source.ResolvePaths("", entry, outDir)
 	if err != nil {
-		s.logStageFailure(contracts.CompileStageLoad, time.Since(loadStart), contracts.DiagnosticKindPathViolation, err)
+		s.logStageFailure(traceID, contracts.CompileStageLoad, "", time.Since(loadStart), contracts.DiagnosticKindPathViolation, err)
 		return analysis{}, fmt.Errorf("resolve paths: %w", err)
 	}
 	sourceBytes, err := os.ReadFile(paths.EntryPath)
 	if err != nil {
-		s.logStageFailure(contracts.CompileStageLoad, time.Since(loadStart), contracts.DiagnosticKindIOError, err)
+		s.logStageFailure(traceID, contracts.CompileStageLoad, "", time.Since(loadStart), contracts.DiagnosticKindIOError, err)
 		return analysis{}, fmt.Errorf("read entry source: %w", err)
 	}
-	s.logStageEnd(contracts.CompileStageLoad, time.Since(loadStart))
+	s.logStageEnd(traceID, contracts.CompileStageLoad, "", time.Since(loadStart))
 
 	lexStart := time.Now()
-	s.logStageStart(contracts.CompileStageLex)
+	s.logStageStart(traceID, contracts.CompileStageLex, "")
 	tokens, lexDiagnostics := lexer.Lex(string(sourceBytes))
-	s.logStageEnd(contracts.CompileStageLex, time.Since(lexStart))
+	s.logStageEnd(traceID, contracts.CompileStageLex, "", time.Since(lexStart))
+	s.logDiagnostics(traceID, contracts.CompileStageLex, paths.EntryPath, lexDiagnostics)
 
 	parseStart := time.Now()
-	s.logStageStart(contracts.CompileStageParse)
+	s.logStageStart(traceID, contracts.CompileStageParse, "")
 	module, parseDiagnostics := parser.Parse(tokens)
-	s.logStageEnd(contracts.CompileStageParse, time.Since(parseStart))
+	s.logStageEnd(traceID, contracts.CompileStageParse, "", time.Since(parseStart))
+	s.logDiagnostics(traceID, contracts.CompileStageParse, paths.EntryPath, parseDiagnostics)
 
 	importDiagnostics := make([]diagnostic.Diagnostic, 0)
 	if len(module.Imports) > 0 {
 		visited := map[string]struct{}{paths.EntryPath: {}}
-		importDiags := s.loadImportsRecursive(module, paths.WorkspaceRoot, paths.EntryPath, visited)
+		importDiags := s.loadImportsRecursive(traceID, module, paths.WorkspaceRoot, paths.EntryPath, visited)
 		importDiagnostics = append(importDiagnostics, importDiags...)
 	}
 
 	typecheckStart := time.Now()
-	s.logStageStart(contracts.CompileStageTypecheck)
+	s.logStageStart(traceID, contracts.CompileStageTypecheck, "")
 	semaResult := sema.Check(module)
-	s.logStageEnd(contracts.CompileStageTypecheck, time.Since(typecheckStart))
+	s.logStageEnd(traceID, contracts.CompileStageTypecheck, "", time.Since(typecheckStart))
 
 	graphStart := time.Now()
-	s.logStageStart(contracts.CompileStageGraph)
+	s.logStageStart(traceID, contracts.CompileStageGraph, "")
 	dependencyGraph := graph.New(toGraphTasks(semaResult.Tasks))
 	if cycle, hasCycle := dependencyGraph.DetectCycle(); hasCycle {
 		cycleText := ""
@@ -496,7 +514,8 @@ func (s *Service) analyze(_ context.Context, entry string, outDir string, taskFi
 			Column:  1,
 		})
 	}
-	s.logStageEnd(contracts.CompileStageGraph, time.Since(graphStart))
+	s.logStageEnd(traceID, contracts.CompileStageGraph, "", time.Since(graphStart))
+	s.logDiagnostics(traceID, contracts.CompileStageTypecheck, paths.EntryPath, semaResult.Diagnostics)
 
 	fingerprintedTasks := make([]taskFingerprint, 0, len(semaResult.Tasks))
 	for _, task := range semaResult.Tasks {
@@ -540,12 +559,14 @@ func (s *Service) analyze(_ context.Context, entry string, outDir string, taskFi
 			}
 		}
 		if len(selectedTasks) == 0 {
-			semaResult.Diagnostics = append(semaResult.Diagnostics, diagnostic.Diagnostic{
+			issue := diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindTypeError,
 				Message: fmt.Sprintf("task not found: %s", taskFilter),
 				Line:    1,
 				Column:  1,
-			})
+			}
+			semaResult.Diagnostics = append(semaResult.Diagnostics, issue)
+			s.logDiagnosticEvent(traceID, contracts.CompileStageTypecheck, paths.EntryPath, issue)
 		}
 	}
 
@@ -591,51 +612,59 @@ func toGraphTasks(tasks []sema.Task) []graph.Task {
 	return results
 }
 
-func (s *Service) loadImportsRecursive(module *ast.Module, workspaceRoot string, currentFilePath string, visited map[string]struct{}) []diagnostic.Diagnostic {
+func (s *Service) loadImportsRecursive(traceID string, module *ast.Module, workspaceRoot string, currentFilePath string, visited map[string]struct{}) []diagnostic.Diagnostic {
 	diagnostics := make([]diagnostic.Diagnostic, 0)
 
 	for _, importDecl := range module.Imports {
 		resolvedPath, err := source.ResolveImportPath(workspaceRoot, currentFilePath, importDecl.Path)
 		if err != nil {
-			diagnostics = append(diagnostics, diagnostic.Diagnostic{
+			issue := diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindImportNotFound,
 				Message: fmt.Sprintf("cannot resolve import %q: %v", importDecl.Path, err),
 				Line:    importDecl.Span.Start.Line,
 				Column:  importDecl.Span.Start.Column,
-			})
+			}
+			diagnostics = append(diagnostics, issue)
+			s.logDiagnosticEvent(traceID, contracts.CompileStageLoad, currentFilePath, issue)
 			continue
 		}
 
 		if _, alreadyVisited := visited[resolvedPath]; alreadyVisited {
-			diagnostics = append(diagnostics, diagnostic.Diagnostic{
+			issue := diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindImportCycle,
 				Message: fmt.Sprintf("import cycle detected: %s", importDecl.Path),
 				Line:    importDecl.Span.Start.Line,
 				Column:  importDecl.Span.Start.Column,
-			})
+			}
+			diagnostics = append(diagnostics, issue)
+			s.logDiagnosticEvent(traceID, contracts.CompileStageLoad, currentFilePath, issue)
 			continue
 		}
 		visited[resolvedPath] = struct{}{}
 
 		importedBytes, err := os.ReadFile(resolvedPath)
 		if err != nil {
-			diagnostics = append(diagnostics, diagnostic.Diagnostic{
+			issue := diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindImportNotFound,
 				Message: fmt.Sprintf("cannot read import %q: %v", importDecl.Path, err),
 				Line:    importDecl.Span.Start.Line,
 				Column:  importDecl.Span.Start.Column,
-			})
+			}
+			diagnostics = append(diagnostics, issue)
+			s.logDiagnosticEvent(traceID, contracts.CompileStageLoad, resolvedPath, issue)
 			continue
 		}
 
 		tokens, lexDiags := lexer.Lex(string(importedBytes))
 		diagnostics = append(diagnostics, lexDiags...)
+		s.logDiagnostics(traceID, contracts.CompileStageLex, resolvedPath, lexDiags)
 
 		importedModule, parseDiags := parser.Parse(tokens)
 		diagnostics = append(diagnostics, parseDiags...)
+		s.logDiagnostics(traceID, contracts.CompileStageParse, resolvedPath, parseDiags)
 
 		if len(importedModule.Imports) > 0 {
-			importDiags := s.loadImportsRecursive(importedModule, workspaceRoot, resolvedPath, visited)
+			importDiags := s.loadImportsRecursive(traceID, importedModule, workspaceRoot, resolvedPath, visited)
 			diagnostics = append(diagnostics, importDiags...)
 		}
 
@@ -1118,6 +1147,35 @@ func composeRunCacheModuleName(moduleName string) string {
 	return moduleName + "#run"
 }
 
+func buildExecutionTraceID(runTrace []string) string {
+	if len(runTrace) == 0 {
+		return ""
+	}
+
+	payload := strings.Builder{}
+	payload.WriteString("run-trace")
+	payload.WriteString("|")
+	for _, taskID := range runTrace {
+		payload.WriteString(strconv.Itoa(len(taskID)))
+		payload.WriteString(":")
+		payload.WriteString(taskID)
+		payload.WriteString("|")
+	}
+	return fingerprint.HashString(payload.String())
+}
+
+func newTraceID() string {
+	entropy := make([]byte, 16)
+	if _, err := rand.Read(entropy); err == nil {
+		return "trace_" + hex.EncodeToString(entropy)
+	}
+	return "trace_" + fingerprint.HashString(fmt.Sprintf("%d:%d", time.Now().UnixNano(), os.Getpid()))
+}
+
+func normalizeSourcePath(path string) string {
+	return filepath.ToSlash(strings.TrimSpace(path))
+}
+
 func cloneArgs(args map[string]any) map[string]any {
 	if args == nil {
 		return map[string]any{}
@@ -1129,48 +1187,69 @@ func cloneArgs(args map[string]any) map[string]any {
 	return clone
 }
 
-func (s *Service) logStageStart(stage contracts.CompileStage) {
+func (s *Service) logStageStart(traceID string, stage contracts.CompileStage, executionTraceID string) {
 	logging.Event(
 		s.logger,
 		slog.LevelInfo,
 		"compile_stage_started",
+		slog.String("trace_id", traceID),
+		slog.String("execution_trace_id", executionTraceID),
 		slog.String("compile_stage", string(stage)),
 		slog.String("task_id", ""),
 		slog.String("cache_key", ""),
 		slog.Bool("cache_hit", false),
 		slog.String("invalidation_reason", ""),
+		slog.String("diagnostic_id", ""),
+		slog.String("diagnostic_kind", ""),
+		slog.String("source_path", ""),
+		slog.Int("line", 0),
+		slog.Int("column", 0),
 		slog.Int("worker_id", 0),
 		slog.Int64("duration_ms", 0),
 		slog.String("error_kind", ""),
 	)
 }
 
-func (s *Service) logStageEnd(stage contracts.CompileStage, duration time.Duration) {
+func (s *Service) logStageEnd(traceID string, stage contracts.CompileStage, executionTraceID string, duration time.Duration) {
 	logging.Event(
 		s.logger,
 		slog.LevelInfo,
 		"compile_stage_completed",
+		slog.String("trace_id", traceID),
+		slog.String("execution_trace_id", executionTraceID),
 		slog.String("compile_stage", string(stage)),
 		slog.String("task_id", ""),
 		slog.String("cache_key", ""),
 		slog.Bool("cache_hit", false),
 		slog.String("invalidation_reason", ""),
+		slog.String("diagnostic_id", ""),
+		slog.String("diagnostic_kind", ""),
+		slog.String("source_path", ""),
+		slog.Int("line", 0),
+		slog.Int("column", 0),
 		slog.Int("worker_id", 0),
 		slog.Int64("duration_ms", duration.Milliseconds()),
 		slog.String("error_kind", ""),
 	)
 }
 
-func (s *Service) logStageFailure(stage contracts.CompileStage, duration time.Duration, errorKind contracts.DiagnosticKind, err error) {
+func (s *Service) logStageFailure(traceID string, stage contracts.CompileStage, executionTraceID string, duration time.Duration, errorKind contracts.DiagnosticKind, err error) {
 	logging.Event(
 		s.logger,
 		slog.LevelError,
 		"compile_stage_failed",
+		slog.String("trace_id", traceID),
+		slog.String("execution_trace_id", executionTraceID),
 		slog.String("compile_stage", string(stage)),
 		slog.String("task_id", ""),
 		slog.String("cache_key", ""),
 		slog.Bool("cache_hit", false),
 		slog.String("invalidation_reason", ""),
+		slog.String("diagnostic_id", ""),
+		slog.String("diagnostic_kind", ""),
+		slog.String("source_path", ""),
+		slog.Int("line", 0),
+		slog.Int("column", 0),
 		slog.Int("worker_id", 0),
 		slog.Int64("duration_ms", duration.Milliseconds()),
 		slog.String("error_kind", string(errorKind)),
@@ -1178,18 +1257,56 @@ func (s *Service) logStageFailure(stage contracts.CompileStage, duration time.Du
 	)
 }
 
-func (s *Service) logTaskCacheEvent(taskID string, cacheKey string, cacheHit bool, invalidationReason contracts.TtlInvalidationReason, errorKind contracts.DiagnosticKind, duration time.Duration) {
+func (s *Service) logTaskCacheEvent(traceID string, executionTraceID string, taskID string, cacheKey string, cacheHit bool, invalidationReason contracts.TtlInvalidationReason, errorKind contracts.DiagnosticKind, duration time.Duration) {
 	logging.Event(
 		s.logger,
 		slog.LevelInfo,
 		"task_cache_processed",
+		slog.String("trace_id", traceID),
+		slog.String("execution_trace_id", executionTraceID),
 		slog.String("compile_stage", string(contracts.CompileStageCache)),
 		slog.String("task_id", taskID),
 		slog.String("cache_key", cacheKey),
 		slog.Bool("cache_hit", cacheHit),
 		slog.String("invalidation_reason", string(invalidationReason)),
+		slog.String("diagnostic_id", ""),
+		slog.String("diagnostic_kind", ""),
+		slog.String("source_path", ""),
+		slog.Int("line", 0),
+		slog.Int("column", 0),
 		slog.Int("worker_id", 0),
 		slog.Int64("duration_ms", duration.Milliseconds()),
 		slog.String("error_kind", string(errorKind)),
+	)
+}
+
+func (s *Service) logDiagnostics(traceID string, stage contracts.CompileStage, sourcePath string, diagnostics []diagnostic.Diagnostic) {
+	for _, issue := range diagnostics {
+		s.logDiagnosticEvent(traceID, stage, sourcePath, issue)
+	}
+}
+
+func (s *Service) logDiagnosticEvent(traceID string, stage contracts.CompileStage, sourcePath string, issue diagnostic.Diagnostic) {
+	normalizedSourcePath := normalizeSourcePath(sourcePath)
+	logging.Event(
+		s.logger,
+		slog.LevelInfo,
+		"diagnostic_reported",
+		slog.String("trace_id", traceID),
+		slog.String("execution_trace_id", ""),
+		slog.String("compile_stage", string(stage)),
+		slog.String("task_id", ""),
+		slog.String("cache_key", ""),
+		slog.Bool("cache_hit", false),
+		slog.String("invalidation_reason", ""),
+		slog.String("diagnostic_id", issue.DeterministicID(normalizedSourcePath)),
+		slog.String("diagnostic_kind", string(issue.Kind)),
+		slog.String("source_path", normalizedSourcePath),
+		slog.Int("line", issue.Line),
+		slog.Int("column", issue.Column),
+		slog.Int("worker_id", 0),
+		slog.Int64("duration_ms", 0),
+		slog.String("error_kind", string(issue.Kind)),
+		slog.String("message", issue.Message),
 	)
 }

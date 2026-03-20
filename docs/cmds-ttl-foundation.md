@@ -27,7 +27,9 @@
 
 ## Logging
 - Use structured `log/slog` logs for command lifecycle, cache decisions, and execution outcomes.
-- Include task ID, cache hit/miss status, and execution trace identifiers.
+- Every top-level command execution emits a stable per-execution `trace_id`.
+- Run/cache events include `execution_trace_id` derived deterministically from `run_trace` when available.
+- Stable logging keys include `trace_id`, `execution_trace_id`, `task_id`, `cache_key`, `cache_hit`, `invalidation_reason`, `diagnostic_id`, `diagnostic_kind`, `source_path`, `line`, and `column`.
 
 ## Build and Test
 - Local validation: `go test ./cmds/ttlc/...`

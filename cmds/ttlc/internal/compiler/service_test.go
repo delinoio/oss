@@ -1,13 +1,16 @@
 package compiler
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -1174,6 +1177,292 @@ task func Build() Vc[string] {
 			t.Fatalf("expected import_not_found diagnostic, got=%+v", result.Diagnostics)
 		}
 	})
+}
+
+func TestServiceLogsIncludeConsistentTraceIDPerExecution(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+}
+
+task func Build(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		testCases := []struct {
+			name string
+			run  func(service *Service) error
+		}{
+			{
+				name: "check",
+				run: func(service *Service) error {
+					_, err := service.Check(context.Background(), CheckOptions{Entry: "./main.ttl"})
+					return err
+				},
+			},
+			{
+				name: "build",
+				run: func(service *Service) error {
+					_, err := service.Build(context.Background(), BuildOptions{Entry: "./main.ttl", OutDir: "./out"})
+					return err
+				},
+			},
+			{
+				name: "explain",
+				run: func(service *Service) error {
+					_, err := service.Explain(context.Background(), ExplainOptions{Entry: "./main.ttl", Task: "Build"})
+					return err
+				},
+			},
+			{
+				name: "run",
+				run: func(service *Service) error {
+					_, err := service.Run(context.Background(), RunOptions{
+						Entry: "./main.ttl",
+						Task:  "Build",
+						Args:  map[string]any{"target": "web"},
+					})
+					return err
+				},
+			},
+		}
+
+		for _, testCase := range testCases {
+			t.Run(testCase.name, func(t *testing.T) {
+				logBuffer := &bytes.Buffer{}
+				logger := slog.New(slog.NewJSONHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+				service := NewWithLogger(logger)
+
+				if err := testCase.run(service); err != nil {
+					t.Fatalf("%s returned error: %v", testCase.name, err)
+				}
+
+				entries := decodeJSONLogEntries(t, logBuffer.Bytes())
+				if len(entries) == 0 {
+					t.Fatalf("expected log entries for %s", testCase.name)
+				}
+
+				traceID := ""
+				for _, entry := range entries {
+					currentTraceID := jsonFieldString(entry, "trace_id")
+					if strings.TrimSpace(currentTraceID) == "" {
+						t.Fatalf("expected non-empty trace_id for %s log entry: %#v", testCase.name, entry)
+					}
+					if traceID == "" {
+						traceID = currentTraceID
+						continue
+					}
+					if currentTraceID != traceID {
+						t.Fatalf("expected single trace_id per execution for %s, got=%s and %s", testCase.name, traceID, currentTraceID)
+					}
+				}
+			})
+		}
+	})
+}
+
+func TestServiceLogsDeterministicDiagnosticIDAcrossRuns(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+import "./missing.ttl"
+
+task func Build() Vc[string] {
+    return vc("ok")
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	runCheck := func() ([]string, error) {
+		logBuffer := &bytes.Buffer{}
+		logger := slog.New(slog.NewJSONHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		service := NewWithLogger(logger)
+		_, err := service.Check(context.Background(), CheckOptions{Entry: "./main.ttl"})
+		if err != nil {
+			return nil, err
+		}
+
+		entries := decodeJSONLogEntries(t, logBuffer.Bytes())
+		ids := collectDiagnosticIDs(entries)
+		sort.Strings(ids)
+		return ids, nil
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		firstIDs, err := runCheck()
+		if err != nil {
+			t.Fatalf("first check returned error: %v", err)
+		}
+		if len(firstIDs) == 0 {
+			t.Fatal("expected diagnostic ids in first run logs")
+		}
+
+		secondIDs, err := runCheck()
+		if err != nil {
+			t.Fatalf("second check returned error: %v", err)
+		}
+		if len(secondIDs) == 0 {
+			t.Fatal("expected diagnostic ids in second run logs")
+		}
+		if !slicesEqual(firstIDs, secondIDs) {
+			t.Fatalf("expected deterministic diagnostic ids, first=%v second=%v", firstIDs, secondIDs)
+		}
+	})
+}
+
+func TestServiceRunLogsDeterministicExecutionTraceIDAcrossCacheMissAndHit(t *testing.T) {
+	workspace := t.TempDir()
+	entryPath := filepath.Join(workspace, "main.ttl")
+	content := `package build
+
+type Artifact struct {
+    Path string
+    Digest string
+}
+
+task func ResolveSource(target string) Vc[Artifact] {
+    return vc(Artifact{Path: target, Digest: "seed"})
+}
+
+task func Build(target string) Vc[Artifact] {
+    src := read(ResolveSource(target))
+    digest := hash(src.Path, src.Digest)
+    return vc(Artifact{Path: src.Path, Digest: digest})
+}
+`
+	if err := os.WriteFile(entryPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write ttl file: %v", err)
+	}
+
+	runWithLogs := func() (Result, []map[string]any, error) {
+		logBuffer := &bytes.Buffer{}
+		logger := slog.New(slog.NewJSONHandler(logBuffer, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		service := NewWithLogger(logger)
+		result, err := service.Run(context.Background(), RunOptions{
+			Entry: "./main.ttl",
+			Task:  "Build",
+			Args:  map[string]any{"target": "web"},
+		})
+		entries := decodeJSONLogEntries(t, logBuffer.Bytes())
+		return result, entries, err
+	}
+
+	withWorkingDirectory(t, workspace, func() {
+		firstResult, firstEntries, err := runWithLogs()
+		if err != nil {
+			t.Fatalf("first run returned error: %v", err)
+		}
+		if len(firstResult.Diagnostics) != 0 {
+			t.Fatalf("unexpected diagnostics on first run: %+v", firstResult.Diagnostics)
+		}
+		if len(firstResult.CacheAnalysis) != 1 || firstResult.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected first run cache miss, got=%+v", firstResult.CacheAnalysis)
+		}
+
+		secondResult, secondEntries, err := runWithLogs()
+		if err != nil {
+			t.Fatalf("second run returned error: %v", err)
+		}
+		if len(secondResult.Diagnostics) != 0 {
+			t.Fatalf("unexpected diagnostics on second run: %+v", secondResult.Diagnostics)
+		}
+		if len(secondResult.CacheAnalysis) != 1 || !secondResult.CacheAnalysis[0].CacheHit {
+			t.Fatalf("expected second run cache hit, got=%+v", secondResult.CacheAnalysis)
+		}
+
+		firstExecutionTraceID := singleCacheEventExecutionTraceID(t, firstEntries)
+		secondExecutionTraceID := singleCacheEventExecutionTraceID(t, secondEntries)
+		if firstExecutionTraceID != secondExecutionTraceID {
+			t.Fatalf("expected deterministic execution_trace_id across miss/hit, first=%s second=%s", firstExecutionTraceID, secondExecutionTraceID)
+		}
+	})
+}
+
+func decodeJSONLogEntries(t *testing.T, payload []byte) []map[string]any {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(string(payload)), "\n")
+	entries := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		entry := map[string]any{}
+		if err := json.Unmarshal([]byte(trimmed), &entry); err != nil {
+			t.Fatalf("unmarshal log entry: %v payload=%s", err, trimmed)
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+func jsonFieldString(entry map[string]any, key string) string {
+	rawValue, exists := entry[key]
+	if !exists {
+		return ""
+	}
+	stringValue, ok := rawValue.(string)
+	if !ok {
+		return ""
+	}
+	return stringValue
+}
+
+func collectDiagnosticIDs(entries []map[string]any) []string {
+	ids := make([]string, 0)
+	for _, entry := range entries {
+		if jsonFieldString(entry, "event") != "diagnostic_reported" {
+			continue
+		}
+		diagnosticID := jsonFieldString(entry, "diagnostic_id")
+		if strings.TrimSpace(diagnosticID) == "" {
+			continue
+		}
+		ids = append(ids, diagnosticID)
+	}
+	return ids
+}
+
+func singleCacheEventExecutionTraceID(t *testing.T, entries []map[string]any) string {
+	t.Helper()
+	ids := make([]string, 0)
+	for _, entry := range entries {
+		if jsonFieldString(entry, "event") != "task_cache_processed" {
+			continue
+		}
+		executionTraceID := jsonFieldString(entry, "execution_trace_id")
+		if strings.TrimSpace(executionTraceID) == "" {
+			continue
+		}
+		ids = append(ids, executionTraceID)
+	}
+	if len(ids) != 1 {
+		t.Fatalf("expected exactly one non-empty execution_trace_id in task_cache_processed logs, got=%v", ids)
+	}
+	return ids[0]
+}
+
+func slicesEqual(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func withWorkingDirectory(t *testing.T, directory string, run func()) {
