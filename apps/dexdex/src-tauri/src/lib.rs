@@ -245,7 +245,7 @@ fn init_tracing() {
 
     INIT.call_once(|| {
         let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("dexdex_desktop=info"));
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("dexdex_desktop=info,webview=trace"));
 
         tracing_subscriber::fmt()
             .with_ansi(true)
@@ -259,7 +259,9 @@ pub fn run() {
     init_tracing();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_log::Builder::new().build())
+        // Keep tracing-subscriber as the single global logger and route webview logs through it.
+        // Remove `skip_logger` only if DexDex stops installing a global tracing logger first.
+        .plugin(tauri_plugin_log::Builder::new().skip_logger().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
