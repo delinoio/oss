@@ -1,0 +1,15 @@
+package helpers
+
+type Result struct {
+    Value string
+    Label string
+}
+
+func makeLabel(prefix string) string {
+    return prefix
+}
+
+task func Process(input string) Vc[Result] {
+    label := makeLabel("processed")
+    return vc(Result{Value: input, Label: label})
+}

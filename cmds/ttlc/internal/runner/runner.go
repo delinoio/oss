@@ -22,6 +22,7 @@ type Program struct {
 	EntryTask string         `json:"entry_task"`
 	Args      map[string]any `json:"args"`
 	Tasks     []ir.TaskDef   `json:"tasks"`
+	Funcs     []ir.FuncDef   `json:"funcs"`
 }
 
 type ExecutionResult struct {
@@ -61,14 +62,31 @@ func BuildProgram(module *ast.Module, entryTask string, args map[string]any) (Pr
 		return Program{}, fmt.Errorf("entry task not found: %s", entryTask)
 	}
 
+	funcs := make([]ir.FuncDef, 0)
+	for _, declaration := range module.Decls {
+		funcDeclaration, ok := declaration.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		serializedFunc, err := ir.FuncFromDecl(funcDeclaration)
+		if err != nil {
+			return Program{}, err
+		}
+		funcs = append(funcs, serializedFunc)
+	}
+
 	sort.Slice(tasks, func(left int, right int) bool {
 		return tasks[left].Name < tasks[right].Name
+	})
+	sort.Slice(funcs, func(left int, right int) bool {
+		return funcs[left].Name < funcs[right].Name
 	})
 	return Program{
 		Module:    module.PackageName,
 		EntryTask: entryTask,
 		Args:      cloneArgs(args),
 		Tasks:     tasks,
+		Funcs:     funcs,
 	}, nil
 }
 
@@ -107,6 +125,7 @@ type program struct {
 	EntryTask string         `+"`json:\"entry_task\"`"+`
 	Args      map[string]any `+"`json:\"args\"`"+`
 	Tasks     []taskDef      `+"`json:\"tasks\"`"+`
+	Funcs     []taskDef      `+"`json:\"funcs\"`"+`
 }
 
 type taskDef struct {
@@ -140,6 +159,7 @@ type fieldValue struct {
 
 type evaluator struct {
 	tasks         map[string]taskDef
+	funcs         map[string]taskDef
 	executedTasks []string
 	stack         []string
 }
@@ -188,8 +208,13 @@ func newEvaluator(programData program) *evaluator {
 	for _, task := range programData.Tasks {
 		tasks[task.Name] = task
 	}
+	funcs := make(map[string]taskDef, len(programData.Funcs))
+	for _, fn := range programData.Funcs {
+		funcs[fn.Name] = fn
+	}
 	return &evaluator{
 		tasks:         tasks,
+		funcs:         funcs,
 		executedTasks: make([]string, 0, len(programData.Tasks)),
 		stack:         make([]string, 0, len(programData.Tasks)),
 	}
@@ -241,6 +266,43 @@ func (e *evaluator) executeTask(taskID string, args []any) (any, error) {
 		returned, value, err := e.evalStatement(scope, statement)
 		if err != nil {
 			return nil, fmt.Errorf("task %%s: %%w", taskID, err)
+		}
+		if returned {
+			return value, nil
+		}
+	}
+	return nil, nil
+}
+
+func (e *evaluator) executeFunc(funcID string, args []any) (any, error) {
+	fn, exists := e.funcs[funcID]
+	if !exists {
+		return nil, fmt.Errorf("func not found: %%s", funcID)
+	}
+	if len(args) != len(fn.Params) {
+		return nil, fmt.Errorf("func %%s argument count mismatch: got=%%d want=%%d", funcID, len(args), len(fn.Params))
+	}
+	for _, activeTask := range e.stack {
+		if activeTask == funcID {
+			cycle := append(append([]string{}, e.stack...), funcID)
+			return nil, fmt.Errorf("cyclic func invocation detected: %%s", strings.Join(cycle, " -> "))
+		}
+	}
+
+	e.stack = append(e.stack, funcID)
+	defer func() {
+		e.stack = e.stack[:len(e.stack)-1]
+	}()
+
+	scope := make(map[string]any, len(fn.Params))
+	for index, parameter := range fn.Params {
+		scope[parameter] = args[index]
+	}
+
+	for _, statement := range fn.Body {
+		returned, value, err := e.evalStatement(scope, statement)
+		if err != nil {
+			return nil, fmt.Errorf("func %%s: %%w", funcID, err)
 		}
 		if returned {
 			return value, nil
@@ -358,6 +420,20 @@ func (e *evaluator) evalCall(scope map[string]any, expression expression) (any, 
 			return nil, fmt.Errorf("task %%s argument count mismatch: got=%%d want=%%d", name, len(callArgs), len(task.Params))
 		}
 		return e.executeTask(name, callArgs)
+	}
+	if fn, exists := e.funcs[name]; exists {
+		callArgs := make([]any, 0, len(expression.Args))
+		for _, argument := range expression.Args {
+			value, err := e.evalExpression(scope, argument)
+			if err != nil {
+				return nil, err
+			}
+			callArgs = append(callArgs, value)
+		}
+		if len(callArgs) != len(fn.Params) {
+			return nil, fmt.Errorf("func %%s argument count mismatch: got=%%d want=%%d", name, len(callArgs), len(fn.Params))
+		}
+		return e.executeFunc(name, callArgs)
 	}
 
 	switch name {

@@ -31,8 +31,15 @@ type Task struct {
 	Deps       []string    `json:"deps"`
 }
 
+type FuncInfo struct {
+	ID         string      `json:"id"`
+	Params     []TaskParam `json:"params"`
+	ReturnType string      `json:"return_type"`
+}
+
 type Result struct {
 	Tasks        []Task
+	Funcs        []FuncInfo
 	Types        []TypeDecl
 	Diagnostics  []diagnostic.Diagnostic
 	ModuleName   string
@@ -198,8 +205,85 @@ func Check(module *ast.Module) Result {
 		})
 	}
 
+	funcNames := make(map[string]struct{})
+	duplicateFuncNames := make(map[string]struct{})
+	for _, declaration := range module.Decls {
+		funcDeclaration, ok := declaration.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		if _, exists := taskNames[funcDeclaration.Name]; exists {
+			result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
+				Kind:    contracts.DiagnosticKindTypeError,
+				Message: fmt.Sprintf("func name collides with task name: %s", funcDeclaration.Name),
+				Line:    funcDeclaration.Span.Start.Line,
+				Column:  funcDeclaration.Span.Start.Column,
+			})
+			continue
+		}
+		if _, exists := funcNames[funcDeclaration.Name]; exists {
+			duplicateFuncNames[funcDeclaration.Name] = struct{}{}
+			result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
+				Kind:    contracts.DiagnosticKindTypeError,
+				Message: fmt.Sprintf("duplicate func declaration: %s", funcDeclaration.Name),
+				Line:    funcDeclaration.Span.Start.Line,
+				Column:  funcDeclaration.Span.Start.Column,
+			})
+			continue
+		}
+		funcNames[funcDeclaration.Name] = struct{}{}
+	}
+
+	emittedFuncNames := make(map[string]struct{})
+	for _, declaration := range module.Decls {
+		funcDeclaration, ok := declaration.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		if _, isDuplicate := duplicateFuncNames[funcDeclaration.Name]; isDuplicate {
+			if _, alreadyEmitted := emittedFuncNames[funcDeclaration.Name]; alreadyEmitted {
+				continue
+			}
+		}
+		if _, alreadyEmitted := emittedFuncNames[funcDeclaration.Name]; alreadyEmitted {
+			continue
+		}
+		if _, collidesWithTask := taskNames[funcDeclaration.Name]; collidesWithTask {
+			continue
+		}
+		emittedFuncNames[funcDeclaration.Name] = struct{}{}
+
+		parameterNames := make(map[string]struct{}, len(funcDeclaration.Parameters))
+		for _, parameter := range funcDeclaration.Parameters {
+			if _, exists := parameterNames[parameter.Name]; exists {
+				result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
+					Kind:    contracts.DiagnosticKindTypeError,
+					Message: fmt.Sprintf("duplicate func parameter name: %s.%s", funcDeclaration.Name, parameter.Name),
+					Line:    parameter.Span.Start.Line,
+					Column:  parameter.Span.Start.Column,
+				})
+				continue
+			}
+			parameterNames[parameter.Name] = struct{}{}
+		}
+
+		returnType := ""
+		if funcDeclaration.ReturnType != nil {
+			returnType = typeExprString(funcDeclaration.ReturnType)
+		}
+
+		result.Funcs = append(result.Funcs, FuncInfo{
+			ID:         funcDeclaration.Name,
+			Params:     parametersToTaskParams(funcDeclaration.Parameters),
+			ReturnType: returnType,
+		})
+	}
+
 	sort.Slice(result.Tasks, func(left int, right int) bool {
 		return result.Tasks[left].ID < result.Tasks[right].ID
+	})
+	sort.Slice(result.Funcs, func(left int, right int) bool {
+		return result.Funcs[left].ID < result.Funcs[right].ID
 	})
 	sort.Slice(result.Types, func(left int, right int) bool {
 		return result.Types[left].Name < result.Types[right].Name
