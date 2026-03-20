@@ -1,0 +1,8 @@
+{
+    "name": "@servers/commit-tracker",
+    "private": true,
+    "scripts": {
+        "prepare:app": "../../scripts/setup/env-vars.sh oss-commit-tracker-server",
+        "dev": "air"
+    }
+}
