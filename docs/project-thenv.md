@@ -1,7 +1,7 @@
 # Project: thenv
 
 ## Goal
-Define secure `.env` sharing workflows across CLI and server components, with a reserved Devkit web-console route for future reactivation.
+Define secure `.env` sharing workflows across CLI, server, and the active Devkit web console.
 
 ## Project ID
 `thenv`
@@ -19,7 +19,8 @@ Define secure `.env` sharing workflows across CLI and server components, with a 
 ## Cross-Domain Invariants
 - Component identifiers remain stable: `cli`, `server`, `web-console`.
 - Trust boundaries and redaction rules must remain consistent across all components.
-- Secret lifecycle operations must use shared semantic contracts for create, read, rotate, and revoke flows.
+- Secret lifecycle operations must use shared semantic contracts for push (create/update), pull (read), activate, and rotate flows.
+- Policy and audit contracts must remain aligned across CLI, server, and web console behavior.
 - Devkit web-console component is active with full Connect RPC integration to the thenv server.
 
 ## Change Policy

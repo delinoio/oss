@@ -10,25 +10,27 @@
 
 ## Users and Operators
 - Developers validating canonical Devkit mini app routing
-- Maintainers preserving scaffold contracts before web-console reactivation
+- Operators managing scope-level bundle, policy, and audit workflows through the web console
 
 ## Interfaces and Contracts
 - Stable component identifier: `web-console`.
 - Route contract: `/apps/thenv`.
 - Registration status contract: `active`.
 - UI contract renders ThenvApp with scope selector, bundle management (list/detail/activate/rotate), policy editor, and audit viewer.
+- Bundle detail fetches by selected version id and must remain aligned with bundle-list selection state.
+- Secret file content is masked by default and only revealed through explicit user action.
 - Devkit API proxy: `/api/thenv/*` routes to `http://127.0.0.1:8087/*` via Next.js rewrites.
 
 ## Storage
-- Uses no component-specific persistence while scaffold-only.
+- Uses no component-specific persistence and relies on Connect RPC server-state reads/writes.
 
 ## Security
-- Placeholder route must not process or render secret values.
+- Secret values must not be rendered by default; reveal/hide actions must be explicit and user-initiated.
 - Error and diagnostic output must remain free of sensitive payloads.
 
 ## Logging
 - Route-level diagnostics should include mini app id and route context.
-- Placeholder logs must avoid backend or secret-specific fields.
+- Diagnostic logs must avoid backend secret payloads.
 
 ## Build and Test
 - Local validation: `pnpm --filter devkit... test`
@@ -40,7 +42,7 @@
 
 ## Change Triggers
 - Update `docs/project-thenv.md` and this file when web-console behavior changes.
-- If `/api/thenv/*` routes are reintroduced, synchronize this contract with server and CLI docs in the same change.
+- Synchronize this contract with server and CLI docs when bundle, policy, audit, or security behavior changes.
 
 ## References
 - `docs/project-thenv.md`
