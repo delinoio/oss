@@ -1,0 +1,15 @@
+package lib
+
+type Metadata struct {
+    Version string
+    Author string
+}
+
+func makeVersion() string {
+    return "1.0.0"
+}
+
+task func GetMetadata() Vc[Metadata] {
+    ver := makeVersion()
+    return vc(Metadata{Version: ver, Author: "ttl"})
+}

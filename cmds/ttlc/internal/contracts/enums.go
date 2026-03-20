@@ -65,6 +65,8 @@ const (
 	DiagnosticKindCycleError        DiagnosticKind = "cycle_error"
 	DiagnosticKindIOError           DiagnosticKind = "io_error"
 	DiagnosticKindCacheCorruption   DiagnosticKind = "cache_corruption"
+	DiagnosticKindImportCycle       DiagnosticKind = "import_cycle"
+	DiagnosticKindImportNotFound    DiagnosticKind = "import_not_found"
 )
 
 type CompileStage string

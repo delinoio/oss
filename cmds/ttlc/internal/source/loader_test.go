@@ -61,3 +61,61 @@ func TestResolvePathsRejectsWorkspaceEscape(t *testing.T) {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }
+
+func TestResolveImportPathRelative(t *testing.T) {
+	workspace := t.TempDir()
+	libPath := filepath.Join(workspace, "lib.ttl")
+	if err := os.WriteFile(libPath, []byte("package lib"), 0o600); err != nil {
+		t.Fatalf("write lib file: %v", err)
+	}
+
+	currentFile := filepath.Join(workspace, "main.ttl")
+	resolved, err := ResolveImportPath(workspace, currentFile, "./lib.ttl")
+	if err != nil {
+		t.Fatalf("resolve import: %v", err)
+	}
+	if !strings.HasSuffix(resolved, "lib.ttl") {
+		t.Fatalf("unexpected resolved path: %s", resolved)
+	}
+}
+
+func TestResolveImportPathAutoAppendsTtl(t *testing.T) {
+	workspace := t.TempDir()
+	subDir := filepath.Join(workspace, "pkg")
+	if err := os.MkdirAll(subDir, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(subDir, "utils.ttl"), []byte("package utils"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	currentFile := filepath.Join(workspace, "main.ttl")
+	resolved, err := ResolveImportPath(workspace, currentFile, "pkg/utils")
+	if err != nil {
+		t.Fatalf("resolve import: %v", err)
+	}
+	if !strings.HasSuffix(resolved, filepath.Join("pkg", "utils.ttl")) {
+		t.Fatalf("unexpected resolved path: %s", resolved)
+	}
+}
+
+func TestResolveImportPathRejectsEscape(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	outsidePath := filepath.Join(root, "evil.ttl")
+	if err := os.WriteFile(outsidePath, []byte("package evil"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	currentFile := filepath.Join(workspace, "main.ttl")
+	_, err := ResolveImportPath(workspace, currentFile, "../evil.ttl")
+	if err == nil {
+		t.Fatal("expected workspace escape error")
+	}
+	if !strings.Contains(err.Error(), "escapes workspace root") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

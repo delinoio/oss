@@ -135,6 +135,37 @@ func resolvePathWithSymlinksAtDepth(path string, depth int) (string, error) {
 	}
 }
 
+func ResolveImportPath(workspaceRoot string, currentFilePath string, importPath string) (string, error) {
+	if strings.TrimSpace(importPath) == "" {
+		return "", fmt.Errorf("import path is empty")
+	}
+
+	var candidate string
+	if strings.HasPrefix(importPath, "./") || strings.HasPrefix(importPath, "../") {
+		currentDir := filepath.Dir(currentFilePath)
+		candidate = filepath.Join(currentDir, importPath)
+	} else {
+		candidate = filepath.Join(workspaceRoot, importPath)
+	}
+
+	if !strings.HasSuffix(candidate, ".ttl") {
+		candidate += ".ttl"
+	}
+
+	resolved, err := resolvePathWithSymlinks(candidate)
+	if err != nil {
+		return "", fmt.Errorf("resolve import path %q: %w", importPath, err)
+	}
+	resolvedRoot, err := resolvePathWithSymlinks(workspaceRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace root for import: %w", err)
+	}
+	if !isWithinPath(resolvedRoot, resolved) {
+		return "", fmt.Errorf("import path escapes workspace root: %s", importPath)
+	}
+	return resolved, nil
+}
+
 func isWithinPath(basePath string, candidatePath string) bool {
 	relPath, err := filepath.Rel(basePath, candidatePath)
 	if err != nil {

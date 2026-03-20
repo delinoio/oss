@@ -466,6 +466,13 @@ func (s *Service) analyze(_ context.Context, entry string, outDir string, taskFi
 	module, parseDiagnostics := parser.Parse(tokens)
 	s.logStageEnd(contracts.CompileStageParse, time.Since(parseStart))
 
+	importDiagnostics := make([]diagnostic.Diagnostic, 0)
+	if len(module.Imports) > 0 {
+		visited := map[string]struct{}{paths.EntryPath: {}}
+		importDiags := s.loadImportsRecursive(module, paths.WorkspaceRoot, paths.EntryPath, visited)
+		importDiagnostics = append(importDiagnostics, importDiags...)
+	}
+
 	typecheckStart := time.Now()
 	s.logStageStart(contracts.CompileStageTypecheck)
 	semaResult := sema.Check(module)
@@ -553,14 +560,14 @@ func (s *Service) analyze(_ context.Context, entry string, outDir string, taskFi
 		moduleName:       module.PackageName,
 		typeDeclarations: append([]sema.TypeDecl{}, semaResult.Types...),
 		funcDeclarations: append([]sema.FuncInfo{}, semaResult.Funcs...),
-		diagnostics:      mergeDiagnostics(lexDiagnostics, parseDiagnostics, semaResult.Diagnostics),
+		diagnostics:      mergeDiagnostics(lexDiagnostics, parseDiagnostics, importDiagnostics, semaResult.Diagnostics),
 		taskFingerprints: fingerprintedTasks,
 		sourceBytes:      sourceBytes,
 		result: Result{
 			Entry:                 paths.EntryPath,
 			Module:                module.PackageName,
 			Tasks:                 selectedTasks,
-			Diagnostics:           mergeDiagnostics(lexDiagnostics, parseDiagnostics, semaResult.Diagnostics),
+			Diagnostics:           mergeDiagnostics(lexDiagnostics, parseDiagnostics, importDiagnostics, semaResult.Diagnostics),
 			FingerprintComponents: components,
 		},
 	}
@@ -582,6 +589,61 @@ func toGraphTasks(tasks []sema.Task) []graph.Task {
 		})
 	}
 	return results
+}
+
+func (s *Service) loadImportsRecursive(module *ast.Module, workspaceRoot string, currentFilePath string, visited map[string]struct{}) []diagnostic.Diagnostic {
+	diagnostics := make([]diagnostic.Diagnostic, 0)
+
+	for _, importDecl := range module.Imports {
+		resolvedPath, err := source.ResolveImportPath(workspaceRoot, currentFilePath, importDecl.Path)
+		if err != nil {
+			diagnostics = append(diagnostics, diagnostic.Diagnostic{
+				Kind:    contracts.DiagnosticKindImportNotFound,
+				Message: fmt.Sprintf("cannot resolve import %q: %v", importDecl.Path, err),
+				Line:    importDecl.Span.Start.Line,
+				Column:  importDecl.Span.Start.Column,
+			})
+			continue
+		}
+
+		if _, alreadyVisited := visited[resolvedPath]; alreadyVisited {
+			diagnostics = append(diagnostics, diagnostic.Diagnostic{
+				Kind:    contracts.DiagnosticKindImportCycle,
+				Message: fmt.Sprintf("import cycle detected: %s", importDecl.Path),
+				Line:    importDecl.Span.Start.Line,
+				Column:  importDecl.Span.Start.Column,
+			})
+			continue
+		}
+		visited[resolvedPath] = struct{}{}
+
+		importedBytes, err := os.ReadFile(resolvedPath)
+		if err != nil {
+			diagnostics = append(diagnostics, diagnostic.Diagnostic{
+				Kind:    contracts.DiagnosticKindImportNotFound,
+				Message: fmt.Sprintf("cannot read import %q: %v", importDecl.Path, err),
+				Line:    importDecl.Span.Start.Line,
+				Column:  importDecl.Span.Start.Column,
+			})
+			continue
+		}
+
+		tokens, lexDiags := lexer.Lex(string(importedBytes))
+		diagnostics = append(diagnostics, lexDiags...)
+
+		importedModule, parseDiags := parser.Parse(tokens)
+		diagnostics = append(diagnostics, parseDiags...)
+
+		if len(importedModule.Imports) > 0 {
+			importDiags := s.loadImportsRecursive(importedModule, workspaceRoot, resolvedPath, visited)
+			diagnostics = append(diagnostics, importDiags...)
+		}
+
+		module.Decls = append(module.Decls, importedModule.Decls...)
+	}
+
+	module.Imports = nil
+	return diagnostics
 }
 
 func toSemaFuncs(a analysis) []sema.FuncInfo {
