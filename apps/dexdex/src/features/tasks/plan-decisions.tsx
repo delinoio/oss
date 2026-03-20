@@ -2,7 +2,7 @@
  * Plan decision controls for subtasks waiting for plan approval.
  */
 
-import { type CSSProperties, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { PlanDecision, SubTaskStatus } from "../../lib/status";
 import type { SubTask } from "../../lib/mock-data";
 import { useFocusOnShow } from "../../hooks/use-dialog-accessibility";
@@ -18,6 +18,74 @@ export function PlanDecisions({ subtask, onDecision }: PlanDecisionsProps) {
   const revisionInputRef = useRef<HTMLTextAreaElement>(null);
 
   useFocusOnShow(showReviseInput, revisionInputRef);
+
+  const submitRevision = useCallback(() => {
+    const trimmedRevisionNote = revisionNote.trim();
+    if (!trimmedRevisionNote) {
+      return;
+    }
+    onDecision(subtask.subTaskId, PlanDecision.REVISE, trimmedRevisionNote);
+  }, [onDecision, revisionNote, subtask.subTaskId]);
+
+  useEffect(() => {
+    if (subtask.status !== SubTaskStatus.WAITING_FOR_PLAN_APPROVAL) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || event.keyCode === 229) {
+        return;
+      }
+
+      const activeElement = document.activeElement as HTMLElement | null;
+      const isTextInputFocused =
+        activeElement?.tagName.toLowerCase() === "input" ||
+        activeElement?.tagName.toLowerCase() === "textarea" ||
+        activeElement?.isContentEditable;
+      if (isTextInputFocused) {
+        if (
+          activeElement === revisionInputRef.current &&
+          (event.metaKey || event.ctrlKey) &&
+          event.key === "Enter"
+        ) {
+          event.preventDefault();
+          submitRevision();
+        }
+        return;
+      }
+
+      const isMetaPressed = event.metaKey || event.ctrlKey;
+      const isAltPressed = event.altKey;
+
+      if (!isMetaPressed && !isAltPressed && !event.shiftKey && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        onDecision(subtask.subTaskId, PlanDecision.APPROVE);
+        return;
+      }
+
+      if (!isMetaPressed && !isAltPressed && !event.shiftKey && event.key.toLowerCase() === "v") {
+        event.preventDefault();
+        if (!showReviseInput) {
+          setShowReviseInput(true);
+        } else {
+          revisionInputRef.current?.focus();
+        }
+        return;
+      }
+
+      if (!isMetaPressed && !isAltPressed && event.shiftKey && event.key === "X") {
+        event.preventDefault();
+        onDecision(subtask.subTaskId, PlanDecision.REJECT);
+        return;
+      }
+
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onDecision, showReviseInput, submitRevision, subtask.status, subtask.subTaskId]);
 
   if (subtask.status !== SubTaskStatus.WAITING_FOR_PLAN_APPROVAL) {
     return null;
@@ -89,6 +157,15 @@ export function PlanDecisions({ subtask, onDecision }: PlanDecisionsProps) {
             placeholder="Describe the revisions needed..."
             value={revisionNote}
             onChange={(e) => setRevisionNote(e.target.value)}
+            onKeyDown={(event) => {
+              if (event.isComposing || event.keyCode === 229) {
+                return;
+              }
+              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                event.preventDefault();
+                submitRevision();
+              }
+            }}
             data-testid="revision-note-input"
           />
         </div>
@@ -126,12 +203,9 @@ export function PlanDecisions({ subtask, onDecision }: PlanDecisionsProps) {
               color: "#fff",
               borderColor: "var(--color-status-action)",
             }}
-            onClick={() => {
-              if (revisionNote.trim()) {
-                onDecision(subtask.subTaskId, PlanDecision.REVISE, revisionNote.trim());
-              }
-            }}
+            onClick={submitRevision}
             disabled={!revisionNote.trim()}
+            data-testid="submit-revision-button"
           >
             Submit Revision
           </button>

@@ -70,6 +70,8 @@ When implementation details differ from documented contracts, follow-up sync wor
 - Workspace CRUD operations: `CreateWorkspace`, `UpdateWorkspace`, `DeleteWorkspace`, `SetActiveWorkspace`.
 - Task cancellation and subtask management: `CancelUnitTask`, `CancelSubTask`, `CreateSubTask`, `ListSubTaskCommits`, `RetrySubTask`.
 - PR tracking and auto-fix control: `TrackPullRequest`, `RunAutoFixNow`, `SetAutoFixPolicy`.
+- `RunAutoFixNow` creates and immediately dispatches a remediation SubTask.
+- Poller-driven automatic remediation for `auto_fix_enabled` policy remains planned.
 - Review assist resolution: `ResolveReviewAssistItem`.
 - Badge theme management: `ListBadgeThemes`, `UpsertBadgeTheme`.
 - Agent session lifecycle: `ListAgentSessions`, `GetAgentSessionLog`, `StopAgentSession`.

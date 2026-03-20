@@ -55,9 +55,9 @@ Behavior contracts:
   - `Cmd+T`: create new task
   - `Cmd+W`: close active tab
   - `J` / `K`: navigate up/down in list views
-  - `A`: approve plan or review item
-  - `V`: open diff viewer for selected commit
-  - `Shift+X`: cancel running task
+  - `A`: approve waiting plan
+  - `V`: open revise input for waiting plan
+  - `Shift+X`: reject waiting plan or cancel running task
 - Diff viewer component for inline review of commit changes with side-by-side and unified modes.
 
 Data and UX invariants:

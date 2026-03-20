@@ -15,9 +15,6 @@ interface KeyboardShortcutsConfig {
   onSwitchTabRight?: () => void;
   onListDown?: () => void;
   onListUp?: () => void;
-  onApprovePlan?: () => void;
-  onRevisePlan?: () => void;
-  onRejectPlan?: () => void;
 }
 
 /**
@@ -35,9 +32,6 @@ interface KeyboardShortcutsConfig {
  * - C: Create new task (when not in an input)
  * - J: Navigate down in task list
  * - K: Navigate up in task list
- * - A: Approve plan (when viewing plan decision)
- * - V: Revise plan
- * - Shift+X: Reject plan
  */
 export function useKeyboardShortcuts(config: KeyboardShortcutsConfig): void {
   const pendingG = useRef(false);
@@ -162,26 +156,6 @@ export function useKeyboardShortcuts(config: KeyboardShortcutsConfig): void {
         return;
       }
 
-      // A: Approve plan (when viewing plan decision)
-      if (e.key === "a" && !meta && !e.altKey && !e.shiftKey) {
-        e.preventDefault();
-        config.onApprovePlan?.();
-        return;
-      }
-
-      // V: Revise plan
-      if (e.key === "v" && !meta && !e.altKey && !e.shiftKey) {
-        e.preventDefault();
-        config.onRevisePlan?.();
-        return;
-      }
-
-      // Shift+X: Reject plan
-      if (e.key === "X" && e.shiftKey && !meta && !e.altKey) {
-        e.preventDefault();
-        config.onRejectPlan?.();
-        return;
-      }
     }
 
     document.addEventListener("keydown", handleKeyDown);

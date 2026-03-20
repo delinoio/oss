@@ -52,9 +52,12 @@ Manual PR creation flow:
 - tracking record is created for polling lifecycle
 
 Automatic remediation flow:
-- policy-enabled tracking entries auto-run remediation on actionable signals
+- policy-enabled tracking entries auto-run remediation on actionable signals (planned; polling-loop auto-dispatch is not yet enabled in current implementation)
 - attempt counters and max-attempt guardrails apply
 - repeated failure transitions to manual-review-required behavior
+
+Current implementation note:
+- `RunAutoFixNow` creates and immediately dispatches a `PR_REVIEW_FIX` remediation SubTask.
 
 ## Storage
 - PR tracking snapshots and poll metadata

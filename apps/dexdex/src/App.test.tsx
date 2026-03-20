@@ -36,6 +36,7 @@ import {
   PrStatus,
   AgentCliType,
   WorkspaceType,
+  PlanDecision as ProtoPlanDecision,
   PullRequestRecordSchema,
 } from "./gen/v1/dexdex_pb";
 import { AUTO_REPOSITORY_GROUP_PREFIX } from "./lib/repository-target";
@@ -268,6 +269,13 @@ let lastCreateUnitTaskRequest:
       repositoryId?: string;
     }
   | null = null;
+let lastSubmitPlanDecisionRequest:
+  | {
+      subTaskId?: string;
+      decision?: ProtoPlanDecision;
+      revisionNote?: string;
+    }
+  | null = null;
 
 interface TestTransportOptions {
   workspaces?: Array<{
@@ -321,10 +329,17 @@ function createTestTransport(options: TestTransportOptions = {}) {
           }),
         };
       },
-      submitPlanDecision: () => ({
-        updatedSubTask: undefined,
-        createdSubTask: undefined,
-      }),
+      submitPlanDecision: (req) => {
+        lastSubmitPlanDecisionRequest = {
+          subTaskId: req.subTaskId,
+          decision: req.decision,
+          revisionNote: req.revisionNote,
+        };
+        return {
+          updatedSubTask: undefined,
+          createdSubTask: undefined,
+        };
+      },
     });
     router.service(NotificationService, {
       listNotifications: () => ({ notifications: mockNotifications }),
@@ -489,6 +504,7 @@ function renderWithProviders(
 beforeEach(() => {
   localStorageMock.clear();
   lastCreateUnitTaskRequest = null;
+  lastSubmitPlanDecisionRequest = null;
   document.documentElement.classList.remove("dark");
   localStorageMock.setItem("dexdex-active-workspace-id", DEFAULT_WORKSPACE_ID);
 });
@@ -790,6 +806,37 @@ describe("App", () => {
     const reviseInput = screen.getByTestId("revision-note-input");
     await waitFor(() => {
       expect(document.activeElement).toBe(reviseInput);
+    });
+  });
+
+  it("submits revise plan decision with keyboard shortcut using sub_task_id", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<App />);
+
+    await screen.findByTestId("task-row-task-002");
+    await user.click(screen.getByTestId("task-row-task-002"));
+    await user.keyboard("v");
+
+    const reviseInput = await screen.findByTestId("revision-note-input");
+    await user.type(reviseInput, "Please add rollback verification tests.");
+    await user.keyboard("{Meta>}{Enter}{/Meta}");
+
+    await waitFor(() => {
+      expect(lastSubmitPlanDecisionRequest?.subTaskId).toBe("sub-002-1");
+      expect(lastSubmitPlanDecisionRequest?.decision).toBe(ProtoPlanDecision.REVISE);
+      expect(lastSubmitPlanDecisionRequest?.revisionNote).toBe("Please add rollback verification tests.");
+    });
+  });
+
+  it("shows waiting-session input context on tasks route", async () => {
+    renderWithProviders(<App />, {
+      initialEntries: ["/tasks?waitingSession=sess-004-1"],
+    });
+
+    expect(await screen.findByTestId("waiting-session-context")).toBeTruthy();
+    const sessionInput = await screen.findByTestId("session-input-textarea");
+    await waitFor(() => {
+      expect(document.activeElement).toBe(sessionInput);
     });
   });
 
