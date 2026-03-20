@@ -13,9 +13,10 @@
 - Security-conscious operators enforcing trust policies
 
 ## Interfaces and Contracts
-- CLI subcommands for secret create/read/update/revoke must remain stable and documented.
+- Stable CLI subcommands are `push`, `pull`, `list`, and `rotate`.
+- Secret lifecycle mapping must remain explicit: `push` (create/update), `pull` (read), `rotate` (version rollover).
 - Authentication, trust bootstrap, and key management flows must be deterministic.
-- Output contracts must align with server API and web console expectations.
+- Output contracts must align with server API and web console expectations, including audit and policy semantics.
 
 ## Storage
 - Stores local trust metadata and encrypted material according to explicit path contracts.

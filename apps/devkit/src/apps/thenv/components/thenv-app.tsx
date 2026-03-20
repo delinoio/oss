@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import type { Scope } from "@/gen/thenv/v1/thenv_pb";
+import { BundleStatus, type Scope } from "@/gen/thenv/v1/thenv_pb";
 
 import { ThenvTransportProvider } from "@/apps/thenv/hooks/use-thenv-transport";
 import { useListBundleVersions } from "@/apps/thenv/hooks/use-thenv-queries";
@@ -20,6 +20,34 @@ function ThenvContent() {
   const [selectedVersionId, setSelectedVersionId] = useState<string | undefined>(undefined);
 
   const { data: versionsData, isLoading: versionsLoading } = useListBundleVersions(scope);
+  const versions = versionsData?.versions ?? [];
+
+  const handleScopeChange = useCallback((nextScope: Scope) => {
+    setScope(nextScope);
+    setSelectedVersionId(undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!scope) {
+      return;
+    }
+    if (versions.length === 0) {
+      if (selectedVersionId !== undefined) {
+        setSelectedVersionId(undefined);
+      }
+      return;
+    }
+
+    const selectedExists = selectedVersionId
+      ? versions.some((version) => version.bundleVersionId === selectedVersionId)
+      : false;
+    if (selectedExists) {
+      return;
+    }
+
+    const activeVersion = versions.find((version) => version.status === BundleStatus.ACTIVE);
+    setSelectedVersionId(activeVersion?.bundleVersionId ?? versions[0]?.bundleVersionId);
+  }, [scope, versions, selectedVersionId]);
 
   const tabs: { id: ThenvTab; label: string }[] = [
     { id: "bundles", label: "Bundles" },
@@ -29,7 +57,7 @@ function ThenvContent() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      <ScopeSelector onScopeChange={setScope} />
+      <ScopeSelector onScopeChange={handleScopeChange} />
 
       {scope && (
         <>
