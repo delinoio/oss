@@ -1,0 +1,8 @@
+{
+    "name": "@servers/remote-file-picker",
+    "private": true,
+    "scripts": {
+        "prepare:app": "../../scripts/setup/env-vars.sh oss-remote-file-picker-server",
+        "dev": "air"
+    }
+}

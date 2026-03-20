@@ -1,0 +1,8 @@
+{
+    "name": "@servers/dexdex-main-server",
+    "private": true,
+    "scripts": {
+        "prepare:app": "../../scripts/setup/env-vars.sh oss-dexdex-main-server",
+        "dev": "air"
+    }
+}
