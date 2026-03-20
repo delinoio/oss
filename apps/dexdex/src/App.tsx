@@ -20,6 +20,7 @@ import { PrDetailPage } from "./features/prs/pr-detail-page";
 import { SettingsPage } from "./features/settings/settings-page";
 import { RepositoryGroupsPage } from "./features/repositories/repository-groups-page";
 import { RepositoriesPage } from "./features/repositories/repositories-page";
+import { SessionInputForm } from "./features/sessions/session-input-form";
 import { useKeyboardShortcuts } from "./hooks/use-keyboard-shortcuts";
 import { useWorkspaceStream } from "./hooks/use-workspace-stream";
 import { useTrayStatus } from "./hooks/use-tray-status";
@@ -267,25 +268,6 @@ function App() {
         handleTabClick(nextTab);
       }
     },
-    onApprovePlan: () => {
-      // Context-sensitive: only if on task detail with waiting subtask
-      if (!currentPath.startsWith("/tasks/")) return;
-      const taskId = currentPath.replace("/tasks/", "");
-      const task = tasks.find((t) => t.unitTaskId === taskId);
-      if (task) {
-        // We need to find a waiting subtask - delegate to handlePlanDecision
-        // This is a simplified version - the full version would need subtask data
-        handlePlanDecision(taskId, PlanDecision.APPROVE);
-      }
-    },
-    onRevisePlan: () => {
-      // For V key - context sensitive
-      if (!currentPath.startsWith("/tasks/")) return;
-    },
-    onRejectPlan: () => {
-      // For Shift+X - context sensitive: cancel task if in progress, reject plan if waiting
-      if (!currentPath.startsWith("/tasks/")) return;
-    },
   });
 
   // Task detail renderer (used by route)
@@ -304,6 +286,51 @@ function App() {
         }}
         onPlanDecision={handlePlanDecision}
       />
+    );
+  }
+
+  function TaskListRoute() {
+    const waitingSessionId = new URLSearchParams(location.search).get("waitingSession")?.trim() ?? "";
+    const hasWaitingSessionContext = waitingSessionId.length > 0;
+
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column", minHeight: 0 }}>
+        {hasWaitingSessionContext && (
+          <div
+            style={{
+              padding: "var(--space-3) var(--space-6)",
+              borderBottom: "1px solid var(--color-border)",
+              backgroundColor: "var(--color-bg-secondary)",
+            }}
+            data-testid="waiting-session-context"
+          >
+            <div
+              style={{
+                fontSize: "var(--font-size-xs)",
+                color: "var(--color-text-tertiary)",
+                marginBottom: "var(--space-2)",
+              }}
+            >
+              Waiting session: {waitingSessionId}
+            </div>
+            <SessionInputForm
+              workspaceId={activeWorkspaceId}
+              sessionId={waitingSessionId}
+              onSubmitted={() => routerNavigate("/tasks", { replace: true })}
+            />
+          </div>
+        )}
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <TaskList
+            tasks={tasks}
+            isLoading={tasksLoading}
+            onTaskSelect={(taskId) => navigate(`/tasks/${taskId}`)}
+            onCreateTask={() => setCreateDialogOpen(true)}
+            selectedIndex={selectedTaskIndex}
+            onSelectIndex={setSelectedTaskIndex}
+          />
+        </div>
+      </div>
     );
   }
 
@@ -356,19 +383,7 @@ function App() {
           <div style={contentAreaStyle}>
             <ErrorBoundary>
               <Routes>
-                <Route
-                  path="/tasks"
-                  element={
-                    <TaskList
-                      tasks={tasks}
-                      isLoading={tasksLoading}
-                      onTaskSelect={(taskId) => navigate(`/tasks/${taskId}`)}
-                      onCreateTask={() => setCreateDialogOpen(true)}
-                      selectedIndex={selectedTaskIndex}
-                      onSelectIndex={setSelectedTaskIndex}
-                    />
-                  }
-                />
+                <Route path="/tasks" element={<TaskListRoute />} />
                 <Route path="/tasks/:taskId" element={<TaskDetailRoute />} />
                 <Route
                   path="/inbox"

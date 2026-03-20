@@ -19,17 +19,19 @@ import (
 // PrHandler implements the PrManagementService Connect RPC handler.
 type PrHandler struct {
 	dexdexv1connect.UnimplementedPrManagementServiceHandler
-	store  store.Store
-	fanOut stream.EventBroadcaster
-	logger *slog.Logger
+	store      store.Store
+	fanOut     stream.EventBroadcaster
+	dispatcher Dispatcher
+	logger     *slog.Logger
 }
 
 // NewPrHandler creates a new PrHandler.
-func NewPrHandler(s store.Store, fanOut stream.EventBroadcaster, logger *slog.Logger) *PrHandler {
+func NewPrHandler(s store.Store, fanOut stream.EventBroadcaster, dispatcher Dispatcher, logger *slog.Logger) *PrHandler {
 	return &PrHandler{
-		store:  s,
-		fanOut: fanOut,
-		logger: logger,
+		store:      s,
+		fanOut:     fanOut,
+		dispatcher: dispatcher,
+		logger:     logger,
 	}
 }
 
@@ -192,12 +194,48 @@ func (h *PrHandler) RunAutoFixNow(
 		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("pull request %s is not linked to a unit task", prTrackingID))
 	}
 
-	// Create a remediation sub task placeholder
+	var unitTask *dexdexv1.UnitTask
+	var repoGroup *dexdexv1.RepositoryGroup
+	if h.dispatcher != nil {
+		var taskErr error
+		unitTask, taskErr = h.store.GetUnitTask(workspaceID, updatedPR.UnitTaskId)
+		if taskErr != nil {
+			h.logger.Error("RunAutoFixNow failed to load unit task",
+				"workspace_id", workspaceID,
+				"unit_task_id", updatedPR.UnitTaskId,
+				"pr_tracking_id", prTrackingID,
+				"error", taskErr,
+			)
+			return nil, connect.NewError(connect.CodeNotFound, taskErr)
+		}
+
+		if strings.TrimSpace(unitTask.RepositoryGroupId) == "" {
+			return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("unit task %s has no repository_group_id", unitTask.UnitTaskId))
+		}
+
+		var repoErr error
+		repoGroup, repoErr = h.store.GetRepositoryGroup(workspaceID, unitTask.RepositoryGroupId)
+		if repoErr != nil {
+			h.logger.Error("RunAutoFixNow failed to load repository group",
+				"workspace_id", workspaceID,
+				"repository_group_id", unitTask.RepositoryGroupId,
+				"pr_tracking_id", prTrackingID,
+				"error", repoErr,
+			)
+			return nil, connect.NewError(connect.CodeFailedPrecondition, repoErr)
+		}
+	}
+
+	// Create and dispatch a remediation sub task.
 	subTask := &dexdexv1.SubTask{
 		SubTaskId:  nextSubTaskID(),
 		UnitTaskId: updatedPR.UnitTaskId,
 		Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_PR_REVIEW_FIX,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+		Title:      fmt.Sprintf("Auto-fix %s", prTrackingID),
+		SessionId:  nextSessionID(),
+		CreatedAt:  timestamppb.Now(),
+		UpdatedAt:  timestamppb.Now(),
 	}
 	h.store.UpsertSubTask(workspaceID, subTask)
 
@@ -205,6 +243,18 @@ func (h *PrHandler) RunAutoFixNow(
 	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_PR_UPDATED, &stream.PrUpdatedPayload{
 		PrUpdated: &dexdexv1.PrUpdatedEvent{PullRequest: updatedPR},
 	})
+
+	if h.dispatcher != nil {
+		if dispatchErr := h.dispatcher.DispatchSubTaskExecution(ctx, workspaceID, unitTask, subTask, repoGroup, unitTask.AgentCliType); dispatchErr != nil {
+			h.logger.Error("RunAutoFixNow failed to dispatch remediation execution",
+				"workspace_id", workspaceID,
+				"pr_tracking_id", prTrackingID,
+				"sub_task_id", subTask.SubTaskId,
+				"error", dispatchErr,
+			)
+			return nil, connect.NewError(connect.CodeInternal, dispatchErr)
+		}
+	}
 
 	h.logger.Info("RunAutoFixNow completed", "workspace_id", workspaceID, "sub_task_id", subTask.SubTaskId)
 

@@ -92,7 +92,7 @@ func main() {
 	repoPath, repoHTTPHandler := dexdexv1connect.NewRepositoryServiceHandler(repoHandler)
 	mux.Handle(repoPath, repoHTTPHandler)
 
-	prHandler := handler.NewPrHandler(dataStore, fanOut, logger)
+	prHandler := handler.NewPrHandler(dataStore, fanOut, dispatcher, logger)
 	prPath, prHTTPHandler := dexdexv1connect.NewPrManagementServiceHandler(prHandler)
 	mux.Handle(prPath, prHTTPHandler)
 

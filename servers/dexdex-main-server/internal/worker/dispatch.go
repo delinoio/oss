@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,7 +50,6 @@ func (d *Dispatcher) DispatchExecution(
 ) error {
 	// Create initial subtask
 	subTaskID := fmt.Sprintf("subtask-%s-%d", unitTask.UnitTaskId, time.Now().UnixNano())
-	sessionID := fmt.Sprintf("session-%s-%d", subTaskID, time.Now().UnixNano())
 
 	subTask := &dexdexv1.SubTask{
 		SubTaskId:  subTaskID,
@@ -57,7 +57,7 @@ func (d *Dispatcher) DispatchExecution(
 		Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_INITIAL_IMPLEMENTATION,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
 		Title:      summarizePrompt(unitTask.Prompt),
-		SessionId:  sessionID,
+		SessionId:  fmt.Sprintf("session-%s-%d", subTaskID, time.Now().UnixNano()),
 		CreatedAt:  timestamppb.Now(),
 		UpdatedAt:  timestamppb.Now(),
 	}
@@ -65,9 +65,40 @@ func (d *Dispatcher) DispatchExecution(
 	d.store.UpsertSubTask(workspaceID, subTask)
 	d.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: subTask})
 
-	// Transition to IN_PROGRESS
-	subTask.Status = dexdexv1.SubTaskStatus_SUB_TASK_STATUS_IN_PROGRESS
+	return d.DispatchSubTaskExecution(parentCtx, workspaceID, unitTask, subTask, repoGroup, agentCliType)
+}
+
+// DispatchSubTaskExecution starts execution for an already-created subtask.
+func (d *Dispatcher) DispatchSubTaskExecution(
+	parentCtx context.Context,
+	workspaceID string,
+	unitTask *dexdexv1.UnitTask,
+	subTask *dexdexv1.SubTask,
+	repoGroup *dexdexv1.RepositoryGroup,
+	agentCliType dexdexv1.AgentCliType,
+) error {
+	if subTask == nil {
+		return fmt.Errorf("sub task is required")
+	}
+
+	if strings.TrimSpace(subTask.SubTaskId) == "" {
+		return fmt.Errorf("sub task id is required")
+	}
+
+	if strings.TrimSpace(subTask.SessionId) == "" {
+		subTask.SessionId = fmt.Sprintf("session-%s-%d", subTask.SubTaskId, time.Now().UnixNano())
+	}
+
+	if strings.TrimSpace(subTask.Title) == "" {
+		subTask.Title = summarizePrompt(unitTask.Prompt)
+	}
+
+	if subTask.CreatedAt == nil {
+		subTask.CreatedAt = timestamppb.Now()
+	}
 	subTask.UpdatedAt = timestamppb.Now()
+	subTask.Status = dexdexv1.SubTaskStatus_SUB_TASK_STATUS_IN_PROGRESS
+
 	d.store.UpsertSubTask(workspaceID, subTask)
 	d.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: subTask})
 
@@ -90,17 +121,17 @@ func (d *Dispatcher) DispatchExecution(
 	// Start execution in background
 	ctx, cancel := context.WithCancel(parentCtx)
 	d.mu.Lock()
-	d.activeSubs[subTaskID] = cancel
-	d.sessionSubs[sessionID] = subTaskID
+	d.activeSubs[subTask.SubTaskId] = cancel
+	d.sessionSubs[subTask.SessionId] = subTask.SubTaskId
 	d.mu.Unlock()
 
-	go d.consumeExecutionStream(ctx, workspaceID, subTask, sessionID, unitTask, repoGroup, agentCliType)
+	go d.consumeExecutionStream(ctx, workspaceID, subTask, subTask.SessionId, unitTask, repoGroup, agentCliType)
 
 	d.logger.Info("execution dispatched",
 		"workspace_id", workspaceID,
 		"unit_task_id", unitTask.UnitTaskId,
-		"sub_task_id", subTaskID,
-		"session_id", sessionID,
+		"sub_task_id", subTask.SubTaskId,
+		"session_id", subTask.SessionId,
 	)
 
 	return nil

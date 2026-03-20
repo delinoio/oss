@@ -54,6 +54,9 @@ Keyboard contracts:
 - list navigation shortcuts (`J`, `K`, `Enter`, `Cmd+Enter`)
 - multiline submit shortcut (`Cmd+Enter`) with IME-safe behavior
 - decision shortcuts for plan mode (`A`, `V`, `Shift+X`)
+  - `A`: approve waiting plan
+  - `V`: open revise input for waiting plan
+  - `Shift+X`: reject waiting plan (or cancel running task when no waiting plan is active)
 
 Accessibility and responsive contracts:
 - keyboard-first operation

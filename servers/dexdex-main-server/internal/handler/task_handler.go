@@ -11,6 +11,7 @@ import (
 	"github.com/delinoio/oss/protos/dexdex/gen/dexdex/v1/dexdexv1connect"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/store"
 	"github.com/delinoio/oss/servers/dexdex-main-server/internal/stream"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // TaskHandler implements the TaskService Connect RPC handler.
@@ -25,6 +26,7 @@ type TaskHandler struct {
 // Dispatcher is the interface for dispatching task execution.
 type Dispatcher interface {
 	DispatchExecution(ctx context.Context, workspaceID string, unitTask *dexdexv1.UnitTask, repoGroup *dexdexv1.RepositoryGroup, agentCliType dexdexv1.AgentCliType) error
+	DispatchSubTaskExecution(ctx context.Context, workspaceID string, unitTask *dexdexv1.UnitTask, subTask *dexdexv1.SubTask, repoGroup *dexdexv1.RepositoryGroup, agentCliType dexdexv1.AgentCliType) error
 	DispatchForkExecution(ctx context.Context, workspaceID string, forkedSessionID string, parentSessionID string, forkIntent dexdexv1.SessionForkIntent, prompt string, repoGroup *dexdexv1.RepositoryGroup, agentCliType dexdexv1.AgentCliType) error
 	CancelSubTask(subTaskID string) error
 	SubmitInput(ctx context.Context, sessionID, inputText string) error
@@ -459,6 +461,10 @@ func cloneSubTask(src *dexdexv1.SubTask) *dexdexv1.SubTask {
 		Status:           src.Status,
 		CompletionReason: src.CompletionReason,
 		CommitChain:      src.CommitChain,
+		Title:            src.Title,
+		SessionId:        src.SessionId,
+		CreatedAt:        src.CreatedAt,
+		UpdatedAt:        src.UpdatedAt,
 	}
 }
 
@@ -585,6 +591,10 @@ func (h *TaskHandler) CreateSubTask(
 		UnitTaskId: unitTaskID,
 		Type:       subTaskType,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+		Title:      prompt,
+		SessionId:  nextSessionID(),
+		CreatedAt:  timestamppb.Now(),
+		UpdatedAt:  timestamppb.Now(),
 	}
 	h.store.UpsertSubTask(workspaceID, subTask)
 	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: subTask})
@@ -594,7 +604,7 @@ func (h *TaskHandler) CreateSubTask(
 		repoGroup, repoErr := h.store.GetRepositoryGroup(workspaceID, task.RepositoryGroupId)
 		if repoErr == nil {
 			go func() {
-				if dispatchErr := h.dispatcher.DispatchExecution(context.Background(), workspaceID, task, repoGroup, task.AgentCliType); dispatchErr != nil {
+				if dispatchErr := h.dispatcher.DispatchSubTaskExecution(context.Background(), workspaceID, task, subTask, repoGroup, task.AgentCliType); dispatchErr != nil {
 					h.logger.Error("failed to dispatch sub task execution", "error", dispatchErr)
 				}
 			}()
@@ -658,6 +668,10 @@ func (h *TaskHandler) RetrySubTask(
 		UnitTaskId: origSubTask.UnitTaskId,
 		Type:       dexdexv1.SubTaskType_SUB_TASK_TYPE_MANUAL_RETRY,
 		Status:     dexdexv1.SubTaskStatus_SUB_TASK_STATUS_QUEUED,
+		Title:      origSubTask.Title,
+		SessionId:  nextSessionID(),
+		CreatedAt:  timestamppb.Now(),
+		UpdatedAt:  timestamppb.Now(),
 	}
 	h.store.UpsertSubTask(workspaceID, retrySubTask)
 	h.fanOut.Publish(workspaceID, dexdexv1.StreamEventType_STREAM_EVENT_TYPE_SUBTASK_UPDATED, &stream.SubTaskPayload{SubTask: retrySubTask})
@@ -666,7 +680,7 @@ func (h *TaskHandler) RetrySubTask(
 		repoGroup, repoErr := h.store.GetRepositoryGroup(workspaceID, task.RepositoryGroupId)
 		if repoErr == nil {
 			go func() {
-				if dispatchErr := h.dispatcher.DispatchExecution(context.Background(), workspaceID, task, repoGroup, task.AgentCliType); dispatchErr != nil {
+				if dispatchErr := h.dispatcher.DispatchSubTaskExecution(context.Background(), workspaceID, task, retrySubTask, repoGroup, task.AgentCliType); dispatchErr != nil {
 					h.logger.Error("failed to dispatch retry execution", "error", dispatchErr)
 				}
 			}()
