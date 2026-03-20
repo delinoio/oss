@@ -27,7 +27,9 @@
 
 ## Logging
 - Use structured logs for parser phases, type-check diagnostics, and code-generation stages.
-- Include source location metadata and deterministic diagnostic identifiers.
+- Diagnostic log events must include `source_path`, `line`, `column`, and `diagnostic_kind`.
+- `diagnostic_id` must be deterministic for identical diagnostic inputs (`kind`, `source_path`, `line`, `column`, `message`).
+- Diagnostic log events must carry the top-level execution `trace_id` for end-to-end correlation.
 
 ## Build and Test
 - Local validation: `go test ./cmds/ttlc/...`
