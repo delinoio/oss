@@ -96,6 +96,7 @@ type analysis struct {
 	module           *ast.Module
 	moduleName       string
 	typeDeclarations []sema.TypeDecl
+	funcDeclarations []sema.FuncInfo
 	diagnostics      []diagnostic.Diagnostic
 	taskFingerprints []taskFingerprint
 	sourceBytes      []byte
@@ -325,10 +326,12 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 
 	emitStart := time.Now()
 	s.logStageStart(contracts.CompileStageEmit)
-	emitResult, err := emitter.EmitGo(
+	emitResult, err := emitter.EmitGoWithAST(
 		analysisResult.moduleName,
 		analysisResult.typeDeclarations,
 		toSemaTasks(analysisResult.taskFingerprints),
+		toSemaFuncs(analysisResult),
+		analysisResult.module,
 		analysisResult.paths.OutDir,
 	)
 	if err != nil {
@@ -549,6 +552,7 @@ func (s *Service) analyze(_ context.Context, entry string, outDir string, taskFi
 		module:           module,
 		moduleName:       module.PackageName,
 		typeDeclarations: append([]sema.TypeDecl{}, semaResult.Types...),
+		funcDeclarations: append([]sema.FuncInfo{}, semaResult.Funcs...),
 		diagnostics:      mergeDiagnostics(lexDiagnostics, parseDiagnostics, semaResult.Diagnostics),
 		taskFingerprints: fingerprintedTasks,
 		sourceBytes:      sourceBytes,
@@ -578,6 +582,10 @@ func toGraphTasks(tasks []sema.Task) []graph.Task {
 		})
 	}
 	return results
+}
+
+func toSemaFuncs(a analysis) []sema.FuncInfo {
+	return append([]sema.FuncInfo{}, a.funcDeclarations...)
 }
 
 func toSemaTasks(tasks []taskFingerprint) []sema.Task {
