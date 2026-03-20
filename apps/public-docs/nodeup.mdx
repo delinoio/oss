@@ -14,6 +14,7 @@
 - Runtime selection: `default`, `override set|unset|list`, `show active-runtime`
 - Runtime-aware execution: `run`, `which`
 - Self-management: `self update|uninstall|upgrade-data`
+- Shell completion generation: `completions <shell> [command]`
 
 ## Install
 
@@ -68,6 +69,23 @@ nodeup override set lts --path /path/to/project
 - `--output human|json` is available for management commands.
 - Human mode uses pretty `tracing` logs by default.
 - JSON mode writes machine payloads to stdout and keeps logs off by default unless explicitly enabled.
+- `completions` always writes raw completion scripts to stdout, even when `--output json` is set.
+
+## Shell completions
+
+Supported shells:
+
+- `bash`
+- `zsh`
+- `fish`
+- `powershell`
+- `elvish`
+
+Command scope behavior:
+
+- `nodeup completions <shell>` generates completion output for all top-level commands.
+- `nodeup completions <shell> <command>` only accepts top-level command scopes (`toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `self`, `completions`).
+- Invalid shell or scope values fail with `invalid-input`.
 
 ## Reliability and validation
 

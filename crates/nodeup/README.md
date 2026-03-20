@@ -51,11 +51,31 @@ If no selector resolves, commands fail with deterministic `not-found` errors.
   - handled failures are written to stderr as JSON envelopes
     - fields: `kind`, `message`, `exit_code`
   - default logging is off unless explicitly enabled via `RUST_LOG`
+- `completions` command:
+  - always writes raw completion script text to stdout
+  - does not wrap completion output in JSON, even when `--output json` is set
 
 Color control:
 
 - `NODEUP_LOG_COLOR=always|auto|never` (default `always`)
 - `NO_COLOR` disables color when `NODEUP_LOG_COLOR` is unset or `auto`
+
+## Completions
+
+`nodeup completions` generates shell completion scripts for:
+
+- `bash`
+- `zsh`
+- `fish`
+- `powershell`
+- `elvish`
+
+Scope filtering:
+
+- `nodeup completions <shell>` generates completions for all top-level commands.
+- `nodeup completions <shell> <command>` accepts only top-level command scopes:
+  - `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `self`, `completions`
+  - invalid scopes fail with `invalid-input`.
 
 ## Testing Strategy
 

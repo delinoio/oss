@@ -16,6 +16,9 @@
 - Channel and command identifiers must remain stable and documented.
 - Shim dispatch behavior must remain deterministic by executable name.
 - Install/update command surfaces must preserve backward-compatible flags and outputs.
+- `completions` must generate raw shell completion scripts for `bash`, `zsh`, `fish`, `powershell`, and `elvish`.
+- `completions <shell> [command]` command scope must accept only top-level command identifiers and fail with `invalid-input` for unsupported scopes.
+- `completions` output must remain raw script text on stdout even when `--output json` is requested.
 
 ## Storage
 - Maintains local version metadata, installation roots, and shim state.
@@ -28,11 +31,13 @@
 ## Logging
 - Use structured `tracing` logs for install, resolve, and dispatch flows.
 - Include resolution source, requested channel, selected version, and result state.
+- Completion generation logs must include shell, command scope, and `generated|failed` outcome state.
 
 ## Build and Test
 - Local validation: `cargo test -p nodeup`
 - Workspace baseline: `cargo test --workspace --all-targets`
 - Release contract checks should align with `release-nodeup` workflow expectations.
+- Completion coverage must include successful script generation, invalid shell/scope validation, and JSON-mode raw output behavior.
 
 ## Dependencies and Integrations
 - Integrates with filesystem runtime shims and remote distribution channels.
