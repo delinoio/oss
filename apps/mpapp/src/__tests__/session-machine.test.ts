@@ -10,6 +10,7 @@ import {
   reduceSessionState,
   type MpappSessionEvent,
 } from "../state/session-machine";
+import type { MpappSessionSnapshot } from "../contracts/types";
 
 describe("session machine", () => {
   it("follows successful connection transition order", () => {
@@ -91,5 +92,45 @@ describe("session machine", () => {
 
     expect(reconnectedState.mode).toBe(MpappMode.Connected);
     expect(reconnectedState.lastDisconnectReason).toBeNull();
+  });
+
+  it("hydrates snapshot metadata while forcing idle mode", () => {
+    const snapshot: MpappSessionSnapshot = {
+      lastConnectionEvent: MpappConnectionEvent.DisconnectFailure,
+      lastDisconnectReason: MpappDisconnectReason.TransportLost,
+      errorCode: MpappErrorCode.TransportFailure,
+      errorMessage: "disconnect failed",
+      updatedAt: 1700000000000,
+    };
+
+    const hydratedState = reduceSessionState(
+      {
+        ...INITIAL_SESSION_STATE,
+        mode: MpappMode.Connected,
+      },
+      {
+        type: MpappSessionEventType.HydrateSnapshot,
+        snapshot,
+      },
+    );
+
+    expect(hydratedState.mode).toBe(MpappMode.Idle);
+    expect(hydratedState.lastConnectionEvent).toBe(
+      MpappConnectionEvent.DisconnectFailure,
+    );
+    expect(hydratedState.lastDisconnectReason).toBe(
+      MpappDisconnectReason.TransportLost,
+    );
+    expect(hydratedState.errorCode).toBe(MpappErrorCode.TransportFailure);
+    expect(hydratedState.errorMessage).toBe("disconnect failed");
+  });
+
+  it("ignores empty hydration snapshots", () => {
+    const hydratedState = reduceSessionState(INITIAL_SESSION_STATE, {
+      type: MpappSessionEventType.HydrateSnapshot,
+      snapshot: null,
+    });
+
+    expect(hydratedState).toEqual(INITIAL_SESSION_STATE);
   });
 });

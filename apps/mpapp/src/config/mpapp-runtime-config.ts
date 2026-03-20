@@ -5,6 +5,7 @@ type RuntimeEnvironment = Record<string, string | undefined>;
 type ExpoMpappExtra = {
   hidTransportMode?: unknown;
   hidTargetHostAddress?: unknown;
+  screenId?: unknown;
 };
 
 type ExpoConstantsShape = {
@@ -18,6 +19,7 @@ type ExpoConstantsShape = {
 export type MpappRuntimeConfig = {
   hidTransportMode: MpappHidTransportMode;
   hidTargetHostAddress: string | null;
+  screenId: string | null;
 };
 
 export type ResolveMpappRuntimeConfigOptions = {
@@ -43,6 +45,19 @@ function parseTransportMode(value: unknown): MpappHidTransportMode | null {
 }
 
 function parseHostAddress(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+  if (!normalizedValue) {
+    return null;
+  }
+
+  return normalizedValue;
+}
+
+function parseScreenId(value: unknown): string | null {
   if (typeof value !== "string") {
     return null;
   }
@@ -94,6 +109,11 @@ export function resolveMpappRuntimeConfig(
   const extraTargetHostAddress = parseHostAddress(
     expoMpappExtra.hidTargetHostAddress,
   );
+  const envScreenId = parseScreenId(
+    explicitEnvironment?.EXPO_PUBLIC_MPAPP_SCREEN_ID ??
+      process.env.EXPO_PUBLIC_MPAPP_SCREEN_ID,
+  );
+  const extraScreenId = parseScreenId(expoMpappExtra.screenId);
 
   return {
     hidTransportMode:
@@ -101,5 +121,6 @@ export function resolveMpappRuntimeConfig(
       extraTransportMode ??
       MpappHidTransportMode.NativeAndroidHid,
     hidTargetHostAddress: envTargetHostAddress ?? extraTargetHostAddress ?? null,
+    screenId: envScreenId ?? extraScreenId ?? null,
   };
 }

@@ -13,12 +13,28 @@
 - App engineers and release operators maintaining mobile behavior
 
 ## Interfaces and Contracts
-- Route and screen identifiers must remain stable for shared navigation logic.
+- Stable screen identifier contract:
+  - `main-console`
+- Stable route/deep-link contract:
+  - `main-console` -> route path `/main`, deep-link path `main`
+- Unknown screen identifiers must safely fall back to `main-console`.
 - Platform capability contracts (including Bluetooth permissions) must be explicitly documented.
+- Android permission contract for Bluetooth HID workflow:
+  - `android.permission.BLUETOOTH_CONNECT`
+  - `android.permission.BLUETOOTH_SCAN`
 - App-level server-state integration should prefer React Query patterns when available.
 
 ## Storage
-- Defines local storage contracts for user preferences and app session state.
+- Input preference storage key: `mpapp.input-preferences.v1`.
+- Session snapshot storage key: `mpapp.session-snapshot.v1`.
+- Session snapshot contract stores only:
+  - `lastConnectionEvent`
+  - `lastDisconnectReason`
+  - `errorCode`
+  - `errorMessage`
+  - `updatedAt`
+- Session snapshot restore must always start in `Idle` mode and only hydrate metadata (no auto-reconnect).
+- Diagnostics storage key: `mpapp.diagnostics.v1` with ring-buffer retention limit `300`.
 - Device-side cache behavior and retention must remain explicit and bounded.
 
 ## Security
@@ -37,6 +53,7 @@
 ## Dependencies and Integrations
 - Integrates with mobile platform APIs and backend services through documented contracts.
 - Aligns UX/UI decisions with Toss Design Guidelines.
+- Native Android HID integration uses `apps/mpapp/modules/mpapp-android-hid`.
 
 ## Change Triggers
 - Update `docs/project-mpapp.md` and this file when app architecture, permissions, or route contracts change.

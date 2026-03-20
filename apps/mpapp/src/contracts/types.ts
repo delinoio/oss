@@ -2,6 +2,8 @@ import {
   MpappActionType,
   MpappBluetoothAvailabilityState,
   MpappClickButton,
+  MpappConnectionEvent,
+  MpappDisconnectReason,
   MpappErrorCode,
   MpappInputAction,
   MpappLogEventFamily,
@@ -73,4 +75,12 @@ export type MpappLogEvent = {
   osVersion: string;
   timestampMs: number;
   payload: Record<string, unknown>;
+};
+
+export type MpappSessionSnapshot = {
+  lastConnectionEvent: MpappConnectionEvent | null;
+  lastDisconnectReason: MpappDisconnectReason | null;
+  errorCode: MpappErrorCode | null;
+  errorMessage: string | null;
+  updatedAt: number;
 };
