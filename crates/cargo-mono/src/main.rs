@@ -24,7 +24,7 @@ fn main() {
 
 fn run() -> Result<i32, CargoMonoError> {
     let cli = cli::parse_from_env();
-    commands::log_invocation(&cli.command, cli.output);
+    commands::log_invocation(&cli.command, cli.output, cli.color);
     run_preflight_checks(&cli)?;
     let app = CargoMonoApp::new()?;
     commands::execute(cli, &app)

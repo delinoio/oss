@@ -2,8 +2,10 @@ use serde::Serialize;
 use tracing::info;
 
 use crate::{
-    cli::ChangedArgs, commands::print_output, errors::Result, git, types::OutputFormat,
-    CargoMonoApp,
+    cli::ChangedArgs,
+    commands::{print_output, OutputSettings},
+    errors::Result,
+    git, CargoMonoApp,
 };
 
 #[derive(Debug, Serialize)]
@@ -17,7 +19,7 @@ struct ChangedResult {
     packages: Vec<String>,
 }
 
-pub fn execute(args: &ChangedArgs, output: OutputFormat, app: &CargoMonoApp) -> Result<i32> {
+pub fn execute(args: &ChangedArgs, output: OutputSettings, app: &CargoMonoApp) -> Result<i32> {
     let changed_files = git::changed_files(&args.base, args.include_uncommitted)?;
     let changed_packages = app
         .workspace

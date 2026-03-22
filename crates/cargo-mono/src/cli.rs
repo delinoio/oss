@@ -5,7 +5,7 @@ use std::{
 
 use clap::{ArgAction, Args, Parser, Subcommand};
 
-use crate::types::{BumpLevel, OutputFormat};
+use crate::types::{BumpLevel, OutputColorMode, OutputFormat};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -18,6 +18,9 @@ pub struct Cli {
     /// Output format for command results.
     #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Human)]
     pub output: OutputFormat,
+    /// Color mode for human output.
+    #[arg(long, global = true, value_enum)]
+    pub color: Option<OutputColorMode>,
 
     #[command(subcommand)]
     pub command: Command,

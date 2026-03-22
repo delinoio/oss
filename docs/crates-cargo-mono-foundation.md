@@ -16,6 +16,12 @@
 - Binary naming contract: `cargo-mono` must remain compatible with `cargo mono` invocation.
 - Command identifiers for lifecycle operations must remain stable and documented.
 - Publish and bump workflows must preserve scriptable output contracts for automation.
+- Human-output color contract:
+  - Global CLI flag: `--color <auto|always|never>`.
+  - Environment override: `CARGO_MONO_OUTPUT_COLOR=auto|always|never`.
+  - Global opt-out: `NO_COLOR`.
+  - Precedence: `--color` > `CARGO_MONO_OUTPUT_COLOR` > `NO_COLOR` > auto-detection.
+- Machine-readable contract: JSON output must remain ANSI-free and schema-stable regardless of color settings.
 
 ## Storage
 - Uses workspace metadata and package manifests as canonical input.
@@ -28,6 +34,7 @@
 ## Logging
 - Use structured `tracing` logs for release automation operations.
 - Include command phase, package target, and outcome status for debugging.
+- Keep `CARGO_MONO_LOG_COLOR` semantics scoped to structured log rendering (separate from human result-output color controls).
 
 ## Error UX Contract
 - Runtime errors must use a fixed three-line format:
@@ -39,6 +46,7 @@
 - Dependency-cycle conflicts from package ordering must include `selected_count`, `selected_sample`, `unresolved_count`, `unresolved_sample`, `cycle_package_count`, `cycle_packages`, and `dependency_scope=all-cargo-metadata-kinds`.
 - Cargo metadata load failures must include `working_directory` and `metadata_command` context keys in addition to the underlying `error` details.
 - Human stderr must include stable error kind labels while preserving the existing exit-code mapping contract.
+- Publish failure summaries must prefer actionable `details_excerpt` content in this order: first `error:` line, then first `failed to ...` line, then first non-empty line.
 - Error messaging improvements must not change CLI command behavior or JSON output schema keys.
 - Error and log output must not expose secret credentials or registry tokens.
 
