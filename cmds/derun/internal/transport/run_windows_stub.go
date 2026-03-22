@@ -15,5 +15,5 @@ func RunPosixPTY(
 	_ func(pid int) error,
 	_ io.Writer,
 ) (RunResult, error) {
-	return RunResult{}, errors.New("posix pty mode is unsupported on windows")
+	return RunResult{}, errors.New("failed to run posix pty mode: unsupported on windows")
 }

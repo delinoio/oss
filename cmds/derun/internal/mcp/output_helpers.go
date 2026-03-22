@@ -19,7 +19,7 @@ type outputPayloadOptions struct {
 func parseRequiredSessionID(args map[string]any) (string, error) {
 	sessionID, ok := args["session_id"].(string)
 	if !ok || sessionID == "" {
-		return "", fmt.Errorf("session_id is required")
+		return "", requiredFieldError("session_id", "a non-empty string")
 	}
 	return sessionID, nil
 }
@@ -28,7 +28,7 @@ func parseCursor(args map[string]any, required bool) (uint64, error) {
 	rawCursor, exists := args["cursor"]
 	if !exists {
 		if required {
-			return 0, fmt.Errorf("cursor is required")
+			return 0, requiredFieldError("cursor", "a non-empty decimal string")
 		}
 		return 0, nil
 	}
@@ -36,7 +36,7 @@ func parseCursor(args map[string]any, required bool) (uint64, error) {
 	cursorString, ok := rawCursor.(string)
 	if !ok || cursorString == "" {
 		if required {
-			return 0, fmt.Errorf("cursor is required")
+			return 0, requiredFieldError("cursor", "a non-empty decimal string")
 		}
 		return 0, nil
 	}

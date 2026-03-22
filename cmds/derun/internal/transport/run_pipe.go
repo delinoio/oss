@@ -22,7 +22,7 @@ func RunPipe(
 	stderr io.Writer,
 ) (RunResult, error) {
 	if len(command) == 0 {
-		return RunResult{}, fmt.Errorf("command is empty")
+		return RunResult{}, fmt.Errorf("failed to run command: command is empty")
 	}
 
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
@@ -31,15 +31,15 @@ func RunPipe(
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		return RunResult{}, fmt.Errorf("create stdout pipe: %w", err)
+		return RunResult{}, fmt.Errorf("failed to create stdout pipe: %w", err)
 	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
-		return RunResult{}, fmt.Errorf("create stderr pipe: %w", err)
+		return RunResult{}, fmt.Errorf("failed to create stderr pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		return RunResult{}, fmt.Errorf("start process: %w", err)
+		return RunResult{}, fmt.Errorf("failed to start process: %w", err)
 	}
 
 	// Install forwarding handlers immediately after process start so SIGINT/SIGTERM
@@ -94,13 +94,13 @@ func RunPipe(
 	close(copyErr)
 	for err := range copyErr {
 		if err != nil {
-			return RunResult{}, fmt.Errorf("copy process output: %w", err)
+			return RunResult{}, fmt.Errorf("failed to copy process output: %w", err)
 		}
 	}
 
 	result, err := decodeExit(waitErr)
 	if err != nil {
-		return RunResult{}, fmt.Errorf("wait for process: %w", err)
+		return RunResult{}, fmt.Errorf("failed to wait for process: %w", err)
 	}
 	return result, nil
 }

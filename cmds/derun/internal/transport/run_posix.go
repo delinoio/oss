@@ -24,7 +24,7 @@ func RunPosixPTY(
 	ptyOutput io.Writer,
 ) (RunResult, error) {
 	if len(command) == 0 {
-		return RunResult{}, fmt.Errorf("command is empty")
+		return RunResult{}, fmt.Errorf("failed to run command: command is empty")
 	}
 
 	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
@@ -32,7 +32,7 @@ func RunPosixPTY(
 
 	ptmx, err := pty.Start(cmd)
 	if err != nil {
-		return RunResult{}, fmt.Errorf("start pty process: %w", err)
+		return RunResult{}, fmt.Errorf("failed to start pty process: %w", err)
 	}
 	defer func() { _ = ptmx.Close() }()
 
@@ -45,7 +45,7 @@ func RunPosixPTY(
 	}
 
 	if err := pty.InheritSize(os.Stdin, ptmx); err != nil {
-		return RunResult{}, fmt.Errorf("inherit pty size: %w", err)
+		return RunResult{}, fmt.Errorf("failed to inherit pty size: %w", err)
 	}
 
 	resize := make(chan os.Signal, 1)
@@ -87,11 +87,11 @@ func RunPosixPTY(
 	}()
 
 	if _, err := io.Copy(ptyOutput, ptmx); err != nil && !isBenignPTYOutputErr(err) {
-		return RunResult{}, fmt.Errorf("copy pty output: %w", err)
+		return RunResult{}, fmt.Errorf("failed to copy pty output: %w", err)
 	}
 	result, err := decodeExit(cmd.Wait())
 	if err != nil {
-		return RunResult{}, fmt.Errorf("wait for pty process: %w", err)
+		return RunResult{}, fmt.Errorf("failed to wait for pty process: %w", err)
 	}
 	return result, nil
 }

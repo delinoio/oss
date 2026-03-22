@@ -88,7 +88,13 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 
 		var req rpcRequest
 		if err := json.Unmarshal(body, &req); err != nil {
-			if err := s.writeResponse(out, rpcResponse{JSONRPC: "2.0", Error: &rpcError{Code: -32700, Message: "invalid json"}}); err != nil {
+			if err := s.writeResponse(out, rpcResponse{
+				JSONRPC: "2.0",
+				Error: &rpcError{
+					Code:    -32700,
+					Message: formatUsageError("invalid json", "send a valid JSON-RPC request body"),
+				},
+			}); err != nil {
 				return err
 			}
 			continue
@@ -99,7 +105,14 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		}
 		if req.Method == "" {
 			if req.ID != nil {
-				if err := s.writeResponse(out, rpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{Code: -32600, Message: "missing method"}}); err != nil {
+				if err := s.writeResponse(out, rpcResponse{
+					JSONRPC: "2.0",
+					ID:      req.ID,
+					Error: &rpcError{
+						Code:    -32600,
+						Message: formatUsageError("missing method", `set the JSON-RPC "method" field`),
+					},
+				}); err != nil {
 					return err
 				}
 			}
@@ -144,7 +157,10 @@ func (s *Server) handleRequest(req rpcRequest) rpcResponse {
 	case "tools/call":
 		var params toolCallParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
-			response.Error = &rpcError{Code: -32602, Message: "invalid tools/call params"}
+			response.Error = &rpcError{
+				Code:    -32602,
+				Message: formatUsageError("invalid tools/call params", `provide {"name":"<tool>", "arguments":{...}}`),
+			}
 			return response
 		}
 		payload, err := s.callTool(params.Name, params.Arguments)
@@ -163,7 +179,10 @@ func (s *Server) handleRequest(req rpcRequest) rpcResponse {
 		}
 		return response
 	default:
-		response.Error = &rpcError{Code: -32601, Message: "method not found"}
+		response.Error = &rpcError{
+			Code:    -32601,
+			Message: formatUsageError(fmt.Sprintf("method not found %q", req.Method), "call initialize, ping, tools/list, or tools/call"),
+		}
 		return response
 	}
 }
@@ -182,24 +201,24 @@ func (s *Server) callTool(name contracts.DerunMCPTool, args map[string]any) (map
 	case contracts.DerunMCPToolWaitOutput:
 		return handleWaitOutput(s.store, args)
 	default:
-		return nil, fmt.Errorf("unknown tool: %s", name)
+		return nil, fmt.Errorf("%s", formatUsageError(fmt.Sprintf("unknown tool %q", name), "call tools/list to discover supported tool names"))
 	}
 }
 
 func (s *Server) writeResponse(out io.Writer, resp rpcResponse) error {
 	body, err := json.Marshal(resp)
 	if err != nil {
-		return fmt.Errorf("marshal response: %w", err)
+		return wrapRuntimeError("marshal response", err)
 	}
 	frame := fmt.Sprintf("Content-Length: %d\r\n\r\n", len(body))
 
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	if _, err := io.WriteString(out, frame); err != nil {
-		return fmt.Errorf("write response header: %w", err)
+		return wrapRuntimeError("write response header", err)
 	}
 	if _, err := out.Write(body); err != nil {
-		return fmt.Errorf("write response body: %w", err)
+		return wrapRuntimeError("write response body", err)
 	}
 	return nil
 }
@@ -224,17 +243,17 @@ func readFrame(reader *bufio.Reader) ([]byte, error) {
 		if strings.EqualFold(key, "Content-Length") {
 			n, err := strconv.Atoi(value)
 			if err != nil {
-				return nil, fmt.Errorf("invalid content length: %w", err)
+				return nil, fmt.Errorf("parse content length: %w", err)
 			}
 			contentLength = n
 		}
 	}
 	if contentLength < 0 {
-		return nil, fmt.Errorf("missing content length header")
+		return nil, fmt.Errorf("%s", formatUsageError("missing content length header", `include "Content-Length: <bytes>" in the request frame`))
 	}
 	body := make([]byte, contentLength)
 	if _, err := io.ReadFull(reader, body); err != nil {
-		return nil, fmt.Errorf("read request body: %w", err)
+		return nil, wrapRuntimeError("read request body", err)
 	}
 	return body, nil
 }

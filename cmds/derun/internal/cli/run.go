@@ -83,10 +83,10 @@ func selectTransportMode(ttyAttached bool, goos string) contracts.DerunTransport
 
 func validateRetentionDuration(retentionDuration time.Duration) error {
 	if retentionDuration <= 0 {
-		return errors.New("retention must be positive")
+		return errors.New(formatUsageError("retention must be positive", "use values like 1s, 5m, or 24h"))
 	}
 	if retentionDuration%time.Second != 0 {
-		return errors.New("retention must be a whole number of seconds (for example: 1s, 30s, 5m)")
+		return errors.New(formatUsageError("retention must use whole-second precision", "use values like 1s, 30s, or 5m"))
 	}
 	return nil
 }

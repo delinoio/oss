@@ -16,6 +16,15 @@
 - Command identifiers and flags must remain stable for automation clients.
 - Streaming output contract must preserve terminal ordering and ANSI behavior.
 - MCP output bridge payloads must remain parseable and backward compatible.
+- User-facing error messages must remain single-line and follow stable style contracts:
+  - Usage/validation: `invalid arguments: <reason>; hint: <how to fix>`
+  - Runtime: `failed to <action>: <cause>`
+  - Parse failures: `parse <field>: <cause>`
+- Compatibility-critical error tokens must remain present for automation consumers:
+  - `session not found`
+  - `parse <field>`
+  - `session_id is required`
+  - `cursor is required`
 
 ## Storage
 - Uses transient run outputs and temporary process metadata.
