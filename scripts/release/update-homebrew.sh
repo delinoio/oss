@@ -11,14 +11,29 @@ Usage:
     --project <nodeup|derun|dexdex-main-server|dexdex-worker-server|dexdex> \
     --version <semver> \
     [--source-url <url>] [--source-sha256 <sha>] \
+    [--darwin-amd64-url <url>] [--darwin-amd64-sha256 <sha>] \
+    [--darwin-arm64-url <url>] [--darwin-arm64-sha256 <sha>] \
+    [--linux-amd64-url <url>] [--linux-amd64-sha256 <sha>] \
     [--desktop-url <url>] [--desktop-sha256 <sha>] \
     [--tap-repo <owner/repo>] [--dry-run]
 
 Options:
   --project <id>         Package identifier.
   --version <semver>     Release version without v-prefix.
-  --source-url <url>     Source tarball URL (formula projects).
-  --source-sha256 <sha>  Source tarball SHA256 (formula projects).
+  --source-url <url>     Source tarball URL (nodeup/dexdex-* formula projects).
+  --source-sha256 <sha>  Source tarball SHA256 (nodeup/dexdex-* formula projects).
+  --darwin-amd64-url <url>
+                         derun darwin amd64 prebuilt artifact URL.
+  --darwin-amd64-sha256 <sha>
+                         derun darwin amd64 prebuilt artifact SHA256.
+  --darwin-arm64-url <url>
+                         derun darwin arm64 prebuilt artifact URL.
+  --darwin-arm64-sha256 <sha>
+                         derun darwin arm64 prebuilt artifact SHA256.
+  --linux-amd64-url <url>
+                         derun linux amd64 prebuilt artifact URL.
+  --linux-amd64-sha256 <sha>
+                         derun linux amd64 prebuilt artifact SHA256.
   --desktop-url <url>    Desktop installer URL (dexdex cask).
   --desktop-sha256 <sha> Desktop installer SHA256 (dexdex cask).
   --tap-repo <repo>      Homebrew tap repository (default: delinoio/homebrew-tap).
@@ -30,6 +45,12 @@ project=""
 version=""
 source_url=""
 source_sha256=""
+darwin_amd64_url=""
+darwin_amd64_sha256=""
+darwin_arm64_url=""
+darwin_arm64_sha256=""
+linux_amd64_url=""
+linux_amd64_sha256=""
 desktop_url=""
 desktop_sha256=""
 tap_repo="delinoio/homebrew-tap"
@@ -51,6 +72,30 @@ while [ "$#" -gt 0 ]; do
       ;;
     --source-sha256)
       source_sha256="${2:-}"
+      shift 2
+      ;;
+    --darwin-amd64-url)
+      darwin_amd64_url="${2:-}"
+      shift 2
+      ;;
+    --darwin-amd64-sha256)
+      darwin_amd64_sha256="${2:-}"
+      shift 2
+      ;;
+    --darwin-arm64-url)
+      darwin_arm64_url="${2:-}"
+      shift 2
+      ;;
+    --darwin-arm64-sha256)
+      darwin_arm64_sha256="${2:-}"
+      shift 2
+      ;;
+    --linux-amd64-url)
+      linux_amd64_url="${2:-}"
+      shift 2
+      ;;
+    --linux-amd64-sha256)
+      linux_amd64_sha256="${2:-}"
       shift 2
       ;;
     --desktop-url)
@@ -93,9 +138,9 @@ rendered_file=""
 destination_path=""
 
 case "$project" in
-  nodeup|derun|dexdex-main-server|dexdex-worker-server)
+  nodeup|dexdex-main-server|dexdex-worker-server)
     if [ -z "$source_url" ] || [ -z "$source_sha256" ]; then
-      echo "[release.homebrew] formula projects require --source-url and --source-sha256" >&2
+      echo "[release.homebrew] $project requires --source-url and --source-sha256" >&2
       exit 1
     fi
 
@@ -111,6 +156,31 @@ case "$project" in
     sed \
       -e "s|__SOURCE_URL__|$source_url|g" \
       -e "s|__SOURCE_SHA256__|$source_sha256|g" \
+      -e "s|__VERSION__|$version|g" \
+      "$template_path" >"$rendered_file"
+    ;;
+  derun)
+    if [ -z "$darwin_amd64_url" ] || [ -z "$darwin_amd64_sha256" ] || [ -z "$darwin_arm64_url" ] || [ -z "$darwin_arm64_sha256" ] || [ -z "$linux_amd64_url" ] || [ -z "$linux_amd64_sha256" ]; then
+      echo "[release.homebrew] derun requires all prebuilt artifact URL/SHA pairs for darwin-amd64, darwin-arm64, and linux-amd64" >&2
+      exit 1
+    fi
+
+    template_path="$repo_root/packaging/homebrew/templates/derun.rb.tmpl"
+    destination_path="Formula/derun.rb"
+
+    if [ ! -f "$template_path" ]; then
+      echo "[release.homebrew] template not found: $template_path" >&2
+      exit 1
+    fi
+
+    rendered_file="$(mktemp)"
+    sed \
+      -e "s|__DARWIN_AMD64_URL__|$darwin_amd64_url|g" \
+      -e "s|__DARWIN_AMD64_SHA256__|$darwin_amd64_sha256|g" \
+      -e "s|__DARWIN_ARM64_URL__|$darwin_arm64_url|g" \
+      -e "s|__DARWIN_ARM64_SHA256__|$darwin_arm64_sha256|g" \
+      -e "s|__LINUX_AMD64_URL__|$linux_amd64_url|g" \
+      -e "s|__LINUX_AMD64_SHA256__|$linux_amd64_sha256|g" \
       -e "s|__VERSION__|$version|g" \
       "$template_path" >"$rendered_file"
     ;;

@@ -309,7 +309,7 @@ Release automation baseline:
 - Distribution contract: publishes signed multi-OS nodeup release artifacts, updates Homebrew (`nodeup`), and updates winget (`DelinoIO.Nodeup`).
 - `release-derun` is defined in `.github/workflows/release-derun.yml`.
 - Trigger contract: runs on tag push `derun@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
-- Distribution contract: publishes signed multi-OS derun release artifacts, updates Homebrew (`derun`), and updates winget (`DelinoIO.Derun`).
+- Distribution contract: publishes signed multi-OS derun release artifacts, updates Homebrew (`derun`) from GitHub release prebuilt archives (`darwin-amd64`, `darwin-arm64`, `linux-amd64`), and updates winget (`DelinoIO.Derun`) from the Windows prebuilt archive.
 - `release-dexdex` is defined in `.github/workflows/release-dexdex.yml`.
 - Trigger contract: runs on tag push `dexdex@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed DexDex desktop + main/worker server artifacts, applies desktop signing/notarization secrets, updates Homebrew (`dexdex`, `dexdex-main-server`, `dexdex-worker-server`), and updates winget (`DelinoIO.DexDex`, `DelinoIO.DexDexMainServer`, `DelinoIO.DexDexWorkerServer`).
