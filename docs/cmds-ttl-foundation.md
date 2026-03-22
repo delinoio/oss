@@ -35,7 +35,10 @@
 ## Error Message Quality Contract
 - User-facing command failures (`stderr`, JSON `diagnostics`, and bubbled command errors) must use centralized templates from `cmds/ttlc/internal/messages`.
 - Templates must be addressed via stable enum-like IDs and formatted through shared builders, not ad-hoc string literals.
-- Message wording must include enough context to act (problem target + expected shape + next-step hint when relevant).
+- Message wording must include enough context to act (problem target + expected shape + actual safe metadata + next-step hint when relevant).
+- Command/runtime failures must preserve root-cause error chains (`%w`) while keeping the top-level message actionable.
+- `run --args` diagnostics must report JSON root shape and trailing-token context using type-only metadata (for example: `object`, `array`, `null`) rather than raw argument values.
+- Run-argument type diagnostics must include argument path (including nested object fields) plus `expected` vs `actual` type summaries.
 - Error/diagnostic text must avoid exposing sensitive runtime argument values by default.
 
 ## Build and Test

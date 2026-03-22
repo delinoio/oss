@@ -10,6 +10,7 @@ import (
 )
 
 const defaultCacheRelativePath = ".ttl/cache/cache.sqlite3"
+const maxSymlinkDepth = 64
 
 type Paths struct {
 	WorkspaceRoot string
@@ -30,7 +31,7 @@ func ResolvePaths(cwd string, entryPath string, outDir string) (Paths, error) {
 
 	workspaceRoot, err := resolvePathWithSymlinks(cwd)
 	if err != nil {
-		return Paths{}, messages.WrapError(messages.ErrorResolveWorkspaceRoot, err)
+		return Paths{}, messages.WrapError(messages.ErrorResolveWorkspaceRoot, err, cwd)
 	}
 
 	entryCandidate := entryPath
@@ -39,13 +40,13 @@ func ResolvePaths(cwd string, entryPath string, outDir string) (Paths, error) {
 	}
 	entryResolved, err := resolvePathWithSymlinks(entryCandidate)
 	if err != nil {
-		return Paths{}, messages.WrapError(messages.ErrorResolveEntryPath, err, entryPath)
+		return Paths{}, messages.WrapError(messages.ErrorResolveEntryPath, err, entryPath, workspaceRoot)
 	}
 	if !isWithinPath(workspaceRoot, entryResolved) {
-		return Paths{}, messages.NewError(messages.ErrorEntryEscapesWorkspace, entryPath)
+		return Paths{}, messages.NewError(messages.ErrorEntryEscapesWorkspace, entryPath, workspaceRoot)
 	}
 	if strings.ToLower(filepath.Ext(entryResolved)) != ".ttl" {
-		return Paths{}, messages.NewError(messages.ErrorEntryFileExtension, entryPath)
+		return Paths{}, messages.NewError(messages.ErrorEntryFileExtension, entryPath, filepath.Ext(entryResolved))
 	}
 
 	outDirCandidate := outDir
@@ -54,19 +55,19 @@ func ResolvePaths(cwd string, entryPath string, outDir string) (Paths, error) {
 	}
 	outDirResolved, err := resolvePathWithSymlinks(outDirCandidate)
 	if err != nil {
-		return Paths{}, messages.WrapError(messages.ErrorResolveOutDirPath, err, outDir)
+		return Paths{}, messages.WrapError(messages.ErrorResolveOutDirPath, err, outDir, workspaceRoot)
 	}
 	if !isWithinPath(workspaceRoot, outDirResolved) {
-		return Paths{}, messages.NewError(messages.ErrorOutDirEscapesWorkspace, outDir)
+		return Paths{}, messages.NewError(messages.ErrorOutDirEscapesWorkspace, outDir, workspaceRoot)
 	}
 
 	cacheDBCandidate := filepath.Join(workspaceRoot, defaultCacheRelativePath)
 	cacheDBResolved, err := resolvePathWithSymlinks(cacheDBCandidate)
 	if err != nil {
-		return Paths{}, messages.WrapError(messages.ErrorResolveCacheDBPath, err)
+		return Paths{}, messages.WrapError(messages.ErrorResolveCacheDBPath, err, cacheDBCandidate)
 	}
 	if !isWithinPath(workspaceRoot, cacheDBResolved) {
-		return Paths{}, messages.NewError(messages.ErrorCacheDBEscapesWorkspace, cacheDBResolved)
+		return Paths{}, messages.NewError(messages.ErrorCacheDBEscapesWorkspace, cacheDBResolved, workspaceRoot)
 	}
 
 	return Paths{
@@ -83,8 +84,8 @@ func resolvePathWithSymlinks(path string) (string, error) {
 }
 
 func resolvePathWithSymlinksAtDepth(path string, depth int) (string, error) {
-	if depth > 64 {
-		return "", messages.NewError(messages.ErrorSymlinkDepthExceeded, path)
+	if depth > maxSymlinkDepth {
+		return "", messages.NewError(messages.ErrorSymlinkDepthExceeded, path, maxSymlinkDepth)
 	}
 
 	absolutePath, err := filepath.Abs(path)
@@ -155,14 +156,14 @@ func ResolveImportPath(workspaceRoot string, currentFilePath string, importPath 
 
 	resolved, err := resolvePathWithSymlinks(candidate)
 	if err != nil {
-		return "", messages.WrapError(messages.ErrorResolveImportPath, err, importPath)
+		return "", messages.WrapError(messages.ErrorResolveImportPath, err, importPath, currentFilePath)
 	}
 	resolvedRoot, err := resolvePathWithSymlinks(workspaceRoot)
 	if err != nil {
-		return "", messages.WrapError(messages.ErrorResolveImportWorkspaceRoot, err)
+		return "", messages.WrapError(messages.ErrorResolveImportWorkspaceRoot, err, workspaceRoot)
 	}
 	if !isWithinPath(resolvedRoot, resolved) {
-		return "", messages.NewError(messages.ErrorImportEscapesWorkspace, importPath)
+		return "", messages.NewError(messages.ErrorImportEscapesWorkspace, importPath, resolvedRoot)
 	}
 	return resolved, nil
 }

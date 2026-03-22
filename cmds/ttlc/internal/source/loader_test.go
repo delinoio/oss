@@ -39,7 +39,7 @@ func TestResolvePathsRejectsNonTtlEntry(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected extension validation error")
 	}
-	if !strings.Contains(err.Error(), messages.FormatError(messages.ErrorEntryFileExtension, "./main.txt")) {
+	if !strings.Contains(err.Error(), messages.FormatError(messages.ErrorEntryFileExtension, "./main.txt", ".txt")) {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }
@@ -59,7 +59,11 @@ func TestResolvePathsRejectsWorkspaceEscape(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected workspace escape error")
 	}
-	if !strings.Contains(err.Error(), messages.FormatError(messages.ErrorEntryEscapesWorkspace, "../outside.ttl")) {
+	resolvedWorkspace, resolveErr := filepath.EvalSymlinks(workspace)
+	if resolveErr != nil {
+		t.Fatalf("resolve workspace symlink: %v", resolveErr)
+	}
+	if !strings.Contains(err.Error(), messages.FormatError(messages.ErrorEntryEscapesWorkspace, "../outside.ttl", resolvedWorkspace)) {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }
@@ -117,7 +121,11 @@ func TestResolveImportPathRejectsEscape(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected workspace escape error")
 	}
-	if !strings.Contains(err.Error(), messages.FormatError(messages.ErrorImportEscapesWorkspace, "../evil.ttl")) {
+	resolvedWorkspace, resolveErr := filepath.EvalSymlinks(workspace)
+	if resolveErr != nil {
+		t.Fatalf("resolve workspace symlink: %v", resolveErr)
+	}
+	if !strings.Contains(err.Error(), messages.FormatError(messages.ErrorImportEscapesWorkspace, "../evil.ttl", resolvedWorkspace)) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

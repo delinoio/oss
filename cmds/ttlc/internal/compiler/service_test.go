@@ -571,7 +571,7 @@ task func Build(target string) Vc[Artifact] {
 		}
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "target", "string") {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "target", "target", "string", "integer") {
 				foundTypeMismatch = true
 				break
 			}
@@ -690,7 +690,7 @@ task func Build(count int) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "count", "int") {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "count", "count", "int", "number") {
 				foundTypeMismatch = true
 				break
 			}
@@ -736,7 +736,7 @@ task func Build(count int) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "count", "int") {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "count", "count", "int", "string") {
 				foundTypeMismatch = true
 				break
 			}
@@ -782,7 +782,7 @@ task func Build(count int8) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "count", "int8") {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "count", "count", "int8", "number(integer)") {
 				foundTypeMismatch = true
 				break
 			}
@@ -828,7 +828,7 @@ task func Build(input Artifact) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "input", "Artifact") {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "input", "input", "object(Artifact)", "string") {
 				foundTypeMismatch = true
 				break
 			}
@@ -888,7 +888,7 @@ task func Build(input Node) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "input", "Node") {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "input", "input.Next.Name", "string", "number(integer)") {
 				foundTypeMismatch = true
 				break
 			}
@@ -937,7 +937,7 @@ task func Build(value float32) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "value", "float32") {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "value", "value", "float32", "number") {
 				foundTypeMismatch = true
 				break
 			}
@@ -983,7 +983,7 @@ task func Build(value float32) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "value", "float32") {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "value", "value", "float32", "integer") {
 				foundTypeMismatch = true
 				break
 			}
