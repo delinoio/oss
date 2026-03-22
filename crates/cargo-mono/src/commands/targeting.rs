@@ -48,9 +48,19 @@ pub fn resolve_targets(
             .collect::<Vec<_>>();
 
         if !missing.is_empty() {
-            return Err(CargoMonoError::with_hint(
+            let requested = names.iter().cloned().collect::<Vec<_>>();
+            return Err(CargoMonoError::with_details(
                 ErrorKind::InvalidInput,
-                format!("Unknown package selector(s): {}", missing.join(", ")),
+                "Unknown package selector(s).",
+                vec![
+                    ("requested_packages", requested.join(",")),
+                    ("missing_packages", missing.join(",")),
+                    ("selected_count", requested.len().to_string()),
+                    (
+                        "workspace_package_count",
+                        workspace.all_package_names().len().to_string(),
+                    ),
+                ],
                 "Run `cargo mono list` to view valid workspace package names.",
             ));
         }

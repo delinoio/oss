@@ -87,6 +87,7 @@ fn list_still_requires_workspace() {
         .stderr(predicate::str::contains(
             "Failed to load workspace metadata via cargo",
         ))
+        .stderr(predicate::str::contains("Context: error="))
         .stderr(predicate::str::contains("Hint: "));
 }
 
@@ -253,6 +254,8 @@ fn bump_fails_on_preexisting_dirty_tree_without_allow_dirty() {
         .stderr(predicate::str::contains(
             "Working tree is dirty and cannot pass preflight checks.",
         ))
+        .stderr(predicate::str::contains("dirty_entry_count=1"))
+        .stderr(predicate::str::contains("dirty_sample=?? scratch.txt"))
         .stderr(predicate::str::contains(
             "Hint: Commit or stash local changes, or rerun with `--allow-dirty`",
         ));
@@ -281,6 +284,8 @@ fn publish_fails_on_preexisting_dirty_tree_without_allow_dirty() {
         .stderr(predicate::str::contains(
             "Working tree is dirty and cannot pass preflight checks.",
         ))
+        .stderr(predicate::str::contains("dirty_entry_count=1"))
+        .stderr(predicate::str::contains("dirty_sample=?? scratch.txt"))
         .stderr(predicate::str::contains(
             "Hint: Commit or stash local changes, or rerun with `--allow-dirty`",
         ));
@@ -464,7 +469,9 @@ fn changed_rejects_invalid_include_path_pattern() {
         .assert()
         .failure()
         .code(2)
-        .stderr(predicate::str::contains("Invalid --include-path pattern"));
+        .stderr(predicate::str::contains("Invalid path filter pattern."))
+        .stderr(predicate::str::contains("flag=--include-path"))
+        .stderr(predicate::str::contains("pattern=["));
 }
 
 #[test]
@@ -634,9 +641,9 @@ fn publish_rejects_unknown_packages() {
         .assert()
         .failure()
         .code(2)
-        .stderr(predicate::str::contains(
-            "Unknown package selector(s): unknown",
-        ))
+        .stderr(predicate::str::contains("Unknown package selector(s)."))
+        .stderr(predicate::str::contains("missing_packages=unknown"))
+        .stderr(predicate::str::contains("requested_packages=unknown"))
         .stderr(predicate::str::contains("Hint: Run `cargo mono list`"));
 }
 

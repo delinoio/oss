@@ -17,7 +17,7 @@ use tracing::{info, warn};
 use crate::{
     cli::PublishArgs,
     commands::{print_output, targeting},
-    errors::{message_with_hint, CargoMonoError, ErrorKind, Result},
+    errors::{message_with_details, CargoMonoError, ErrorKind, Result},
     types::{OutputFormat, PublishSkipReason},
     workspace::Workspace,
     CargoMonoApp,
@@ -324,8 +324,11 @@ pub fn execute(args: &PublishArgs, output: OutputFormat, app: &CargoMonoApp) -> 
                         attempts,
                         error: format_publish_failure(
                             &package_name,
+                            attempts,
                             &publish_output.status.to_string(),
                             &details,
+                            args.dry_run,
+                            args.registry.as_deref(),
                         ),
                     });
                     published_or_skipped = true;
@@ -338,7 +341,12 @@ pub fn execute(args: &PublishArgs, output: OutputFormat, app: &CargoMonoApp) -> 
             failed.push(FailedPackage {
                 name: package_name.clone(),
                 attempts,
-                error: format_publish_retry_limit_failure(&package_name, attempts),
+                error: format_publish_retry_limit_failure(
+                    &package_name,
+                    attempts,
+                    args.dry_run,
+                    args.registry.as_deref(),
+                ),
             });
         }
     }
@@ -390,9 +398,10 @@ pub fn execute(args: &PublishArgs, output: OutputFormat, app: &CargoMonoApp) -> 
 
     for item in &result.failed {
         human_lines.push(format!(
-            "- failed {} (attempts={}): {}",
-            item.name, item.attempts, item.error
+            "- failed {} (attempts={}):",
+            item.name, item.attempts
         ));
+        human_lines.push(indent_multiline(&item.error, "  "));
     }
 
     print_output(output, &human_lines.join("\n"), &result)?;
@@ -852,39 +861,76 @@ fn run_publish_command(package: &str, dry_run: bool, registry: Option<&str>) -> 
     }
 
     command.output().map_err(|error| {
-        CargoMonoError::with_hint(
+        CargoMonoError::with_details(
             ErrorKind::Cargo,
-            format!("Failed to start `cargo publish` for package `{package}`: {error}"),
+            "Failed to start `cargo publish` command.",
+            vec![
+                ("package", package.to_string()),
+                ("dry_run", dry_run.to_string()),
+                ("registry", registry.unwrap_or("default").to_string()),
+                ("error", error.to_string()),
+            ],
             "Ensure Cargo is installed, the package exists, and registry credentials are \
              configured before retrying.",
         )
     })
 }
 
-fn format_publish_failure(package: &str, status: &str, raw_details: &str) -> String {
+fn format_publish_failure(
+    package: &str,
+    attempts: usize,
+    status: &str,
+    raw_details: &str,
+    dry_run: bool,
+    registry: Option<&str>,
+) -> String {
     let details = compact_error_details(raw_details);
-    let summary = if details.is_empty() {
-        format!("`cargo publish` failed for package `{package}` with status {status}.")
-    } else {
-        format!("`cargo publish` failed for package `{package}`: {details}")
-    };
-    message_with_hint(
-        summary,
+    let mut context = vec![
+        ("package", package.to_string()),
+        ("attempt", attempts.to_string()),
+        ("status", status.to_string()),
+        ("dry_run", dry_run.to_string()),
+        ("registry", registry.unwrap_or("default").to_string()),
+    ];
+    if !details.is_empty() {
+        context.push(("details_excerpt", details));
+    }
+
+    message_with_details(
+        "`cargo publish` failed for package.",
+        &context,
         "Verify package metadata, registry access, and network connectivity, then retry.",
     )
 }
 
-fn format_publish_retry_limit_failure(package: &str, attempts: usize) -> String {
-    message_with_hint(
-        format!(
-            "`cargo publish` did not complete for package `{package}` within {attempts} attempts."
-        ),
+fn format_publish_retry_limit_failure(
+    package: &str,
+    attempts: usize,
+    dry_run: bool,
+    registry: Option<&str>,
+) -> String {
+    message_with_details(
+        "`cargo publish` did not complete within retry attempts.",
+        &[
+            ("package", package.to_string()),
+            ("attempts", attempts.to_string()),
+            ("max_attempts", MAX_PUBLISH_ATTEMPTS.to_string()),
+            ("dry_run", dry_run.to_string()),
+            ("registry", registry.unwrap_or("default").to_string()),
+        ],
         "Wait for index propagation or rate limits to clear, then rerun publish.",
     )
 }
 
 fn compact_error_details(raw: &str) -> String {
     raw.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn indent_multiline(raw: &str, prefix: &str) -> String {
+    raw.lines()
+        .map(|line| format!("{prefix}{line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn retry_delay(attempt: usize) -> Duration {
@@ -994,25 +1040,40 @@ mod tests {
 
     #[test]
     fn format_publish_failure_uses_status_when_no_details_exist() {
-        let message = format_publish_failure("alpha", "exit status: 101", "");
-        assert!(message
-            .contains("`cargo publish` failed for package `alpha` with status exit status: 101."));
+        let message =
+            format_publish_failure("alpha", 1, "exit status: 101", "", false, Some("crates-io"));
+        assert!(message.contains("Summary: `cargo publish` failed for package."));
+        assert!(message.contains("package=alpha"));
+        assert!(message.contains("attempt=1"));
+        assert!(message.contains("status=exit status: 101"));
         assert!(message.contains("Hint: "));
     }
 
     #[test]
     fn format_publish_failure_compacts_multiline_details() {
-        let message = format_publish_failure("alpha", "ignored", "error:\nnetwork timeout\n");
-        assert!(
-            message.contains("`cargo publish` failed for package `alpha`: error: network timeout")
+        let message = format_publish_failure(
+            "alpha",
+            2,
+            "exit status: 101",
+            "error:\nnetwork timeout\n",
+            true,
+            None,
         );
+        assert!(message.contains("details_excerpt=error: network timeout"));
+        assert!(message.contains("dry_run=true"));
+        assert!(message.contains("registry=default"));
         assert!(message.contains("Hint: "));
     }
 
     #[test]
     fn format_publish_retry_limit_failure_includes_hint() {
-        let message = format_publish_retry_limit_failure("alpha", 3);
-        assert!(message.contains("within 3 attempts."));
+        let message = format_publish_retry_limit_failure("alpha", 3, false, Some("internal"));
+        assert!(
+            message.contains("Summary: `cargo publish` did not complete within retry attempts.")
+        );
+        assert!(message.contains("attempts=3"));
+        assert!(message.contains("max_attempts=3"));
+        assert!(message.contains("registry=internal"));
         assert!(message.contains("Hint: "));
     }
 

@@ -55,12 +55,14 @@ impl Workspace {
                 .strip_prefix(&root)
                 .map(Path::to_path_buf)
                 .map_err(|error| {
-                CargoMonoError::with_hint(
+                CargoMonoError::with_details(
                     ErrorKind::Internal,
-                    format!(
-                        "Workspace manifest is outside the workspace root: {} ({error})",
-                        manifest_path.display()
-                    ),
+                    "Workspace manifest is outside the workspace root.",
+                    vec![
+                        ("manifest_path", manifest_path.display().to_string()),
+                        ("workspace_root", root.display().to_string()),
+                        ("strip_prefix_error", error.to_string()),
+                    ],
                     "Verify workspace members in `Cargo.toml` and ensure all manifests live under \
                      the workspace root.",
                 )
@@ -68,12 +70,13 @@ impl Workspace {
             let directory = manifest_path
                 .parent()
                 .ok_or_else(|| {
-                    CargoMonoError::with_hint(
+                    CargoMonoError::with_details(
                         ErrorKind::Internal,
-                        format!(
-                            "Failed to resolve package directory from manifest path: {}",
-                            manifest_path.display()
-                        ),
+                        "Failed to resolve package directory from manifest path.",
+                        vec![
+                            ("package", package.name.clone()),
+                            ("manifest_path", manifest_path.display().to_string()),
+                        ],
                         "Ensure each package manifest path points to a valid file inside the \
                          workspace.",
                     )
@@ -83,13 +86,15 @@ impl Workspace {
                 .strip_prefix(&root)
                 .map(Path::to_path_buf)
                 .map_err(|error| {
-                    CargoMonoError::with_hint(
+                    CargoMonoError::with_details(
                         ErrorKind::Internal,
-                        format!(
-                            "Workspace package directory is outside the workspace root: {} \
-                             ({error})",
-                            directory.display()
-                        ),
+                        "Workspace package directory is outside the workspace root.",
+                        vec![
+                            ("package", package.name.clone()),
+                            ("directory_path", directory.display().to_string()),
+                            ("workspace_root", root.display().to_string()),
+                            ("strip_prefix_error", error.to_string()),
+                        ],
                         "Verify package paths in workspace metadata and keep package directories \
                          under the workspace root.",
                     )
@@ -295,9 +300,15 @@ impl Workspace {
         }
 
         if ordered.len() != selected.len() {
-            return Err(CargoMonoError::with_hint(
+            let selected_names = selected.iter().cloned().collect::<Vec<_>>();
+            let selected_sample = format_string_sample(&selected_names, 8);
+            return Err(CargoMonoError::with_details(
                 ErrorKind::Conflict,
                 "Failed to build package order due to a dependency cycle in selected packages.",
+                vec![
+                    ("selected_count", selected.len().to_string()),
+                    ("selected_sample", selected_sample),
+                ],
                 "Break the cycle between selected packages, or narrow the target set with \
                  `--package`/`--changed`.",
             ));
@@ -352,9 +363,14 @@ fn compile_globset(patterns: &[String], flag: &str) -> Result<Option<GlobSet>> {
     let mut builder = GlobSetBuilder::new();
     for pattern in patterns {
         let glob = Glob::new(pattern).map_err(|error| {
-            CargoMonoError::with_hint(
+            CargoMonoError::with_details(
                 ErrorKind::InvalidInput,
-                format!("Invalid {flag} pattern `{pattern}`: {error}"),
+                "Invalid path filter pattern.",
+                vec![
+                    ("flag", flag.to_string()),
+                    ("pattern", pattern.clone()),
+                    ("parse_error", error.to_string()),
+                ],
                 "Use valid glob syntax (for example, `crates/**`) and quote patterns in your \
                  shell.",
             )
@@ -363,9 +379,15 @@ fn compile_globset(patterns: &[String], flag: &str) -> Result<Option<GlobSet>> {
     }
 
     let globset = builder.build().map_err(|error| {
-        CargoMonoError::with_hint(
+        CargoMonoError::with_details(
             ErrorKind::InvalidInput,
-            format!("Failed to build matcher for {flag}: {error}"),
+            "Failed to build matcher for path filters.",
+            vec![
+                ("flag", flag.to_string()),
+                ("pattern_count", patterns.len().to_string()),
+                ("pattern_sample", format_string_sample(patterns, 5)),
+                ("build_error", error.to_string()),
+            ],
             "Review your glob patterns for syntax issues and quote each pattern argument.",
         )
     })?;
@@ -383,6 +405,26 @@ fn path_is_excluded_by_filters(
         include_path_globset.is_some_and(|globset| globset.is_match(&normalized_path));
     let excluded = exclude_path_globset.is_some_and(|globset| globset.is_match(&normalized_path));
     excluded && !include_override
+}
+
+fn format_string_sample(values: &[String], limit: usize) -> String {
+    if values.is_empty() {
+        return "none".to_string();
+    }
+
+    let visible_count = values.len().min(limit);
+    let mut sample = values
+        .iter()
+        .take(visible_count)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("|");
+
+    if values.len() > visible_count {
+        sample.push_str(&format!("|...(+{} more)", values.len() - visible_count));
+    }
+
+    sample
 }
 
 #[cfg(test)]

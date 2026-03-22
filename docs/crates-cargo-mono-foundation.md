@@ -30,7 +30,12 @@
 - Include command phase, package target, and outcome status for debugging.
 
 ## Error UX Contract
-- Runtime errors must use a single-line `summary + Hint: ...` format so operators can act immediately.
+- Runtime errors must use a fixed three-line format:
+  - `Summary: ...`
+  - `Context: key=value, ...`
+  - `Hint: ...`
+- Context values must include safe operational data (for example package name, manifest path, command, status, attempt count) needed for debugging.
+- Context values must normalize whitespace and be length-limited to avoid noisy or unsafe output.
 - Human stderr must include stable error kind labels while preserving the existing exit-code mapping contract.
 - Error messaging improvements must not change CLI command behavior or JSON output schema keys.
 - Error and log output must not expose secret credentials or registry tokens.

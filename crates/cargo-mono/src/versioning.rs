@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use semver::{Prerelease, Version};
@@ -46,9 +46,10 @@ pub fn bump_version(current: &Version, level: BumpLevel, preid: Option<&str>) ->
         }
         BumpLevel::Prerelease => {
             let preid = preid.ok_or_else(|| {
-                CargoMonoError::with_hint(
+                CargoMonoError::with_details(
                     ErrorKind::InvalidInput,
                     "`--preid` is required when `--level prerelease` is used.",
+                    vec![("level", BumpLevel::Prerelease.as_str().to_string())],
                     "Provide a prerelease identifier, for example `--preid rc`.",
                 )
             })?;
@@ -81,8 +82,9 @@ pub fn apply_workspace_bump(
             root_manifest_processed = true;
         }
 
-        let content = fs::read_to_string(&package.manifest_path)?;
-        let mut document = content.parse::<DocumentMut>()?;
+        let content = read_manifest_content(&package.manifest_path, &package.name)?;
+        let mut document =
+            parse_manifest_document(&content, &package.manifest_path, &package.name)?;
 
         let mut changed = false;
         if let Some(new_version) = bumped_versions.get(&package.name) {
@@ -96,18 +98,19 @@ pub fn apply_workspace_bump(
         }
 
         if changed {
-            fs::write(&package.manifest_path, document.to_string())?;
+            write_manifest_document(&package.manifest_path, &document, &package.name)?;
             updated_manifests.insert(package.manifest_relative_path.clone());
         }
     }
 
     if !root_manifest_processed {
-        let content = fs::read_to_string(&root_manifest_path)?;
-        let mut document = content.parse::<DocumentMut>()?;
+        let content = read_manifest_content(&root_manifest_path, "<workspace-root>")?;
+        let mut document =
+            parse_manifest_document(&content, &root_manifest_path, "<workspace-root>")?;
         let updates_in_manifest = update_dependency_versions(&mut document, bumped_versions);
 
         if updates_in_manifest > 0 {
-            fs::write(&root_manifest_path, document.to_string())?;
+            write_manifest_document(&root_manifest_path, &document, "<workspace-root>")?;
             dependency_updates += updates_in_manifest;
             updated_manifests.insert(PathBuf::from("Cargo.toml"));
         }
@@ -116,6 +119,62 @@ pub fn apply_workspace_bump(
     Ok(ManifestUpdateResult {
         updated_manifests,
         dependency_updates,
+    })
+}
+
+fn read_manifest_content(manifest_path: &Path, package_name: &str) -> Result<String> {
+    fs::read_to_string(manifest_path).map_err(|error| {
+        CargoMonoError::with_details(
+            ErrorKind::Internal,
+            "Failed to read Cargo manifest.",
+            vec![
+                ("operation", "read".to_string()),
+                ("package", package_name.to_string()),
+                ("manifest_path", manifest_path.display().to_string()),
+                ("error", error.to_string()),
+            ],
+            "Verify that the manifest path exists and is readable.",
+        )
+    })
+}
+
+fn parse_manifest_document(
+    content: &str,
+    manifest_path: &Path,
+    package_name: &str,
+) -> Result<DocumentMut> {
+    content.parse::<DocumentMut>().map_err(|error| {
+        CargoMonoError::with_details(
+            ErrorKind::Internal,
+            "Failed to parse Cargo manifest.",
+            vec![
+                ("operation", "parse".to_string()),
+                ("package", package_name.to_string()),
+                ("manifest_path", manifest_path.display().to_string()),
+                ("error", error.to_string()),
+            ],
+            "Fix TOML syntax issues in the manifest and retry.",
+        )
+    })
+}
+
+fn write_manifest_document(
+    manifest_path: &Path,
+    document: &DocumentMut,
+    package_name: &str,
+) -> Result<()> {
+    fs::write(manifest_path, document.to_string()).map_err(|error| {
+        CargoMonoError::with_details(
+            ErrorKind::Internal,
+            "Failed to write Cargo manifest.",
+            vec![
+                ("operation", "write".to_string()),
+                ("package", package_name.to_string()),
+                ("manifest_path", manifest_path.display().to_string()),
+                ("error", error.to_string()),
+            ],
+            "Verify write permissions for the manifest path and retry.",
+        )
     })
 }
 
