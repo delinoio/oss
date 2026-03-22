@@ -303,6 +303,8 @@ Release automation baseline:
 - Trigger contract: runs on `push` to `main` and supports `workflow_dispatch`.
 - Branch guard contract: publish job runs only when `github.ref == 'refs/heads/main'`.
 - Publish command contract: `cargo run -p cargo-mono -- publish`.
+- Workflow permission contract: `permissions.contents: write`.
+- Tag push contract: after successful publish command execution, run `git push --tags` without no-tag fallback handling.
 - Required secret contract: `CARGO_REGISTRY_TOKEN`.
 - `release-cargo-mono` is defined in `.github/workflows/release-cargo-mono.yml`.
 - Trigger contract: runs on tag push `cargo-mono@v*` and supports `workflow_dispatch` (`version`, `dry_run`).

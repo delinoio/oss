@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: auto-publish-${{ github.workflow }}-${{ github.ref }}
@@ -45,3 +45,6 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo run -p cargo-mono -- publish
+
+      - name: Push release tags
+        run: git push --tags
