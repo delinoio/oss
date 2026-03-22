@@ -64,6 +64,30 @@ nodeup override set lts --path /path/to/project
 2. Directory override selector (`override set`)
 3. Global default selector (`default`)
 
+## `packageManager` support (`yarn` / `pnpm`)
+
+`nodeup` reads the nearest `package.json` from the current directory upward and applies
+strict `packageManager` handling for `yarn` and `pnpm`.
+
+- Supported format: `<manager>@<exact-semver>`
+- Supported managers: `yarn`, `pnpm`
+- When present, manager mismatch fails with `conflict`.
+- Malformed values fail with `invalid-input`.
+- Corepack is not used; nodeup runs the selected runtime's `npm exec`.
+
+Mapping behavior:
+
+- `pnpm@x.y.z` -> `pnpm@x.y.z`
+- `yarn@1.x.y` -> `yarn@1.x.y`
+- `yarn@2+` -> `@yarnpkg/cli-dist@x.y.z`
+
+When `packageManager` is missing:
+
+- direct `bin/yarn` or `bin/pnpm` is preferred if available
+- otherwise nodeup falls back to `npm exec` defaults:
+  - `yarn` -> `@yarnpkg/cli-dist`
+  - `pnpm` -> `pnpm`
+
 ## Output and logging behavior
 
 - `--output human|json` is available for management commands.
@@ -105,7 +129,7 @@ Coverage highlights:
 - Command-family coverage for `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `self`, and `completions`.
 - Deterministic JSON failure envelopes on stderr (`kind`, `message`, `exit_code`) with stdout reserved for machine output.
 - Selector precedence checks across explicit selectors, directory overrides, and global defaults.
-- Alias dispatch checks for `node`, `npm`, and `npx` execution paths.
+- Alias dispatch checks for `node`, `npm`, `npx`, `yarn`, and `pnpm` execution paths.
 
 To run project validation from repository root:
 
