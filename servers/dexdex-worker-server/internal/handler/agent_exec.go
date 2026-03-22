@@ -93,8 +93,8 @@ func buildAgentCommand(
 	cmd.Dir = primaryDir
 	if usePlanMode {
 		cmd.Env = append(os.Environ(),
-			"DEXDEX_PLAN_MODE=1",
-			fmt.Sprintf("DEXDEX_PLAN_MODE_AGENT=%s", agentType.String()),
+			"PLAN_MODE=1",
+			fmt.Sprintf("PLAN_MODE_AGENT=%s", agentType.String()),
 		)
 	}
 
