@@ -136,10 +136,10 @@ fn ensure_secure_directory_permissions(path: &Path) -> Result<()> {
     }
 
     if !path.exists() {
-        return Err(NodeupError::internal(format!(
-            "Failed to create required directory: {}",
-            path.display()
-        )));
+        return Err(NodeupError::internal_with_hint(
+            format!("Failed to create required directory: {}", path.display()),
+            "Check filesystem permissions for the path and retry.",
+        ));
     }
 
     Ok(())

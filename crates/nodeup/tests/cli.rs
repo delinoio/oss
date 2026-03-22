@@ -527,7 +527,8 @@ fn toolchain_link_rejects_reserved_channel_name_and_does_not_persist_selector() 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Invalid linked runtime name: lts"));
     assert!(stderr.contains(
-        "Reserved channel selectors cannot be used as linked runtime names: lts, current, latest",
+        "Reserved channel selectors (`lts`, `current`, `latest`) cannot be used as linked runtime \
+         names.",
     ));
 
     let list_output = env
@@ -628,7 +629,7 @@ fn toolchain_link_rejects_directory_without_node_binary() {
 
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Linked runtime path must contain bin/node"));
+    assert!(stderr.contains("Linked runtime path must contain `bin/node`"));
 }
 
 #[test]
@@ -660,7 +661,7 @@ fn json_toolchain_link_failure_emits_invalid_input_error_envelope() {
     assert!(payload["message"]
         .as_str()
         .unwrap()
-        .contains("Linked runtime path must contain bin/node"));
+        .contains("Linked runtime path must contain `bin/node`"));
 }
 
 #[test]
@@ -708,7 +709,7 @@ fn uninstall_blocks_default_selector_with_mixed_version_spelling() {
         .args(["toolchain", "uninstall", "v22.1.0"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("used as default runtime"));
+        .stderr(predicates::str::contains("used as the default runtime"));
 }
 
 #[test]
@@ -744,7 +745,9 @@ fn uninstall_blocks_override_selector_with_mixed_version_spelling() {
         .args(["toolchain", "uninstall", "v22.1.0"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("referenced by an override"));
+        .stderr(predicates::str::contains(
+            "referenced by a directory override",
+        ));
 }
 
 #[test]
@@ -776,7 +779,9 @@ fn uninstall_removes_tracked_selector_across_version_spellings() {
         .args(["update"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("No runtimes to update"));
+        .stderr(predicates::str::contains(
+            "No runtimes are eligible for update",
+        ));
 }
 
 #[test]
@@ -814,7 +819,7 @@ fn uninstall_is_atomic_when_later_target_conflicts_with_default() {
         .args(["toolchain", "uninstall", "22.1.0", "24.0.0"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("used as default runtime"));
+        .stderr(predicates::str::contains("used as the default runtime"));
 
     assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
     assert!(env.data_root.join("toolchains").join("v24.0.0").exists());
@@ -1240,10 +1245,11 @@ fn json_show_active_runtime_failure_emits_stderr_error_envelope() {
 
     let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(payload["kind"], "not-found");
-    assert_eq!(
-        payload["message"],
-        "No runtime selector resolved. Set a default runtime or directory override"
-    );
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("No runtime selector resolved"));
+    assert!(payload["message"].as_str().unwrap().contains("Hint:"));
     assert_eq!(payload["exit_code"], 5);
 }
 
@@ -1406,7 +1412,11 @@ fn json_startup_failure_emits_stderr_error_envelope() {
 
     let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(payload["kind"], "internal");
-    assert!(payload["message"].as_str().unwrap().contains("I/O error:"));
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("I/O operation failed:"));
+    assert!(payload["message"].as_str().unwrap().contains("Hint:"));
 
     let process_exit_code = output.status.code().unwrap();
     assert_ne!(process_exit_code, 0);
@@ -1995,7 +2005,7 @@ fn override_set_rejects_invalid_selector() {
         .args(["override", "set", "22.x"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("Invalid selector"));
+        .stderr(predicates::str::contains("Invalid runtime selector"));
 }
 
 #[test]
@@ -2253,10 +2263,11 @@ fn json_which_failure_emits_stderr_error_envelope() {
     let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(payload["kind"], "not-found");
     assert_eq!(payload["exit_code"], 5);
-    assert_eq!(
-        payload["message"],
-        "No runtime selector resolved. Set a default runtime or directory override"
-    );
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("No runtime selector resolved"));
+    assert!(payload["message"].as_str().unwrap().contains("Hint:"));
 }
 
 #[test]
@@ -2535,7 +2546,7 @@ fn toolchain_install_requires_at_least_one_runtime_selector() {
         .failure()
         .code(2)
         .stderr(predicates::str::contains(
-            "nodeup toolchain install requires at least one runtime selector",
+            "Missing runtime selector for `nodeup toolchain install`",
         ));
 }
 
@@ -2564,7 +2575,7 @@ fn toolchain_install_rejects_linked_runtime_selector() {
         .failure()
         .code(2)
         .stderr(predicates::str::contains(
-            "toolchain install only supports version/channel selectors",
+            "`toolchain install` only supports semantic version or channel selectors",
         ));
 }
 
@@ -2579,7 +2590,7 @@ fn toolchain_uninstall_requires_at_least_one_runtime_selector() {
         .failure()
         .code(2)
         .stderr(predicates::str::contains(
-            "nodeup toolchain uninstall requires at least one runtime selector",
+            "Missing runtime selector for `nodeup toolchain uninstall`",
         ));
 }
 

@@ -100,7 +100,11 @@ impl ReleaseIndexClient {
             .timeout(Duration::from_secs(30))
             .build()
             .map_err(|error| {
-                NodeupError::network(format!("Failed to build HTTP client: {error}"))
+                NodeupError::network_with_hint(
+                    format!("Failed to build HTTP client: {error}"),
+                    "Retry the command. If it keeps failing, run with `RUST_LOG=nodeup=debug` and \
+                     inspect the TLS/network configuration.",
+                )
             })?;
         Ok(http)
     }
@@ -213,23 +217,34 @@ impl ReleaseIndexClient {
                 Ok(response) => {
                     if !response.status().is_success() {
                         if attempt == MAX_RETRIES {
-                            return Err(NodeupError::network(format!(
-                                "Release index request failed with status {}",
-                                response.status()
-                            )));
+                            return Err(NodeupError::network_with_hint(
+                                format!(
+                                    "Release index request failed with status {}",
+                                    response.status()
+                                ),
+                                "Retry the command later or override the index endpoint with \
+                                 `NODEUP_INDEX_URL` if you use a mirror.",
+                            ));
                         }
                     } else {
                         return response.json::<Vec<ReleaseEntry>>().map_err(|error| {
-                            NodeupError::network(format!("Failed to decode release index: {error}"))
+                            NodeupError::network_with_hint(
+                                format!("Failed to decode release index response: {error}"),
+                                "Retry the command. If it repeats, verify the index endpoint \
+                                 serves valid JSON.",
+                            )
                         });
                     }
                 }
                 Err(error) => {
                     if attempt == MAX_RETRIES {
-                        return Err(NodeupError::network(format!(
-                            "Failed to fetch release index from {}: {error}",
-                            self.index_url
-                        )));
+                        return Err(NodeupError::network_with_hint(
+                            format!(
+                                "Failed to fetch release index from {}: {error}",
+                                self.index_url
+                            ),
+                            "Check network connectivity and endpoint reachability, then retry.",
+                        ));
                     }
                 }
             }
@@ -237,7 +252,11 @@ impl ReleaseIndexClient {
             thread::sleep(Duration::from_millis((attempt as u64) * 200));
         }
 
-        Err(NodeupError::network("Exhausted release index retries"))
+        Err(NodeupError::network_with_hint(
+            "Exhausted release index retries",
+            "Retry the command in a few moments. If it continues, run with \
+             `RUST_LOG=nodeup=debug` for diagnostics.",
+        ))
     }
 
     fn read_cached_index(&self, now_epoch_seconds: u64) -> Option<CachedReleaseIndex> {
@@ -322,10 +341,13 @@ impl ReleaseIndexClient {
 
     fn write_cache(&self, entries: &[ReleaseEntry], fetched_at_epoch_seconds: u64) -> Result<()> {
         let parent = self.cache_file.parent().ok_or_else(|| {
-            NodeupError::internal(format!(
-                "Cannot determine release index cache parent for {}",
-                self.cache_file.display()
-            ))
+            NodeupError::internal_with_hint(
+                format!(
+                    "Cannot determine release index cache parent for {}",
+                    self.cache_file.display()
+                ),
+                "Check the nodeup cache path configuration and retry.",
+            )
         })?;
         fs::create_dir_all(parent)?;
 
@@ -340,10 +362,13 @@ impl ReleaseIndexClient {
         temp_file.write_all(&serialized)?;
         temp_file.flush()?;
         temp_file.persist(&self.cache_file).map_err(|error| {
-            NodeupError::internal(format!(
-                "Failed to persist release index cache {}: {error}",
-                self.cache_file.display()
-            ))
+            NodeupError::internal_with_hint(
+                format!(
+                    "Failed to persist release index cache {}: {error}",
+                    self.cache_file.display()
+                ),
+                "Ensure the cache directory is writable, then retry the command.",
+            )
         })?;
         Ok(())
     }
@@ -361,9 +386,11 @@ impl ReleaseIndexClient {
         };
 
         selected.ok_or_else(|| {
-            NodeupError::not_found(format!(
-                "Could not resolve release for channel {channel}. Release index may be empty"
-            ))
+            NodeupError::not_found_with_hint(
+                format!("Could not resolve a release for channel {channel}"),
+                "Retry later or inspect available versions with `nodeup check` after installing \
+                 at least one runtime.",
+            )
         })
     }
 

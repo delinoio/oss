@@ -20,8 +20,10 @@ impl RuntimeSelector {
     pub fn parse(input: &str) -> Result<Self> {
         let normalized = input.trim();
         if normalized.is_empty() {
-            return Err(NodeupError::invalid_input(
+            return Err(NodeupError::invalid_input_with_hint(
                 "Runtime selector cannot be empty",
+                "Provide a selector like `22.1.0`, `v22.1.0`, `lts`, `current`, `latest`, or a \
+                 linked runtime name.",
             ));
         }
 
@@ -40,10 +42,11 @@ impl RuntimeSelector {
         }
 
         if !is_valid_linked_name(normalized) {
-            return Err(NodeupError::invalid_input(format!(
-                "Invalid selector '{normalized}'. Expected semantic version, channel, or linked \
-                 runtime name"
-            )));
+            return Err(NodeupError::invalid_input_with_hint(
+                format!("Invalid runtime selector '{normalized}'"),
+                "Use a semantic version (`22.1.0`), channel (`lts|current|latest`), or a linked \
+                 runtime name ([A-Za-z0-9][A-Za-z0-9_-]*).",
+            ));
         }
 
         Ok(Self::LinkedName(normalized.to_string()))

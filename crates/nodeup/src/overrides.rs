@@ -52,10 +52,13 @@ impl OverrideStore {
         let content = fs::read_to_string(&self.paths.overrides_file)?;
         let file: OverridesFile = toml::from_str(&content)?;
         if file.schema_version != OVERRIDES_SCHEMA_VERSION {
-            return Err(NodeupError::invalid_input(format!(
-                "Unsupported overrides schema version: {}",
-                file.schema_version
-            )));
+            return Err(NodeupError::invalid_input_with_hint(
+                format!(
+                    "Unsupported overrides schema version: {}",
+                    file.schema_version
+                ),
+                "Run `nodeup self upgrade-data` to migrate local data, then retry.",
+            ));
         }
 
         Ok(file)
@@ -149,7 +152,10 @@ fn canonical_or_absolute(path: &Path) -> Result<String> {
         .to_str()
         .map(|value| value.to_string())
         .ok_or_else(|| {
-            NodeupError::invalid_input(format!("Path is not valid UTF-8: {}", normalized.display()))
+            NodeupError::invalid_input_with_hint(
+                format!("Path is not valid UTF-8: {}", normalized.display()),
+                "Use a UTF-8 path for override operations.",
+            )
         })
 }
 
@@ -175,17 +181,23 @@ fn canonicalize_nonexistent_path(path: &Path) -> Result<PathBuf> {
 
     while !cursor.exists() {
         let Some(file_name) = cursor.file_name() else {
-            return Err(NodeupError::invalid_input(format!(
-                "Cannot canonicalize path with missing root: {}",
-                path.display()
-            )));
+            return Err(NodeupError::invalid_input_with_hint(
+                format!(
+                    "Cannot canonicalize path with missing root: {}",
+                    path.display()
+                ),
+                "Provide a path under an existing filesystem root.",
+            ));
         };
         missing_parts.push(file_name.to_os_string());
         cursor = cursor.parent().ok_or_else(|| {
-            NodeupError::invalid_input(format!(
-                "Cannot canonicalize path without parent: {}",
-                path.display()
-            ))
+            NodeupError::invalid_input_with_hint(
+                format!(
+                    "Cannot canonicalize path without parent: {}",
+                    path.display()
+                ),
+                "Provide a path that has a resolvable parent directory.",
+            )
         })?;
     }
 

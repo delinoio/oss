@@ -118,8 +118,10 @@ impl RuntimeResolver {
             "No directory override or default selector found"
         );
 
-        Err(NodeupError::not_found(
-            "No runtime selector resolved. Set a default runtime or directory override",
+        Err(NodeupError::not_found_with_hint(
+            "No runtime selector resolved",
+            "Set a default runtime with `nodeup default <runtime>` or configure a directory \
+             override with `nodeup override set <runtime>`.",
         ))
     }
 
@@ -139,7 +141,13 @@ impl RuntimeResolver {
             RuntimeSelector::LinkedName(name) => {
                 let settings = self.store.load_settings()?;
                 let path = settings.linked_runtimes.get(name).ok_or_else(|| {
-                    NodeupError::not_found(format!("Linked runtime '{name}' does not exist"))
+                    NodeupError::not_found_with_hint(
+                        format!("Linked runtime '{name}' does not exist"),
+                        format!(
+                            "Register it with `nodeup toolchain link {name} <path>` or choose an \
+                             existing selector from `nodeup toolchain list --verbose`."
+                        ),
+                    )
                 })?;
 
                 ResolvedRuntimeTarget::LinkedPath {

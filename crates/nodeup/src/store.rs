@@ -52,10 +52,13 @@ impl Store {
         let content = fs::read_to_string(&self.paths.settings_file)?;
         let file: SettingsFile = toml::from_str(&content)?;
         if file.schema_version != SETTINGS_SCHEMA_VERSION {
-            return Err(NodeupError::invalid_input(format!(
-                "Unsupported settings schema version: {}",
-                file.schema_version
-            )));
+            return Err(NodeupError::invalid_input_with_hint(
+                format!(
+                    "Unsupported settings schema version: {}",
+                    file.schema_version
+                ),
+                "Run `nodeup self upgrade-data` to migrate local data, then retry.",
+            ));
         }
 
         Ok(file)
@@ -107,9 +110,11 @@ impl Store {
     pub fn remove_runtime(&self, version: &str) -> Result<()> {
         let runtime_dir = self.runtime_dir(version);
         if !runtime_dir.exists() {
-            return Err(NodeupError::not_found(format!(
-                "Runtime {version} is not installed"
-            )));
+            return Err(NodeupError::not_found_with_hint(
+                format!("Runtime {version} is not installed"),
+                "List installed runtimes with `nodeup toolchain list` and retry with a valid \
+                 version.",
+            ));
         }
 
         fs::remove_dir_all(runtime_dir)?;
@@ -123,10 +128,10 @@ impl Store {
 
 fn atomic_write(path: &Path, content: &[u8]) -> Result<()> {
     let parent = path.parent().ok_or_else(|| {
-        NodeupError::internal(format!(
-            "Cannot determine parent directory for {}",
-            path.display()
-        ))
+        NodeupError::internal_with_hint(
+            format!("Cannot determine parent directory for {}", path.display()),
+            "Check the configured nodeup data paths and retry.",
+        )
     })?;
 
     fs::create_dir_all(parent)?;
@@ -135,7 +140,10 @@ fn atomic_write(path: &Path, content: &[u8]) -> Result<()> {
     temp_file.flush()?;
 
     temp_file.persist(path).map_err(|error| {
-        NodeupError::internal(format!("Failed to persist {}: {error}", path.display()))
+        NodeupError::internal_with_hint(
+            format!("Failed to persist {}: {error}", path.display()),
+            "Ensure the destination directory is writable, then retry.",
+        )
     })?;
 
     Ok(())

@@ -28,19 +28,24 @@ pub fn execute(
 
     if let ResolvedRuntimeTarget::Version { version } = &resolved.target {
         if !app.store.is_installed(version) {
-            return Err(NodeupError::not_found(format!(
-                "Runtime {} is not installed",
-                version
-            )));
+            return Err(NodeupError::not_found_with_hint(
+                format!("Runtime {version} is not installed"),
+                "Install it with `nodeup toolchain install <runtime>` and retry `nodeup which \
+                 ...`.",
+            ));
         }
     }
 
     let executable = resolved.executable_path(&app.store, command);
     if !Path::new(&executable).exists() {
-        return Err(NodeupError::not_found(format!(
-            "Command '{command}' does not exist for runtime {}",
-            resolved.runtime_id()
-        )));
+        return Err(NodeupError::not_found_with_hint(
+            format!(
+                "Command '{command}' does not exist for runtime {}",
+                resolved.runtime_id()
+            ),
+            "Use `nodeup show active-runtime` to confirm the runtime, then install or relink a \
+             runtime that provides the command.",
+        ));
     }
 
     let response = WhichResponse {

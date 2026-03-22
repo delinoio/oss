@@ -51,10 +51,10 @@ pub fn run_command(
     }
 
     let status = command.status().map_err(|error| {
-        NodeupError::not_found(format!(
-            "Failed to execute {}: {error}",
-            command_path.display()
-        ))
+        NodeupError::not_found_with_hint(
+            format!("Failed to execute {}: {error}", command_path.display()),
+            "Verify the executable exists and is runnable on this host, then retry.",
+        )
     })?;
 
     let termination = status_details(status);

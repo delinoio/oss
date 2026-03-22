@@ -31,11 +31,14 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
 
     let executable = resolved.executable_path(&app.store, alias.as_str());
     if !executable.exists() {
-        return Err(NodeupError::not_found(format!(
-            "Managed alias '{}' is not available in runtime {}",
-            alias.as_str(),
-            resolved.runtime_id()
-        )));
+        return Err(NodeupError::not_found_with_hint(
+            format!(
+                "Managed alias '{}' is not available in runtime {}",
+                alias.as_str(),
+                resolved.runtime_id()
+            ),
+            "Install or relink the active runtime so it provides the delegated executable.",
+        ));
     }
 
     info!(

@@ -16,6 +16,8 @@
 - Channel and command identifiers must remain stable and documented.
 - Shim dispatch behavior must remain deterministic by executable name.
 - Install/update command surfaces must preserve backward-compatible flags and outputs.
+- User-facing `NodeupError` messages must follow the format `<cause>. Hint: <next action>`.
+- JSON error envelopes must keep the stable shape `kind`, `message`, and `exit_code` while allowing message text improvements.
 - `completions` must generate raw shell completion scripts for `bash`, `zsh`, `fish`, `powershell`, and `elvish`.
 - `completions <shell> [command]` command scope must accept only top-level command identifiers and fail with `invalid-input` for unsupported scopes.
 - `completions` output must remain raw script text on stdout even when `--output json` is requested.
