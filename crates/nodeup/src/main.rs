@@ -54,19 +54,10 @@ fn logging_context() -> logging::LoggingContext {
     logging_context_from_args(std::env::args_os())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 struct ManagementOutputPreferences {
     json_error_output_requested: bool,
     color_mode: Option<OutputColorMode>,
-}
-
-impl Default for ManagementOutputPreferences {
-    fn default() -> Self {
-        Self {
-            json_error_output_requested: false,
-            color_mode: None,
-        }
-    }
 }
 
 fn management_output_preferences() -> ManagementOutputPreferences {
