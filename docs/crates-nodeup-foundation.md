@@ -17,6 +17,7 @@
 - Shim dispatch behavior must remain deterministic by executable name.
 - Install/update command surfaces must preserve backward-compatible flags and outputs.
 - User-facing `NodeupError` messages must follow the format `<cause>. Hint: <next action>`.
+- `NodeupError` cause text should include deterministic key-value diagnostics when available (for example `selector`, `runtime`, `path`, `url`, `status`, `attempt`).
 - JSON error envelopes must keep the stable shape `kind`, `message`, and `exit_code` while allowing message text improvements.
 - `completions` must generate raw shell completion scripts for `bash`, `zsh`, `fish`, `powershell`, and `elvish`.
 - `completions <shell> [command]` command scope must accept only top-level command identifiers and fail with `invalid-input` for unsupported scopes.
@@ -29,6 +30,7 @@
 ## Security
 - Download and install flows must validate source and artifact integrity.
 - Secrets must not be logged, and sensitive file paths should be minimized in logs.
+- URL diagnostics in error messages must omit query strings and fragments.
 
 ## Logging
 - Use structured `tracing` logs for install, resolve, and dispatch flows.

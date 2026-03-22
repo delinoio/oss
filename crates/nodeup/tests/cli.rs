@@ -1647,6 +1647,52 @@ selector = "22.1.0"
 
 #[test]
 #[serial]
+fn self_upgrade_data_reports_field_type_context_for_invalid_settings() {
+    let env = TestEnv::new();
+    let settings_file = env.config_root.join("settings.toml");
+    fs::write(
+        &settings_file,
+        r#"default_selector = 123
+tracked_selectors = []
+"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["self", "upgrade-data"])
+        .output()
+        .expect("self upgrade-data invalid settings type");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Expected 'default_selector' to be a string"));
+    assert!(stderr.contains("actual_type=integer"));
+    assert!(stderr.contains(&format!("file={}", settings_file.display())));
+}
+
+#[test]
+#[serial]
+fn update_without_candidates_includes_selector_source_context() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["update"])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicates::str::contains(
+            "No runtimes are eligible for update",
+        ))
+        .stderr(predicates::str::contains(
+            "selector_source=installed-runtimes",
+        ))
+        .stderr(predicates::str::contains("installed_runtimes=0"))
+        .stderr(predicates::str::contains("resolved_selectors=0"));
+}
+
+#[test]
+#[serial]
 fn completions_logs_action_and_outcome() {
     let env = TestEnv::new();
 

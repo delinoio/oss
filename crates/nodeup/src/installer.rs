@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use tracing::info;
 
 use crate::{
-    errors::{NodeupError, Result},
+    errors::{sanitize_url_text, NodeupError, Result},
     paths::NodeupPaths,
     release_index::{normalize_version, ReleaseIndexClient},
     store::Store,
@@ -76,9 +76,13 @@ impl RuntimeInstaller {
         }
 
         let archive_url = release_client.archive_url(&canonical_version, target.archive_segment());
+        let archive_url_sanitized = sanitize_url_text(&archive_url);
         let archive_filename = archive_url.rsplit('/').next().ok_or_else(|| {
             NodeupError::internal_with_hint(
-                "Failed to parse archive file name from the download URL",
+                format!(
+                    "Failed to parse archive file name from download URL \
+                     (runtime={canonical_version}, url={archive_url_sanitized})"
+                ),
                 "Retry the install command. If it persists, run with `RUST_LOG=nodeup=debug` and \
                  check the computed archive URL.",
             )
@@ -96,30 +100,49 @@ impl RuntimeInstaller {
         download_file(release_client, &archive_url, &archive_path)?;
 
         let shasums_url = release_client.shasums_url(&canonical_version);
+        let shasums_url_sanitized = sanitize_url_text(&shasums_url);
         let shasums_content = release_client
             .http()
             .get(&shasums_url)
             .send()?
             .error_for_status()
             .map_err(|error| {
+                let status = error
+                    .status()
+                    .map(|status| status.as_u16().to_string())
+                    .unwrap_or_else(|| "none".to_string());
                 NodeupError::network_with_hint(
-                    format!("Failed to fetch SHASUMS256.txt: {error}"),
+                    format!(
+                        "Failed to fetch SHASUMS256.txt (runtime={canonical_version}, \
+                         url={shasums_url_sanitized}, status={status}): {error}"
+                    ),
                     "Check network connectivity and retry the install command.",
                 )
             })?
             .text()
             .map_err(|error| {
                 NodeupError::network_with_hint(
-                    format!("Failed to read SHASUMS256.txt body: {error}"),
+                    format!(
+                        "Failed to read SHASUMS256.txt body (runtime={canonical_version}, \
+                         url={shasums_url_sanitized}): {error}"
+                    ),
                     "Retry the command. If it keeps failing, run with `RUST_LOG=nodeup=debug` and \
                      inspect HTTP response details.",
                 )
             })?;
 
-        let checksum_table = parse_shasums(&shasums_content)?;
+        let checksum_table = parse_shasums_for_archive(
+            &shasums_content,
+            &shasums_url_sanitized,
+            &canonical_version,
+            archive_filename,
+        )?;
         let expected_checksum = checksum_table.get(archive_filename).ok_or_else(|| {
             NodeupError::not_found_with_hint(
-                format!("Checksum for {archive_filename} was not found in SHASUMS256.txt"),
+                format!(
+                    "Checksum entry not found in SHASUMS256.txt (runtime={canonical_version}, \
+                     archive={archive_filename}, source={shasums_url_sanitized})"
+                ),
                 "Retry later in case upstream metadata is still propagating, or verify the \
                  release exists for this platform.",
             )
@@ -161,14 +184,19 @@ impl RuntimeInstaller {
 }
 
 fn download_file(release_client: &ReleaseIndexClient, url: &str, destination: &Path) -> Result<()> {
+    let sanitized_url = sanitize_url_text(url);
     let mut response = release_client
         .http()
         .get(url)
         .send()?
         .error_for_status()
         .map_err(|error| {
+            let status = error
+                .status()
+                .map(|status| status.as_u16().to_string())
+                .unwrap_or_else(|| "none".to_string());
             NodeupError::network_with_hint(
-                format!("Download request failed for {url}: {error}"),
+                format!("Download request failed (url={sanitized_url}, status={status}): {error}"),
                 "Check network connectivity and retry the command.",
             )
         })?;
@@ -177,8 +205,8 @@ fn download_file(release_client: &ReleaseIndexClient, url: &str, destination: &P
     response.copy_to(&mut output).map_err(|error| {
         NodeupError::network_with_hint(
             format!(
-                "Failed to stream downloaded bytes to {}: {error}",
-                destination.display()
+                "Failed to stream downloaded bytes (url={sanitized_url}, destination={}): {error}",
+                destination.display(),
             ),
             "Ensure the downloads directory is writable, then retry.",
         )
@@ -216,7 +244,11 @@ fn extract_archive_to_runtime(archive_path: &Path, runtime_dir: &Path) -> Result
         .next()
         .ok_or_else(|| {
             NodeupError::internal_with_hint(
-                "Archive unpack produced an empty directory",
+                format!(
+                    "Archive unpack produced an empty directory (archive={}, temp_dir={})",
+                    archive_path.display(),
+                    temp_dir.path().display()
+                ),
                 "Retry the install command. If it repeats, remove the archive and re-download.",
             )
         })??
@@ -227,10 +259,20 @@ fn extract_archive_to_runtime(archive_path: &Path, runtime_dir: &Path) -> Result
 }
 
 pub fn parse_shasums(content: &str) -> Result<HashMap<String, String>> {
+    parse_shasums_for_archive(content, "unknown", "unknown", "unknown")
+}
+
+fn parse_shasums_for_archive(
+    content: &str,
+    source: &str,
+    runtime: &str,
+    archive_filename: &str,
+) -> Result<HashMap<String, String>> {
     let reader = BufReader::new(content.as_bytes());
     let mut checksums = HashMap::new();
 
-    for line in reader.lines() {
+    for (index, line) in reader.lines().enumerate() {
+        let line_number = index + 1;
         let line = line?;
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -240,7 +282,12 @@ pub fn parse_shasums(content: &str) -> Result<HashMap<String, String>> {
         let mut parts = trimmed.split_whitespace();
         let checksum = parts.next().ok_or_else(|| {
             NodeupError::invalid_input_with_hint(
-                "Malformed SHASUMS256.txt line: missing checksum value",
+                format!(
+                    "Malformed SHASUMS256.txt line: missing checksum value (runtime={runtime}, \
+                     archive={archive_filename}, source={source}, line={line_number}, \
+                     preview='{}')",
+                    shasums_preview(trimmed)
+                ),
                 "Retry the command. If the issue persists, inspect upstream SHASUMS256.txt \
                  content.",
             )
@@ -249,7 +296,12 @@ pub fn parse_shasums(content: &str) -> Result<HashMap<String, String>> {
             .next()
             .ok_or_else(|| {
                 NodeupError::invalid_input_with_hint(
-                    "Malformed SHASUMS256.txt line: missing archive filename",
+                    format!(
+                        "Malformed SHASUMS256.txt line: missing archive filename \
+                         (runtime={runtime}, archive={archive_filename}, source={source}, \
+                         line={line_number}, preview='{}')",
+                        shasums_preview(trimmed)
+                    ),
                     "Retry the command. If the issue persists, inspect upstream SHASUMS256.txt \
                      content.",
                 )
@@ -260,6 +312,24 @@ pub fn parse_shasums(content: &str) -> Result<HashMap<String, String>> {
     }
 
     Ok(checksums)
+}
+
+fn shasums_preview(line: &str) -> String {
+    const MAX_CHARS: usize = 80;
+    let escaped = line
+        .replace('\\', "\\\\")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+        .replace('\'', "\\'");
+
+    let mut chars = escaped.chars();
+    let preview = chars.by_ref().take(MAX_CHARS).collect::<String>();
+    if chars.next().is_some() {
+        format!("{preview}...")
+    } else {
+        preview
+    }
 }
 
 pub fn sha256_file(path: &Path) -> Result<String> {
@@ -314,6 +384,7 @@ impl Drop for InstallLock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::errors::ErrorKind;
 
     #[test]
     fn parses_shasums_table() {
@@ -337,5 +408,25 @@ mod tests {
             sha256_file(&path).unwrap(),
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
         );
+    }
+
+    #[test]
+    fn parse_shasums_failure_includes_runtime_archive_and_line_context() {
+        let error = parse_shasums_for_archive(
+            "abc123\n",
+            "https://nodejs.org/download/release/v22.1.0/SHASUMS256.txt",
+            "v22.1.0",
+            "node-v22.1.0-linux-x64.tar.xz",
+        )
+        .unwrap_err();
+
+        assert_eq!(error.kind, ErrorKind::InvalidInput);
+        assert!(error.message.contains("runtime=v22.1.0"));
+        assert!(error
+            .message
+            .contains("archive=node-v22.1.0-linux-x64.tar.xz"));
+        assert!(error.message.contains("source=https://nodejs.org"));
+        assert!(error.message.contains("line=1"));
+        assert!(error.message.contains("preview='abc123'"));
     }
 }

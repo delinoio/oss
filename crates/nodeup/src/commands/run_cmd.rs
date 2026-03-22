@@ -29,7 +29,11 @@ pub fn execute(
 ) -> Result<i32> {
     if command.is_empty() {
         return Err(NodeupError::invalid_input_with_hint(
-            "Missing delegated command arguments for `nodeup run`",
+            format!(
+                "Missing delegated command arguments for `nodeup run` (runtime={runtime}, \
+                 delegated_argv_len={})",
+                command.len()
+            ),
             "Use `nodeup run [--install] <runtime> <command> [args...]`.",
         ));
     }

@@ -29,6 +29,13 @@ struct UpdateEntry {
     status: String,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct UpdateSelectorContext {
+    source: &'static str,
+    tracked_selectors: usize,
+    installed_runtimes: usize,
+}
+
 pub fn check(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     let installed = app.store.list_installed_versions()?;
     let mut results = Vec::new();
@@ -53,15 +60,29 @@ pub fn check(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
 }
 
 pub fn update(runtimes: Vec<String>, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
-    let selectors = if runtimes.is_empty() {
+    let (selectors, selector_context) = if runtimes.is_empty() {
         selectors_for_update(app)?
     } else {
-        runtimes
+        (
+            runtimes,
+            UpdateSelectorContext {
+                source: "explicit-args",
+                tracked_selectors: 0,
+                installed_runtimes: 0,
+            },
+        )
     };
 
     if selectors.is_empty() {
         return Err(NodeupError::not_found_with_hint(
-            "No runtimes are eligible for update",
+            format!(
+                "No runtimes are eligible for update (selector_source={}, tracked_selectors={}, \
+                 installed_runtimes={}, resolved_selectors={})",
+                selector_context.source,
+                selector_context.tracked_selectors,
+                selector_context.installed_runtimes,
+                selectors.len()
+            ),
             "Install a runtime with `nodeup toolchain install <runtime>` or configure tracked \
              selectors first.",
         ));
@@ -163,14 +184,30 @@ pub fn update(runtimes: Vec<String>, output: OutputFormat, app: &NodeupApp) -> R
     Ok(0)
 }
 
-fn selectors_for_update(app: &NodeupApp) -> Result<Vec<String>> {
+fn selectors_for_update(app: &NodeupApp) -> Result<(Vec<String>, UpdateSelectorContext)> {
     let settings = app.store.load_settings()?;
     if !settings.tracked_selectors.is_empty() {
-        return Ok(settings.tracked_selectors);
+        let tracked_count = settings.tracked_selectors.len();
+        return Ok((
+            settings.tracked_selectors,
+            UpdateSelectorContext {
+                source: "tracked-selectors",
+                tracked_selectors: tracked_count,
+                installed_runtimes: 0,
+            },
+        ));
     }
 
     let installed = app.store.list_installed_versions()?;
-    Ok(installed)
+    let installed_count = installed.len();
+    Ok((
+        installed,
+        UpdateSelectorContext {
+            source: "installed-runtimes",
+            tracked_selectors: 0,
+            installed_runtimes: installed_count,
+        },
+    ))
 }
 
 fn latest_newer_version(app: &NodeupApp, current: &str) -> Result<Option<String>> {
