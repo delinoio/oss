@@ -1,7 +1,7 @@
 param(
   [string]$Version = "latest",
   [ValidateSet("package-manager", "direct")]
-  [string]$Method = "package-manager",
+  [string]$Method = "direct",
   [string]$InstallDir = "$HOME\\.local\\bin"
 )
 
@@ -67,17 +67,6 @@ function Verify-Signature {
     $FilePath | Out-Null
 }
 
-function Install-WithPackageManager {
-  if (Get-Command winget -ErrorAction SilentlyContinue) {
-    Write-Host "[install.nodeup] installing via winget"
-    winget install --id DelinoIO.Nodeup --exact --accept-package-agreements --accept-source-agreements
-    return $true
-  }
-
-  Write-Warning "[install.nodeup] winget is unavailable; falling back to direct installation"
-  return $false
-}
-
 function Install-Direct {
   $tag = Resolve-Tag
   $baseUrl = "https://github.com/$Repo/releases/download/$tag"
@@ -116,9 +105,10 @@ function Install-Direct {
 
 switch ($Method) {
   "package-manager" {
-    if (-not (Install-WithPackageManager)) {
-      Install-Direct
-    }
+    # Compatibility shim: keep accepting the legacy package-manager flag until downstream
+    # automation and docs stop sending it for Windows installs.
+    Write-Warning "[install.nodeup] method=package-manager is deprecated on Windows and now maps to direct installation."
+    Install-Direct
   }
   "direct" {
     Install-Direct

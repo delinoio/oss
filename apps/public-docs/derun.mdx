@@ -25,19 +25,22 @@ Tag contract:
 
 - `derun@v<semver>`
 
-Package managers:
+Package manager:
 
 - macOS/Linux: `brew install delinoio/tap/derun`
-- Windows: `winget install --id DelinoIO.Derun --exact`
 
-Script installer (package manager first, then direct fallback):
+Windows direct install:
+
+- `./scripts/install/derun.ps1 -Version latest -Method direct`
+
+Script installer:
 
 ```bash
 ./scripts/install/derun.sh --version latest --method package-manager
 ```
 
 ```powershell
-./scripts/install/derun.ps1 -Version latest -Method package-manager
+./scripts/install/derun.ps1 -Version latest -Method direct
 ```
 
 ## Quick start

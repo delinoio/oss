@@ -10,7 +10,7 @@ on:
         description: "Semver without v prefix (for example: 0.2.0)"
         required: true
       dry_run:
-        description: "If true, skip release publication and package-manager PR creation"
+        description: "If true, skip release publication and Homebrew PR creation"
         required: false
         default: "true"
         type: choice
@@ -203,7 +203,7 @@ jobs:
       - name: Submit Homebrew update
         if: env.DRY_RUN != 'true'
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -231,42 +231,3 @@ jobs:
             --darwin-arm64-sha256 "$darwin_arm64_sha" \
             --linux-amd64-url "$linux_amd64_url" \
             --linux-amd64-sha256 "$linux_amd64_sha"
-
-      - name: Render winget update
-        if: env.DRY_RUN == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          chmod +x ./scripts/release/update-winget.sh
-
-          asset_name="derun-windows-amd64.zip"
-          asset_sha="$(grep " ${asset_name}$" dist/SHA256SUMS | awk '{print $1}')"
-          asset_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${asset_name}"
-
-          ./scripts/release/update-winget.sh \
-            --package-id DelinoIO.Derun \
-            --version "$RELEASE_VERSION" \
-            --installer-url "$asset_url" \
-            --installer-sha256 "$asset_sha" \
-            --dry-run >/dev/null
-
-      - name: Submit winget update
-        if: env.DRY_RUN != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.WINGET_GH_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          chmod +x ./scripts/release/update-winget.sh
-
-          asset_name="derun-windows-amd64.zip"
-          asset_sha="$(grep " ${asset_name}$" dist/SHA256SUMS | awk '{print $1}')"
-          asset_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${asset_name}"
-
-          ./scripts/release/update-winget.sh \
-            --package-id DelinoIO.Derun \
-            --version "$RELEASE_VERSION" \
-            --installer-url "$asset_url" \
-            --installer-sha256 "$asset_sha"
