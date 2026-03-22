@@ -23,6 +23,8 @@ pub fn merge_base(base_ref: &str) -> Result<String> {
             ErrorKind::Git,
             &format!("Failed to resolve merge-base for base ref `{base_ref}`"),
             error,
+            "Ensure the base ref exists locally (for example, run `git fetch`) and retry with \
+             `--base <ref>`.",
         )
     })
 }
@@ -59,8 +61,10 @@ pub fn ensure_clean_working_tree(allow_dirty: bool) -> Result<()> {
         return Ok(());
     }
 
-    Err(CargoMonoError::conflict(
-        "Working tree is dirty; re-run with --allow-dirty to bypass this check",
+    Err(CargoMonoError::with_hint(
+        ErrorKind::Conflict,
+        "Working tree is dirty and cannot pass preflight checks.",
+        "Commit or stash local changes, or rerun with `--allow-dirty` when this is intentional.",
     ))
 }
 
@@ -112,10 +116,14 @@ fn parse_paths(output: &str) -> BTreeSet<PathBuf> {
 }
 
 fn run_git(args: &[&str]) -> Result<Output> {
-    let output = Command::new("git")
-        .args(args)
-        .output()
-        .map_err(|error| with_context(ErrorKind::Git, "Failed to execute git", error))?;
+    let output = Command::new("git").args(args).output().map_err(|error| {
+        with_context(
+            ErrorKind::Git,
+            "Failed to start `git`",
+            error,
+            "Ensure `git` is installed and available in PATH.",
+        )
+    })?;
 
     ensure_success(&output, args.join(" "))?;
     Ok(output)
@@ -125,7 +133,14 @@ fn run_git_os(args: Vec<OsString>) -> Result<Output> {
     let output = Command::new("git")
         .args(args.iter().map(OsString::as_os_str))
         .output()
-        .map_err(|error| with_context(ErrorKind::Git, "Failed to execute git", error))?;
+        .map_err(|error| {
+            with_context(
+                ErrorKind::Git,
+                "Failed to start `git`",
+                error,
+                "Ensure `git` is installed and available in PATH.",
+            )
+        })?;
 
     let command = args
         .iter()
@@ -147,11 +162,18 @@ fn ensure_success(output: &Output, command: String) -> Result<()> {
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let message = if stderr.is_empty() {
-        format!("git {command} failed with status {}", output.status)
+    let summary = if stderr.is_empty() {
+        format!(
+            "Git command `git {command}` failed with status {}.",
+            output.status
+        )
     } else {
-        format!("git {command} failed: {stderr}")
+        format!("Git command `git {command}` failed: {stderr}")
     };
 
-    Err(CargoMonoError::git(message))
+    Err(CargoMonoError::with_hint(
+        ErrorKind::Git,
+        summary,
+        format!("Run `git {command}` directly to inspect and resolve the underlying problem."),
+    ))
 }
