@@ -102,10 +102,21 @@ impl From<io::Error> for CargoMonoError {
 
 impl From<cargo_metadata::Error> for CargoMonoError {
     fn from(value: cargo_metadata::Error) -> Self {
+        let working_directory = std::env::current_dir()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|error| format!("<unavailable:{error}>"));
+
         Self::with_details(
             ErrorKind::Cargo,
             "Failed to load workspace metadata via cargo.",
-            vec![("error", value.to_string())],
+            vec![
+                ("working_directory", working_directory),
+                (
+                    "metadata_command",
+                    "cargo metadata --format-version 1".to_string(),
+                ),
+                ("error", value.to_string()),
+            ],
             "Run `cargo metadata` in this workspace to reproduce and inspect the root cause.",
         )
     }
