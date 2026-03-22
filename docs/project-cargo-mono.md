@@ -16,7 +16,7 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 - The binary must remain compatible with `cargo mono` invocation conventions.
 - Release automation integration must keep stable command semantics.
 - Release tagging responsibility is split by command: `bump` must not create Git tags, while `publish` may create local Git tags for configured packages.
-- Remote tag publication remains CI-owned: `auto-publish` pushes release tags with `git push --tags` after a successful `publish` run.
+- Remote tag publication remains CI-owned: `auto-publish` pushes release tags with `git push --tags` after a successful `publish` run, authenticated via `secrets.GH_TOKEN`.
 - Publish tag configuration must be opt-in through `[workspace.metadata.cargo-mono.publish.tag].packages`, and tag naming must remain `<crate>@v<version>`.
 - Tag release automation must detect `cargo-mono@v*` and produce signed multi-OS prebuilt artifacts without changing CLI command behavior.
 - Runtime failure messaging must follow the `Summary/Context/Hint` three-line contract while command behavior, output schema, and exit code semantics remain stable.

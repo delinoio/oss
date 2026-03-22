@@ -47,4 +47,16 @@ jobs:
         run: cargo run -p cargo-mono -- publish
 
       - name: Push release tags
-        run: git push --tags
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::GH_TOKEN is required for auto-publish tag push."
+            exit 1
+          fi
+
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git push --tags
