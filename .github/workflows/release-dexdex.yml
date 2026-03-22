@@ -323,7 +323,7 @@ jobs:
       - name: Submit Homebrew updates
         if: env.DRY_RUN != 'true'
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
