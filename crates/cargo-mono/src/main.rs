@@ -12,7 +12,11 @@ fn main() {
     match run() {
         Ok(code) => std::process::exit(code),
         Err(error) => {
-            eprintln!("cargo-mono error: {}", error.message);
+            eprintln!(
+                "cargo-mono error [{}]: {}",
+                error.kind.label(),
+                error.message
+            );
             std::process::exit(error.exit_code());
         }
     }

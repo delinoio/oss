@@ -84,7 +84,10 @@ fn list_still_requires_workspace() {
         .arg("list")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("cargo metadata error"));
+        .stderr(predicate::str::contains(
+            "Failed to load workspace metadata via cargo",
+        ))
+        .stderr(predicate::str::contains("Hint: "));
 }
 
 #[test]
@@ -248,7 +251,10 @@ fn bump_fails_on_preexisting_dirty_tree_without_allow_dirty() {
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "Working tree is dirty; re-run with --allow-dirty to bypass this check",
+            "Working tree is dirty and cannot pass preflight checks.",
+        ))
+        .stderr(predicate::str::contains(
+            "Hint: Commit or stash local changes, or rerun with `--allow-dirty`",
         ));
 
     let status = git_status_short(temp_dir.path());
@@ -273,7 +279,10 @@ fn publish_fails_on_preexisting_dirty_tree_without_allow_dirty() {
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "Working tree is dirty; re-run with --allow-dirty to bypass this check",
+            "Working tree is dirty and cannot pass preflight checks.",
+        ))
+        .stderr(predicate::str::contains(
+            "Hint: Commit or stash local changes, or rerun with `--allow-dirty`",
         ));
 
     let status = git_status_short(temp_dir.path());
@@ -304,7 +313,7 @@ fn bump_dirty_tree_failure_still_logs_command_invocation() {
         .stdout(predicate::str::contains("action=\"invoke-command\""))
         .stdout(predicate::str::contains("command_path=\"bump\""))
         .stderr(predicate::str::contains(
-            "Working tree is dirty; re-run with --allow-dirty to bypass this check",
+            "Working tree is dirty and cannot pass preflight checks.",
         ));
 }
 
@@ -625,7 +634,10 @@ fn publish_rejects_unknown_packages() {
         .assert()
         .failure()
         .code(2)
-        .stderr(predicate::str::contains("Unknown package(s): unknown"));
+        .stderr(predicate::str::contains(
+            "Unknown package selector(s): unknown",
+        ))
+        .stderr(predicate::str::contains("Hint: Run `cargo mono list`"));
 }
 
 fn cargo_mono_command() -> Command {

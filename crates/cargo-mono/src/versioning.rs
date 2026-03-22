@@ -8,7 +8,7 @@ use semver::{Prerelease, Version};
 use toml_edit::{value, DocumentMut, Item, Value};
 
 use crate::{
-    errors::{CargoMonoError, Result},
+    errors::{CargoMonoError, ErrorKind, Result},
     types::BumpLevel,
     workspace::Workspace,
 };
@@ -46,7 +46,11 @@ pub fn bump_version(current: &Version, level: BumpLevel, preid: Option<&str>) ->
         }
         BumpLevel::Prerelease => {
             let preid = preid.ok_or_else(|| {
-                CargoMonoError::invalid_input("--preid is required when --level prerelease")
+                CargoMonoError::with_hint(
+                    ErrorKind::InvalidInput,
+                    "`--preid` is required when `--level prerelease` is used.",
+                    "Provide a prerelease identifier, for example `--preid rc`.",
+                )
             })?;
 
             let next_pre = next_prerelease(current, preid)?;

@@ -8,7 +8,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use semver::Version;
 use serde::Serialize;
 
-use crate::errors::{CargoMonoError, Result};
+use crate::errors::{CargoMonoError, ErrorKind, Result};
 
 pub const GLOBAL_IMPACT_FILES: [&str; 3] = ["Cargo.toml", "Cargo.lock", "rust-toolchain"];
 
@@ -55,28 +55,44 @@ impl Workspace {
                 .strip_prefix(&root)
                 .map(Path::to_path_buf)
                 .map_err(|error| {
-                CargoMonoError::internal(format!(
-                    "Workspace manifest is outside workspace root: {} ({error})",
-                    manifest_path.display()
-                ))
+                CargoMonoError::with_hint(
+                    ErrorKind::Internal,
+                    format!(
+                        "Workspace manifest is outside the workspace root: {} ({error})",
+                        manifest_path.display()
+                    ),
+                    "Verify workspace members in `Cargo.toml` and ensure all manifests live under \
+                     the workspace root.",
+                )
             })?;
             let directory = manifest_path
                 .parent()
                 .ok_or_else(|| {
-                    CargoMonoError::internal(format!(
-                        "Failed to resolve package directory from manifest path: {}",
-                        manifest_path.display()
-                    ))
+                    CargoMonoError::with_hint(
+                        ErrorKind::Internal,
+                        format!(
+                            "Failed to resolve package directory from manifest path: {}",
+                            manifest_path.display()
+                        ),
+                        "Ensure each package manifest path points to a valid file inside the \
+                         workspace.",
+                    )
                 })?
                 .to_path_buf();
             let directory_relative_path = directory
                 .strip_prefix(&root)
                 .map(Path::to_path_buf)
                 .map_err(|error| {
-                    CargoMonoError::internal(format!(
-                        "Workspace package directory is outside workspace root: {} ({error})",
-                        directory.display()
-                    ))
+                    CargoMonoError::with_hint(
+                        ErrorKind::Internal,
+                        format!(
+                            "Workspace package directory is outside the workspace root: {} \
+                             ({error})",
+                            directory.display()
+                        ),
+                        "Verify package paths in workspace metadata and keep package directories \
+                         under the workspace root.",
+                    )
                 })?;
 
             let publishable = package
@@ -279,8 +295,11 @@ impl Workspace {
         }
 
         if ordered.len() != selected.len() {
-            return Err(CargoMonoError::conflict(
-                "Failed to build package order due to dependency cycle",
+            return Err(CargoMonoError::with_hint(
+                ErrorKind::Conflict,
+                "Failed to build package order due to a dependency cycle in selected packages.",
+                "Break the cycle between selected packages, or narrow the target set with \
+                 `--package`/`--changed`.",
             ));
         }
 
@@ -333,13 +352,22 @@ fn compile_globset(patterns: &[String], flag: &str) -> Result<Option<GlobSet>> {
     let mut builder = GlobSetBuilder::new();
     for pattern in patterns {
         let glob = Glob::new(pattern).map_err(|error| {
-            CargoMonoError::invalid_input(format!("Invalid {flag} pattern `{pattern}`: {error}"))
+            CargoMonoError::with_hint(
+                ErrorKind::InvalidInput,
+                format!("Invalid {flag} pattern `{pattern}`: {error}"),
+                "Use valid glob syntax (for example, `crates/**`) and quote patterns in your \
+                 shell.",
+            )
         })?;
         builder.add(glob);
     }
 
     let globset = builder.build().map_err(|error| {
-        CargoMonoError::invalid_input(format!("Failed to build {flag} matcher: {error}"))
+        CargoMonoError::with_hint(
+            ErrorKind::InvalidInput,
+            format!("Failed to build matcher for {flag}: {error}"),
+            "Review your glob patterns for syntax issues and quote each pattern argument.",
+        )
     })?;
 
     Ok(Some(globset))

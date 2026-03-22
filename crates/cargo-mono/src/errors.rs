@@ -23,6 +23,16 @@ impl ErrorKind {
             Self::Conflict => 5,
         }
     }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Internal => "internal",
+            Self::InvalidInput => "invalid-input",
+            Self::Git => "git",
+            Self::Cargo => "cargo",
+            Self::Conflict => "conflict",
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -38,6 +48,10 @@ impl CargoMonoError {
             kind,
             message: message.into(),
         }
+    }
+
+    pub fn with_hint(kind: ErrorKind, summary: impl AsRef<str>, hint: impl AsRef<str>) -> Self {
+        Self::new(kind, message_with_hint(summary, hint))
     }
 
     pub fn internal(message: impl Into<String>) -> Self {
@@ -67,31 +81,51 @@ impl CargoMonoError {
 
 impl From<io::Error> for CargoMonoError {
     fn from(value: io::Error) -> Self {
-        Self::internal(format!("I/O error: {value}"))
+        Self::with_hint(
+            ErrorKind::Internal,
+            format!("I/O operation failed: {value}"),
+            "Verify paths and permissions, then retry the command.",
+        )
     }
 }
 
 impl From<cargo_metadata::Error> for CargoMonoError {
     fn from(value: cargo_metadata::Error) -> Self {
-        Self::cargo(format!("cargo metadata error: {value}"))
+        Self::with_hint(
+            ErrorKind::Cargo,
+            format!("Failed to load workspace metadata via cargo: {value}"),
+            "Run `cargo metadata` in this workspace to reproduce and inspect the root cause.",
+        )
     }
 }
 
 impl From<serde_json::Error> for CargoMonoError {
     fn from(value: serde_json::Error) -> Self {
-        Self::internal(format!("JSON error: {value}"))
+        Self::with_hint(
+            ErrorKind::Internal,
+            format!("Failed to parse JSON content: {value}"),
+            "Check the JSON payload for syntax issues near the reported location.",
+        )
     }
 }
 
 impl From<semver::Error> for CargoMonoError {
     fn from(value: semver::Error) -> Self {
-        Self::invalid_input(format!("Invalid semantic version: {value}"))
+        Self::with_hint(
+            ErrorKind::InvalidInput,
+            format!("Invalid semantic version: {value}"),
+            "Use a valid SemVer value such as `1.2.3` or `1.2.3-rc.1`.",
+        )
     }
 }
 
 impl From<toml_edit::TomlError> for CargoMonoError {
     fn from(value: toml_edit::TomlError) -> Self {
-        Self::internal(format!("TOML error: {value}"))
+        Self::with_hint(
+            ErrorKind::Internal,
+            format!("Failed to parse TOML document: {value}"),
+            "Check TOML syntax in Cargo manifests and retry.",
+        )
     }
 }
 
@@ -101,6 +135,52 @@ impl From<CargoMonoError> for io::Error {
     }
 }
 
-pub fn with_context<E: fmt::Display>(kind: ErrorKind, context: &str, error: E) -> CargoMonoError {
-    CargoMonoError::new(kind, format!("{context}: {error}"))
+pub fn message_with_hint(summary: impl AsRef<str>, hint: impl AsRef<str>) -> String {
+    format!("{} Hint: {}", summary.as_ref(), hint.as_ref())
+}
+
+pub fn with_context<E: fmt::Display>(
+    kind: ErrorKind,
+    context: &str,
+    error: E,
+    hint: &str,
+) -> CargoMonoError {
+    CargoMonoError::with_hint(kind, format!("{context}: {error}"), hint)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{message_with_hint, CargoMonoError, ErrorKind};
+
+    #[test]
+    fn error_kind_labels_are_stable() {
+        assert_eq!(ErrorKind::Internal.label(), "internal");
+        assert_eq!(ErrorKind::InvalidInput.label(), "invalid-input");
+        assert_eq!(ErrorKind::Git.label(), "git");
+        assert_eq!(ErrorKind::Cargo.label(), "cargo");
+        assert_eq!(ErrorKind::Conflict.label(), "conflict");
+    }
+
+    #[test]
+    fn message_with_hint_uses_single_line_contract() {
+        let message = message_with_hint("Unable to read manifest.", "Check file permissions.");
+        assert_eq!(
+            message,
+            "Unable to read manifest. Hint: Check file permissions."
+        );
+    }
+
+    #[test]
+    fn with_hint_formats_error_message() {
+        let error = CargoMonoError::with_hint(
+            ErrorKind::InvalidInput,
+            "Invalid package selector.",
+            "Run `cargo mono list`.",
+        );
+        assert_eq!(error.kind, ErrorKind::InvalidInput);
+        assert_eq!(
+            error.message,
+            "Invalid package selector. Hint: Run `cargo mono list`."
+        );
+    }
 }

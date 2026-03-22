@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::{
     cli::{ChangedArgs, TargetArgs},
-    errors::{CargoMonoError, Result},
+    errors::{CargoMonoError, ErrorKind, Result},
     git,
     types::TargetSelector,
     workspace::Workspace,
@@ -48,10 +48,11 @@ pub fn resolve_targets(
             .collect::<Vec<_>>();
 
         if !missing.is_empty() {
-            return Err(CargoMonoError::invalid_input(format!(
-                "Unknown package(s): {}",
-                missing.join(", ")
-            )));
+            return Err(CargoMonoError::with_hint(
+                ErrorKind::InvalidInput,
+                format!("Unknown package selector(s): {}", missing.join(", ")),
+                "Run `cargo mono list` to view valid workspace package names.",
+            ));
         }
 
         return Ok(ResolvedTargets {

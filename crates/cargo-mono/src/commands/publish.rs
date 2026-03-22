@@ -17,7 +17,7 @@ use tracing::{info, warn};
 use crate::{
     cli::PublishArgs,
     commands::{print_output, targeting},
-    errors::{CargoMonoError, Result},
+    errors::{message_with_hint, CargoMonoError, ErrorKind, Result},
     types::{OutputFormat, PublishSkipReason},
     workspace::Workspace,
     CargoMonoApp,
@@ -322,11 +322,11 @@ pub fn execute(args: &PublishArgs, output: OutputFormat, app: &CargoMonoApp) -> 
                     failed.push(FailedPackage {
                         name: package_name.clone(),
                         attempts,
-                        error: if details.is_empty() {
-                            format!("publish failed with status {}", publish_output.status)
-                        } else {
-                            details
-                        },
+                        error: format_publish_failure(
+                            &package_name,
+                            &publish_output.status.to_string(),
+                            &details,
+                        ),
                     });
                     published_or_skipped = true;
                     break;
@@ -336,9 +336,9 @@ pub fn execute(args: &PublishArgs, output: OutputFormat, app: &CargoMonoApp) -> 
 
         if !published_or_skipped {
             failed.push(FailedPackage {
-                name: package_name,
+                name: package_name.clone(),
                 attempts,
-                error: "publish did not complete within retry limit".to_string(),
+                error: format_publish_retry_limit_failure(&package_name, attempts),
             });
         }
     }
@@ -851,9 +851,40 @@ fn run_publish_command(package: &str, dry_run: bool, registry: Option<&str>) -> 
         command.arg("--registry").arg(registry);
     }
 
-    command
-        .output()
-        .map_err(|error| CargoMonoError::cargo(format!("Failed to execute cargo publish: {error}")))
+    command.output().map_err(|error| {
+        CargoMonoError::with_hint(
+            ErrorKind::Cargo,
+            format!("Failed to start `cargo publish` for package `{package}`: {error}"),
+            "Ensure Cargo is installed, the package exists, and registry credentials are \
+             configured before retrying.",
+        )
+    })
+}
+
+fn format_publish_failure(package: &str, status: &str, raw_details: &str) -> String {
+    let details = compact_error_details(raw_details);
+    let summary = if details.is_empty() {
+        format!("`cargo publish` failed for package `{package}` with status {status}.")
+    } else {
+        format!("`cargo publish` failed for package `{package}`: {details}")
+    };
+    message_with_hint(
+        summary,
+        "Verify package metadata, registry access, and network connectivity, then retry.",
+    )
+}
+
+fn format_publish_retry_limit_failure(package: &str, attempts: usize) -> String {
+    message_with_hint(
+        format!(
+            "`cargo publish` did not complete for package `{package}` within {attempts} attempts."
+        ),
+        "Wait for index propagation or rate limits to clear, then rerun publish.",
+    )
+}
+
+fn compact_error_details(raw: &str) -> String {
+    raw.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn retry_delay(attempt: usize) -> Duration {
@@ -959,6 +990,30 @@ mod tests {
             classify_publish_failure(&output),
             PublishFailureKind::RateLimited
         ));
+    }
+
+    #[test]
+    fn format_publish_failure_uses_status_when_no_details_exist() {
+        let message = format_publish_failure("alpha", "exit status: 101", "");
+        assert!(message
+            .contains("`cargo publish` failed for package `alpha` with status exit status: 101."));
+        assert!(message.contains("Hint: "));
+    }
+
+    #[test]
+    fn format_publish_failure_compacts_multiline_details() {
+        let message = format_publish_failure("alpha", "ignored", "error:\nnetwork timeout\n");
+        assert!(
+            message.contains("`cargo publish` failed for package `alpha`: error: network timeout")
+        );
+        assert!(message.contains("Hint: "));
+    }
+
+    #[test]
+    fn format_publish_retry_limit_failure_includes_hint() {
+        let message = format_publish_retry_limit_failure("alpha", 3);
+        assert!(message.contains("within 3 attempts."));
+        assert!(message.contains("Hint: "));
     }
 
     #[test]
