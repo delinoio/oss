@@ -1,7 +1,7 @@
 # Release Automation Scripts
 
 - `generate-checksums.sh`: produces `SHA256SUMS` and cosign signatures.
-- `update-homebrew.sh`: renders and optionally submits Homebrew formula/cask updates.
+- `update-homebrew.sh`: renders and optionally submits Homebrew formula/cask updates (DexDex server formulas consume prebuilt multi-OS release artifacts).
 - `update-winget.sh`: renders and optionally submits winget manifests.
 
 These scripts are designed for use by release workflows:

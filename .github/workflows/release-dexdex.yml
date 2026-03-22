@@ -255,19 +255,6 @@ TARGETS
           files: dist/*
           generate_release_notes: true
 
-      - name: Compute source archive checksum
-        id: source
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          source_url="https://github.com/delinoio/oss/archive/refs/tags/${RELEASE_TAG}.tar.gz"
-          curl -fsSL "$source_url" -o source.tar.gz
-          source_sha="$(shasum -a 256 source.tar.gz | awk '{print $1}')"
-
-          echo "source_url=$source_url" >> "$GITHUB_OUTPUT"
-          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
-
       - name: Render Homebrew updates
         if: env.DRY_RUN == 'true'
         shell: bash
@@ -276,6 +263,30 @@ TARGETS
 
           chmod +x ./scripts/release/update-homebrew.sh
 
+          main_darwin_amd64_asset="dexdex-main-server-darwin-amd64.tar.gz"
+          main_darwin_amd64_sha="$(grep " ${main_darwin_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          main_darwin_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${main_darwin_amd64_asset}"
+
+          main_darwin_arm64_asset="dexdex-main-server-darwin-arm64.tar.gz"
+          main_darwin_arm64_sha="$(grep " ${main_darwin_arm64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          main_darwin_arm64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${main_darwin_arm64_asset}"
+
+          main_linux_amd64_asset="dexdex-main-server-linux-amd64.tar.gz"
+          main_linux_amd64_sha="$(grep " ${main_linux_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          main_linux_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${main_linux_amd64_asset}"
+
+          worker_darwin_amd64_asset="dexdex-worker-server-darwin-amd64.tar.gz"
+          worker_darwin_amd64_sha="$(grep " ${worker_darwin_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          worker_darwin_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${worker_darwin_amd64_asset}"
+
+          worker_darwin_arm64_asset="dexdex-worker-server-darwin-arm64.tar.gz"
+          worker_darwin_arm64_sha="$(grep " ${worker_darwin_arm64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          worker_darwin_arm64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${worker_darwin_arm64_asset}"
+
+          worker_linux_amd64_asset="dexdex-worker-server-linux-amd64.tar.gz"
+          worker_linux_amd64_sha="$(grep " ${worker_linux_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          worker_linux_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${worker_linux_amd64_asset}"
+
           desktop_asset="dexdex-desktop-darwin-universal.dmg"
           desktop_sha="$(grep " ${desktop_asset}$" dist/SHA256SUMS | awk '{print $1}')"
           desktop_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${desktop_asset}"
@@ -283,15 +294,23 @@ TARGETS
           ./scripts/release/update-homebrew.sh \
             --project dexdex-main-server \
             --version "$RELEASE_VERSION" \
-            --source-url "${{ steps.source.outputs.source_url }}" \
-            --source-sha256 "${{ steps.source.outputs.source_sha }}" \
+            --darwin-amd64-url "$main_darwin_amd64_url" \
+            --darwin-amd64-sha256 "$main_darwin_amd64_sha" \
+            --darwin-arm64-url "$main_darwin_arm64_url" \
+            --darwin-arm64-sha256 "$main_darwin_arm64_sha" \
+            --linux-amd64-url "$main_linux_amd64_url" \
+            --linux-amd64-sha256 "$main_linux_amd64_sha" \
             --dry-run >/dev/null
 
           ./scripts/release/update-homebrew.sh \
             --project dexdex-worker-server \
             --version "$RELEASE_VERSION" \
-            --source-url "${{ steps.source.outputs.source_url }}" \
-            --source-sha256 "${{ steps.source.outputs.source_sha }}" \
+            --darwin-amd64-url "$worker_darwin_amd64_url" \
+            --darwin-amd64-sha256 "$worker_darwin_amd64_sha" \
+            --darwin-arm64-url "$worker_darwin_arm64_url" \
+            --darwin-arm64-sha256 "$worker_darwin_arm64_sha" \
+            --linux-amd64-url "$worker_linux_amd64_url" \
+            --linux-amd64-sha256 "$worker_linux_amd64_sha" \
             --dry-run >/dev/null
 
           ./scripts/release/update-homebrew.sh \
@@ -311,6 +330,30 @@ TARGETS
 
           chmod +x ./scripts/release/update-homebrew.sh
 
+          main_darwin_amd64_asset="dexdex-main-server-darwin-amd64.tar.gz"
+          main_darwin_amd64_sha="$(grep " ${main_darwin_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          main_darwin_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${main_darwin_amd64_asset}"
+
+          main_darwin_arm64_asset="dexdex-main-server-darwin-arm64.tar.gz"
+          main_darwin_arm64_sha="$(grep " ${main_darwin_arm64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          main_darwin_arm64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${main_darwin_arm64_asset}"
+
+          main_linux_amd64_asset="dexdex-main-server-linux-amd64.tar.gz"
+          main_linux_amd64_sha="$(grep " ${main_linux_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          main_linux_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${main_linux_amd64_asset}"
+
+          worker_darwin_amd64_asset="dexdex-worker-server-darwin-amd64.tar.gz"
+          worker_darwin_amd64_sha="$(grep " ${worker_darwin_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          worker_darwin_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${worker_darwin_amd64_asset}"
+
+          worker_darwin_arm64_asset="dexdex-worker-server-darwin-arm64.tar.gz"
+          worker_darwin_arm64_sha="$(grep " ${worker_darwin_arm64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          worker_darwin_arm64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${worker_darwin_arm64_asset}"
+
+          worker_linux_amd64_asset="dexdex-worker-server-linux-amd64.tar.gz"
+          worker_linux_amd64_sha="$(grep " ${worker_linux_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          worker_linux_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${worker_linux_amd64_asset}"
+
           desktop_asset="dexdex-desktop-darwin-universal.dmg"
           desktop_sha="$(grep " ${desktop_asset}$" dist/SHA256SUMS | awk '{print $1}')"
           desktop_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${desktop_asset}"
@@ -318,14 +361,22 @@ TARGETS
           ./scripts/release/update-homebrew.sh \
             --project dexdex-main-server \
             --version "$RELEASE_VERSION" \
-            --source-url "${{ steps.source.outputs.source_url }}" \
-            --source-sha256 "${{ steps.source.outputs.source_sha }}"
+            --darwin-amd64-url "$main_darwin_amd64_url" \
+            --darwin-amd64-sha256 "$main_darwin_amd64_sha" \
+            --darwin-arm64-url "$main_darwin_arm64_url" \
+            --darwin-arm64-sha256 "$main_darwin_arm64_sha" \
+            --linux-amd64-url "$main_linux_amd64_url" \
+            --linux-amd64-sha256 "$main_linux_amd64_sha"
 
           ./scripts/release/update-homebrew.sh \
             --project dexdex-worker-server \
             --version "$RELEASE_VERSION" \
-            --source-url "${{ steps.source.outputs.source_url }}" \
-            --source-sha256 "${{ steps.source.outputs.source_sha }}"
+            --darwin-amd64-url "$worker_darwin_amd64_url" \
+            --darwin-amd64-sha256 "$worker_darwin_amd64_sha" \
+            --darwin-arm64-url "$worker_darwin_arm64_url" \
+            --darwin-arm64-sha256 "$worker_darwin_arm64_sha" \
+            --linux-amd64-url "$worker_linux_amd64_url" \
+            --linux-amd64-sha256 "$worker_linux_amd64_sha"
 
           ./scripts/release/update-homebrew.sh \
             --project dexdex \
