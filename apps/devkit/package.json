@@ -16,7 +16,7 @@
     "@connectrpc/connect-query": "^2.2.0",
     "@connectrpc/connect-web": "^2.1.1",
     "@tanstack/react-query": "^5.90.21",
-    "next": "^16.2.0",
+    "next": "^16.2.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
