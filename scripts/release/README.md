@@ -6,6 +6,7 @@
 
 These scripts are designed for use by release workflows:
 
+- `.github/workflows/release-cargo-mono.yml`
 - `.github/workflows/release-nodeup.yml`
 - `.github/workflows/release-derun.yml`
 - `.github/workflows/release-dexdex.yml`
