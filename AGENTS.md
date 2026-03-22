@@ -304,15 +304,18 @@ Release automation baseline:
 - Branch guard contract: publish job runs only when `github.ref == 'refs/heads/main'`.
 - Publish command contract: `cargo run -p cargo-mono -- publish`.
 - Required secret contract: `CARGO_REGISTRY_TOKEN`.
+- `release-cargo-mono` is defined in `.github/workflows/release-cargo-mono.yml`.
+- Trigger contract: runs on tag push `cargo-mono@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
+- Distribution contract: publishes signed multi-OS cargo-mono release artifacts to GitHub Releases.
 - `release-nodeup` is defined in `.github/workflows/release-nodeup.yml`.
 - Trigger contract: runs on tag push `nodeup@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
-- Distribution contract: publishes signed multi-OS nodeup release artifacts, updates Homebrew (`nodeup`), and updates winget (`DelinoIO.Nodeup`).
+- Distribution contract: publishes signed multi-OS nodeup release artifacts, including standalone prebuilt binaries (`nodeup-<os>-<arch>[.exe]`) and archive assets (`nodeup-<os>-<arch>.tar.gz|zip`), then updates Homebrew (`nodeup`) and winget (`DelinoIO.Nodeup`).
 - `release-derun` is defined in `.github/workflows/release-derun.yml`.
 - Trigger contract: runs on tag push `derun@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS derun release artifacts, updates Homebrew (`derun`) from GitHub release prebuilt archives (`darwin-amd64`, `darwin-arm64`, `linux-amd64`), and updates winget (`DelinoIO.Derun`) from the Windows prebuilt archive.
 - `release-dexdex` is defined in `.github/workflows/release-dexdex.yml`.
 - Trigger contract: runs on tag push `dexdex@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
-- Distribution contract: publishes signed DexDex desktop + main/worker server artifacts, applies desktop signing/notarization secrets, updates Homebrew (`dexdex`, `dexdex-main-server`, `dexdex-worker-server`), and updates winget (`DelinoIO.DexDex`, `DelinoIO.DexDexMainServer`, `DelinoIO.DexDexWorkerServer`).
+- Distribution contract: publishes signed DexDex desktop + main/worker server artifacts, applies desktop signing/notarization secrets, updates Homebrew (`dexdex`, `dexdex-main-server`, `dexdex-worker-server`) where DexDex server formulas consume prebuilt release artifacts for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`, and updates winget (`DelinoIO.DexDex`, `DelinoIO.DexDexMainServer`, `DelinoIO.DexDexWorkerServer`).
 
 ### Documentation Lifecycle Rules
 

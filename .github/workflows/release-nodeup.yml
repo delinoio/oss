@@ -109,14 +109,22 @@ jobs:
 
           mkdir -p dist
           artifact_name="nodeup-${{ matrix.asset_os }}-${{ matrix.asset_arch }}.${{ matrix.archive_ext }}"
+          binary_name="nodeup-${{ matrix.asset_os }}-${{ matrix.asset_arch }}"
+          source_binary="target/${{ matrix.target }}/release/nodeup"
 
           if [ "${{ matrix.asset_os }}" = "windows" ]; then
-            cp "target/${{ matrix.target }}/release/nodeup.exe" dist/nodeup.exe
-            pwsh -NoLogo -NoProfile -Command "Compress-Archive -Path dist/nodeup.exe -DestinationPath dist/${artifact_name}"
-            rm -f dist/nodeup.exe
+            binary_name="${binary_name}.exe"
+            source_binary="${source_binary}.exe"
+          fi
+
+          cp "$source_binary" "dist/${binary_name}"
+
+          if [ "${{ matrix.asset_os }}" = "windows" ]; then
+            pwsh -NoLogo -NoProfile -Command "Compress-Archive -Path dist/${binary_name} -DestinationPath dist/${artifact_name}"
           else
-            cp "target/${{ matrix.target }}/release/nodeup" dist/nodeup
+            cp "dist/${binary_name}" dist/nodeup
             tar -C dist -czf "dist/${artifact_name}" nodeup
+            rm -f dist/nodeup
           fi
 
       - name: Upload artifact

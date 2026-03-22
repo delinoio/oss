@@ -20,20 +20,20 @@ Usage:
 Options:
   --project <id>         Package identifier.
   --version <semver>     Release version without v-prefix.
-  --source-url <url>     Source tarball URL (nodeup/dexdex-* formula projects).
-  --source-sha256 <sha>  Source tarball SHA256 (nodeup/dexdex-* formula projects).
+  --source-url <url>     Source tarball URL (nodeup formula only).
+  --source-sha256 <sha>  Source tarball SHA256 (nodeup formula only).
   --darwin-amd64-url <url>
-                         derun darwin amd64 prebuilt artifact URL.
+                         Darwin amd64 prebuilt artifact URL (derun and DexDex server formulas).
   --darwin-amd64-sha256 <sha>
-                         derun darwin amd64 prebuilt artifact SHA256.
+                         Darwin amd64 prebuilt artifact SHA256 (derun and DexDex server formulas).
   --darwin-arm64-url <url>
-                         derun darwin arm64 prebuilt artifact URL.
+                         Darwin arm64 prebuilt artifact URL (derun and DexDex server formulas).
   --darwin-arm64-sha256 <sha>
-                         derun darwin arm64 prebuilt artifact SHA256.
+                         Darwin arm64 prebuilt artifact SHA256 (derun and DexDex server formulas).
   --linux-amd64-url <url>
-                         derun linux amd64 prebuilt artifact URL.
+                         Linux amd64 prebuilt artifact URL (derun and DexDex server formulas).
   --linux-amd64-sha256 <sha>
-                         derun linux amd64 prebuilt artifact SHA256.
+                         Linux amd64 prebuilt artifact SHA256 (derun and DexDex server formulas).
   --desktop-url <url>    Desktop installer URL (dexdex cask).
   --desktop-sha256 <sha> Desktop installer SHA256 (dexdex cask).
   --tap-repo <repo>      Homebrew tap repository (default: delinoio/homebrew-tap).
@@ -138,7 +138,7 @@ rendered_file=""
 destination_path=""
 
 case "$project" in
-  nodeup|dexdex-main-server|dexdex-worker-server)
+  nodeup)
     if [ -z "$source_url" ] || [ -z "$source_sha256" ]; then
       echo "[release.homebrew] $project requires --source-url and --source-sha256" >&2
       exit 1
@@ -159,14 +159,14 @@ case "$project" in
       -e "s|__VERSION__|$version|g" \
       "$template_path" >"$rendered_file"
     ;;
-  derun)
+  derun|dexdex-main-server|dexdex-worker-server)
     if [ -z "$darwin_amd64_url" ] || [ -z "$darwin_amd64_sha256" ] || [ -z "$darwin_arm64_url" ] || [ -z "$darwin_arm64_sha256" ] || [ -z "$linux_amd64_url" ] || [ -z "$linux_amd64_sha256" ]; then
-      echo "[release.homebrew] derun requires all prebuilt artifact URL/SHA pairs for darwin-amd64, darwin-arm64, and linux-amd64" >&2
+      echo "[release.homebrew] $project requires --darwin-amd64-url, --darwin-amd64-sha256, --darwin-arm64-url, --darwin-arm64-sha256, --linux-amd64-url, and --linux-amd64-sha256" >&2
       exit 1
     fi
 
-    template_path="$repo_root/packaging/homebrew/templates/derun.rb.tmpl"
-    destination_path="Formula/derun.rb"
+    template_path="$repo_root/packaging/homebrew/templates/${project}.rb.tmpl"
+    destination_path="Formula/${project}.rb"
 
     if [ ! -f "$template_path" ]; then
       echo "[release.homebrew] template not found: $template_path" >&2

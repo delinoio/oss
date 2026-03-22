@@ -50,6 +50,7 @@
 - Local validation: `cargo test -p nodeup`
 - Workspace baseline: `cargo test --workspace --all-targets`
 - Release contract checks should align with `release-nodeup` workflow expectations.
+- Release assets must include both standalone prebuilt binaries (`nodeup-<os>-<arch>[.exe]`) and compressed archives (`nodeup-<os>-<arch>.tar.gz|zip`) for the supported release matrix.
 - Completion coverage must include successful script generation, invalid shell/scope validation, and JSON-mode raw output behavior.
 - Output color coverage must include flag/env precedence, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
 - `packageManager` coverage must include strict parsing, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, and npm-exec fallback behavior.

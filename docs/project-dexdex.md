@@ -137,6 +137,18 @@ Recommended runtime environment keys:
 - `DEXDEX_PR_POLL_INTERVAL_SEC`
 - `DEXDEX_WORKTREE_ROOT`
 
+## Release Distribution Contracts
+- Release workflow: `.github/workflows/release-dexdex.yml`.
+- GitHub Releases publish signed desktop and server artifacts (`SHA256SUMS` + cosign signatures).
+- Homebrew distribution:
+  - `dexdex` cask consumes the macOS desktop DMG release artifact.
+  - `dexdex-main-server` and `dexdex-worker-server` formulas consume prebuilt server release artifacts for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`.
+  - Linux `arm64` Homebrew prebuilt server artifacts are currently out of scope.
+- winget distribution remains prebuilt-asset based for:
+  - `DelinoIO.DexDex`
+  - `DelinoIO.DexDexMainServer`
+  - `DelinoIO.DexDexWorkerServer`
+
 ## Change Policy
 - Any DexDex API, entity, plan-mode, event-streaming, or connectivity contract change must update `docs/project-dexdex.md` and the related domain contract docs in the same change.
 - If remote-source contract behavior is adopted before local proto/code sync, keep an explicit alignment note in the changed docs.
