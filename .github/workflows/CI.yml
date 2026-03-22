@@ -386,7 +386,7 @@ jobs:
         run: pnpm --filter dexdex exec tauri ios init --ci
 
       - name: Run dexdex iOS smoke build
-        run: pnpm --filter dexdex exec tauri ios build --ci --debug --target aarch64-sim --no-build
+        run: pnpm --filter dexdex exec tauri ios build --ci --debug --target aarch64-sim --config '{"build":{"beforeBuildCommand":"true"}}'
 
   ci-result:
     name: CI Result
