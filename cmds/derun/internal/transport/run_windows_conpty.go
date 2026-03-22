@@ -4,7 +4,7 @@ package transport
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"os"
 	"os/signal"
@@ -32,41 +32,41 @@ func RunWindowsConPTY(
 	ptyOutput io.Writer,
 ) (RunResult, error) {
 	if len(command) == 0 {
-		return RunResult{}, fmt.Errorf("failed to run command: command is empty")
+		return RunResult{}, commandRuntimeError("run command", command, workingDir, errors.New("command is empty"))
 	}
 
 	conPTYSize := detectConPTYSize()
 
 	inRead, inWrite, err := createInheritedPipePair()
 	if err != nil {
-		return RunResult{}, fmt.Errorf("failed to create conpty input pipe: %w", err)
+		return RunResult{}, commandRuntimeError("create conpty input pipe", command, workingDir, err)
 	}
 	defer closeHandle(&inRead)
 	defer closeHandle(&inWrite)
 
 	outRead, outWrite, err := createInheritedPipePair()
 	if err != nil {
-		return RunResult{}, fmt.Errorf("failed to create conpty output pipe: %w", err)
+		return RunResult{}, commandRuntimeError("create conpty output pipe", command, workingDir, err)
 	}
 	defer closeHandle(&outRead)
 	defer closeHandle(&outWrite)
 
 	if err := windows.SetHandleInformation(inWrite, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
-		return RunResult{}, fmt.Errorf("failed to mark conpty input writer non-inheritable: %w", err)
+		return RunResult{}, commandRuntimeError("mark conpty input writer non-inheritable", command, workingDir, err)
 	}
 	if err := windows.SetHandleInformation(outRead, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
-		return RunResult{}, fmt.Errorf("failed to mark conpty output reader non-inheritable: %w", err)
+		return RunResult{}, commandRuntimeError("mark conpty output reader non-inheritable", command, workingDir, err)
 	}
 
 	var pseudoConsole windows.Handle
 	if err := windows.CreatePseudoConsole(conPTYSize, inRead, outWrite, 0, &pseudoConsole); err != nil {
-		return RunResult{}, fmt.Errorf("failed to create pseudo console: %w", err)
+		return RunResult{}, commandRuntimeError("create pseudo console", command, workingDir, err)
 	}
 	defer closePseudoConsole(&pseudoConsole)
 
 	attributeList, err := windows.NewProcThreadAttributeList(1)
 	if err != nil {
-		return RunResult{}, fmt.Errorf("failed to create proc thread attribute list: %w", err)
+		return RunResult{}, commandRuntimeError("create proc thread attribute list", command, workingDir, err)
 	}
 	defer attributeList.Delete()
 
@@ -75,7 +75,7 @@ func RunWindowsConPTY(
 		unsafe.Pointer(&pseudoConsole),
 		unsafe.Sizeof(pseudoConsole),
 	); err != nil {
-		return RunResult{}, fmt.Errorf("failed to set pseudoconsole attribute: %w", err)
+		return RunResult{}, commandRuntimeError("set pseudoconsole attribute", command, workingDir, err)
 	}
 
 	startupInfo := windows.StartupInfoEx{
@@ -87,14 +87,14 @@ func RunWindowsConPTY(
 
 	commandLine, err := windows.UTF16PtrFromString(windows.ComposeCommandLine(command))
 	if err != nil {
-		return RunResult{}, fmt.Errorf("failed to compose command line: %w", err)
+		return RunResult{}, commandRuntimeError("compose command line", command, workingDir, err)
 	}
 
 	var workingDirUTF16 *uint16
 	if workingDir != "" {
 		workingDirUTF16, err = windows.UTF16PtrFromString(workingDir)
 		if err != nil {
-			return RunResult{}, fmt.Errorf("failed to encode working directory: %w", err)
+			return RunResult{}, commandRuntimeError("encode working directory", command, workingDir, err)
 		}
 	}
 
@@ -112,7 +112,7 @@ func RunWindowsConPTY(
 		&startupInfo.StartupInfo,
 		&processInfo,
 	); err != nil {
-		return RunResult{}, fmt.Errorf("failed to start conpty process: %w", err)
+		return RunResult{}, commandRuntimeError("start conpty process", command, workingDir, err)
 	}
 	defer closeHandle(&processInfo.Thread)
 	defer closeHandle(&processInfo.Process)
@@ -189,14 +189,14 @@ func RunWindowsConPTY(
 
 	stdinWriter := os.NewFile(uintptr(inWrite), "conpty-stdin-write")
 	if stdinWriter == nil {
-		return RunResult{}, fmt.Errorf("failed to wrap conpty input writer")
+		return RunResult{}, commandRuntimeError("wrap conpty input writer", command, workingDir, errors.New("os.NewFile returned nil for input writer"))
 	}
 	inWrite = 0
 	defer stdinWriter.Close()
 
 	stdoutReader := os.NewFile(uintptr(outRead), "conpty-stdout-read")
 	if stdoutReader == nil {
-		return RunResult{}, fmt.Errorf("failed to wrap conpty output reader")
+		return RunResult{}, commandRuntimeError("wrap conpty output reader", command, workingDir, errors.New("os.NewFile returned nil for output reader"))
 	}
 	outRead = 0
 	defer stdoutReader.Close()
@@ -229,7 +229,7 @@ func RunWindowsConPTY(
 
 	if _, err := windows.WaitForSingleObject(processInfo.Process, windows.INFINITE); err != nil {
 		close(waitDone)
-		return RunResult{}, fmt.Errorf("failed to wait for conpty process: %w", err)
+		return RunResult{}, commandRuntimeError("wait for conpty process", command, workingDir, err)
 	}
 	close(waitDone)
 	stopResize()
@@ -242,18 +242,18 @@ func RunWindowsConPTY(
 		select {
 		case stdoutCopyErr = <-copyStdoutErr:
 		case <-time.After(conPTYDrainTimeout):
-			return RunResult{}, fmt.Errorf("failed to drain conpty output: timeout")
+			return RunResult{}, commandRuntimeError("drain conpty output", command, workingDir, errors.New("timeout"))
 		}
 	}
 	closePseudoConsole(&pseudoConsole)
 
 	if stdoutCopyErr != nil {
-		return RunResult{}, fmt.Errorf("failed to copy conpty output: %w", stdoutCopyErr)
+		return RunResult{}, commandRuntimeError("copy conpty output", command, workingDir, stdoutCopyErr)
 	}
 
 	var exitCode uint32
 	if err := windows.GetExitCodeProcess(processInfo.Process, &exitCode); err != nil {
-		return RunResult{}, fmt.Errorf("failed to get conpty exit code: %w", err)
+		return RunResult{}, commandRuntimeError("get conpty exit code", command, workingDir, err)
 	}
 	resultCode := int(exitCode)
 	return RunResult{ExitCode: &resultCode}, nil

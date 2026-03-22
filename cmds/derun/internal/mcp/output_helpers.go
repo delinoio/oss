@@ -1,10 +1,10 @@
 package mcp
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
 	"github.com/delinoio/oss/cmds/derun/internal/session"
 )
 
@@ -17,9 +17,13 @@ type outputPayloadOptions struct {
 }
 
 func parseRequiredSessionID(args map[string]any) (string, error) {
-	sessionID, ok := args["session_id"].(string)
+	rawSessionID, exists := args["session_id"]
+	if !exists {
+		return "", requiredFieldError("session_id", "a non-empty string", nil)
+	}
+	sessionID, ok := rawSessionID.(string)
 	if !ok || sessionID == "" {
-		return "", requiredFieldError("session_id", "a non-empty string")
+		return "", requiredFieldError("session_id", "a non-empty string", rawSessionID)
 	}
 	return sessionID, nil
 }
@@ -28,7 +32,7 @@ func parseCursor(args map[string]any, required bool) (uint64, error) {
 	rawCursor, exists := args["cursor"]
 	if !exists {
 		if required {
-			return 0, requiredFieldError("cursor", "a non-empty decimal string")
+			return 0, requiredFieldError("cursor", "a non-empty decimal string", nil)
 		}
 		return 0, nil
 	}
@@ -36,14 +40,14 @@ func parseCursor(args map[string]any, required bool) (uint64, error) {
 	cursorString, ok := rawCursor.(string)
 	if !ok || cursorString == "" {
 		if required {
-			return 0, requiredFieldError("cursor", "a non-empty decimal string")
+			return 0, requiredFieldError("cursor", "a non-empty decimal string", rawCursor)
 		}
 		return 0, nil
 	}
 
 	cursor, err := strconv.ParseUint(cursorString, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("parse cursor: %w", err)
+		return 0, parseFieldError("cursor", err, errmsg.ReceivedDetails(rawCursor))
 	}
 	return cursor, nil
 }
@@ -57,7 +61,7 @@ func parsePositiveIntDefault(args map[string]any, key string, defaultValue int) 
 
 	parsed, err := anyToInt(raw)
 	if err != nil {
-		return 0, fmt.Errorf("parse %s: %w", key, err)
+		return 0, parseFieldError(key, err, errmsg.ReceivedDetails(raw))
 	}
 	if parsed > 0 {
 		value = parsed

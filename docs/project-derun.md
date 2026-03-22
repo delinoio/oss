@@ -15,6 +15,7 @@ Provide a Go CLI that preserves terminal fidelity for AI-agent workflows and bri
 ## Cross-Domain Invariants
 - CLI command identifiers and output contracts must remain stable for automation consumers.
 - Terminal stream behavior must preserve ordering and ANSI compatibility by default.
+- User-facing error messages must remain single-line and include deterministic `details` segments with safe diagnostic fields only (no secrets).
 - User-facing error messages must preserve compatibility tokens used by MCP/automation integrations (`session not found`, `parse <field>`, `session_id is required`, `cursor is required`).
 
 ## Change Policy

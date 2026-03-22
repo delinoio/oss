@@ -2,11 +2,12 @@ package logging
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
 )
 
 type Logger struct {
@@ -17,16 +18,25 @@ type Logger struct {
 func New(stateRoot string) (*Logger, error) {
 	logDir := filepath.Join(stateRoot, "logs")
 	if err := os.MkdirAll(logDir, 0o700); err != nil {
-		return nil, fmt.Errorf("create log dir: %w", err)
+		return nil, errmsg.Error(errmsg.Runtime("create log dir", err, map[string]any{
+			"state_root": stateRoot,
+			"log_dir":    logDir,
+		}), nil)
 	}
 	if err := os.Chmod(logDir, 0o700); err != nil {
-		return nil, fmt.Errorf("chmod log dir: %w", err)
+		return nil, errmsg.Error(errmsg.Runtime("chmod log dir", err, map[string]any{
+			"state_root": stateRoot,
+			"log_dir":    logDir,
+		}), nil)
 	}
 
 	path := filepath.Join(logDir, "derun.log")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("open log file: %w", err)
+		return nil, errmsg.Error(errmsg.Runtime("open log file", err, map[string]any{
+			"state_root": stateRoot,
+			"log_path":   path,
+		}), nil)
 	}
 
 	return &Logger{f: f}, nil

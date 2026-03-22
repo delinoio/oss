@@ -26,26 +26,43 @@ func ExecuteMCP(args []string) int {
 		return 2
 	}
 	if len(fs.Args()) != 0 {
+		firstArg := ""
+		if len(fs.Args()) > 0 {
+			firstArg = fs.Args()[0]
+		}
 		fmt.Fprintln(
 			os.Stderr,
-			formatUsageError("mcp command does not accept positional arguments", "use `derun mcp` without extra arguments"),
+			formatUsageErrorWithDetails(
+				"mcp command does not accept positional arguments",
+				"use `derun mcp` without extra arguments",
+				map[string]any{
+					"arg_count": len(fs.Args()),
+					"first_arg": firstArg,
+				},
+			),
 		)
 		return 2
 	}
 
 	stateRoot, err := resolveStateRootForMCP()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("resolve state root", err))
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("resolve state root", err, map[string]any{
+			"has_derun_state_root": os.Getenv("DERUN_STATE_ROOT") != "",
+		}))
 		return 1
 	}
 	store, err := state.New(stateRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("initialize state store", err))
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("initialize state store", err, map[string]any{
+			"state_root": stateRoot,
+		}))
 		return 1
 	}
 	logger, err := logging.New(stateRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("initialize logger", err))
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("initialize logger", err, map[string]any{
+			"state_root": stateRoot,
+		}))
 		return 1
 	}
 	defer logger.Close()
@@ -54,7 +71,11 @@ func ExecuteMCP(args []string) int {
 
 	server := mcp.NewServer(store, logger, 10*time.Minute, defaultRetention)
 	if err := server.Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("run mcp server", err))
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("run mcp server", err, map[string]any{
+			"state_root":     stateRoot,
+			"gc_interval_ms": (10 * time.Minute).Milliseconds(),
+			"retention_ms":   defaultRetention.Milliseconds(),
+		}))
 		return 1
 	}
 	return 0

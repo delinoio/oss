@@ -2,10 +2,10 @@ package mcp
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
 )
 
@@ -19,7 +19,7 @@ func handleListSessions(store *state.Store, args map[string]any) (map[string]any
 	if raw, ok := args["limit"]; ok {
 		parsed, err := anyToInt(raw)
 		if err != nil {
-			return nil, fmt.Errorf("parse limit: %w", err)
+			return nil, parseFieldError("limit", err, errmsg.ReceivedDetails(raw))
 		}
 		if parsed > 0 {
 			limit = parsed
@@ -28,7 +28,10 @@ func handleListSessions(store *state.Store, args map[string]any) (map[string]any
 
 	sessions, totalCount, err := store.ListSessions(stateFilter, limit)
 	if err != nil {
-		return nil, wrapRuntimeError("list sessions", err)
+		return nil, wrapRuntimeErrorWithDetails("list sessions", err, map[string]any{
+			"state": stateFilter,
+			"limit": limit,
+		})
 	}
 
 	return map[string]any{
@@ -41,17 +44,23 @@ func handleListSessions(store *state.Store, args map[string]any) (map[string]any
 }
 
 func handleGetSession(store *state.Store, args map[string]any) (map[string]any, error) {
-	rawSessionID, ok := args["session_id"].(string)
-	if !ok || rawSessionID == "" {
-		return nil, requiredFieldError("session_id", "a non-empty string")
+	rawSessionID, exists := args["session_id"]
+	if !exists {
+		return nil, requiredFieldError("session_id", "a non-empty string", nil)
+	}
+	sessionID, ok := rawSessionID.(string)
+	if !ok || sessionID == "" {
+		return nil, requiredFieldError("session_id", "a non-empty string", rawSessionID)
 	}
 
-	detail, err := store.GetSession(rawSessionID)
+	detail, err := store.GetSession(sessionID)
 	if err != nil {
 		if errors.Is(err, state.ErrSessionNotFound) {
-			return nil, state.ErrSessionNotFound
+			return nil, errmsg.Wrap(state.ErrSessionNotFound, map[string]any{"session_id": sessionID})
 		}
-		return nil, wrapRuntimeError("get session", err)
+		return nil, wrapRuntimeErrorWithDetails("get session", err, map[string]any{
+			"session_id": sessionID,
+		})
 	}
 
 	return map[string]any{

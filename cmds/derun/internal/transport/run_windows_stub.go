@@ -10,10 +10,10 @@ import (
 
 func RunPosixPTY(
 	_ context.Context,
-	_ []string,
-	_ string,
+	command []string,
+	workingDir string,
 	_ func(pid int) error,
 	_ io.Writer,
 ) (RunResult, error) {
-	return RunResult{}, errors.New("failed to run posix pty mode: unsupported on windows")
+	return RunResult{}, commandRuntimeError("run posix pty mode", command, workingDir, errors.New("unsupported on windows"))
 }

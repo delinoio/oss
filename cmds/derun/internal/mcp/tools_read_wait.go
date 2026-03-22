@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
 )
 
@@ -26,7 +27,11 @@ func handleReadOutput(store *state.Store, args map[string]any) (map[string]any, 
 
 	chunks, nextCursor, eof, err := store.ReadOutput(sessionID, cursor, maxBytes)
 	if err != nil {
-		return nil, wrapReadWaitError("read output", err)
+		return nil, wrapReadWaitError("read output", err, map[string]any{
+			"session_id": sessionID,
+			"cursor":     cursor,
+			"max_bytes":  maxBytes,
+		})
 	}
 
 	return buildOutputPayload(sessionID, chunks, nextCursor, eof, outputPayloadOptions{}), nil
@@ -52,12 +57,18 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 	if err != nil {
 		return nil, err
 	}
+	timeoutMS := timeout.Milliseconds()
 
 	started := time.Now()
 	for {
 		chunks, nextCursor, eof, err := store.ReadOutput(sessionID, cursor, maxBytes)
 		if err != nil {
-			return nil, wrapReadWaitError("read output while waiting", err)
+			return nil, wrapReadWaitError("read output while waiting", err, map[string]any{
+				"session_id": sessionID,
+				"cursor":     cursor,
+				"max_bytes":  maxBytes,
+				"timeout_ms": timeoutMS,
+			})
 		}
 		if len(chunks) > 0 {
 			return buildOutputPayload(sessionID, chunks, nextCursor, eof, outputPayloadOptions{
@@ -69,7 +80,9 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 		if eof {
 			detail, err := store.GetSession(sessionID)
 			if err != nil {
-				return nil, wrapReadWaitError("get session detail", err)
+				return nil, wrapReadWaitError("get session detail", err, map[string]any{
+					"session_id": sessionID,
+				})
 			}
 			if !isSessionActive(detail.State) {
 				return buildOutputPayload(sessionID, chunks, nextCursor, eof, outputPayloadOptions{
@@ -87,7 +100,12 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 
 	chunks, nextCursor, eof, err := store.ReadOutput(sessionID, cursor, maxBytes)
 	if err != nil {
-		return nil, wrapReadWaitError("read output after timeout", err)
+		return nil, wrapReadWaitError("read output after timeout", err, map[string]any{
+			"session_id": sessionID,
+			"cursor":     cursor,
+			"max_bytes":  maxBytes,
+			"timeout_ms": timeoutMS,
+		})
 	}
 	return buildOutputPayload(sessionID, chunks, nextCursor, eof, outputPayloadOptions{
 		includeWait: true,
@@ -100,9 +118,9 @@ func isSessionActive(sessionState contracts.DerunSessionState) bool {
 	return sessionState == contracts.DerunSessionStateStarting || sessionState == contracts.DerunSessionStateRunning
 }
 
-func wrapReadWaitError(prefix string, err error) error {
+func wrapReadWaitError(prefix string, err error, details map[string]any) error {
 	if errors.Is(err, state.ErrSessionNotFound) {
-		return state.ErrSessionNotFound
+		return errmsg.Wrap(state.ErrSessionNotFound, details)
 	}
-	return wrapRuntimeError(prefix, err)
+	return wrapRuntimeErrorWithDetails(prefix, err, details)
 }

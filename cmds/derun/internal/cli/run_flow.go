@@ -68,9 +68,14 @@ func parseRunRequest(args []string) (runRequest, int) {
 	if !hasSeparator {
 		fmt.Fprintln(
 			os.Stderr,
-			formatUsageError(
+			formatUsageErrorWithDetails(
 				"run command requires '--' separator before target command",
 				"use `derun run [flags] -- <command> [args...]`",
+				map[string]any{
+					"arg_count":      len(args),
+					"flag_arg_count": len(flagArgs),
+					"has_separator":  hasSeparator,
+				},
 			),
 		)
 		return runRequest{}, 2
@@ -78,7 +83,14 @@ func parseRunRequest(args []string) (runRequest, int) {
 	if len(commandArgs) == 0 {
 		fmt.Fprintln(
 			os.Stderr,
-			formatUsageError("run command requires target command", "provide a command after `--`"),
+			formatUsageErrorWithDetails(
+				"run command requires target command",
+				"provide a command after `--`",
+				map[string]any{
+					"arg_count":         len(args),
+					"command_arg_count": len(commandArgs),
+				},
+			),
 		)
 		return runRequest{}, 2
 	}
@@ -94,18 +106,24 @@ func parseRunRequest(args []string) (runRequest, int) {
 func initRunRuntime(request runRequest) (*runRuntime, int) {
 	stateRoot, err := resolveStateRootForRun()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("resolve state root", err))
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("resolve state root", err, map[string]any{
+			"has_derun_state_root": os.Getenv("DERUN_STATE_ROOT") != "",
+		}))
 		return nil, 1
 	}
 
 	store, err := state.New(stateRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("initialize state store", err))
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("initialize state store", err, map[string]any{
+			"state_root": stateRoot,
+		}))
 		return nil, 1
 	}
 	logger, err := logging.New(stateRoot)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("initialize logger", err))
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("initialize logger", err, map[string]any{
+			"state_root": stateRoot,
+		}))
 		return nil, 1
 	}
 
@@ -130,7 +148,9 @@ func prepareSession(runtimeState *runRuntime, request runRequest) (*preparedRunS
 	if sessionID == "" {
 		sessionID, err = generateUniqueSessionID(runtimeState.store, runtimeState.logger)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, formatRuntimeError("generate session id", err))
+			fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("generate session id", err, map[string]any{
+				"session_id_source": "generated",
+			}))
 			return nil, 1
 		}
 	} else {
@@ -143,14 +163,17 @@ func prepareSession(runtimeState *runRuntime, request runRequest) (*preparedRunS
 				})
 				fmt.Fprintln(
 					os.Stderr,
-					formatUsageError(
+					formatUsageErrorWithDetails(
 						fmt.Sprintf("invalid session id %q", sessionID),
 						"use a unique path-safe id (for example: 01J0S444444444444444444444)",
+						map[string]any{"session_id": sessionID},
 					),
 				)
 				return nil, 2
 			}
-			fmt.Fprintln(os.Stderr, formatRuntimeError("check session metadata", err))
+			fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("check session metadata", err, map[string]any{
+				"session_id": sessionID,
+			}))
 			return nil, 1
 		}
 		if hasMetadata {
@@ -160,9 +183,10 @@ func prepareSession(runtimeState *runRuntime, request runRequest) (*preparedRunS
 			})
 			fmt.Fprintln(
 				os.Stderr,
-				formatUsageError(
+				formatUsageErrorWithDetails(
 					fmt.Sprintf("session id already exists %q", sessionID),
 					"omit `--session-id` or choose a different id",
+					map[string]any{"session_id": sessionID},
 				),
 			)
 			return nil, 2
@@ -170,13 +194,17 @@ func prepareSession(runtimeState *runRuntime, request runRequest) (*preparedRunS
 	}
 
 	if err := runtimeState.store.EnsureSessionDir(sessionID); err != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("prepare session directory", err))
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("prepare session directory", err, map[string]any{
+			"session_id": sessionID,
+		}))
 		return nil, 1
 	}
 
 	workingDir, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("resolve working directory", err))
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("resolve working directory", err, map[string]any{
+			"has_pwd_env": os.Getenv("PWD") != "",
+		}))
 		return nil, 1
 	}
 
@@ -195,7 +223,11 @@ func prepareSession(runtimeState *runRuntime, request runRequest) (*preparedRunS
 		PID:              0,
 	}
 	if err := runtimeState.store.WriteMeta(meta); err != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("write session metadata", err))
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("write session metadata", err, map[string]any{
+			"session_id":     sessionID,
+			"transport_mode": transportMode,
+			"tty_attached":   ttyAttached,
+		}))
 		return nil, 1
 	}
 
@@ -223,7 +255,10 @@ func executeTransport(runtimeState *runRuntime, preparedSession *preparedRunSess
 		}
 		preparedSession.meta.PID = pid
 		if err := runtimeState.store.WriteMeta(preparedSession.meta); err != nil {
-			return fmt.Errorf("failed to write session metadata file: %w", err)
+			return errors.New(formatRuntimeErrorWithDetails("write session metadata file", err, map[string]any{
+				"session_id": preparedSession.sessionID,
+				"pid":        pid,
+			}))
 		}
 		return nil
 	}
@@ -258,7 +293,11 @@ func executeTransport(runtimeState *runRuntime, preparedSession *preparedRunSess
 			preparedSession.transportMode = contracts.DerunTransportModePipe
 			preparedSession.meta.TransportMode = preparedSession.transportMode
 			if err := runtimeState.store.WriteMeta(preparedSession.meta); err != nil {
-				fmt.Fprintln(os.Stderr, formatRuntimeError("write fallback metadata", err))
+				fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("write fallback metadata", err, map[string]any{
+					"session_id":    preparedSession.sessionID,
+					"fallback_from": contracts.DerunTransportModeWindowsConPTY,
+					"fallback_to":   contracts.DerunTransportModePipe,
+				}))
 				return runExecutionResult{}, 1
 			}
 			result, runErr = runPipe()
@@ -302,7 +341,10 @@ func persistFinalState(runtimeState *runRuntime, preparedSession *preparedRunSes
 	}
 
 	if err := runtimeState.store.WriteFinal(final); err != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("write final metadata", err))
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("write final metadata", err, map[string]any{
+			"session_id": preparedSession.sessionID,
+			"state":      final.State,
+		}))
 		return 1
 	}
 
@@ -311,7 +353,14 @@ func persistFinalState(runtimeState *runRuntime, preparedSession *preparedRunSes
 
 func resolveRunExitCode(execution runExecutionResult) int {
 	if execution.runErr != nil {
-		fmt.Fprintln(os.Stderr, formatRuntimeError("execute command", execution.runErr))
+		runtimeDetails := map[string]any{}
+		if execution.runResult.Signal != "" {
+			runtimeDetails["signal"] = execution.runResult.Signal
+		}
+		if execution.runResult.ExitCode != nil {
+			runtimeDetails["exit_code"] = *execution.runResult.ExitCode
+		}
+		fmt.Fprintln(os.Stderr, formatRuntimeErrorWithDetails("execute command", execution.runErr, runtimeDetails))
 		return 1
 	}
 	if execution.runResult.SignalNum > 0 {

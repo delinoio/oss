@@ -1,12 +1,13 @@
 package retention
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
 	"github.com/delinoio/oss/cmds/derun/internal/logging"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
 )
@@ -38,7 +39,10 @@ const (
 
 func Sweep(store *state.Store, ttl time.Duration, logger *logging.Logger) (Result, error) {
 	if ttl <= 0 {
-		return Result{}, fmt.Errorf("ttl must be positive")
+		return Result{}, errmsg.Error("ttl must be positive", map[string]any{
+			"ttl":    ttl.String(),
+			"ttl_ms": ttl.Milliseconds(),
+		})
 	}
 	root := filepath.Join(store.Root(), "sessions")
 	entries, err := os.ReadDir(root)
@@ -46,7 +50,9 @@ func Sweep(store *state.Store, ttl time.Duration, logger *logging.Logger) (Resul
 		if os.IsNotExist(err) {
 			return Result{}, nil
 		}
-		return Result{}, fmt.Errorf("read sessions dir: %w", err)
+		return Result{}, errors.New(errmsg.Runtime("read sessions dir", err, map[string]any{
+			"sessions_root": root,
+		}))
 	}
 
 	result := Result{}
@@ -109,19 +115,28 @@ func Sweep(store *state.Store, ttl time.Duration, logger *logging.Logger) (Resul
 func unreadableSessionExpiresAt(sessionPath string, ttl time.Duration) (time.Time, error) {
 	sessionInfo, err := os.Stat(sessionPath)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("stat unreadable session directory: %w", err)
+		return time.Time{}, errors.New(errmsg.Runtime("stat unreadable session directory", err, map[string]any{
+			"session_path": sessionPath,
+			"ttl":          ttl.String(),
+		}))
 	}
 	lastTouchedAt := sessionInfo.ModTime().UTC()
 
 	artifacts, err := os.ReadDir(sessionPath)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("read unreadable session artifacts: %w", err)
+		return time.Time{}, errors.New(errmsg.Runtime("read unreadable session artifacts", err, map[string]any{
+			"session_path": sessionPath,
+		}))
 	}
 	for _, artifact := range artifacts {
 		artifactPath := filepath.Join(sessionPath, artifact.Name())
 		artifactInfo, err := os.Stat(artifactPath)
 		if err != nil {
-			return time.Time{}, fmt.Errorf("stat unreadable session artifact %q: %w", artifact.Name(), err)
+			return time.Time{}, errors.New(errmsg.Runtime("stat unreadable session artifact", err, map[string]any{
+				"session_path":  sessionPath,
+				"artifact_path": artifactPath,
+				"artifact_name": artifact.Name(),
+			}))
 		}
 		artifactTouchedAt := artifactInfo.ModTime().UTC()
 		if artifactTouchedAt.After(lastTouchedAt) {

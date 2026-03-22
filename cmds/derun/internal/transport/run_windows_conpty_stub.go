@@ -10,10 +10,10 @@ import (
 
 func RunWindowsConPTY(
 	_ context.Context,
-	_ []string,
-	_ string,
+	command []string,
+	workingDir string,
 	_ func(pid int) error,
 	_ io.Writer,
 ) (RunResult, error) {
-	return RunResult{}, errors.New("failed to run windows conpty mode: unsupported on non-windows platforms")
+	return RunResult{}, commandRuntimeError("run windows conpty mode", command, workingDir, errors.New("unsupported on non-windows platforms"))
 }
