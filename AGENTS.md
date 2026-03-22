@@ -291,7 +291,8 @@ DexDex desktop packaging CI baseline:
 - Build command contract: `pnpm --filter dexdex tauri:build`.
 
 Change-scoped execution rules:
-- CI uses path-based change detection to skip unaffected domain jobs by default.
+- CI uses path-based change detection for `go` and `rust` domain jobs by default.
+- CI uses `pnpm dlx turbo@2.8.20 query affected --packages devkit mpapp public-docs dexdex` to gate Node jobs per package (`devkit`, `mpapp`, `public-docs`, `dexdex`).
 - Changes to `.github/workflows/CI.yml` force all `go`, `node`, and `rust` domain jobs to run.
 - `workflow_dispatch` runs all domain jobs regardless of changed paths.
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.

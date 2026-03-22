@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize, reopened]
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,17 +20,24 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       go: ${{ steps.filter.outputs.go }}
-      node: ${{ steps.filter.outputs.node }}
       rust: ${{ steps.filter.outputs.rust }}
+      node_devkit: ${{ steps.node-affected.outputs.node_devkit }}
+      node_mpapp: ${{ steps.node-affected.outputs.node_mpapp }}
+      node_public_docs: ${{ steps.node-affected.outputs.node_public_docs }}
+      node_dexdex: ${{ steps.node-affected.outputs.node_dexdex }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         uses: dorny/paths-filter@v3
         with:
           filters: |
+            ci_workflow:
+              - .github/workflows/CI.yml
             go:
               - .github/workflows/CI.yml
               - go.mod
@@ -38,14 +46,6 @@ jobs:
               - scripts/lib/go-proto-tools.sh
               - cmds/**
               - servers/**
-            node:
-              - .github/workflows/CI.yml
-              - package.json
-              - pnpm-lock.yaml
-              - pnpm-workspace.yaml
-              - turbo.json
-              - apps/**
-              - packages/**
             rust:
               - .github/workflows/CI.yml
               - Cargo.toml
@@ -58,6 +58,48 @@ jobs:
               - '**/rust-toolchain.toml'
               - '**/*.rs'
               - crates/**
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Detect affected Node workspaces
+        id: node-affected
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+        run: |
+          set -euo pipefail
+
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
+            echo "node_devkit=true" >> "${GITHUB_OUTPUT}"
+            echo "node_mpapp=true" >> "${GITHUB_OUTPUT}"
+            echo "node_public_docs=true" >> "${GITHUB_OUTPUT}"
+            echo "node_dexdex=true" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages devkit mpapp public-docs dexdex)"
+          printf '%s\n' "${affected_json}"
+
+          node_devkit="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == "devkit")')"
+          node_mpapp="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == "mpapp")')"
+          node_public_docs="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == "public-docs")')"
+          node_dexdex="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == "dexdex")')"
+
+          echo "node_devkit=${node_devkit}" >> "${GITHUB_OUTPUT}"
+          echo "node_mpapp=${node_mpapp}" >> "${GITHUB_OUTPUT}"
+          echo "node_public_docs=${node_public_docs}" >> "${GITHUB_OUTPUT}"
+          echo "node_dexdex=${node_dexdex}" >> "${GITHUB_OUTPUT}"
 
   go-quality:
     name: Go Quality
@@ -187,7 +229,7 @@ jobs:
     name: Node devkit test
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ needs.detect-changes.outputs.node_devkit == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -214,7 +256,7 @@ jobs:
     name: Node devkit build
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ needs.detect-changes.outputs.node_devkit == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -241,7 +283,7 @@ jobs:
     name: Node mpapp test
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ needs.detect-changes.outputs.node_mpapp == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -268,7 +310,7 @@ jobs:
     name: Node mpapp lint
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ needs.detect-changes.outputs.node_mpapp == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -295,7 +337,7 @@ jobs:
     name: Node public-docs test
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ needs.detect-changes.outputs.node_public_docs == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -322,7 +364,7 @@ jobs:
     name: Node dexdex test
     runs-on: ubuntu-latest
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ needs.detect-changes.outputs.node_dexdex == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -349,7 +391,7 @@ jobs:
     name: Node dexdex iOS build
     runs-on: macos-latest
     needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ needs.detect-changes.outputs.node_dexdex == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
