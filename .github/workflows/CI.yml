@@ -748,6 +748,17 @@ jobs:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
+            dexdex_ios:
+              - apps/dexdex/src/**
+              - apps/dexdex/src-tauri/**
+              - apps/dexdex/public/**
+              - apps/dexdex/index.html
+              - apps/dexdex/package.json
+              - apps/dexdex/tsconfig.json
+              - apps/dexdex/vite.config.ts
+              - apps/dexdex/buf.yaml
+              - apps/dexdex/buf.gen.yaml
+              - pnpm-lock.yaml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -767,25 +778,40 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          DEXDEX_IOS_CHANGED: ${{ steps.filter.outputs.dexdex_ios }}
           WORKSPACE: dexdex
         run: |
           set -euo pipefail
 
           run=false
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
+          workspace_affected=false
+          ci_workflow_changed="${CI_WORKFLOW_CHANGED:-false}"
+          dexdex_ios_changed="${DEXDEX_IOS_CHANGED:-false}"
+
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${ci_workflow_changed}" = "true" ]; then
             run=true
-          else
+          elif [ "${dexdex_ios_changed}" = "true" ]; then
             affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
             printf '%s\n' "${affected_json}"
-            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+            workspace_affected="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+            if [ "${workspace_affected}" = "true" ]; then
+              run=true
+            fi
           fi
+
+          printf 'gate_decision event=%s ci_workflow_changed=%s dexdex_ios_changed=%s workspace_affected=%s final_run=%s\n' \
+            "${EVENT_NAME}" \
+            "${ci_workflow_changed}" \
+            "${dexdex_ios_changed}" \
+            "${workspace_affected}" \
+            "${run}"
 
           echo "run=${run}" >> "${GITHUB_OUTPUT}"
 
-      - name: Skip (dexdex unaffected)
+      - name: Skip (iOS gate unmatched)
         if: ${{ steps.gate.outputs.run != 'true' }}
         run: |
-          echo "Skipping Node dexdex iOS build: workspace unaffected"
+          echo "Skipping Node dexdex iOS build: iOS-related paths unaffected or workspace unaffected"
 
       - name: Setup Rust toolchain
         if: ${{ steps.gate.outputs.run == 'true' }}
