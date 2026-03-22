@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	providerEnv := strings.TrimSpace(os.Getenv("REMOTE_FILE_PICKER_STORAGE_PROVIDER"))
+	providerEnv := strings.TrimSpace(os.Getenv("STORAGE_PROVIDER"))
 	provider := remotefilepickerv1.StorageProvider_STORAGE_PROVIDER_S3
 	switch strings.ToLower(providerEnv) {
 	case "gcs":
@@ -23,20 +23,20 @@ func main() {
 	case "s3", "":
 		provider = remotefilepickerv1.StorageProvider_STORAGE_PROVIDER_S3
 	default:
-		log.Fatalf("unsupported REMOTE_FILE_PICKER_STORAGE_PROVIDER: %s (must be s3 or gcs)", providerEnv)
+		log.Fatalf("unsupported STORAGE_PROVIDER: %s (must be s3 or gcs)", providerEnv)
 	}
 
-	bucket := strings.TrimSpace(os.Getenv("REMOTE_FILE_PICKER_BUCKET"))
+	bucket := strings.TrimSpace(os.Getenv("BUCKET"))
 	if bucket == "" {
-		log.Fatal("REMOTE_FILE_PICKER_BUCKET is required")
+		log.Fatal("BUCKET is required")
 	}
 
-	authToken := strings.TrimSpace(os.Getenv("REMOTE_FILE_PICKER_AUTH_TOKEN"))
+	authToken := strings.TrimSpace(os.Getenv("AUTH_TOKEN"))
 	if authToken == "" {
-		log.Fatal("REMOTE_FILE_PICKER_AUTH_TOKEN is required")
+		log.Fatal("AUTH_TOKEN is required")
 	}
 
-	addr := strings.TrimSpace(os.Getenv("REMOTE_FILE_PICKER_ADDR"))
+	addr := strings.TrimSpace(os.Getenv("ADDR"))
 	if addr == "" {
 		addr = "127.0.0.1:8089"
 	}

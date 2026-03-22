@@ -24,26 +24,26 @@ type Config struct {
 // LoadConfig reads configuration from environment variables with defaults.
 func LoadConfig(logger *slog.Logger) *Config {
 	cfg := &Config{
-		ServerAddr:              envOrDefault("DEXDEX_MAIN_SERVER_ADDR", "127.0.0.1:7878"),
-		StreamRetention:         envIntOrDefault("DEXDEX_MAIN_STREAM_RETENTION", 1000),
-		StreamHeartbeatInterval: envDurationOrDefault("DEXDEX_MAIN_STREAM_HEARTBEAT_INTERVAL", 30*time.Second),
-		WorkerServerURL:         envOrDefault("DEXDEX_WORKER_SERVER_URL", "http://127.0.0.1:7879"),
-		DeploymentMode:          envOrDefault("DEXDEX_DEPLOYMENT_MODE", "SINGLE_INSTANCE"),
-		DatabaseURL:             strings.TrimSpace(os.Getenv("DEXDEX_DATABASE_URL")),
-		RedisURL:                strings.TrimSpace(os.Getenv("DEXDEX_REDIS_URL")),
-		PRPollIntervalSec:       envIntOrDefault("DEXDEX_PR_POLL_INTERVAL_SEC", 60),
-		SeedData:                strings.EqualFold(strings.TrimSpace(os.Getenv("DEXDEX_SEED_DATA")), "true"),
+		ServerAddr:              envOrDefault("MAIN_SERVER_ADDR", "127.0.0.1:7878"),
+		StreamRetention:         envIntOrDefault("MAIN_STREAM_RETENTION", 1000),
+		StreamHeartbeatInterval: envDurationOrDefault("MAIN_STREAM_HEARTBEAT_INTERVAL", 30*time.Second),
+		WorkerServerURL:         envOrDefault("WORKER_SERVER_URL", "http://127.0.0.1:7879"),
+		DeploymentMode:          envOrDefault("DEPLOYMENT_MODE", "SINGLE_INSTANCE"),
+		DatabaseURL:             strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		RedisURL:                strings.TrimSpace(os.Getenv("REDIS_URL")),
+		PRPollIntervalSec:       envIntOrDefault("PR_POLL_INTERVAL_SEC", 60),
+		SeedData:                strings.EqualFold(strings.TrimSpace(os.Getenv("SEED_DATA")), "true"),
 	}
 
 	// Validate deployment mode
 	if cfg.DeploymentMode != "SINGLE_INSTANCE" && cfg.DeploymentMode != "SCALE" {
-		logger.Warn("invalid DEXDEX_DEPLOYMENT_MODE, defaulting to SINGLE_INSTANCE",
+		logger.Warn("invalid DEPLOYMENT_MODE, defaulting to SINGLE_INSTANCE",
 			"value", cfg.DeploymentMode)
 		cfg.DeploymentMode = "SINGLE_INSTANCE"
 	}
 
 	if cfg.DeploymentMode == "SCALE" && cfg.RedisURL == "" {
-		logger.Warn("DEXDEX_REDIS_URL is required for SCALE deployment mode")
+		logger.Warn("REDIS_URL is required for SCALE deployment mode")
 	}
 
 	logger.Info("loaded configuration",

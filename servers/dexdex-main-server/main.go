@@ -23,7 +23,7 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	cfg := config.LoadConfig(logger)
 
-	// Initialize store: PostgreSQL if DEXDEX_DATABASE_URL is set, else in-memory
+	// Initialize store: PostgreSQL if DATABASE_URL is set, else in-memory
 	var dataStore store.Store
 	if cfg.DatabaseURL != "" {
 		pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)

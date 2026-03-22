@@ -30,19 +30,19 @@ func main() {
 
 func run(logger *slog.Logger) error {
 	// Read configuration from environment variables.
-	dbURL := os.Getenv("COMMIT_TRACKER_DATABASE_URL")
+	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		return fmt.Errorf("COMMIT_TRACKER_DATABASE_URL is required")
+		return fmt.Errorf("DATABASE_URL is required")
 	}
 
-	authToken := os.Getenv("COMMIT_TRACKER_AUTH_TOKEN")
+	authToken := os.Getenv("AUTH_TOKEN")
 	if authToken == "" {
-		return fmt.Errorf("COMMIT_TRACKER_AUTH_TOKEN is required")
+		return fmt.Errorf("AUTH_TOKEN is required")
 	}
 
-	githubToken := os.Getenv("COMMIT_TRACKER_GITHUB_TOKEN")
+	githubToken := os.Getenv("GITHUB_TOKEN")
 
-	addr := os.Getenv("COMMIT_TRACKER_ADDR")
+	addr := os.Getenv("ADDR")
 	if addr == "" {
 		addr = "127.0.0.1:8088"
 	}

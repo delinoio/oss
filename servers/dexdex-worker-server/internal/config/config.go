@@ -24,7 +24,7 @@ type Config struct {
 
 // LoadConfig reads configuration from environment variables with defaults.
 func LoadConfig(logger *slog.Logger) *Config {
-	workerID := strings.TrimSpace(os.Getenv("DEXDEX_WORKER_ID"))
+	workerID := strings.TrimSpace(os.Getenv("WORKER_ID"))
 	if workerID == "" {
 		workerID = uuid.NewString()
 	}
@@ -34,15 +34,15 @@ func LoadConfig(logger *slog.Logger) *Config {
 	defaultRepoCacheRoot := homeDir + "/.dexdex/repo-cache"
 
 	cfg := &Config{
-		ServerAddr:          envOrDefault("DEXDEX_WORKER_SERVER_ADDR", "127.0.0.1:7879"),
+		ServerAddr:          envOrDefault("WORKER_SERVER_ADDR", "127.0.0.1:7879"),
 		WorkerID:            workerID,
-		MainServerURL:       envOrDefault("DEXDEX_MAIN_SERVER_URL", "http://127.0.0.1:7878"),
-		WorktreeRoot:        envOrDefault("DEXDEX_WORKTREE_ROOT", defaultWorktreeRoot),
-		RepoCacheRoot:       envOrDefault("DEXDEX_REPO_CACHE_ROOT", defaultRepoCacheRoot),
-		MaxParallelSubtasks: envIntOrDefault("DEXDEX_MAX_PARALLEL_SUBTASKS", 3),
-		AgentExecTimeoutSec: envIntOrDefault("DEXDEX_AGENT_EXEC_TIMEOUT_SEC", 1800),
-		AgentIdleTimeoutSec: envIntOrDefault("DEXDEX_AGENT_IDLE_TIMEOUT_SEC", 300),
-		SeedData:            strings.EqualFold(strings.TrimSpace(os.Getenv("DEXDEX_SEED_DATA")), "true"),
+		MainServerURL:       envOrDefault("MAIN_SERVER_URL", "http://127.0.0.1:7878"),
+		WorktreeRoot:        envOrDefault("WORKTREE_ROOT", defaultWorktreeRoot),
+		RepoCacheRoot:       envOrDefault("REPO_CACHE_ROOT", defaultRepoCacheRoot),
+		MaxParallelSubtasks: envIntOrDefault("MAX_PARALLEL_SUBTASKS", 3),
+		AgentExecTimeoutSec: envIntOrDefault("AGENT_EXEC_TIMEOUT_SEC", 1800),
+		AgentIdleTimeoutSec: envIntOrDefault("AGENT_IDLE_TIMEOUT_SEC", 300),
+		SeedData:            strings.EqualFold(strings.TrimSpace(os.Getenv("SEED_DATA")), "true"),
 	}
 
 	logger.Info("loaded configuration",

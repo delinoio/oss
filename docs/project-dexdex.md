@@ -130,12 +130,12 @@ Bootstrap and validation checklist:
 - `cd protos/dexdex && buf lint && buf build`
 
 Recommended runtime environment keys:
-- `DEXDEX_DEPLOYMENT_MODE`
-- `DEXDEX_HTTP_ADDR`
-- `DEXDEX_DATABASE_URL`
-- `DEXDEX_REDIS_URL` (`SCALE` mode)
-- `DEXDEX_PR_POLL_INTERVAL_SEC`
-- `DEXDEX_WORKTREE_ROOT`
+- `DEPLOYMENT_MODE`
+- `MAIN_SERVER_ADDR`
+- `DATABASE_URL`
+- `REDIS_URL` (`SCALE` mode)
+- `PR_POLL_INTERVAL_SEC`
+- `WORKTREE_ROOT`
 
 ## Release Distribution Contracts
 - Release workflow: `.github/workflows/release-dexdex.yml`.

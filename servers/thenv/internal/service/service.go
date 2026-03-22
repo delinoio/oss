@@ -217,7 +217,7 @@ func applyMigrations(ctx context.Context, db *sql.DB) error {
 func decodeMasterKey(raw string) ([]byte, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return nil, errors.New("THENV_MASTER_KEY_B64 is required")
+		return nil, errors.New("MASTER_KEY_B64 is required")
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(trimmed)
