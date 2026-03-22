@@ -306,7 +306,7 @@ Release automation baseline:
 - Required secret contract: `CARGO_REGISTRY_TOKEN`.
 - `release-nodeup` is defined in `.github/workflows/release-nodeup.yml`.
 - Trigger contract: runs on tag push `nodeup@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
-- Distribution contract: publishes signed multi-OS nodeup release artifacts, updates Homebrew (`nodeup`), and updates winget (`DelinoIO.Nodeup`).
+- Distribution contract: publishes signed multi-OS nodeup release artifacts, including standalone prebuilt binaries (`nodeup-<os>-<arch>[.exe]`) and archive assets (`nodeup-<os>-<arch>.tar.gz|zip`), then updates Homebrew (`nodeup`) and winget (`DelinoIO.Nodeup`).
 - `release-derun` is defined in `.github/workflows/release-derun.yml`.
 - Trigger contract: runs on tag push `derun@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS derun release artifacts, updates Homebrew (`derun`), and updates winget (`DelinoIO.Derun`).
