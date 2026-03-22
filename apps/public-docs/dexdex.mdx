@@ -6,7 +6,7 @@
 
 - Keep desktop and backend orchestration contracts aligned through shared proto definitions.
 - Run a full local stack with desktop UI + main server + worker server.
-- Use the same release tag, package-manager, and script-install flows across macOS, Linux, and Windows.
+- Use the same release tag and script-install flows across macOS, Linux, and Windows.
 
 ## Components
 
@@ -29,19 +29,19 @@ Package managers:
 - Linux (servers):
   - `brew install delinoio/tap/dexdex-main-server`
   - `brew install delinoio/tap/dexdex-worker-server`
-- Windows:
-  - `winget install --id DelinoIO.DexDex --exact`
-  - `winget install --id DelinoIO.DexDexMainServer --exact`
-  - `winget install --id DelinoIO.DexDexWorkerServer --exact`
 
-Script installer (package manager first, then direct fallback):
+Windows direct install:
+
+- `./scripts/install/dexdex-stack.ps1 -Version latest -Method direct`
+
+Script installer:
 
 ```bash
 ./scripts/install/dexdex-stack.sh --version latest --method package-manager
 ```
 
 ```powershell
-./scripts/install/dexdex-stack.ps1 -Version latest -Method package-manager
+./scripts/install/dexdex-stack.ps1 -Version latest -Method direct
 ```
 
 ## Related pages

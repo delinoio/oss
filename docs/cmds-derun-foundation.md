@@ -22,8 +22,6 @@
 - Homebrew `derun` formula contract:
   - Must install from GitHub release prebuilt tarballs (darwin amd64/arm64 and linux amd64).
   - Linux arm64 must fail explicitly as unsupported until a dedicated artifact is added.
-- winget `DelinoIO.Derun` contract:
-  - Must resolve installer URL and checksum from `derun-windows-amd64.zip`.
 - User-facing error messages must remain single-line and follow stable style contracts:
   - Usage/validation: `invalid arguments: <reason>; details: <k=v,...>; hint: <how to fix>`
   - Runtime: `failed to <action>: <cause>; details: <k=v,...>`

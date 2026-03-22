@@ -144,10 +144,6 @@ Recommended runtime environment keys:
   - `dexdex` cask consumes the macOS desktop DMG release artifact.
   - `dexdex-main-server` and `dexdex-worker-server` formulas consume prebuilt server release artifacts for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`.
   - Linux `arm64` Homebrew prebuilt server artifacts are currently out of scope.
-- winget distribution remains prebuilt-asset based for:
-  - `DelinoIO.DexDex`
-  - `DelinoIO.DexDexMainServer`
-  - `DelinoIO.DexDexWorkerServer`
 
 ## Change Policy
 - Any DexDex API, entity, plan-mode, event-streaming, or connectivity contract change must update `docs/project-dexdex.md` and the related domain contract docs in the same change.
