@@ -60,8 +60,10 @@ pub fn update(runtimes: Vec<String>, output: OutputFormat, app: &NodeupApp) -> R
     };
 
     if selectors.is_empty() {
-        return Err(NodeupError::not_found(
-            "No runtimes to update. Install runtimes or configure tracked selectors first",
+        return Err(NodeupError::not_found_with_hint(
+            "No runtimes are eligible for update",
+            "Install a runtime with `nodeup toolchain install <runtime>` or configure tracked \
+             selectors first.",
         ));
     }
 

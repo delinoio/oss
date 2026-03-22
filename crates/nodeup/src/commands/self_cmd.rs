@@ -13,7 +13,7 @@ use tracing::{info, warn};
 use crate::{
     cli::{OutputFormat, SelfCommand},
     commands::print_output,
-    errors::{ErrorKind, NodeupError, Result},
+    errors::{NodeupError, Result},
     overrides::{OverrideEntry, OverridesFile, OVERRIDES_SCHEMA_VERSION},
     store::{SettingsFile, SETTINGS_SCHEMA_VERSION},
     NodeupApp,
@@ -21,6 +21,28 @@ use crate::{
 
 const NODEUP_SELF_UPDATE_SOURCE: &str = "NODEUP_SELF_UPDATE_SOURCE";
 const NODEUP_SELF_BIN_PATH: &str = "NODEUP_SELF_BIN_PATH";
+
+fn self_internal(cause: impl Into<String>) -> NodeupError {
+    NodeupError::internal_with_hint(
+        cause,
+        "Retry `nodeup self ...`. If it keeps failing, run with `RUST_LOG=nodeup=debug` and \
+         inspect logs.",
+    )
+}
+
+fn self_invalid_input(cause: impl Into<String>) -> NodeupError {
+    NodeupError::invalid_input_with_hint(
+        cause,
+        "Review command inputs and local nodeup data files, then retry the `nodeup self` command.",
+    )
+}
+
+fn self_not_found(cause: impl Into<String>) -> NodeupError {
+    NodeupError::not_found_with_hint(
+        cause,
+        "Verify the referenced path exists and is accessible, then retry the command.",
+    )
+}
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -248,13 +270,10 @@ fn uninstall(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
         fs::remove_dir_all(&target).map_err(|error| {
             log_failure(
                 action,
-                NodeupError::new(
-                    ErrorKind::Internal,
-                    format!(
-                        "Failed to remove uninstall target {}: {error}",
-                        target.display()
-                    ),
-                ),
+                self_internal(format!(
+                    "Failed to remove uninstall target {}: {error}",
+                    target.display()
+                )),
             )
         })?;
         removed_paths.push(target.display().to_string());
@@ -331,7 +350,7 @@ fn upgrade_data(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
 
 fn resolve_update_source_path() -> Result<PathBuf> {
     let source = env::var_os(NODEUP_SELF_UPDATE_SOURCE).ok_or_else(|| {
-        NodeupError::invalid_input(format!(
+        self_invalid_input(format!(
             "Self update source is not configured. Set {NODEUP_SELF_UPDATE_SOURCE} to a binary \
              path"
         ))
@@ -339,14 +358,14 @@ fn resolve_update_source_path() -> Result<PathBuf> {
 
     let source_path = PathBuf::from(source);
     if !source_path.exists() {
-        return Err(NodeupError::not_found(format!(
+        return Err(self_not_found(format!(
             "Self update source does not exist: {}",
             source_path.display()
         )));
     }
 
     if !source_path.is_file() {
-        return Err(NodeupError::invalid_input(format!(
+        return Err(self_invalid_input(format!(
             "Self update source is not a file: {}",
             source_path.display()
         )));
@@ -361,16 +380,15 @@ fn resolve_target_binary_path() -> Result<PathBuf> {
     }
 
     env::current_exe().map_err(|error| {
-        NodeupError::new(
-            ErrorKind::Internal,
-            format!("Failed to resolve current executable path: {error}"),
-        )
+        self_internal(format!(
+            "Failed to resolve current executable path: {error}"
+        ))
     })
 }
 
 fn replace_binary(source: &Path, target: &Path) -> Result<()> {
     let parent = target.parent().ok_or_else(|| {
-        NodeupError::internal(format!(
+        self_internal(format!(
             "Cannot replace binary without parent directory: {}",
             target.display()
         ))
@@ -390,40 +408,31 @@ fn replace_binary(source: &Path, target: &Path) -> Result<()> {
         let backup_target = backup_target_path(target)?;
         if backup_target.exists() {
             fs::remove_file(&backup_target).map_err(|error| {
-                NodeupError::new(
-                    ErrorKind::Internal,
-                    format!(
-                        "Failed to clean stale backup {} before self update: {error}",
-                        backup_target.display()
-                    ),
-                )
+                self_internal(format!(
+                    "Failed to clean stale backup {} before self update: {error}",
+                    backup_target.display()
+                ))
             })?;
         }
 
         fs::rename(target, &backup_target).map_err(|error| {
-            NodeupError::new(
-                ErrorKind::Internal,
-                format!(
-                    "Failed to stage existing binary {} for replacement: {error}",
-                    target.display()
-                ),
-            )
+            self_internal(format!(
+                "Failed to stage existing binary {} for replacement: {error}",
+                target.display()
+            ))
         })?;
 
         if let Err(error) = fs::rename(&staged_path, target) {
             let rollback = fs::rename(&backup_target, target);
-            return Err(NodeupError::new(
-                ErrorKind::Internal,
-                format!(
-                    "Failed to replace binary {} with staged update: {error}. Rollback status: {}",
-                    target.display(),
-                    if rollback.is_ok() {
-                        "restored-previous-binary"
-                    } else {
-                        "rollback-failed"
-                    }
-                ),
-            ));
+            return Err(self_internal(format!(
+                "Failed to replace binary {} with staged update: {error}. Rollback status: {}",
+                target.display(),
+                if rollback.is_ok() {
+                    "restored-previous-binary"
+                } else {
+                    "rollback-failed"
+                }
+            )));
         }
 
         if let Err(error) = fs::remove_file(&backup_target) {
@@ -439,13 +448,10 @@ fn replace_binary(source: &Path, target: &Path) -> Result<()> {
         }
     } else {
         fs::rename(&staged_path, target).map_err(|error| {
-            NodeupError::new(
-                ErrorKind::Internal,
-                format!(
-                    "Failed to replace binary {} with staged update: {error}",
-                    target.display()
-                ),
-            )
+            self_internal(format!(
+                "Failed to replace binary {} with staged update: {error}",
+                target.display()
+            ))
         })?;
     }
 
@@ -454,7 +460,7 @@ fn replace_binary(source: &Path, target: &Path) -> Result<()> {
 
 fn backup_target_path(target: &Path) -> Result<PathBuf> {
     let filename = target.file_name().ok_or_else(|| {
-        NodeupError::invalid_input(format!(
+        self_invalid_input(format!(
             "Cannot create backup path for binary without filename: {}",
             target.display()
         ))
@@ -488,7 +494,7 @@ fn normalize_target_path(path: &Path) -> Result<PathBuf> {
 
 fn ensure_safe_uninstall_path(path: &Path) -> Result<()> {
     if path.parent().is_none() {
-        return Err(NodeupError::invalid_input(format!(
+        return Err(self_invalid_input(format!(
             "Refusing to uninstall unsafe path: {}",
             path.display()
         )));
@@ -500,7 +506,7 @@ fn ensure_safe_uninstall_path(path: &Path) -> Result<()> {
     });
 
     if !owned_by_nodeup {
-        return Err(NodeupError::invalid_input(format!(
+        return Err(self_invalid_input(format!(
             "Refusing to uninstall non-nodeup-owned path: {}",
             path.display()
         )));
@@ -567,7 +573,7 @@ fn migrate_settings_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {
     let from_schema = extract_schema_version(&raw_value)?;
 
     if from_schema > SETTINGS_SCHEMA_VERSION {
-        return Err(NodeupError::invalid_input(format!(
+        return Err(self_invalid_input(format!(
             "Unsupported settings schema version: {from_schema}"
         )));
     }
@@ -611,7 +617,7 @@ fn migrate_overrides_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {
     let from_schema = extract_schema_version(&raw_value)?;
 
     if from_schema > OVERRIDES_SCHEMA_VERSION {
-        return Err(NodeupError::invalid_input(format!(
+        return Err(self_invalid_input(format!(
             "Unsupported overrides schema version: {from_schema}"
         )));
     }
@@ -640,7 +646,7 @@ fn migrate_overrides_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {
 fn extract_schema_version(value: &Value) -> Result<u32> {
     let table = value
         .as_table()
-        .ok_or_else(|| NodeupError::invalid_input("Expected a TOML table at the document root"))?;
+        .ok_or_else(|| self_invalid_input("Expected a TOML table at the document root"))?;
 
     let Some(version_value) = table.get("schema_version") else {
         return Ok(0);
@@ -648,12 +654,10 @@ fn extract_schema_version(value: &Value) -> Result<u32> {
 
     let version = version_value
         .as_integer()
-        .ok_or_else(|| NodeupError::invalid_input("schema_version must be an integer"))?;
+        .ok_or_else(|| self_invalid_input("schema_version must be an integer"))?;
 
     if version < 0 {
-        return Err(NodeupError::invalid_input(
-            "schema_version cannot be negative",
-        ));
+        return Err(self_invalid_input("schema_version cannot be negative"));
     }
 
     Ok(version as u32)
@@ -661,14 +665,14 @@ fn extract_schema_version(value: &Value) -> Result<u32> {
 
 fn migrate_settings_legacy(value: &Value, from_schema: u32) -> Result<SettingsFile> {
     if from_schema != 0 {
-        return Err(NodeupError::invalid_input(format!(
+        return Err(self_invalid_input(format!(
             "Unsupported legacy settings schema version: {from_schema}"
         )));
     }
 
     let table = value
         .as_table()
-        .ok_or_else(|| NodeupError::invalid_input("Expected settings file to be a TOML table"))?;
+        .ok_or_else(|| self_invalid_input("Expected settings file to be a TOML table"))?;
 
     let default_selector = optional_string(table, "default_selector")?;
     let linked_runtimes = string_table(table, "linked_runtimes")?;
@@ -684,14 +688,14 @@ fn migrate_settings_legacy(value: &Value, from_schema: u32) -> Result<SettingsFi
 
 fn migrate_overrides_legacy(value: &Value, from_schema: u32) -> Result<OverridesFile> {
     if from_schema != 0 {
-        return Err(NodeupError::invalid_input(format!(
+        return Err(self_invalid_input(format!(
             "Unsupported legacy overrides schema version: {from_schema}"
         )));
     }
 
     let table = value
         .as_table()
-        .ok_or_else(|| NodeupError::invalid_input("Expected overrides file to be a TOML table"))?;
+        .ok_or_else(|| self_invalid_input("Expected overrides file to be a TOML table"))?;
 
     let entries = if let Some(entries_value) = table.get("entries") {
         parse_override_entries(entries_value)?
@@ -712,7 +716,7 @@ fn optional_string(table: &Table, field: &str) -> Result<Option<String>> {
 
     let string = value
         .as_str()
-        .ok_or_else(|| NodeupError::invalid_input(format!("Expected '{field}' to be a string")))?;
+        .ok_or_else(|| self_invalid_input(format!("Expected '{field}' to be a string")))?;
 
     Ok(Some(string.to_string()))
 }
@@ -724,12 +728,12 @@ fn string_table(table: &Table, field: &str) -> Result<BTreeMap<String, String>> 
 
     let map = value
         .as_table()
-        .ok_or_else(|| NodeupError::invalid_input(format!("Expected '{field}' to be a table")))?;
+        .ok_or_else(|| self_invalid_input(format!("Expected '{field}' to be a table")))?;
 
     let mut result = BTreeMap::new();
     for (key, item) in map {
         let value = item.as_str().ok_or_else(|| {
-            NodeupError::invalid_input(format!("Expected '{field}.{key}' to be a string"))
+            self_invalid_input(format!("Expected '{field}.{key}' to be a string"))
         })?;
         result.insert(key.clone(), value.to_string());
     }
@@ -744,12 +748,12 @@ fn string_array(table: &Table, field: &str) -> Result<Vec<String>> {
 
     let items = value
         .as_array()
-        .ok_or_else(|| NodeupError::invalid_input(format!("Expected '{field}' to be an array")))?;
+        .ok_or_else(|| self_invalid_input(format!("Expected '{field}' to be an array")))?;
 
     let mut result = Vec::new();
     for (index, item) in items.iter().enumerate() {
         let value = item.as_str().ok_or_else(|| {
-            NodeupError::invalid_input(format!("Expected '{field}[{index}]' to be a string"))
+            self_invalid_input(format!("Expected '{field}[{index}]' to be a string"))
         })?;
         result.push(value.to_string());
     }
@@ -760,23 +764,23 @@ fn string_array(table: &Table, field: &str) -> Result<Vec<String>> {
 fn parse_override_entries(value: &Value) -> Result<Vec<OverrideEntry>> {
     let items = value
         .as_array()
-        .ok_or_else(|| NodeupError::invalid_input("Expected 'entries' to be an array"))?;
+        .ok_or_else(|| self_invalid_input("Expected 'entries' to be an array"))?;
 
     let mut entries = Vec::new();
     for (index, item) in items.iter().enumerate() {
         let table = item.as_table().ok_or_else(|| {
-            NodeupError::invalid_input(format!("Expected 'entries[{index}]' to be a table"))
+            self_invalid_input(format!("Expected 'entries[{index}]' to be a table"))
         })?;
 
         let path = table.get("path").and_then(Value::as_str).ok_or_else(|| {
-            NodeupError::invalid_input(format!("Expected 'entries[{index}].path' to be a string"))
+            self_invalid_input(format!("Expected 'entries[{index}].path' to be a string"))
         })?;
 
         let selector = table
             .get("selector")
             .and_then(Value::as_str)
             .ok_or_else(|| {
-                NodeupError::invalid_input(format!(
+                self_invalid_input(format!(
                     "Expected 'entries[{index}].selector' to be a string"
                 ))
             })?;

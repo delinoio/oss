@@ -55,11 +55,14 @@ impl RuntimeInstaller {
         }
 
         let target = PlatformTarget::from_host().ok_or_else(|| {
-            NodeupError::unsupported_platform(format!(
-                "nodeup currently supports macOS/Linux x64/arm64 only. host={}/{}",
-                std::env::consts::OS,
-                std::env::consts::ARCH
-            ))
+            NodeupError::unsupported_platform_with_hint(
+                format!(
+                    "nodeup currently supports macOS/Linux x64/arm64 only. host={}/{}",
+                    std::env::consts::OS,
+                    std::env::consts::ARCH
+                ),
+                "Run this command on a supported host platform.",
+            )
         })?;
 
         let _lock = InstallLock::acquire(&self.paths.toolchains_dir, &canonical_version)?;
@@ -73,10 +76,13 @@ impl RuntimeInstaller {
         }
 
         let archive_url = release_client.archive_url(&canonical_version, target.archive_segment());
-        let archive_filename = archive_url
-            .rsplit('/')
-            .next()
-            .ok_or_else(|| NodeupError::internal("Failed to parse archive file name"))?;
+        let archive_filename = archive_url.rsplit('/').next().ok_or_else(|| {
+            NodeupError::internal_with_hint(
+                "Failed to parse archive file name from the download URL",
+                "Retry the install command. If it persists, run with `RUST_LOG=nodeup=debug` and \
+                 check the computed archive URL.",
+            )
+        })?;
         let archive_path = self.paths.downloads_dir.join(archive_filename);
 
         info!(
@@ -96,19 +102,27 @@ impl RuntimeInstaller {
             .send()?
             .error_for_status()
             .map_err(|error| {
-                NodeupError::network(format!("Failed to fetch SHASUMS256.txt: {error}"))
+                NodeupError::network_with_hint(
+                    format!("Failed to fetch SHASUMS256.txt: {error}"),
+                    "Check network connectivity and retry the install command.",
+                )
             })?
             .text()
             .map_err(|error| {
-                NodeupError::network(format!("Failed to read SHASUMS256.txt body: {error}"))
+                NodeupError::network_with_hint(
+                    format!("Failed to read SHASUMS256.txt body: {error}"),
+                    "Retry the command. If it keeps failing, run with `RUST_LOG=nodeup=debug` and \
+                     inspect HTTP response details.",
+                )
             })?;
 
         let checksum_table = parse_shasums(&shasums_content)?;
         let expected_checksum = checksum_table.get(archive_filename).ok_or_else(|| {
-            NodeupError::not_found(format!(
-                "Checksum for {} not found in SHASUMS256.txt",
-                archive_filename
-            ))
+            NodeupError::not_found_with_hint(
+                format!("Checksum for {archive_filename} was not found in SHASUMS256.txt"),
+                "Retry later in case upstream metadata is still propagating, or verify the \
+                 release exists for this platform.",
+            )
         })?;
 
         let observed_checksum = sha256_file(&archive_path)?;
@@ -125,10 +139,14 @@ impl RuntimeInstaller {
         );
 
         if *expected_checksum != observed_checksum {
-            return Err(NodeupError::conflict(format!(
-                "Checksum mismatch for {}. expected={}, observed={}",
-                archive_filename, expected_checksum, observed_checksum
-            )));
+            return Err(NodeupError::conflict_with_hint(
+                format!(
+                    "Checksum mismatch for {archive_filename}. expected={expected_checksum}, \
+                     observed={observed_checksum}"
+                ),
+                "Delete the downloaded archive from the nodeup downloads directory and retry the \
+                 install.",
+            ));
         }
 
         let runtime_dir = self.paths.runtime_dir(&canonical_version);
@@ -149,12 +167,21 @@ fn download_file(release_client: &ReleaseIndexClient, url: &str, destination: &P
         .send()?
         .error_for_status()
         .map_err(|error| {
-            NodeupError::network(format!("Download request failed for {url}: {error}"))
+            NodeupError::network_with_hint(
+                format!("Download request failed for {url}: {error}"),
+                "Check network connectivity and retry the command.",
+            )
         })?;
 
     let mut output = File::create(destination)?;
     response.copy_to(&mut output).map_err(|error| {
-        NodeupError::network(format!("Failed to write downloaded bytes: {error}"))
+        NodeupError::network_with_hint(
+            format!(
+                "Failed to stream downloaded bytes to {}: {error}",
+                destination.display()
+            ),
+            "Ensure the downloads directory is writable, then retry.",
+        )
     })?;
     output.flush()?;
     Ok(())
@@ -166,10 +193,14 @@ fn extract_archive_to_runtime(archive_path: &Path, runtime_dir: &Path) -> Result
     }
 
     let parent = runtime_dir.parent().ok_or_else(|| {
-        NodeupError::internal(format!(
-            "Cannot get runtime parent for {}",
-            runtime_dir.display()
-        ))
+        NodeupError::internal_with_hint(
+            format!(
+                "Cannot determine runtime parent directory for {}",
+                runtime_dir.display()
+            ),
+            "Check the nodeup data directory layout and retry. If needed, run with \
+             `RUST_LOG=nodeup=debug`.",
+        )
     })?;
 
     let temp_dir = tempfile::Builder::new()
@@ -183,7 +214,12 @@ fn extract_archive_to_runtime(archive_path: &Path, runtime_dir: &Path) -> Result
 
     let extracted_root = fs::read_dir(temp_dir.path())?
         .next()
-        .ok_or_else(|| NodeupError::internal("Archive unpack produced empty directory"))??
+        .ok_or_else(|| {
+            NodeupError::internal_with_hint(
+                "Archive unpack produced an empty directory",
+                "Retry the install command. If it repeats, remove the archive and re-download.",
+            )
+        })??
         .path();
 
     fs::rename(extracted_root, runtime_dir)?;
@@ -202,12 +238,22 @@ pub fn parse_shasums(content: &str) -> Result<HashMap<String, String>> {
         }
 
         let mut parts = trimmed.split_whitespace();
-        let checksum = parts
-            .next()
-            .ok_or_else(|| NodeupError::invalid_input("Malformed SHASUMS256.txt line"))?;
+        let checksum = parts.next().ok_or_else(|| {
+            NodeupError::invalid_input_with_hint(
+                "Malformed SHASUMS256.txt line: missing checksum value",
+                "Retry the command. If the issue persists, inspect upstream SHASUMS256.txt \
+                 content.",
+            )
+        })?;
         let filename = parts
             .next()
-            .ok_or_else(|| NodeupError::invalid_input("Malformed SHASUMS256.txt line"))?
+            .ok_or_else(|| {
+                NodeupError::invalid_input_with_hint(
+                    "Malformed SHASUMS256.txt line: missing archive filename",
+                    "Retry the command. If the issue persists, inspect upstream SHASUMS256.txt \
+                     content.",
+                )
+            })?
             .trim_start_matches('*');
 
         checksums.insert(filename.to_string(), checksum.to_string());
@@ -245,14 +291,16 @@ impl InstallLock {
         match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(file) => Ok(Self { path, _file: file }),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                Err(NodeupError::conflict(format!(
-                    "Another install is already running for runtime {version}"
-                )))
+                Err(NodeupError::conflict_with_hint(
+                    format!("Another install is already running for runtime {version}"),
+                    "Wait for the other install to finish, or remove a stale lock file if no \
+                     install is active.",
+                ))
             }
-            Err(error) => Err(NodeupError::internal(format!(
-                "Failed to create install lock {}: {error}",
-                path.display()
-            ))),
+            Err(error) => Err(NodeupError::internal_with_hint(
+                format!("Failed to create install lock {}: {error}", path.display()),
+                "Check filesystem permissions for the toolchains directory and retry.",
+            )),
         }
     }
 }

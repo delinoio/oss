@@ -45,10 +45,11 @@ fn show_active_runtime(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
                 reason = "runtime-not-installed",
                 "Active runtime is unavailable"
             );
-            return Err(NodeupError::not_found(format!(
-                "Runtime {} is not installed",
-                version
-            )));
+            return Err(NodeupError::not_found_with_hint(
+                format!("Runtime {version} is not installed"),
+                "Install it with `nodeup toolchain install <runtime>` and retry `nodeup show \
+                 active-runtime`.",
+            ));
         }
     }
 
@@ -64,10 +65,14 @@ fn show_active_runtime(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
             executable = %executable.display(),
             "Active runtime is unavailable"
         );
-        return Err(NodeupError::not_found(format!(
-            "Command 'node' does not exist for runtime {}",
-            resolved.runtime_id()
-        )));
+        return Err(NodeupError::not_found_with_hint(
+            format!(
+                "Command 'node' does not exist for runtime {}",
+                resolved.runtime_id()
+            ),
+            "Reinstall the runtime with `nodeup toolchain install <runtime>` or relink it with \
+             `nodeup toolchain link <name> <path>`.",
+        ));
     }
 
     let response = ActiveRuntimeResponse {

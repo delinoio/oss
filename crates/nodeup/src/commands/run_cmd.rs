@@ -28,8 +28,9 @@ pub fn execute(
     app: &NodeupApp,
 ) -> Result<i32> {
     if command.is_empty() {
-        return Err(NodeupError::invalid_input(
-            "nodeup run requires delegated command arguments",
+        return Err(NodeupError::invalid_input_with_hint(
+            "Missing delegated command arguments for `nodeup run`",
+            "Use `nodeup run [--install] <runtime> <command> [args...]`.",
         ));
     }
 
@@ -42,11 +43,13 @@ pub fn execute(
             if install {
                 app.installer.ensure_installed(version, &app.releases)?;
             } else {
-                return Err(NodeupError::not_found(format!(
-                    "Runtime {} is not installed. Re-run with --install or run nodeup toolchain \
-                     install {}",
-                    version, runtime
-                )));
+                return Err(NodeupError::not_found_with_hint(
+                    format!("Runtime {version} is not installed"),
+                    format!(
+                        "Install it with `nodeup toolchain install {runtime}` or retry with \
+                         `nodeup run --install {runtime} ...`."
+                    ),
+                ));
             }
         }
     }
@@ -59,11 +62,17 @@ pub fn execute(
 
     let executable = resolved.executable_path(&app.store, delegated_command);
     if !executable.exists() {
-        return Err(NodeupError::not_found(format!(
-            "Command '{}' is not available in runtime {}",
-            delegated_command,
-            resolved.runtime_id()
-        )));
+        return Err(NodeupError::not_found_with_hint(
+            format!(
+                "Command '{delegated_command}' is not available in runtime {}",
+                resolved.runtime_id()
+            ),
+            format!(
+                "Check available commands with `nodeup which --runtime {} {delegated_command}` or \
+                 pick a runtime that provides it.",
+                resolved.runtime_id()
+            ),
+        ));
     }
 
     info!(

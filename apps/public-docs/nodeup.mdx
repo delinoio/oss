@@ -69,6 +69,7 @@ nodeup override set lts --path /path/to/project
 - `--output human|json` is available for management commands.
 - Human mode uses pretty `tracing` logs by default.
 - JSON mode writes machine payloads to stdout and keeps logs off by default unless explicitly enabled.
+- Handled failures use an actionable message shape: `<cause>. Hint: <next action>`.
 - `completions` always writes raw completion scripts to stdout, even when `--output json` is set.
 
 ## Shell completions

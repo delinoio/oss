@@ -26,9 +26,13 @@ impl CompletionShell {
             "fish" => Ok(Self::Fish),
             "powershell" => Ok(Self::PowerShell),
             "elvish" => Ok(Self::Elvish),
-            _ => Err(NodeupError::invalid_input(format!(
-                "Unsupported shell '{raw}'. Supported shells: bash, zsh, fish, powershell, elvish"
-            ))),
+            _ => Err(NodeupError::invalid_input_with_hint(
+                format!(
+                    "Unsupported shell '{raw}'. Supported shells: bash, zsh, fish, powershell, \
+                     elvish"
+                ),
+                "Use one of the supported shell values and retry `nodeup completions`.",
+            )),
         }
     }
 
@@ -80,10 +84,13 @@ impl CompletionScope {
             "run" => Ok(Self::Run),
             "self" => Ok(Self::SelfCmd),
             "completions" => Ok(Self::Completions),
-            _ => Err(NodeupError::invalid_input(format!(
-                "Unsupported command scope '{raw}'. Supported top-level commands: toolchain, \
-                 default, show, update, check, override, which, run, self, completions"
-            ))),
+            _ => Err(NodeupError::invalid_input_with_hint(
+                format!(
+                    "Unsupported command scope '{raw}'. Supported top-level commands: toolchain, \
+                     default, show, update, check, override, which, run, self, completions"
+                ),
+                "Pass a valid top-level command name as the optional scope.",
+            )),
         }
     }
 
@@ -128,9 +135,10 @@ pub fn completions(shell: &str, command: Option<&str>) -> Result<i32> {
 
     let mut stdout = std::io::stdout();
     stdout.write_all(&script).map_err(|error| {
-        let nodeup_error = NodeupError::internal(format!(
-            "Failed to write completion script to stdout: {error}"
-        ));
+        let nodeup_error = NodeupError::internal_with_hint(
+            format!("Failed to write completion script to stdout: {error}"),
+            "Ensure stdout is writable and retry the command.",
+        );
         log_generation_failure(
             parsed_shell.as_str(),
             scope_label,
@@ -140,8 +148,10 @@ pub fn completions(shell: &str, command: Option<&str>) -> Result<i32> {
         nodeup_error
     })?;
     stdout.flush().map_err(|error| {
-        let nodeup_error =
-            NodeupError::internal(format!("Failed to flush completion script output: {error}"));
+        let nodeup_error = NodeupError::internal_with_hint(
+            format!("Failed to flush completion script output: {error}"),
+            "Retry the command and ensure the output stream remains open.",
+        );
         log_generation_failure(
             parsed_shell.as_str(),
             scope_label,
@@ -184,9 +194,10 @@ fn apply_scope(root: &mut clap::Command, scope: CompletionScope) -> Result<()> {
         .get_subcommands()
         .any(|subcommand| subcommand.get_name() == selected)
     {
-        return Err(NodeupError::invalid_input(format!(
-            "Unsupported command scope '{selected}'"
-        )));
+        return Err(NodeupError::invalid_input_with_hint(
+            format!("Unsupported command scope '{selected}'"),
+            "Choose a supported top-level command scope and retry.",
+        ));
     }
 
     *root = root.clone().mut_subcommands(|subcommand| {

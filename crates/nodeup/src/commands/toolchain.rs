@@ -120,8 +120,9 @@ fn render_human_toolchain_list(
 
 fn install(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     if runtimes.is_empty() {
-        return Err(NodeupError::invalid_input(
-            "nodeup toolchain install requires at least one runtime selector",
+        return Err(NodeupError::invalid_input_with_hint(
+            "Missing runtime selector for `nodeup toolchain install`",
+            "Run `nodeup toolchain install <runtime>...`.",
         ));
     }
 
@@ -134,8 +135,10 @@ fn install(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result
         let version = match resolved.target {
             ResolvedRuntimeTarget::Version { version } => version,
             ResolvedRuntimeTarget::LinkedPath { .. } => {
-                return Err(NodeupError::invalid_input(
-                    "toolchain install only supports version/channel selectors",
+                return Err(NodeupError::invalid_input_with_hint(
+                    "`toolchain install` only supports semantic version or channel selectors",
+                    "Use selectors like `22.1.0`, `v22.1.0`, `lts`, `current`, or `latest`. \
+                     Linked runtimes are added with `nodeup toolchain link <name> <path>`.",
                 ));
             }
         };
@@ -172,8 +175,9 @@ fn install(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result
 
 fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     if runtimes.is_empty() {
-        return Err(NodeupError::invalid_input(
-            "nodeup toolchain uninstall requires at least one runtime selector",
+        return Err(NodeupError::invalid_input_with_hint(
+            "Missing runtime selector for `nodeup toolchain uninstall`",
+            "Run `nodeup toolchain uninstall <runtime>...`.",
         ));
     }
 
@@ -193,8 +197,10 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
         let version = match selector {
             RuntimeSelector::Version(version) => format!("v{version}"),
             _ => {
-                return Err(NodeupError::invalid_input(
-                    "toolchain uninstall only supports exact version selectors",
+                return Err(NodeupError::invalid_input_with_hint(
+                    "`toolchain uninstall` only supports exact version selectors",
+                    "Use selectors like `22.1.0` or `v22.1.0`. Channels and linked runtime names \
+                     are not supported here.",
                 ));
             }
         };
@@ -217,9 +223,11 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
             .as_ref()
             .is_some_and(|default| selector_references_version(default, version))
         {
-            return Err(NodeupError::conflict(format!(
-                "Cannot uninstall {version}; it is used as default runtime"
-            )));
+            return Err(NodeupError::conflict_with_hint(
+                format!("Cannot uninstall {version}; it is used as the default runtime"),
+                "Set a different default first with `nodeup default <runtime>`, then retry \
+                 uninstall.",
+            ));
         }
 
         if overrides
@@ -227,15 +235,19 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
             .iter()
             .any(|entry| selector_references_version(&entry.selector, version))
         {
-            return Err(NodeupError::conflict(format!(
-                "Cannot uninstall {version}; it is referenced by an override"
-            )));
+            return Err(NodeupError::conflict_with_hint(
+                format!("Cannot uninstall {version}; it is referenced by a directory override"),
+                "Update or remove the blocking override with `nodeup override set <runtime> \
+                 --path <path>` or `nodeup override unset --path <path>`.",
+            ));
         }
 
         if !app.store.is_installed(version) {
-            return Err(NodeupError::not_found(format!(
-                "Runtime {version} is not installed"
-            )));
+            return Err(NodeupError::not_found_with_hint(
+                format!("Runtime {version} is not installed"),
+                "List installed runtimes with `nodeup toolchain list` and retry with an installed \
+                 version.",
+            ));
         }
     }
 
@@ -289,9 +301,10 @@ fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result
             reason = "invalid-linked-name",
             "Rejected linked runtime"
         );
-        return Err(NodeupError::invalid_input(format!(
-            "Invalid linked runtime name: {name}"
-        )));
+        return Err(NodeupError::invalid_input_with_hint(
+            format!("Invalid linked runtime name: {name}"),
+            "Use a linked runtime name that matches `[A-Za-z0-9][A-Za-z0-9_-]*`.",
+        ));
     }
 
     if is_reserved_channel_selector_token(name) {
@@ -303,10 +316,11 @@ fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result
             reason = "reserved-linked-name",
             "Rejected linked runtime"
         );
-        return Err(NodeupError::invalid_input(format!(
-            "Invalid linked runtime name: {name}. Reserved channel selectors cannot be used as \
-             linked runtime names: lts, current, latest"
-        )));
+        return Err(NodeupError::invalid_input_with_hint(
+            format!("Invalid linked runtime name: {name}"),
+            "Reserved channel selectors (`lts`, `current`, `latest`) cannot be used as linked \
+             runtime names.",
+        ));
     }
 
     let runtime_path = PathBuf::from(path);
@@ -319,10 +333,13 @@ fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result
             reason = "linked-path-missing",
             "Rejected linked runtime"
         );
-        return Err(NodeupError::not_found(format!(
-            "Linked runtime path does not exist: {}",
-            runtime_path.display()
-        )));
+        return Err(NodeupError::not_found_with_hint(
+            format!(
+                "Linked runtime path does not exist: {}",
+                runtime_path.display()
+            ),
+            "Provide an existing runtime directory path to `nodeup toolchain link`.",
+        ));
     }
 
     if !runtime_path.is_dir() {
@@ -334,10 +351,13 @@ fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result
             reason = "linked-path-not-directory",
             "Rejected linked runtime"
         );
-        return Err(NodeupError::invalid_input(format!(
-            "Linked runtime path is not a directory: {}",
-            runtime_path.display()
-        )));
+        return Err(NodeupError::invalid_input_with_hint(
+            format!(
+                "Linked runtime path is not a directory: {}",
+                runtime_path.display()
+            ),
+            "Provide a runtime directory that contains a `bin/node` executable.",
+        ));
     }
 
     let absolute = fs::canonicalize(&runtime_path)?;
@@ -353,10 +373,13 @@ fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result
             reason = "node-executable-missing",
             "Rejected linked runtime"
         );
-        return Err(NodeupError::invalid_input(format!(
-            "Linked runtime path must contain bin/node: {}",
-            absolute.display()
-        )));
+        return Err(NodeupError::invalid_input_with_hint(
+            format!(
+                "Linked runtime path must contain `bin/node`: {}",
+                absolute.display()
+            ),
+            "Verify the runtime root path and ensure `<path>/bin/node` exists before linking.",
+        ));
     }
 
     let mut settings = app.store.load_settings()?;

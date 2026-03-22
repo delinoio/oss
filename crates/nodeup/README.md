@@ -50,6 +50,7 @@ If no selector resolves, commands fail with deterministic `not-found` errors.
   - success payloads are written to stdout as JSON
   - handled failures are written to stderr as JSON envelopes
     - fields: `kind`, `message`, `exit_code`
+    - `message` follows `<cause>. Hint: <next action>` for actionable recovery guidance
   - default logging is off unless explicitly enabled via `RUST_LOG`
 - `completions` command:
   - always writes raw completion script text to stdout
@@ -102,6 +103,8 @@ cargo test
   - verify `<path>/bin/node` exists before `toolchain link`
 - JSON parsing issues in automation:
   - use `--output json` and keep `RUST_LOG` unset (or `off`) to avoid log noise
+- Error troubleshooting:
+  - follow the `Hint:` action in the error message first, then rerun with `RUST_LOG=nodeup=debug` when deeper diagnostics are needed
 
 ## Documentation Links
 
