@@ -54,10 +54,12 @@
 - Local validation: `cargo test -p cargo-mono`
 - Workspace validation baseline: `cargo test --workspace --all-targets`
 - CI alignment: `.github/workflows/CI.yml` Rust jobs
+- Release contract checks should align with `.github/workflows/release-cargo-mono.yml`.
 
 ## Dependencies and Integrations
 - Integrates with Cargo workspace metadata and release workflows.
 - Integrates with root automation (`auto-publish`) through stable command contracts.
+- Integrates with tag-based binary distribution automation (`release-cargo-mono`) through stable artifact naming and signing contracts.
 
 ## Change Triggers
 - Update `docs/project-cargo-mono.md` with this file when command identifiers or ownership changes.
