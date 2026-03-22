@@ -15,7 +15,7 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 ## Cross-Domain Invariants
 - The binary must remain compatible with `cargo mono` invocation conventions.
 - Release automation integration must keep stable command semantics.
-- Runtime failure messaging may evolve for clarity, but command behavior, output schema, and exit code semantics must remain stable.
+- Runtime failure messaging must follow the `Summary/Context/Hint` three-line contract while command behavior, output schema, and exit code semantics remain stable.
 
 ## Change Policy
 - Update this index and `docs/crates-cargo-mono-foundation.md` together when command shape, release workflow, or ownership changes.

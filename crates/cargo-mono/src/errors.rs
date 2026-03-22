@@ -1,8 +1,9 @@
-use std::{fmt, io};
+use std::io;
 
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, CargoMonoError>;
+const MAX_CONTEXT_VALUE_CHARS: usize = 160;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
@@ -51,7 +52,16 @@ impl CargoMonoError {
     }
 
     pub fn with_hint(kind: ErrorKind, summary: impl AsRef<str>, hint: impl AsRef<str>) -> Self {
-        Self::new(kind, message_with_hint(summary, hint))
+        Self::with_details(kind, summary, Vec::new(), hint)
+    }
+
+    pub fn with_details(
+        kind: ErrorKind,
+        summary: impl AsRef<str>,
+        context: Vec<(&str, String)>,
+        hint: impl AsRef<str>,
+    ) -> Self {
+        Self::new(kind, message_with_details(summary, &context, hint))
     }
 
     pub fn internal(message: impl Into<String>) -> Self {
@@ -81,9 +91,10 @@ impl CargoMonoError {
 
 impl From<io::Error> for CargoMonoError {
     fn from(value: io::Error) -> Self {
-        Self::with_hint(
+        Self::with_details(
             ErrorKind::Internal,
-            format!("I/O operation failed: {value}"),
+            "I/O operation failed.",
+            vec![("error", value.to_string())],
             "Verify paths and permissions, then retry the command.",
         )
     }
@@ -91,9 +102,10 @@ impl From<io::Error> for CargoMonoError {
 
 impl From<cargo_metadata::Error> for CargoMonoError {
     fn from(value: cargo_metadata::Error) -> Self {
-        Self::with_hint(
+        Self::with_details(
             ErrorKind::Cargo,
-            format!("Failed to load workspace metadata via cargo: {value}"),
+            "Failed to load workspace metadata via cargo.",
+            vec![("error", value.to_string())],
             "Run `cargo metadata` in this workspace to reproduce and inspect the root cause.",
         )
     }
@@ -101,9 +113,14 @@ impl From<cargo_metadata::Error> for CargoMonoError {
 
 impl From<serde_json::Error> for CargoMonoError {
     fn from(value: serde_json::Error) -> Self {
-        Self::with_hint(
+        Self::with_details(
             ErrorKind::Internal,
-            format!("Failed to parse JSON content: {value}"),
+            "Failed to parse JSON content.",
+            vec![
+                ("error", value.to_string()),
+                ("line", value.line().to_string()),
+                ("column", value.column().to_string()),
+            ],
             "Check the JSON payload for syntax issues near the reported location.",
         )
     }
@@ -111,9 +128,10 @@ impl From<serde_json::Error> for CargoMonoError {
 
 impl From<semver::Error> for CargoMonoError {
     fn from(value: semver::Error) -> Self {
-        Self::with_hint(
+        Self::with_details(
             ErrorKind::InvalidInput,
-            format!("Invalid semantic version: {value}"),
+            "Invalid semantic version.",
+            vec![("error", value.to_string())],
             "Use a valid SemVer value such as `1.2.3` or `1.2.3-rc.1`.",
         )
     }
@@ -121,9 +139,10 @@ impl From<semver::Error> for CargoMonoError {
 
 impl From<toml_edit::TomlError> for CargoMonoError {
     fn from(value: toml_edit::TomlError) -> Self {
-        Self::with_hint(
+        Self::with_details(
             ErrorKind::Internal,
-            format!("Failed to parse TOML document: {value}"),
+            "Failed to parse TOML document.",
+            vec![("error", value.to_string())],
             "Check TOML syntax in Cargo manifests and retry.",
         )
     }
@@ -136,21 +155,53 @@ impl From<CargoMonoError> for io::Error {
 }
 
 pub fn message_with_hint(summary: impl AsRef<str>, hint: impl AsRef<str>) -> String {
-    format!("{} Hint: {}", summary.as_ref(), hint.as_ref())
+    message_with_details(summary, &[], hint)
 }
 
-pub fn with_context<E: fmt::Display>(
-    kind: ErrorKind,
-    context: &str,
-    error: E,
-    hint: &str,
-) -> CargoMonoError {
-    CargoMonoError::with_hint(kind, format!("{context}: {error}"), hint)
+pub fn message_with_details(
+    summary: impl AsRef<str>,
+    context: &[(&str, String)],
+    hint: impl AsRef<str>,
+) -> String {
+    let summary_line = normalize_line(summary.as_ref());
+    let context_line = if context.is_empty() {
+        "none".to_string()
+    } else {
+        context
+            .iter()
+            .map(|(key, value)| format!("{key}={}", normalize_context_value(value)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let hint_line = normalize_line(hint.as_ref());
+
+    format!("Summary: {summary_line}\nContext: {context_line}\nHint: {hint_line}")
+}
+
+fn normalize_context_value(raw: &str) -> String {
+    let normalized = normalize_line(raw);
+    if normalized.is_empty() {
+        return "n/a".to_string();
+    }
+
+    let mut chars = normalized.chars();
+    let truncated = chars
+        .by_ref()
+        .take(MAX_CONTEXT_VALUE_CHARS)
+        .collect::<String>();
+    if chars.next().is_some() {
+        return format!("{truncated}...(truncated)");
+    }
+    truncated
+}
+
+fn normalize_line(raw: &str) -> String {
+    raw.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{message_with_hint, CargoMonoError, ErrorKind};
+    use super::{message_with_details, message_with_hint, CargoMonoError, ErrorKind};
 
     #[test]
     fn error_kind_labels_are_stable() {
@@ -162,11 +213,28 @@ mod tests {
     }
 
     #[test]
-    fn message_with_hint_uses_single_line_contract() {
+    fn message_with_hint_uses_multiline_contract_with_empty_context() {
         let message = message_with_hint("Unable to read manifest.", "Check file permissions.");
         assert_eq!(
             message,
-            "Unable to read manifest. Hint: Check file permissions."
+            "Summary: Unable to read manifest.\nContext: none\nHint: Check file permissions."
+        );
+    }
+
+    #[test]
+    fn message_with_details_formats_context_line() {
+        let message = message_with_details(
+            "Failed to run command.",
+            &[
+                ("command", "git status --porcelain".to_string()),
+                ("status", "exit status: 1".to_string()),
+            ],
+            "Run the command directly to inspect stderr.",
+        );
+        assert_eq!(
+            message,
+            "Summary: Failed to run command.\nContext: command=git status --porcelain, \
+             status=exit status: 1\nHint: Run the command directly to inspect stderr."
         );
     }
 
@@ -180,7 +248,7 @@ mod tests {
         assert_eq!(error.kind, ErrorKind::InvalidInput);
         assert_eq!(
             error.message,
-            "Invalid package selector. Hint: Run `cargo mono list`."
+            "Summary: Invalid package selector.\nContext: none\nHint: Run `cargo mono list`."
         );
     }
 }

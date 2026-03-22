@@ -5,7 +5,9 @@ use std::{
     process::{Command, Output},
 };
 
-use crate::errors::{with_context, CargoMonoError, ErrorKind, Result};
+use crate::errors::{CargoMonoError, ErrorKind, Result};
+
+const DIRTY_SAMPLE_LIMIT: usize = 5;
 
 #[derive(Debug, Clone)]
 pub struct ChangedFiles {
@@ -19,10 +21,14 @@ pub fn current_head() -> Result<String> {
 
 pub fn merge_base(base_ref: &str) -> Result<String> {
     run_git_capture(&["merge-base", base_ref, "HEAD"]).map_err(|error| {
-        with_context(
+        CargoMonoError::with_details(
             ErrorKind::Git,
-            &format!("Failed to resolve merge-base for base ref `{base_ref}`"),
-            error,
+            "Failed to resolve merge base.",
+            vec![
+                ("base_ref", base_ref.to_string()),
+                ("command", format!("git merge-base {base_ref} HEAD")),
+                ("cause", error.message),
+            ],
             "Ensure the base ref exists locally (for example, run `git fetch`) and retry with \
              `--base <ref>`.",
         )
@@ -48,8 +54,7 @@ pub fn changed_files(base_ref: &str, include_uncommitted: bool) -> Result<Change
 }
 
 pub fn is_working_tree_clean() -> Result<bool> {
-    let output = run_git_capture(&["status", "--porcelain", "--untracked-files=normal"])?;
-    Ok(output.trim().is_empty())
+    Ok(working_tree_status_entries()?.is_empty())
 }
 
 pub fn ensure_clean_working_tree(allow_dirty: bool) -> Result<()> {
@@ -57,13 +62,38 @@ pub fn ensure_clean_working_tree(allow_dirty: bool) -> Result<()> {
         return Ok(());
     }
 
-    if is_working_tree_clean()? {
+    let dirty_entries = working_tree_status_entries()?;
+    if dirty_entries.is_empty() {
         return Ok(());
     }
 
-    Err(CargoMonoError::with_hint(
+    let dirty_entry_count = dirty_entries.len();
+    let visible_sample_count = dirty_entry_count.min(DIRTY_SAMPLE_LIMIT);
+    let mut dirty_sample = dirty_entries
+        .iter()
+        .take(visible_sample_count)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(" | ");
+    if dirty_entry_count > visible_sample_count {
+        dirty_sample.push_str(&format!(
+            " ... (+{} more)",
+            dirty_entry_count - visible_sample_count
+        ));
+    }
+
+    Err(CargoMonoError::with_details(
         ErrorKind::Conflict,
         "Working tree is dirty and cannot pass preflight checks.",
+        vec![
+            ("allow_dirty", allow_dirty.to_string()),
+            ("dirty_entry_count", dirty_entry_count.to_string()),
+            ("dirty_sample", dirty_sample),
+            (
+                "command",
+                "git status --porcelain --untracked-files=normal".to_string(),
+            ),
+        ],
         "Commit or stash local changes, or rerun with `--allow-dirty` when this is intentional.",
     ))
 }
@@ -116,37 +146,28 @@ fn parse_paths(output: &str) -> BTreeSet<PathBuf> {
 }
 
 fn run_git(args: &[&str]) -> Result<Output> {
-    let output = Command::new("git").args(args).output().map_err(|error| {
-        with_context(
-            ErrorKind::Git,
-            "Failed to start `git`",
-            error,
-            "Ensure `git` is installed and available in PATH.",
-        )
-    })?;
+    let command = format!("git {}", args.join(" "));
+    let output = Command::new("git")
+        .args(args)
+        .output()
+        .map_err(|error| start_git_error(&command, error))?;
 
-    ensure_success(&output, args.join(" "))?;
+    ensure_success(&output, command)?;
     Ok(output)
 }
 
 fn run_git_os(args: Vec<OsString>) -> Result<Output> {
+    let command = format!(
+        "git {}",
+        args.iter()
+            .map(|part| part.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
     let output = Command::new("git")
         .args(args.iter().map(OsString::as_os_str))
         .output()
-        .map_err(|error| {
-            with_context(
-                ErrorKind::Git,
-                "Failed to start `git`",
-                error,
-                "Ensure `git` is installed and available in PATH.",
-            )
-        })?;
-
-    let command = args
-        .iter()
-        .map(|part| part.to_string_lossy().to_string())
-        .collect::<Vec<_>>()
-        .join(" ");
+        .map_err(|error| start_git_error(&command, error))?;
     ensure_success(&output, command)?;
     Ok(output)
 }
@@ -156,24 +177,48 @@ fn run_git_capture(args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+fn working_tree_status_entries() -> Result<Vec<String>> {
+    let output = run_git_capture(&["status", "--porcelain", "--untracked-files=normal"])?;
+    Ok(output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect())
+}
+
+fn start_git_error(command: &str, error: std::io::Error) -> CargoMonoError {
+    CargoMonoError::with_details(
+        ErrorKind::Git,
+        "Failed to start git command.",
+        vec![
+            ("command", command.to_string()),
+            ("error", error.to_string()),
+        ],
+        "Ensure `git` is installed and available in PATH.",
+    )
+}
+
 fn ensure_success(output: &Output, command: String) -> Result<()> {
     if output.status.success() {
         return Ok(());
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let summary = if stderr.is_empty() {
-        format!(
-            "Git command `git {command}` failed with status {}.",
-            output.status
-        )
-    } else {
-        format!("Git command `git {command}` failed: {stderr}")
-    };
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let details_excerpt = if stderr.is_empty() { stdout } else { stderr };
+    let mut context = vec![
+        ("command", command.clone()),
+        ("status", output.status.to_string()),
+    ];
+    if !details_excerpt.is_empty() {
+        context.push(("details_excerpt", details_excerpt));
+    }
 
-    Err(CargoMonoError::with_hint(
+    Err(CargoMonoError::with_details(
         ErrorKind::Git,
-        summary,
-        format!("Run `git {command}` directly to inspect and resolve the underlying problem."),
+        "Git command failed.",
+        context,
+        format!("Run `{command}` directly to inspect and resolve the underlying problem."),
     ))
 }
