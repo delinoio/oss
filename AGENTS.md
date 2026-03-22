@@ -294,6 +294,7 @@ Change-scoped execution rules:
 - CI jobs perform self-gating (there is no standalone `detect-changes` job).
 - Go and Rust jobs use in-job path-based change detection via `dorny/paths-filter`.
 - Node jobs use in-job Turbo affected detection via `pnpm dlx turbo@2.8.20 query affected --packages <workspace>`.
+- `node-dexdex-ios-build` applies an additional in-job path gate before Turbo detection; outside `workflow_dispatch` and `.github/workflows/CI.yml` changes, it runs only when DexDex iOS-related files changed (`apps/dexdex/src/**`, `apps/dexdex/src-tauri/**`, `apps/dexdex/public/**`, `apps/dexdex/index.html`, `apps/dexdex/package.json`, `apps/dexdex/tsconfig.json`, `apps/dexdex/vite.config.ts`, `apps/dexdex/buf.yaml`, `apps/dexdex/buf.gen.yaml`, `pnpm-lock.yaml`) and Turbo reports `dexdex` as affected.
 - Changes to `.github/workflows/CI.yml` force all `go`, `node`, and `rust` domain jobs to run.
 - `workflow_dispatch` runs all domain jobs regardless of changed paths.
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
