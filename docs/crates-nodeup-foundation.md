@@ -14,6 +14,7 @@
 
 ## Interfaces and Contracts
 - Channel and command identifiers must remain stable and documented.
+- Binary entrypoints must force-link `swc_malloc` allocator policy, while the library target remains allocator-agnostic for downstream consumers.
 - Shim dispatch behavior must remain deterministic by executable name (`node`, `npm`, `npx`, `yarn`, `pnpm`).
 - Install/update command surfaces must preserve backward-compatible flags and outputs.
 - `yarn`/`pnpm` delegated execution must honor nearest `package.json` `packageManager` when present.
