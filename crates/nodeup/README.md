@@ -1,13 +1,13 @@
 # nodeup
 
-`nodeup` is a Rust-based Node.js version manager with rustup-like commands, deterministic runtime resolution, and managed alias dispatch for `node`, `npm`, and `npx`.
+`nodeup` is a Rust-based Node.js version manager with rustup-like commands, deterministic runtime resolution, and managed alias dispatch for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
 
 ## Overview
 
 - Manage multiple Node.js runtimes from one CLI.
 - Resolve active runtime consistently with explicit, override, and default selectors.
 - Use human-friendly output for operators and JSON output for automation.
-- Run `node`, `npm`, and `npx` through one binary by executable-name dispatch.
+- Run `node`, `npm`, `npx`, `yarn`, and `pnpm` through one binary by executable-name dispatch.
 
 ## Quick Command Reference
 
@@ -39,6 +39,32 @@ Runtime resolution follows a stable order:
 3. Global default (`default`)
 
 If no selector resolves, commands fail with deterministic `not-found` errors.
+
+## `packageManager` Support
+
+`nodeup` resolves `package.json` from the current working directory upward and supports
+the `packageManager` field for `yarn` and `pnpm` commands.
+
+- Supported format: `<manager>@<exact-semver>`
+- Supported managers: `yarn`, `pnpm`
+- Strict behavior:
+  - if `packageManager` exists, requested command must match manager
+  - mismatches fail with `conflict`
+  - malformed values fail with `invalid-input`
+- Corepack is not used; `nodeup` uses the selected runtime's `npm exec`.
+
+Mapping rules:
+
+- `pnpm@x.y.z` -> `npm exec --package pnpm@x.y.z -- pnpm ...`
+- `yarn@1.x.y` -> `npm exec --package yarn@1.x.y -- yarn ...`
+- `yarn@2+` -> `npm exec --package @yarnpkg/cli-dist@x.y.z -- yarn ...`
+
+Fallback rules when `packageManager` is absent:
+
+- if runtime provides `bin/yarn` or `bin/pnpm`, run it directly
+- otherwise run through `npm exec` with defaults:
+  - `yarn` -> `@yarnpkg/cli-dist`
+  - `pnpm` -> `pnpm`
 
 ## Output and Logging
 
@@ -92,7 +118,7 @@ Scope filtering:
 `nodeup` validation combines unit tests and end-to-end CLI integration tests.
 
 - Unit tests cover selectors, resolver, release index cache behavior, logging mode selection, and installer helpers.
-- CLI integration tests cover command contracts, JSON error envelopes, selector precedence, override lifecycle, update/check branches, self-management commands, and alias dispatch (`node`, `npm`, `npx`).
+- CLI integration tests cover command contracts, JSON error envelopes, selector precedence, override lifecycle, update/check branches, self-management commands, alias dispatch (`node`, `npm`, `npx`, `yarn`, `pnpm`), and `packageManager`-aware execution planning.
 
 Run locally from repository root:
 

@@ -14,6 +14,8 @@ Post-install bootstrap:
   nodeup default lts
   node --version
   npm --version
+  yarn --version
+  pnpm --version
 
 Optional environment variables:
   NODEUP_LOCAL_INSTALL_ROOT  Install root (default: <repo>/.local/nodeup)
@@ -40,7 +42,7 @@ if [ ! -x "$nodeup_binary" ]; then
 fi
 
 echo "[nodeup-local] ensuring managed alias shims in \"$install_bin_dir\"" >&2
-for alias in node npm npx; do
+for alias in node npm npx yarn pnpm; do
   ln -sfn nodeup "$install_bin_dir/$alias"
   echo "[nodeup-local] shim ready: $alias -> nodeup" >&2
 done

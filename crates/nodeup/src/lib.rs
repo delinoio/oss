@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod command_plan;
 pub mod commands;
 pub mod dispatch;
 pub mod errors;

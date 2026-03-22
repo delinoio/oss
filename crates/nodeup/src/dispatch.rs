@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use tracing::info;
 
 use crate::{
+    command_plan::{plan_delegated_command, DelegatedCommandMode},
     errors::{NodeupError, Result},
     process::{run_command, DelegatedStdioPolicy},
     resolver::ResolvedRuntimeTarget,
@@ -29,8 +30,10 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
         }
     }
 
-    let executable = resolved.executable_path(&app.store, alias.as_str());
-    if !executable.exists() {
+    let plan =
+        plan_delegated_command(&resolved, &app.store, alias.as_str(), &delegated_args, &cwd)?;
+
+    if plan.mode == DelegatedCommandMode::Direct && !plan.executable.exists() {
         return Err(NodeupError::not_found_with_hint(
             format!(
                 "Managed alias '{}' is not available in runtime {}",
@@ -41,17 +44,28 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
         ));
     }
 
+    let package_spec = plan.package_spec.as_deref().unwrap_or("none");
+    let package_json_path = plan
+        .package_json_path
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "none".to_string());
+
     info!(
         command_path = "nodeup.dispatch.alias",
         argv0 = %alias.as_str(),
         runtime = %resolved.runtime_id(),
-        executable = %executable.display(),
+        mode = plan.mode.as_str(),
+        package_spec,
+        package_json_path = %package_json_path,
+        reason = plan.reason.as_str(),
+        executable = %plan.executable.display(),
         "Dispatching managed alias"
     );
 
     let exit_code = run_command(
-        &executable,
-        &delegated_args,
+        &plan.executable,
+        &plan.args,
         DelegatedStdioPolicy::Inherit,
         "nodeup.dispatch.process",
     )?;
