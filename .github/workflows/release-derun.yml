@@ -169,19 +169,6 @@ jobs:
           files: dist/*
           generate_release_notes: true
 
-      - name: Compute source archive checksum
-        id: source
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          source_url="https://github.com/delinoio/oss/archive/refs/tags/${RELEASE_TAG}.tar.gz"
-          curl -fsSL "$source_url" -o source.tar.gz
-          source_sha="$(shasum -a 256 source.tar.gz | awk '{print $1}')"
-
-          echo "source_url=$source_url" >> "$GITHUB_OUTPUT"
-          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
-
       - name: Render Homebrew update
         if: env.DRY_RUN == 'true'
         shell: bash
@@ -189,11 +176,28 @@ jobs:
           set -euo pipefail
 
           chmod +x ./scripts/release/update-homebrew.sh
+
+          darwin_amd64_asset="derun-darwin-amd64.tar.gz"
+          darwin_amd64_sha="$(grep " ${darwin_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          darwin_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${darwin_amd64_asset}"
+
+          darwin_arm64_asset="derun-darwin-arm64.tar.gz"
+          darwin_arm64_sha="$(grep " ${darwin_arm64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          darwin_arm64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${darwin_arm64_asset}"
+
+          linux_amd64_asset="derun-linux-amd64.tar.gz"
+          linux_amd64_sha="$(grep " ${linux_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          linux_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${linux_amd64_asset}"
+
           ./scripts/release/update-homebrew.sh \
             --project derun \
             --version "$RELEASE_VERSION" \
-            --source-url "${{ steps.source.outputs.source_url }}" \
-            --source-sha256 "${{ steps.source.outputs.source_sha }}" \
+            --darwin-amd64-url "$darwin_amd64_url" \
+            --darwin-amd64-sha256 "$darwin_amd64_sha" \
+            --darwin-arm64-url "$darwin_arm64_url" \
+            --darwin-arm64-sha256 "$darwin_arm64_sha" \
+            --linux-amd64-url "$linux_amd64_url" \
+            --linux-amd64-sha256 "$linux_amd64_sha" \
             --dry-run >/dev/null
 
       - name: Submit Homebrew update
@@ -205,11 +209,28 @@ jobs:
           set -euo pipefail
 
           chmod +x ./scripts/release/update-homebrew.sh
+
+          darwin_amd64_asset="derun-darwin-amd64.tar.gz"
+          darwin_amd64_sha="$(grep " ${darwin_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          darwin_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${darwin_amd64_asset}"
+
+          darwin_arm64_asset="derun-darwin-arm64.tar.gz"
+          darwin_arm64_sha="$(grep " ${darwin_arm64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          darwin_arm64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${darwin_arm64_asset}"
+
+          linux_amd64_asset="derun-linux-amd64.tar.gz"
+          linux_amd64_sha="$(grep " ${linux_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          linux_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${linux_amd64_asset}"
+
           ./scripts/release/update-homebrew.sh \
             --project derun \
             --version "$RELEASE_VERSION" \
-            --source-url "${{ steps.source.outputs.source_url }}" \
-            --source-sha256 "${{ steps.source.outputs.source_sha }}"
+            --darwin-amd64-url "$darwin_amd64_url" \
+            --darwin-amd64-sha256 "$darwin_amd64_sha" \
+            --darwin-arm64-url "$darwin_arm64_url" \
+            --darwin-arm64-sha256 "$darwin_arm64_sha" \
+            --linux-amd64-url "$linux_amd64_url" \
+            --linux-amd64-sha256 "$linux_amd64_sha"
 
       - name: Render winget update
         if: env.DRY_RUN == 'true'

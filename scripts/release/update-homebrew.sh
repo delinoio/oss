@@ -20,20 +20,20 @@ Usage:
 Options:
   --project <id>         Package identifier.
   --version <semver>     Release version without v-prefix.
-  --source-url <url>     Source tarball URL (nodeup/derun formula only).
-  --source-sha256 <sha>  Source tarball SHA256 (nodeup/derun formula only).
+  --source-url <url>     Source tarball URL (nodeup formula only).
+  --source-sha256 <sha>  Source tarball SHA256 (nodeup formula only).
   --darwin-amd64-url <url>
-                         Darwin amd64 prebuilt artifact URL (DexDex server formulas).
+                         Darwin amd64 prebuilt artifact URL (derun and DexDex server formulas).
   --darwin-amd64-sha256 <sha>
-                         Darwin amd64 prebuilt artifact SHA256 (DexDex server formulas).
+                         Darwin amd64 prebuilt artifact SHA256 (derun and DexDex server formulas).
   --darwin-arm64-url <url>
-                         Darwin arm64 prebuilt artifact URL (DexDex server formulas).
+                         Darwin arm64 prebuilt artifact URL (derun and DexDex server formulas).
   --darwin-arm64-sha256 <sha>
-                         Darwin arm64 prebuilt artifact SHA256 (DexDex server formulas).
+                         Darwin arm64 prebuilt artifact SHA256 (derun and DexDex server formulas).
   --linux-amd64-url <url>
-                         Linux amd64 prebuilt artifact URL (DexDex server formulas).
+                         Linux amd64 prebuilt artifact URL (derun and DexDex server formulas).
   --linux-amd64-sha256 <sha>
-                         Linux amd64 prebuilt artifact SHA256 (DexDex server formulas).
+                         Linux amd64 prebuilt artifact SHA256 (derun and DexDex server formulas).
   --desktop-url <url>    Desktop installer URL (dexdex cask).
   --desktop-sha256 <sha> Desktop installer SHA256 (dexdex cask).
   --tap-repo <repo>      Homebrew tap repository (default: delinoio/homebrew-tap).
@@ -138,7 +138,7 @@ rendered_file=""
 destination_path=""
 
 case "$project" in
-  nodeup|derun)
+  nodeup)
     if [ -z "$source_url" ] || [ -z "$source_sha256" ]; then
       echo "[release.homebrew] $project requires --source-url and --source-sha256" >&2
       exit 1
@@ -159,7 +159,7 @@ case "$project" in
       -e "s|__VERSION__|$version|g" \
       "$template_path" >"$rendered_file"
     ;;
-  dexdex-main-server|dexdex-worker-server)
+  derun|dexdex-main-server|dexdex-worker-server)
     if [ -z "$darwin_amd64_url" ] || [ -z "$darwin_amd64_sha256" ] || [ -z "$darwin_arm64_url" ] || [ -z "$darwin_arm64_sha256" ] || [ -z "$linux_amd64_url" ] || [ -z "$linux_amd64_sha256" ]; then
       echo "[release.homebrew] $project requires --darwin-amd64-url, --darwin-amd64-sha256, --darwin-arm64-url, --darwin-arm64-sha256, --linux-amd64-url, and --linux-amd64-sha256" >&2
       exit 1
