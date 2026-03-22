@@ -217,6 +217,7 @@ mod commands {
     }
 
     #[tauri::command]
+    #[cfg(desktop)]
     pub fn update_tray_status(
         app: tauri::AppHandle,
         status: String,
@@ -236,6 +237,19 @@ mod commands {
             tracing::info!(status = %status, tooltip = %tooltip, "tray status updated");
         }
 
+        Ok(())
+    }
+
+    #[tauri::command]
+    #[cfg(not(desktop))]
+    pub fn update_tray_status(
+        _app: tauri::AppHandle,
+        status: String,
+    ) -> Result<(), String> {
+        tracing::debug!(
+            status = %status,
+            "tray status update skipped: tray integration is desktop-only"
+        );
         Ok(())
     }
 }
@@ -258,11 +272,14 @@ fn init_tracing() {
 pub fn run() {
     init_tracing();
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         // Keep tracing-subscriber as the single global logger and route webview logs through it.
         // Remove `skip_logger` only if DexDex stops installing a global tracing logger first.
-        .plugin(tauri_plugin_log::Builder::new().skip_logger().build())
-        .plugin(
+        .plugin(tauri_plugin_log::Builder::new().skip_logger().build());
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
                     use tauri::Emitter;
@@ -273,8 +290,13 @@ pub fn run() {
                     }
                 })
                 .build(),
-        )
+        );
+    }
+
+    builder
         .setup(|app| {
+            #[cfg(desktop)]
+            {
             use tauri::Manager;
 
             // Set up menu bar tray (status-only)
@@ -306,6 +328,14 @@ pub fn run() {
             })?;
 
             tracing::info!("DexDex tray and global shortcut initialized");
+            }
+
+            #[cfg(not(desktop))]
+            {
+                let _ = app;
+                tracing::info!("DexDex mobile runtime initialized without tray and global shortcut integration");
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
