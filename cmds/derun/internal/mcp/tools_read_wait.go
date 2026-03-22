@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
@@ -58,7 +57,7 @@ func handleWaitOutput(store *state.Store, args map[string]any) (map[string]any, 
 	for {
 		chunks, nextCursor, eof, err := store.ReadOutput(sessionID, cursor, maxBytes)
 		if err != nil {
-			return nil, wrapReadWaitError("wait read output", err)
+			return nil, wrapReadWaitError("read output while waiting", err)
 		}
 		if len(chunks) > 0 {
 			return buildOutputPayload(sessionID, chunks, nextCursor, eof, outputPayloadOptions{
@@ -105,5 +104,5 @@ func wrapReadWaitError(prefix string, err error) error {
 	if errors.Is(err, state.ErrSessionNotFound) {
 		return state.ErrSessionNotFound
 	}
-	return fmt.Errorf("%s: %w", prefix, err)
+	return wrapRuntimeError(prefix, err)
 }

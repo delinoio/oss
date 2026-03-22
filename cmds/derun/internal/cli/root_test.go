@@ -92,7 +92,7 @@ func TestExecuteHelpCommandRejectsUnknownTopic(t *testing.T) {
 	if exitCode != 2 {
 		t.Fatalf("unexpected exit code: got=%d want=2", exitCode)
 	}
-	if !strings.Contains(stderrOutput, "unknown help topic: unknown-topic") {
+	if !strings.Contains(stderrOutput, `invalid arguments: unknown help topic "unknown-topic"`) {
 		t.Fatalf("expected unknown topic error: %q", stderrOutput)
 	}
 }

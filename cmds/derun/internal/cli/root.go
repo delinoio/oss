@@ -28,7 +28,10 @@ func Execute(args []string) int {
 	case contracts.DerunCommandMCP:
 		return ExecuteMCP(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", args[0])
+		fmt.Fprintln(
+			os.Stderr,
+			formatUsageError(fmt.Sprintf("unknown command %q", args[0]), "run `derun help` to see available commands"),
+		)
 		printUsage()
 		return 2
 	}
@@ -40,7 +43,10 @@ func executeHelp(args []string) int {
 		return 0
 	}
 	if len(args) > 1 {
-		fmt.Fprintln(os.Stderr, "help command accepts at most one topic")
+		fmt.Fprintln(
+			os.Stderr,
+			formatUsageError("help command accepts at most one topic", "use `derun help` or `derun help <run|mcp>`"),
+		)
 		return 2
 	}
 
@@ -52,7 +58,10 @@ func executeHelp(args []string) int {
 		printMCPUsage()
 		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "unknown help topic: %s\n", args[0])
+		fmt.Fprintln(
+			os.Stderr,
+			formatUsageError(fmt.Sprintf("unknown help topic %q", args[0]), "use `derun help` to list supported topics"),
+		)
 		printUsage()
 		return 2
 	}

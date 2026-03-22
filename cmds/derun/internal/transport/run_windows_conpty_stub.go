@@ -15,5 +15,5 @@ func RunWindowsConPTY(
 	_ func(pid int) error,
 	_ io.Writer,
 ) (RunResult, error) {
-	return RunResult{}, errors.New("windows conpty mode is unsupported on non-windows platforms")
+	return RunResult{}, errors.New("failed to run windows conpty mode: unsupported on non-windows platforms")
 }

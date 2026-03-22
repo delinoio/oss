@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -27,7 +28,7 @@ func handleListSessions(store *state.Store, args map[string]any) (map[string]any
 
 	sessions, totalCount, err := store.ListSessions(stateFilter, limit)
 	if err != nil {
-		return nil, fmt.Errorf("list sessions: %w", err)
+		return nil, wrapRuntimeError("list sessions", err)
 	}
 
 	return map[string]any{
@@ -42,12 +43,15 @@ func handleListSessions(store *state.Store, args map[string]any) (map[string]any
 func handleGetSession(store *state.Store, args map[string]any) (map[string]any, error) {
 	rawSessionID, ok := args["session_id"].(string)
 	if !ok || rawSessionID == "" {
-		return nil, fmt.Errorf("session_id is required")
+		return nil, requiredFieldError("session_id", "a non-empty string")
 	}
 
 	detail, err := store.GetSession(rawSessionID)
 	if err != nil {
-		return nil, fmt.Errorf("get session: %w", err)
+		if errors.Is(err, state.ErrSessionNotFound) {
+			return nil, state.ErrSessionNotFound
+		}
+		return nil, wrapRuntimeError("get session", err)
 	}
 
 	return map[string]any{

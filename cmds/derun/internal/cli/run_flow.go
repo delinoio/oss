@@ -66,11 +66,20 @@ func parseRunRequest(args []string) (runRequest, int) {
 		return runRequest{}, 2
 	}
 	if !hasSeparator {
-		fmt.Fprintln(os.Stderr, "run command requires '--' separator before target command")
+		fmt.Fprintln(
+			os.Stderr,
+			formatUsageError(
+				"run command requires '--' separator before target command",
+				"use `derun run [flags] -- <command> [args...]`",
+			),
+		)
 		return runRequest{}, 2
 	}
 	if len(commandArgs) == 0 {
-		fmt.Fprintln(os.Stderr, "run command requires target command")
+		fmt.Fprintln(
+			os.Stderr,
+			formatUsageError("run command requires target command", "provide a command after `--`"),
+		)
 		return runRequest{}, 2
 	}
 	if err := validateRetentionDuration(request.retentionDuration); err != nil {
@@ -85,18 +94,18 @@ func parseRunRequest(args []string) (runRequest, int) {
 func initRunRuntime(request runRequest) (*runRuntime, int) {
 	stateRoot, err := resolveStateRootForRun()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "resolve state root: %v\n", err)
+		fmt.Fprintln(os.Stderr, formatRuntimeError("resolve state root", err))
 		return nil, 1
 	}
 
 	store, err := state.New(stateRoot)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "init state store: %v\n", err)
+		fmt.Fprintln(os.Stderr, formatRuntimeError("initialize state store", err))
 		return nil, 1
 	}
 	logger, err := logging.New(stateRoot)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "init logger: %v\n", err)
+		fmt.Fprintln(os.Stderr, formatRuntimeError("initialize logger", err))
 		return nil, 1
 	}
 
@@ -121,7 +130,7 @@ func prepareSession(runtimeState *runRuntime, request runRequest) (*preparedRunS
 	if sessionID == "" {
 		sessionID, err = generateUniqueSessionID(runtimeState.store, runtimeState.logger)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "generate session id: %v\n", err)
+			fmt.Fprintln(os.Stderr, formatRuntimeError("generate session id", err))
 			return nil, 1
 		}
 	} else {
@@ -132,10 +141,16 @@ func prepareSession(runtimeState *runRuntime, request runRequest) (*preparedRunS
 					"session_id": sessionID,
 					"reason":     string(sessionIDRejectionReasonInvalid),
 				})
-				fmt.Fprintf(os.Stderr, "invalid session id: %s\n", sessionID)
+				fmt.Fprintln(
+					os.Stderr,
+					formatUsageError(
+						fmt.Sprintf("invalid session id %q", sessionID),
+						"use a unique path-safe id (for example: 01J0S444444444444444444444)",
+					),
+				)
 				return nil, 2
 			}
-			fmt.Fprintf(os.Stderr, "check session metadata: %v\n", err)
+			fmt.Fprintln(os.Stderr, formatRuntimeError("check session metadata", err))
 			return nil, 1
 		}
 		if hasMetadata {
@@ -143,19 +158,25 @@ func prepareSession(runtimeState *runRuntime, request runRequest) (*preparedRunS
 				"session_id": sessionID,
 				"reason":     string(sessionIDRejectionReasonMetadataExists),
 			})
-			fmt.Fprintf(os.Stderr, "session id already exists: %s\n", sessionID)
+			fmt.Fprintln(
+				os.Stderr,
+				formatUsageError(
+					fmt.Sprintf("session id already exists %q", sessionID),
+					"omit `--session-id` or choose a different id",
+				),
+			)
 			return nil, 2
 		}
 	}
 
 	if err := runtimeState.store.EnsureSessionDir(sessionID); err != nil {
-		fmt.Fprintf(os.Stderr, "prepare session directory: %v\n", err)
+		fmt.Fprintln(os.Stderr, formatRuntimeError("prepare session directory", err))
 		return nil, 1
 	}
 
 	workingDir, err := os.Getwd()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "resolve working directory: %v\n", err)
+		fmt.Fprintln(os.Stderr, formatRuntimeError("resolve working directory", err))
 		return nil, 1
 	}
 
@@ -174,7 +195,7 @@ func prepareSession(runtimeState *runRuntime, request runRequest) (*preparedRunS
 		PID:              0,
 	}
 	if err := runtimeState.store.WriteMeta(meta); err != nil {
-		fmt.Fprintf(os.Stderr, "write metadata: %v\n", err)
+		fmt.Fprintln(os.Stderr, formatRuntimeError("write session metadata", err))
 		return nil, 1
 	}
 
@@ -202,7 +223,7 @@ func executeTransport(runtimeState *runRuntime, preparedSession *preparedRunSess
 		}
 		preparedSession.meta.PID = pid
 		if err := runtimeState.store.WriteMeta(preparedSession.meta); err != nil {
-			return fmt.Errorf("write meta file: %w", err)
+			return fmt.Errorf("failed to write session metadata file: %w", err)
 		}
 		return nil
 	}
@@ -237,7 +258,7 @@ func executeTransport(runtimeState *runRuntime, preparedSession *preparedRunSess
 			preparedSession.transportMode = contracts.DerunTransportModePipe
 			preparedSession.meta.TransportMode = preparedSession.transportMode
 			if err := runtimeState.store.WriteMeta(preparedSession.meta); err != nil {
-				fmt.Fprintf(os.Stderr, "write fallback metadata: %v\n", err)
+				fmt.Fprintln(os.Stderr, formatRuntimeError("write fallback metadata", err))
 				return runExecutionResult{}, 1
 			}
 			result, runErr = runPipe()
@@ -281,7 +302,7 @@ func persistFinalState(runtimeState *runRuntime, preparedSession *preparedRunSes
 	}
 
 	if err := runtimeState.store.WriteFinal(final); err != nil {
-		fmt.Fprintf(os.Stderr, "write final metadata: %v\n", err)
+		fmt.Fprintln(os.Stderr, formatRuntimeError("write final metadata", err))
 		return 1
 	}
 
@@ -290,7 +311,7 @@ func persistFinalState(runtimeState *runRuntime, preparedSession *preparedRunSes
 
 func resolveRunExitCode(execution runExecutionResult) int {
 	if execution.runErr != nil {
-		fmt.Fprintf(os.Stderr, "run command: %v\n", execution.runErr)
+		fmt.Fprintln(os.Stderr, formatRuntimeError("execute command", execution.runErr))
 		return 1
 	}
 	if execution.runResult.SignalNum > 0 {
