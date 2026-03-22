@@ -16,6 +16,10 @@
 - Binary naming contract: `cargo-mono` must remain compatible with `cargo mono` invocation.
 - Command identifiers for lifecycle operations must remain stable and documented.
 - Publish and bump workflows must preserve scriptable output contracts for automation.
+- Publish release trigger contract:
+  - `.github/workflows/auto-publish.yml` runs on `push` to `main` (plus `workflow_dispatch`).
+  - `.github/workflows/release-cargo-mono.yml` runs on tag push `cargo-mono@v*` only.
+  - `cargo-mono-v*` tags must not trigger `release-cargo-mono`.
 - Human-output color contract:
   - Global CLI flag: `--color <auto|always|never>`.
   - Environment override: `CARGO_MONO_OUTPUT_COLOR=auto|always|never`.
@@ -57,10 +61,11 @@
 
 ## Dependencies and Integrations
 - Integrates with Cargo workspace metadata and release workflows.
-- Integrates with root automation (`auto-publish`) through stable command contracts.
+- Integrates with root automation (`auto-publish`) and tag automation (`release-cargo-mono`) through stable command contracts.
 
 ## Change Triggers
 - Update `docs/project-cargo-mono.md` with this file when command identifiers or ownership changes.
+- Update release workflow contracts in this document when `.github/workflows/auto-publish.yml` or `.github/workflows/release-cargo-mono.yml` trigger rules change.
 - Update `crates/AGENTS.md` and root `AGENTS.md` when policy or path contracts change.
 
 ## References

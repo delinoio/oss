@@ -304,6 +304,11 @@ Release automation baseline:
 - Branch guard contract: publish job runs only when `github.ref == 'refs/heads/main'`.
 - Publish command contract: `cargo run -p cargo-mono -- publish`.
 - Required secret contract: `CARGO_REGISTRY_TOKEN`.
+- `release-cargo-mono` is defined in `.github/workflows/release-cargo-mono.yml`.
+- Trigger contract: runs on tag push `cargo-mono@v*` only (no `workflow_dispatch` trigger).
+- Publish command contract: `cargo run -p cargo-mono -- publish`.
+- Required secret contract: `CARGO_REGISTRY_TOKEN`.
+- Non-trigger contract: tags matching `cargo-mono-v*` must not trigger `release-cargo-mono`.
 - `release-nodeup` is defined in `.github/workflows/release-nodeup.yml`.
 - Trigger contract: runs on tag push `nodeup@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS nodeup release artifacts, updates Homebrew (`nodeup`), and updates winget (`DelinoIO.Nodeup`).

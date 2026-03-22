@@ -15,6 +15,8 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 ## Cross-Domain Invariants
 - The binary must remain compatible with `cargo mono` invocation conventions.
 - Release automation integration must keep stable command semantics.
+- Tag-based publish automation for `cargo-mono` must trigger only on `cargo-mono@v*`.
+- Legacy-style tags (`cargo-mono-v*`) are outside the tag-trigger contract for `cargo-mono` publish automation.
 - Runtime failure messaging must follow the `Summary/Context/Hint` three-line contract while command behavior, output schema, and exit code semantics remain stable.
 - Dependency-cycle conflicts in package ordering must identify cycle package names and dependency scope in `Context` without changing CLI flags, command behavior, or JSON output schema.
 - Human output color controls must remain stable: global `--color <auto|always|never>`, `CARGO_MONO_OUTPUT_COLOR`, and `NO_COLOR` with precedence `--color` > `CARGO_MONO_OUTPUT_COLOR` > `NO_COLOR` > auto-detection.
@@ -22,6 +24,7 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 
 ## Change Policy
 - Update this index and `docs/crates-cargo-mono-foundation.md` together when command shape, release workflow, or ownership changes.
+- Keep `.github/workflows/auto-publish.yml` and `.github/workflows/release-cargo-mono.yml` contracts synchronized with this document when publish trigger policies change.
 - Keep `crates/AGENTS.md` and root `AGENTS.md` aligned with structural changes.
 
 ## References
