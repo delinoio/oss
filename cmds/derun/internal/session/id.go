@@ -3,8 +3,9 @@ package session
 import (
 	"crypto/rand"
 	"encoding/binary"
-	"fmt"
 	"time"
+
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
 )
 
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
@@ -12,13 +13,18 @@ const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 func NewULID(now time.Time) (string, error) {
 	timestamp := uint64(now.UnixMilli())
 	if timestamp > (1<<48)-1 {
-		return "", fmt.Errorf("timestamp exceeds ULID max: %d", timestamp)
+		return "", errmsg.Error("timestamp exceeds ULID max", map[string]any{
+			"timestamp_ms": timestamp,
+			"max_ms":       uint64((1 << 48) - 1),
+		})
 	}
 
 	buf := make([]byte, 16)
 	binary.BigEndian.PutUint64(buf[:8], timestamp<<16)
 	if _, err := rand.Read(buf[6:16]); err != nil {
-		return "", fmt.Errorf("read random bytes: %w", err)
+		return "", errmsg.Error(errmsg.Runtime("read random bytes", err, map[string]any{
+			"random_bytes": len(buf[6:16]),
+		}), nil)
 	}
 
 	out := make([]byte, 26)

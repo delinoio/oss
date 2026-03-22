@@ -1,24 +1,31 @@
 package mcp
 
-import "fmt"
+import (
+	"errors"
+
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
+)
 
 func formatUsageError(reason, hint string) string {
-	if hint == "" {
-		return fmt.Sprintf("invalid arguments: %s", reason)
-	}
-	return fmt.Sprintf("invalid arguments: %s; hint: %s", reason, hint)
+	return formatUsageErrorWithDetails(reason, hint, nil)
 }
 
-func requiredFieldError(field, expected string) error {
-	if expected == "" {
-		return fmt.Errorf("%s is required", field)
-	}
-	return fmt.Errorf("%s is required; expected %s", field, expected)
+func formatUsageErrorWithDetails(reason, hint string, details map[string]any) string {
+	return errmsg.Usage(reason, hint, details)
+}
+
+func requiredFieldError(field, expected string, received any) error {
+	return errmsg.Required(field, expected, received)
+}
+
+func parseFieldError(field string, err error, details map[string]any) error {
+	return errmsg.Parse(field, err, details)
 }
 
 func wrapRuntimeError(action string, err error) error {
-	if err == nil {
-		return fmt.Errorf("failed to %s", action)
-	}
-	return fmt.Errorf("failed to %s: %w", action, err)
+	return wrapRuntimeErrorWithDetails(action, err, nil)
+}
+
+func wrapRuntimeErrorWithDetails(action string, err error, details map[string]any) error {
+	return errors.New(errmsg.Runtime(action, err, details))
 }

@@ -2,13 +2,13 @@ package cli
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
 	"github.com/delinoio/oss/cmds/derun/internal/logging"
 	"github.com/delinoio/oss/cmds/derun/internal/session"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
@@ -83,10 +83,24 @@ func selectTransportMode(ttyAttached bool, goos string) contracts.DerunTransport
 
 func validateRetentionDuration(retentionDuration time.Duration) error {
 	if retentionDuration <= 0 {
-		return errors.New(formatUsageError("retention must be positive", "use values like 1s, 5m, or 24h"))
+		return errors.New(formatUsageErrorWithDetails(
+			"retention must be positive",
+			"use values like 1s, 5m, or 24h",
+			map[string]any{
+				"retention":    retentionDuration.String(),
+				"retention_ms": retentionDuration.Milliseconds(),
+			},
+		))
 	}
 	if retentionDuration%time.Second != 0 {
-		return errors.New(formatUsageError("retention must use whole-second precision", "use values like 1s, 30s, or 5m"))
+		return errors.New(formatUsageErrorWithDetails(
+			"retention must use whole-second precision",
+			"use values like 1s, 30s, or 5m",
+			map[string]any{
+				"retention":    retentionDuration.String(),
+				"retention_ms": retentionDuration.Milliseconds(),
+			},
+		))
 	}
 	return nil
 }
@@ -99,14 +113,20 @@ func resolveStateRootForRun() (string, error) {
 }
 
 func generateUniqueSessionID(store *state.Store, logger *logging.Logger) (string, error) {
-	for attempt := 1; attempt <= 5; attempt++ {
+	const maxAttempts = 5
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		sessionID, err := session.NewULID(time.Now().UTC())
 		if err != nil {
-			return "", err
+			return "", errors.New(formatRuntimeErrorWithDetails("generate candidate session id", err, map[string]any{
+				"attempt": attempt,
+			}))
 		}
 		hasMetadata, err := store.HasSessionMetadata(sessionID)
 		if err != nil {
-			return "", err
+			return "", errors.New(formatRuntimeErrorWithDetails("check candidate session metadata", err, map[string]any{
+				"attempt":    attempt,
+				"session_id": sessionID,
+			}))
 		}
 		if !hasMetadata {
 			return sessionID, nil
@@ -116,7 +136,9 @@ func generateUniqueSessionID(store *state.Store, logger *logging.Logger) (string
 			"attempt":    attempt,
 		})
 	}
-	return "", fmt.Errorf("too many session id collisions")
+	return "", errmsg.Error("too many session id collisions", map[string]any{
+		"attempt_limit": maxAttempts,
+	})
 }
 
 func derefInt(v *int) int {

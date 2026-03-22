@@ -146,6 +146,9 @@ func TestHandleReadOutputMissingSessionReturnsError(t *testing.T) {
 	if !strings.Contains(err.Error(), "session not found") {
 		t.Fatalf("expected deterministic missing-session error, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "session_id=01J0S555555555555555555555") {
+		t.Fatalf("expected missing-session details to include session_id, got: %v", err)
+	}
 	if payload != nil {
 		t.Fatalf("expected nil payload on error")
 	}
@@ -169,6 +172,9 @@ func TestHandleWaitOutputMissingSessionReturnsError(t *testing.T) {
 	if !strings.Contains(err.Error(), "session not found") {
 		t.Fatalf("expected deterministic missing-session error, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "session_id=01J0S666666666666666666666") {
+		t.Fatalf("expected missing-session details to include session_id, got: %v", err)
+	}
 	if payload != nil {
 		t.Fatalf("expected nil payload on error")
 	}
@@ -187,6 +193,9 @@ func TestHandleListSessionsRejectsFractionalLimit(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "parse limit") {
 		t.Fatalf("expected parse limit error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "received_type=float64") || !strings.Contains(err.Error(), "details:") {
+		t.Fatalf("expected parse limit details, got: %v", err)
 	}
 	if payload != nil {
 		t.Fatalf("expected nil payload on error")
@@ -211,6 +220,9 @@ func TestHandleReadOutputRejectsFractionalMaxBytes(t *testing.T) {
 	if !strings.Contains(err.Error(), "parse max_bytes") {
 		t.Fatalf("expected parse max_bytes error, got: %v", err)
 	}
+	if !strings.Contains(err.Error(), "received_type=float64") || !strings.Contains(err.Error(), "details:") {
+		t.Fatalf("expected parse max_bytes details, got: %v", err)
+	}
 	if payload != nil {
 		t.Fatalf("expected nil payload on error")
 	}
@@ -233,6 +245,9 @@ func TestHandleWaitOutputRejectsFractionalTimeout(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "parse timeout_ms") {
 		t.Fatalf("expected parse timeout_ms error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "received_type=float64") || !strings.Contains(err.Error(), "details:") {
+		t.Fatalf("expected parse timeout_ms details, got: %v", err)
 	}
 	if payload != nil {
 		t.Fatalf("expected nil payload on error")

@@ -1,17 +1,19 @@
 package cli
 
-import "fmt"
+import "github.com/delinoio/oss/cmds/derun/internal/errmsg"
 
 func formatUsageError(reason, hint string) string {
-	if hint == "" {
-		return fmt.Sprintf("invalid arguments: %s", reason)
-	}
-	return fmt.Sprintf("invalid arguments: %s; hint: %s", reason, hint)
+	return formatUsageErrorWithDetails(reason, hint, nil)
+}
+
+func formatUsageErrorWithDetails(reason, hint string, details map[string]any) string {
+	return errmsg.Usage(reason, hint, details)
 }
 
 func formatRuntimeError(action string, err error) string {
-	if err == nil {
-		return fmt.Sprintf("failed to %s", action)
-	}
-	return fmt.Sprintf("failed to %s: %v", action, err)
+	return formatRuntimeErrorWithDetails(action, err, nil)
+}
+
+func formatRuntimeErrorWithDetails(action string, err error, details map[string]any) string {
+	return errmsg.Runtime(action, err, details)
 }

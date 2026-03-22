@@ -1,11 +1,11 @@
 package capture
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
 	"github.com/delinoio/oss/cmds/derun/internal/logging"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
 )
@@ -35,7 +35,11 @@ func (w *Writer) Write(p []byte) (int, error) {
 	defer w.mu.Unlock()
 	offset, err := w.store.AppendOutput(w.sessionID, w.channel, p, time.Now().UTC())
 	if err != nil {
-		return 0, fmt.Errorf("append output: %w", err)
+		return 0, errmsg.Error(errmsg.Runtime("append output", err, map[string]any{
+			"session_id": w.sessionID,
+			"channel":    w.channel,
+			"chunk_size": len(p),
+		}), nil)
 	}
 	w.logger.Event("chunk_written", map[string]any{
 		"session_id":   w.sessionID,

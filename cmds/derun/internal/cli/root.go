@@ -30,7 +30,14 @@ func Execute(args []string) int {
 	default:
 		fmt.Fprintln(
 			os.Stderr,
-			formatUsageError(fmt.Sprintf("unknown command %q", args[0]), "run `derun help` to see available commands"),
+			formatUsageErrorWithDetails(
+				fmt.Sprintf("unknown command %q", args[0]),
+				"run `derun help` to see available commands",
+				map[string]any{
+					"command":   args[0],
+					"arg_count": len(args),
+				},
+			),
 		)
 		printUsage()
 		return 2
@@ -45,7 +52,11 @@ func executeHelp(args []string) int {
 	if len(args) > 1 {
 		fmt.Fprintln(
 			os.Stderr,
-			formatUsageError("help command accepts at most one topic", "use `derun help` or `derun help <run|mcp>`"),
+			formatUsageErrorWithDetails(
+				"help command accepts at most one topic",
+				"use `derun help` or `derun help <run|mcp>`",
+				map[string]any{"topic_count": len(args)},
+			),
 		)
 		return 2
 	}
@@ -60,7 +71,11 @@ func executeHelp(args []string) int {
 	default:
 		fmt.Fprintln(
 			os.Stderr,
-			formatUsageError(fmt.Sprintf("unknown help topic %q", args[0]), "use `derun help` to list supported topics"),
+			formatUsageErrorWithDetails(
+				fmt.Sprintf("unknown help topic %q", args[0]),
+				"use `derun help` to list supported topics",
+				map[string]any{"topic": args[0]},
+			),
 		)
 		printUsage()
 		return 2

@@ -1,9 +1,10 @@
 package state
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
 )
 
 const (
@@ -16,17 +17,21 @@ func ResolveStateRoot() (string, error) {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve home directory: %w", err)
+		return "", errmsg.Error(errmsg.Runtime("resolve home directory", err, nil), nil)
 	}
 	return filepath.Join(home, ".local", "state", rootDirName), nil
 }
 
 func EnsureDir(path string) error {
 	if err := os.MkdirAll(path, 0o700); err != nil {
-		return fmt.Errorf("mkdir %s: %w", path, err)
+		return errmsg.Error(errmsg.Runtime("mkdir", err, map[string]any{
+			"path": path,
+		}), nil)
 	}
 	if err := os.Chmod(path, 0o700); err != nil {
-		return fmt.Errorf("chmod %s: %w", path, err)
+		return errmsg.Error(errmsg.Runtime("chmod", err, map[string]any{
+			"path": path,
+		}), nil)
 	}
 	return nil
 }

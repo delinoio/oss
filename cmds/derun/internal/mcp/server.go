@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
 	"github.com/delinoio/oss/cmds/derun/internal/logging"
 	"github.com/delinoio/oss/cmds/derun/internal/retention"
 	"github.com/delinoio/oss/cmds/derun/internal/state"
@@ -91,8 +92,12 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			if err := s.writeResponse(out, rpcResponse{
 				JSONRPC: "2.0",
 				Error: &rpcError{
-					Code:    -32700,
-					Message: formatUsageError("invalid json", "send a valid JSON-RPC request body"),
+					Code: -32700,
+					Message: formatUsageErrorWithDetails(
+						"invalid json",
+						"send a valid JSON-RPC request body",
+						map[string]any{"body_bytes": len(body)},
+					),
 				},
 			}); err != nil {
 				return err
@@ -109,8 +114,14 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 					JSONRPC: "2.0",
 					ID:      req.ID,
 					Error: &rpcError{
-						Code:    -32600,
-						Message: formatUsageError("missing method", `set the JSON-RPC "method" field`),
+						Code: -32600,
+						Message: formatUsageErrorWithDetails(
+							"missing method",
+							`set the JSON-RPC "method" field`,
+							map[string]any{
+								"request_id_type": errmsg.TypeName(req.ID),
+							},
+						),
 					},
 				}); err != nil {
 					return err
@@ -158,8 +169,14 @@ func (s *Server) handleRequest(req rpcRequest) rpcResponse {
 		var params toolCallParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			response.Error = &rpcError{
-				Code:    -32602,
-				Message: formatUsageError("invalid tools/call params", `provide {"name":"<tool>", "arguments":{...}}`),
+				Code: -32602,
+				Message: formatUsageErrorWithDetails(
+					"invalid tools/call params",
+					`provide {"name":"<tool>", "arguments":{...}}`,
+					map[string]any{
+						"params_bytes": len(req.Params),
+					},
+				),
 			}
 			return response
 		}
@@ -180,8 +197,12 @@ func (s *Server) handleRequest(req rpcRequest) rpcResponse {
 		return response
 	default:
 		response.Error = &rpcError{
-			Code:    -32601,
-			Message: formatUsageError(fmt.Sprintf("method not found %q", req.Method), "call initialize, ping, tools/list, or tools/call"),
+			Code: -32601,
+			Message: formatUsageErrorWithDetails(
+				fmt.Sprintf("method not found %q", req.Method),
+				"call initialize, ping, tools/list, or tools/call",
+				map[string]any{"method": req.Method},
+			),
 		}
 		return response
 	}
@@ -201,7 +222,11 @@ func (s *Server) callTool(name contracts.DerunMCPTool, args map[string]any) (map
 	case contracts.DerunMCPToolWaitOutput:
 		return handleWaitOutput(s.store, args)
 	default:
-		return nil, fmt.Errorf("%s", formatUsageError(fmt.Sprintf("unknown tool %q", name), "call tools/list to discover supported tool names"))
+		return nil, errors.New(formatUsageErrorWithDetails(
+			fmt.Sprintf("unknown tool %q", name),
+			"call tools/list to discover supported tool names",
+			map[string]any{"tool_name": name},
+		))
 	}
 }
 
@@ -243,13 +268,20 @@ func readFrame(reader *bufio.Reader) ([]byte, error) {
 		if strings.EqualFold(key, "Content-Length") {
 			n, err := strconv.Atoi(value)
 			if err != nil {
-				return nil, fmt.Errorf("parse content length: %w", err)
+				return nil, parseFieldError("content length", err, map[string]any{
+					"header":         "Content-Length",
+					"received_value": value,
+				})
 			}
 			contentLength = n
 		}
 	}
 	if contentLength < 0 {
-		return nil, fmt.Errorf("%s", formatUsageError("missing content length header", `include "Content-Length: <bytes>" in the request frame`))
+		return nil, errors.New(formatUsageErrorWithDetails(
+			"missing content length header",
+			`include "Content-Length: <bytes>" in the request frame`,
+			map[string]any{"header": "Content-Length"},
+		))
 	}
 	body := make([]byte, contentLength)
 	if _, err := io.ReadFull(reader, body); err != nil {
@@ -268,25 +300,28 @@ func anyToInt(value any) (int, error) {
 		return int64ToInt(typed)
 	case float64:
 		if math.IsNaN(typed) || math.IsInf(typed, 0) {
-			return 0, fmt.Errorf("invalid number %v", typed)
+			return 0, errmsg.Error("invalid number", errmsg.ReceivedDetails(value))
 		}
 		if typed != math.Trunc(typed) {
-			return 0, fmt.Errorf("number must be an integer")
+			return 0, errmsg.Error("number must be an integer", errmsg.ReceivedDetails(value))
 		}
 		const maxInt64PlusOne = float64(uint64(1) << 63)
 		const minInt64 = -maxInt64PlusOne
 		if typed < minInt64 || typed >= maxInt64PlusOne {
-			return 0, fmt.Errorf("number out of int64 range")
+			return 0, errmsg.Error("number out of int64 range", errmsg.ReceivedDetails(value))
 		}
 		return int64ToInt(int64(typed))
 	case json.Number:
 		parsed, err := typed.Int64()
 		if err != nil {
-			return 0, fmt.Errorf("invalid integer %q: %w", typed.String(), err)
+			return 0, errmsg.Error(
+				fmt.Sprintf("invalid integer %q: %v", typed.String(), err),
+				errmsg.ReceivedDetails(value),
+			)
 		}
 		return int64ToInt(parsed)
 	default:
-		return 0, fmt.Errorf("unsupported number type %T", value)
+		return 0, errmsg.Error(fmt.Sprintf("unsupported number type %T", value), errmsg.ReceivedDetails(value))
 	}
 }
 
@@ -294,7 +329,11 @@ func int64ToInt(value int64) (int, error) {
 	maxInt := int64(^uint(0) >> 1)
 	minInt := -maxInt - 1
 	if value < minInt || value > maxInt {
-		return 0, fmt.Errorf("number out of int range")
+		return 0, errmsg.Error("number out of int range", map[string]any{
+			"value":   value,
+			"min_int": minInt,
+			"max_int": maxInt,
+		})
 	}
 	return int(value), nil
 }

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/cmds/derun/internal/contracts"
+	"github.com/delinoio/oss/cmds/derun/internal/errmsg"
 	"github.com/delinoio/oss/cmds/derun/internal/session"
 )
 
@@ -38,7 +39,9 @@ type Store struct {
 
 func New(root string) (*Store, error) {
 	if root == "" {
-		return nil, errors.New("state root is empty")
+		return nil, errmsg.Error("state root is empty", map[string]any{
+			"state_root": root,
+		})
 	}
 	if err := EnsureDir(root); err != nil {
 		return nil, err
@@ -69,7 +72,10 @@ func (s *Store) HasSessionMetadata(sessionID string) (bool, error) {
 	if _, err := os.Stat(metaPath); err == nil {
 		return true, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("stat meta file: %w", err)
+		return false, errors.New(errmsg.Runtime("stat meta file", err, map[string]any{
+			"session_id": sessionID,
+			"meta_path":  metaPath,
+		}))
 	}
 
 	finalPath, err := s.sessionFile(sessionID, finalFileName)
@@ -79,7 +85,10 @@ func (s *Store) HasSessionMetadata(sessionID string) (bool, error) {
 	if _, err := os.Stat(finalPath); err == nil {
 		return true, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return false, fmt.Errorf("stat final file: %w", err)
+		return false, errors.New(errmsg.Runtime("stat final file", err, map[string]any{
+			"session_id": sessionID,
+			"final_path": finalPath,
+		}))
 	}
 
 	return false, nil
@@ -136,19 +145,32 @@ func (s *Store) AppendOutput(sessionID string, channel contracts.DerunOutputChan
 
 	outputFile, err := os.OpenFile(outputPath, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
-		return 0, fmt.Errorf("open output file: %w", err)
+		return 0, errors.New(errmsg.Runtime("open output file", err, map[string]any{
+			"session_id":  sessionID,
+			"output_path": outputPath,
+		}))
 	}
 	defer outputFile.Close()
 
 	offset, err := outputFile.Seek(0, io.SeekEnd)
 	if err != nil {
-		return 0, fmt.Errorf("seek output file: %w", err)
+		return 0, errors.New(errmsg.Runtime("seek output file", err, map[string]any{
+			"session_id":  sessionID,
+			"output_path": outputPath,
+		}))
 	}
 	if _, err := outputFile.Write(data); err != nil {
-		return 0, fmt.Errorf("write output file: %w", err)
+		return 0, errors.New(errmsg.Runtime("write output file", err, map[string]any{
+			"session_id":  sessionID,
+			"output_path": outputPath,
+			"chunk_size":  len(data),
+		}))
 	}
 	if err := outputFile.Sync(); err != nil {
-		return 0, fmt.Errorf("sync output file: %w", err)
+		return 0, errors.New(errmsg.Runtime("sync output file", err, map[string]any{
+			"session_id":  sessionID,
+			"output_path": outputPath,
+		}))
 	}
 
 	entry := session.IndexEntry{
@@ -159,20 +181,34 @@ func (s *Store) AppendOutput(sessionID string, channel contracts.DerunOutputChan
 	}
 	line, err := json.Marshal(entry)
 	if err != nil {
-		return 0, fmt.Errorf("marshal index entry: %w", err)
+		return 0, errors.New(errmsg.Runtime("marshal index entry", err, map[string]any{
+			"session_id": sessionID,
+			"channel":    channel,
+			"chunk_size": len(data),
+		}))
 	}
 	line = append(line, '\n')
 
 	indexFile, err := os.OpenFile(indexPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
-		return 0, fmt.Errorf("open index file: %w", err)
+		return 0, errors.New(errmsg.Runtime("open index file", err, map[string]any{
+			"session_id": sessionID,
+			"index_path": indexPath,
+		}))
 	}
 	defer indexFile.Close()
 	if _, err := indexFile.Write(line); err != nil {
-		return 0, fmt.Errorf("write index file: %w", err)
+		return 0, errors.New(errmsg.Runtime("write index file", err, map[string]any{
+			"session_id": sessionID,
+			"index_path": indexPath,
+			"line_bytes": len(line),
+		}))
 	}
 	if err := indexFile.Sync(); err != nil {
-		return 0, fmt.Errorf("sync index file: %w", err)
+		return 0, errors.New(errmsg.Runtime("sync index file", err, map[string]any{
+			"session_id": sessionID,
+			"index_path": indexPath,
+		}))
 	}
 
 	return uint64(offset), nil
@@ -185,7 +221,11 @@ func (s *Store) ListSessions(stateFilter contracts.DerunSessionState, limit int)
 		if os.IsNotExist(err) {
 			return nil, 0, nil
 		}
-		return nil, 0, fmt.Errorf("read sessions directory: %w", err)
+		return nil, 0, errors.New(errmsg.Runtime("read sessions directory", err, map[string]any{
+			"sessions_path": sessionsPath,
+			"state_filter":  stateFilter,
+			"limit":         limit,
+		}))
 	}
 
 	summaries := make([]session.Summary, 0, len(entries))
@@ -221,7 +261,10 @@ func (s *Store) GetSession(sessionID string) (session.Detail, error) {
 	}
 	var meta session.Meta
 	if err := readJSON(metaPath, &meta); err != nil {
-		return session.Detail{}, fmt.Errorf("read meta file: %w", err)
+		return session.Detail{}, errors.New(errmsg.Runtime("read meta file", err, map[string]any{
+			"session_id": sessionID,
+			"meta_path":  metaPath,
+		}))
 	}
 
 	state := contracts.DerunSessionStateRunning
@@ -243,7 +286,10 @@ func (s *Store) GetSession(sessionID string) (session.Detail, error) {
 		signal = final.Signal
 		finalErr = final.Error
 	} else if !os.IsNotExist(err) {
-		return session.Detail{}, fmt.Errorf("read final file: %w", err)
+		return session.Detail{}, errors.New(errmsg.Runtime("read final file", err, map[string]any{
+			"session_id": sessionID,
+			"final_path": finalPath,
+		}))
 	} else {
 		if !processAlive(meta.PID) {
 			state = contracts.DerunSessionStateFailed
@@ -282,10 +328,19 @@ func (s *Store) ReadOutput(sessionID string, cursor uint64, maxBytes int) ([]ses
 
 	hasMetadata, err := s.HasSessionMetadata(sessionID)
 	if err != nil {
-		return nil, cursor, false, fmt.Errorf("check session metadata: %w", err)
+		detailedErr := errmsg.Wrap(err, map[string]any{
+			"session_id": sessionID,
+			"cursor":     cursor,
+			"max_bytes":  maxBytes,
+		})
+		return nil, cursor, false, fmt.Errorf("failed to check session metadata: %w", detailedErr)
 	}
 	if !hasMetadata {
-		return nil, cursor, false, ErrSessionNotFound
+		return nil, cursor, false, errmsg.Wrap(ErrSessionNotFound, map[string]any{
+			"session_id": sessionID,
+			"cursor":     cursor,
+			"max_bytes":  maxBytes,
+		})
 	}
 
 	entries, err := s.readIndexEntries(sessionID)
@@ -305,13 +360,23 @@ func (s *Store) ReadOutput(sessionID string, cursor uint64, maxBytes int) ([]ses
 		if os.IsNotExist(err) {
 			return nil, cursor, true, nil
 		}
-		return nil, cursor, false, fmt.Errorf("open output file: %w", err)
+		return nil, cursor, false, errors.New(errmsg.Runtime("open output file", err, map[string]any{
+			"session_id":  sessionID,
+			"cursor":      cursor,
+			"max_bytes":   maxBytes,
+			"output_path": outputPath,
+		}))
 	}
 	defer outputFile.Close()
 
 	fileInfo, err := outputFile.Stat()
 	if err != nil {
-		return nil, cursor, false, fmt.Errorf("stat output file: %w", err)
+		return nil, cursor, false, errors.New(errmsg.Runtime("stat output file", err, map[string]any{
+			"session_id":  sessionID,
+			"cursor":      cursor,
+			"max_bytes":   maxBytes,
+			"output_path": outputPath,
+		}))
 	}
 	outputSize := uint64(fileInfo.Size())
 	if cursor > outputSize {
@@ -348,7 +413,13 @@ func (s *Store) ReadOutput(sessionID string, cursor uint64, maxBytes int) ([]ses
 		length := chunkEnd - chunkStart
 		buf := make([]byte, length)
 		if _, err := outputFile.ReadAt(buf, int64(chunkStart)); err != nil && !errors.Is(err, io.EOF) {
-			return nil, cursor, false, fmt.Errorf("read output chunk: %w", err)
+			return nil, cursor, false, errors.New(errmsg.Runtime("read output chunk", err, map[string]any{
+				"session_id":   sessionID,
+				"output_path":  outputPath,
+				"chunk_start":  chunkStart,
+				"chunk_end":    chunkEnd,
+				"chunk_length": length,
+			}))
 		}
 
 		chunks = append(chunks, session.OutputChunk{
@@ -377,19 +448,33 @@ func (s *Store) sessionDir(sessionID string) (string, error) {
 	base := filepath.Clean(filepath.Join(s.root, "sessions"))
 	dir := filepath.Clean(filepath.Join(base, sessionID))
 	if !isWithinPath(base, dir) {
-		return "", fmt.Errorf("invalid session path")
+		return "", errmsg.Error("invalid session path", map[string]any{
+			"session_id": sessionID,
+			"base_path":  base,
+			"dir_path":   dir,
+		})
 	}
 
 	resolvedBase, err := resolvePathWithSymlinks(base)
 	if err != nil {
-		return "", fmt.Errorf("resolve sessions path: %w", err)
+		return "", errors.New(errmsg.Runtime("resolve sessions path", err, map[string]any{
+			"session_id": sessionID,
+			"base_path":  base,
+		}))
 	}
 	resolvedDir, err := resolvePathWithSymlinks(dir)
 	if err != nil {
-		return "", fmt.Errorf("resolve session path: %w", err)
+		return "", errors.New(errmsg.Runtime("resolve session path", err, map[string]any{
+			"session_id": sessionID,
+			"dir_path":   dir,
+		}))
 	}
 	if !isWithinPath(resolvedBase, resolvedDir) {
-		return "", fmt.Errorf("session path symlink escape: resolved=%s base=%s", resolvedDir, resolvedBase)
+		return "", errmsg.Error("session path symlink escape", map[string]any{
+			"session_id":    sessionID,
+			"resolved_dir":  resolvedDir,
+			"resolved_base": resolvedBase,
+		})
 	}
 
 	return dir, nil
@@ -402,19 +487,34 @@ func (s *Store) sessionFile(sessionID, fileName string) (string, error) {
 	}
 	path := filepath.Clean(filepath.Join(dir, fileName))
 	if !isWithinPath(dir, path) {
-		return "", fmt.Errorf("invalid session file path")
+		return "", errmsg.Error("invalid session file path", map[string]any{
+			"session_id": sessionID,
+			"file_name":  fileName,
+			"file_path":  path,
+		})
 	}
 
 	resolvedDir, err := resolvePathWithSymlinks(dir)
 	if err != nil {
-		return "", fmt.Errorf("resolve session directory path: %w", err)
+		return "", errors.New(errmsg.Runtime("resolve session directory path", err, map[string]any{
+			"session_id": sessionID,
+			"dir_path":   dir,
+		}))
 	}
 	resolvedPath, err := resolvePathWithSymlinks(path)
 	if err != nil {
-		return "", fmt.Errorf("resolve session file path: %w", err)
+		return "", errors.New(errmsg.Runtime("resolve session file path", err, map[string]any{
+			"session_id": sessionID,
+			"file_path":  path,
+		}))
 	}
 	if !isWithinPath(resolvedDir, resolvedPath) {
-		return "", fmt.Errorf("session file symlink escape: file=%s resolved=%s session=%s", path, resolvedPath, resolvedDir)
+		return "", errmsg.Error("session file symlink escape", map[string]any{
+			"session_id":    sessionID,
+			"file_path":     path,
+			"resolved_path": resolvedPath,
+			"resolved_dir":  resolvedDir,
+		})
 	}
 
 	return path, nil
@@ -429,7 +529,10 @@ func (s *Store) outputStats(sessionID string) (uint64, uint64, *time.Time, error
 	if info, err := os.Stat(outputPath); err == nil {
 		outputBytes = uint64(info.Size())
 	} else if !os.IsNotExist(err) {
-		return 0, 0, nil, fmt.Errorf("stat output file: %w", err)
+		return 0, 0, nil, errors.New(errmsg.Runtime("stat output file", err, map[string]any{
+			"session_id":  sessionID,
+			"output_path": outputPath,
+		}))
 	}
 
 	entries, err := s.readIndexEntries(sessionID)
@@ -472,23 +575,26 @@ func (s *Store) readIndexEntries(sessionID string) ([]session.IndexEntry, error)
 		entries = append(entries, entry)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan index file: %w", err)
+		return nil, errors.New(errmsg.Runtime("scan index file", err, map[string]any{
+			"session_id": sessionID,
+			"index_path": indexPath,
+		}))
 	}
 	return entries, nil
 }
 
 func validateSessionID(sessionID string) error {
 	if sessionID == "" {
-		return fmt.Errorf("%w: session id is empty", ErrInvalidSessionID)
+		return fmt.Errorf("%w: session id is empty; details: session_id=%s", ErrInvalidSessionID, errmsg.ValueSummary(sessionID))
 	}
 	if sessionID == "." {
-		return fmt.Errorf("%w: session id contains invalid path segment alias", ErrInvalidSessionID)
+		return fmt.Errorf("%w: session id contains invalid path segment alias; details: session_id=%s", ErrInvalidSessionID, errmsg.ValueSummary(sessionID))
 	}
 	if strings.Contains(sessionID, "..") {
-		return fmt.Errorf("%w: session id contains invalid path segment", ErrInvalidSessionID)
+		return fmt.Errorf("%w: session id contains invalid path segment; details: session_id=%s", ErrInvalidSessionID, errmsg.ValueSummary(sessionID))
 	}
 	if strings.ContainsAny(sessionID, `/\\`) {
-		return fmt.Errorf("%w: session id contains path separator", ErrInvalidSessionID)
+		return fmt.Errorf("%w: session id contains path separator; details: session_id=%s", ErrInvalidSessionID, errmsg.ValueSummary(sessionID))
 	}
 	return nil
 }
@@ -499,12 +605,17 @@ func resolvePathWithSymlinks(path string) (string, error) {
 
 func resolvePathWithSymlinksAtDepth(path string, depth int) (string, error) {
 	if depth > 64 {
-		return "", fmt.Errorf("resolve symlinks depth exceeded for %s", path)
+		return "", errmsg.Error("resolve symlinks depth exceeded", map[string]any{
+			"path":  path,
+			"depth": depth,
+		})
 	}
 
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("resolve absolute path %s: %w", path, err)
+		return "", errors.New(errmsg.Runtime("resolve absolute path", err, map[string]any{
+			"path": path,
+		}))
 	}
 	current := filepath.Clean(absolutePath)
 	missingSegments := make([]string, 0, 4)
@@ -519,7 +630,10 @@ func resolvePathWithSymlinksAtDepth(path string, depth int) (string, error) {
 			return resolvedPath, nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("eval symlinks %s: %w", current, err)
+			return "", errors.New(errmsg.Runtime("eval symlinks", err, map[string]any{
+				"path":  current,
+				"depth": depth,
+			}))
 		}
 
 		// EvalSymlinks returns os.ErrNotExist for dangling symlink targets as well.
@@ -528,7 +642,10 @@ func resolvePathWithSymlinksAtDepth(path string, depth int) (string, error) {
 		if lstatErr == nil && pathInfo.Mode()&os.ModeSymlink != 0 {
 			linkTarget, readlinkErr := os.Readlink(current)
 			if readlinkErr != nil {
-				return "", fmt.Errorf("read symlink %s: %w", current, readlinkErr)
+				return "", errors.New(errmsg.Runtime("read symlink", readlinkErr, map[string]any{
+					"path":  current,
+					"depth": depth,
+				}))
 			}
 			resolvedLink := linkTarget
 			if !filepath.IsAbs(resolvedLink) {
@@ -541,12 +658,18 @@ func resolvePathWithSymlinksAtDepth(path string, depth int) (string, error) {
 			return resolvePathWithSymlinksAtDepth(resolvedLink, depth+1)
 		}
 		if lstatErr != nil && !errors.Is(lstatErr, os.ErrNotExist) {
-			return "", fmt.Errorf("lstat path %s: %w", current, lstatErr)
+			return "", errors.New(errmsg.Runtime("lstat path", lstatErr, map[string]any{
+				"path":  current,
+				"depth": depth,
+			}))
 		}
 
 		parent := filepath.Dir(current)
 		if parent == current {
-			return "", fmt.Errorf("eval symlinks %s: %w", current, err)
+			return "", errors.New(errmsg.Runtime("eval symlinks", err, map[string]any{
+				"path":  current,
+				"depth": depth,
+			}))
 		}
 		missingSegments = append(missingSegments, filepath.Base(current))
 		current = parent
@@ -578,7 +701,9 @@ func readJSON(path string, target any) error {
 	defer f.Close()
 	decoder := json.NewDecoder(f)
 	if err := decoder.Decode(target); err != nil {
-		return fmt.Errorf("decode json file %s: %w", path, err)
+		return errors.New(errmsg.Runtime("decode json file", err, map[string]any{
+			"path": path,
+		}))
 	}
 	return nil
 }
@@ -590,33 +715,53 @@ func writeAtomicJSON(path string, value any) error {
 	}
 	payload, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("marshal json: %w", err)
+		return errors.New(errmsg.Runtime("marshal json", err, map[string]any{
+			"path": path,
+		}))
 	}
 	tmp, err := os.CreateTemp(dir, ".tmp-*.json")
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return errors.New(errmsg.Runtime("create temp file", err, map[string]any{
+			"path": path,
+			"dir":  dir,
+		}))
 	}
 	tmpPath := tmp.Name()
 	if _, err := tmp.Write(payload); err != nil {
 		tmp.Close()
 		_ = os.Remove(tmpPath)
-		return fmt.Errorf("write temp file: %w", err)
+		return errors.New(errmsg.Runtime("write temp file", err, map[string]any{
+			"path":        path,
+			"temp_path":   tmpPath,
+			"payload_len": len(payload),
+		}))
 	}
 	if err := tmp.Chmod(0o600); err != nil {
 		tmp.Close()
 		_ = os.Remove(tmpPath)
-		return fmt.Errorf("chmod temp file: %w", err)
+		return errors.New(errmsg.Runtime("chmod temp file", err, map[string]any{
+			"path":      path,
+			"temp_path": tmpPath,
+		}))
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpPath)
-		return fmt.Errorf("close temp file: %w", err)
+		return errors.New(errmsg.Runtime("close temp file", err, map[string]any{
+			"path":      path,
+			"temp_path": tmpPath,
+		}))
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		_ = os.Remove(tmpPath)
-		return fmt.Errorf("rename temp file: %w", err)
+		return errors.New(errmsg.Runtime("rename temp file", err, map[string]any{
+			"path":      path,
+			"temp_path": tmpPath,
+		}))
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
-		return fmt.Errorf("chmod target file: %w", err)
+		return errors.New(errmsg.Runtime("chmod target file", err, map[string]any{
+			"path": path,
+		}))
 	}
 	return nil
 }

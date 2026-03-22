@@ -194,6 +194,9 @@ func TestStoreReadOutputMissingSessionReturnsNotFound(t *testing.T) {
 	if !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("expected ErrSessionNotFound, got: %v", err)
 	}
+	if err == nil || !strings.Contains(err.Error(), "session not found") || !strings.Contains(err.Error(), "session_id=01J0S000000000000000000000") {
+		t.Fatalf("expected missing session details, got: %v", err)
+	}
 	if chunks != nil {
 		t.Fatalf("expected no chunks, got=%d", len(chunks))
 	}

@@ -13,6 +13,9 @@ func TestParseRequiredSessionID(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "session_id is required") {
 		t.Fatalf("expected required session_id error, got=%v", err)
 	}
+	if !strings.Contains(err.Error(), "details:") || !strings.Contains(err.Error(), "received_type=<nil>") {
+		t.Fatalf("expected required session_id details, got=%v", err)
+	}
 
 	sessionID, err := parseRequiredSessionID(map[string]any{"session_id": "01JTEST"})
 	if err != nil {
@@ -51,12 +54,18 @@ func TestParseCursor(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "parse cursor") {
 			t.Fatalf("expected parse cursor error, got=%v", err)
 		}
+		if !strings.Contains(err.Error(), "received_type=string") || !strings.Contains(err.Error(), "details:") {
+			t.Fatalf("expected parse cursor details, got=%v", err)
+		}
 	})
 
 	t.Run("required missing", func(t *testing.T) {
 		_, err := parseCursor(map[string]any{}, true)
 		if err == nil || !strings.Contains(err.Error(), "cursor is required") {
 			t.Fatalf("expected cursor required error, got=%v", err)
+		}
+		if !strings.Contains(err.Error(), "details:") || !strings.Contains(err.Error(), "received_type=<nil>") {
+			t.Fatalf("expected cursor required details, got=%v", err)
 		}
 	})
 
@@ -99,6 +108,9 @@ func TestParsePositiveIntDefault(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "parse max_bytes") {
 		t.Fatalf("expected parse max_bytes error, got=%v", err)
 	}
+	if !strings.Contains(err.Error(), "received_type=float64") || !strings.Contains(err.Error(), "details:") {
+		t.Fatalf("expected parse max_bytes details, got=%v", err)
+	}
 }
 
 func TestParseWaitTimeout(t *testing.T) {
@@ -123,6 +135,9 @@ func TestParseWaitTimeout(t *testing.T) {
 	_, err = parseWaitTimeout(map[string]any{"timeout_ms": 0.5})
 	if err == nil || !strings.Contains(err.Error(), "parse timeout_ms") {
 		t.Fatalf("expected parse timeout_ms error, got=%v", err)
+	}
+	if !strings.Contains(err.Error(), "received_type=float64") || !strings.Contains(err.Error(), "details:") {
+		t.Fatalf("expected parse timeout_ms details, got=%v", err)
 	}
 }
 

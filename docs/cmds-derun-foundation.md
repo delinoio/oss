@@ -17,9 +17,15 @@
 - Streaming output contract must preserve terminal ordering and ANSI behavior.
 - MCP output bridge payloads must remain parseable and backward compatible.
 - User-facing error messages must remain single-line and follow stable style contracts:
-  - Usage/validation: `invalid arguments: <reason>; hint: <how to fix>`
-  - Runtime: `failed to <action>: <cause>`
-  - Parse failures: `parse <field>: <cause>`
+  - Usage/validation: `invalid arguments: <reason>; details: <k=v,...>; hint: <how to fix>`
+  - Runtime: `failed to <action>: <cause>; details: <k=v,...>`
+  - Parse failures: `parse <field>: <cause>; details: <k=v,...>`
+  - Required field failures: `<field> is required; expected <type>; details: received_type=<type>, received_value=<summary>`
+  - Details rendering contract:
+    - Stable deterministic key order.
+    - Values must be single-line, with escaped control characters and bounded length.
+    - Include only safe diagnostics (`session_id`, `cursor`, `path`, `received_type`, `received_value`, `command_name`, `arg_count`, etc.).
+    - Do not include secrets or raw sensitive payloads (full argv/env values, credentials, tokens).
 - Compatibility-critical error tokens must remain present for automation consumers:
   - `session not found`
   - `parse <field>`
