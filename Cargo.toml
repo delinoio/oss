@@ -7,6 +7,9 @@ members = [
     "crates/serde-feather-macros",
 ]
 
+[workspace.metadata.cargo-mono.publish.tag]
+packages = ["nodeup", "cargo-mono"]
+
 # Release profile optimizations
 [profile.release]
 # Enable Link-Time Optimization for smaller binaries
