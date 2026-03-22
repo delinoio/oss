@@ -14,10 +14,11 @@ use tracing::info;
 
 use crate::{
     cli::{
-        Cli, Command, OutputFormat, OverrideCommand, SelfCommand, ShowCommand, ToolchainCommand,
-        ToolchainListDetail,
+        Cli, Command, OutputColorMode, OutputFormat, OverrideCommand, SelfCommand, ShowCommand,
+        ToolchainCommand, ToolchainListDetail,
     },
     errors::Result,
+    output_style,
     types::{
         NodeupCommand, NodeupOverrideCommand, NodeupSelfCommand, NodeupShowCommand,
         NodeupToolchainCommand,
@@ -29,21 +30,23 @@ pub fn execute(cli: Cli, app: &NodeupApp) -> Result<i32> {
     log_command_invocation(&cli.command, cli.output);
 
     match cli.command {
-        Command::Toolchain { command } => toolchain::execute(command, cli.output, app),
-        Command::Default { runtime } => default_cmd::execute(runtime.as_deref(), cli.output, app),
-        Command::Show { command } => show::execute(command, cli.output, app),
-        Command::Update { runtimes } => update_check::update(runtimes, cli.output, app),
-        Command::Check => update_check::check(cli.output, app),
-        Command::Override { command } => override_cmd::execute(command, cli.output, app),
+        Command::Toolchain { command } => toolchain::execute(command, cli.output, cli.color, app),
+        Command::Default { runtime } => {
+            default_cmd::execute(runtime.as_deref(), cli.output, cli.color, app)
+        }
+        Command::Show { command } => show::execute(command, cli.output, cli.color, app),
+        Command::Update { runtimes } => update_check::update(runtimes, cli.output, cli.color, app),
+        Command::Check => update_check::check(cli.output, cli.color, app),
+        Command::Override { command } => override_cmd::execute(command, cli.output, cli.color, app),
         Command::Which { runtime, command } => {
-            which_cmd::execute(runtime.as_deref(), &command, cli.output, app)
+            which_cmd::execute(runtime.as_deref(), &command, cli.output, cli.color, app)
         }
         Command::Run {
             install,
             runtime,
             command,
-        } => run_cmd::execute(install, &runtime, &command, cli.output, app),
-        Command::SelfCmd { command } => self_cmd::execute(command, cli.output, app),
+        } => run_cmd::execute(install, &runtime, &command, cli.output, cli.color, app),
+        Command::SelfCmd { command } => self_cmd::execute(command, cli.output, cli.color, app),
         Command::Completions { shell, command } => {
             skeleton::completions(&shell, command.as_deref())
         }
@@ -52,11 +55,12 @@ pub fn execute(cli: Cli, app: &NodeupApp) -> Result<i32> {
 
 pub fn print_output<T: Serialize>(
     output: OutputFormat,
+    color: Option<OutputColorMode>,
     human_line: &str,
     json_value: &T,
 ) -> Result<()> {
     match output {
-        OutputFormat::Human => println!("{human_line}"),
+        OutputFormat::Human => println!("{}", output_style::style_human_stdout(human_line, color)),
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(json_value)?),
     }
 

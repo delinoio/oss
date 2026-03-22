@@ -6,6 +6,23 @@ pub enum OutputFormat {
     Json,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutputColorMode {
+    Auto,
+    Always,
+    Never,
+}
+
+impl OutputColorMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Always => "always",
+            Self::Never => "never",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolchainListDetail {
     Standard,
@@ -43,6 +60,10 @@ pub struct Cli {
     /// Output format for command results.
     #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Human)]
     pub output: OutputFormat,
+
+    /// Color mode for human output (`auto`, `always`, or `never`).
+    #[arg(long, global = true, value_enum)]
+    pub color: Option<OutputColorMode>,
 
     #[command(subcommand)]
     pub command: Command,

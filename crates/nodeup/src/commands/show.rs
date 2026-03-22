@@ -2,7 +2,7 @@ use serde::Serialize;
 use tracing::info;
 
 use crate::{
-    cli::{OutputFormat, ShowCommand},
+    cli::{OutputColorMode, OutputFormat, ShowCommand},
     commands::print_output,
     errors::{NodeupError, Result},
     resolver::ResolvedRuntimeTarget,
@@ -23,14 +23,23 @@ struct HomeResponse {
     config_root: String,
 }
 
-pub fn execute(command: ShowCommand, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+pub fn execute(
+    command: ShowCommand,
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     match command {
-        ShowCommand::ActiveRuntime => show_active_runtime(output, app),
-        ShowCommand::Home => show_home(output, app),
+        ShowCommand::ActiveRuntime => show_active_runtime(output, color, app),
+        ShowCommand::Home => show_home(output, color, app),
     }
 }
 
-fn show_active_runtime(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+fn show_active_runtime(
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     let cwd = std::env::current_dir()?;
     let resolved = app.resolver.resolve_with_precedence(None, &cwd)?;
 
@@ -82,11 +91,11 @@ fn show_active_runtime(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     };
     let human = format!("Active runtime: {}", response.runtime);
 
-    print_output(output, &human, &response)?;
+    print_output(output, color, &human, &response)?;
     Ok(0)
 }
 
-fn show_home(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+fn show_home(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupApp) -> Result<i32> {
     let response = HomeResponse {
         data_root: app.paths.data_root.to_string_lossy().to_string(),
         cache_root: app.paths.cache_root.to_string_lossy().to_string(),
@@ -97,6 +106,6 @@ fn show_home(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
         response.data_root, response.cache_root, response.config_root
     );
 
-    print_output(output, &human, &response)?;
+    print_output(output, color, &human, &response)?;
     Ok(0)
 }

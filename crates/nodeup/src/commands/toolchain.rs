@@ -4,7 +4,7 @@ use serde::Serialize;
 use tracing::info;
 
 use crate::{
-    cli::{OutputFormat, ToolchainCommand, ToolchainListDetail},
+    cli::{OutputColorMode, OutputFormat, ToolchainCommand, ToolchainListDetail},
     commands::print_output,
     errors::{NodeupError, Result},
     resolver::ResolvedRuntimeTarget,
@@ -25,18 +25,31 @@ struct ToolchainInstallResult {
     status: String,
 }
 
-pub fn execute(command: ToolchainCommand, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+pub fn execute(
+    command: ToolchainCommand,
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     match command {
-        ToolchainCommand::List { quiet, verbose } => {
-            list(ToolchainListDetail::from_flags(quiet, verbose), output, app)
-        }
-        ToolchainCommand::Install { runtimes } => install(&runtimes, output, app),
-        ToolchainCommand::Uninstall { runtimes } => uninstall(&runtimes, output, app),
-        ToolchainCommand::Link { name, path } => link(&name, &path, output, app),
+        ToolchainCommand::List { quiet, verbose } => list(
+            ToolchainListDetail::from_flags(quiet, verbose),
+            output,
+            color,
+            app,
+        ),
+        ToolchainCommand::Install { runtimes } => install(&runtimes, output, color, app),
+        ToolchainCommand::Uninstall { runtimes } => uninstall(&runtimes, output, color, app),
+        ToolchainCommand::Link { name, path } => link(&name, &path, output, color, app),
     }
 }
 
-fn list(list_detail: ToolchainListDetail, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+fn list(
+    list_detail: ToolchainListDetail,
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     let settings = app.store.load_settings()?;
     let installed = app.store.list_installed_versions()?;
     let response = ToolchainListResponse {
@@ -59,7 +72,7 @@ fn list(list_detail: ToolchainListDetail, output: OutputFormat, app: &NodeupApp)
     {
         return Ok(0);
     }
-    print_output(output, &human, &response)?;
+    print_output(output, color, &human, &response)?;
 
     Ok(0)
 }
@@ -118,7 +131,12 @@ fn render_human_toolchain_list(
     }
 }
 
-fn install(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+fn install(
+    runtimes: &[String],
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     if runtimes.is_empty() {
         return Err(NodeupError::invalid_input_with_hint(
             format!(
@@ -174,12 +192,17 @@ fn install(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result
     }
 
     let human = format!("Installed/verified {} runtime(s)", results.len());
-    print_output(output, &human, &results)?;
+    print_output(output, color, &human, &results)?;
 
     Ok(0)
 }
 
-fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+fn uninstall(
+    runtimes: &[String],
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     if runtimes.is_empty() {
         return Err(NodeupError::invalid_input_with_hint(
             format!(
@@ -286,7 +309,7 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
         "Completed runtime uninstall"
     );
     let human = format!("Removed {} runtime(s)", removed_versions.len());
-    print_output(output, &human, &removed_versions)?;
+    print_output(output, color, &human, &removed_versions)?;
 
     Ok(0)
 }
@@ -303,7 +326,13 @@ fn canonical_version_selector(selector: &str) -> Option<String> {
     }
 }
 
-fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+fn link(
+    name: &str,
+    path: &str,
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     if !is_valid_linked_name(name) {
         info!(
             command_path = "nodeup.toolchain.link",
@@ -416,7 +445,7 @@ fn link(name: &str, path: &str, output: OutputFormat, app: &NodeupApp) -> Result
         "path": absolute,
         "status": "linked"
     });
-    print_output(output, &message, &response)?;
+    print_output(output, color, &message, &response)?;
 
     Ok(0)
 }
