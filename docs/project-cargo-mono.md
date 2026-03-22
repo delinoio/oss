@@ -15,6 +15,8 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 ## Cross-Domain Invariants
 - The binary must remain compatible with `cargo mono` invocation conventions.
 - Release automation integration must keep stable command semantics.
+- Release tagging responsibility is split by command: `bump` must not create Git tags, while `publish` may create local Git tags for configured packages.
+- Publish tag configuration must be opt-in through `[workspace.metadata.cargo-mono.publish.tag].packages`, and tag naming must remain `<crate>@v<version>`.
 - Runtime failure messaging must follow the `Summary/Context/Hint` three-line contract while command behavior, output schema, and exit code semantics remain stable.
 - Dependency-cycle conflicts in package ordering must identify cycle package names and dependency scope in `Context` without changing CLI flags, command behavior, or JSON output schema.
 - Human output color controls must remain stable: global `--color <auto|always|never>`, `CARGO_MONO_OUTPUT_COLOR`, and `NO_COLOR` with precedence `--color` > `CARGO_MONO_OUTPUT_COLOR` > `NO_COLOR` > auto-detection.

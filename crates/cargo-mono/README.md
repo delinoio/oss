@@ -11,6 +11,18 @@ cargo mono bump [--all|--changed|--package <name>] --level <major|minor|patch|pr
 cargo mono publish [--all|--changed|--package <name>] [--dry-run]
 ```
 
+## Publish Tag Configuration
+
+`cargo mono publish` can create local Git tags for published crates when opt-in allowlist
+configuration is set in the workspace manifest:
+
+```toml
+[workspace.metadata.cargo-mono.publish.tag]
+packages = ["nodeup", "cargo-mono"]
+```
+
+Tag format is `<crate>@v<version>` (for example, `nodeup@v0.2.0`).
+
 ## Output Contract
 
 All commands support a stable output mode switch:
@@ -27,8 +39,8 @@ The integration suite at `crates/cargo-mono/tests/cli.rs` covers end-to-end comm
 Coverage highlights:
 - `list`: workspace discovery and publishability reporting.
 - `changed`: base override, include/exclude filters, invalid glob rejection, direct-only vs dependent expansion, include-uncommitted behavior, and global-impact file handling.
-- `bump`: clean-tree preflight, non-publishable skip behavior, manifest/version/dependency updates, dependent patch propagation, release commit creation, and crate tag creation.
-- `publish`: clean-tree preflight, non-publishable skip behavior, and unknown package validation.
+- `bump`: clean-tree preflight, non-publishable skip behavior, manifest/version/dependency updates, dependent patch propagation, and release commit creation (no tag creation).
+- `publish`: clean-tree preflight, non-publishable skip behavior, unknown package validation, and allowlist-based publish tag creation.
 - Cargo external-subcommand mode compatibility (`cargo mono ...`) and top-level help/version behavior outside workspaces.
 
 ## Local Validation

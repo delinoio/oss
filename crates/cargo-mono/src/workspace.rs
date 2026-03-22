@@ -7,12 +7,19 @@ use cargo_metadata::{MetadataCommand, PackageId};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use semver::Version;
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 use tracing::warn;
 
 use crate::errors::{CargoMonoError, ErrorKind, Result};
 
 pub const GLOBAL_IMPACT_FILES: [&str; 3] = ["Cargo.toml", "Cargo.lock", "rust-toolchain"];
 const DEPENDENCY_SCOPE_ALL_CARGO_METADATA_KINDS: &str = "all-cargo-metadata-kinds";
+const METADATA_PATH_PUBLISH_TAG_PACKAGES: &str =
+    "workspace.metadata.cargo-mono.publish.tag.packages";
+const METADATA_KEY_CARGO_MONO: &str = "cargo-mono";
+const METADATA_KEY_PUBLISH: &str = "publish";
+const METADATA_KEY_TAG: &str = "tag";
+const METADATA_KEY_PACKAGES: &str = "packages";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspacePackage {
@@ -31,6 +38,7 @@ pub struct Workspace {
     packages: BTreeMap<String, WorkspacePackage>,
     dependencies: BTreeMap<String, BTreeSet<String>>,
     dependents: BTreeMap<String, BTreeSet<String>>,
+    publish_tag_packages: BTreeSet<String>,
 }
 
 impl Workspace {
@@ -152,12 +160,16 @@ impl Workspace {
                 }
             }
         }
+        let workspace_package_names = packages.keys().cloned().collect::<BTreeSet<_>>();
+        let publish_tag_packages =
+            parse_publish_tag_packages(&metadata.workspace_metadata, &workspace_package_names)?;
 
         Ok(Self {
             root,
             packages,
             dependencies,
             dependents,
+            publish_tag_packages,
         })
     }
 
@@ -171,6 +183,10 @@ impl Workspace {
 
     pub fn packages<'a>(&'a self) -> impl Iterator<Item = &'a WorkspacePackage> + 'a {
         self.packages.values()
+    }
+
+    pub fn publish_tag_packages(&self) -> &BTreeSet<String> {
+        &self.publish_tag_packages
     }
 
     pub fn changed_packages(
@@ -497,6 +513,7 @@ impl Workspace {
             packages,
             dependencies,
             dependents,
+            publish_tag_packages: BTreeSet::new(),
         }
     }
 }
@@ -583,8 +600,126 @@ fn format_string_sample(values: &[String], limit: usize) -> String {
     sample
 }
 
+fn parse_publish_tag_packages(
+    workspace_metadata: &JsonValue,
+    workspace_package_names: &BTreeSet<String>,
+) -> Result<BTreeSet<String>> {
+    let Some(packages_value) = workspace_metadata
+        .get(METADATA_KEY_CARGO_MONO)
+        .and_then(JsonValue::as_object)
+        .and_then(|value| value.get(METADATA_KEY_PUBLISH))
+        .and_then(JsonValue::as_object)
+        .and_then(|value| value.get(METADATA_KEY_TAG))
+        .and_then(JsonValue::as_object)
+        .and_then(|value| value.get(METADATA_KEY_PACKAGES))
+    else {
+        return Ok(BTreeSet::new());
+    };
+
+    let packages_array = packages_value.as_array().ok_or_else(|| {
+        CargoMonoError::with_details(
+            ErrorKind::InvalidInput,
+            "Invalid publish tag package configuration type.",
+            vec![
+                (
+                    "metadata_path",
+                    METADATA_PATH_PUBLISH_TAG_PACKAGES.to_string(),
+                ),
+                ("expected_type", "array-of-package-names".to_string()),
+                ("actual_type", json_type_label(packages_value).to_string()),
+            ],
+            "Use an array of package names (for example, `packages = [\"nodeup\", \
+             \"cargo-mono\"]`).",
+        )
+    })?;
+
+    let mut configured_packages = BTreeSet::new();
+    for (index, package_value) in packages_array.iter().enumerate() {
+        let package_name = package_value.as_str().ok_or_else(|| {
+            CargoMonoError::with_details(
+                ErrorKind::InvalidInput,
+                "Invalid publish tag package value type.",
+                vec![
+                    (
+                        "metadata_path",
+                        METADATA_PATH_PUBLISH_TAG_PACKAGES.to_string(),
+                    ),
+                    ("index", index.to_string()),
+                    ("actual_type", json_type_label(package_value).to_string()),
+                ],
+                "Use string package names in `packages` (for example, `\"nodeup\"`).",
+            )
+        })?;
+        let normalized_name = package_name.trim();
+        if normalized_name.is_empty() {
+            return Err(CargoMonoError::with_details(
+                ErrorKind::InvalidInput,
+                "Publish tag package name cannot be empty.",
+                vec![
+                    (
+                        "metadata_path",
+                        METADATA_PATH_PUBLISH_TAG_PACKAGES.to_string(),
+                    ),
+                    ("index", index.to_string()),
+                ],
+                "Use non-empty workspace package names in `packages`.",
+            ));
+        }
+
+        configured_packages.insert(normalized_name.to_string());
+    }
+
+    let unknown_packages = configured_packages
+        .iter()
+        .filter(|name| !workspace_package_names.contains(*name))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unknown_packages.is_empty() {
+        return Err(CargoMonoError::with_details(
+            ErrorKind::InvalidInput,
+            "Publish tag configuration references unknown workspace packages.",
+            vec![
+                (
+                    "metadata_path",
+                    METADATA_PATH_PUBLISH_TAG_PACKAGES.to_string(),
+                ),
+                (
+                    "unknown_packages",
+                    format_string_sample(&unknown_packages, 8),
+                ),
+                (
+                    "workspace_package_count",
+                    workspace_package_names.len().to_string(),
+                ),
+            ],
+            "Use only workspace package names in publish tag configuration (run `cargo mono list` \
+             to verify package names).",
+        ));
+    }
+
+    Ok(configured_packages)
+}
+
+fn json_type_label(value: &JsonValue) -> &'static str {
+    if value.is_null() {
+        "null"
+    } else if value.is_boolean() {
+        "boolean"
+    } else if value.is_number() {
+        "number"
+    } else if value.is_string() {
+        "string"
+    } else if value.is_array() {
+        "array"
+    } else {
+        "object"
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
     use crate::errors::ErrorKind;
 
@@ -804,5 +939,77 @@ mod tests {
             "strict dependency scope includes normal, build, and dev dependencies from cargo \
              metadata"
         ));
+    }
+
+    #[test]
+    fn parse_publish_tag_packages_defaults_to_empty_when_missing() {
+        let metadata = json!({});
+        let workspace_package_names = BTreeSet::from(["alpha".to_string(), "beta".to_string()]);
+
+        let packages = parse_publish_tag_packages(&metadata, &workspace_package_names).unwrap();
+
+        assert!(packages.is_empty());
+    }
+
+    #[test]
+    fn parse_publish_tag_packages_reads_allowlist() {
+        let metadata = json!({
+            "cargo-mono": {
+                "publish": {
+                    "tag": {
+                        "packages": ["alpha", "beta"]
+                    }
+                }
+            }
+        });
+        let workspace_package_names = BTreeSet::from(["alpha".to_string(), "beta".to_string()]);
+
+        let packages = parse_publish_tag_packages(&metadata, &workspace_package_names).unwrap();
+
+        assert_eq!(
+            packages,
+            BTreeSet::from(["alpha".to_string(), "beta".to_string()])
+        );
+    }
+
+    #[test]
+    fn parse_publish_tag_packages_rejects_non_array_type() {
+        let metadata = json!({
+            "cargo-mono": {
+                "publish": {
+                    "tag": {
+                        "packages": "alpha"
+                    }
+                }
+            }
+        });
+        let workspace_package_names = BTreeSet::from(["alpha".to_string()]);
+
+        let error = parse_publish_tag_packages(&metadata, &workspace_package_names)
+            .expect_err("expected invalid-input error");
+
+        assert_eq!(error.kind, ErrorKind::InvalidInput);
+        assert!(error.message.contains(METADATA_PATH_PUBLISH_TAG_PACKAGES));
+        assert!(error.message.contains("actual_type=string"));
+    }
+
+    #[test]
+    fn parse_publish_tag_packages_rejects_unknown_packages() {
+        let metadata = json!({
+            "cargo-mono": {
+                "publish": {
+                    "tag": {
+                        "packages": ["alpha", "unknown"]
+                    }
+                }
+            }
+        });
+        let workspace_package_names = BTreeSet::from(["alpha".to_string()]);
+
+        let error = parse_publish_tag_packages(&metadata, &workspace_package_names)
+            .expect_err("expected invalid-input error");
+
+        assert_eq!(error.kind, ErrorKind::InvalidInput);
+        assert!(error.message.contains("unknown_packages=unknown"));
     }
 }

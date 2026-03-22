@@ -70,7 +70,6 @@ struct BumpResult {
     dependency_updates: usize,
     updated_manifests: Vec<String>,
     commit: Option<String>,
-    tags: Vec<String>,
 }
 
 pub fn execute(args: &BumpArgs, output: OutputSettings, app: &CargoMonoApp) -> Result<i32> {
@@ -116,7 +115,6 @@ pub fn execute(args: &BumpArgs, output: OutputSettings, app: &CargoMonoApp) -> R
             dependency_updates: 0,
             updated_manifests: Vec::new(),
             commit: None,
-            tags: Vec::new(),
         };
 
         let human = "No publishable packages were selected for bump.".to_string();
@@ -183,7 +181,6 @@ pub fn execute(args: &BumpArgs, output: OutputSettings, app: &CargoMonoApp) -> R
             dependency_updates: manifest_result.dependency_updates,
             updated_manifests: Vec::new(),
             commit: None,
-            tags: Vec::new(),
         };
 
         print_output(
@@ -197,13 +194,6 @@ pub fn execute(args: &BumpArgs, output: OutputSettings, app: &CargoMonoApp) -> R
     git::add_paths(&manifest_result.updated_manifests)?;
     let commit_message = format!("chore(release): bump {} crate(s)", next_versions.len());
     let commit = git::commit_paths(&commit_message, &manifest_result.updated_manifests)?;
-
-    let mut tags = Vec::with_capacity(next_versions.len());
-    for (package_name, new_version) in &next_versions {
-        let tag = format!("{package_name}-v{new_version}");
-        git::create_tag(&tag)?;
-        tags.push(tag);
-    }
 
     let bumped_packages = next_versions
         .iter()
@@ -249,7 +239,6 @@ pub fn execute(args: &BumpArgs, output: OutputSettings, app: &CargoMonoApp) -> R
             .map(|path| path.display().to_string())
             .collect(),
         commit: Some(commit.clone()),
-        tags,
     };
 
     info!(
