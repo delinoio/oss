@@ -321,6 +321,7 @@ fn classify_human_line_tone(line: &str) -> Option<HumanLineTone> {
     }
 
     if trimmed.starts_with("- published ")
+        || trimmed.starts_with("- tagged ")
         || trimmed.contains("(publishable)")
         || trimmed.starts_with("Bumped ")
     {

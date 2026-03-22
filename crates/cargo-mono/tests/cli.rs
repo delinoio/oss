@@ -1,6 +1,7 @@
 use std::{
+    ffi::OsString,
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command as ProcessCommand, Output},
 };
 
@@ -549,7 +550,7 @@ fn changed_rejects_invalid_include_path_pattern() {
 }
 
 #[test]
-fn bump_updates_manifests_and_creates_commit_and_tag() {
+fn bump_updates_manifests_and_creates_commit_without_tag() {
     let temp_dir = init_mixed_publishability_workspace();
 
     let output = run_success(cargo_mono_command().current_dir(temp_dir.path()).args([
@@ -573,7 +574,7 @@ fn bump_updates_manifests_and_creates_commit_and_tag() {
         }])
     );
     assert!(result["commit"].as_str().is_some());
-    assert!(contains_json_string(&result["tags"], "alpha-v0.1.1"));
+    assert!(result.get("tags").is_none());
 
     let alpha_manifest = temp_dir.path().join("crates/alpha/Cargo.toml");
     let beta_manifest = temp_dir.path().join("crates/beta/Cargo.toml");
@@ -601,7 +602,7 @@ fn bump_updates_manifests_and_creates_commit_and_tag() {
         run_git_capture(temp_dir.path(), &["log", "-1", "--pretty=%s"]),
         "chore(release): bump 1 crate(s)"
     );
-    assert_eq!(git_tags(temp_dir.path()), vec!["alpha-v0.1.1".to_string()]);
+    assert!(git_tags(temp_dir.path()).is_empty());
 }
 
 #[test]
@@ -648,10 +649,7 @@ fn bump_with_bump_dependents_adds_patch_bumps_for_reverse_dependencies() {
         run_git_capture(temp_dir.path(), &["log", "-1", "--pretty=%s"]),
         "chore(release): bump 2 crate(s)"
     );
-    assert_eq!(
-        git_tags(temp_dir.path()),
-        vec!["alpha-v0.1.1".to_string(), "beta-v0.2.1".to_string()]
-    );
+    assert!(git_tags(temp_dir.path()).is_empty());
 }
 
 #[test]
@@ -703,6 +701,7 @@ fn publish_reports_skip_for_non_publishable_packages() {
         json!([{ "name": "gamma", "reason": "non-publishable" }])
     );
     assert_eq!(result["failed"], json!([]));
+    assert_eq!(result["tags"], json!([]));
 }
 
 #[test]
@@ -719,6 +718,114 @@ fn publish_rejects_unknown_packages() {
         .stderr(predicate::str::contains("missing_packages=unknown"))
         .stderr(predicate::str::contains("requested_packages=unknown"))
         .stderr(predicate::str::contains("Hint: Run `cargo mono list`"));
+}
+
+#[test]
+fn publish_rejects_unknown_packages_in_tag_allowlist_config() {
+    let temp_dir = init_mixed_publishability_workspace();
+    write_publish_tag_allowlist(temp_dir.path(), &["unknown"]);
+
+    cargo_mono_command()
+        .current_dir(temp_dir.path())
+        .args([
+            "publish",
+            "--dry-run",
+            "--allow-dirty",
+            "--package",
+            "alpha",
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Publish tag configuration references unknown workspace packages.",
+        ))
+        .stderr(predicate::str::contains("unknown_packages=unknown"))
+        .stderr(predicate::str::contains(
+            "workspace.metadata.cargo-mono.publish.tag.packages",
+        ));
+}
+
+#[test]
+fn publish_dry_run_does_not_create_tags_even_with_allowlist() {
+    let temp_dir = init_mixed_publishability_workspace();
+    write_publish_tag_allowlist(temp_dir.path(), &["alpha"]);
+
+    let mut command = cargo_mono_command_with_fake_publish(temp_dir.path());
+    let output = run_success(command.current_dir(temp_dir.path()).args([
+        "--output",
+        "json",
+        "publish",
+        "--dry-run",
+        "--allow-dirty",
+        "--package",
+        "alpha",
+    ]));
+
+    let result = parse_stdout_json(&output);
+    assert_eq!(result["published"][0]["name"], json!("alpha"));
+    assert_eq!(result["tags"], json!([]));
+    assert!(git_tags(temp_dir.path()).is_empty());
+}
+
+#[test]
+fn publish_creates_tags_for_allowlisted_packages() {
+    let temp_dir = init_mixed_publishability_workspace();
+    write_publish_tag_allowlist(temp_dir.path(), &["alpha"]);
+
+    let mut command = cargo_mono_command_with_fake_publish(temp_dir.path());
+    let output = run_success(command.current_dir(temp_dir.path()).args([
+        "--output",
+        "json",
+        "publish",
+        "--allow-dirty",
+        "--package",
+        "alpha",
+    ]));
+
+    let result = parse_stdout_json(&output);
+    assert_eq!(result["published"][0]["name"], json!("alpha"));
+    assert_eq!(result["failed"], json!([]));
+    assert!(contains_json_string(&result["tags"], "alpha@v0.1.0"));
+    assert_eq!(git_tags(temp_dir.path()), vec!["alpha@v0.1.0".to_string()]);
+}
+
+#[test]
+fn publish_skips_tags_for_non_allowlisted_packages() {
+    let temp_dir = init_mixed_publishability_workspace();
+    write_publish_tag_allowlist(temp_dir.path(), &["beta"]);
+
+    let mut command = cargo_mono_command_with_fake_publish(temp_dir.path());
+    let output = run_success(command.current_dir(temp_dir.path()).args([
+        "--output",
+        "json",
+        "publish",
+        "--allow-dirty",
+        "--package",
+        "alpha",
+    ]));
+
+    let result = parse_stdout_json(&output);
+    assert_eq!(result["published"][0]["name"], json!("alpha"));
+    assert_eq!(result["tags"], json!([]));
+    assert!(git_tags(temp_dir.path()).is_empty());
+}
+
+#[test]
+fn publish_fails_when_tag_already_exists() {
+    let temp_dir = init_mixed_publishability_workspace();
+    write_publish_tag_allowlist(temp_dir.path(), &["alpha"]);
+    run_git(temp_dir.path(), &["tag", "alpha@v0.1.0"]);
+
+    let mut command = cargo_mono_command_with_fake_publish(temp_dir.path());
+    command
+        .current_dir(temp_dir.path())
+        .args(["publish", "--allow-dirty", "--package", "alpha"])
+        .assert()
+        .failure()
+        .code(3)
+        .stderr(predicate::str::contains("Failed to create publish tag."))
+        .stderr(predicate::str::contains("tag=alpha@v0.1.0"));
 }
 
 #[test]
@@ -746,6 +853,61 @@ fn cargo_mono_command() -> Command {
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("cargo-mono"));
     command.env("RUST_LOG", "off");
     command
+}
+
+fn cargo_mono_command_with_fake_publish(working_dir: &Path) -> Command {
+    let fake_bin_directory = working_dir.join(".fake-bin");
+    fs::create_dir_all(&fake_bin_directory).expect("failed to create fake bin directory");
+    let fake_cargo_path = fake_bin_directory.join("cargo");
+    let wrapper_script = r#"#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "${1-}" = "publish" ]; then
+  exit 0
+fi
+
+exec "${REAL_CARGO:?}" "$@"
+"#;
+    fs::write(&fake_cargo_path, wrapper_script).expect("failed to write fake cargo wrapper");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(&fake_cargo_path)
+            .expect("failed to stat fake cargo wrapper")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&fake_cargo_path, permissions)
+            .expect("failed to set executable permission on fake cargo wrapper");
+    }
+
+    let mut command = cargo_mono_command();
+    command.env("REAL_CARGO", env!("CARGO"));
+    command.env("PATH", path_with_prepend(&fake_bin_directory));
+    command
+}
+
+fn path_with_prepend(prefix: &Path) -> OsString {
+    let mut paths = Vec::from([PathBuf::from(prefix)]);
+    if let Some(current_path) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&current_path));
+    }
+
+    std::env::join_paths(paths).expect("failed to compose PATH with fake cargo wrapper")
+}
+
+fn write_publish_tag_allowlist(root: &Path, packages: &[&str]) {
+    let manifest_path = root.join("Cargo.toml");
+    let mut manifest = fs::read_to_string(&manifest_path).expect("failed to read Cargo.toml");
+    let package_list = packages
+        .iter()
+        .map(|package| format!("\"{package}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    manifest.push_str("\n[workspace.metadata.cargo-mono.publish.tag]\n");
+    manifest.push_str(&format!("packages = [{package_list}]\n"));
+    fs::write(&manifest_path, manifest).expect("failed to write Cargo.toml");
 }
 
 fn init_library_workspace() -> tempfile::TempDir {

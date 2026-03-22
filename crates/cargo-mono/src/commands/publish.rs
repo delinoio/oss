@@ -18,6 +18,7 @@ use crate::{
     cli::PublishArgs,
     commands::{print_output, targeting, OutputSettings},
     errors::{message_with_details, CargoMonoError, ErrorKind, Result},
+    git,
     types::PublishSkipReason,
     workspace::Workspace,
     CargoMonoApp,
@@ -54,6 +55,21 @@ impl PublishMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PublishTagSkipReason {
+    DryRun,
+    NotAllowlisted,
+}
+
+impl PublishTagSkipReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::DryRun => "dry-run",
+            Self::NotAllowlisted => "not-allowlisted",
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct PublishedPackage {
     name: String,
@@ -84,6 +100,7 @@ struct PublishResult {
     published: Vec<PublishedPackage>,
     skipped: Vec<SkippedPackage>,
     failed: Vec<FailedPackage>,
+    tags: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +173,7 @@ struct SparseIndexEntry {
 
 pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -> Result<i32> {
     let resolved = targeting::resolve_targets(&args.target, &args.changed, &app.workspace)?;
+    let publish_tag_packages = app.workspace.publish_tag_packages();
 
     let mode = if args.dry_run {
         PublishMode::DryRun
@@ -192,6 +210,7 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
             published: Vec::new(),
             skipped,
             failed: Vec::new(),
+            tags: Vec::new(),
         };
 
         print_output(
@@ -208,6 +227,7 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
         prefetch_published_versions(&app.workspace, &order, args.registry.as_deref());
     let mut published = Vec::<PublishedPackage>::new();
     let mut failed = Vec::<FailedPackage>::new();
+    let mut tags = Vec::<String>::new();
 
     for package_name in order {
         if prefetch_result
@@ -254,6 +274,13 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
                     name: package_name.clone(),
                     attempts,
                 });
+                maybe_create_publish_tag(
+                    &app.workspace,
+                    &package_name,
+                    mode,
+                    publish_tag_packages,
+                    &mut tags,
+                )?;
                 published_or_skipped = true;
                 break;
             }
@@ -355,6 +382,7 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
         published,
         skipped,
         failed,
+        tags,
     };
 
     info!(
@@ -365,6 +393,7 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
         published_count = result.published.len(),
         skipped_count = result.skipped.len(),
         failed_count = result.failed.len(),
+        tag_count = result.tags.len(),
         "Completed publish run"
     );
 
@@ -380,6 +409,10 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
             "- published {} (attempts={})",
             item.name, item.attempts
         ));
+    }
+
+    for tag in &result.tags {
+        human_lines.push(format!("- tagged {tag}"));
     }
 
     for item in &result.skipped {
@@ -405,6 +438,85 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
     } else {
         Ok(1)
     }
+}
+
+fn maybe_create_publish_tag(
+    workspace: &Workspace,
+    package_name: &str,
+    mode: PublishMode,
+    publish_tag_packages: &BTreeSet<String>,
+    tags: &mut Vec<String>,
+) -> Result<()> {
+    let skip_reason = if mode == PublishMode::DryRun {
+        Some(PublishTagSkipReason::DryRun)
+    } else if !publish_tag_packages.contains(package_name) {
+        Some(PublishTagSkipReason::NotAllowlisted)
+    } else {
+        None
+    };
+
+    if let Some(skip_reason) = skip_reason {
+        info!(
+            command_path = "cargo-mono.publish",
+            workspace_root = %workspace.root.display(),
+            package = %package_name,
+            action = "create-publish-tag",
+            outcome = "skipped",
+            reason = skip_reason.as_str(),
+            allowlist_count = publish_tag_packages.len(),
+            "Skipping publish tag creation"
+        );
+        return Ok(());
+    }
+
+    let package = workspace.package(package_name).ok_or_else(|| {
+        CargoMonoError::with_details(
+            ErrorKind::Internal,
+            "Publish succeeded but package metadata was missing for tag creation.",
+            vec![("package", package_name.to_string())],
+            "Reload workspace metadata and retry publish.",
+        )
+    })?;
+
+    let tag = publish_tag_name(package_name, &package.version);
+    info!(
+        command_path = "cargo-mono.publish",
+        workspace_root = %workspace.root.display(),
+        package = %package_name,
+        action = "create-publish-tag",
+        outcome = "started",
+        tag = %tag,
+        "Creating publish tag"
+    );
+
+    git::create_tag(&tag).map_err(|error| {
+        CargoMonoError::with_details(
+            ErrorKind::Git,
+            "Failed to create publish tag.",
+            vec![
+                ("package", package_name.to_string()),
+                ("tag", tag.clone()),
+                ("cause", error.message),
+            ],
+            "Ensure the tag does not already exist and retry publish.",
+        )
+    })?;
+
+    info!(
+        command_path = "cargo-mono.publish",
+        workspace_root = %workspace.root.display(),
+        package = %package_name,
+        action = "create-publish-tag",
+        outcome = "tagged",
+        tag = %tag,
+        "Created publish tag"
+    );
+    tags.push(tag);
+    Ok(())
+}
+
+fn publish_tag_name(package: &str, version: &Version) -> String {
+    format!("{package}@v{version}")
 }
 
 fn prefetch_published_versions(
@@ -1282,5 +1394,11 @@ mod tests {
         assert_eq!(result.lookup_errors.len(), 1);
         assert_eq!(result.lookup_errors[0].package, "gamma");
         assert_eq!(result.lookup_errors[0].http_status, Some(503));
+    }
+
+    #[test]
+    fn publish_tag_name_uses_at_v_format() {
+        let version = Version::new(1, 2, 3);
+        assert_eq!(publish_tag_name("nodeup", &version), "nodeup@v1.2.3");
     }
 }

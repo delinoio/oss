@@ -31,6 +31,7 @@
 
 - Keep command identifiers stable and documented in `docs/project-cargo-mono.md` and `docs/crates-cargo-mono-foundation.md`.
 - Preserve `cargo mono` subcommand compatibility (`cargo-mono` binary naming contract).
+- Keep release-tag responsibility split: `bump` must not create tags, and `publish` may create tags only for packages listed in `[workspace.metadata.cargo-mono.publish.tag].packages`.
 - Ensure release automation (`bump`, `publish`) logs include structured operational context.
 - Keep runtime error output on the fixed `Summary/Context/Hint` three-line contract and include only safe debugging context values.
 

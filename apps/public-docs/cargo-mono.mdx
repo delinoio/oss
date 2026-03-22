@@ -12,8 +12,8 @@
 
 - Workspace discovery and reporting: `list`
 - Git-aware impact analysis: `changed`
-- Version orchestration and release tagging: `bump`
-- Dependency-aware publish flow: `publish`
+- Version orchestration and release commit automation: `bump`
+- Dependency-aware publish flow with optional release tag creation: `publish`
 - Stable output contract: `--output human|json`
 
 ## Common workflows
@@ -42,6 +42,15 @@ Dry-run publish for selected changed crates:
 cargo mono publish --changed --dry-run
 ```
 
+Enable publish tag creation for selected crates:
+
+```toml
+[workspace.metadata.cargo-mono.publish.tag]
+packages = ["nodeup", "cargo-mono"]
+```
+
+When enabled, successful publish runs create local tags with `<crate>@v<version>` naming.
+
 ## Quality and reliability
 
 `cargo-mono` is validated with command-level integration tests that run against temporary git workspaces.
@@ -49,8 +58,8 @@ cargo mono publish --changed --dry-run
 The suite verifies:
 - Stable `human` and `json` output behavior across commands.
 - Change detection contracts, including include/exclude path filters, direct-only mode, include-uncommitted mode, and global-impact file handling.
-- Release bump behavior, including internal dependency updates, workspace dependency updates, release commit creation, and crate tag creation.
-- Publish safety behavior, including non-publishable crate skipping and invalid package selection errors.
+- Release bump behavior, including internal dependency updates, workspace dependency updates, and release commit creation without tag creation.
+- Publish safety behavior, including non-publishable crate skipping, invalid package selection errors, and allowlist-based publish tag creation.
 
 Run from repository root:
 

@@ -16,6 +16,10 @@
 - Binary naming contract: `cargo-mono` must remain compatible with `cargo mono` invocation.
 - Command identifiers for lifecycle operations must remain stable and documented.
 - Publish and bump workflows must preserve scriptable output contracts for automation.
+- `bump` must not create Git tags.
+- `publish` is the only command allowed to create release tags, and only for packages listed in `[workspace.metadata.cargo-mono.publish.tag].packages`.
+- Publish tag creation is opt-in by default (no config means no tags), must remain local-only (`git tag` without push), and must use `<crate>@v<version>` naming.
+- If `publish` tag configuration references unknown workspace packages, command execution must fail with `invalid-input`.
 - Human-output color contract:
   - Global CLI flag: `--color <auto|always|never>`.
   - Environment override: `CARGO_MONO_OUTPUT_COLOR=auto|always|never`.
