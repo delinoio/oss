@@ -36,6 +36,8 @@
   - `Hint: ...`
 - Context values must include safe operational data (for example package name, manifest path, command, status, attempt count) needed for debugging.
 - Context values must normalize whitespace and be length-limited to avoid noisy or unsafe output.
+- Dependency-cycle conflicts from package ordering must include `selected_count`, `selected_sample`, `unresolved_count`, `unresolved_sample`, `cycle_package_count`, `cycle_packages`, and `dependency_scope=all-cargo-metadata-kinds`.
+- Cargo metadata load failures must include `working_directory` and `metadata_command` context keys in addition to the underlying `error` details.
 - Human stderr must include stable error kind labels while preserving the existing exit-code mapping contract.
 - Error messaging improvements must not change CLI command behavior or JSON output schema keys.
 - Error and log output must not expose secret credentials or registry tokens.

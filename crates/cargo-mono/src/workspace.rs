@@ -7,10 +7,12 @@ use cargo_metadata::{MetadataCommand, PackageId};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use semver::Version;
 use serde::Serialize;
+use tracing::warn;
 
 use crate::errors::{CargoMonoError, ErrorKind, Result};
 
 pub const GLOBAL_IMPACT_FILES: [&str; 3] = ["Cargo.toml", "Cargo.lock", "rust-toolchain"];
+const DEPENDENCY_SCOPE_ALL_CARGO_METADATA_KINDS: &str = "all-cargo-metadata-kinds";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct WorkspacePackage {
@@ -302,19 +304,163 @@ impl Workspace {
         if ordered.len() != selected.len() {
             let selected_names = selected.iter().cloned().collect::<Vec<_>>();
             let selected_sample = format_string_sample(&selected_names, 8);
+            let unresolved_names = indegree
+                .iter()
+                .filter_map(|(name, degree)| {
+                    if *degree > 0 {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            let unresolved_sample = format_string_sample(&unresolved_names, 8);
+            let unresolved = unresolved_names.iter().cloned().collect::<BTreeSet<_>>();
+            let cycle_packages = self.cycle_packages_for_nodes(&unresolved);
+            let cycle_packages_sample = format_string_sample(&cycle_packages, 8);
+
+            warn!(
+                command_path = "cargo-mono.workspace",
+                workspace_root = %self.root.display(),
+                action = "build-topological-order",
+                outcome = "failed-cycle",
+                selected_count = selected.len(),
+                unresolved_count = unresolved_names.len(),
+                cycle_package_count = cycle_packages.len(),
+                dependency_scope = DEPENDENCY_SCOPE_ALL_CARGO_METADATA_KINDS,
+                selected_sample = %selected_sample,
+                unresolved_sample = %unresolved_sample,
+                cycle_packages = %cycle_packages_sample,
+                "Failed to build package order due to a dependency cycle in selected packages"
+            );
+
             return Err(CargoMonoError::with_details(
                 ErrorKind::Conflict,
                 "Failed to build package order due to a dependency cycle in selected packages.",
                 vec![
                     ("selected_count", selected.len().to_string()),
                     ("selected_sample", selected_sample),
+                    ("unresolved_count", unresolved_names.len().to_string()),
+                    ("unresolved_sample", unresolved_sample),
+                    ("cycle_package_count", cycle_packages.len().to_string()),
+                    ("cycle_packages", cycle_packages_sample),
+                    (
+                        "dependency_scope",
+                        DEPENDENCY_SCOPE_ALL_CARGO_METADATA_KINDS.to_string(),
+                    ),
                 ],
                 "Break the cycle between selected packages, or narrow the target set with \
-                 `--package`/`--changed`.",
+                 `--package`/`--changed`. The strict dependency scope includes normal, build, and \
+                 dev dependencies from cargo metadata.",
             ));
         }
 
         Ok(ordered)
+    }
+
+    fn cycle_packages_for_nodes(&self, nodes: &BTreeSet<String>) -> Vec<String> {
+        let mut detector = CycleDetector::default();
+        for node in nodes {
+            if detector.indices.contains_key(node) {
+                continue;
+            }
+
+            self.strong_connect_cycle_node(node, nodes, &mut detector);
+        }
+
+        detector.cycle_packages.into_iter().collect()
+    }
+
+    fn strong_connect_cycle_node(
+        &self,
+        node: &str,
+        nodes: &BTreeSet<String>,
+        detector: &mut CycleDetector,
+    ) {
+        let node = node.to_string();
+        detector.indices.insert(node.clone(), detector.next_index);
+        detector.lowlinks.insert(node.clone(), detector.next_index);
+        detector.next_index += 1;
+        detector.stack.push(node.clone());
+        detector.on_stack.insert(node.clone());
+
+        if let Some(dependencies) = self.dependencies.get(&node) {
+            for dependency in dependencies {
+                if !nodes.contains(dependency) {
+                    continue;
+                }
+
+                if !detector.indices.contains_key(dependency) {
+                    self.strong_connect_cycle_node(dependency, nodes, detector);
+                    let dependency_lowlink = detector
+                        .lowlinks
+                        .get(dependency)
+                        .copied()
+                        .expect("dependency lowlink must exist after DFS traversal");
+                    let node_lowlink = detector
+                        .lowlinks
+                        .get(&node)
+                        .copied()
+                        .expect("node lowlink must exist");
+                    if dependency_lowlink < node_lowlink {
+                        detector.lowlinks.insert(node.clone(), dependency_lowlink);
+                    }
+                    continue;
+                }
+
+                if detector.on_stack.contains(dependency) {
+                    let dependency_index = detector
+                        .indices
+                        .get(dependency)
+                        .copied()
+                        .expect("dependency index must exist while on stack");
+                    let node_lowlink = detector
+                        .lowlinks
+                        .get(&node)
+                        .copied()
+                        .expect("node lowlink must exist");
+                    if dependency_index < node_lowlink {
+                        detector.lowlinks.insert(node.clone(), dependency_index);
+                    }
+                }
+            }
+        }
+
+        let node_lowlink = detector
+            .lowlinks
+            .get(&node)
+            .copied()
+            .expect("node lowlink must exist");
+        let node_index = detector
+            .indices
+            .get(&node)
+            .copied()
+            .expect("node index must exist");
+        if node_lowlink != node_index {
+            return;
+        }
+
+        let mut component = Vec::new();
+        while let Some(current) = detector.stack.pop() {
+            detector.on_stack.remove(&current);
+            component.push(current.clone());
+            if current == node {
+                break;
+            }
+        }
+
+        let contains_cycle = component.len() > 1
+            || component
+                .first()
+                .and_then(|current| {
+                    self.dependencies
+                        .get(current)
+                        .map(|deps| deps.contains(current))
+                })
+                .unwrap_or(false);
+        if contains_cycle {
+            detector.cycle_packages.extend(component);
+        }
     }
 
     fn normalize_relative_path(&self, path: &Path) -> Option<PathBuf> {
@@ -353,6 +499,16 @@ impl Workspace {
             dependents,
         }
     }
+}
+
+#[derive(Debug, Default)]
+struct CycleDetector {
+    next_index: usize,
+    indices: HashMap<String, usize>,
+    lowlinks: HashMap<String, usize>,
+    stack: Vec<String>,
+    on_stack: BTreeSet<String>,
+    cycle_packages: BTreeSet<String>,
 }
 
 fn compile_globset(patterns: &[String], flag: &str) -> Result<Option<GlobSet>> {
@@ -466,6 +622,29 @@ mod tests {
             "core".to_string(),
             BTreeSet::from(["app".to_string(), "cli".to_string()]),
         );
+
+        Workspace::from_parts(root, packages, dependencies, dependents)
+    }
+
+    fn cycle_fixture_workspace() -> Workspace {
+        let root = PathBuf::from("/repo");
+        let packages = ["a", "b", "c"]
+            .into_iter()
+            .map(|name| (name.to_string(), package(name, &root)))
+            .collect::<BTreeMap<_, _>>();
+
+        let mut dependencies = BTreeMap::<String, BTreeSet<String>>::new();
+        dependencies.insert("a".to_string(), BTreeSet::from(["b".to_string()]));
+        dependencies.insert("b".to_string(), BTreeSet::from(["a".to_string()]));
+        dependencies.insert("c".to_string(), BTreeSet::from(["a".to_string()]));
+
+        let mut dependents = BTreeMap::<String, BTreeSet<String>>::new();
+        dependents.insert(
+            "a".to_string(),
+            BTreeSet::from(["b".to_string(), "c".to_string()]),
+        );
+        dependents.insert("b".to_string(), BTreeSet::from(["a".to_string()]));
+        dependents.insert("c".to_string(), BTreeSet::new());
 
         Workspace::from_parts(root, packages, dependencies, dependents)
     }
@@ -599,5 +778,31 @@ mod tests {
 
         assert!(core_index < app_index);
         assert!(core_index < cli_index);
+    }
+
+    #[test]
+    fn topological_order_cycle_error_reports_cycle_packages_and_scope() {
+        let workspace = cycle_fixture_workspace();
+        let selected = BTreeSet::from(["a".to_string(), "b".to_string(), "c".to_string()]);
+
+        let error = workspace
+            .topological_order(&selected)
+            .expect_err("expected dependency cycle conflict");
+
+        assert_eq!(error.kind, ErrorKind::Conflict);
+        assert!(error.message.contains(
+            "Failed to build package order due to a dependency cycle in selected packages."
+        ));
+        assert!(error.message.contains("selected_count=3"));
+        assert!(error.message.contains("unresolved_count=3"));
+        assert!(error.message.contains("cycle_package_count=2"));
+        assert!(error.message.contains("cycle_packages=a|b"));
+        assert!(error
+            .message
+            .contains("dependency_scope=all-cargo-metadata-kinds"));
+        assert!(error.message.contains(
+            "strict dependency scope includes normal, build, and dev dependencies from cargo \
+             metadata"
+        ));
     }
 }

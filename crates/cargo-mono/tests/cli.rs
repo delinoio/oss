@@ -87,7 +87,11 @@ fn list_still_requires_workspace() {
         .stderr(predicate::str::contains(
             "Failed to load workspace metadata via cargo",
         ))
-        .stderr(predicate::str::contains("Context: error="))
+        .stderr(predicate::str::contains("working_directory="))
+        .stderr(predicate::str::contains(
+            "metadata_command=cargo metadata --format-version 1",
+        ))
+        .stderr(predicate::str::contains("error="))
         .stderr(predicate::str::contains("Hint: "));
 }
 
@@ -647,6 +651,27 @@ fn publish_rejects_unknown_packages() {
         .stderr(predicate::str::contains("Hint: Run `cargo mono list`"));
 }
 
+#[test]
+fn publish_reports_cycle_packages_for_dev_dependency_cycle() {
+    let temp_dir = init_dev_dependency_cycle_workspace();
+
+    cargo_mono_command()
+        .current_dir(temp_dir.path())
+        .args(["publish", "--dry-run", "--package", "a", "--package", "b"])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicate::str::contains(
+            "Failed to build package order due to a dependency cycle in selected packages.",
+        ))
+        .stderr(predicate::str::contains("cycle_package_count=2"))
+        .stderr(predicate::str::contains("cycle_packages=a|b"))
+        .stderr(predicate::str::contains("unresolved_count=2"))
+        .stderr(predicate::str::contains(
+            "dependency_scope=all-cargo-metadata-kinds",
+        ));
+}
+
 fn cargo_mono_command() -> Command {
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("cargo-mono"));
     command.env("RUST_LOG", "off");
@@ -769,6 +794,79 @@ alpha = { path = "../alpha", version = "0.1.0" }
         "pub fn gamma() -> &'static str { \"gamma\" }\n",
     )
     .expect("failed to write gamma source");
+
+    run_git(root, &["init", "-q"]);
+    run_git(root, &["config", "user.name", "test"]);
+    run_git(root, &["config", "user.email", "test@example.com"]);
+    run_git(root, &["add", "."]);
+    run_git(
+        root,
+        &[
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ],
+    );
+
+    temp_dir
+}
+
+fn init_dev_dependency_cycle_workspace() -> tempfile::TempDir {
+    let temp_dir = tempfile::tempdir().expect("failed to create tempdir");
+    let root = temp_dir.path();
+
+    fs::create_dir_all(root.join("crates/a/src")).expect("failed to create a directory");
+    fs::create_dir_all(root.join("crates/b/src")).expect("failed to create b directory");
+
+    fs::write(
+        root.join("Cargo.toml"),
+        r#"[workspace]
+members = ["crates/a", "crates/b"]
+resolver = "2"
+"#,
+    )
+    .expect("failed to write workspace manifest");
+    fs::write(
+        root.join("crates/a/Cargo.toml"),
+        r#"[package]
+name = "a"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dev-dependencies]
+b = { path = "../b", version = "0.1.0" }
+"#,
+    )
+    .expect("failed to write a manifest");
+    fs::write(
+        root.join("crates/b/Cargo.toml"),
+        r#"[package]
+name = "b"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+a = { path = "../a", version = "0.1.0" }
+"#,
+    )
+    .expect("failed to write b manifest");
+    fs::write(
+        root.join("crates/a/src/lib.rs"),
+        "pub fn a() -> &'static str { \"a\" }\n",
+    )
+    .expect("failed to write a source");
+    fs::write(
+        root.join("crates/b/src/lib.rs"),
+        "pub fn b() -> &'static str { \"b\" }\n",
+    )
+    .expect("failed to write b source");
 
     run_git(root, &["init", "-q"]);
     run_git(root, &["config", "user.name", "test"]);
