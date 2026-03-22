@@ -345,6 +345,44 @@ jobs:
       - name: Run dexdex tests
         run: pnpm --filter dexdex test
 
+  node-dexdex-ios-build:
+    name: Node dexdex iOS build
+    runs-on: macos-latest
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.node == 'true' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Initialize iOS target
+        run: pnpm --filter dexdex exec tauri ios init --ci
+
+      - name: Run dexdex iOS smoke build
+        run: pnpm --filter dexdex exec tauri ios build --ci --debug --target aarch64-sim
+
   ci-result:
     name: CI Result
     runs-on: ubuntu-latest
@@ -362,6 +400,7 @@ jobs:
       - node-mpapp-lint
       - node-public-docs-test
       - node-dexdex-test
+      - node-dexdex-ios-build
     steps:
       - run: exit 1
         if: ${{ always() && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
