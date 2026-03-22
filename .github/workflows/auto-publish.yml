@@ -20,6 +20,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Keep checkout auth separate so tag push uses GH_TOKEN credentials.
+          persist-credentials: false
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -58,5 +61,13 @@ jobs:
             exit 1
           fi
 
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          echo "Preparing tag push for repository: ${{ github.repository }}"
+          echo "Clearing checkout-injected github.com auth header."
+          git config --local --unset-all "http.https://github.com/.extraheader" || true
+
+          remote_url="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git remote set-url origin "$remote_url"
+
+          echo "Pushing all local tags to origin."
           git push --tags
+          echo "Tag push finished."

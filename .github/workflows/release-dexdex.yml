@@ -194,11 +194,11 @@ jobs:
               tar -C build -czf "dist/$worker_asset" "$worker_output"
             fi
           done <<'TARGETS'
-linux amd64 tar.gz
-darwin amd64 tar.gz
-darwin arm64 tar.gz
-windows amd64 zip
-TARGETS
+          linux amd64 tar.gz
+          darwin amd64 tar.gz
+          darwin arm64 tar.gz
+          windows amd64 zip
+          TARGETS
 
       - name: Upload server artifacts
         uses: actions/upload-artifact@v4

@@ -19,7 +19,7 @@
 - `bump` must not create Git tags.
 - `publish` is the only command allowed to create release tags, and only for packages listed in `[workspace.metadata.cargo-mono.publish.tag].packages`.
 - Publish tag creation is opt-in by default (no config means no tags), must remain local-only (`git tag` without push), and must use `<crate>@v<version>` naming.
-- Remote tag publication is owned by CI automation: `.github/workflows/auto-publish.yml` must run `git push --tags` after a successful `publish` command, authenticated via `secrets.GH_TOKEN`.
+- Remote tag publication is owned by CI automation: `.github/workflows/auto-publish.yml` must run `git push --tags` after a successful `publish` command, with checkout credential persistence disabled and authentication bound to `secrets.GH_TOKEN` (non-`GITHUB_TOKEN`) so downstream tag-triggered workflows run.
 - If `publish` tag configuration references unknown workspace packages, command execution must fail with `invalid-input`.
 - Human-output color contract:
   - Global CLI flag: `--color <auto|always|never>`.

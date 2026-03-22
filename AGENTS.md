@@ -305,7 +305,8 @@ Release automation baseline:
 - Publish command contract: `cargo run -p cargo-mono -- publish`.
 - Workflow permission contract: `permissions.contents: write`.
 - Tag push contract: after successful publish command execution, run `git push --tags` without no-tag fallback handling.
-- Required secret contract: `CARGO_REGISTRY_TOKEN` (crate publish) and `GH_TOKEN` (tag push authentication).
+- Tag push authentication contract: checkout must disable persisted credentials (`persist-credentials: false`) and clear `http.https://github.com/.extraheader` before pushing tags so `GH_TOKEN` auth is authoritative.
+- Required secret contract: `CARGO_REGISTRY_TOKEN` (crate publish) and `GH_TOKEN` (tag push authentication). `GH_TOKEN` must be a dedicated non-`GITHUB_TOKEN` credential so tag pushes emit downstream `push` events for tag-triggered workflows.
 - `release-cargo-mono` is defined in `.github/workflows/release-cargo-mono.yml`.
 - Trigger contract: runs on tag push `cargo-mono@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS cargo-mono release artifacts to GitHub Releases.
