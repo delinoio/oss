@@ -99,6 +99,7 @@ Client logs should include:
 - `cd apps/dexdex && pnpm test`
 - `cd apps/dexdex && pnpm build`
 - `cd apps/dexdex && pnpm tauri:build`
+- CI iOS smoke build (unsigned): `pnpm --filter dexdex exec vite build`, then `pnpm --filter dexdex exec tauri ios init --ci`, then `pnpm --filter dexdex exec tauri ios build --ci --debug --target aarch64-sim --config '{"build":{"beforeBuildCommand":"true"}}'`
 
 ## Dependencies and Integrations
 - Proto/API/entity contracts:

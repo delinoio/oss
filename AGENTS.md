@@ -282,6 +282,7 @@ Coverage expectations:
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
 - `node-dexdex-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter dexdex test`.
+- `node-dexdex-ios-build`: runs `pnpm install --frozen-lockfile`, `pnpm --filter dexdex exec vite build`, `pnpm --filter dexdex exec tauri ios init --ci`, and `pnpm --filter dexdex exec tauri ios build --ci --debug --target aarch64-sim --config '{"build":{"beforeBuildCommand":"true"}}'` on `macos-latest`.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 
 DexDex desktop packaging CI baseline:
