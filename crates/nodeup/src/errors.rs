@@ -69,6 +69,38 @@ fn default_hint_for_kind(kind: ErrorKind) -> &'static str {
     }
 }
 
+fn sanitized_url(url: &reqwest::Url) -> String {
+    let mut sanitized = url.clone();
+    sanitized.set_query(None);
+    sanitized.set_fragment(None);
+    sanitized.to_string()
+}
+
+pub fn sanitize_url_text(raw: &str) -> String {
+    match reqwest::Url::parse(raw) {
+        Ok(url) => sanitized_url(&url),
+        Err(_) => raw.to_string(),
+    }
+}
+
+fn reqwest_error_classification(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        "timeout"
+    } else if error.is_connect() {
+        "connect"
+    } else if error.is_status() {
+        "http-status"
+    } else if error.is_decode() {
+        "decode"
+    } else if error.is_request() {
+        "request"
+    } else if error.is_body() {
+        "body"
+    } else {
+        "other"
+    }
+}
+
 fn format_error_message(
     kind: ErrorKind,
     cause: impl Into<String>,
@@ -183,8 +215,15 @@ impl NodeupError {
 
 impl From<io::Error> for NodeupError {
     fn from(value: io::Error) -> Self {
+        let io_kind = format!("{:?}", value.kind());
+        let raw_os_error = value
+            .raw_os_error()
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "none".to_string());
         Self::internal_with_hint(
-            format!("I/O operation failed: {value}"),
+            format!(
+                "I/O operation failed: {value} (io_kind={io_kind}, raw_os_error={raw_os_error})"
+            ),
             "Check file permissions and disk availability, then retry the command.",
         )
     }
@@ -192,14 +231,29 @@ impl From<io::Error> for NodeupError {
 
 impl From<reqwest::Error> for NodeupError {
     fn from(value: reqwest::Error) -> Self {
+        let classification = reqwest_error_classification(&value);
+        let status = value
+            .status()
+            .map(|status| status.as_u16().to_string())
+            .unwrap_or_else(|| "none".to_string());
+        let url = value
+            .url()
+            .map(sanitized_url)
+            .unwrap_or_else(|| "none".to_string());
         if value.is_timeout() || value.is_connect() {
             return Self::network_with_hint(
-                format!("Network request failed: {value}"),
+                format!(
+                    "Network request failed: {value} (classification={classification}, \
+                     status={status}, url={url})"
+                ),
                 "Check your internet connection and retry the command.",
             );
         }
         Self::internal_with_hint(
-            format!("HTTP client failed: {value}"),
+            format!(
+                "HTTP client failed: {value} (classification={classification}, status={status}, \
+                 url={url})"
+            ),
             "Retry the command. If it still fails, run again with `RUST_LOG=nodeup=debug`.",
         )
     }

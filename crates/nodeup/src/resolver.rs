@@ -119,7 +119,11 @@ impl RuntimeResolver {
         );
 
         Err(NodeupError::not_found_with_hint(
-            "No runtime selector resolved",
+            format!(
+                "No runtime selector resolved (cwd={}, checked_sources=override|default, \
+                 override_match=false, default_selector_set=false)",
+                path.display()
+            ),
             "Set a default runtime with `nodeup default <runtime>` or configure a directory \
              override with `nodeup override set <runtime>`.",
         ))

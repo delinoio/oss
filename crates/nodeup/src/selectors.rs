@@ -21,7 +21,11 @@ impl RuntimeSelector {
         let normalized = input.trim();
         if normalized.is_empty() {
             return Err(NodeupError::invalid_input_with_hint(
-                "Runtime selector cannot be empty",
+                format!(
+                    "Runtime selector cannot be empty (raw_input_len={}, trimmed_len={})",
+                    input.len(),
+                    normalized.len()
+                ),
                 "Provide a selector like `22.1.0`, `v22.1.0`, `lts`, `current`, `latest`, or a \
                  linked runtime name.",
             ));

@@ -121,7 +121,10 @@ fn render_human_toolchain_list(
 fn install(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     if runtimes.is_empty() {
         return Err(NodeupError::invalid_input_with_hint(
-            "Missing runtime selector for `nodeup toolchain install`",
+            format!(
+                "Missing runtime selector for `nodeup toolchain install` (requested_count={})",
+                runtimes.len()
+            ),
             "Run `nodeup toolchain install <runtime>...`.",
         ));
     }
@@ -136,7 +139,10 @@ fn install(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result
             ResolvedRuntimeTarget::Version { version } => version,
             ResolvedRuntimeTarget::LinkedPath { .. } => {
                 return Err(NodeupError::invalid_input_with_hint(
-                    "`toolchain install` only supports semantic version or channel selectors",
+                    format!(
+                        "`toolchain install` only supports semantic version or channel selectors \
+                         (selector={runtime})"
+                    ),
                     "Use selectors like `22.1.0`, `v22.1.0`, `lts`, `current`, or `latest`. \
                      Linked runtimes are added with `nodeup toolchain link <name> <path>`.",
                 ));
@@ -176,7 +182,10 @@ fn install(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result
 fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Result<i32> {
     if runtimes.is_empty() {
         return Err(NodeupError::invalid_input_with_hint(
-            "Missing runtime selector for `nodeup toolchain uninstall`",
+            format!(
+                "Missing runtime selector for `nodeup toolchain uninstall` (requested_count={})",
+                runtimes.len()
+            ),
             "Run `nodeup toolchain uninstall <runtime>...`.",
         ));
     }
@@ -198,7 +207,10 @@ fn uninstall(runtimes: &[String], output: OutputFormat, app: &NodeupApp) -> Resu
             RuntimeSelector::Version(version) => format!("v{version}"),
             _ => {
                 return Err(NodeupError::invalid_input_with_hint(
-                    "`toolchain uninstall` only supports exact version selectors",
+                    format!(
+                        "`toolchain uninstall` only supports exact version selectors \
+                         (selector={runtime})"
+                    ),
                     "Use selectors like `22.1.0` or `v22.1.0`. Channels and linked runtime names \
                      are not supported here.",
                 ));

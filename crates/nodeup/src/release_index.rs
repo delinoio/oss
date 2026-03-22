@@ -12,7 +12,7 @@ use tempfile::NamedTempFile;
 use tracing::{info, warn};
 
 use crate::{
-    errors::{NodeupError, Result},
+    errors::{sanitize_url_text, NodeupError, Result},
     types::NodeupChannel,
 };
 
@@ -101,7 +101,7 @@ impl ReleaseIndexClient {
             .build()
             .map_err(|error| {
                 NodeupError::network_with_hint(
-                    format!("Failed to build HTTP client: {error}"),
+                    format!("Failed to build HTTP client (timeout_seconds=30): {error}"),
                     "Retry the command. If it keeps failing, run with `RUST_LOG=nodeup=debug` and \
                      inspect the TLS/network configuration.",
                 )
@@ -205,6 +205,7 @@ impl ReleaseIndexClient {
     }
 
     fn fetch_index_from_network(&self) -> Result<Vec<ReleaseEntry>> {
+        let sanitized_index_url = sanitize_url_text(&self.index_url);
         for attempt in 1..=MAX_RETRIES {
             info!(
                 command_path = "nodeup.release-index.fetch",
@@ -219,17 +220,23 @@ impl ReleaseIndexClient {
                         if attempt == MAX_RETRIES {
                             return Err(NodeupError::network_with_hint(
                                 format!(
-                                    "Release index request failed with status {}",
-                                    response.status()
+                                    "Release index request failed (url={sanitized_index_url}, \
+                                     status={}, attempt={attempt}, max_retries={MAX_RETRIES})",
+                                    response.status(),
                                 ),
                                 "Retry the command later or override the index endpoint with \
                                  `NODEUP_INDEX_URL` if you use a mirror.",
                             ));
                         }
                     } else {
+                        let response_status = response.status().as_u16();
                         return response.json::<Vec<ReleaseEntry>>().map_err(|error| {
                             NodeupError::network_with_hint(
-                                format!("Failed to decode release index response: {error}"),
+                                format!(
+                                    "Failed to decode release index response \
+                                     (url={sanitized_index_url}, status={response_status}, \
+                                     attempt={attempt}, max_retries={MAX_RETRIES}): {error}"
+                                ),
                                 "Retry the command. If it repeats, verify the index endpoint \
                                  serves valid JSON.",
                             )
@@ -240,8 +247,8 @@ impl ReleaseIndexClient {
                     if attempt == MAX_RETRIES {
                         return Err(NodeupError::network_with_hint(
                             format!(
-                                "Failed to fetch release index from {}: {error}",
-                                self.index_url
+                                "Failed to fetch release index (url={sanitized_index_url}, \
+                                 attempt={attempt}, max_retries={MAX_RETRIES}): {error}"
                             ),
                             "Check network connectivity and endpoint reachability, then retry.",
                         ));
@@ -253,7 +260,10 @@ impl ReleaseIndexClient {
         }
 
         Err(NodeupError::network_with_hint(
-            "Exhausted release index retries",
+            format!(
+                "Exhausted release index retries (url={sanitized_index_url}, \
+                 max_retries={MAX_RETRIES})"
+            ),
             "Retry the command in a few moments. If it continues, run with \
              `RUST_LOG=nodeup=debug` for diagnostics.",
         ))
@@ -439,6 +449,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+    use crate::errors::ErrorKind;
 
     #[test]
     fn latest_and_lts_resolution_from_stubbed_entries() {
@@ -645,5 +656,32 @@ mod tests {
         let fetched = client.fetch_index().unwrap();
         assert_eq!(fetched[0].version, "v24.14.0");
         index_mock.assert_calls(1);
+    }
+
+    #[test]
+    fn refresh_failure_surfaces_url_status_and_retry_context() {
+        let dir = tempdir().unwrap();
+        let cache_file = dir.path().join("release-index.json");
+        let server = MockServer::start();
+        let index_mock = server.mock(|when, then| {
+            when.method(GET).path("/index.json");
+            then.status(500);
+        });
+
+        let client = ReleaseIndexClient::with_urls(
+            cache_file,
+            Duration::from_secs(600),
+            server.url("/index.json"),
+            server.url("/release"),
+        )
+        .unwrap();
+
+        let error = client.fetch_index().unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Network);
+        assert!(error.message.contains("url=http://"));
+        assert!(error.message.contains("status=500"));
+        assert!(error.message.contains("attempt=3"));
+        assert!(error.message.contains("max_retries=3"));
+        index_mock.assert_calls(MAX_RETRIES);
     }
 }

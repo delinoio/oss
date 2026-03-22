@@ -570,7 +570,7 @@ fn migrate_settings_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {
 
     let content = fs::read_to_string(&file_path)?;
     let raw_value: Value = toml::from_str(&content)?;
-    let from_schema = extract_schema_version(&raw_value)?;
+    let from_schema = extract_schema_version(&raw_value, &file_path)?;
 
     if from_schema > SETTINGS_SCHEMA_VERSION {
         return Err(self_invalid_input(format!(
@@ -588,7 +588,7 @@ fn migrate_settings_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {
         });
     }
 
-    let migrated = migrate_settings_legacy(&raw_value, from_schema)?;
+    let migrated = migrate_settings_legacy(&raw_value, from_schema, &file_path)?;
     app.store.save_settings(&migrated)?;
 
     Ok(SchemaMigrationResult {
@@ -614,7 +614,7 @@ fn migrate_overrides_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {
 
     let content = fs::read_to_string(&file_path)?;
     let raw_value: Value = toml::from_str(&content)?;
-    let from_schema = extract_schema_version(&raw_value)?;
+    let from_schema = extract_schema_version(&raw_value, &file_path)?;
 
     if from_schema > OVERRIDES_SCHEMA_VERSION {
         return Err(self_invalid_input(format!(
@@ -632,7 +632,7 @@ fn migrate_overrides_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {
         });
     }
 
-    let migrated = migrate_overrides_legacy(&raw_value, from_schema)?;
+    let migrated = migrate_overrides_legacy(&raw_value, from_schema, &file_path)?;
     app.overrides.save(&migrated)?;
 
     Ok(SchemaMigrationResult {
@@ -643,40 +643,60 @@ fn migrate_overrides_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {
     })
 }
 
-fn extract_schema_version(value: &Value) -> Result<u32> {
-    let table = value
-        .as_table()
-        .ok_or_else(|| self_invalid_input("Expected a TOML table at the document root"))?;
+fn extract_schema_version(value: &Value, file_path: &Path) -> Result<u32> {
+    let table = value.as_table().ok_or_else(|| {
+        self_invalid_input(format!(
+            "Expected TOML table at document root (file={}, actual_type={})",
+            file_path.display(),
+            toml_value_type(value)
+        ))
+    })?;
 
     let Some(version_value) = table.get("schema_version") else {
         return Ok(0);
     };
 
-    let version = version_value
-        .as_integer()
-        .ok_or_else(|| self_invalid_input("schema_version must be an integer"))?;
+    let version = version_value.as_integer().ok_or_else(|| {
+        self_invalid_input(format!(
+            "schema_version must be an integer (file={}, actual_type={})",
+            file_path.display(),
+            toml_value_type(version_value)
+        ))
+    })?;
 
     if version < 0 {
-        return Err(self_invalid_input("schema_version cannot be negative"));
+        return Err(self_invalid_input(format!(
+            "schema_version cannot be negative (file={}, value={version})",
+            file_path.display()
+        )));
     }
 
     Ok(version as u32)
 }
 
-fn migrate_settings_legacy(value: &Value, from_schema: u32) -> Result<SettingsFile> {
+fn migrate_settings_legacy(
+    value: &Value,
+    from_schema: u32,
+    file_path: &Path,
+) -> Result<SettingsFile> {
     if from_schema != 0 {
         return Err(self_invalid_input(format!(
-            "Unsupported legacy settings schema version: {from_schema}"
+            "Unsupported legacy settings schema version: {from_schema} (file={})",
+            file_path.display()
         )));
     }
 
-    let table = value
-        .as_table()
-        .ok_or_else(|| self_invalid_input("Expected settings file to be a TOML table"))?;
+    let table = value.as_table().ok_or_else(|| {
+        self_invalid_input(format!(
+            "Expected settings file to be a TOML table (file={}, actual_type={})",
+            file_path.display(),
+            toml_value_type(value)
+        ))
+    })?;
 
-    let default_selector = optional_string(table, "default_selector")?;
-    let linked_runtimes = string_table(table, "linked_runtimes")?;
-    let tracked_selectors = string_array(table, "tracked_selectors")?;
+    let default_selector = optional_string(table, "default_selector", file_path)?;
+    let linked_runtimes = string_table(table, "linked_runtimes", file_path)?;
+    let tracked_selectors = string_array(table, "tracked_selectors", file_path)?;
 
     Ok(SettingsFile {
         schema_version: SETTINGS_SCHEMA_VERSION,
@@ -686,19 +706,28 @@ fn migrate_settings_legacy(value: &Value, from_schema: u32) -> Result<SettingsFi
     })
 }
 
-fn migrate_overrides_legacy(value: &Value, from_schema: u32) -> Result<OverridesFile> {
+fn migrate_overrides_legacy(
+    value: &Value,
+    from_schema: u32,
+    file_path: &Path,
+) -> Result<OverridesFile> {
     if from_schema != 0 {
         return Err(self_invalid_input(format!(
-            "Unsupported legacy overrides schema version: {from_schema}"
+            "Unsupported legacy overrides schema version: {from_schema} (file={})",
+            file_path.display()
         )));
     }
 
-    let table = value
-        .as_table()
-        .ok_or_else(|| self_invalid_input("Expected overrides file to be a TOML table"))?;
+    let table = value.as_table().ok_or_else(|| {
+        self_invalid_input(format!(
+            "Expected overrides file to be a TOML table (file={}, actual_type={})",
+            file_path.display(),
+            toml_value_type(value)
+        ))
+    })?;
 
     let entries = if let Some(entries_value) = table.get("entries") {
-        parse_override_entries(entries_value)?
+        parse_override_entries(entries_value, file_path)?
     } else {
         Vec::new()
     };
@@ -709,31 +738,43 @@ fn migrate_overrides_legacy(value: &Value, from_schema: u32) -> Result<Overrides
     })
 }
 
-fn optional_string(table: &Table, field: &str) -> Result<Option<String>> {
+fn optional_string(table: &Table, field: &str, file_path: &Path) -> Result<Option<String>> {
     let Some(value) = table.get(field) else {
         return Ok(None);
     };
 
-    let string = value
-        .as_str()
-        .ok_or_else(|| self_invalid_input(format!("Expected '{field}' to be a string")))?;
+    let string = value.as_str().ok_or_else(|| {
+        self_invalid_input(format!(
+            "Expected '{field}' to be a string (file={}, actual_type={})",
+            file_path.display(),
+            toml_value_type(value)
+        ))
+    })?;
 
     Ok(Some(string.to_string()))
 }
 
-fn string_table(table: &Table, field: &str) -> Result<BTreeMap<String, String>> {
+fn string_table(table: &Table, field: &str, file_path: &Path) -> Result<BTreeMap<String, String>> {
     let Some(value) = table.get(field) else {
         return Ok(BTreeMap::new());
     };
 
-    let map = value
-        .as_table()
-        .ok_or_else(|| self_invalid_input(format!("Expected '{field}' to be a table")))?;
+    let map = value.as_table().ok_or_else(|| {
+        self_invalid_input(format!(
+            "Expected '{field}' to be a table (file={}, actual_type={})",
+            file_path.display(),
+            toml_value_type(value)
+        ))
+    })?;
 
     let mut result = BTreeMap::new();
     for (key, item) in map {
         let value = item.as_str().ok_or_else(|| {
-            self_invalid_input(format!("Expected '{field}.{key}' to be a string"))
+            self_invalid_input(format!(
+                "Expected '{field}.{key}' to be a string (file={}, actual_type={})",
+                file_path.display(),
+                toml_value_type(item)
+            ))
         })?;
         result.insert(key.clone(), value.to_string());
     }
@@ -741,19 +782,27 @@ fn string_table(table: &Table, field: &str) -> Result<BTreeMap<String, String>> 
     Ok(result)
 }
 
-fn string_array(table: &Table, field: &str) -> Result<Vec<String>> {
+fn string_array(table: &Table, field: &str, file_path: &Path) -> Result<Vec<String>> {
     let Some(value) = table.get(field) else {
         return Ok(Vec::new());
     };
 
-    let items = value
-        .as_array()
-        .ok_or_else(|| self_invalid_input(format!("Expected '{field}' to be an array")))?;
+    let items = value.as_array().ok_or_else(|| {
+        self_invalid_input(format!(
+            "Expected '{field}' to be an array (file={}, actual_type={})",
+            file_path.display(),
+            toml_value_type(value)
+        ))
+    })?;
 
     let mut result = Vec::new();
     for (index, item) in items.iter().enumerate() {
         let value = item.as_str().ok_or_else(|| {
-            self_invalid_input(format!("Expected '{field}[{index}]' to be a string"))
+            self_invalid_input(format!(
+                "Expected '{field}[{index}]' to be a string (file={}, actual_type={})",
+                file_path.display(),
+                toml_value_type(item)
+            ))
         })?;
         result.push(value.to_string());
     }
@@ -761,27 +810,43 @@ fn string_array(table: &Table, field: &str) -> Result<Vec<String>> {
     Ok(result)
 }
 
-fn parse_override_entries(value: &Value) -> Result<Vec<OverrideEntry>> {
-    let items = value
-        .as_array()
-        .ok_or_else(|| self_invalid_input("Expected 'entries' to be an array"))?;
+fn parse_override_entries(value: &Value, file_path: &Path) -> Result<Vec<OverrideEntry>> {
+    let items = value.as_array().ok_or_else(|| {
+        self_invalid_input(format!(
+            "Expected 'entries' to be an array (file={}, actual_type={})",
+            file_path.display(),
+            toml_value_type(value)
+        ))
+    })?;
 
     let mut entries = Vec::new();
     for (index, item) in items.iter().enumerate() {
         let table = item.as_table().ok_or_else(|| {
-            self_invalid_input(format!("Expected 'entries[{index}]' to be a table"))
+            self_invalid_input(format!(
+                "Expected 'entries[{index}]' to be a table (file={}, actual_type={})",
+                file_path.display(),
+                toml_value_type(item)
+            ))
         })?;
 
         let path = table.get("path").and_then(Value::as_str).ok_or_else(|| {
-            self_invalid_input(format!("Expected 'entries[{index}].path' to be a string"))
+            let actual_type = table.get("path").map(toml_value_type).unwrap_or("none");
+            self_invalid_input(format!(
+                "Expected 'entries[{index}].path' to be a string (file={}, \
+                 actual_type={actual_type})",
+                file_path.display()
+            ))
         })?;
 
         let selector = table
             .get("selector")
             .and_then(Value::as_str)
             .ok_or_else(|| {
+                let actual_type = table.get("selector").map(toml_value_type).unwrap_or("none");
                 self_invalid_input(format!(
-                    "Expected 'entries[{index}].selector' to be a string"
+                    "Expected 'entries[{index}].selector' to be a string (file={}, \
+                     actual_type={actual_type})",
+                    file_path.display()
                 ))
             })?;
 
@@ -792,6 +857,18 @@ fn parse_override_entries(value: &Value) -> Result<Vec<OverrideEntry>> {
     }
 
     Ok(entries)
+}
+
+fn toml_value_type(value: &Value) -> &'static str {
+    match value {
+        Value::String(_) => "string",
+        Value::Integer(_) => "integer",
+        Value::Float(_) => "float",
+        Value::Boolean(_) => "boolean",
+        Value::Datetime(_) => "datetime",
+        Value::Array(_) => "array",
+        Value::Table(_) => "table",
+    }
 }
 
 fn log_failure(action: SelfAction, error: NodeupError) -> NodeupError {
