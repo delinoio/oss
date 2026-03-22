@@ -342,6 +342,76 @@ fn list_human_output_marks_publishability() {
 }
 
 #[test]
+fn list_human_output_emits_ansi_when_color_is_always() {
+    let temp_dir = init_mixed_publishability_workspace();
+
+    cargo_mono_command()
+        .current_dir(temp_dir.path())
+        .args(["--color", "always", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\u{1b}["));
+}
+
+#[test]
+fn list_human_output_omits_ansi_when_color_is_never() {
+    let temp_dir = init_mixed_publishability_workspace();
+
+    cargo_mono_command()
+        .current_dir(temp_dir.path())
+        .args(["--color", "never", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\u{1b}[").not());
+}
+
+#[test]
+fn list_human_output_respects_no_color_by_default() {
+    let temp_dir = init_mixed_publishability_workspace();
+    let mut command = cargo_mono_command();
+    command.env("NO_COLOR", "1");
+
+    command
+        .current_dir(temp_dir.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\u{1b}[").not());
+}
+
+#[test]
+fn list_human_output_color_flag_overrides_no_color() {
+    let temp_dir = init_mixed_publishability_workspace();
+    let mut command = cargo_mono_command();
+    command.env("NO_COLOR", "1");
+
+    command
+        .current_dir(temp_dir.path())
+        .args(["--color", "always", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\u{1b}["));
+}
+
+#[test]
+fn list_json_output_is_ansi_free_even_with_forced_color() {
+    let temp_dir = init_mixed_publishability_workspace();
+    let output = run_success(
+        cargo_mono_command()
+            .current_dir(temp_dir.path())
+            .args(["--color", "always", "--output", "json", "list"]),
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("\u{1b}["),
+        "did not expect ANSI color sequences in JSON output: {stdout}"
+    );
+    let parsed = parse_stdout_json(&output);
+    assert!(parsed["packages"].is_array());
+}
+
+#[test]
 fn changed_include_uncommitted_controls_untracked_file_detection() {
     let temp_dir = init_mixed_publishability_workspace();
 

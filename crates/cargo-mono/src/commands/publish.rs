@@ -16,9 +16,9 @@ use tracing::{info, warn};
 
 use crate::{
     cli::PublishArgs,
-    commands::{print_output, targeting},
+    commands::{print_output, targeting, OutputSettings},
     errors::{message_with_details, CargoMonoError, ErrorKind, Result},
-    types::{OutputFormat, PublishSkipReason},
+    types::PublishSkipReason,
     workspace::Workspace,
     CargoMonoApp,
 };
@@ -154,7 +154,7 @@ struct SparseIndexEntry {
     vers: String,
 }
 
-pub fn execute(args: &PublishArgs, output: OutputFormat, app: &CargoMonoApp) -> Result<i32> {
+pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -> Result<i32> {
     let resolved = targeting::resolve_targets(&args.target, &args.changed, &app.workspace)?;
 
     let mode = if args.dry_run {
@@ -259,13 +259,7 @@ pub fn execute(args: &PublishArgs, output: OutputFormat, app: &CargoMonoApp) -> 
             }
 
             let failure_kind = classify_publish_failure(&publish_output);
-            let stderr = String::from_utf8_lossy(&publish_output.stderr)
-                .trim()
-                .to_string();
-            let stdout = String::from_utf8_lossy(&publish_output.stdout)
-                .trim()
-                .to_string();
-            let details = if stderr.is_empty() { stdout } else { stderr };
+            let details = collect_publish_failure_details(&publish_output);
             let retry_after_seconds =
                 parse_publish_retry_after_seconds(&publish_output.stdout, &publish_output.stderr);
 
@@ -884,7 +878,7 @@ fn format_publish_failure(
     dry_run: bool,
     registry: Option<&str>,
 ) -> String {
-    let details = compact_error_details(raw_details);
+    let details = extract_relevant_error_excerpt(raw_details);
     let mut context = vec![
         ("package", package.to_string()),
         ("attempt", attempts.to_string()),
@@ -901,6 +895,18 @@ fn format_publish_failure(
         &context,
         "Verify package metadata, registry access, and network connectivity, then retry.",
     )
+}
+
+fn collect_publish_failure_details(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    match (stderr.is_empty(), stdout.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => stderr,
+        (true, false) => stdout,
+        (false, false) => format!("{stderr}\n{stdout}"),
+    }
 }
 
 fn format_publish_retry_limit_failure(
@@ -924,6 +930,56 @@ fn format_publish_retry_limit_failure(
 
 fn compact_error_details(raw: &str) -> String {
     raw.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn extract_relevant_error_excerpt(raw: &str) -> String {
+    let lines = raw
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    let Some(selected_line) = preferred_failure_detail_line(&lines) else {
+        return String::new();
+    };
+
+    compact_error_details(&selected_line)
+}
+
+fn preferred_failure_detail_line(lines: &[&str]) -> Option<String> {
+    for (index, line) in lines.iter().enumerate() {
+        if line.to_ascii_lowercase().starts_with("error:") {
+            return Some(merge_continuation_line(lines, index));
+        }
+    }
+
+    for line in lines {
+        if line.to_ascii_lowercase().contains("failed to") {
+            return Some((*line).to_string());
+        }
+    }
+
+    lines.first().map(|line| (*line).to_string())
+}
+
+fn merge_continuation_line(lines: &[&str], index: usize) -> String {
+    let primary = lines[index];
+    let Some(next_line) = lines.get(index + 1) else {
+        return primary.to_string();
+    };
+
+    if !primary.ends_with(':') {
+        return primary.to_string();
+    }
+
+    let next_lower = next_line.to_ascii_lowercase();
+    if next_lower.starts_with("warning:")
+        || next_lower.starts_with("note:")
+        || next_lower.starts_with("help:")
+    {
+        return primary.to_string();
+    }
+
+    format!("{primary} {next_line}")
 }
 
 fn indent_multiline(raw: &str, prefix: &str) -> String {
@@ -1063,6 +1119,28 @@ mod tests {
         assert!(message.contains("dry_run=true"));
         assert!(message.contains("registry=default"));
         assert!(message.contains("Hint: "));
+    }
+
+    #[test]
+    fn extract_relevant_error_excerpt_prefers_error_line() {
+        let excerpt = extract_relevant_error_excerpt(
+            "warning: profiles for the non root package will be ignored\nerror: failed to publish",
+        );
+        assert_eq!(excerpt, "error: failed to publish");
+    }
+
+    #[test]
+    fn extract_relevant_error_excerpt_uses_failed_to_fallback() {
+        let excerpt = extract_relevant_error_excerpt(
+            "warning: first line\nfailed to select a version for the requirement",
+        );
+        assert_eq!(excerpt, "failed to select a version for the requirement");
+    }
+
+    #[test]
+    fn extract_relevant_error_excerpt_uses_first_non_empty_line_as_last_resort() {
+        let excerpt = extract_relevant_error_excerpt("   \nwarning: only warning\n");
+        assert_eq!(excerpt, "warning: only warning");
     }
 
     #[test]

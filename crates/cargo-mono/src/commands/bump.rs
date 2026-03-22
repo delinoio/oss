@@ -6,10 +6,10 @@ use tracing::info;
 
 use crate::{
     cli::BumpArgs,
-    commands::{print_output, targeting},
+    commands::{print_output, targeting, OutputSettings},
     errors::Result,
     git,
-    types::{BumpLevel, OutputFormat},
+    types::BumpLevel,
     versioning, CargoMonoApp,
 };
 
@@ -73,7 +73,7 @@ struct BumpResult {
     tags: Vec<String>,
 }
 
-pub fn execute(args: &BumpArgs, output: OutputFormat, app: &CargoMonoApp) -> Result<i32> {
+pub fn execute(args: &BumpArgs, output: OutputSettings, app: &CargoMonoApp) -> Result<i32> {
     if args.level != BumpLevel::Prerelease && args.preid.is_some() {
         info!(
             command_path = "cargo-mono.bump",

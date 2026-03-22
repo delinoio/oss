@@ -17,6 +17,8 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 - Release automation integration must keep stable command semantics.
 - Runtime failure messaging must follow the `Summary/Context/Hint` three-line contract while command behavior, output schema, and exit code semantics remain stable.
 - Dependency-cycle conflicts in package ordering must identify cycle package names and dependency scope in `Context` without changing CLI flags, command behavior, or JSON output schema.
+- Human output color controls must remain stable: global `--color <auto|always|never>`, `CARGO_MONO_OUTPUT_COLOR`, and `NO_COLOR` with precedence `--color` > `CARGO_MONO_OUTPUT_COLOR` > `NO_COLOR` > auto-detection.
+- JSON output must remain ANSI-free and schema-stable regardless of color settings.
 
 ## Change Policy
 - Update this index and `docs/crates-cargo-mono-foundation.md` together when command shape, release workflow, or ownership changes.

@@ -1,7 +1,11 @@
 use serde::Serialize;
 use tracing::info;
 
-use crate::{commands::print_output, errors::Result, types::OutputFormat, CargoMonoApp};
+use crate::{
+    commands::{print_output, OutputSettings},
+    errors::Result,
+    CargoMonoApp,
+};
 
 #[derive(Debug, Serialize)]
 struct ListPackage {
@@ -17,7 +21,7 @@ struct ListResult {
     packages: Vec<ListPackage>,
 }
 
-pub fn execute(output: OutputFormat, app: &CargoMonoApp) -> Result<i32> {
+pub fn execute(output: OutputSettings, app: &CargoMonoApp) -> Result<i32> {
     let packages = app
         .workspace
         .packages()
