@@ -15,16 +15,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  detect-changes:
-    name: Detect Changes
+  go-quality:
+    name: Go Quality
     runs-on: ubuntu-latest
-    outputs:
-      go: ${{ steps.filter.outputs.go }}
-      rust: ${{ steps.filter.outputs.rust }}
-      node_devkit: ${{ steps.node-affected.outputs.node_devkit }}
-      node_mpapp: ${{ steps.node-affected.outputs.node_mpapp }}
-      node_public_docs: ${{ steps.node-affected.outputs.node_public_docs }}
-      node_dexdex: ${{ steps.node-affected.outputs.node_dexdex }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,11 +26,10 @@ jobs:
 
       - name: Filter changed paths
         id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
         uses: dorny/paths-filter@v3
         with:
           filters: |
-            ci_workflow:
-              - .github/workflows/CI.yml
             go:
               - .github/workflows/CI.yml
               - go.mod
@@ -46,6 +38,139 @@ jobs:
               - scripts/lib/go-proto-tools.sh
               - cmds/**
               - servers/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GO_CHANGED: ${{ steps.filter.outputs.go }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${GO_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (no Go-related changes)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Go Quality: no relevant changes"
+
+      - name: Setup Go
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Generate Go protobuf artifacts
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        shell: bash
+        run: ./scripts/generate-go-proto.sh
+
+      - name: Check go fmt
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: |
+          set -euo pipefail
+
+          formatted_output="$(go fmt ./...)"
+          if [ -n "$formatted_output" ]; then
+            echo "::error::go fmt reformatted files. Run 'go fmt ./...' locally and commit the result."
+            printf '%s\n' "$formatted_output"
+            exit 1
+          fi
+
+      - name: Run go vet
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: go vet ./...
+
+  go-test:
+    name: Go Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            go:
+              - .github/workflows/CI.yml
+              - go.mod
+              - go.sum
+              - scripts/generate-go-proto.sh
+              - scripts/lib/go-proto-tools.sh
+              - cmds/**
+              - servers/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GO_CHANGED: ${{ steps.filter.outputs.go }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${GO_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (no Go-related changes)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Go Test on ${{ matrix.os }}: no relevant changes"
+
+      - name: Setup Go
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Generate Go protobuf artifacts
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        shell: bash
+        run: ./scripts/generate-go-proto.sh
+
+      - name: Run go test
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: go test ./...
+
+  rust-fmt:
+    name: Rust fmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
             rust:
               - .github/workflows/CI.yml
               - Cargo.toml
@@ -59,180 +184,186 @@ jobs:
               - '**/*.rs'
               - crates/**
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10.26.2
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Detect affected Node workspaces
-        id: node-affected
+      - name: Determine whether to run
+        id: gate
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          RUST_CHANGED: ${{ steps.filter.outputs.rust }}
         run: |
           set -euo pipefail
 
-          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
-            echo "node_devkit=true" >> "${GITHUB_OUTPUT}"
-            echo "node_mpapp=true" >> "${GITHUB_OUTPUT}"
-            echo "node_public_docs=true" >> "${GITHUB_OUTPUT}"
-            echo "node_dexdex=true" >> "${GITHUB_OUTPUT}"
-            exit 0
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${RUST_CHANGED}" = "true" ]; then
+            run=true
           fi
 
-          affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages devkit mpapp public-docs dexdex)"
-          printf '%s\n' "${affected_json}"
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
 
-          node_devkit="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == "devkit")')"
-          node_mpapp="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == "mpapp")')"
-          node_public_docs="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == "public-docs")')"
-          node_dexdex="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == "dexdex")')"
-
-          echo "node_devkit=${node_devkit}" >> "${GITHUB_OUTPUT}"
-          echo "node_mpapp=${node_mpapp}" >> "${GITHUB_OUTPUT}"
-          echo "node_public_docs=${node_public_docs}" >> "${GITHUB_OUTPUT}"
-          echo "node_dexdex=${node_dexdex}" >> "${GITHUB_OUTPUT}"
-
-  go-quality:
-    name: Go Quality
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.go == 'true' || github.event_name == 'workflow_dispatch' }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-
-      - name: Generate Go protobuf artifacts
-        shell: bash
-        run: ./scripts/generate-go-proto.sh
-
-      - name: Check go fmt
+      - name: Skip (no Rust-related changes)
+        if: ${{ steps.gate.outputs.run != 'true' }}
         run: |
-          set -euo pipefail
-
-          formatted_output="$(go fmt ./...)"
-          if [ -n "$formatted_output" ]; then
-            echo "::error::go fmt reformatted files. Run 'go fmt ./...' locally and commit the result."
-            printf '%s\n' "$formatted_output"
-            exit 1
-          fi
-
-      - name: Run go vet
-        run: go vet ./...
-
-  go-test:
-    name: Go Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.go == 'true' || github.event_name == 'workflow_dispatch' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-
-      - name: Generate Go protobuf artifacts
-        shell: bash
-        run: ./scripts/generate-go-proto.sh
-
-      - name: Run go test
-        run: go test ./...
-
-  rust-fmt:
-    name: Rust fmt
-    runs-on: ubuntu-latest
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch' }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+          echo "Skipping Rust fmt: no relevant changes"
 
       - name: Install Rust toolchain
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-01-01
           components: rustfmt
 
       - name: Cache Rust dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: Swatinem/rust-cache@v2
 
       - name: Run rustfmt
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: cargo fmt --all --check
 
   rust-clippy:
     name: Rust clippy
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            rust:
+              - .github/workflows/CI.yml
+              - Cargo.toml
+              - Cargo.lock
+              - '**/Cargo.toml'
+              - '**/Cargo.lock'
+              - rust-toolchain
+              - rust-toolchain.toml
+              - '**/rust-toolchain'
+              - '**/rust-toolchain.toml'
+              - '**/*.rs'
+              - crates/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUST_CHANGED: ${{ steps.filter.outputs.rust }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${RUST_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (no Rust-related changes)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Rust clippy: no relevant changes"
 
       - name: Install Rust toolchain
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-01-01
           components: clippy
 
       - name: Cache Rust dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: Swatinem/rust-cache@v2
 
       - name: Run clippy
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   rust-test:
     name: Rust test
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            rust:
+              - .github/workflows/CI.yml
+              - Cargo.toml
+              - Cargo.lock
+              - '**/Cargo.toml'
+              - '**/Cargo.lock'
+              - rust-toolchain
+              - rust-toolchain.toml
+              - '**/rust-toolchain'
+              - '**/rust-toolchain.toml'
+              - '**/*.rs'
+              - crates/**
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUST_CHANGED: ${{ steps.filter.outputs.rust }}
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${RUST_CHANGED}" = "true" ]; then
+            run=true
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (no Rust-related changes)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Rust test: no relevant changes"
 
       - name: Install Rust toolchain
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: nightly-2026-01-01
 
       - name: Cache Rust dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: Swatinem/rust-cache@v2
 
       - name: Run cargo test
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: cargo test --workspace --all-targets
 
   node-devkit-test:
     name: Node devkit test
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node_devkit == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ci_workflow:
+              - .github/workflows/CI.yml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -246,20 +377,57 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          WORKSPACE: devkit
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
+            run=true
+          else
+            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            printf '%s\n' "${affected_json}"
+            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (devkit unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Node devkit test: workspace unaffected"
+
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
       - name: Run Devkit tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter devkit... test
 
   node-devkit-build:
     name: Node devkit build
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node_devkit == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ci_workflow:
+              - .github/workflows/CI.yml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -273,20 +441,57 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          WORKSPACE: devkit
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
+            run=true
+          else
+            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            printf '%s\n' "${affected_json}"
+            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (devkit unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Node devkit build: workspace unaffected"
+
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
       - name: Run Devkit build
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter devkit... build
 
   node-mpapp-test:
     name: Node mpapp test
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node_mpapp == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ci_workflow:
+              - .github/workflows/CI.yml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -300,20 +505,57 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          WORKSPACE: mpapp
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
+            run=true
+          else
+            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            printf '%s\n' "${affected_json}"
+            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (mpapp unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Node mpapp test: workspace unaffected"
+
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
       - name: Run mpapp tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter mpapp test
 
   node-mpapp-lint:
     name: Node mpapp lint
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node_mpapp == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ci_workflow:
+              - .github/workflows/CI.yml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -327,20 +569,57 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          WORKSPACE: mpapp
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
+            run=true
+          else
+            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            printf '%s\n' "${affected_json}"
+            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (mpapp unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Node mpapp lint: workspace unaffected"
+
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
       - name: Run mpapp lint
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter mpapp lint
 
   node-public-docs-test:
     name: Node public-docs test
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node_public_docs == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ci_workflow:
+              - .github/workflows/CI.yml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -354,20 +633,57 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          WORKSPACE: public-docs
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
+            run=true
+          else
+            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            printf '%s\n' "${affected_json}"
+            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (public-docs unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Node public-docs test: workspace unaffected"
+
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
       - name: Run public-docs tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter public-docs test
 
   node-dexdex-test:
     name: Node dexdex test
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node_dexdex == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ci_workflow:
+              - .github/workflows/CI.yml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -381,20 +697,57 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          WORKSPACE: dexdex
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
+            run=true
+          else
+            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            printf '%s\n' "${affected_json}"
+            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (dexdex unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Node dexdex test: workspace unaffected"
+
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
       - name: Run dexdex tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter dexdex test
 
   node-dexdex-ios-build:
     name: Node dexdex iOS build
     runs-on: macos-latest
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.node_dexdex == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ci_workflow:
+              - .github/workflows/CI.yml
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -408,26 +761,58 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          WORKSPACE: dexdex
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
+            run=true
+          else
+            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            printf '%s\n' "${affected_json}"
+            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (dexdex unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Node dexdex iOS build: workspace unaffected"
+
       - name: Setup Rust toolchain
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
 
       - name: Cache Rust dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         uses: Swatinem/rust-cache@v2
 
       - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm install --frozen-lockfile
 
       # Workaround: this job validates iOS packaging flow, not TypeScript type safety.
       # Remove this once DexDex `pnpm build` (tsc + vite) is enforced by a dedicated CI gate.
       - name: Build frontend bundle for iOS smoke test
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter dexdex exec vite build
 
       - name: Initialize iOS target
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter dexdex exec tauri ios init --ci
 
       - name: Run dexdex iOS smoke build
+        if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter dexdex exec tauri ios build --ci --debug --target aarch64-sim --config '{"build":{"beforeBuildCommand":"true"}}'
 
   ci-result:
@@ -435,7 +820,6 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
-      - detect-changes
       - go-quality
       - go-test
       - rust-fmt
