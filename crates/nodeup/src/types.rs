@@ -211,6 +211,8 @@ pub enum ManagedAlias {
     Node,
     Npm,
     Npx,
+    Yarn,
+    Pnpm,
 }
 
 impl ManagedAlias {
@@ -219,6 +221,8 @@ impl ManagedAlias {
             Self::Node => "node",
             Self::Npm => "npm",
             Self::Npx => "npx",
+            Self::Yarn => "yarn",
+            Self::Pnpm => "pnpm",
         }
     }
 
@@ -231,6 +235,8 @@ impl ManagedAlias {
             "node" => Some(Self::Node),
             "npm" => Some(Self::Npm),
             "npx" => Some(Self::Npx),
+            "yarn" => Some(Self::Yarn),
+            "pnpm" => Some(Self::Pnpm),
             _ => None,
         }
     }

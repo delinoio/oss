@@ -267,6 +267,14 @@ mod tests {
             logging_context_from_args(os_args(&["node"])),
             LoggingContext::ManagedAlias
         );
+        assert_eq!(
+            logging_context_from_args(os_args(&["yarn"])),
+            LoggingContext::ManagedAlias
+        );
+        assert_eq!(
+            logging_context_from_args(os_args(&["pnpm"])),
+            LoggingContext::ManagedAlias
+        );
     }
 
     #[test]

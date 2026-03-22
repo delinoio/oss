@@ -185,6 +185,10 @@ fn make_archive(version: &str, target: &str, scripts: &[(&str, &str)]) -> Vec<u8
     encoder.finish().unwrap()
 }
 
+fn make_npm_argv_script(prefix: &str) -> String {
+    format!("#!/bin/sh\necho {prefix}:$*\n")
+}
+
 #[test]
 #[serial]
 fn help_lists_top_level_subcommand_descriptions() {
@@ -3030,4 +3034,334 @@ fn shim_dispatch_supports_npx_alias() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("shim-npx"));
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn shim_dispatch_supports_yarn_alias_via_npm_exec_with_package_manager_field() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    let npm_script = make_npm_argv_script("npm-argv");
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho shim-node\n"),
+                ("npm", &npm_script),
+            ],
+        ),
+        None,
+    );
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let project_dir = env.root.join("project-shim-yarn");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"shim-yarn","packageManager":"yarn@4.13.0"}"#,
+    )
+    .unwrap();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("yarn");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .current_dir(&project_dir)
+        .arg("--version")
+        .output()
+        .expect("run yarn shim binary");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("npm-argv:exec --yes --package @yarnpkg/cli-dist@4.13.0 -- yarn --version")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn shim_dispatch_supports_pnpm_alias_via_npm_exec_with_package_manager_field() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    let npm_script = make_npm_argv_script("npm-argv");
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho shim-node\n"),
+                ("npm", &npm_script),
+            ],
+        ),
+        None,
+    );
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let project_dir = env.root.join("project-shim-pnpm");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"shim-pnpm","packageManager":"pnpm@10.32.1"}"#,
+    )
+    .unwrap();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("pnpm");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .current_dir(&project_dir)
+        .arg("--version")
+        .output()
+        .expect("run pnpm shim binary");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("npm-argv:exec --yes --package pnpm@10.32.1 -- pnpm --version"));
+}
+
+#[test]
+#[serial]
+fn run_yarn_uses_package_manager_policy_via_npm_exec() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    let npm_script = make_npm_argv_script("npm-argv");
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho run-node\n"), ("npm", &npm_script)],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-run-yarn-policy");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"run-yarn","packageManager":"yarn@1.22.22"}"#,
+    )
+    .unwrap();
+
+    env.command()
+        .current_dir(&project_dir)
+        .args([
+            "run",
+            "--install",
+            "22.1.0",
+            "yarn",
+            "install",
+            "--immutable",
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "npm-argv:exec --yes --package yarn@1.22.22 -- yarn install --immutable",
+        ));
+}
+
+#[test]
+#[serial]
+fn which_yarn_uses_runtime_npm_path_in_npm_exec_mode() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-which-yarn-package-manager");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho node\n").unwrap();
+    fs::write(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n").unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-yarn-package-manager",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-yarn-package-manager"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-which-yarn-package-manager");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"which-yarn","packageManager":"yarn@4.13.0"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args(["which", "yarn"])
+        .output()
+        .expect("which yarn with packageManager");
+    assert!(output.status.success());
+
+    let expected = fs::canonicalize(runtime_dir.join("bin").join("npm")).unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim(), expected.to_string_lossy());
+}
+
+#[test]
+#[serial]
+fn run_package_manager_mismatch_returns_conflict() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    let npm_script = make_npm_argv_script("npm-argv");
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho run-node\n"), ("npm", &npm_script)],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-run-mismatch");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"run-mismatch","packageManager":"pnpm@10.32.1"}"#,
+    )
+    .unwrap();
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["run", "--install", "22.1.0", "yarn", "--version"])
+        .assert()
+        .failure()
+        .code(6)
+        .stderr(predicates::str::contains(
+            "does not match packageManager 'pnpm@10.32.1'",
+        ));
+}
+
+#[test]
+#[serial]
+fn run_yarn_prefers_direct_binary_when_package_manager_field_is_missing() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    let npm_script = make_npm_argv_script("npm-argv");
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho run-node\n"),
+                ("npm", &npm_script),
+                ("yarn", "#!/bin/sh\necho direct-yarn\n"),
+            ],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-run-direct-yarn");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"run-direct-yarn"}"#,
+    )
+    .unwrap();
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["run", "--install", "22.1.0", "yarn", "--version"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("direct-yarn"));
+}
+
+#[test]
+#[serial]
+fn run_yarn_falls_back_to_npm_exec_when_package_manager_field_is_missing_and_binary_is_missing() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    let npm_script = make_npm_argv_script("npm-argv");
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho run-node\n"), ("npm", &npm_script)],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-run-fallback-yarn");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"run-fallback-yarn"}"#,
+    )
+    .unwrap();
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["run", "--install", "22.1.0", "yarn", "--version"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "npm-argv:exec --yes --package @yarnpkg/cli-dist -- yarn --version",
+        ));
+}
+
+#[test]
+#[serial]
+fn which_pnpm_uses_runtime_npm_path_in_npm_exec_mode() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-which-pnpm-package-manager");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho node\n").unwrap();
+    fs::write(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n").unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-pnpm-package-manager",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-pnpm-package-manager"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-which-pnpm-package-manager");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"which-pnpm","packageManager":"pnpm@10.32.1"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args(["which", "pnpm"])
+        .output()
+        .expect("which pnpm with packageManager");
+    assert!(output.status.success());
+
+    let expected = fs::canonicalize(runtime_dir.join("bin").join("npm")).unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim(), expected.to_string_lossy());
 }

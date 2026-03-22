@@ -14,8 +14,13 @@
 
 ## Interfaces and Contracts
 - Channel and command identifiers must remain stable and documented.
-- Shim dispatch behavior must remain deterministic by executable name.
+- Shim dispatch behavior must remain deterministic by executable name (`node`, `npm`, `npx`, `yarn`, `pnpm`).
 - Install/update command surfaces must preserve backward-compatible flags and outputs.
+- `yarn`/`pnpm` delegated execution must honor nearest `package.json` `packageManager` when present.
+- `packageManager` parsing contract is strict: `<manager>@<exact-semver>` with manager limited to `yarn|pnpm`.
+- `packageManager` manager-command mismatch must fail with `conflict`; malformed values must fail with `invalid-input`.
+- `packageManager`-aware execution must use runtime `npm exec` (Corepack is out of scope).
+- `which yarn|pnpm` in npm-exec mode must resolve to the runtime `npm` executable path.
 - Human output styling must support `--color auto|always|never` and `NODEUP_COLOR=auto|always|never`.
 - Human output color precedence must remain `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
 - User-facing `NodeupError` messages must follow the format `<cause>. Hint: <next action>`.
@@ -38,14 +43,17 @@
 ## Logging
 - Use structured `tracing` logs for install, resolve, and dispatch flows.
 - Include resolution source, requested channel, selected version, and result state.
+- Delegated command planning logs must include `mode=direct|npm-exec`, `package_spec`, `package_json_path`, and `reason`.
 - Completion generation logs must include shell, command scope, and `generated|failed` outcome state.
 
 ## Build and Test
 - Local validation: `cargo test -p nodeup`
 - Workspace baseline: `cargo test --workspace --all-targets`
 - Release contract checks should align with `release-nodeup` workflow expectations.
+- Release assets must include both standalone prebuilt binaries (`nodeup-<os>-<arch>[.exe]`) and compressed archives (`nodeup-<os>-<arch>.tar.gz|zip`) for the supported release matrix.
 - Completion coverage must include successful script generation, invalid shell/scope validation, and JSON-mode raw output behavior.
 - Output color coverage must include flag/env precedence, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
+- `packageManager` coverage must include strict parsing, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, and npm-exec fallback behavior.
 
 ## Dependencies and Integrations
 - Integrates with filesystem runtime shims and remote distribution channels.
