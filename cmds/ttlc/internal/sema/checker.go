@@ -7,6 +7,7 @@ import (
 	"github.com/delinoio/oss/cmds/ttlc/internal/ast"
 	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
 	"github.com/delinoio/oss/cmds/ttlc/internal/diagnostic"
+	"github.com/delinoio/oss/cmds/ttlc/internal/messages"
 )
 
 type TaskParam struct {
@@ -52,7 +53,7 @@ func Check(module *ast.Module) Result {
 	for _, importDecl := range module.Imports {
 		result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
 			Kind:    contracts.DiagnosticKindUnsupportedImport,
-			Message: fmt.Sprintf("imports are parsed but unsupported in phase 1: %s", importDecl.Path),
+			Message: messages.FormatDiagnostic(messages.DiagnosticUnsupportedImportInSema, importDecl.Path),
 			Line:    importDecl.Span.Start.Line,
 			Column:  importDecl.Span.Start.Column,
 		})
@@ -67,7 +68,7 @@ func Check(module *ast.Module) Result {
 		if _, exists := typeNames[typeDeclaration.Name]; exists {
 			result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindTypeError,
-				Message: fmt.Sprintf("duplicate type declaration: %s", typeDeclaration.Name),
+				Message: messages.FormatDiagnostic(messages.DiagnosticDuplicateTypeDeclaration, typeDeclaration.Name),
 				Line:    typeDeclaration.Span.Start.Line,
 				Column:  typeDeclaration.Span.Start.Column,
 			})
@@ -81,7 +82,7 @@ func Check(module *ast.Module) Result {
 			if _, exists := fieldNames[field.Name]; exists {
 				result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
 					Kind:    contracts.DiagnosticKindTypeError,
-					Message: fmt.Sprintf("duplicate struct field declaration: %s.%s", typeDeclaration.Name, field.Name),
+					Message: messages.FormatDiagnostic(messages.DiagnosticDuplicateStructFieldDeclaration, typeDeclaration.Name, field.Name),
 					Line:    field.Span.Start.Line,
 					Column:  field.Span.Start.Column,
 				})
@@ -111,7 +112,7 @@ func Check(module *ast.Module) Result {
 			duplicateTaskNames[taskDeclaration.Name] = struct{}{}
 			result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindTypeError,
-				Message: fmt.Sprintf("duplicate task declaration: %s", taskDeclaration.Name),
+				Message: messages.FormatDiagnostic(messages.DiagnosticDuplicateTaskDeclaration, taskDeclaration.Name),
 				Line:    taskDeclaration.Span.Start.Line,
 				Column:  taskDeclaration.Span.Start.Column,
 			})
@@ -143,7 +144,7 @@ func Check(module *ast.Module) Result {
 			if _, exists := parameterNames[parameter.Name]; exists {
 				parameterDiagnostics = append(parameterDiagnostics, diagnostic.Diagnostic{
 					Kind:    contracts.DiagnosticKindTypeError,
-					Message: fmt.Sprintf("duplicate task parameter name: %s.%s", taskDeclaration.Name, parameter.Name),
+					Message: messages.FormatDiagnostic(messages.DiagnosticDuplicateTaskParameterName, taskDeclaration.Name, parameter.Name),
 					Line:    parameter.Span.Start.Line,
 					Column:  parameter.Span.Start.Column,
 				})
@@ -157,7 +158,7 @@ func Check(module *ast.Module) Result {
 		if !isVcReturnType(taskDeclaration.ReturnType) {
 			result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindTypeError,
-				Message: fmt.Sprintf("task func %s must return Vc[T]", taskDeclaration.Name),
+				Message: messages.FormatDiagnostic(messages.DiagnosticTaskMustReturnVC, taskDeclaration.Name),
 				Line:    taskDeclaration.Span.Start.Line,
 				Column:  taskDeclaration.Span.Start.Column,
 			})
@@ -177,7 +178,7 @@ func Check(module *ast.Module) Result {
 				if len(callExpression.Args) != 1 {
 					result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
 						Kind:    contracts.DiagnosticKindTypeError,
-						Message: "read(...) requires exactly one argument",
+						Message: messages.FormatDiagnostic(messages.DiagnosticReadRequiresOneArgument),
 						Line:    callExpression.Span.Start.Line,
 						Column:  callExpression.Span.Start.Column,
 					})
@@ -215,7 +216,7 @@ func Check(module *ast.Module) Result {
 		if _, exists := taskNames[funcDeclaration.Name]; exists {
 			result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindTypeError,
-				Message: fmt.Sprintf("func name collides with task name: %s", funcDeclaration.Name),
+				Message: messages.FormatDiagnostic(messages.DiagnosticFunctionTaskNameCollision, funcDeclaration.Name, funcDeclaration.Name),
 				Line:    funcDeclaration.Span.Start.Line,
 				Column:  funcDeclaration.Span.Start.Column,
 			})
@@ -225,7 +226,7 @@ func Check(module *ast.Module) Result {
 			duplicateFuncNames[funcDeclaration.Name] = struct{}{}
 			result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindTypeError,
-				Message: fmt.Sprintf("duplicate func declaration: %s", funcDeclaration.Name),
+				Message: messages.FormatDiagnostic(messages.DiagnosticDuplicateFunctionDeclaration, funcDeclaration.Name),
 				Line:    funcDeclaration.Span.Start.Line,
 				Column:  funcDeclaration.Span.Start.Column,
 			})
@@ -258,7 +259,7 @@ func Check(module *ast.Module) Result {
 			if _, exists := parameterNames[parameter.Name]; exists {
 				result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
 					Kind:    contracts.DiagnosticKindTypeError,
-					Message: fmt.Sprintf("duplicate func parameter name: %s.%s", funcDeclaration.Name, parameter.Name),
+					Message: messages.FormatDiagnostic(messages.DiagnosticDuplicateFunctionParameterName, funcDeclaration.Name, parameter.Name),
 					Line:    parameter.Span.Start.Line,
 					Column:  parameter.Span.Start.Column,
 				})

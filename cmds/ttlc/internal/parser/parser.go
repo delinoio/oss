@@ -7,6 +7,7 @@ import (
 	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
 	"github.com/delinoio/oss/cmds/ttlc/internal/diagnostic"
 	"github.com/delinoio/oss/cmds/ttlc/internal/lexer"
+	"github.com/delinoio/oss/cmds/ttlc/internal/messages"
 )
 
 type Parser struct {
@@ -24,10 +25,10 @@ func Parse(tokens []lexer.Token) (*ast.Module, []diagnostic.Diagnostic) {
 func (p *Parser) parseModule() *ast.Module {
 	module := &ast.Module{}
 	if !p.match(lexer.TokenKeywordPackage) {
-		p.addCurrentSyntaxError("module must start with package declaration")
+		p.addCurrentSyntaxError(messages.FormatDiagnostic(messages.DiagnosticModuleMustStartWithPackage))
 		return module
 	}
-	packageName, ok := p.expectIdentifier("expected package name")
+	packageName, ok := p.expectIdentifier(messages.FormatDiagnostic(messages.DiagnosticExpectedPackageName))
 	if ok {
 		module.PackageName = packageName
 	}
@@ -54,7 +55,7 @@ func (p *Parser) parseModule() *ast.Module {
 				module.Decls = append(module.Decls, declaration)
 			}
 		default:
-			p.addCurrentSyntaxError("unsupported top-level declaration")
+			p.addCurrentSyntaxError(messages.FormatDiagnostic(messages.DiagnosticUnsupportedTopLevelDeclaration))
 			p.synchronizeTopLevel()
 		}
 	}
@@ -76,20 +77,20 @@ func (p *Parser) parseImportDecls() []ast.ImportDecl {
 			}
 			token := p.current()
 			if !p.match(lexer.TokenString) {
-				p.addSyntaxError(token, "expected import path string")
+				p.addSyntaxError(token, messages.FormatDiagnostic(messages.DiagnosticExpectedImportPathString))
 				p.advance()
 				continue
 			}
 			imports = append(imports, ast.ImportDecl{Path: token.Lexeme, Span: spanFromTokenRange(start, token)})
 			_ = p.match(lexer.TokenSemicolon)
 		}
-		p.expect(lexer.TokenRParen, "expected ')' after import group")
+		p.expect(lexer.TokenRParen, messages.FormatDiagnostic(messages.DiagnosticExpectedImportGroupClose))
 		return imports
 	}
 
 	token := p.current()
 	if !p.match(lexer.TokenString) {
-		p.addSyntaxError(token, "expected import path string")
+		p.addSyntaxError(token, messages.FormatDiagnostic(messages.DiagnosticExpectedImportPathString))
 		return imports
 	}
 	imports = append(imports, ast.ImportDecl{Path: token.Lexeme, Span: spanFromTokenRange(start, token)})
@@ -99,16 +100,16 @@ func (p *Parser) parseImportDecls() []ast.ImportDecl {
 
 func (p *Parser) parseTypeDecl() ast.Decl {
 	start := p.advance()
-	name, ok := p.expectIdentifier("expected type name")
+	name, ok := p.expectIdentifier(messages.FormatDiagnostic(messages.DiagnosticExpectedTypeName))
 	if !ok {
 		p.synchronizeTopLevel()
 		return nil
 	}
-	if !p.expect(lexer.TokenKeywordStruct, "only struct type declarations are supported") {
+	if !p.expect(lexer.TokenKeywordStruct, messages.FormatDiagnostic(messages.DiagnosticOnlyStructTypeSupported)) {
 		p.synchronizeTopLevel()
 		return nil
 	}
-	if !p.expect(lexer.TokenLBrace, "expected '{' after struct") {
+	if !p.expect(lexer.TokenLBrace, messages.FormatDiagnostic(messages.DiagnosticExpectedStructOpenBrace)) {
 		p.synchronizeTopLevel()
 		return nil
 	}
@@ -119,7 +120,7 @@ func (p *Parser) parseTypeDecl() ast.Decl {
 			continue
 		}
 		fieldStart := p.current()
-		fieldName, ok := p.expectIdentifier("expected struct field name")
+		fieldName, ok := p.expectIdentifier(messages.FormatDiagnostic(messages.DiagnosticExpectedStructFieldName))
 		if !ok {
 			p.synchronizeBlock()
 			continue
@@ -137,7 +138,7 @@ func (p *Parser) parseTypeDecl() ast.Decl {
 		_ = p.match(lexer.TokenSemicolon)
 	}
 	end := p.current()
-	p.expect(lexer.TokenRBrace, "expected '}' after struct fields")
+	p.expect(lexer.TokenRBrace, messages.FormatDiagnostic(messages.DiagnosticExpectedStructCloseBrace))
 	_ = p.match(lexer.TokenSemicolon)
 
 	return &ast.TypeDecl{Name: name, Fields: fields, Span: spanFromTokenRange(start, end)}
@@ -145,11 +146,11 @@ func (p *Parser) parseTypeDecl() ast.Decl {
 
 func (p *Parser) parseTaskDecl() ast.Decl {
 	start := p.advance()
-	if !p.expect(lexer.TokenKeywordFunc, "expected 'func' after 'task'") {
+	if !p.expect(lexer.TokenKeywordFunc, messages.FormatDiagnostic(messages.DiagnosticExpectedFuncAfterTask)) {
 		p.synchronizeTopLevel()
 		return nil
 	}
-	name, ok := p.expectIdentifier("expected task name")
+	name, ok := p.expectIdentifier(messages.FormatDiagnostic(messages.DiagnosticExpectedTaskName))
 	if !ok {
 		p.synchronizeTopLevel()
 		return nil
@@ -161,7 +162,7 @@ func (p *Parser) parseTaskDecl() ast.Decl {
 	}
 	returnType := p.parseTypeExpr()
 	if returnType == nil {
-		p.addCurrentSyntaxError("task functions must declare a return type")
+		p.addCurrentSyntaxError(messages.FormatDiagnostic(messages.DiagnosticTaskReturnTypeRequired))
 		p.synchronizeTopLevel()
 		return nil
 	}
@@ -181,7 +182,7 @@ func (p *Parser) parseTaskDecl() ast.Decl {
 
 func (p *Parser) parseFuncDecl() ast.Decl {
 	start := p.advance()
-	name, ok := p.expectIdentifier("expected function name")
+	name, ok := p.expectIdentifier(messages.FormatDiagnostic(messages.DiagnosticExpectedFunctionName))
 	if !ok {
 		p.synchronizeTopLevel()
 		return nil
@@ -216,13 +217,13 @@ func (p *Parser) parseFuncDecl() ast.Decl {
 }
 
 func (p *Parser) parseParameters() ([]ast.Parameter, bool) {
-	if !p.expect(lexer.TokenLParen, "expected '(' for parameters") {
+	if !p.expect(lexer.TokenLParen, messages.FormatDiagnostic(messages.DiagnosticExpectedParameterListOpen)) {
 		return nil, false
 	}
 	parameters := make([]ast.Parameter, 0, 4)
 	for !p.check(lexer.TokenRParen) && !p.check(lexer.TokenEOF) {
 		paramStart := p.current()
-		name, ok := p.expectIdentifier("expected parameter name")
+		name, ok := p.expectIdentifier(messages.FormatDiagnostic(messages.DiagnosticExpectedParameterName))
 		if !ok {
 			return nil, false
 		}
@@ -239,7 +240,7 @@ func (p *Parser) parseParameters() ([]ast.Parameter, bool) {
 			break
 		}
 	}
-	if !p.expect(lexer.TokenRParen, "expected ')' after parameters") {
+	if !p.expect(lexer.TokenRParen, messages.FormatDiagnostic(messages.DiagnosticExpectedParameterListClose)) {
 		return nil, false
 	}
 	return parameters, true
@@ -247,14 +248,14 @@ func (p *Parser) parseParameters() ([]ast.Parameter, bool) {
 
 func (p *Parser) parseTypeExpr() *ast.TypeExpr {
 	start := p.current()
-	name, ok := p.expectIdentifier("expected type name")
+	name, ok := p.expectIdentifier(messages.FormatDiagnostic(messages.DiagnosticExpectedTypeName))
 	if !ok {
 		return nil
 	}
 
 	typeExpr := &ast.TypeExpr{Name: name, Span: spanFromTokenRange(start, p.previous())}
 	if p.match(lexer.TokenDot) {
-		qualifiedName, ok := p.expectIdentifier("expected type name after '.'")
+		qualifiedName, ok := p.expectIdentifier(messages.FormatDiagnostic(messages.DiagnosticExpectedTypeNameAfterQualifier))
 		if !ok {
 			return nil
 		}
@@ -275,7 +276,7 @@ func (p *Parser) parseTypeExpr() *ast.TypeExpr {
 				break
 			}
 		}
-		if !p.expect(lexer.TokenRBracket, "expected ']' after generic type arguments") {
+		if !p.expect(lexer.TokenRBracket, messages.FormatDiagnostic(messages.DiagnosticExpectedGenericArgsClose)) {
 			return nil
 		}
 		typeExpr.TypeArgs = typeArgs
@@ -286,7 +287,7 @@ func (p *Parser) parseTypeExpr() *ast.TypeExpr {
 }
 
 func (p *Parser) parseBlock() ([]ast.Stmt, lexer.Token, bool) {
-	if !p.expect(lexer.TokenLBrace, "expected '{' to start block") {
+	if !p.expect(lexer.TokenLBrace, messages.FormatDiagnostic(messages.DiagnosticExpectedBlockOpen)) {
 		return nil, p.current(), false
 	}
 
@@ -304,7 +305,7 @@ func (p *Parser) parseBlock() ([]ast.Stmt, lexer.Token, bool) {
 		_ = p.match(lexer.TokenSemicolon)
 	}
 	end := p.current()
-	if !p.expect(lexer.TokenRBrace, "expected '}' to close block") {
+	if !p.expect(lexer.TokenRBrace, messages.FormatDiagnostic(messages.DiagnosticExpectedBlockClose)) {
 		return nil, end, false
 	}
 	_ = p.match(lexer.TokenSemicolon)
@@ -374,12 +375,12 @@ func (p *Parser) parsePrimary() ast.Expr {
 	case lexer.TokenLParen:
 		p.advance()
 		value := p.parseExpr()
-		if !p.expect(lexer.TokenRParen, "expected ')' after expression") {
+		if !p.expect(lexer.TokenRParen, messages.FormatDiagnostic(messages.DiagnosticExpectedExpressionCloseParen)) {
 			return nil
 		}
 		return value
 	default:
-		p.addSyntaxError(token, "expected expression")
+		p.addSyntaxError(token, messages.FormatDiagnostic(messages.DiagnosticExpectedExpression))
 		return nil
 	}
 }
@@ -388,7 +389,7 @@ func (p *Parser) parseExprSuffix(expression ast.Expr) ast.Expr {
 	for {
 		switch {
 		case p.match(lexer.TokenDot):
-			name, ok := p.expectIdentifier("expected selector name")
+			name, ok := p.expectIdentifier(messages.FormatDiagnostic(messages.DiagnosticExpectedSelectorName))
 			if !ok {
 				return expression
 			}
@@ -409,7 +410,7 @@ func (p *Parser) parseExprSuffix(expression ast.Expr) ast.Expr {
 					break
 				}
 			}
-			if !p.expect(lexer.TokenRParen, "expected ')' after call arguments") {
+			if !p.expect(lexer.TokenRParen, messages.FormatDiagnostic(messages.DiagnosticExpectedCallArgsClose)) {
 				return expression
 			}
 			expression = &ast.CallExpr{
@@ -430,11 +431,11 @@ func (p *Parser) parseExprSuffix(expression ast.Expr) ast.Expr {
 					continue
 				}
 				fieldStart := p.current()
-				fieldName, ok := p.expectIdentifier("expected composite field name")
+				fieldName, ok := p.expectIdentifier(messages.FormatDiagnostic(messages.DiagnosticExpectedCompositeFieldName))
 				if !ok {
 					return expression
 				}
-				if !p.expect(lexer.TokenColon, "expected ':' in composite field") {
+				if !p.expect(lexer.TokenColon, messages.FormatDiagnostic(messages.DiagnosticExpectedCompositeFieldColon)) {
 					return expression
 				}
 				value := p.parseExpr()
@@ -446,7 +447,7 @@ func (p *Parser) parseExprSuffix(expression ast.Expr) ast.Expr {
 					break
 				}
 			}
-			if !p.expect(lexer.TokenRBrace, "expected '}' after composite literal") {
+			if !p.expect(lexer.TokenRBrace, messages.FormatDiagnostic(messages.DiagnosticExpectedCompositeCloseBrace)) {
 				return expression
 			}
 			expression = &ast.CompositeLiteralExpr{
@@ -532,12 +533,12 @@ func (p *Parser) addCurrentSyntaxError(message string) {
 }
 
 func (p *Parser) addSyntaxError(token lexer.Token, message string) {
-	p.diagnostics = append(p.diagnostics, diagnostic.Diagnostic{
-		Kind:    contracts.DiagnosticKindSyntaxError,
-		Message: message,
-		Line:    token.Span.Start.Line,
-		Column:  token.Span.Start.Column,
-	})
+	p.diagnostics = append(p.diagnostics, messages.NewDiagnosticWithMessage(
+		contracts.DiagnosticKindSyntaxError,
+		token.Span.Start.Line,
+		token.Span.Start.Column,
+		message,
+	))
 }
 
 func (p *Parser) check(kind lexer.TokenKind) bool {

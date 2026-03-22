@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/delinoio/oss/cmds/ttlc/internal/messages"
 )
 
 func TestResolvePathsSuccess(t *testing.T) {
@@ -37,7 +39,7 @@ func TestResolvePathsRejectsNonTtlEntry(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected extension validation error")
 	}
-	if !strings.Contains(err.Error(), ".ttl extension") {
+	if !strings.Contains(err.Error(), messages.FormatError(messages.ErrorEntryFileExtension, "./main.txt")) {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }
@@ -57,7 +59,7 @@ func TestResolvePathsRejectsWorkspaceEscape(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected workspace escape error")
 	}
-	if !strings.Contains(err.Error(), "escapes workspace root") {
+	if !strings.Contains(err.Error(), messages.FormatError(messages.ErrorEntryEscapesWorkspace, "../outside.ttl")) {
 		t.Fatalf("unexpected error message: %v", err)
 	}
 }
@@ -115,7 +117,7 @@ func TestResolveImportPathRejectsEscape(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected workspace escape error")
 	}
-	if !strings.Contains(err.Error(), "escapes workspace root") {
+	if !strings.Contains(err.Error(), messages.FormatError(messages.ErrorImportEscapesWorkspace, "../evil.ttl")) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

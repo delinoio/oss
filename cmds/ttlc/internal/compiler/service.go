@@ -28,6 +28,7 @@ import (
 	"github.com/delinoio/oss/cmds/ttlc/internal/graph"
 	"github.com/delinoio/oss/cmds/ttlc/internal/lexer"
 	"github.com/delinoio/oss/cmds/ttlc/internal/logging"
+	"github.com/delinoio/oss/cmds/ttlc/internal/messages"
 	"github.com/delinoio/oss/cmds/ttlc/internal/parser"
 	"github.com/delinoio/oss/cmds/ttlc/internal/runner"
 	"github.com/delinoio/oss/cmds/ttlc/internal/sema"
@@ -195,12 +196,12 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	result.Args = cloneArgs(options.Args)
 
 	if strings.TrimSpace(options.Task) == "" {
-		result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
-			Kind:    contracts.DiagnosticKindTypeError,
-			Message: "--task is required for run command",
-			Line:    1,
-			Column:  1,
-		})
+		result.Diagnostics = append(result.Diagnostics, messages.NewDiagnostic(
+			contracts.DiagnosticKindTypeError,
+			messages.DiagnosticRunTaskRequired,
+			1,
+			1,
+		))
 		return result, nil
 	}
 	if hasErrorDiagnostics(result.Diagnostics) {
@@ -218,11 +219,11 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 
 	rootFingerprint, found := findTaskFingerprintByID(analysisResult.taskFingerprints, rootTask.ID)
 	if !found {
-		return Result{}, fmt.Errorf("resolve root task fingerprint: %s", rootTask.ID)
+		return Result{}, messages.NewError(messages.ErrorRootTaskFingerprintMissing, rootTask.ID)
 	}
 	runParameterHash, err := buildRunParameterHash(rootFingerprint.Task, options.Args)
 	if err != nil {
-		return Result{}, fmt.Errorf("build run parameter hash: %w", err)
+		return Result{}, messages.WrapError(messages.ErrorBuildRunParameterHash, err)
 	}
 	rootFingerprint.Components.ParameterHash = runParameterHash
 	rootFingerprint.CacheKey = fingerprint.CacheKey(rootFingerprint.Components)
@@ -235,21 +236,21 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageCache, executionTraceID, time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
-		return Result{}, fmt.Errorf("open cache store: %w", err)
+		return Result{}, messages.NewError(messages.ErrorOpenCacheStore, analysisResult.paths.CacheDBPath)
 	}
 	defer store.Close()
 
 	cacheAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, runCacheModuleName, rootFingerprint, true)
 	if lookupErr != nil {
 		s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
-		return Result{}, fmt.Errorf("analyze task cache state for %s: %w", rootFingerprint.Task.ID, lookupErr)
+		return Result{}, messages.NewError(messages.ErrorAnalyzeTaskCacheState, rootFingerprint.Task.ID)
 	}
 
 	if cacheAnalysis.CacheHit {
 		cachedState, stateFound, stateErr := store.GetTaskStateByTaskKey(rootFingerprint.CacheKey)
 		if stateErr != nil {
 			s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
-			return Result{}, fmt.Errorf("read cache state for %s by task key: %w", rootFingerprint.Task.ID, stateErr)
+			return Result{}, messages.NewError(messages.ErrorReadCachedTaskState, rootFingerprint.Task.ID)
 		}
 		if stateFound {
 			cachedResult, cachedRunTrace, ok := decodeRunMetadata(cachedState.Metadata)
@@ -273,17 +274,17 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	runProgram, err := runner.BuildProgram(analysisResult.module, rootTask.ID, options.Args)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart), contracts.DiagnosticKindTypeError, err)
-		return Result{}, fmt.Errorf("build run program: %w", err)
+		return Result{}, messages.NewError(messages.ErrorBuildRunProgram, rootTask.ID)
 	}
 	runnerSource, err := runner.GenerateGoSource(runProgram)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart), contracts.DiagnosticKindIOError, err)
-		return Result{}, fmt.Errorf("generate runner source: %w", err)
+		return Result{}, messages.NewError(messages.ErrorGenerateRunnerSource)
 	}
 	runExecutionResult, err := runner.Execute(ctx, analysisResult.paths.OutDir, runnerSource)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart), contracts.DiagnosticKindIOError, err)
-		return Result{}, fmt.Errorf("execute generated runner: %w", err)
+		return Result{}, messages.NewError(messages.ErrorExecuteGeneratedRunner)
 	}
 	executionTraceID = buildExecutionTraceID(runExecutionResult.ExecutedTasks)
 	s.logStageEnd(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart))
@@ -310,7 +311,7 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	}
 	if err := store.UpsertTask(record); err != nil {
 		s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
-		return Result{}, fmt.Errorf("upsert run cache row for %s: %w", rootTask.ID, err)
+		return Result{}, messages.NewError(messages.ErrorUpsertRunCacheRecord, rootTask.ID)
 	}
 
 	s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, cacheAnalysis.InvalidationReason, errorKind, time.Since(cacheStart))
@@ -347,12 +348,12 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 	if err != nil {
 		s.logDiagnosticEvent(traceID, contracts.CompileStageEmit, analysisResult.paths.EntryPath, diagnostic.Diagnostic{
 			Kind:    contracts.DiagnosticKindIOError,
-			Message: err.Error(),
+			Message: messages.FormatDiagnostic(messages.DiagnosticEmitStageFailure, err.Error()),
 			Line:    1,
 			Column:  1,
 		})
 		s.logStageFailure(traceID, contracts.CompileStageEmit, "", time.Since(emitStart), contracts.DiagnosticKindIOError, err)
-		return Result{}, fmt.Errorf("emit go source: %w", err)
+		return Result{}, messages.NewError(messages.ErrorEmitGoSource, analysisResult.moduleName)
 	}
 	s.logStageEnd(traceID, contracts.CompileStageEmit, "", time.Since(emitStart))
 	result.GeneratedFiles = []string{emitResult.Path}
@@ -362,7 +363,7 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageCache, "", time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
-		return Result{}, fmt.Errorf("open cache store: %w", err)
+		return Result{}, messages.NewError(messages.ErrorOpenCacheStore, analysisResult.paths.CacheDBPath)
 	}
 	defer store.Close()
 
@@ -373,7 +374,7 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 		cacheAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, analysisResult.moduleName, fingerprintedTask, true)
 		if lookupErr != nil {
 			s.logTaskCacheEvent(traceID, "", fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(taskStart))
-			return Result{}, fmt.Errorf("analyze task cache state for %s: %w", fingerprintedTask.Task.ID, lookupErr)
+			return Result{}, messages.NewError(messages.ErrorAnalyzeTaskCacheState, fingerprintedTask.Task.ID)
 		}
 
 		record := cache.TaskRecord{
@@ -395,7 +396,7 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 		}
 		if err := store.UpsertTask(record); err != nil {
 			s.logTaskCacheEvent(traceID, "", fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheAnalysis.CacheHit, cacheAnalysis.InvalidationReason, contracts.DiagnosticKindIOError, time.Since(taskStart))
-			return Result{}, fmt.Errorf("upsert cache row for %s: %w", fingerprintedTask.Task.ID, err)
+			return Result{}, messages.NewError(messages.ErrorUpsertTaskCacheRecord, fingerprintedTask.Task.ID)
 		}
 		s.logTaskCacheEvent(traceID, "", fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheAnalysis.CacheHit, cacheAnalysis.InvalidationReason, errorKind, time.Since(taskStart))
 		analysisRecords = append(analysisRecords, cacheAnalysis)
@@ -422,7 +423,7 @@ func (s *Service) analyzeTaskCacheState(store *cache.Store, moduleName string, f
 			analysisRecord.InvalidationReason = contracts.TtlInvalidationReasonCacheCorruption
 			if repairCorruption {
 				if deleteErr := store.DeleteTaskState(moduleName, fingerprintedTask.Task.ID); deleteErr != nil {
-					return CacheAnalysis{}, contracts.DiagnosticKindCacheCorruption, fmt.Errorf("delete corrupted cache state: %w", deleteErr)
+					return CacheAnalysis{}, contracts.DiagnosticKindCacheCorruption, messages.NewError(messages.ErrorDeleteCorruptedCacheState, fingerprintedTask.Task.ID)
 				}
 			}
 			return analysisRecord, contracts.DiagnosticKindCacheCorruption, nil
@@ -463,12 +464,12 @@ func (s *Service) analyze(_ context.Context, traceID string, entry string, outDi
 	paths, err := source.ResolvePaths("", entry, outDir)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageLoad, "", time.Since(loadStart), contracts.DiagnosticKindPathViolation, err)
-		return analysis{}, fmt.Errorf("resolve paths: %w", err)
+		return analysis{}, messages.WrapError(messages.ErrorResolveCompilerPaths, err)
 	}
 	sourceBytes, err := os.ReadFile(paths.EntryPath)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageLoad, "", time.Since(loadStart), contracts.DiagnosticKindIOError, err)
-		return analysis{}, fmt.Errorf("read entry source: %w", err)
+		return analysis{}, messages.WrapError(messages.ErrorReadEntrySourceFile, err, paths.EntryPath)
 	}
 	s.logStageEnd(traceID, contracts.CompileStageLoad, "", time.Since(loadStart))
 
@@ -509,7 +510,7 @@ func (s *Service) analyze(_ context.Context, traceID string, entry string, outDi
 		}
 		semaResult.Diagnostics = append(semaResult.Diagnostics, diagnostic.Diagnostic{
 			Kind:    contracts.DiagnosticKindCycleError,
-			Message: "task dependency cycle detected: " + cycleText,
+			Message: messages.FormatDiagnostic(messages.DiagnosticTaskDependencyCycle, cycleText),
 			Line:    1,
 			Column:  1,
 		})
@@ -561,7 +562,7 @@ func (s *Service) analyze(_ context.Context, traceID string, entry string, outDi
 		if len(selectedTasks) == 0 {
 			issue := diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindTypeError,
-				Message: fmt.Sprintf("task not found: %s", taskFilter),
+				Message: messages.FormatDiagnostic(messages.DiagnosticTaskNotFound, taskFilter),
 				Line:    1,
 				Column:  1,
 			}
@@ -620,7 +621,7 @@ func (s *Service) loadImportsRecursive(traceID string, module *ast.Module, works
 		if err != nil {
 			issue := diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindImportNotFound,
-				Message: fmt.Sprintf("cannot resolve import %q: %v", importDecl.Path, err),
+				Message: messages.FormatDiagnostic(messages.DiagnosticImportResolveFailed, importDecl.Path, err.Error()),
 				Line:    importDecl.Span.Start.Line,
 				Column:  importDecl.Span.Start.Column,
 			}
@@ -632,7 +633,7 @@ func (s *Service) loadImportsRecursive(traceID string, module *ast.Module, works
 		if _, alreadyVisited := visited[resolvedPath]; alreadyVisited {
 			issue := diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindImportCycle,
-				Message: fmt.Sprintf("import cycle detected: %s", importDecl.Path),
+				Message: messages.FormatDiagnostic(messages.DiagnosticImportCycle, importDecl.Path),
 				Line:    importDecl.Span.Start.Line,
 				Column:  importDecl.Span.Start.Column,
 			}
@@ -646,7 +647,7 @@ func (s *Service) loadImportsRecursive(traceID string, module *ast.Module, works
 		if err != nil {
 			issue := diagnostic.Diagnostic{
 				Kind:    contracts.DiagnosticKindImportNotFound,
-				Message: fmt.Sprintf("cannot read import %q: %v", importDecl.Path, err),
+				Message: messages.FormatDiagnostic(messages.DiagnosticImportReadFailed, importDecl.Path, err.Error()),
 				Line:    importDecl.Span.Start.Line,
 				Column:  importDecl.Span.Start.Column,
 			}
@@ -811,7 +812,7 @@ func stableRunValueString(value any) (string, error) {
 	default:
 		payload, err := json.Marshal(typed)
 		if err != nil {
-			return "", fmt.Errorf("unsupported run argument type: %T", value)
+			return "", messages.NewError(messages.ErrorUnsupportedRunArgumentType, value)
 		}
 		return "json:" + string(payload), nil
 	}
@@ -833,21 +834,24 @@ func validateRunArgs(parameters []sema.TaskParam, args map[string]any, typeDecla
 
 		value, exists := args[parameter.Name]
 		if !exists {
-			diagnostics = append(diagnostics, diagnostic.Diagnostic{
-				Kind:    contracts.DiagnosticKindTypeError,
-				Message: fmt.Sprintf("missing run argument: %s", parameter.Name),
-				Line:    1,
-				Column:  1,
-			})
+			diagnostics = append(diagnostics, messages.NewDiagnostic(
+				contracts.DiagnosticKindTypeError,
+				messages.DiagnosticMissingRunArgument,
+				1,
+				1,
+				parameter.Name,
+			))
 			continue
 		}
 		if !runArgumentTypeMatches(parameter.Type, value, typeDeclarationsByName, 0) {
-			diagnostics = append(diagnostics, diagnostic.Diagnostic{
-				Kind:    contracts.DiagnosticKindTypeError,
-				Message: fmt.Sprintf("invalid run argument type: %s expects %s", parameter.Name, parameter.Type),
-				Line:    1,
-				Column:  1,
-			})
+			diagnostics = append(diagnostics, messages.NewDiagnostic(
+				contracts.DiagnosticKindTypeError,
+				messages.DiagnosticInvalidRunArgumentType,
+				1,
+				1,
+				parameter.Name,
+				parameter.Type,
+			))
 		}
 	}
 
@@ -860,12 +864,13 @@ func validateRunArgs(parameters []sema.TaskParam, args map[string]any, typeDecla
 		if _, exists := parameterByName[name]; exists {
 			continue
 		}
-		diagnostics = append(diagnostics, diagnostic.Diagnostic{
-			Kind:    contracts.DiagnosticKindTypeError,
-			Message: fmt.Sprintf("unknown run argument: %s", name),
-			Line:    1,
-			Column:  1,
-		})
+		diagnostics = append(diagnostics, messages.NewDiagnostic(
+			contracts.DiagnosticKindTypeError,
+			messages.DiagnosticUnknownRunArgument,
+			1,
+			1,
+			name,
+		))
 	}
 	return diagnostics
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/ttlc/internal/ast"
 	"github.com/delinoio/oss/cmds/ttlc/internal/lexer"
+	"github.com/delinoio/oss/cmds/ttlc/internal/messages"
 	"github.com/delinoio/oss/cmds/ttlc/internal/parser"
 )
 
@@ -90,7 +91,7 @@ task func B() Vc[Artifact] {
 	result := Check(module)
 	found := false
 	for _, diagnostic := range result.Diagnostics {
-		if diagnostic.Message == "read(...) requires exactly one argument" {
+		if diagnostic.Message == messages.FormatDiagnostic(messages.DiagnosticReadRequiresOneArgument) {
 			found = true
 			break
 		}
@@ -172,7 +173,7 @@ task func Build() Vc[Artifact] {
 	result := Check(module)
 	foundDuplicateDiagnostic := false
 	for _, issue := range result.Diagnostics {
-		if issue.Message == "duplicate task declaration: Build" {
+		if issue.Message == messages.FormatDiagnostic(messages.DiagnosticDuplicateTaskDeclaration, "Build") {
 			foundDuplicateDiagnostic = true
 			break
 		}
@@ -203,7 +204,7 @@ task func Build() Vc[Artifact] {
 	result := Check(module)
 	foundDuplicateDiagnostic := false
 	for _, issue := range result.Diagnostics {
-		if issue.Message == "duplicate type declaration: Artifact" {
+		if issue.Message == messages.FormatDiagnostic(messages.DiagnosticDuplicateTypeDeclaration, "Artifact") {
 			foundDuplicateDiagnostic = true
 			break
 		}
@@ -266,7 +267,7 @@ task func Build() Vc[Artifact] {
 	result := Check(module)
 	foundDuplicateFieldDiagnostic := false
 	for _, issue := range result.Diagnostics {
-		if issue.Message == "duplicate struct field declaration: Artifact.Path" {
+		if issue.Message == messages.FormatDiagnostic(messages.DiagnosticDuplicateStructFieldDeclaration, "Artifact", "Path") {
 			foundDuplicateFieldDiagnostic = true
 			break
 		}
@@ -296,7 +297,7 @@ task func Build(target string, target string) Vc[Artifact] {
 	result := Check(module)
 	foundDuplicateParameterDiagnostic := false
 	for _, issue := range result.Diagnostics {
-		if issue.Message == "duplicate task parameter name: Build.target" {
+		if issue.Message == messages.FormatDiagnostic(messages.DiagnosticDuplicateTaskParameterName, "Build", "target") {
 			foundDuplicateParameterDiagnostic = true
 			break
 		}
@@ -357,7 +358,7 @@ task func Build() Vc[string] {
 	result := Check(module)
 	found := false
 	for _, issue := range result.Diagnostics {
-		if issue.Message == "duplicate func declaration: helper" {
+		if issue.Message == messages.FormatDiagnostic(messages.DiagnosticDuplicateFunctionDeclaration, "helper") {
 			found = true
 			break
 		}
@@ -381,7 +382,7 @@ func Build() string {
 	result := Check(module)
 	found := false
 	for _, issue := range result.Diagnostics {
-		if issue.Message == "func name collides with task name: Build" {
+		if issue.Message == messages.FormatDiagnostic(messages.DiagnosticFunctionTaskNameCollision, "Build", "Build") {
 			found = true
 			break
 		}
@@ -422,7 +423,7 @@ task func Build() Vc[string] {
 	result := Check(module)
 	found := false
 	for _, issue := range result.Diagnostics {
-		if issue.Message == "duplicate func parameter name: helper.x" {
+		if issue.Message == messages.FormatDiagnostic(messages.DiagnosticDuplicateFunctionParameterName, "helper", "x") {
 			found = true
 			break
 		}

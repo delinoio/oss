@@ -13,6 +13,7 @@ import (
 	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
 	"github.com/delinoio/oss/cmds/ttlc/internal/diagnostic"
 	"github.com/delinoio/oss/cmds/ttlc/internal/logging"
+	"github.com/delinoio/oss/cmds/ttlc/internal/messages"
 )
 
 const (
@@ -51,7 +52,7 @@ func execute(args []string, stdout io.Writer, stderr io.Writer) int {
 	case contracts.TtlCommandRun:
 		return executeRun(args[1:], stdout, stderr)
 	default:
-		_, _ = fmt.Fprintf(stderr, "unknown command: %s\n", args[0])
+		_, _ = fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		printUsage(stderr)
 		return 2
 	}
@@ -71,7 +72,7 @@ func executeCheck(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	logger, err := logging.NewWithWriter(stderr, logging.Options{Level: "info", NoColor: noColor})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Failed to initialize logger: %v\n", err)
 		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandCheck, map[string]any{
 			"entry":          entry,
 			"cache_analysis": make([]compiler.CacheAnalysis, 0),
@@ -84,7 +85,7 @@ func executeCheck(args []string, stdout io.Writer, stderr io.Writer) int {
 	service := newCompilerService(logger)
 	result, err := service.Check(context.Background(), compiler.CheckOptions{Entry: entry})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "check failed: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Check command failed: %v\n", err)
 		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandCheck, map[string]any{
 			"entry":          entry,
 			"cache_analysis": make([]compiler.CacheAnalysis, 0),
@@ -128,7 +129,7 @@ func executeBuild(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	logger, err := logging.NewWithWriter(stderr, logging.Options{Level: "info", NoColor: noColor})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Failed to initialize logger: %v\n", err)
 		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandBuild, map[string]any{
 			"entry":          entry,
 			"out_dir":        outDir,
@@ -142,7 +143,7 @@ func executeBuild(args []string, stdout io.Writer, stderr io.Writer) int {
 	service := newCompilerService(logger)
 	result, err := service.Build(context.Background(), compiler.BuildOptions{Entry: entry, OutDir: outDir})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "build failed: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Build command failed: %v\n", err)
 		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandBuild, map[string]any{
 			"entry":          entry,
 			"out_dir":        outDir,
@@ -189,7 +190,7 @@ func executeExplain(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	logger, err := logging.NewWithWriter(stderr, logging.Options{Level: "info", NoColor: noColor})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Failed to initialize logger: %v\n", err)
 		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandExplain, map[string]any{
 			"entry":          entry,
 			"task":           task,
@@ -203,7 +204,7 @@ func executeExplain(args []string, stdout io.Writer, stderr io.Writer) int {
 	service := newCompilerService(logger)
 	result, err := service.Explain(context.Background(), compiler.ExplainOptions{Entry: entry, Task: task})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "explain failed: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Explain command failed: %v\n", err)
 		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandExplain, map[string]any{
 			"entry":          entry,
 			"task":           task,
@@ -251,12 +252,13 @@ func executeRun(args []string, stdout io.Writer, stderr io.Writer) int {
 	parsedArgs, parseErr := parseRunArgsJSON(rawArgs)
 	if parseErr != nil {
 		diagnostics := []diagnostic.Diagnostic{
-			{
-				Kind:    contracts.DiagnosticKindTypeError,
-				Message: parseErr.Error(),
-				Line:    1,
-				Column:  1,
-			},
+			messages.NewDiagnostic(
+				contracts.DiagnosticKindTypeError,
+				messages.DiagnosticInvalidRunArgsJSON,
+				1,
+				1,
+				parseErr.Error(),
+			),
 		}
 		payload := map[string]any{
 			"entry":          entry,
@@ -274,12 +276,7 @@ func executeRun(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	if strings.TrimSpace(task) == "" {
 		diagnostics := []diagnostic.Diagnostic{
-			{
-				Kind:    contracts.DiagnosticKindTypeError,
-				Message: "--task is required for run command",
-				Line:    1,
-				Column:  1,
-			},
+			messages.NewDiagnostic(contracts.DiagnosticKindTypeError, messages.DiagnosticRunTaskRequired, 1, 1),
 		}
 		payload := map[string]any{
 			"entry":          entry,
@@ -297,7 +294,7 @@ func executeRun(args []string, stdout io.Writer, stderr io.Writer) int {
 
 	logger, err := logging.NewWithWriter(stderr, logging.Options{Level: "info", NoColor: noColor})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "init logger: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Failed to initialize logger: %v\n", err)
 		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandRun, map[string]any{
 			"entry":          entry,
 			"task":           task,
@@ -318,7 +315,7 @@ func executeRun(args []string, stdout io.Writer, stderr io.Writer) int {
 		Args:  parsedArgs,
 	})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "run failed: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "Run command failed: %v\n", err)
 		if envelopeErr := writeCommandFailureEnvelope(stdout, contracts.TtlCommandRun, map[string]any{
 			"entry":          entry,
 			"task":           task,
@@ -376,12 +373,14 @@ func writeEnvelope(stdout io.Writer, command contracts.TtlCommand, status contra
 
 func writeCommandFailureEnvelope(stdout io.Writer, command contracts.TtlCommand, data any, commandErr error) error {
 	return writeEnvelope(stdout, command, contracts.TtlResponseStatusFailed, []diagnostic.Diagnostic{
-		{
-			Kind:    contracts.DiagnosticKindIOError,
-			Message: commandErr.Error(),
-			Line:    1,
-			Column:  1,
-		},
+		messages.NewDiagnostic(
+			contracts.DiagnosticKindIOError,
+			messages.DiagnosticCommandFailure,
+			1,
+			1,
+			command,
+			commandErr.Error(),
+		),
 	}, data)
 }
 
@@ -405,15 +404,15 @@ func parseRunArgsJSON(raw string) (map[string]any, error) {
 
 	var decoded any
 	if err := decoder.Decode(&decoded); err != nil {
-		return nil, fmt.Errorf("parse --args JSON object: %w", err)
+		return nil, messages.WrapError(messages.ErrorParseRunArgsDecode, err)
 	}
 	parsed, ok := decoded.(map[string]any)
 	if !ok || parsed == nil {
-		return nil, fmt.Errorf("parse --args JSON object: expected JSON object")
+		return nil, messages.NewError(messages.ErrorParseRunArgsExpectedObject)
 	}
 	trailing := struct{}{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return nil, fmt.Errorf("parse --args JSON object: unexpected trailing tokens")
+		return nil, messages.NewError(messages.ErrorParseRunArgsTrailingTokens)
 	}
 	return parsed, nil
 }

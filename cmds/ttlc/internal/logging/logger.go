@@ -3,11 +3,12 @@ package logging
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/delinoio/oss/cmds/ttlc/internal/messages"
 )
 
 type Options struct {
@@ -65,7 +66,7 @@ func parseLevel(level string) (slog.Level, error) {
 	case "error":
 		return slog.LevelError, nil
 	default:
-		return slog.LevelInfo, fmt.Errorf("unsupported log level: %s", level)
+		return slog.LevelInfo, messages.NewError(messages.ErrorUnsupportedLogLevel, level)
 	}
 }
 
