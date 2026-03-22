@@ -238,6 +238,14 @@ pushd "$tmp_dir/tap" >/dev/null
 mkdir -p "$(dirname -- "$destination_path")"
 cp "$rendered_file" "$destination_path"
 
+# Workaround: GitHub runner environments may not provide a git committer identity,
+# which causes `git commit` to fail with "empty ident name" in this script.
+# Scope: non-dry-run path only, inside the temporary tap clone created above.
+# Remove when release workflows or the execution environment guarantee commit identity.
+git config user.name "github-actions[bot]"
+git config user.email "github-actions@users.noreply.github.com"
+echo "[release.homebrew] using commit identity: $(git config user.name) <$(git config user.email)>" >&2
+
 branch_name="release/${project}-${version}"
 git checkout -b "$branch_name"
 git add "$destination_path"
@@ -247,6 +255,7 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
+echo "[release.homebrew] creating commit on branch $branch_name for $destination_path" >&2
 git commit -m "chore(${project}): bump Homebrew package to ${version}"
 
 gh pr create \
