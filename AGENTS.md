@@ -312,7 +312,7 @@ Release automation baseline:
 - Distribution contract: publishes signed multi-OS derun release artifacts, updates Homebrew (`derun`), and updates winget (`DelinoIO.Derun`).
 - `release-dexdex` is defined in `.github/workflows/release-dexdex.yml`.
 - Trigger contract: runs on tag push `dexdex@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
-- Distribution contract: publishes signed DexDex desktop + main/worker server artifacts, applies desktop signing/notarization secrets, updates Homebrew (`dexdex`, `dexdex-main-server`, `dexdex-worker-server`), and updates winget (`DelinoIO.DexDex`, `DelinoIO.DexDexMainServer`, `DelinoIO.DexDexWorkerServer`).
+- Distribution contract: publishes signed DexDex desktop + main/worker server artifacts, applies desktop signing/notarization secrets, updates Homebrew (`dexdex`, `dexdex-main-server`, `dexdex-worker-server`) where DexDex server formulas consume prebuilt release artifacts for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`, and updates winget (`DelinoIO.DexDex`, `DelinoIO.DexDexMainServer`, `DelinoIO.DexDexWorkerServer`).
 
 ### Documentation Lifecycle Rules
 

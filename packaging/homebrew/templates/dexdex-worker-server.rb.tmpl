@@ -1,14 +1,29 @@
 class DexdexWorkerServer < Formula
   desc "DexDex execution-plane session adapter server"
   homepage "https://github.com/delinoio/oss"
-  url "__SOURCE_URL__"
-  sha256 "__SOURCE_SHA256__"
   license "MIT"
 
-  depends_on "go" => :build
+  on_macos do
+    if Hardware::CPU.intel?
+      url "__DARWIN_AMD64_URL__"
+      sha256 "__DARWIN_AMD64_SHA256__"
+    else
+      url "__DARWIN_ARM64_URL__"
+      sha256 "__DARWIN_ARM64_SHA256__"
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.intel?
+      url "__LINUX_AMD64_URL__"
+      sha256 "__LINUX_AMD64_SHA256__"
+    else
+      odie "DexDex worker server prebuilt binaries are only available for linux/amd64"
+    end
+  end
 
   def install
-    system "go", "build", "-o", bin/"dexdex-worker-server", "./servers/dexdex-worker-server"
+    bin.install "dexdex-worker-server"
   end
 
   test do

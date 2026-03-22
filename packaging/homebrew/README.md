@@ -6,6 +6,6 @@ Supported package identifiers:
 
 - `nodeup`
 - `derun`
-- `dexdex-main-server`
-- `dexdex-worker-server`
+- `dexdex-main-server` (prebuilt formula: `darwin/amd64`, `darwin/arm64`, `linux/amd64`)
+- `dexdex-worker-server` (prebuilt formula: `darwin/amd64`, `darwin/arm64`, `linux/amd64`)
 - `dexdex` (cask)
