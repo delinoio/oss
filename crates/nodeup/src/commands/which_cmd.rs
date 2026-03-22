@@ -3,7 +3,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::{
-    cli::OutputFormat,
+    cli::{OutputColorMode, OutputFormat},
     commands::print_output,
     errors::{NodeupError, Result},
     resolver::ResolvedRuntimeTarget,
@@ -21,6 +21,7 @@ pub fn execute(
     runtime: Option<&str>,
     command: &str,
     output: OutputFormat,
+    color: Option<OutputColorMode>,
     app: &NodeupApp,
 ) -> Result<i32> {
     let cwd = std::env::current_dir()?;
@@ -54,7 +55,7 @@ pub fn execute(
         executable_path: executable.to_string_lossy().to_string(),
     };
     let human = response.executable_path.clone();
-    print_output(output, &human, &response)?;
+    print_output(output, color, &human, &response)?;
 
     Ok(0)
 }

@@ -2,7 +2,7 @@ use serde::Serialize;
 use tracing::{info, warn};
 
 use crate::{
-    cli::OutputFormat,
+    cli::{OutputColorMode, OutputFormat},
     commands::print_output,
     errors::{ErrorKind, NodeupError, Result},
     resolver::ResolvedRuntimeTarget,
@@ -32,7 +32,12 @@ impl From<NodeupError> for DefaultResolutionError {
     }
 }
 
-pub fn execute(runtime: Option<&str>, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+pub fn execute(
+    runtime: Option<&str>,
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     if let Some(runtime_selector) = runtime {
         let resolved = app
             .resolver
@@ -63,7 +68,7 @@ pub fn execute(runtime: Option<&str>, output: OutputFormat, app: &NodeupApp) -> 
             "Default runtime set to {}",
             response.default_selector.as_deref().unwrap_or("")
         );
-        print_output(output, &human, &response)?;
+        print_output(output, color, &human, &response)?;
         return Ok(0);
     }
 
@@ -107,7 +112,7 @@ pub fn execute(runtime: Option<&str>, output: OutputFormat, app: &NodeupApp) -> 
         "Default runtime is not set".to_string()
     };
 
-    print_output(output, &human, &response)?;
+    print_output(output, color, &human, &response)?;
 
     Ok(0)
 }

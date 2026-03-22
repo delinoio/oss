@@ -4,7 +4,7 @@ use serde::Serialize;
 use tracing::info;
 
 use crate::{
-    cli::{OutputFormat, OverrideCommand},
+    cli::{OutputColorMode, OutputFormat, OverrideCommand},
     commands::print_output,
     errors::Result,
     selectors::RuntimeSelector,
@@ -17,17 +17,24 @@ struct OverrideListItem {
     selector: String,
 }
 
-pub fn execute(command: OverrideCommand, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+pub fn execute(
+    command: OverrideCommand,
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     match command {
-        OverrideCommand::List => list(output, app),
-        OverrideCommand::Set { runtime, path } => set(&runtime, path.as_deref(), output, app),
+        OverrideCommand::List => list(output, color, app),
+        OverrideCommand::Set { runtime, path } => {
+            set(&runtime, path.as_deref(), output, color, app)
+        }
         OverrideCommand::Unset { path, nonexistent } => {
-            unset(path.as_deref(), nonexistent, output, app)
+            unset(path.as_deref(), nonexistent, output, color, app)
         }
     }
 }
 
-fn list(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+fn list(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupApp) -> Result<i32> {
     let entries = app
         .overrides
         .list()?
@@ -39,11 +46,17 @@ fn list(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
         .collect::<Vec<_>>();
 
     let human = format!("Configured overrides: {}", entries.len());
-    print_output(output, &human, &entries)?;
+    print_output(output, color, &human, &entries)?;
     Ok(0)
 }
 
-fn set(runtime: &str, path: Option<&str>, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+fn set(
+    runtime: &str,
+    path: Option<&str>,
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     let target_path = match path {
         Some(path) => PathBuf::from(path),
         None => std::env::current_dir()?,
@@ -74,7 +87,7 @@ fn set(runtime: &str, path: Option<&str>, output: OutputFormat, app: &NodeupApp)
         "status": "set"
     });
 
-    print_output(output, &human, &response)?;
+    print_output(output, color, &human, &response)?;
     Ok(0)
 }
 
@@ -82,11 +95,12 @@ fn unset(
     path: Option<&str>,
     nonexistent: bool,
     output: OutputFormat,
+    color: Option<OutputColorMode>,
     app: &NodeupApp,
 ) -> Result<i32> {
     let path = path.map(PathBuf::from);
     let removed = app.overrides.unset(path.as_deref(), nonexistent)?;
     let human = format!("Removed {} override(s)", removed.len());
-    print_output(output, &human, &removed)?;
+    print_output(output, color, &human, &removed)?;
     Ok(0)
 }

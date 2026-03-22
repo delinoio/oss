@@ -16,9 +16,12 @@
 - Channel and command identifiers must remain stable and documented.
 - Shim dispatch behavior must remain deterministic by executable name.
 - Install/update command surfaces must preserve backward-compatible flags and outputs.
+- Human output styling must support `--color auto|always|never` and `NODEUP_COLOR=auto|always|never`.
+- Human output color precedence must remain `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
 - User-facing `NodeupError` messages must follow the format `<cause>. Hint: <next action>`.
 - `NodeupError` cause text should include deterministic key-value diagnostics when available (for example `selector`, `runtime`, `path`, `url`, `status`, `attempt`).
 - JSON error envelopes must keep the stable shape `kind`, `message`, and `exit_code` while allowing message text improvements.
+- ANSI styling must never be injected into `--output json` payloads on stdout/stderr.
 - `completions` must generate raw shell completion scripts for `bash`, `zsh`, `fish`, `powershell`, and `elvish`.
 - `completions <shell> [command]` command scope must accept only top-level command identifiers and fail with `invalid-input` for unsupported scopes.
 - `completions` output must remain raw script text on stdout even when `--output json` is requested.
@@ -42,6 +45,7 @@
 - Workspace baseline: `cargo test --workspace --all-targets`
 - Release contract checks should align with `release-nodeup` workflow expectations.
 - Completion coverage must include successful script generation, invalid shell/scope validation, and JSON-mode raw output behavior.
+- Output color coverage must include flag/env precedence, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
 
 ## Dependencies and Integrations
 - Integrates with filesystem runtime shims and remote distribution channels.

@@ -4,7 +4,7 @@ use serde::Serialize;
 use tracing::info;
 
 use crate::{
-    cli::OutputFormat,
+    cli::{OutputColorMode, OutputFormat},
     commands::print_output,
     errors::{NodeupError, Result},
     process::{run_command, DelegatedStdioPolicy},
@@ -25,6 +25,7 @@ pub fn execute(
     runtime: &str,
     command: &[String],
     output: OutputFormat,
+    color: Option<OutputColorMode>,
     app: &NodeupApp,
 ) -> Result<i32> {
     if command.is_empty() {
@@ -111,6 +112,6 @@ pub fn execute(
         delegated_command, exit_code
     );
 
-    print_output(output, &human, &response)?;
+    print_output(output, color, &human, &response)?;
     Ok(exit_code)
 }

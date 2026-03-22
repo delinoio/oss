@@ -3,7 +3,7 @@ use serde::Serialize;
 use tracing::info;
 
 use crate::{
-    cli::OutputFormat,
+    cli::{OutputColorMode, OutputFormat},
     commands::print_output,
     errors::{NodeupError, Result},
     installer::InstallState,
@@ -36,7 +36,7 @@ struct UpdateSelectorContext {
     installed_runtimes: usize,
 }
 
-pub fn check(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+pub fn check(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupApp) -> Result<i32> {
     let installed = app.store.list_installed_versions()?;
     let mut results = Vec::new();
 
@@ -55,11 +55,16 @@ pub fn check(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
         format!("Checked {} installed runtime(s)", results.len())
     };
 
-    print_output(output, &human, &results)?;
+    print_output(output, color, &human, &results)?;
     Ok(0)
 }
 
-pub fn update(runtimes: Vec<String>, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+pub fn update(
+    runtimes: Vec<String>,
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     let (selectors, selector_context) = if runtimes.is_empty() {
         selectors_for_update(app)?
     } else {
@@ -180,7 +185,7 @@ pub fn update(runtimes: Vec<String>, output: OutputFormat, app: &NodeupApp) -> R
     }
 
     let human = format!("Processed updates for {} selector(s)", updates.len());
-    print_output(output, &human, &updates)?;
+    print_output(output, color, &human, &updates)?;
     Ok(0)
 }
 

@@ -4,6 +4,7 @@ pub mod dispatch;
 pub mod errors;
 pub mod installer;
 pub mod logging;
+pub mod output_style;
 pub mod overrides;
 pub mod paths;
 pub mod process;

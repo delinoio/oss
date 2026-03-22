@@ -56,7 +56,16 @@ If no selector resolves, commands fail with deterministic `not-found` errors.
   - always writes raw completion script text to stdout
   - does not wrap completion output in JSON, even when `--output json` is set
 
-Color control:
+Human output color control:
+
+- Global color mode for human output: `--color auto|always|never` (default: `auto`)
+- Environment override for human output: `NODEUP_COLOR=auto|always|never`
+- Precedence: `--color` > `NODEUP_COLOR` > `NO_COLOR` > `auto`
+- `auto` enables ANSI styles per stream only when the stream is a terminal
+- `--output json` never injects ANSI styles into JSON payloads
+- `completions` output remains raw shell script text even when `--color always` is set
+
+Log color control:
 
 - `NODEUP_LOG_COLOR=always|auto|never` (default `always`)
 - `NO_COLOR` disables color when `NODEUP_LOG_COLOR` is unset or `auto`

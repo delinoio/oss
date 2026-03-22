@@ -72,6 +72,14 @@ nodeup override set lts --path /path/to/project
 - Handled failures use an actionable message shape: `<cause>. Hint: <next action>`.
 - `completions` always writes raw completion scripts to stdout, even when `--output json` is set.
 
+Human output color control:
+
+- `--color auto|always|never` controls ANSI styling for `--output human` output.
+- `NODEUP_COLOR=auto|always|never` controls the same behavior via environment.
+- Precedence is `--color` > `NODEUP_COLOR` > `NO_COLOR` > `auto`.
+- `auto` enables color only when each output stream is attached to a terminal.
+- `--output json` and `completions` output are always emitted without ANSI styling.
+
 ## Shell completions
 
 Supported shells:

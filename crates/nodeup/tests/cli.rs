@@ -2832,6 +2832,136 @@ fn check_reports_latest_available_null_when_runtime_is_current() {
     assert!(entries[0]["latest_available"].is_null());
 }
 
+#[test]
+#[serial]
+fn color_flag_always_applies_ansi_to_human_stdout() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--color", "always", "show", "home"])
+        .output()
+        .expect("show home with --color always");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\u{1b}["));
+}
+
+#[test]
+#[serial]
+fn nodeup_color_env_always_applies_ansi_to_human_stdout() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NODEUP_COLOR", "always")
+        .args(["show", "home"])
+        .output()
+        .expect("show home with NODEUP_COLOR=always");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\u{1b}["));
+}
+
+#[test]
+#[serial]
+fn color_flag_never_overrides_nodeup_color_env() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NODEUP_COLOR", "always")
+        .args(["--color", "never", "show", "home"])
+        .output()
+        .expect("show home with --color never and NODEUP_COLOR=always");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("\u{1b}["));
+}
+
+#[test]
+#[serial]
+fn json_output_does_not_include_ansi_when_color_is_forced() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "--color", "always", "show", "home"])
+        .output()
+        .expect("show home --output json with forced color");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("\u{1b}["));
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["data_root"].is_string());
+}
+
+#[test]
+#[serial]
+fn completions_output_stays_raw_without_ansi_when_color_is_forced() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--color", "always", "completions", "bash"])
+        .output()
+        .expect("bash completions with forced color");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup"));
+    assert!(!stdout.contains("\u{1b}["));
+}
+
+#[test]
+#[serial]
+fn human_error_output_uses_styled_label_when_color_is_forced() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--color", "always", "which", "--runtime", "22.1.0", "node"])
+        .output()
+        .expect("which with missing runtime should fail");
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("\u{1b}[1;31mnodeup error:\u{1b}[0m"));
+}
+
+#[test]
+#[serial]
+fn json_error_output_stays_machine_parseable_when_color_is_forced() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "--color",
+            "always",
+            "which",
+            "--runtime",
+            "22.1.0",
+            "node",
+        ])
+        .output()
+        .expect("json which with missing runtime should fail");
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("\u{1b}["));
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+}
+
 #[cfg(unix)]
 #[test]
 #[serial]

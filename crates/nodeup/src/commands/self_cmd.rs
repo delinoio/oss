@@ -11,7 +11,7 @@ use toml::{value::Table, Value};
 use tracing::{info, warn};
 
 use crate::{
-    cli::{OutputFormat, SelfCommand},
+    cli::{OutputColorMode, OutputFormat, SelfCommand},
     commands::print_output,
     errors::{NodeupError, Result},
     overrides::{OverrideEntry, OverridesFile, OVERRIDES_SCHEMA_VERSION},
@@ -171,15 +171,20 @@ struct SelfUpgradeDataResponse {
     overrides: SchemaMigrationResult,
 }
 
-pub fn execute(command: SelfCommand, output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+pub fn execute(
+    command: SelfCommand,
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     match command {
-        SelfCommand::Update => update(output, app),
-        SelfCommand::Uninstall => uninstall(output, app),
-        SelfCommand::UpgradeData => upgrade_data(output, app),
+        SelfCommand::Update => update(output, color, app),
+        SelfCommand::Uninstall => uninstall(output, color, app),
+        SelfCommand::UpgradeData => upgrade_data(output, color, app),
     }
 }
 
-fn update(output: OutputFormat, _app: &NodeupApp) -> Result<i32> {
+fn update(output: OutputFormat, color: Option<OutputColorMode>, _app: &NodeupApp) -> Result<i32> {
     let action = SelfAction::Update;
     let command_path = action.command_path();
 
@@ -223,12 +228,12 @@ fn update(output: OutputFormat, _app: &NodeupApp) -> Result<i32> {
         status.as_str(),
         response.target_binary
     );
-    print_output(output, &human, &response)?;
+    print_output(output, color, &human, &response)?;
 
     Ok(0)
 }
 
-fn uninstall(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupApp) -> Result<i32> {
     let action = SelfAction::Uninstall;
 
     let mut deletion_targets = Vec::new();
@@ -305,12 +310,16 @@ fn uninstall(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
         status.as_str(),
         response.removed_paths.len()
     );
-    print_output(output, &human, &response)?;
+    print_output(output, color, &human, &response)?;
 
     Ok(0)
 }
 
-fn upgrade_data(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
+fn upgrade_data(
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
     let action = SelfAction::UpgradeData;
     let settings = migrate_settings_schema(app).map_err(|error| log_failure(action, error))?;
     let overrides = migrate_overrides_schema(app).map_err(|error| log_failure(action, error))?;
@@ -343,7 +352,7 @@ fn upgrade_data(output: OutputFormat, app: &NodeupApp) -> Result<i32> {
         response.settings.status.as_str(),
         response.overrides.status.as_str()
     );
-    print_output(output, &human, &response)?;
+    print_output(output, color, &human, &response)?;
 
     Ok(0)
 }
