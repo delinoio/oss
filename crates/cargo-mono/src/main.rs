@@ -4,6 +4,7 @@ use cargo_mono::{
     errors::CargoMonoError,
     git, logging, CargoMonoApp,
 };
+use swc_malloc as _;
 use tracing::info;
 
 fn main() {

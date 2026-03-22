@@ -14,6 +14,7 @@
 
 ## Interfaces and Contracts
 - Binary naming contract: `cargo-mono` must remain compatible with `cargo mono` invocation.
+- Binary entrypoint must force-link `swc_malloc` allocator policy, while the library target remains allocator-agnostic for downstream consumers.
 - Command identifiers for lifecycle operations must remain stable and documented.
 - Publish and bump workflows must preserve scriptable output contracts for automation.
 - `bump` must not create Git tags.

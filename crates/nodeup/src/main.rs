@@ -9,6 +9,7 @@ use nodeup::{
     types::ManagedAlias,
     NodeupApp,
 };
+use swc_malloc as _;
 
 fn main() {
     let logging_context = logging_context();
