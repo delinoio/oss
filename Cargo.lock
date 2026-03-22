@@ -194,7 +194,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-mono"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "assert_cmd",
  "cargo_metadata",
@@ -1081,7 +1081,7 @@ dependencies = [
 
 [[package]]
 name = "nodeup"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "assert_cmd",
  "clap",
