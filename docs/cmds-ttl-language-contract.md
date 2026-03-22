@@ -31,6 +31,11 @@
 - `diagnostic_id` must be deterministic for identical diagnostic inputs (`kind`, `source_path`, `line`, `column`, `message`).
 - Diagnostic log events must carry the top-level execution `trace_id` for end-to-end correlation.
 
+## Diagnostic Wording Contract
+- Parser/type-check diagnostics must be generated from centralized message templates (`cmds/ttlc/internal/messages`) using stable enum-like IDs.
+- Syntax diagnostics should describe what was expected and how to fix it (for example, missing closing token or required declaration form).
+- Type diagnostics should identify the affected symbol (task/function/parameter/type) and the expected contract.
+
 ## Build and Test
 - Local validation: `go test ./cmds/ttlc/...`
 - Contract validation: parser/type-check fixtures and code-generation golden tests
