@@ -1,6 +1,10 @@
 package lexer
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/delinoio/oss/cmds/ttlc/internal/messages"
+)
 
 func TestLexKeywordsAndSymbols(t *testing.T) {
 	source := `package build
@@ -46,7 +50,7 @@ func TestLexReportsUnterminatedBlockComment(t *testing.T) {
 
 	found := false
 	for _, issue := range diagnostics {
-		if issue.Message == "unterminated block comment" {
+		if issue.Message == messages.FormatDiagnostic(messages.DiagnosticUnterminatedBlockComment) {
 			found = true
 			break
 		}

@@ -2,10 +2,11 @@ package source
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/delinoio/oss/cmds/ttlc/internal/messages"
 )
 
 const defaultCacheRelativePath = ".ttl/cache/cache.sqlite3"
@@ -22,14 +23,14 @@ func ResolvePaths(cwd string, entryPath string, outDir string) (Paths, error) {
 	if strings.TrimSpace(cwd) == "" {
 		resolvedCwd, err := os.Getwd()
 		if err != nil {
-			return Paths{}, fmt.Errorf("resolve cwd: %w", err)
+			return Paths{}, messages.WrapError(messages.ErrorResolveCwd, err)
 		}
 		cwd = resolvedCwd
 	}
 
 	workspaceRoot, err := resolvePathWithSymlinks(cwd)
 	if err != nil {
-		return Paths{}, fmt.Errorf("resolve workspace root: %w", err)
+		return Paths{}, messages.WrapError(messages.ErrorResolveWorkspaceRoot, err)
 	}
 
 	entryCandidate := entryPath
@@ -38,13 +39,13 @@ func ResolvePaths(cwd string, entryPath string, outDir string) (Paths, error) {
 	}
 	entryResolved, err := resolvePathWithSymlinks(entryCandidate)
 	if err != nil {
-		return Paths{}, fmt.Errorf("resolve entry path: %w", err)
+		return Paths{}, messages.WrapError(messages.ErrorResolveEntryPath, err, entryPath)
 	}
 	if !isWithinPath(workspaceRoot, entryResolved) {
-		return Paths{}, fmt.Errorf("entry path escapes workspace root: %s", entryPath)
+		return Paths{}, messages.NewError(messages.ErrorEntryEscapesWorkspace, entryPath)
 	}
 	if strings.ToLower(filepath.Ext(entryResolved)) != ".ttl" {
-		return Paths{}, fmt.Errorf("entry file must use .ttl extension: %s", entryPath)
+		return Paths{}, messages.NewError(messages.ErrorEntryFileExtension, entryPath)
 	}
 
 	outDirCandidate := outDir
@@ -53,19 +54,19 @@ func ResolvePaths(cwd string, entryPath string, outDir string) (Paths, error) {
 	}
 	outDirResolved, err := resolvePathWithSymlinks(outDirCandidate)
 	if err != nil {
-		return Paths{}, fmt.Errorf("resolve out-dir path: %w", err)
+		return Paths{}, messages.WrapError(messages.ErrorResolveOutDirPath, err, outDir)
 	}
 	if !isWithinPath(workspaceRoot, outDirResolved) {
-		return Paths{}, fmt.Errorf("out-dir path escapes workspace root: %s", outDir)
+		return Paths{}, messages.NewError(messages.ErrorOutDirEscapesWorkspace, outDir)
 	}
 
 	cacheDBCandidate := filepath.Join(workspaceRoot, defaultCacheRelativePath)
 	cacheDBResolved, err := resolvePathWithSymlinks(cacheDBCandidate)
 	if err != nil {
-		return Paths{}, fmt.Errorf("resolve cache db path: %w", err)
+		return Paths{}, messages.WrapError(messages.ErrorResolveCacheDBPath, err)
 	}
 	if !isWithinPath(workspaceRoot, cacheDBResolved) {
-		return Paths{}, fmt.Errorf("cache db path escapes workspace root: %s", cacheDBResolved)
+		return Paths{}, messages.NewError(messages.ErrorCacheDBEscapesWorkspace, cacheDBResolved)
 	}
 
 	return Paths{
@@ -83,12 +84,12 @@ func resolvePathWithSymlinks(path string) (string, error) {
 
 func resolvePathWithSymlinksAtDepth(path string, depth int) (string, error) {
 	if depth > 64 {
-		return "", fmt.Errorf("resolve symlinks depth exceeded for %s", path)
+		return "", messages.NewError(messages.ErrorSymlinkDepthExceeded, path)
 	}
 
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
-		return "", fmt.Errorf("resolve absolute path %s: %w", path, err)
+		return "", messages.WrapError(messages.ErrorResolveAbsolutePath, err, path)
 	}
 	current := filepath.Clean(absolutePath)
 	missingSegments := make([]string, 0, 4)
@@ -103,14 +104,14 @@ func resolvePathWithSymlinksAtDepth(path string, depth int) (string, error) {
 			return resolvedPath, nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
-			return "", fmt.Errorf("eval symlinks %s: %w", current, err)
+			return "", messages.WrapError(messages.ErrorEvaluateSymlinks, err, current)
 		}
 
 		pathInfo, lstatErr := os.Lstat(current)
 		if lstatErr == nil && pathInfo.Mode()&os.ModeSymlink != 0 {
 			linkTarget, readlinkErr := os.Readlink(current)
 			if readlinkErr != nil {
-				return "", fmt.Errorf("read symlink %s: %w", current, readlinkErr)
+				return "", messages.WrapError(messages.ErrorReadSymlink, readlinkErr, current)
 			}
 			resolvedLink := linkTarget
 			if !filepath.IsAbs(resolvedLink) {
@@ -123,12 +124,12 @@ func resolvePathWithSymlinksAtDepth(path string, depth int) (string, error) {
 			return resolvePathWithSymlinksAtDepth(resolvedLink, depth+1)
 		}
 		if lstatErr != nil && !errors.Is(lstatErr, os.ErrNotExist) {
-			return "", fmt.Errorf("lstat path %s: %w", current, lstatErr)
+			return "", messages.WrapError(messages.ErrorStatPath, lstatErr, current)
 		}
 
 		parent := filepath.Dir(current)
 		if parent == current {
-			return "", fmt.Errorf("eval symlinks %s: %w", current, err)
+			return "", messages.WrapError(messages.ErrorEvaluateSymlinks, err, current)
 		}
 		missingSegments = append(missingSegments, filepath.Base(current))
 		current = parent
@@ -137,7 +138,7 @@ func resolvePathWithSymlinksAtDepth(path string, depth int) (string, error) {
 
 func ResolveImportPath(workspaceRoot string, currentFilePath string, importPath string) (string, error) {
 	if strings.TrimSpace(importPath) == "" {
-		return "", fmt.Errorf("import path is empty")
+		return "", messages.NewError(messages.ErrorImportPathEmpty)
 	}
 
 	var candidate string
@@ -154,14 +155,14 @@ func ResolveImportPath(workspaceRoot string, currentFilePath string, importPath 
 
 	resolved, err := resolvePathWithSymlinks(candidate)
 	if err != nil {
-		return "", fmt.Errorf("resolve import path %q: %w", importPath, err)
+		return "", messages.WrapError(messages.ErrorResolveImportPath, err, importPath)
 	}
 	resolvedRoot, err := resolvePathWithSymlinks(workspaceRoot)
 	if err != nil {
-		return "", fmt.Errorf("resolve workspace root for import: %w", err)
+		return "", messages.WrapError(messages.ErrorResolveImportWorkspaceRoot, err)
 	}
 	if !isWithinPath(resolvedRoot, resolved) {
-		return "", fmt.Errorf("import path escapes workspace root: %s", importPath)
+		return "", messages.NewError(messages.ErrorImportEscapesWorkspace, importPath)
 	}
 	return resolved, nil
 }

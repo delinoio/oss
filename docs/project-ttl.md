@@ -21,6 +21,7 @@ Define the TTL compiler project contract for task graph validation, execution, a
 ## Change Policy
 - Update this index, `docs/cmds-ttl-foundation.md`, and `docs/cmds-ttl-language-contract.md` together when command or language contracts change.
 - Keep command/runtime behavior aligned with `cmds/AGENTS.md` and root `AGENTS.md`.
+- Keep user-facing error/diagnostic message template IDs and wording policy aligned with `cmds/ttlc/internal/messages`.
 
 ## References
 - `docs/project-template.md`

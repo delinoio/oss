@@ -23,6 +23,7 @@
 - Keep configuration schemas documented and synchronized with implementation.
 - Add enough structured logging for step-level debugging and failure diagnosis.
 - Do not log secret values for sensitive workflows (including thenv operations).
+- For `cmds/ttlc`, keep user-facing diagnostics/errors in centralized template helpers (`cmds/ttlc/internal/messages`) with stable enum-like IDs.
 
 ### Integration Rules
 

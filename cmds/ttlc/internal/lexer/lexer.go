@@ -7,6 +7,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
 	"github.com/delinoio/oss/cmds/ttlc/internal/diagnostic"
+	"github.com/delinoio/oss/cmds/ttlc/internal/messages"
 )
 
 type Lexer struct {
@@ -49,7 +50,7 @@ func (l *Lexer) nextToken() Token {
 	r, size := utf8.DecodeRuneInString(l.source[l.offset:])
 	if r == utf8.RuneError && size == 1 {
 		l.advance(size)
-		return l.illegalToken(start, "invalid utf-8 rune")
+		return l.illegalToken(start, messages.FormatDiagnostic(messages.DiagnosticInvalidUTF8Rune))
 	}
 
 	if isIdentifierStart(r) {
@@ -113,7 +114,7 @@ func (l *Lexer) nextToken() Token {
 		return Token{Kind: TokenSlash, Lexeme: "/", Span: Span{Start: start, End: l.position()}}
 	default:
 		l.advance(size)
-		return l.illegalToken(start, "unsupported token: "+string(r))
+		return l.illegalToken(start, messages.FormatDiagnostic(messages.DiagnosticUnsupportedToken, string(r)))
 	}
 }
 
@@ -186,7 +187,7 @@ func (l *Lexer) readString(start Position) Token {
 	}
 	l.diagnostics = append(l.diagnostics, diagnostic.Diagnostic{
 		Kind:    contracts.DiagnosticKindSyntaxError,
-		Message: "unterminated string literal",
+		Message: messages.FormatDiagnostic(messages.DiagnosticUnterminatedStringLiteral),
 		Line:    start.Line,
 		Column:  start.Column,
 	})
@@ -240,7 +241,7 @@ func (l *Lexer) skipWhitespaceAndComments() {
 				if !terminated {
 					l.diagnostics = append(l.diagnostics, diagnostic.Diagnostic{
 						Kind:    contracts.DiagnosticKindSyntaxError,
-						Message: "unterminated block comment",
+						Message: messages.FormatDiagnostic(messages.DiagnosticUnterminatedBlockComment),
 						Line:    commentStart.Line,
 						Column:  commentStart.Column,
 					})

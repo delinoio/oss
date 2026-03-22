@@ -16,6 +16,7 @@ import (
 
 	"github.com/delinoio/oss/cmds/ttlc/internal/cache"
 	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
+	"github.com/delinoio/oss/cmds/ttlc/internal/messages"
 
 	_ "modernc.org/sqlite"
 )
@@ -525,7 +526,7 @@ task func Build(target string) Vc[Artifact] {
 		}
 		foundTaskNotFound := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == "task not found: MissingTask" {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticTaskNotFound, "MissingTask") {
 				foundTaskNotFound = true
 				break
 			}
@@ -570,7 +571,7 @@ task func Build(target string) Vc[Artifact] {
 		}
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == "invalid run argument type: target expects string" {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "target", "string") {
 				foundTypeMismatch = true
 				break
 			}
@@ -689,7 +690,7 @@ task func Build(count int) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == "invalid run argument type: count expects int" {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "count", "int") {
 				foundTypeMismatch = true
 				break
 			}
@@ -735,7 +736,7 @@ task func Build(count int) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == "invalid run argument type: count expects int" {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "count", "int") {
 				foundTypeMismatch = true
 				break
 			}
@@ -781,7 +782,7 @@ task func Build(count int8) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == "invalid run argument type: count expects int8" {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "count", "int8") {
 				foundTypeMismatch = true
 				break
 			}
@@ -827,7 +828,7 @@ task func Build(input Artifact) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == "invalid run argument type: input expects Artifact" {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "input", "Artifact") {
 				foundTypeMismatch = true
 				break
 			}
@@ -887,7 +888,7 @@ task func Build(input Node) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == "invalid run argument type: input expects Node" {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "input", "Node") {
 				foundTypeMismatch = true
 				break
 			}
@@ -936,7 +937,7 @@ task func Build(value float32) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == "invalid run argument type: value expects float32" {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "value", "float32") {
 				foundTypeMismatch = true
 				break
 			}
@@ -982,7 +983,7 @@ task func Build(value float32) Vc[Artifact] {
 
 		foundTypeMismatch := false
 		for _, issue := range result.Diagnostics {
-			if issue.Message == "invalid run argument type: value expects float32" {
+			if issue.Message == messages.FormatDiagnostic(messages.DiagnosticInvalidRunArgumentType, "value", "float32") {
 				foundTypeMismatch = true
 				break
 			}

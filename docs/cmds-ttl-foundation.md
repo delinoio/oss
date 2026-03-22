@@ -24,12 +24,19 @@
 ## Security
 - Runtime arguments and execution contexts must be validated before execution.
 - Logs and diagnostic output must not leak sensitive task arguments by default.
+- User-facing errors and diagnostics must be written in English and remain actionable.
 
 ## Logging
 - Use structured `log/slog` logs for command lifecycle, cache decisions, and execution outcomes.
 - Every top-level command execution emits a stable per-execution `trace_id`.
 - Run/cache events include `execution_trace_id` derived deterministically from `run_trace` when available.
 - Stable logging keys include `trace_id`, `execution_trace_id`, `task_id`, `cache_key`, `cache_hit`, `invalidation_reason`, `diagnostic_id`, `diagnostic_kind`, `source_path`, `line`, and `column`.
+
+## Error Message Quality Contract
+- User-facing command failures (`stderr`, JSON `diagnostics`, and bubbled command errors) must use centralized templates from `cmds/ttlc/internal/messages`.
+- Templates must be addressed via stable enum-like IDs and formatted through shared builders, not ad-hoc string literals.
+- Message wording must include enough context to act (problem target + expected shape + next-step hint when relevant).
+- Error/diagnostic text must avoid exposing sensitive runtime argument values by default.
 
 ## Build and Test
 - Local validation: `go test ./cmds/ttlc/...`
