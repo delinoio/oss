@@ -35,6 +35,8 @@
 - Parser/type-check diagnostics must be generated from centralized message templates (`cmds/ttlc/internal/messages`) using stable enum-like IDs.
 - Syntax diagnostics should describe what was expected and how to fix it (for example, missing closing token or required declaration form).
 - Type diagnostics should identify the affected symbol (task/function/parameter/type) and the expected contract.
+- Parser expectation diagnostics must include token context (`found token kind + lexeme`, with EOF-specific wording) so users can pinpoint parse failures quickly.
+- Run-argument validation diagnostics must include nested field paths and `expected` vs `actual` type summaries without echoing raw argument values.
 
 ## Build and Test
 - Local validation: `go test ./cmds/ttlc/...`

@@ -91,7 +91,7 @@ task func B() Vc[Artifact] {
 	result := Check(module)
 	found := false
 	for _, diagnostic := range result.Diagnostics {
-		if diagnostic.Message == messages.FormatDiagnostic(messages.DiagnosticReadRequiresOneArgument) {
+		if diagnostic.Message == messages.FormatDiagnostic(messages.DiagnosticReadRequiresOneArgument, 2) {
 			found = true
 			break
 		}

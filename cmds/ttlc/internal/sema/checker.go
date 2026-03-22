@@ -178,7 +178,7 @@ func Check(module *ast.Module) Result {
 				if len(callExpression.Args) != 1 {
 					result.Diagnostics = append(result.Diagnostics, diagnostic.Diagnostic{
 						Kind:    contracts.DiagnosticKindTypeError,
-						Message: messages.FormatDiagnostic(messages.DiagnosticReadRequiresOneArgument),
+						Message: messages.FormatDiagnostic(messages.DiagnosticReadRequiresOneArgument, len(callExpression.Args)),
 						Line:    callExpression.Span.Start.Line,
 						Column:  callExpression.Span.Start.Column,
 					})

@@ -223,7 +223,7 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	}
 	runParameterHash, err := buildRunParameterHash(rootFingerprint.Task, options.Args)
 	if err != nil {
-		return Result{}, messages.WrapError(messages.ErrorBuildRunParameterHash, err)
+		return Result{}, messages.WrapError(messages.ErrorBuildRunParameterHash, err, rootTask.ID)
 	}
 	rootFingerprint.Components.ParameterHash = runParameterHash
 	rootFingerprint.CacheKey = fingerprint.CacheKey(rootFingerprint.Components)
@@ -236,21 +236,21 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageCache, executionTraceID, time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
-		return Result{}, messages.NewError(messages.ErrorOpenCacheStore, analysisResult.paths.CacheDBPath)
+		return Result{}, messages.WrapError(messages.ErrorOpenCacheStore, err, analysisResult.paths.CacheDBPath)
 	}
 	defer store.Close()
 
 	cacheAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, runCacheModuleName, rootFingerprint, true)
 	if lookupErr != nil {
 		s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
-		return Result{}, messages.NewError(messages.ErrorAnalyzeTaskCacheState, rootFingerprint.Task.ID)
+		return Result{}, messages.WrapError(messages.ErrorAnalyzeTaskCacheState, lookupErr, runCacheModuleName, rootFingerprint.Task.ID, rootFingerprint.CacheKey)
 	}
 
 	if cacheAnalysis.CacheHit {
 		cachedState, stateFound, stateErr := store.GetTaskStateByTaskKey(rootFingerprint.CacheKey)
 		if stateErr != nil {
 			s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
-			return Result{}, messages.NewError(messages.ErrorReadCachedTaskState, rootFingerprint.Task.ID)
+			return Result{}, messages.WrapError(messages.ErrorReadCachedTaskState, stateErr, runCacheModuleName, rootFingerprint.Task.ID, rootFingerprint.CacheKey)
 		}
 		if stateFound {
 			cachedResult, cachedRunTrace, ok := decodeRunMetadata(cachedState.Metadata)
@@ -274,17 +274,17 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	runProgram, err := runner.BuildProgram(analysisResult.module, rootTask.ID, options.Args)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart), contracts.DiagnosticKindTypeError, err)
-		return Result{}, messages.NewError(messages.ErrorBuildRunProgram, rootTask.ID)
+		return Result{}, messages.WrapError(messages.ErrorBuildRunProgram, err, rootTask.ID)
 	}
 	runnerSource, err := runner.GenerateGoSource(runProgram)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart), contracts.DiagnosticKindIOError, err)
-		return Result{}, messages.NewError(messages.ErrorGenerateRunnerSource)
+		return Result{}, messages.WrapError(messages.ErrorGenerateRunnerSource, err, rootTask.ID)
 	}
 	runExecutionResult, err := runner.Execute(ctx, analysisResult.paths.OutDir, runnerSource)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart), contracts.DiagnosticKindIOError, err)
-		return Result{}, messages.NewError(messages.ErrorExecuteGeneratedRunner)
+		return Result{}, messages.WrapError(messages.ErrorExecuteGeneratedRunner, err, rootTask.ID, analysisResult.paths.OutDir)
 	}
 	executionTraceID = buildExecutionTraceID(runExecutionResult.ExecutedTasks)
 	s.logStageEnd(traceID, contracts.CompileStageRun, executionTraceID, time.Since(runStart))
@@ -311,7 +311,7 @@ func (s *Service) Run(ctx context.Context, options RunOptions) (Result, error) {
 	}
 	if err := store.UpsertTask(record); err != nil {
 		s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(cacheStart))
-		return Result{}, messages.NewError(messages.ErrorUpsertRunCacheRecord, rootTask.ID)
+		return Result{}, messages.WrapError(messages.ErrorUpsertRunCacheRecord, err, runCacheModuleName, rootTask.ID, rootFingerprint.CacheKey)
 	}
 
 	s.logTaskCacheEvent(traceID, executionTraceID, rootFingerprint.Task.ID, rootFingerprint.CacheKey, false, cacheAnalysis.InvalidationReason, errorKind, time.Since(cacheStart))
@@ -353,7 +353,7 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 			Column:  1,
 		})
 		s.logStageFailure(traceID, contracts.CompileStageEmit, "", time.Since(emitStart), contracts.DiagnosticKindIOError, err)
-		return Result{}, messages.NewError(messages.ErrorEmitGoSource, analysisResult.moduleName)
+		return Result{}, messages.WrapError(messages.ErrorEmitGoSource, err, analysisResult.moduleName)
 	}
 	s.logStageEnd(traceID, contracts.CompileStageEmit, "", time.Since(emitStart))
 	result.GeneratedFiles = []string{emitResult.Path}
@@ -363,7 +363,7 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 	store, err := openCacheStore(analysisResult.paths.CacheDBPath)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageCache, "", time.Since(cacheStart), contracts.DiagnosticKindIOError, err)
-		return Result{}, messages.NewError(messages.ErrorOpenCacheStore, analysisResult.paths.CacheDBPath)
+		return Result{}, messages.WrapError(messages.ErrorOpenCacheStore, err, analysisResult.paths.CacheDBPath)
 	}
 	defer store.Close()
 
@@ -374,7 +374,7 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 		cacheAnalysis, errorKind, lookupErr := s.analyzeTaskCacheState(store, analysisResult.moduleName, fingerprintedTask, true)
 		if lookupErr != nil {
 			s.logTaskCacheEvent(traceID, "", fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, false, contracts.TtlInvalidationReasonCacheMiss, contracts.DiagnosticKindIOError, time.Since(taskStart))
-			return Result{}, messages.NewError(messages.ErrorAnalyzeTaskCacheState, fingerprintedTask.Task.ID)
+			return Result{}, messages.WrapError(messages.ErrorAnalyzeTaskCacheState, lookupErr, analysisResult.moduleName, fingerprintedTask.Task.ID, fingerprintedTask.CacheKey)
 		}
 
 		record := cache.TaskRecord{
@@ -396,7 +396,7 @@ func (s *Service) Build(ctx context.Context, options BuildOptions) (Result, erro
 		}
 		if err := store.UpsertTask(record); err != nil {
 			s.logTaskCacheEvent(traceID, "", fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheAnalysis.CacheHit, cacheAnalysis.InvalidationReason, contracts.DiagnosticKindIOError, time.Since(taskStart))
-			return Result{}, messages.NewError(messages.ErrorUpsertTaskCacheRecord, fingerprintedTask.Task.ID)
+			return Result{}, messages.WrapError(messages.ErrorUpsertTaskCacheRecord, err, analysisResult.moduleName, fingerprintedTask.Task.ID, fingerprintedTask.CacheKey)
 		}
 		s.logTaskCacheEvent(traceID, "", fingerprintedTask.Task.ID, fingerprintedTask.CacheKey, cacheAnalysis.CacheHit, cacheAnalysis.InvalidationReason, errorKind, time.Since(taskStart))
 		analysisRecords = append(analysisRecords, cacheAnalysis)
@@ -423,7 +423,7 @@ func (s *Service) analyzeTaskCacheState(store *cache.Store, moduleName string, f
 			analysisRecord.InvalidationReason = contracts.TtlInvalidationReasonCacheCorruption
 			if repairCorruption {
 				if deleteErr := store.DeleteTaskState(moduleName, fingerprintedTask.Task.ID); deleteErr != nil {
-					return CacheAnalysis{}, contracts.DiagnosticKindCacheCorruption, messages.NewError(messages.ErrorDeleteCorruptedCacheState, fingerprintedTask.Task.ID)
+					return CacheAnalysis{}, contracts.DiagnosticKindCacheCorruption, messages.WrapError(messages.ErrorDeleteCorruptedCacheState, deleteErr, moduleName, fingerprintedTask.Task.ID)
 				}
 			}
 			return analysisRecord, contracts.DiagnosticKindCacheCorruption, nil
@@ -464,7 +464,7 @@ func (s *Service) analyze(_ context.Context, traceID string, entry string, outDi
 	paths, err := source.ResolvePaths("", entry, outDir)
 	if err != nil {
 		s.logStageFailure(traceID, contracts.CompileStageLoad, "", time.Since(loadStart), contracts.DiagnosticKindPathViolation, err)
-		return analysis{}, messages.WrapError(messages.ErrorResolveCompilerPaths, err)
+		return analysis{}, messages.WrapError(messages.ErrorResolveCompilerPaths, err, entry, outDir)
 	}
 	sourceBytes, err := os.ReadFile(paths.EntryPath)
 	if err != nil {
@@ -843,14 +843,17 @@ func validateRunArgs(parameters []sema.TaskParam, args map[string]any, typeDecla
 			))
 			continue
 		}
-		if !runArgumentTypeMatches(parameter.Type, value, typeDeclarationsByName, 0) {
+		mismatch := runArgumentTypeMismatch(parameter.Type, value, typeDeclarationsByName, parameter.Name, 0)
+		if mismatch != nil {
 			diagnostics = append(diagnostics, messages.NewDiagnostic(
 				contracts.DiagnosticKindTypeError,
 				messages.DiagnosticInvalidRunArgumentType,
 				1,
 				1,
 				parameter.Name,
-				parameter.Type,
+				mismatch.Path,
+				mismatch.ExpectedType,
+				mismatch.ActualType,
 			))
 		}
 	}
@@ -877,23 +880,61 @@ func validateRunArgs(parameters []sema.TaskParam, args map[string]any, typeDecla
 
 const maxRunArgumentValidationDepth = 128
 
-func runArgumentTypeMatches(expectedType string, value any, typeDeclarationsByName map[string]sema.TypeDecl, depth int) bool {
+type runArgumentMismatch struct {
+	Path         string
+	ExpectedType string
+	ActualType   string
+}
+
+func runArgumentTypeMismatch(expectedType string, value any, typeDeclarationsByName map[string]sema.TypeDecl, path string, depth int) *runArgumentMismatch {
 	if depth > maxRunArgumentValidationDepth {
-		return false
+		return &runArgumentMismatch{
+			Path:         path,
+			ExpectedType: strings.TrimSpace(expectedType),
+			ActualType:   "validation_depth_exceeded",
+		}
 	}
 
 	normalizedType := strings.TrimSpace(expectedType)
 	switch normalizedType {
 	case "string":
 		_, ok := value.(string)
-		return ok
+		if ok {
+			return nil
+		}
+		return &runArgumentMismatch{
+			Path:         path,
+			ExpectedType: normalizedType,
+			ActualType:   runValueTypeLabel(value),
+		}
 	case "bool":
 		_, ok := value.(bool)
-		return ok
+		if ok {
+			return nil
+		}
+		return &runArgumentMismatch{
+			Path:         path,
+			ExpectedType: normalizedType,
+			ActualType:   runValueTypeLabel(value),
+		}
 	case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr":
-		return runIntegerArgumentTypeMatches(normalizedType, value)
+		if runIntegerArgumentTypeMatches(normalizedType, value) {
+			return nil
+		}
+		return &runArgumentMismatch{
+			Path:         path,
+			ExpectedType: normalizedType,
+			ActualType:   runValueTypeLabel(value),
+		}
 	case "float32", "float64":
-		return runFloatArgumentTypeMatches(normalizedType, value)
+		if runFloatArgumentTypeMatches(normalizedType, value) {
+			return nil
+		}
+		return &runArgumentMismatch{
+			Path:         path,
+			ExpectedType: normalizedType,
+			ActualType:   runValueTypeLabel(value),
+		}
 	default:
 		typeName := normalizedType
 		if separator := strings.LastIndex(typeName, "."); separator >= 0 {
@@ -901,12 +942,20 @@ func runArgumentTypeMatches(expectedType string, value any, typeDeclarationsByNa
 		}
 		typeDeclaration, exists := typeDeclarationsByName[typeName]
 		if !exists {
-			return false
+			return &runArgumentMismatch{
+				Path:         path,
+				ExpectedType: normalizedType,
+				ActualType:   runValueTypeLabel(value),
+			}
 		}
 
 		objectValue, ok := value.(map[string]any)
 		if !ok {
-			return false
+			return &runArgumentMismatch{
+				Path:         path,
+				ExpectedType: "object(" + normalizedType + ")",
+				ActualType:   runValueTypeLabel(value),
+			}
 		}
 
 		seenFields := make(map[string]struct{}, len(objectValue))
@@ -917,14 +966,70 @@ func runArgumentTypeMatches(expectedType string, value any, typeDeclarationsByNa
 		for _, field := range typeDeclaration.Fields {
 			fieldValue, exists := objectValue[field.Name]
 			if !exists {
-				return false
+				return &runArgumentMismatch{
+					Path:         runArgumentPath(path, field.Name),
+					ExpectedType: strings.TrimSpace(field.Type),
+					ActualType:   "missing",
+				}
 			}
 			delete(seenFields, field.Name)
-			if !runArgumentTypeMatches(field.Type, fieldValue, typeDeclarationsByName, depth+1) {
-				return false
+			mismatch := runArgumentTypeMismatch(field.Type, fieldValue, typeDeclarationsByName, runArgumentPath(path, field.Name), depth+1)
+			if mismatch != nil {
+				return mismatch
 			}
 		}
-		return len(seenFields) == 0
+		if len(seenFields) == 0 {
+			return nil
+		}
+		extraFieldNames := make([]string, 0, len(seenFields))
+		for fieldName := range seenFields {
+			extraFieldNames = append(extraFieldNames, fieldName)
+		}
+		sort.Strings(extraFieldNames)
+		firstUnexpectedField := extraFieldNames[0]
+		return &runArgumentMismatch{
+			Path:         runArgumentPath(path, firstUnexpectedField),
+			ExpectedType: "absent",
+			ActualType:   runValueTypeLabel(objectValue[firstUnexpectedField]),
+		}
+	}
+}
+
+func runArgumentPath(base string, segment string) string {
+	normalizedBase := strings.TrimSpace(base)
+	normalizedSegment := strings.TrimSpace(segment)
+	if normalizedBase == "" {
+		return normalizedSegment
+	}
+	if normalizedSegment == "" {
+		return normalizedBase
+	}
+	return normalizedBase + "." + normalizedSegment
+}
+
+func runValueTypeLabel(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return "null"
+	case string:
+		return "string"
+	case bool:
+		return "boolean"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, uintptr:
+		return "integer"
+	case float32, float64:
+		return "number"
+	case json.Number:
+		if isJSONIntegerValue(typed.String()) {
+			return "number(integer)"
+		}
+		return "number"
+	case map[string]any:
+		return "object"
+	case []any:
+		return "array"
+	default:
+		return fmt.Sprintf("%T", value)
 	}
 }
 

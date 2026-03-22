@@ -408,13 +408,34 @@ func parseRunArgsJSON(raw string) (map[string]any, error) {
 	}
 	parsed, ok := decoded.(map[string]any)
 	if !ok || parsed == nil {
-		return nil, messages.NewError(messages.ErrorParseRunArgsExpectedObject)
+		return nil, messages.NewError(messages.ErrorParseRunArgsExpectedObject, jsonValueTypeLabel(decoded))
 	}
-	trailing := struct{}{}
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return nil, messages.NewError(messages.ErrorParseRunArgsTrailingTokens)
+	var trailing any
+	if err := decoder.Decode(&trailing); err == io.EOF {
+		return parsed, nil
+	} else if err != nil {
+		return nil, messages.WrapError(messages.ErrorParseRunArgsTrailingTokens, err, "invalid trailing JSON token sequence")
 	}
-	return parsed, nil
+	return nil, messages.NewError(messages.ErrorParseRunArgsTrailingTokens, fmt.Sprintf("additional JSON value of type %s", jsonValueTypeLabel(trailing)))
+}
+
+func jsonValueTypeLabel(value any) string {
+	switch value.(type) {
+	case nil:
+		return "null"
+	case map[string]any:
+		return "object"
+	case []any:
+		return "array"
+	case string:
+		return "string"
+	case bool:
+		return "boolean"
+	case json.Number, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, uintptr, float32, float64:
+		return "number"
+	default:
+		return fmt.Sprintf("%T", value)
+	}
 }
 
 func printUsage(stderr io.Writer) {

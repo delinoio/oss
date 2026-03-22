@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/delinoio/oss/cmds/ttlc/internal/ast"
 	"github.com/delinoio/oss/cmds/ttlc/internal/contracts"
@@ -533,12 +534,31 @@ func (p *Parser) addCurrentSyntaxError(message string) {
 }
 
 func (p *Parser) addSyntaxError(token lexer.Token, message string) {
+	messageWithContext := withParserTokenContext(message, token)
 	p.diagnostics = append(p.diagnostics, messages.NewDiagnosticWithMessage(
 		contracts.DiagnosticKindSyntaxError,
 		token.Span.Start.Line,
 		token.Span.Start.Column,
-		message,
+		messageWithContext,
 	))
+}
+
+func withParserTokenContext(message string, token lexer.Token) string {
+	normalizedMessage := strings.TrimSpace(message)
+	if normalizedMessage == "" {
+		normalizedMessage = "Invalid syntax."
+	}
+	return fmt.Sprintf("%s Found %s.", normalizedMessage, parserTokenSummary(token))
+}
+
+func parserTokenSummary(token lexer.Token) string {
+	if token.Kind == lexer.TokenEOF {
+		return "end-of-file"
+	}
+	if strings.TrimSpace(token.Lexeme) == "" {
+		return fmt.Sprintf("token %q", token.Kind)
+	}
+	return fmt.Sprintf("token %q with lexeme %q", token.Kind, token.Lexeme)
 }
 
 func (p *Parser) check(kind lexer.TokenKind) bool {

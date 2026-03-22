@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/delinoio/oss/cmds/ttlc/internal/ast"
@@ -67,5 +68,54 @@ var x = 1
 	_, diagnostics := Parse(tokens)
 	if len(diagnostics) == 0 {
 		t.Fatal("expected unsupported top-level declaration diagnostic")
+	}
+}
+
+func TestParseExpectationDiagnosticsIncludeTokenContext(t *testing.T) {
+	source := `package build
+
+task func Build(target string Vc[Artifact] {
+    return vc(Artifact{})
+}
+`
+	tokens, _ := lexer.Lex(source)
+	_, diagnostics := Parse(tokens)
+	if len(diagnostics) == 0 {
+		t.Fatal("expected parse diagnostics")
+	}
+
+	foundTokenContext := false
+	for _, issue := range diagnostics {
+		if strings.Contains(issue.Message, "Found token") {
+			foundTokenContext = true
+			break
+		}
+	}
+	if !foundTokenContext {
+		t.Fatalf("expected parser token context in diagnostics, got=%+v", diagnostics)
+	}
+}
+
+func TestParseExpectationDiagnosticsHandleEOFContext(t *testing.T) {
+	source := `package build
+
+task func Build() Vc[Artifact] {
+    return vc(Artifact{})
+`
+	tokens, _ := lexer.Lex(source)
+	_, diagnostics := Parse(tokens)
+	if len(diagnostics) == 0 {
+		t.Fatal("expected parse diagnostics")
+	}
+
+	foundEOFContext := false
+	for _, issue := range diagnostics {
+		if strings.Contains(issue.Message, "Found end-of-file.") {
+			foundEOFContext = true
+			break
+		}
+	}
+	if !foundEOFContext {
+		t.Fatalf("expected EOF token context in diagnostics, got=%+v", diagnostics)
 	}
 }

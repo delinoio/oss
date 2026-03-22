@@ -414,6 +414,16 @@ func TestRunReportsInvalidJSONArgs(t *testing.T) {
 		if envelope.Diagnostics[0]["kind"] != string(contracts.DiagnosticKindTypeError) {
 			t.Fatalf("unexpected diagnostic kind: %+v", envelope.Diagnostics[0])
 		}
+		message, ok := envelope.Diagnostics[0]["message"].(string)
+		if !ok {
+			t.Fatalf("expected diagnostic message string, got=%T", envelope.Diagnostics[0]["message"])
+		}
+		if !strings.Contains(message, "Invalid --args payload.") {
+			t.Fatalf("expected invalid args prefix in diagnostic message, got=%q", message)
+		}
+		if !strings.Contains(message, "Expected a single JSON object") {
+			t.Fatalf("expected object-shape guidance in diagnostic message, got=%q", message)
+		}
 		data, ok := envelope.Data.(map[string]any)
 		if !ok {
 			t.Fatalf("expected data map payload, got=%T", envelope.Data)
@@ -453,6 +463,52 @@ func TestRunRejectsNullJSONArgs(t *testing.T) {
 		}
 		if envelope.Diagnostics[0]["kind"] != string(contracts.DiagnosticKindTypeError) {
 			t.Fatalf("unexpected diagnostic kind: %+v", envelope.Diagnostics[0])
+		}
+		message, ok := envelope.Diagnostics[0]["message"].(string)
+		if !ok {
+			t.Fatalf("expected diagnostic message string, got=%T", envelope.Diagnostics[0]["message"])
+		}
+		if !strings.Contains(message, "got null") {
+			t.Fatalf("expected null root-type detail in diagnostic message, got=%q", message)
+		}
+	})
+}
+
+func TestRunRejectsTrailingJSONArgs(t *testing.T) {
+	workspace := t.TempDir()
+	writeTTLFile(t, filepath.Join(workspace, "main.ttl"))
+
+	withWorkingDirectory(t, workspace, func() {
+		stdout := &bytes.Buffer{}
+		stderr := &bytes.Buffer{}
+
+		code := execute([]string{"run", "--task", "Build", "--args", `{"target":"web"}{"extra":"x"}`}, stdout, stderr)
+		if code != 1 {
+			t.Fatalf("expected exit code 1, got=%d stderr=%s", code, stderr.String())
+		}
+
+		envelope := decodeEnvelope(t, stdout.Bytes())
+		if envelope.Command != contracts.TtlCommandRun {
+			t.Fatalf("unexpected command: %s", envelope.Command)
+		}
+		if envelope.Status != contracts.TtlResponseStatusFailed {
+			t.Fatalf("expected failed status, got=%s", envelope.Status)
+		}
+		if len(envelope.Diagnostics) != 1 {
+			t.Fatalf("expected one diagnostic, got=%+v", envelope.Diagnostics)
+		}
+		if envelope.Diagnostics[0]["kind"] != string(contracts.DiagnosticKindTypeError) {
+			t.Fatalf("unexpected diagnostic kind: %+v", envelope.Diagnostics[0])
+		}
+		message, ok := envelope.Diagnostics[0]["message"].(string)
+		if !ok {
+			t.Fatalf("expected diagnostic message string, got=%T", envelope.Diagnostics[0]["message"])
+		}
+		if !strings.Contains(message, "trailing content") {
+			t.Fatalf("expected trailing-content detail in diagnostic message, got=%q", message)
+		}
+		if !strings.Contains(message, "type object") {
+			t.Fatalf("expected trailing JSON value type detail in diagnostic message, got=%q", message)
 		}
 	})
 }

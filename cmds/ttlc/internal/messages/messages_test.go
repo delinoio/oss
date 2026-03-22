@@ -15,13 +15,13 @@ func TestFormatDiagnosticTable(t *testing.T) {
 		},
 		{
 			name:     "run arg type mismatch",
-			actual:   FormatDiagnostic(DiagnosticInvalidRunArgumentType, "target", "string"),
-			expected: "Invalid type for run argument \"target\": expected string.",
+			actual:   FormatDiagnostic(DiagnosticInvalidRunArgumentType, "target", "target", "string", "integer"),
+			expected: "Invalid run argument \"target\" at \"target\". Expected string, got integer.",
 		},
 		{
 			name:     "duplicate declaration",
 			actual:   FormatDiagnostic(DiagnosticDuplicateTaskDeclaration, "Build"),
-			expected: "Task \"Build\" is declared more than once. Remove or rename duplicates.",
+			expected: "Duplicate task declaration \"Build\". Remove or rename one declaration.",
 		},
 		{
 			name:     "import cycle",
@@ -31,12 +31,12 @@ func TestFormatDiagnosticTable(t *testing.T) {
 		{
 			name:     "import not found",
 			actual:   FormatDiagnostic(DiagnosticImportResolveFailed, "pkg/lib", "file does not exist"),
-			expected: "Import \"pkg/lib\" could not be resolved. file does not exist",
+			expected: "Failed to resolve import \"pkg/lib\". Cause: file does not exist.",
 		},
 		{
 			name:     "parser expectation",
 			actual:   FormatDiagnostic(DiagnosticExpectedParameterListClose),
-			expected: "Parameter list is not closed. Add ')' after parameters.",
+			expected: "Invalid parameter list. Expected ')' to close parameters.",
 		},
 	}
 
@@ -57,28 +57,28 @@ func TestFormatErrorTable(t *testing.T) {
 	}{
 		{
 			name:     "entry extension",
-			actual:   FormatError(ErrorEntryFileExtension, "./main.txt"),
-			expected: "Entry path \"./main.txt\" must use the .ttl extension.",
+			actual:   FormatError(ErrorEntryFileExtension, "./main.txt", ".txt"),
+			expected: "Entry path \"./main.txt\" must use the .ttl extension (detected extension \".txt\").",
 		},
 		{
 			name:     "entry escape",
-			actual:   FormatError(ErrorEntryEscapesWorkspace, "../outside.ttl"),
-			expected: "Entry path \"../outside.ttl\" escapes the workspace root.",
+			actual:   FormatError(ErrorEntryEscapesWorkspace, "../outside.ttl", "/tmp/workspace"),
+			expected: "Entry path \"../outside.ttl\" escapes workspace root \"/tmp/workspace\".",
 		},
 		{
 			name:     "out dir escape",
-			actual:   FormatError(ErrorOutDirEscapesWorkspace, "../out"),
-			expected: "Output directory path \"../out\" escapes the workspace root.",
+			actual:   FormatError(ErrorOutDirEscapesWorkspace, "../out", "/tmp/workspace"),
+			expected: "Output directory \"../out\" escapes workspace root \"/tmp/workspace\".",
 		},
 		{
 			name:     "import escape",
-			actual:   FormatError(ErrorImportEscapesWorkspace, "../evil.ttl"),
-			expected: "Import path \"../evil.ttl\" escapes the workspace root.",
+			actual:   FormatError(ErrorImportEscapesWorkspace, "../evil.ttl", "/tmp/workspace"),
+			expected: "Import path \"../evil.ttl\" escapes workspace root \"/tmp/workspace\".",
 		},
 		{
 			name:     "cache open",
 			actual:   FormatError(ErrorOpenCacheStore, "/tmp/cache.sqlite3"),
-			expected: "Could not open the TTL cache store at \"/tmp/cache.sqlite3\".",
+			expected: "Failed to open TTL cache store at \"/tmp/cache.sqlite3\".",
 		},
 	}
 
