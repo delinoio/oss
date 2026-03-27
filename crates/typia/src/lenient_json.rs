@@ -366,22 +366,20 @@ impl<'a> LenientJsonParser<'a> {
                             if (0xd800..=0xdbff).contains(&high)
                                 && self.peek_char(1) == Some('\\')
                                 && self.peek_char(2) == Some('u')
+                                && let Some(low) = self.read_hex4(self.pos + 3)
+                                && (0xdc00..=0xdfff).contains(&low)
                             {
-                                if let Some(low) = self.read_hex4(self.pos + 3)
-                                    && (0xdc00..=0xdfff).contains(&low)
-                                {
-                                    let high_ten = u32::from(high - 0xd800);
-                                    let low_ten = u32::from(low - 0xdc00);
-                                    let codepoint = 0x10000 + ((high_ten << 10) | low_ten);
+                                let high_ten = u32::from(high - 0xd800);
+                                let low_ten = u32::from(low - 0xdc00);
+                                let codepoint = 0x10000 + ((high_ten << 10) | low_ten);
 
-                                    if let Some(ch) = char::from_u32(codepoint) {
-                                        result.push(ch);
-                                    }
-                                    self.pos += 6;
-                                    escaped = false;
-                                    self.pos += 1;
-                                    continue;
+                                if let Some(ch) = char::from_u32(codepoint) {
+                                    result.push(ch);
                                 }
+                                self.pos += 6;
+                                escaped = false;
+                                self.pos += 1;
+                                continue;
                             }
 
                             if let Some(ch) = char::from_u32(u32::from(high)) {
