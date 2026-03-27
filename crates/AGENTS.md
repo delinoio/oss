@@ -12,7 +12,7 @@
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.
 - `crates/serde-feather-macros`: Proc-macro companion crate for serde-feather.
 - `crates/typia`: Type-safe JSON schema validation core scaffold crate.
-- `crates/typia-macros`: Planned proc-macro companion crate for typia.
+- `crates/typia-macros`: Proc-macro companion scaffold crate for typia.
 
 ### Rust Workspace Rules
 
@@ -45,7 +45,7 @@
 
 ### typia-Specific Rules
 
-- Keep `typia` as the runtime-facing crate and `typia-macros` as the proc-macro companion when activated.
+- Keep `typia` as the runtime-facing crate and `typia-macros` as the proc-macro companion crate.
 - Keep scaffold-stage API policy explicit: do not treat v0 public identifiers as stable until documented in `docs/project-typia.md` and `docs/crates-typia-core-foundation.md`.
 - Keep future macro/runtime compatibility constraints synchronized with typia project and crate contracts.
 

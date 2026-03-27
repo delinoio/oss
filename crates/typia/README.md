@@ -8,17 +8,17 @@
 - Current status: scaffold only; the crate does not expose stabilized public APIs yet.
 - API policy: v0 public function/type and macro identifiers are intentionally not frozen at this stage.
 
-## Planned Architecture
+## Component Architecture
 
 - `core`: `crates/typia` (active scaffold)
-- `macros`: `crates/typia-macros` (planned; path not created yet)
+- `macros`: `crates/typia-macros` (active scaffold)
 
 Future macro-generated code must remain compatible with the core runtime contracts.
 
 ## Current Non-Goals
 
 - Freezing public runtime API identifiers before scaffold-stage contracts are finalized.
-- Defining stable derive macro names or expansion schemas before macro crate activation.
+- Defining stable derive macro names or expansion schemas before macro interface contracts are stabilized.
 - Providing production-ready validation semantics before core and macro contracts are documented as active.
 
 ## Local Validation

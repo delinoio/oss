@@ -110,7 +110,7 @@ enum ProjectId {
 - `devkit-remote-file-picker` -> `apps/devkit/src/apps/remote-file-picker`
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
-- `typia` -> `crates/typia`, `crates/typia-macros` (planned)
+- `typia` -> `crates/typia`, `crates/typia-macros`
 - `public-docs` -> `apps/public-docs`
 - `dexdex` -> `servers/dexdex-main-server`, `servers/dexdex-worker-server`, `apps/dexdex`, `protos/dexdex`
 
@@ -198,7 +198,7 @@ enum TypiaComponent {
 ```
 
 - `Core` -> `crates/typia`
-- `Macros` -> planned (`crates/typia-macros`)
+- `Macros` -> `crates/typia-macros`
 
 ### DexDex Component Contract
 

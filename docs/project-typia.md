@@ -1,14 +1,14 @@
 # Project: typia
 
 ## Goal
-Provide type-safe JSON schema validation foundations for Rust with a core runtime crate and a planned proc-macro companion crate.
+Provide type-safe JSON schema validation foundations for Rust with a core runtime crate and an active scaffold proc-macro companion crate.
 
 ## Project ID
 `typia`
 
 ## Domain Ownership Map
 - `crates/typia` (`core`)
-- `crates/typia-macros` (`macros`, planned)
+- `crates/typia-macros` (`macros`)
 
 ## Domain Contract Documents
 - `docs/crates-typia-core-foundation.md`
@@ -21,7 +21,7 @@ Provide type-safe JSON schema validation foundations for Rust with a core runtim
 
 ## Change Policy
 - Update this index and both crate contract docs together when component boundaries, public API stability, or compatibility expectations change.
-- When `crates/typia-macros` becomes active, update root and crate-domain `AGENTS.md` ownership mappings in the same change set.
+- Keep root and crate-domain `AGENTS.md` ownership mappings synchronized with this index when typia component paths change.
 
 ## References
 - `docs/project-template.md`

@@ -2,10 +2,10 @@
 
 ## Scope
 - Project/component: `typia` macros scaffold contract
-- Canonical path: `crates/typia-macros` (planned; no active path yet)
+- Canonical path: `crates/typia-macros`
 
 ## Runtime and Language
-- Runtime: Rust proc-macro crate (planned)
+- Runtime: Rust proc-macro crate
 - Primary language: Rust
 
 ## Users and Operators
@@ -14,13 +14,13 @@
 
 ## Interfaces and Contracts
 - Stable component identifier: `macros`.
+- Current scaffold macro identifier `__typia_scaffold` is internal-only and not part of the stable public API contract.
 - Derive macro identifiers and expansion contracts are not stabilized at scaffold stage.
 - Future generated code must remain compatible with contracts defined by `crates/typia` runtime APIs.
-- Activating `crates/typia-macros` requires creating the canonical path and updating project/domain ownership contracts in the same change set.
 
 ## Storage
 - No persistent storage contract.
-- Macro expansion artifacts are compile-time outputs only when the crate is implemented.
+- Macro expansion artifacts are compile-time outputs only.
 
 ## Security
 - Macro expansion should avoid generating unsound code patterns.
@@ -31,11 +31,11 @@
 - Build tooling around macro workflows should prefer structured logs.
 
 ## Build and Test
-- Local validation (after crate activation): `cargo test -p typia-macros`
+- Local validation: `cargo test -p typia-macros`
 - Workspace baseline: `cargo test --workspace --all-targets`
 
 ## Dependencies and Integrations
-- Planned dependency domain: Rust proc-macro ecosystem.
+- Dependency domain: Rust proc-macro ecosystem.
 - Integrates with `docs/crates-typia-core-foundation.md` compatibility contracts.
 
 ## Change Triggers

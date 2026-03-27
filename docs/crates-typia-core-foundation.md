@@ -36,7 +36,7 @@
 
 ## Dependencies and Integrations
 - Upstream integration: consumer crates depending on typia runtime APIs.
-- Planned downstream integration: `typia-macros` generated code compatibility.
+- Downstream integration: `typia-macros` generated code compatibility.
 
 ## Change Triggers
 - Update `docs/project-typia.md` and this file for public API, feature-flag, or compatibility-boundary changes.
