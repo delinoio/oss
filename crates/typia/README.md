@@ -1,25 +1,52 @@
 # typia
 
-`typia` is a scaffold-stage Rust project for type-safe JSON schema validation.
+`typia` provides serde-based LLM JSON utilities for Rust.
 
-## Goal and Current Status
+## Stable APIs
 
-- Goal: provide a stable runtime foundation for type-safe validation and schema workflows.
-- Current status: scaffold only; the crate does not expose stabilized public APIs yet.
-- API policy: v0 public function/type and macro identifiers are intentionally not frozen at this stage.
+- `LLMData` trait
+  - `parse(input: &str) -> LlmJsonParseResult<Self>`
+  - `validate(value: serde_json::Value) -> Result<Self, serde_json::Error>`
+  - `stringify(&self) -> Result<String, serde_json::Error>`
+- `LlmJsonParseResult<T>`
+- `LlmJsonParseError`
+- `#[derive(LLMData)]` (from `typia-macros`, re-exported by `typia`)
 
-## Component Architecture
+## Example
 
-- `core`: `crates/typia` (active scaffold)
-- `macros`: `crates/typia-macros` (active scaffold)
+```rust
+use typia::{
+    LLMData,
+    serde::{Deserialize, Serialize},
+};
 
-Future macro-generated code must remain compatible with the core runtime contracts.
+#[derive(Debug, Serialize, Deserialize, LLMData)]
+struct User {
+    id: u32,
+    name: String,
+}
 
-## Current Non-Goals
+fn main() {
+    let parsed = User::parse("{id: 1, name: \"alice\",}");
+    println!("{parsed:?}");
+}
+```
 
-- Freezing public runtime API identifiers before scaffold-stage contracts are finalized.
-- Defining stable derive macro names or expansion schemas before macro interface contracts are stabilized.
-- Providing production-ready validation semantics before core and macro contracts are documented as active.
+## Lenient Parser Behaviors
+
+`LLMData::parse()` uses typia's internal lenient JSON parser before serde validation.
+
+Supported recovery behaviors:
+
+- markdown ` ```json ... ``` ` extraction
+- junk prefix skipping before JSON payloads
+- JavaScript comments (`//`, `/* ... */`)
+- unquoted object keys
+- trailing commas
+- partial keywords (`tru`, `fal`, `nul`)
+- unclosed strings/brackets with partial recovery
+- unicode escapes (including surrogate-pair decoding)
+- depth guard (`MAX_DEPTH = 512`)
 
 ## Local Validation
 

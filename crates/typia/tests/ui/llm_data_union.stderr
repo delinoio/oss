@@ -1,0 +1,7 @@
+error: `LLMData` can only be derived for structs and enums
+ --> tests/ui/llm_data_union.rs:4:1
+  |
+4 | / union InvalidUnion {
+5 | |     value: u32,
+6 | | }
+  | |_^

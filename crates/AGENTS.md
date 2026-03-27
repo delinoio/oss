@@ -11,8 +11,8 @@
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.
 - `crates/serde-feather-macros`: Proc-macro companion crate for serde-feather.
-- `crates/typia`: Type-safe JSON schema validation core scaffold crate.
-- `crates/typia-macros`: Proc-macro companion scaffold crate for typia.
+- `crates/typia`: Serde-based LLM JSON runtime crate.
+- `crates/typia-macros`: Proc-macro derive companion crate for typia.
 
 ### Rust Workspace Rules
 
@@ -46,7 +46,8 @@
 ### typia-Specific Rules
 
 - Keep `typia` as the runtime-facing crate and `typia-macros` as the proc-macro companion crate.
-- Keep scaffold-stage API policy explicit: do not treat v0 public identifiers as stable until documented in `docs/project-typia.md` and `docs/crates-typia-core-foundation.md`.
+- Keep stable typia identifiers (`LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`, and `#[derive(LLMData)]`) synchronized with `docs/project-typia.md`, `docs/crates-typia-core-foundation.md`, and `docs/crates-typia-macros-foundation.md`.
+- Keep non-contracted v0 identifiers explicitly documented as unstable until promoted in typia contract docs.
 - Keep future macro/runtime compatibility constraints synchronized with typia project and crate contracts.
 
 ### Multi-Component Contract Sync
