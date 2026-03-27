@@ -55,10 +55,10 @@
 - `docs/project-thenv.md`: Thenv multi-component project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
-- `docs/project-typia.md`: Typia scaffold-stage multi-crate project index.
+- `docs/project-typia.md`: Typia multi-crate project index.
 - `docs/project-dexdex.md`: DexDex multi-runtime project index.
-- `docs/crates-typia-core-foundation.md`: Typia core runtime scaffold contract.
-- `docs/crates-typia-macros-foundation.md`: Typia macros scaffold contract.
+- `docs/crates-typia-core-foundation.md`: Typia core runtime LLM data contract.
+- `docs/crates-typia-macros-foundation.md`: Typia macros derive contract.
 - `docs/apps-dexdex-desktop-app-foundation.md`: DexDex app runtime and integration foundation contract.
 - `docs/apps-dexdex-ui-contract.md`: DexDex UI and interaction contract.
 - `docs/apps-dexdex-user-guide-contract.md`: DexDex end-user workflow contract.

@@ -1,7 +1,7 @@
 # Project: typia
 
 ## Goal
-Provide type-safe JSON schema validation foundations for Rust with a core runtime crate and an active scaffold proc-macro companion crate.
+Provide serde-based LLM JSON parsing utilities for Rust with a runtime crate (`typia`) and a derive proc-macro companion crate (`typia-macros`).
 
 ## Project ID
 `typia`
@@ -16,12 +16,15 @@ Provide type-safe JSON schema validation foundations for Rust with a core runtim
 
 ## Cross-Domain Invariants
 - Component identifiers remain stable: `core`, `macros`.
-- Core runtime and macro code generation must preserve explicit crate boundary separation.
-- Public API identifiers remain scaffold-stage and are not stabilized until this index and crate contract docs are updated in the same change.
+- Runtime and macro boundaries remain explicitly separated across crates.
+- Stable public API contract identifiers:
+  - Runtime: `LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`
+  - Macro: `#[derive(LLMData)]`
+- `LLMData` derive expansion must remain compatible with runtime trait bounds and helper types from `crates/typia`.
 
 ## Change Policy
-- Update this index and both crate contract docs together when component boundaries, public API stability, or compatibility expectations change.
-- Keep root and crate-domain `AGENTS.md` ownership mappings synchronized with this index when typia component paths change.
+- Update this index and both crate contract docs together when `LLMData` parsing semantics, trait methods, or derive expansion contracts change.
+- Keep root and crate-domain `AGENTS.md` ownership mappings synchronized with this index when typia component paths or stability policies change.
 
 ## References
 - `docs/project-template.md`
