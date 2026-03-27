@@ -59,6 +59,11 @@ Each project must have one project index document and one or more domain contrac
 - `docs/crates-serde-feather-core-foundation.md`
 - `docs/crates-serde-feather-macros-foundation.md`
 
+### typia
+- `docs/project-typia.md`
+- `docs/crates-typia-core-foundation.md`
+- `docs/crates-typia-macros-foundation.md`
+
 ### dexdex
 - `docs/project-dexdex.md`
 - `docs/apps-dexdex-desktop-app-foundation.md`

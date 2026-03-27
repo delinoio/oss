@@ -1,0 +1,12 @@
+[package]
+name = "typia-macros"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Proc-macro scaffold crate for typia"
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
