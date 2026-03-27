@@ -48,6 +48,23 @@ Supported recovery behaviors:
 - unicode escapes (including surrogate-pair decoding)
 - depth guard (`MAX_DEPTH = 512`)
 
+Current parse parity baseline for lenient behavior:
+
+- `samchon/typia` `master` parse suite at commit
+  `29a02742661d476ce5ef5414fe32acc7e97c0e6c`
+
+Important parity exclusions:
+
+- JS `undefined`-dependent expectations
+- non-finite numbers (`Infinity`, `-Infinity`)
+- lone-surrogate code-unit expectations
+
+Additional EOF recovery contract:
+
+- incomplete/truncated but structurally recoverable inputs are accepted by the
+  lenient parser (for example: unclosed object/array/string, key-only EOF, and
+  key-colon EOF), while token/syntax violations still surface failures.
+
 ## Local Validation
 
 Run from repository root:

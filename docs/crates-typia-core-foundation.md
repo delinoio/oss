@@ -26,10 +26,20 @@
   - lenient parse first, then serde validation
   - preserves original input on failure
   - includes partial parsed `serde_json::Value` when recoverable
+  - incomplete/truncated inputs that can be recovered without parser-token errors
+    (for example: unclosed string/object/array, key-only EOF, key-colon EOF)
+    must succeed at lenient parse stage
 - Internal lenient parser behavior contract:
   - supports markdown code-block extraction, junk-prefix skipping, comments, unquoted keys, trailing commas, partial keyword recovery, and unclosed string/bracket recovery
   - supports unicode escape decoding including surrogate-pair handling
   - enforces depth guard (`MAX_DEPTH = 512`)
+  - TS parity baseline for parse behavior is pinned to
+    `samchon/typia@29a02742661d476ce5ef5414fe32acc7e97c0e6c`
+    (`tests/test-utils/src/features/llm/parse`)
+  - explicit parity exclusions (documented test policy):
+    - JS `undefined`-dependent expectations are excluded
+    - `Infinity` / `-Infinity` expectations are excluded
+    - lone-surrogate code-unit expectations are excluded
 
 ## Storage
 - No persistent internal storage contract.

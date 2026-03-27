@@ -125,19 +125,20 @@ fn parse_unicode_surrogate_pair() {
 }
 
 #[test]
-fn parse_incomplete_json_reports_failure_with_partial_data() {
+fn parse_incomplete_json_recovers_to_success() {
     let result = User::parse(r#"{"id":1,"name":"alice""#);
 
     match result {
-        LlmJsonParseResult::Failure { data, errors, .. } => {
-            assert!(data.is_some(), "expected partial data");
-            assert!(!errors.is_empty(), "expected parser errors");
-            assert!(
-                errors.iter().any(|error| error.expected.contains("'}'")),
-                "expected missing object terminator error"
+        LlmJsonParseResult::Success { data } => {
+            assert_eq!(
+                data,
+                User {
+                    id: 1,
+                    name: "alice".to_owned(),
+                }
             );
         }
-        other => panic!("expected failure, got {other:?}"),
+        other => panic!("expected success, got {other:?}"),
     }
 }
 
@@ -212,4 +213,46 @@ fn validate_and_stringify_use_serde() {
 
     let encoded = validated.stringify().expect("stringify should succeed");
     assert_eq!(encoded, r#"{"id":42,"name":"eve"}"#);
+}
+
+#[test]
+fn validate_reports_missing_required_field() {
+    let value = typia::serde_json::json!({
+        "id": 7
+    });
+
+    let error = User::validate(value).expect_err("validation should fail");
+    assert!(
+        error.to_string().contains("missing field"),
+        "expected missing field error"
+    );
+}
+
+#[test]
+fn validate_reports_type_mismatch() {
+    let value = typia::serde_json::json!({
+        "id": "not-a-number",
+        "name": "eve"
+    });
+
+    let error = User::validate(value).expect_err("validation should fail");
+    assert!(
+        error.to_string().contains("invalid type"),
+        "expected invalid type error"
+    );
+}
+
+#[test]
+fn stringify_roundtrip_through_validate() {
+    let user = User {
+        id: 9,
+        name: "frank".to_owned(),
+    };
+
+    let encoded = user.stringify().expect("stringify should succeed");
+    let decoded: typia::serde_json::Value =
+        typia::serde_json::from_str(&encoded).expect("must be valid JSON");
+
+    let validated = User::validate(decoded).expect("validation should succeed");
+    assert_eq!(validated, user);
 }
