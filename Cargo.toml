@@ -4,7 +4,7 @@ members = [
     "crates/cargo-mono",
     "crates/nodeup",
     "crates/serde-feather",
-    "crates/serde-feather-macros",
+    "crates/serde-feather-macros", "crates/typia",
 ]
 
 [workspace.metadata.cargo-mono.publish.tag]
