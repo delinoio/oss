@@ -8,6 +8,7 @@ members = [
     "crates/rustia",
     "crates/rustia-llm",
     "crates/rustia-macros",
+    "crates/rustia-agentica",
 ]
 
 [workspace.metadata.cargo-mono.publish.tag]

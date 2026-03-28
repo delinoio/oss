@@ -65,6 +65,11 @@ Each project must have one project index document and one or more domain contrac
 - `docs/crates-rustia-llm-foundation.md`
 - `docs/crates-rustia-macros-foundation.md`
 
+
+### rustia-agentica
+- `docs/project-rustia-agentica.md`
+- `docs/crates-rustia-agentica-foundation.md`
+
 ### dexdex
 - `docs/project-dexdex.md`
 - `docs/apps-dexdex-desktop-app-foundation.md`

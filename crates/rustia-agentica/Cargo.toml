@@ -1,0 +1,31 @@
+[package]
+name = "rustia-agentica"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "MicroAgentica-style Rust agent loop with rustia-llm class tools and MCP tool bridging"
+homepage = "https://github.com/delinoio/oss/tree/main/crates/rustia-agentica"
+repository = "https://github.com/delinoio/oss"
+readme = "README.md"
+publish = false
+
+[dependencies]
+aisdk = { version = "0.5.2", default-features = false, features = ["language-model-request"] }
+chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
+rmcp = { version = "0.12.0", default-features = false, features = ["base64", "client"] }
+schemars = "1.0.4"
+serde_json = "1.0.145"
+tokio = { version = "1.47.1", features = ["rt", "rt-multi-thread", "sync"] }
+tracing = "0.1.41"
+
+[dev-dependencies]
+anyhow = "1.0.100"
+async-trait = "0.1.89"
+futures = "0.3.31"
+rmcp = { version = "0.12.0", default-features = false, features = ["base64", "client", "server", "macros", "transport-io"] }
+rustia = { package = "rustia-rs", path = "../rustia" }
+rustia-llm = { path = "../rustia-llm" }
+schemars = "1.0.4"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.145"
+tokio = { version = "1.47.1", features = ["io-util", "macros", "rt-multi-thread", "sync"] }

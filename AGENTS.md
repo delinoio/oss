@@ -56,10 +56,12 @@
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
+- `docs/project-rustia-agentica.md`: Rustia Agentica micro-agent project index.
 - `docs/project-dexdex.md`: DexDex multi-runtime project index.
 - `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.
 - `docs/crates-rustia-llm-foundation.md`: Rustia aisdk tool adapter contract.
 - `docs/crates-rustia-macros-foundation.md`: Rustia macros derive contract.
+- `docs/crates-rustia-agentica-foundation.md`: Rustia Agentica MicroAgentica runtime contract.
 - `docs/apps-dexdex-desktop-app-foundation.md`: DexDex app runtime and integration foundation contract.
 - `docs/apps-dexdex-ui-contract.md`: DexDex UI and interaction contract.
 - `docs/apps-dexdex-user-guide-contract.md`: DexDex end-user workflow contract.
@@ -94,6 +96,7 @@ enum ProjectId {
   Thenv = "thenv",
   SerdeFeather = "serde-feather",
   Rustia = "rustia",
+  RustiaAgentica = "rustia-agentica",
   PublicDocs = "public-docs",
   DexDex = "dexdex",
 }
@@ -112,6 +115,7 @@ enum ProjectId {
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
+- `rustia-agentica` -> `crates/rustia-agentica`
 - `public-docs` -> `apps/public-docs`
 - `dexdex` -> `servers/dexdex-main-server`, `servers/dexdex-worker-server`, `apps/dexdex`, `protos/dexdex`
 
@@ -202,6 +206,18 @@ enum RustiaComponent {
 - `Core` -> `crates/rustia`
 - `Llm` -> `crates/rustia-llm`
 - `Macros` -> `crates/rustia-macros`
+
+### Rustia Agentica Component Contract
+
+`rustia-agentica` is a single-component project with fixed mapping:
+
+```ts
+enum RustiaAgenticaComponent {
+  Core = "core",
+}
+```
+
+- `Core` -> `crates/rustia-agentica`
 
 ### DexDex Component Contract
 

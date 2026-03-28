@@ -14,6 +14,7 @@
 - `crates/rustia`: Serde-based LLM JSON runtime crate.
 - `crates/rustia-llm`: aisdk tool adapter crate for rustia-based function-calling input validation.
 - `crates/rustia-macros`: Proc-macro derive companion crate for rustia.
+- `crates/rustia-agentica`: MicroAgentica runtime crate with class + MCP controller bridging.
 
 ### Rust Workspace Rules
 
@@ -51,6 +52,12 @@
 - Keep non-contracted v0 identifiers explicitly documented as unstable until promoted in rustia contract docs.
 - Keep future macro/runtime compatibility constraints synchronized with rustia project and crate contracts.
 
+### rustia-agentica-Specific Rules
+
+- Keep `rustia-agentica` API identifiers (`MicroAgentica`, `MicroAgenticaConfig`, `MicroAgenticaController`, `ClassController`, `McpController`, `ConversationOutcome`, `StepRecord`, `UsageSummary`, `MicroAgenticaBuildError`, `MicroAgenticaConversationError`) synchronized with `docs/project-rustia-agentica.md` and `docs/crates-rustia-agentica-foundation.md`.
+- Keep v1 scope fixed to non-streaming `MicroAgentica` loop behavior unless project and crate contracts are updated together.
+- Keep MCP bridge workaround comments and removal conditions explicit while AISDK tool callbacks remain synchronous.
+
 ### Multi-Component Contract Sync
 
 - `serde-feather` core crate changes must update `docs/crates-serde-feather-core-foundation.md` and `docs/project-serde-feather.md`.
@@ -58,6 +65,7 @@
 - `rustia` core crate changes must update `docs/crates-rustia-core-foundation.md` and `docs/project-rustia.md`.
 - `rustia-llm` crate changes must update `docs/crates-rustia-llm-foundation.md` and `docs/project-rustia.md`.
 - `rustia-macros` crate changes must update `docs/crates-rustia-macros-foundation.md` and `docs/project-rustia.md`.
+- `rustia-agentica` crate changes must update `docs/crates-rustia-agentica-foundation.md` and `docs/project-rustia-agentica.md`.
 
 ### Testing and Validation
 
