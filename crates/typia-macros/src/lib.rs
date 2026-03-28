@@ -4,6 +4,10 @@
 
 use std::collections::{BTreeSet, HashMap};
 
+use heck::{
+    ToKebabCase, ToLowerCamelCase, ToShoutyKebabCase, ToShoutySnakeCase, ToSnakeCase,
+    ToUpperCamelCase,
+};
 use proc_macro::TokenStream;
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Span, TokenStream as TokenStream2};
@@ -61,7 +65,10 @@ fn expand_struct_validate(
     let (impl_generics, ty_generics, where_clause) = validate_generics.split_for_impl();
 
     let body = match &data.fields {
-        Fields::Named(fields) => expand_named_struct_validate(fields, typia_path)?,
+        Fields::Named(fields) => {
+            let struct_options = parse_struct_serde_options(input)?;
+            expand_named_struct_validate(fields, &struct_options, typia_path)?
+        }
         Fields::Unnamed(_) | Fields::Unit => {
             quote! {
                 if __strict {
@@ -92,25 +99,23 @@ fn expand_struct_validate(
 
 fn expand_named_struct_validate(
     fields: &syn::FieldsNamed,
+    struct_options: &StructSerdeOptions,
     typia_path: &TokenStream2,
 ) -> syn::Result<TokenStream2> {
     let mut field_blocks = Vec::new();
     let mut known_fields = Vec::new();
 
     for field in &fields.named {
-        let field_ident = field
-            .ident
-            .clone()
-            .expect("named fields must always have identifiers");
         let field_ty = &field.ty;
-        let field_name = field_wire_name(field)?;
+        let field_options = field_serde_options(field, struct_options)?;
+        let field_name = field_options.wire_name;
         let field_name_lit = LitStr::new(&field_name, Span::call_site());
         known_fields.push(field_name_lit.clone());
 
         let tags = parse_typia_tags(&field.attrs)?;
         validate_tags_for_type(&tags, &field.ty)?;
 
-        let optional = is_option_type(field_ty);
+        let optional = is_option_type(field_ty) || field_options.has_default;
         let apply_tags = if tags.is_empty() {
             quote! {}
         } else {
@@ -169,8 +174,6 @@ fn expand_named_struct_validate(
                 }
             }
         });
-
-        let _ = field_ident;
     }
 
     Ok(quote! {
@@ -227,6 +230,60 @@ fn expand_named_struct_validate(
             }
         }
     })
+}
+
+#[derive(Clone, Copy)]
+enum RenameRule {
+    LowerCase,
+    UpperCase,
+    PascalCase,
+    CamelCase,
+    SnakeCase,
+    ScreamingSnakeCase,
+    KebabCase,
+    ScreamingKebabCase,
+}
+
+impl RenameRule {
+    fn parse(literal: &LitStr) -> syn::Result<Self> {
+        match literal.value().as_str() {
+            "lowercase" => Ok(Self::LowerCase),
+            "UPPERCASE" => Ok(Self::UpperCase),
+            "PascalCase" => Ok(Self::PascalCase),
+            "camelCase" => Ok(Self::CamelCase),
+            "snake_case" => Ok(Self::SnakeCase),
+            "SCREAMING_SNAKE_CASE" => Ok(Self::ScreamingSnakeCase),
+            "kebab-case" => Ok(Self::KebabCase),
+            "SCREAMING-KEBAB-CASE" => Ok(Self::ScreamingKebabCase),
+            _ => Err(syn::Error::new(
+                literal.span(),
+                "unsupported serde rename rule",
+            )),
+        }
+    }
+
+    fn apply(self, value: &str) -> String {
+        match self {
+            Self::LowerCase => value.to_lowercase(),
+            Self::UpperCase => value.to_uppercase(),
+            Self::PascalCase => value.to_upper_camel_case(),
+            Self::CamelCase => value.to_lower_camel_case(),
+            Self::SnakeCase => value.to_snake_case(),
+            Self::ScreamingSnakeCase => value.to_shouty_snake_case(),
+            Self::KebabCase => value.to_kebab_case(),
+            Self::ScreamingKebabCase => value.to_shouty_kebab_case(),
+        }
+    }
+}
+
+struct StructSerdeOptions {
+    rename_all_deserialize: Option<RenameRule>,
+    default: bool,
+}
+
+struct FieldSerdeOptions {
+    wire_name: String,
+    has_default: bool,
 }
 
 fn expand_enum_validate(
@@ -894,7 +951,62 @@ fn quote_runtime_tag(tag: &ParsedTag, typia_path: &TokenStream2) -> TokenStream2
     }
 }
 
-fn field_wire_name(field: &Field) -> syn::Result<String> {
+fn parse_struct_serde_options(input: &DeriveInput) -> syn::Result<StructSerdeOptions> {
+    let mut options = StructSerdeOptions {
+        rename_all_deserialize: None,
+        default: false,
+    };
+
+    for attr in &input.attrs {
+        if !attr.path().is_ident("serde") {
+            continue;
+        }
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("default") {
+                options.default = true;
+                if meta.input.peek(Token![=]) {
+                    let value = meta.value()?;
+                    let _: LitStr = value.parse()?;
+                }
+                return Ok(());
+            }
+
+            if meta.path.is_ident("rename_all") {
+                if meta.input.peek(Token![=]) {
+                    let value = meta.value()?;
+                    let lit: LitStr = value.parse()?;
+                    options.rename_all_deserialize = Some(RenameRule::parse(&lit)?);
+                    return Ok(());
+                }
+
+                meta.parse_nested_meta(|nested| {
+                    if nested.path.is_ident("deserialize") {
+                        let value = nested.value()?;
+                        let lit: LitStr = value.parse()?;
+                        options.rename_all_deserialize = Some(RenameRule::parse(&lit)?);
+                    } else if nested.path.is_ident("serialize") {
+                        let value = nested.value()?;
+                        let _: LitStr = value.parse()?;
+                    } else {
+                        return Err(syn::Error::new_spanned(
+                            nested.path,
+                            "unsupported `serde(rename_all(...))` entry",
+                        ));
+                    }
+                    Ok(())
+                })?;
+            }
+            Ok(())
+        })?;
+    }
+
+    Ok(options)
+}
+
+fn field_serde_options(
+    field: &Field,
+    struct_options: &StructSerdeOptions,
+) -> syn::Result<FieldSerdeOptions> {
     let default_name = field
         .ident
         .as_ref()
@@ -905,11 +1017,21 @@ fn field_wire_name(field: &Field) -> syn::Result<String> {
 
     let mut direct_rename: Option<String> = None;
     let mut deserialize_rename: Option<String> = None;
+    let mut has_default = struct_options.default;
     for attr in &field.attrs {
         if !attr.path().is_ident("serde") {
             continue;
         }
         attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("default") {
+                has_default = true;
+                if meta.input.peek(Token![=]) {
+                    let value = meta.value()?;
+                    let _: LitStr = value.parse()?;
+                }
+                return Ok(());
+            }
+
             if meta.path.is_ident("rename") {
                 if meta.input.peek(Token![=]) {
                     let value = meta.value()?;
@@ -930,7 +1052,16 @@ fn field_wire_name(field: &Field) -> syn::Result<String> {
         })?;
     }
 
-    Ok(deserialize_rename.or(direct_rename).unwrap_or(default_name))
+    let renamed = if let Some(rule) = struct_options.rename_all_deserialize {
+        rule.apply(&default_name)
+    } else {
+        default_name
+    };
+
+    Ok(FieldSerdeOptions {
+        wire_name: deserialize_rename.or(direct_rename).unwrap_or(renamed),
+        has_default,
+    })
 }
 
 fn is_option_type(ty: &Type) -> bool {

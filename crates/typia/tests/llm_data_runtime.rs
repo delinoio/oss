@@ -302,6 +302,26 @@ struct TaggedPayload {
     tags: Vec<String>,
 }
 
+fn default_country() -> String {
+    "KR".to_owned()
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct SerdeDefaultPayload {
+    id: u32,
+    #[serde(default)]
+    nickname: String,
+    #[serde(default = "default_country")]
+    country: String,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+#[serde(rename_all = "camelCase")]
+struct SerdeRenameAllPayload {
+    first_name: String,
+    last_name: String,
+}
+
 #[test]
 fn validate_collects_multiple_tag_errors() {
     let value = typia::serde_json::json!({
@@ -330,5 +350,47 @@ fn validate_collects_multiple_tag_errors() {
                 "expected nested item tag errors"
             );
         }
+    }
+}
+
+#[test]
+fn validate_respects_serde_default_field_rules() {
+    let value = typia::serde_json::json!({
+        "id": 7
+    });
+
+    match SerdeDefaultPayload::validate(value) {
+        IValidation::Success { data } => {
+            assert_eq!(
+                data,
+                SerdeDefaultPayload {
+                    id: 7,
+                    nickname: String::new(),
+                    country: "KR".to_owned(),
+                }
+            );
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    }
+}
+
+#[test]
+fn validate_respects_serde_rename_all_for_field_lookup() {
+    let value = typia::serde_json::json!({
+        "firstName": "alice",
+        "lastName": "smith"
+    });
+
+    match SerdeRenameAllPayload::validate_equals(value) {
+        IValidation::Success { data } => {
+            assert_eq!(
+                data,
+                SerdeRenameAllPayload {
+                    first_name: "alice".to_owned(),
+                    last_name: "smith".to_owned(),
+                }
+            );
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
     }
 }
