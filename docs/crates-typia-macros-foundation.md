@@ -41,6 +41,12 @@
 ## Logging
 - Proc-macro diagnostics should remain concise and deterministic.
 
+## Release and Distribution
+- Crate remains publishable (`publish = true`) via `crates/typia-macros/Cargo.toml`.
+- Workspace release orchestration is owned by `cargo-mono publish`.
+- Publish tag eligibility for this crate is controlled by root
+  `[workspace.metadata.cargo-mono.publish.tag].packages`.
+
 ## Build and Test
 - Local validation: `cargo test -p typia-macros`
 - Workspace baseline: `cargo test --workspace --all-targets`

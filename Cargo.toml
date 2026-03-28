@@ -10,7 +10,7 @@ members = [
 ]
 
 [workspace.metadata.cargo-mono.publish.tag]
-packages = ["nodeup", "cargo-mono", "typia"]
+packages = ["nodeup", "cargo-mono", "typia", "typia-macros"]
 
 # Release profile optimizations
 [profile.release]
