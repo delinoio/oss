@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.metadata.cargo-mono.publish.tag]
-packages = ["nodeup", "cargo-mono", "rustia", "rustia-macros", "rustia-llm"]
+packages = ["nodeup", "cargo-mono", "rustia-rs", "rustia-macros", "rustia-llm"]
 
 # Release profile optimizations
 [profile.release]
