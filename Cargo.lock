@@ -1841,27 +1841,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "357703d41365b4b27c590e3ed91eabb1b663f07c4c084095e60cbed4362dff0d"
 
 [[package]]
-name = "rustia"
-version = "0.1.1"
-dependencies = [
- "base64",
- "chrono",
- "regex",
- "rustia-macros",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "trybuild",
- "url",
- "uuid",
-]
-
-[[package]]
 name = "rustia-llm"
 version = "0.1.0"
 dependencies = [
  "aisdk",
- "rustia",
+ "rustia-rs",
  "schemars",
  "serde",
  "serde_json",
@@ -1877,6 +1861,22 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "rustia-rs"
+version = "0.1.1"
+dependencies = [
+ "base64",
+ "chrono",
+ "regex",
+ "rustia-macros",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "trybuild",
+ "url",
+ "uuid",
 ]
 
 [[package]]
