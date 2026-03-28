@@ -1,6 +1,6 @@
 [package]
 name = "typia"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "Rust version of typia.io for type-safe JSON validation and LLM JSON parsing"
@@ -20,7 +20,7 @@ regex = "1.11.1"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.145"
 serde_path_to_error = "0.1.17"
-typia-macros = { version = "0.1.0", path = "../typia-macros", optional = true }
+typia-macros = { version = "0.1.1", path = "../typia-macros", optional = true }
 url = "2.5.7"
 uuid = { version = "1.18.1", features = ["std"] }
 
