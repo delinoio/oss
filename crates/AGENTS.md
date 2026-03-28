@@ -11,9 +11,9 @@
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.
 - `crates/serde-feather-macros`: Proc-macro companion crate for serde-feather.
-- `crates/typia`: Serde-based LLM JSON runtime crate.
-- `crates/typia-llm`: aisdk tool adapter crate for typia-based function-calling input validation.
-- `crates/typia-macros`: Proc-macro derive companion crate for typia.
+- `crates/rustia`: Serde-based LLM JSON runtime crate.
+- `crates/rustia-llm`: aisdk tool adapter crate for rustia-based function-calling input validation.
+- `crates/rustia-macros`: Proc-macro derive companion crate for rustia.
 
 ### Rust Workspace Rules
 
@@ -44,20 +44,20 @@
 - Keep binary-size-first defaults: minimal default features and no convenience dependencies by default.
 - Keep stable derive macro identifiers (`FeatherSerialize`, `FeatherDeserialize`) aligned with `docs/project-serde-feather.md` and crate component docs.
 
-### typia-Specific Rules
+### rustia-Specific Rules
 
-- Keep `typia` as the runtime-facing crate, `typia-llm` as the aisdk adapter crate, and `typia-macros` as the proc-macro companion crate.
-- Keep stable typia identifiers (`Validate`, `IValidation`, `IValidationError`, `LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`, `LlmToolInput`, `LlmToolOutput`, `LlmToolSpec`, `tool`, `LlmToolBuildError`, `LlmToolInputError`, `LlmToolExecutionError`, and `#[derive(LLMData)]`) synchronized with `docs/project-typia.md`, `docs/crates-typia-core-foundation.md`, `docs/crates-typia-llm-foundation.md`, and `docs/crates-typia-macros-foundation.md`.
-- Keep non-contracted v0 identifiers explicitly documented as unstable until promoted in typia contract docs.
-- Keep future macro/runtime compatibility constraints synchronized with typia project and crate contracts.
+- Keep `rustia` as the runtime-facing crate, `rustia-llm` as the aisdk adapter crate, and `rustia-macros` as the proc-macro companion crate.
+- Keep stable rustia identifiers (`Validate`, `IValidation`, `IValidationError`, `LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`, `LlmToolInput`, `LlmToolOutput`, `LlmToolSpec`, `tool`, `LlmToolBuildError`, `LlmToolInputError`, `LlmToolExecutionError`, and `#[derive(LLMData)]`) synchronized with `docs/project-rustia.md`, `docs/crates-rustia-core-foundation.md`, `docs/crates-rustia-llm-foundation.md`, and `docs/crates-rustia-macros-foundation.md`.
+- Keep non-contracted v0 identifiers explicitly documented as unstable until promoted in rustia contract docs.
+- Keep future macro/runtime compatibility constraints synchronized with rustia project and crate contracts.
 
 ### Multi-Component Contract Sync
 
 - `serde-feather` core crate changes must update `docs/crates-serde-feather-core-foundation.md` and `docs/project-serde-feather.md`.
 - `serde-feather-macros` changes must update `docs/crates-serde-feather-macros-foundation.md` and `docs/project-serde-feather.md`.
-- `typia` core crate changes must update `docs/crates-typia-core-foundation.md` and `docs/project-typia.md`.
-- `typia-llm` crate changes must update `docs/crates-typia-llm-foundation.md` and `docs/project-typia.md`.
-- `typia-macros` crate changes must update `docs/crates-typia-macros-foundation.md` and `docs/project-typia.md`.
+- `rustia` core crate changes must update `docs/crates-rustia-core-foundation.md` and `docs/project-rustia.md`.
+- `rustia-llm` crate changes must update `docs/crates-rustia-llm-foundation.md` and `docs/project-rustia.md`.
+- `rustia-macros` crate changes must update `docs/crates-rustia-macros-foundation.md` and `docs/project-rustia.md`.
 
 ### Testing and Validation
 

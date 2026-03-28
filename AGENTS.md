@@ -55,11 +55,11 @@
 - `docs/project-thenv.md`: Thenv multi-component project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
-- `docs/project-typia.md`: Typia multi-crate project index.
+- `docs/project-rustia.md`: Rustia multi-crate project index.
 - `docs/project-dexdex.md`: DexDex multi-runtime project index.
-- `docs/crates-typia-core-foundation.md`: Typia core runtime LLM data contract.
-- `docs/crates-typia-llm-foundation.md`: Typia aisdk tool adapter contract.
-- `docs/crates-typia-macros-foundation.md`: Typia macros derive contract.
+- `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.
+- `docs/crates-rustia-llm-foundation.md`: Rustia aisdk tool adapter contract.
+- `docs/crates-rustia-macros-foundation.md`: Rustia macros derive contract.
 - `docs/apps-dexdex-desktop-app-foundation.md`: DexDex app runtime and integration foundation contract.
 - `docs/apps-dexdex-ui-contract.md`: DexDex UI and interaction contract.
 - `docs/apps-dexdex-user-guide-contract.md`: DexDex end-user workflow contract.
@@ -93,7 +93,7 @@ enum ProjectId {
   DevkitRemoteFilePicker = "devkit-remote-file-picker",
   Thenv = "thenv",
   SerdeFeather = "serde-feather",
-  Typia = "typia",
+  Rustia = "rustia",
   PublicDocs = "public-docs",
   DexDex = "dexdex",
 }
@@ -111,7 +111,7 @@ enum ProjectId {
 - `devkit-remote-file-picker` -> `apps/devkit/src/apps/remote-file-picker`
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
-- `typia` -> `crates/typia`, `crates/typia-llm`, `crates/typia-macros`
+- `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`
 - `dexdex` -> `servers/dexdex-main-server`, `servers/dexdex-worker-server`, `apps/dexdex`, `protos/dexdex`
 
@@ -187,21 +187,21 @@ enum SerdeFeatherComponent {
 - `Core` -> `crates/serde-feather`
 - `Macros` -> `crates/serde-feather-macros`
 
-### Typia Component Contract
+### Rustia Component Contract
 
-`typia` is a three-component project with fixed mapping:
+`rustia` is a three-component project with fixed mapping:
 
 ```ts
-enum TypiaComponent {
+enum RustiaComponent {
   Core = "core",
   Llm = "llm",
   Macros = "macros",
 }
 ```
 
-- `Core` -> `crates/typia`
-- `Llm` -> `crates/typia-llm`
-- `Macros` -> `crates/typia-macros`
+- `Core` -> `crates/rustia`
+- `Llm` -> `crates/rustia-llm`
+- `Macros` -> `crates/rustia-macros`
 
 ### DexDex Component Contract
 

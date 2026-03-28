@@ -1,0 +1,31 @@
+[package]
+name = "rustia-rs"
+version = "0.1.2"
+edition = "2024"
+license = "MIT"
+description = "Rust version of typia.io for type-safe JSON validation and LLM JSON parsing"
+homepage = "https://github.com/delinoio/oss/tree/main/crates/rustia"
+repository = "https://github.com/delinoio/oss"
+readme = "README.md"
+publish = true
+
+[lib]
+name = "rustia"
+
+[features]
+default = ["derive"]
+derive = ["dep:rustia-macros"]
+
+[dependencies]
+base64 = "0.22.1"
+chrono = { version = "0.4.42", default-features = false, features = ["std"] }
+regex = "1.11.1"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.145"
+serde_path_to_error = "0.1.17"
+rustia-macros = { version = "0.1.1", path = "../rustia-macros", optional = true }
+url = "2.5.7"
+uuid = { version = "1.18.1", features = ["std"] }
+
+[dev-dependencies]
+trybuild = "1.0.114"

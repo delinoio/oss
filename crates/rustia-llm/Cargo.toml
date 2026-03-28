@@ -1,0 +1,18 @@
+[package]
+name = "rustia-llm"
+version = "0.1.1"
+edition = "2024"
+license = "MIT"
+description = "Rustia-powered LLM tool-calling adapter for aisdk"
+homepage = "https://github.com/delinoio/oss/tree/main/crates/rustia-llm"
+repository = "https://github.com/delinoio/oss"
+readme = "README.md"
+publish = true
+
+[dependencies]
+aisdk = { version = "0.5.2", default-features = false }
+schemars = "1.0.4"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.145"
+tracing = "0.1.41"
+rustia-rs = { version = "0.1.1", path = "../rustia" }
