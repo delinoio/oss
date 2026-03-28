@@ -1,6 +1,6 @@
 [package]
 name = "rustia-llm"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "Rustia-powered LLM tool-calling adapter for aisdk"

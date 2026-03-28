@@ -1,6 +1,6 @@
 [package]
 name = "rustia-rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 description = "Rust version of rustia.io for type-safe JSON validation and LLM JSON parsing"
