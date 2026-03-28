@@ -71,6 +71,12 @@
 - Library-level logging remains opt-in and minimal.
 - No mandatory runtime logging side effects are introduced by default parsing methods.
 
+## Release and Distribution
+- Crate remains publishable (`publish = true`) via `crates/typia/Cargo.toml`.
+- Workspace release orchestration is owned by `cargo-mono publish`.
+- Publish tag eligibility for this crate is controlled by root
+  `[workspace.metadata.cargo-mono.publish.tag].packages`.
+
 ## Build and Test
 - Local validation: `cargo test -p typia`
 - Workspace baseline: `cargo test --workspace --all-targets`
