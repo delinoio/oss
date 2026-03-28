@@ -21,6 +21,24 @@ enum Command {
     Ping,
 }
 
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct UserEnvelope {
+    user: User,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct CoercedScalars {
+    age: u32,
+    vip: bool,
+    tags: Vec<String>,
+    maybe_age: Option<u32>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct JsonStringField {
+    message: String,
+}
+
 #[test]
 fn parse_valid_json_fast_path() {
     let result = User::parse(r#"{"id":1,"name":"alice"}"#);
@@ -31,6 +49,128 @@ fn parse_valid_json_fast_path() {
                 User {
                     id: 1,
                     name: "alice".to_owned(),
+                }
+            );
+        }
+        other => panic!("expected success, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_root_stringified_object_with_coercion() {
+    let result = User::parse(r#""{\"id\":10,\"name\":\"root\"}""#);
+
+    match result {
+        LlmJsonParseResult::Success { data } => {
+            assert_eq!(
+                data,
+                User {
+                    id: 10,
+                    name: "root".to_owned(),
+                }
+            );
+        }
+        other => panic!("expected success, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_nested_stringified_object_with_coercion() {
+    let result = UserEnvelope::parse(r#"{"user":"{\"id\":11,\"name\":\"nested\"}"}"#);
+
+    match result {
+        LlmJsonParseResult::Success { data } => {
+            assert_eq!(
+                data,
+                UserEnvelope {
+                    user: User {
+                        id: 11,
+                        name: "nested".to_owned(),
+                    },
+                }
+            );
+        }
+        other => panic!("expected success, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_triple_stringified_object_with_coercion() {
+    let payload = typia::serde_json::json!({
+        "id": 12,
+        "name": "triple"
+    });
+    let level1 = typia::serde_json::to_string(&payload).expect("first stringify must succeed");
+    let level2 = typia::serde_json::to_string(&level1).expect("second stringify must succeed");
+    let level3 = typia::serde_json::to_string(&level2).expect("third stringify must succeed");
+    let input = typia::serde_json::json!({ "user": level3 }).to_string();
+    let result = UserEnvelope::parse(&input);
+
+    match result {
+        LlmJsonParseResult::Success { data } => {
+            assert_eq!(
+                data,
+                UserEnvelope {
+                    user: User {
+                        id: 12,
+                        name: "triple".to_owned(),
+                    },
+                }
+            );
+        }
+        other => panic!("expected success, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_stringified_scalars_and_containers_with_coercion() {
+    let result = CoercedScalars::parse(
+        r#"{"age":"30","vip":"true","tags":"[\"admin\",\"editor\"]","maybe_age":"null"}"#,
+    );
+
+    match result {
+        LlmJsonParseResult::Success { data } => {
+            assert_eq!(
+                data,
+                CoercedScalars {
+                    age: 30,
+                    vip: true,
+                    tags: vec!["admin".to_owned(), "editor".to_owned()],
+                    maybe_age: None,
+                }
+            );
+        }
+        other => panic!("expected success, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_non_json_string_for_number_still_fails() {
+    let result = CoercedScalars::parse(
+        r#"{"age":"not-a-number","vip":"true","tags":"[]","maybe_age":"null"}"#,
+    );
+
+    match result {
+        LlmJsonParseResult::Failure { errors, .. } => {
+            assert!(
+                errors.iter().any(|error| error.path.contains("$input.age")),
+                "expected age validation failure"
+            );
+        }
+        other => panic!("expected failure, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_string_field_stays_string_without_coercion() {
+    let result = JsonStringField::parse(r#"{"message":"{\"hello\":1}"}"#);
+
+    match result {
+        LlmJsonParseResult::Success { data } => {
+            assert_eq!(
+                data,
+                JsonStringField {
+                    message: "{\"hello\":1}".to_owned(),
                 }
             );
         }

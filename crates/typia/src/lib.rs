@@ -2,7 +2,10 @@
 
 //! Serde-based LLM JSON utilities and data trait for `typia`.
 
+use std::collections::HashSet;
+
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 mod lenient_json;
 mod validate;
@@ -44,46 +47,33 @@ pub trait LLMData: Validate + serde::Serialize + DeserializeOwned + Sized {
     /// the shape through serde deserialization.
     fn parse(input: &str) -> LlmJsonParseResult<Self> {
         match parse_lenient_json_value(input) {
-            LlmJsonParseResult::Success { data } => match Self::validate(data.clone()) {
-                IValidation::Success { data: decoded } => {
-                    LlmJsonParseResult::Success { data: decoded }
+            LlmJsonParseResult::Success { data } => {
+                match validate_with_parse_coercion::<Self>(data) {
+                    CoercionValidation::Success { data, .. } => {
+                        LlmJsonParseResult::Success { data }
+                    }
+                    CoercionValidation::Failure { value, errors } => LlmJsonParseResult::Failure {
+                        data: Some(value),
+                        input: input.to_owned(),
+                        errors: map_validation_errors(errors),
+                    },
                 }
-                IValidation::Failure { errors, .. } => LlmJsonParseResult::Failure {
-                    data: Some(data),
-                    input: input.to_owned(),
-                    errors: errors
-                        .into_iter()
-                        .map(|error| LlmJsonParseError {
-                            path: error.path,
-                            expected: error.expected,
-                            description: error
-                                .description
-                                .unwrap_or_else(|| "validation failed".to_owned()),
-                        })
-                        .collect(),
-                },
-            },
+            }
             LlmJsonParseResult::Failure {
                 data,
                 input,
                 mut errors,
             } => {
-                if let Some(value) = data.as_ref()
-                    && let IValidation::Failure {
+                let data = data.map(|value| match validate_with_parse_coercion::<Self>(value) {
+                    CoercionValidation::Success { value, .. } => value,
+                    CoercionValidation::Failure {
+                        value: coerced,
                         errors: validation_errors,
-                        ..
-                    } = Self::validate(value.clone())
-                {
-                    errors.extend(validation_errors.into_iter().map(|error| {
-                        LlmJsonParseError {
-                            path: error.path,
-                            expected: error.expected,
-                            description: error
-                                .description
-                                .unwrap_or_else(|| "validation failed".to_owned()),
-                        }
-                    }));
-                }
+                    } => {
+                        errors.extend(map_validation_errors(validation_errors));
+                        coerced
+                    }
+                });
 
                 LlmJsonParseResult::Failure {
                     data,
@@ -103,4 +93,197 @@ pub trait LLMData: Validate + serde::Serialize + DeserializeOwned + Sized {
 #[doc(hidden)]
 pub mod __private {
     pub use crate::validate::__private::*;
+}
+
+const MAX_PARSE_COERCION_ROUNDS: usize = 16;
+
+enum CoercionValidation<T> {
+    Success {
+        data: T,
+        value: Value,
+    },
+    Failure {
+        value: Value,
+        errors: Vec<IValidationError>,
+    },
+}
+
+enum JsonPathSegment {
+    Key(String),
+    Index(usize),
+}
+
+fn validate_with_parse_coercion<T>(mut value: Value) -> CoercionValidation<T>
+where
+    T: Validate,
+{
+    for _ in 0..MAX_PARSE_COERCION_ROUNDS {
+        match T::validate(value.clone()) {
+            IValidation::Success { data } => return CoercionValidation::Success { data, value },
+            IValidation::Failure { errors, .. } => {
+                if !coerce_value_from_errors(&mut value, &errors) {
+                    return CoercionValidation::Failure { value, errors };
+                }
+            }
+        }
+    }
+
+    match T::validate(value.clone()) {
+        IValidation::Success { data } => CoercionValidation::Success { data, value },
+        IValidation::Failure { errors, .. } => CoercionValidation::Failure { value, errors },
+    }
+}
+
+fn coerce_value_from_errors(value: &mut Value, errors: &[IValidationError]) -> bool {
+    let mut changed = false;
+    let mut seen = HashSet::new();
+
+    for error in errors {
+        if !seen.insert(error.path.clone()) {
+            continue;
+        }
+        let Some(path) = parse_validation_path(&error.path) else {
+            continue;
+        };
+        if coerce_stringified_path(value, &path) {
+            changed = true;
+        }
+    }
+
+    changed
+}
+
+fn coerce_stringified_path(root: &mut Value, path: &[JsonPathSegment]) -> bool {
+    let Some(target) = value_mut_on_path(root, path) else {
+        return false;
+    };
+
+    let raw = match target {
+        Value::String(raw) => raw.clone(),
+        _ => return false,
+    };
+
+    let LlmJsonParseResult::Success { data } = parse_lenient_json_value(&raw) else {
+        return false;
+    };
+
+    let original = Value::String(raw);
+    if data == original {
+        return false;
+    }
+
+    *target = data;
+    true
+}
+
+fn value_mut_on_path<'a>(root: &'a mut Value, path: &[JsonPathSegment]) -> Option<&'a mut Value> {
+    let mut cursor = root;
+
+    for segment in path {
+        match segment {
+            JsonPathSegment::Key(key) => {
+                cursor = cursor.as_object_mut()?.get_mut(key)?;
+            }
+            JsonPathSegment::Index(index) => {
+                cursor = cursor.as_array_mut()?.get_mut(*index)?;
+            }
+        }
+    }
+
+    Some(cursor)
+}
+
+fn parse_validation_path(path: &str) -> Option<Vec<JsonPathSegment>> {
+    let mut chars = path.chars().peekable();
+
+    for expected in "$input".chars() {
+        if chars.next()? != expected {
+            return None;
+        }
+    }
+
+    let mut output = Vec::new();
+
+    while let Some(ch) = chars.peek().copied() {
+        match ch {
+            '.' => {
+                chars.next();
+                let mut key = String::new();
+                while let Some(next) = chars.peek().copied() {
+                    if matches!(next, '.' | '[') {
+                        break;
+                    }
+                    key.push(next);
+                    chars.next();
+                }
+                if key.is_empty() {
+                    continue;
+                }
+                output.push(JsonPathSegment::Key(key));
+            }
+            '[' => {
+                chars.next();
+                match chars.peek().copied() {
+                    Some('"') => {
+                        chars.next();
+                        let mut key = String::new();
+                        let mut escaped = false;
+
+                        while let Some(next) = chars.next() {
+                            if escaped {
+                                key.push(next);
+                                escaped = false;
+                                continue;
+                            }
+                            if next == '\\' {
+                                escaped = true;
+                                continue;
+                            }
+                            if next == '"' {
+                                break;
+                            }
+                            key.push(next);
+                        }
+
+                        if escaped || chars.next() != Some(']') {
+                            return None;
+                        }
+                        output.push(JsonPathSegment::Key(key));
+                    }
+                    Some(next) if next.is_ascii_digit() => {
+                        let mut digits = String::new();
+                        while let Some(digit) = chars.peek().copied() {
+                            if !digit.is_ascii_digit() {
+                                break;
+                            }
+                            digits.push(digit);
+                            chars.next();
+                        }
+                        if chars.next() != Some(']') {
+                            return None;
+                        }
+                        let index = digits.parse::<usize>().ok()?;
+                        output.push(JsonPathSegment::Index(index));
+                    }
+                    _ => return None,
+                }
+            }
+            _ => return None,
+        }
+    }
+
+    Some(output)
+}
+
+fn map_validation_errors(errors: Vec<IValidationError>) -> Vec<LlmJsonParseError> {
+    errors
+        .into_iter()
+        .map(|error| LlmJsonParseError {
+            path: error.path,
+            expected: error.expected,
+            description: error
+                .description
+                .unwrap_or_else(|| "validation failed".to_owned()),
+        })
+        .collect()
 }
