@@ -232,6 +232,7 @@ fn expand_named_struct_validate(
     })
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy)]
 enum RenameRule {
     LowerCase,
