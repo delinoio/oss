@@ -58,8 +58,10 @@
 ## Change Triggers
 - Update `docs/project-typia.md` and this file when derive identifiers or expansion constraints change.
 - Keep derive/runtime compatibility updates synchronized with `docs/crates-typia-core-foundation.md`.
+- Keep typia component contract updates synchronized with `docs/crates-typia-llm-foundation.md` when shared API identifiers or release policy boundaries change.
 
 ## References
 - `docs/project-typia.md`
 - `docs/crates-typia-core-foundation.md`
+- `docs/crates-typia-llm-foundation.md`
 - `docs/domain-template.md`
