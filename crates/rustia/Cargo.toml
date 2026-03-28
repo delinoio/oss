@@ -1,5 +1,5 @@
 [package]
-name = "rustia"
+name = "rustia-rs"
 version = "0.1.1"
 edition = "2024"
 license = "MIT"
@@ -8,6 +8,9 @@ homepage = "https://github.com/delinoio/oss/tree/main/crates/rustia"
 repository = "https://github.com/delinoio/oss"
 readme = "README.md"
 publish = true
+
+[lib]
+name = "rustia"
 
 [features]
 default = ["derive"]
