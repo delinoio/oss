@@ -13,8 +13,8 @@ use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use syn::{
-    Data, DataEnum, DataStruct, DeriveInput, Field, Fields, GenericParam, Ident, LitBool, LitFloat,
-    LitInt, LitStr, Token, Type, TypePath, meta::ParseNestedMeta, parse_macro_input,
+    Data, DataEnum, DataStruct, DeriveInput, Field, Fields, GenericParam, Ident, LitBool, LitInt,
+    LitStr, Token, Type, TypePath, meta::ParseNestedMeta, parse_macro_input,
     punctuated::Punctuated, spanned::Spanned,
 };
 
@@ -104,13 +104,19 @@ fn expand_named_struct_validate(
 ) -> syn::Result<TokenStream2> {
     let mut field_blocks = Vec::new();
     let mut known_fields = Vec::new();
+    let mut has_flatten = false;
 
     for field in &fields.named {
         let field_ty = &field.ty;
         let field_options = field_serde_options(field, struct_options)?;
+        if field_options.flatten {
+            has_flatten = true;
+        }
         let field_name = field_options.wire_name;
         let field_name_lit = LitStr::new(&field_name, Span::call_site());
-        known_fields.push(field_name_lit.clone());
+        if !field_options.flatten {
+            known_fields.push(field_name_lit.clone());
+        }
 
         let tags = parse_typia_tags(&field.attrs)?;
         validate_tags_for_type(&tags, &field.ty)?;
@@ -148,33 +154,77 @@ fn expand_named_struct_validate(
             }
         };
 
-        field_blocks.push(quote! {
-            let __field_path = #typia_path::__private::join_object_path("$input", #field_name_lit);
-            match __object.get(#field_name_lit) {
-                Some(__field_value) => {
-                    let __validated_field = if __strict {
-                        <#field_ty as #typia_path::Validate>::validate_equals(__field_value.clone())
-                    } else {
-                        <#field_ty as #typia_path::Validate>::validate(__field_value.clone())
-                    };
-                    match __validated_field {
-                        #typia_path::IValidation::Success { .. } => {}
-                        #typia_path::IValidation::Failure { errors: __nested_errors, .. } => {
-                            #typia_path::__private::merge_prefixed_errors(
-                                &mut __errors,
-                                &__field_path,
-                                __nested_errors,
-                            );
-                        }
+        if field_options.flatten {
+            field_blocks.push(quote! {
+                // Flattened fields consume keys from the parent object.
+                // Keep this validation non-strict even in validate_equals to
+                // avoid false unknown-field errors from sibling parent keys.
+                // Remove this workaround once strict flattened-key ownership
+                // analysis is implemented in the derive validator.
+                let __validated_field = <#field_ty as #typia_path::Validate>::validate(__root.clone());
+                match __validated_field {
+                    #typia_path::IValidation::Success { .. } => {}
+                    #typia_path::IValidation::Failure { errors: __nested_errors, .. } => {
+                        #typia_path::__private::merge_prefixed_errors(
+                            &mut __errors,
+                            "$input",
+                            __nested_errors,
+                        );
                     }
-                    #apply_tags
                 }
-                None => {
-                    #missing_behavior
+            });
+        } else {
+            field_blocks.push(quote! {
+                let __field_path = #typia_path::__private::join_object_path("$input", #field_name_lit);
+                match __object.get(#field_name_lit) {
+                    Some(__field_value) => {
+                        let __validated_field = if __strict {
+                            <#field_ty as #typia_path::Validate>::validate_equals(__field_value.clone())
+                        } else {
+                            <#field_ty as #typia_path::Validate>::validate(__field_value.clone())
+                        };
+                        match __validated_field {
+                            #typia_path::IValidation::Success { .. } => {}
+                            #typia_path::IValidation::Failure { errors: __nested_errors, .. } => {
+                                #typia_path::__private::merge_prefixed_errors(
+                                    &mut __errors,
+                                    &__field_path,
+                                    __nested_errors,
+                                );
+                            }
+                        }
+                        #apply_tags
+                    }
+                    None => {
+                        #missing_behavior
+                    }
+                }
+            });
+        }
+    }
+
+    let strict_unknown_check = if has_flatten {
+        quote! {}
+    } else {
+        quote! {
+            if __strict {
+                let __known_fields = [#(#known_fields),*];
+                for __unknown_key in __object.keys() {
+                    if !__known_fields.contains(&__unknown_key.as_str()) {
+                        __errors.push(#typia_path::IValidationError {
+                            path: #typia_path::__private::join_object_path("$input", __unknown_key),
+                            expected: "undefined".to_owned(),
+                            value: __object
+                                .get(__unknown_key)
+                                .cloned()
+                                .unwrap_or(#typia_path::serde_json::Value::Null),
+                            description: Some("unexpected property".to_owned()),
+                        });
+                    }
                 }
             }
-        });
-    }
+        }
+    };
 
     Ok(quote! {
         let __root = __input.clone();
@@ -195,23 +245,7 @@ fn expand_named_struct_validate(
 
         let mut __errors = Vec::<#typia_path::IValidationError>::new();
         #(#field_blocks)*
-
-        if __strict {
-            let __known_fields = [#(#known_fields),*];
-            for __unknown_key in __object.keys() {
-                if !__known_fields.contains(&__unknown_key.as_str()) {
-                    __errors.push(#typia_path::IValidationError {
-                        path: #typia_path::__private::join_object_path("$input", __unknown_key),
-                        expected: "undefined".to_owned(),
-                        value: __object
-                            .get(__unknown_key)
-                            .cloned()
-                            .unwrap_or(#typia_path::serde_json::Value::Null),
-                        description: Some("unexpected property".to_owned()),
-                    });
-                }
-            }
-        }
+        #strict_unknown_check
 
         if __errors.is_empty() {
             match #typia_path::__private::validate_with_serde::<Self>(__root.clone()) {
@@ -285,6 +319,7 @@ struct StructSerdeOptions {
 struct FieldSerdeOptions {
     wire_name: String,
     has_default: bool,
+    flatten: bool,
 }
 
 fn expand_enum_validate(
@@ -703,24 +738,39 @@ fn parse_optional_bool_arg(meta: &ParseNestedMeta<'_>) -> syn::Result<bool> {
 fn parse_f64_arg(meta: &ParseNestedMeta<'_>) -> syn::Result<f64> {
     let content;
     syn::parenthesized!(content in meta.input);
-    if content.peek(LitFloat) {
-        let lit: LitFloat = content.parse()?;
-        if !content.is_empty() {
-            return Err(syn::Error::new(
-                content.span(),
-                "unexpected trailing tokens",
-            ));
-        }
-        return lit.base10_parse();
-    }
-    let lit: LitInt = content.parse()?;
+    let expression: syn::Expr = content.parse()?;
     if !content.is_empty() {
         return Err(syn::Error::new(
             content.span(),
             "unexpected trailing tokens",
         ));
     }
-    lit.base10_parse()
+    parse_f64_expression(&expression)
+}
+
+fn parse_f64_expression(expression: &syn::Expr) -> syn::Result<f64> {
+    match expression {
+        syn::Expr::Lit(literal) => match &literal.lit {
+            syn::Lit::Float(value) => value.base10_parse(),
+            syn::Lit::Int(value) => value.base10_parse(),
+            _ => Err(syn::Error::new_spanned(
+                literal,
+                "expected a numeric literal",
+            )),
+        },
+        syn::Expr::Paren(paren) => parse_f64_expression(&paren.expr),
+        syn::Expr::Unary(unary) => match unary.op {
+            syn::UnOp::Neg(_) => Ok(-parse_f64_expression(&unary.expr)?),
+            _ => Err(syn::Error::new_spanned(
+                unary,
+                "expected a signed numeric literal",
+            )),
+        },
+        _ => Err(syn::Error::new_spanned(
+            expression,
+            "expected a numeric literal",
+        )),
+    }
 }
 
 fn parse_string_arg(meta: &ParseNestedMeta<'_>) -> syn::Result<String> {
@@ -1019,11 +1069,17 @@ fn field_serde_options(
     let mut direct_rename: Option<String> = None;
     let mut deserialize_rename: Option<String> = None;
     let mut has_default = struct_options.default;
+    let mut flatten = false;
     for attr in &field.attrs {
         if !attr.path().is_ident("serde") {
             continue;
         }
         attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("flatten") {
+                flatten = true;
+                return Ok(());
+            }
+
             if meta.path.is_ident("default") {
                 has_default = true;
                 if meta.input.peek(Token![=]) {
@@ -1062,6 +1118,7 @@ fn field_serde_options(
     Ok(FieldSerdeOptions {
         wire_name: deserialize_rename.or(direct_rename).unwrap_or(renamed),
         has_default,
+        flatten,
     })
 }
 

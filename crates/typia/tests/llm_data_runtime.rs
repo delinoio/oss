@@ -322,6 +322,25 @@ struct SerdeRenameAllPayload {
     last_name: String,
 }
 
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct FlattenedAddress {
+    city: String,
+    country: String,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct FlattenedProfile {
+    id: u32,
+    #[serde(flatten)]
+    address: FlattenedAddress,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct SignedNumericTagPayload {
+    #[typia(tags(minimum(-1), maximum(3)))]
+    value: i32,
+}
+
 #[test]
 fn validate_collects_multiple_tag_errors() {
     let value = typia::serde_json::json!({
@@ -392,5 +411,58 @@ fn validate_respects_serde_rename_all_for_field_lookup() {
             );
         }
         IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    }
+}
+
+#[test]
+fn validate_equals_supports_serde_flatten_fields() {
+    let value = typia::serde_json::json!({
+        "id": 1,
+        "city": "Seoul",
+        "country": "KR"
+    });
+
+    match FlattenedProfile::validate_equals(value) {
+        IValidation::Success { data } => {
+            assert_eq!(
+                data,
+                FlattenedProfile {
+                    id: 1,
+                    address: FlattenedAddress {
+                        city: "Seoul".to_owned(),
+                        country: "KR".to_owned(),
+                    },
+                }
+            );
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    }
+}
+
+#[test]
+fn validate_accepts_signed_numeric_tag_literals() {
+    let success = typia::serde_json::json!({
+        "value": -1
+    });
+    match SignedNumericTagPayload::validate(success) {
+        IValidation::Success { data } => {
+            assert_eq!(data, SignedNumericTagPayload { value: -1 });
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    }
+
+    let failure = typia::serde_json::json!({
+        "value": -2
+    });
+    match SignedNumericTagPayload::validate(failure) {
+        IValidation::Success { data } => panic!("validation should fail, got {data:?}"),
+        IValidation::Failure { errors, .. } => {
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.expected == "number & Minimum<-1>"),
+                "expected minimum(-1) tag failure"
+            );
+        }
     }
 }

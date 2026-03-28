@@ -19,8 +19,10 @@
   - derives for `struct` and `enum`
   - emits compile-time error for `union`
   - supports `#[typia(tags(...))]` on fields with lowerCamelCase typia tag identifiers
+  - accepts signed numeric literals for numeric tags (`minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`)
   - supports nested tag groups: `items(tags(...))`, `keys(tags(...))`, `values(tags(...))`
   - validates tag-target compatibility and tag exclusivity at compile time
+  - respects serde field-shape attributes used by validator codegen (`rename`, `rename_all`, `default`, `flatten`)
   - resolves runtime crate path through `proc-macro-crate` to support renamed `typia` dependencies
 - Generated impls must remain compatible with runtime trait contracts defined by `crates/typia`.
 - Derived output contract:
