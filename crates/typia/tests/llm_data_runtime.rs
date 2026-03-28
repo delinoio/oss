@@ -341,6 +341,49 @@ struct SignedNumericTagPayload {
     value: i32,
 }
 
+mod u32_as_string {
+    use typia::serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &u32, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u32, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        raw.parse::<u32>().map_err(typia::serde::de::Error::custom)
+    }
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct SerdeExtraKeyValueOptionsPayload {
+    id: u32,
+    #[serde(
+        alias = "legacyCode",
+        with = "u32_as_string",
+        skip_serializing_if = "is_zero"
+    )]
+    code: u32,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct SerdeSkippedFieldPayload {
+    id: u32,
+    #[serde(skip)]
+    skipped: String,
+    #[serde(skip_deserializing)]
+    skipped_on_deserialize: i32,
+}
+
 #[test]
 fn validate_collects_multiple_tag_errors() {
     let value = typia::serde_json::json!({
@@ -464,5 +507,56 @@ fn validate_accepts_signed_numeric_tag_literals() {
                 "expected minimum(-1) tag failure"
             );
         }
+    }
+}
+
+#[test]
+fn derive_accepts_additional_serde_key_value_options() {
+    let payload = SerdeExtraKeyValueOptionsPayload { id: 1, code: 7 };
+    let encoded = payload.stringify().expect("stringify should succeed");
+    assert_eq!(encoded, r#"{"id":1,"code":"7"}"#);
+}
+
+#[test]
+fn validate_treats_skipped_serde_fields_as_non_required() {
+    let value = typia::serde_json::json!({
+        "id": 1
+    });
+
+    match SerdeSkippedFieldPayload::validate(value) {
+        IValidation::Success { data } => {
+            assert_eq!(
+                data,
+                SerdeSkippedFieldPayload {
+                    id: 1,
+                    skipped: String::new(),
+                    skipped_on_deserialize: 0,
+                }
+            );
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    }
+}
+
+#[test]
+fn validate_equals_accepts_present_skipped_serde_fields() {
+    let value = typia::serde_json::json!({
+        "id": 2,
+        "skipped": "input-value",
+        "skipped_on_deserialize": 99
+    });
+
+    match SerdeSkippedFieldPayload::validate_equals(value) {
+        IValidation::Success { data } => {
+            assert_eq!(
+                data,
+                SerdeSkippedFieldPayload {
+                    id: 2,
+                    skipped: String::new(),
+                    skipped_on_deserialize: 0,
+                }
+            );
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
     }
 }

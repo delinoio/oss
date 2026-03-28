@@ -121,6 +121,13 @@ fn expand_named_struct_validate(
         let tags = parse_typia_tags(&field.attrs)?;
         validate_tags_for_type(&tags, &field.ty)?;
 
+        if field_options.skip_deserializing {
+            // Serde skips these fields during deserialization and injects
+            // defaults instead, so runtime validation must not enforce
+            // requiredness or field-level value constraints for input keys.
+            continue;
+        }
+
         let optional = is_option_type(field_ty) || field_options.has_default;
         let apply_tags = if tags.is_empty() {
             quote! {}
@@ -320,6 +327,7 @@ struct FieldSerdeOptions {
     wire_name: String,
     has_default: bool,
     flatten: bool,
+    skip_deserializing: bool,
 }
 
 fn expand_enum_validate(
@@ -1046,8 +1054,10 @@ fn parse_struct_serde_options(input: &DeriveInput) -> syn::Result<StructSerdeOpt
                     }
                     Ok(())
                 })?;
+                return Ok(());
             }
-            Ok(())
+
+            consume_unknown_serde_meta(&meta)
         })?;
     }
 
@@ -1070,6 +1080,7 @@ fn field_serde_options(
     let mut deserialize_rename: Option<String> = None;
     let mut has_default = struct_options.default;
     let mut flatten = false;
+    let mut skip_deserializing = false;
     for attr in &field.attrs {
         if !attr.path().is_ident("serde") {
             continue;
@@ -1077,6 +1088,12 @@ fn field_serde_options(
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("flatten") {
                 flatten = true;
+                return Ok(());
+            }
+
+            if meta.path.is_ident("skip") || meta.path.is_ident("skip_deserializing") {
+                has_default = true;
+                skip_deserializing = true;
                 return Ok(());
             }
 
@@ -1101,11 +1118,15 @@ fn field_serde_options(
                         let value = nested.value()?;
                         let lit: LitStr = value.parse()?;
                         deserialize_rename = Some(lit.value());
+                        return Ok(());
                     }
-                    Ok(())
+
+                    consume_unknown_serde_meta(&nested)
                 })?;
+                return Ok(());
             }
-            Ok(())
+
+            consume_unknown_serde_meta(&meta)
         })?;
     }
 
@@ -1119,7 +1140,24 @@ fn field_serde_options(
         wire_name: deserialize_rename.or(direct_rename).unwrap_or(renamed),
         has_default,
         flatten,
+        skip_deserializing,
     })
+}
+
+fn consume_unknown_serde_meta(meta: &ParseNestedMeta<'_>) -> syn::Result<()> {
+    if meta.input.peek(Token![=]) {
+        let value = meta.value()?;
+        let _: TokenStream2 = value.parse()?;
+        return Ok(());
+    }
+
+    if meta.input.peek(syn::token::Paren) {
+        let content;
+        syn::parenthesized!(content in meta.input);
+        let _: TokenStream2 = content.parse()?;
+    }
+
+    Ok(())
 }
 
 fn is_option_type(ty: &Type) -> bool {
