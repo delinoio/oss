@@ -234,11 +234,6 @@ impl<'a> LenientJsonParser<'a> {
 
             self.skip_whitespace();
             if self.pos >= self.chars.len() {
-                self.errors.push(LlmJsonParseError {
-                    path: path.to_owned(),
-                    expected: "':'".to_owned(),
-                    description: "end of input".to_owned(),
-                });
                 self.depth -= 1;
                 return Some(Value::Object(result));
             }
@@ -256,11 +251,6 @@ impl<'a> LenientJsonParser<'a> {
 
             self.skip_whitespace();
             if self.pos >= self.chars.len() {
-                self.errors.push(LlmJsonParseError {
-                    path: format!("{path}.{key}"),
-                    expected: "JSON value".to_owned(),
-                    description: "end of input".to_owned(),
-                });
                 self.depth -= 1;
                 return Some(Value::Object(result));
             }
@@ -275,11 +265,6 @@ impl<'a> LenientJsonParser<'a> {
             }
         }
 
-        self.errors.push(LlmJsonParseError {
-            path: path.to_owned(),
-            expected: "'}'".to_owned(),
-            description: "end of input".to_owned(),
-        });
         self.depth -= 1;
         Some(Value::Object(result))
     }
@@ -332,16 +317,11 @@ impl<'a> LenientJsonParser<'a> {
             }
         }
 
-        self.errors.push(LlmJsonParseError {
-            path: path.to_owned(),
-            expected: "']'".to_owned(),
-            description: "end of input".to_owned(),
-        });
         self.depth -= 1;
         Some(Value::Array(result))
     }
 
-    fn parse_string(&mut self, path: &str) -> String {
+    fn parse_string(&mut self, _path: &str) -> String {
         self.pos += 1;
         let mut result = String::new();
         let mut escaped = false;
@@ -417,11 +397,6 @@ impl<'a> LenientJsonParser<'a> {
             self.pos += 1;
         }
 
-        self.errors.push(LlmJsonParseError {
-            path: path.to_owned(),
-            expected: "closing quote".to_owned(),
-            description: "end of input".to_owned(),
-        });
         result
     }
 
