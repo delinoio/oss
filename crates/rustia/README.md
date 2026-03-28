@@ -1,8 +1,8 @@
 # rustia
 
-> **Rust version of [rustia.io](https://rustia.io/).**
+> **Rust version of [typia.io](https://typia.io/).**
 
-`rustia` is the Rust version of `rustia.io`, providing serde-based type-safe
+`rustia` is the Rust version of `typia.io`, providing serde-based type-safe
 validation and LLM JSON parsing utilities.
 
 ## Stable APIs
