@@ -84,12 +84,15 @@
 ## Dependencies and Integrations
 - Serde integration: `serde`, `serde_json`, `serde_path_to_error`.
 - Downstream integration: `typia-macros` derive expansion compatibility.
+- Downstream integration: `typia-llm` adapter input parsing via `LLMData::parse`.
 
 ## Change Triggers
 - Update `docs/project-typia.md` and this file when runtime trait signatures, parsing error shapes, or lenient parsing semantics change.
 - Keep runtime/derive compatibility updates synchronized with `docs/crates-typia-macros-foundation.md`.
+- Keep runtime/adapter compatibility updates synchronized with `docs/crates-typia-llm-foundation.md`.
 
 ## References
 - `docs/project-typia.md`
+- `docs/crates-typia-llm-foundation.md`
 - `docs/crates-typia-macros-foundation.md`
 - `docs/domain-template.md`

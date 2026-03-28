@@ -58,6 +58,7 @@
 - `docs/project-typia.md`: Typia multi-crate project index.
 - `docs/project-dexdex.md`: DexDex multi-runtime project index.
 - `docs/crates-typia-core-foundation.md`: Typia core runtime LLM data contract.
+- `docs/crates-typia-llm-foundation.md`: Typia aisdk tool adapter contract.
 - `docs/crates-typia-macros-foundation.md`: Typia macros derive contract.
 - `docs/apps-dexdex-desktop-app-foundation.md`: DexDex app runtime and integration foundation contract.
 - `docs/apps-dexdex-ui-contract.md`: DexDex UI and interaction contract.
@@ -110,7 +111,7 @@ enum ProjectId {
 - `devkit-remote-file-picker` -> `apps/devkit/src/apps/remote-file-picker`
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
-- `typia` -> `crates/typia`, `crates/typia-macros`
+- `typia` -> `crates/typia`, `crates/typia-llm`, `crates/typia-macros`
 - `public-docs` -> `apps/public-docs`
 - `dexdex` -> `servers/dexdex-main-server`, `servers/dexdex-worker-server`, `apps/dexdex`, `protos/dexdex`
 
@@ -188,16 +189,18 @@ enum SerdeFeatherComponent {
 
 ### Typia Component Contract
 
-`typia` is a two-component project with fixed mapping:
+`typia` is a three-component project with fixed mapping:
 
 ```ts
 enum TypiaComponent {
   Core = "core",
+  Llm = "llm",
   Macros = "macros",
 }
 ```
 
 - `Core` -> `crates/typia`
+- `Llm` -> `crates/typia-llm`
 - `Macros` -> `crates/typia-macros`
 
 ### DexDex Component Contract

@@ -6,11 +6,12 @@ members = [
     "crates/serde-feather",
     "crates/serde-feather-macros",
     "crates/typia",
+    "crates/typia-llm",
     "crates/typia-macros",
 ]
 
 [workspace.metadata.cargo-mono.publish.tag]
-packages = ["nodeup", "cargo-mono", "typia", "typia-macros"]
+packages = ["nodeup", "cargo-mono", "typia", "typia-macros", "typia-llm"]
 
 # Release profile optimizations
 [profile.release]

@@ -12,6 +12,7 @@
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.
 - `crates/serde-feather-macros`: Proc-macro companion crate for serde-feather.
 - `crates/typia`: Serde-based LLM JSON runtime crate.
+- `crates/typia-llm`: aisdk tool adapter crate for typia-based function-calling input validation.
 - `crates/typia-macros`: Proc-macro derive companion crate for typia.
 
 ### Rust Workspace Rules
@@ -45,8 +46,8 @@
 
 ### typia-Specific Rules
 
-- Keep `typia` as the runtime-facing crate and `typia-macros` as the proc-macro companion crate.
-- Keep stable typia identifiers (`Validate`, `IValidation`, `IValidationError`, `LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`, and `#[derive(LLMData)]`) synchronized with `docs/project-typia.md`, `docs/crates-typia-core-foundation.md`, and `docs/crates-typia-macros-foundation.md`.
+- Keep `typia` as the runtime-facing crate, `typia-llm` as the aisdk adapter crate, and `typia-macros` as the proc-macro companion crate.
+- Keep stable typia identifiers (`Validate`, `IValidation`, `IValidationError`, `LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`, `LlmToolInput`, `LlmToolOutput`, `LlmToolSpec`, `tool`, `LlmToolBuildError`, `LlmToolInputError`, `LlmToolExecutionError`, and `#[derive(LLMData)]`) synchronized with `docs/project-typia.md`, `docs/crates-typia-core-foundation.md`, `docs/crates-typia-llm-foundation.md`, and `docs/crates-typia-macros-foundation.md`.
 - Keep non-contracted v0 identifiers explicitly documented as unstable until promoted in typia contract docs.
 - Keep future macro/runtime compatibility constraints synchronized with typia project and crate contracts.
 
@@ -55,6 +56,7 @@
 - `serde-feather` core crate changes must update `docs/crates-serde-feather-core-foundation.md` and `docs/project-serde-feather.md`.
 - `serde-feather-macros` changes must update `docs/crates-serde-feather-macros-foundation.md` and `docs/project-serde-feather.md`.
 - `typia` core crate changes must update `docs/crates-typia-core-foundation.md` and `docs/project-typia.md`.
+- `typia-llm` crate changes must update `docs/crates-typia-llm-foundation.md` and `docs/project-typia.md`.
 - `typia-macros` crate changes must update `docs/crates-typia-macros-foundation.md` and `docs/project-typia.md`.
 
 ### Testing and Validation

@@ -62,6 +62,7 @@ Each project must have one project index document and one or more domain contrac
 ### typia
 - `docs/project-typia.md`
 - `docs/crates-typia-core-foundation.md`
+- `docs/crates-typia-llm-foundation.md`
 - `docs/crates-typia-macros-foundation.md`
 
 ### dexdex
