@@ -731,11 +731,7 @@ fn is_valid_format(format_name: &str, input: &str) -> bool {
         "date-time" => chrono::DateTime::parse_from_rfc3339(input).is_ok(),
         "date" => chrono::NaiveDate::parse_from_str(input, "%Y-%m-%d").is_ok(),
         "time" => is_valid_time(input),
-        "duration" => {
-            Regex::new(r"^P(?!$)(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$")
-                .map(|regex| regex.is_match(input))
-                .unwrap_or(false)
-        }
+        "duration" => is_valid_duration(input),
         "json-pointer" => is_valid_json_pointer(input),
         "relative-json-pointer" => is_valid_relative_json_pointer(input),
         _ => false,
@@ -815,6 +811,19 @@ fn is_valid_relative_json_pointer(input: &str) -> bool {
         return false;
     }
     suffix == "#" || is_valid_json_pointer(suffix)
+}
+
+fn is_valid_duration(input: &str) -> bool {
+    let Ok(regex) = Regex::new(r"^P(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$")
+    else {
+        return false;
+    };
+
+    if !regex.is_match(input) {
+        return false;
+    }
+
+    input != "P" && input != "PT"
 }
 
 fn matches_numeric_type(type_name: &str, value: &Value) -> bool {
