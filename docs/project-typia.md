@@ -18,7 +18,7 @@ Provide serde-based LLM JSON parsing utilities for Rust with a runtime crate (`t
 - Component identifiers remain stable: `core`, `macros`.
 - Runtime and macro boundaries remain explicitly separated across crates.
 - Stable public API contract identifiers:
-  - Runtime: `LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`
+  - Runtime: `Validate`, `IValidation`, `IValidationError`, `LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`
   - Macro: `#[derive(LLMData)]`
 - `LLMData` derive expansion must remain compatible with runtime trait bounds and helper types from `crates/typia`.
 - Lenient parse parity baseline is pinned to

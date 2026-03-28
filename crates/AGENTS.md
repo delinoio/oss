@@ -46,7 +46,7 @@
 ### typia-Specific Rules
 
 - Keep `typia` as the runtime-facing crate and `typia-macros` as the proc-macro companion crate.
-- Keep stable typia identifiers (`LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`, and `#[derive(LLMData)]`) synchronized with `docs/project-typia.md`, `docs/crates-typia-core-foundation.md`, and `docs/crates-typia-macros-foundation.md`.
+- Keep stable typia identifiers (`Validate`, `IValidation`, `IValidationError`, `LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`, and `#[derive(LLMData)]`) synchronized with `docs/project-typia.md`, `docs/crates-typia-core-foundation.md`, and `docs/crates-typia-macros-foundation.md`.
 - Keep non-contracted v0 identifiers explicitly documented as unstable until promoted in typia contract docs.
 - Keep future macro/runtime compatibility constraints synchronized with typia project and crate contracts.
 

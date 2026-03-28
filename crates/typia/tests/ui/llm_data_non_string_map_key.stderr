@@ -1,0 +1,5 @@
+error: map key type must be `String` for typia derive validation
+ --> tests/ui/llm_data_non_string_map_key.rs:8:20
+  |
+8 |     names: HashMap<u32, String>,
+  |                    ^^^

@@ -18,8 +18,17 @@
 - Expansion contract:
   - derives for `struct` and `enum`
   - emits compile-time error for `union`
+  - supports `#[typia(tags(...))]` on fields with lowerCamelCase typia tag identifiers
+  - accepts signed numeric literals for numeric tags (`minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`)
+  - supports nested tag groups: `items(tags(...))`, `keys(tags(...))`, `values(tags(...))`
+  - validates tag-target compatibility and tag exclusivity at compile time
+  - respects serde field-shape attributes used by validator codegen (`rename`, `rename_all`, `default`, `flatten`, `skip`, `skip_deserializing`)
+  - accepts additional serde key-value field options without derive parse failures (for example `alias`, `with`, `skip_serializing_if`)
   - resolves runtime crate path through `proc-macro-crate` to support renamed `typia` dependencies
 - Generated impls must remain compatible with runtime trait contracts defined by `crates/typia`.
+- Derived output contract:
+  - always emits `impl LLMData`
+  - emits `impl Validate`
 
 ## Storage
 - No persistent storage contract.

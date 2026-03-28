@@ -1,5 +1,5 @@
 use typia::{
-    LLMData, LlmJsonParseResult,
+    IValidation, LLMData, LlmJsonParseResult, Validate,
     serde::{Deserialize, Serialize},
 };
 
@@ -202,7 +202,10 @@ fn validate_and_stringify_use_serde() {
         "name": "eve"
     });
 
-    let validated = User::validate(value).expect("validation should succeed");
+    let validated = match User::validate(value) {
+        IValidation::Success { data } => data,
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    };
     assert_eq!(
         validated,
         User {
@@ -221,11 +224,17 @@ fn validate_reports_missing_required_field() {
         "id": 7
     });
 
-    let error = User::validate(value).expect_err("validation should fail");
-    assert!(
-        error.to_string().contains("missing field"),
-        "expected missing field error"
-    );
+    match User::validate(value) {
+        IValidation::Success { data } => panic!("validation should fail, got {data:?}"),
+        IValidation::Failure { errors, .. } => {
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.expected == "required property"),
+                "expected missing field error"
+            );
+        }
+    }
 }
 
 #[test]
@@ -235,11 +244,34 @@ fn validate_reports_type_mismatch() {
         "name": "eve"
     });
 
-    let error = User::validate(value).expect_err("validation should fail");
-    assert!(
-        error.to_string().contains("invalid type"),
-        "expected invalid type error"
-    );
+    match User::validate(value) {
+        IValidation::Success { data } => panic!("validation should fail, got {data:?}"),
+        IValidation::Failure { errors, .. } => {
+            assert!(
+                !errors.is_empty(),
+                "expected at least one type mismatch error"
+            );
+        }
+    }
+}
+
+#[test]
+fn validate_equals_reports_extra_fields() {
+    let value = typia::serde_json::json!({
+        "id": 9,
+        "name": "frank",
+        "unexpected": true
+    });
+
+    match User::validate_equals(value) {
+        IValidation::Success { data } => panic!("validation should fail, got {data:?}"),
+        IValidation::Failure { errors, .. } => {
+            assert!(
+                errors.iter().any(|error| error.path == "$input.unexpected"),
+                "expected extra field error"
+            );
+        }
+    }
 }
 
 #[test]
@@ -253,6 +285,278 @@ fn stringify_roundtrip_through_validate() {
     let decoded: typia::serde_json::Value =
         typia::serde_json::from_str(&encoded).expect("must be valid JSON");
 
-    let validated = User::validate(decoded).expect("validation should succeed");
+    let validated = match User::validate(decoded) {
+        IValidation::Success { data } => data,
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    };
     assert_eq!(validated, user);
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct TaggedPayload {
+    #[typia(tags(minLength(1), maxLength(5), pattern("^[a-z]+$")))]
+    name: String,
+    #[typia(tags(minimum(1), maximum(10), multipleOf(1)))]
+    score: i32,
+    #[typia(tags(minItems(1), maxItems(3), uniqueItems(), items(tags(minLength(2)))))]
+    tags: Vec<String>,
+}
+
+fn default_country() -> String {
+    "KR".to_owned()
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct SerdeDefaultPayload {
+    id: u32,
+    #[serde(default)]
+    nickname: String,
+    #[serde(default = "default_country")]
+    country: String,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+#[serde(rename_all = "camelCase")]
+struct SerdeRenameAllPayload {
+    first_name: String,
+    last_name: String,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct FlattenedAddress {
+    city: String,
+    country: String,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct FlattenedProfile {
+    id: u32,
+    #[serde(flatten)]
+    address: FlattenedAddress,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct SignedNumericTagPayload {
+    #[typia(tags(minimum(-1), maximum(3)))]
+    value: i32,
+}
+
+mod u32_as_string {
+    use typia::serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &u32, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&value.to_string())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u32, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        raw.parse::<u32>().map_err(typia::serde::de::Error::custom)
+    }
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct SerdeExtraKeyValueOptionsPayload {
+    id: u32,
+    #[serde(
+        alias = "legacyCode",
+        with = "u32_as_string",
+        skip_serializing_if = "is_zero"
+    )]
+    code: u32,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize, LLMData)]
+struct SerdeSkippedFieldPayload {
+    id: u32,
+    #[serde(skip)]
+    skipped: String,
+    #[serde(skip_deserializing)]
+    skipped_on_deserialize: i32,
+}
+
+#[test]
+fn validate_collects_multiple_tag_errors() {
+    let value = typia::serde_json::json!({
+        "name": "TOO-LONG",
+        "score": 11,
+        "tags": ["x", "x", "ok", "more"]
+    });
+
+    match TaggedPayload::validate(value) {
+        IValidation::Success { data } => panic!("validation should fail, got {data:?}"),
+        IValidation::Failure { errors, .. } => {
+            assert!(
+                errors.iter().any(|error| error.path == "$input.name"),
+                "expected name tag errors"
+            );
+            assert!(
+                errors.iter().any(|error| error.path == "$input.score"),
+                "expected score tag errors"
+            );
+            assert!(
+                errors.iter().any(|error| error.path == "$input.tags"),
+                "expected tags array-level tag errors"
+            );
+            assert!(
+                errors.iter().any(|error| error.path == "$input.tags[0]"),
+                "expected nested item tag errors"
+            );
+        }
+    }
+}
+
+#[test]
+fn validate_respects_serde_default_field_rules() {
+    let value = typia::serde_json::json!({
+        "id": 7
+    });
+
+    match SerdeDefaultPayload::validate(value) {
+        IValidation::Success { data } => {
+            assert_eq!(
+                data,
+                SerdeDefaultPayload {
+                    id: 7,
+                    nickname: String::new(),
+                    country: "KR".to_owned(),
+                }
+            );
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    }
+}
+
+#[test]
+fn validate_respects_serde_rename_all_for_field_lookup() {
+    let value = typia::serde_json::json!({
+        "firstName": "alice",
+        "lastName": "smith"
+    });
+
+    match SerdeRenameAllPayload::validate_equals(value) {
+        IValidation::Success { data } => {
+            assert_eq!(
+                data,
+                SerdeRenameAllPayload {
+                    first_name: "alice".to_owned(),
+                    last_name: "smith".to_owned(),
+                }
+            );
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    }
+}
+
+#[test]
+fn validate_equals_supports_serde_flatten_fields() {
+    let value = typia::serde_json::json!({
+        "id": 1,
+        "city": "Seoul",
+        "country": "KR"
+    });
+
+    match FlattenedProfile::validate_equals(value) {
+        IValidation::Success { data } => {
+            assert_eq!(
+                data,
+                FlattenedProfile {
+                    id: 1,
+                    address: FlattenedAddress {
+                        city: "Seoul".to_owned(),
+                        country: "KR".to_owned(),
+                    },
+                }
+            );
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    }
+}
+
+#[test]
+fn validate_accepts_signed_numeric_tag_literals() {
+    let success = typia::serde_json::json!({
+        "value": -1
+    });
+    match SignedNumericTagPayload::validate(success) {
+        IValidation::Success { data } => {
+            assert_eq!(data, SignedNumericTagPayload { value: -1 });
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    }
+
+    let failure = typia::serde_json::json!({
+        "value": -2
+    });
+    match SignedNumericTagPayload::validate(failure) {
+        IValidation::Success { data } => panic!("validation should fail, got {data:?}"),
+        IValidation::Failure { errors, .. } => {
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.expected == "number & Minimum<-1>"),
+                "expected minimum(-1) tag failure"
+            );
+        }
+    }
+}
+
+#[test]
+fn derive_accepts_additional_serde_key_value_options() {
+    let payload = SerdeExtraKeyValueOptionsPayload { id: 1, code: 7 };
+    let encoded = payload.stringify().expect("stringify should succeed");
+    assert_eq!(encoded, r#"{"id":1,"code":"7"}"#);
+}
+
+#[test]
+fn validate_treats_skipped_serde_fields_as_non_required() {
+    let value = typia::serde_json::json!({
+        "id": 1
+    });
+
+    match SerdeSkippedFieldPayload::validate(value) {
+        IValidation::Success { data } => {
+            assert_eq!(
+                data,
+                SerdeSkippedFieldPayload {
+                    id: 1,
+                    skipped: String::new(),
+                    skipped_on_deserialize: 0,
+                }
+            );
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    }
+}
+
+#[test]
+fn validate_equals_accepts_present_skipped_serde_fields() {
+    let value = typia::serde_json::json!({
+        "id": 2,
+        "skipped": "input-value",
+        "skipped_on_deserialize": 99
+    });
+
+    match SerdeSkippedFieldPayload::validate_equals(value) {
+        IValidation::Success { data } => {
+            assert_eq!(
+                data,
+                SerdeSkippedFieldPayload {
+                    id: 2,
+                    skipped: String::new(),
+                    skipped_on_deserialize: 0,
+                }
+            );
+        }
+        IValidation::Failure { errors, .. } => panic!("validation should succeed, got {errors:?}"),
+    }
 }

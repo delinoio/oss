@@ -5,12 +5,17 @@
 use serde::de::DeserializeOwned;
 
 mod lenient_json;
+mod validate;
 
 pub use lenient_json::parse_lenient_json_value;
 pub use serde;
 pub use serde_json;
 #[cfg(feature = "derive")]
 pub use typia_macros::LLMData;
+pub use validate::{
+    IValidation, IValidationError, TagRuntime, Validate, apply_tags, join_index_path,
+    join_object_path, merge_prefixed_errors, prepend_path,
+};
 
 /// Detailed parsing error emitted by the lenient parser or serde validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,17 +39,28 @@ pub enum LlmJsonParseResult<T> {
 }
 
 /// Trait for Serde-powered LLM data parsing/validation/stringification.
-pub trait LLMData: serde::Serialize + DeserializeOwned + Sized {
+pub trait LLMData: Validate + serde::Serialize + DeserializeOwned + Sized {
     /// Parse raw LLM output using typia's lenient JSON parser and then validate
     /// the shape through serde deserialization.
     fn parse(input: &str) -> LlmJsonParseResult<Self> {
         match parse_lenient_json_value(input) {
-            LlmJsonParseResult::Success { data } => match deserialize_with_path::<Self>(&data) {
-                Ok(decoded) => LlmJsonParseResult::Success { data: decoded },
-                Err(error) => LlmJsonParseResult::Failure {
+            LlmJsonParseResult::Success { data } => match Self::validate(data.clone()) {
+                IValidation::Success { data: decoded } => {
+                    LlmJsonParseResult::Success { data: decoded }
+                }
+                IValidation::Failure { errors, .. } => LlmJsonParseResult::Failure {
                     data: Some(data),
                     input: input.to_owned(),
-                    errors: vec![error],
+                    errors: errors
+                        .into_iter()
+                        .map(|error| LlmJsonParseError {
+                            path: error.path,
+                            expected: error.expected,
+                            description: error
+                                .description
+                                .unwrap_or_else(|| "validation failed".to_owned()),
+                        })
+                        .collect(),
                 },
             },
             LlmJsonParseResult::Failure {
@@ -53,9 +69,20 @@ pub trait LLMData: serde::Serialize + DeserializeOwned + Sized {
                 mut errors,
             } => {
                 if let Some(value) = data.as_ref()
-                    && let Err(error) = deserialize_with_path::<Self>(value)
+                    && let IValidation::Failure {
+                        errors: validation_errors,
+                        ..
+                    } = Self::validate(value.clone())
                 {
-                    errors.push(error);
+                    errors.extend(validation_errors.into_iter().map(|error| {
+                        LlmJsonParseError {
+                            path: error.path,
+                            expected: error.expected,
+                            description: error
+                                .description
+                                .unwrap_or_else(|| "validation failed".to_owned()),
+                        }
+                    }));
                 }
 
                 LlmJsonParseResult::Failure {
@@ -67,47 +94,13 @@ pub trait LLMData: serde::Serialize + DeserializeOwned + Sized {
         }
     }
 
-    /// Validate a parsed JSON value using serde deserialization.
-    fn validate(value: serde_json::Value) -> Result<Self, serde_json::Error> {
-        serde_json::from_value(value)
-    }
-
     /// Serialize into compact JSON text.
     fn stringify(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
     }
 }
 
-fn deserialize_with_path<T>(value: &serde_json::Value) -> Result<T, LlmJsonParseError>
-where
-    T: DeserializeOwned,
-{
-    let encoded = serde_json::to_vec(value).map_err(|error| LlmJsonParseError {
-        path: "$input".to_owned(),
-        expected: "JSON value".to_owned(),
-        description: error.to_string(),
-    })?;
-
-    let mut deserializer = serde_json::Deserializer::from_slice(&encoded);
-    serde_path_to_error::deserialize::<_, T>(&mut deserializer).map_err(|error| {
-        let raw_path = error.path().to_string();
-        let path = normalize_path(&raw_path);
-        let description = error.into_inner().to_string();
-
-        LlmJsonParseError {
-            path,
-            expected: "serde-compatible schema".to_owned(),
-            description,
-        }
-    })
-}
-
-fn normalize_path(path: &str) -> String {
-    if path.is_empty() {
-        "$input".to_owned()
-    } else if path.starts_with('[') {
-        format!("$input{path}")
-    } else {
-        format!("$input.{path}")
-    }
+#[doc(hidden)]
+pub mod __private {
+    pub use crate::validate::__private::*;
 }
