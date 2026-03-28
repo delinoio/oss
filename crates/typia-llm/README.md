@@ -50,6 +50,48 @@ fn main() {
 }
 ```
 
+## API Key Setup
+
+`typia-llm` only builds typed `Tool` adapters. API key configuration is handled by
+the `aisdk` provider you use (for example, OpenAI).
+
+If you use OpenAI, enable the provider feature in your app crate:
+
+```bash
+cargo add aisdk --features openai
+```
+
+### Option A: Environment Variable (recommended)
+
+```bash
+export OPENAI_API_KEY="<YOUR_OPENAI_API_KEY>"
+```
+
+Then use your tool with `aisdk`:
+
+```rust
+use aisdk::{core::LanguageModelRequest, providers::OpenAI};
+
+let response = LanguageModelRequest::builder()
+    .model(OpenAI::gpt_5())
+    .prompt("Use the provided tool to answer the request.")
+    .with_tool(weather_tool)
+    .build()
+    .generate_text()
+    .await?;
+```
+
+### Option B: Explicit API Key in Provider Builder
+
+```rust
+use aisdk::providers::OpenAI;
+
+let mut openai = OpenAI::gpt_5();
+openai.settings.api_key = "<YOUR_OPENAI_API_KEY>".to_owned();
+```
+
+Use `openai` as the model in `LanguageModelRequest::builder().model(openai)`.
+
 ## API Surface
 
 - `LlmToolInput`: `typia::LLMData + schemars::JsonSchema + Send + Sync + 'static`
