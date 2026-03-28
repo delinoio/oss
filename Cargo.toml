@@ -5,13 +5,13 @@ members = [
     "crates/nodeup",
     "crates/serde-feather",
     "crates/serde-feather-macros",
-    "crates/typia",
-    "crates/typia-llm",
-    "crates/typia-macros",
+    "crates/rustia",
+    "crates/rustia-llm",
+    "crates/rustia-macros",
 ]
 
 [workspace.metadata.cargo-mono.publish.tag]
-packages = ["nodeup", "cargo-mono", "typia", "typia-macros", "typia-llm"]
+packages = ["nodeup", "cargo-mono", "rustia", "rustia-macros", "rustia-llm"]
 
 # Release profile optimizations
 [profile.release]

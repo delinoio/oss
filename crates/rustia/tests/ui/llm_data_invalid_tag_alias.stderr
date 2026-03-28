@@ -1,0 +1,5 @@
+error: unsupported rustia tag `minLen`
+ --> tests/ui/llm_data_invalid_tag_alias.rs:5:19
+  |
+5 |     #[rustia(tags(minLen(1)))]
+  |                   ^^^^^^

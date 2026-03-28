@@ -1,0 +1,20 @@
+[package]
+name = "rustia-macros"
+version = "0.1.1"
+edition = "2024"
+license = "MIT"
+description = "Rust version of rustia.io derive macros for rustia"
+homepage = "https://github.com/delinoio/oss/tree/main/crates/rustia-macros"
+repository = "https://github.com/delinoio/oss"
+readme = "README.md"
+publish = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+heck = "0.5.0"
+proc-macro-crate = "3.3.0"
+proc-macro2 = "1.0.94"
+quote = "1.0.39"
+syn = { version = "2.0.100", features = ["full"] }

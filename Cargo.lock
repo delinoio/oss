@@ -1841,6 +1841,45 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "357703d41365b4b27c590e3ed91eabb1b663f07c4c084095e60cbed4362dff0d"
 
 [[package]]
+name = "rustia"
+version = "0.1.1"
+dependencies = [
+ "base64",
+ "chrono",
+ "regex",
+ "rustia-macros",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "trybuild",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "rustia-llm"
+version = "0.1.0"
+dependencies = [
+ "aisdk",
+ "rustia",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "rustia-macros"
+version = "0.1.1"
+dependencies = [
+ "heck",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "rustix"
 version = "1.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2753,45 +2792,6 @@ name = "typenum"
 version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
-
-[[package]]
-name = "typia"
-version = "0.1.1"
-dependencies = [
- "base64",
- "chrono",
- "regex",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "trybuild",
- "typia-macros",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "typia-llm"
-version = "0.1.0"
-dependencies = [
- "aisdk",
- "schemars",
- "serde",
- "serde_json",
- "tracing",
- "typia",
-]
-
-[[package]]
-name = "typia-macros"
-version = "0.1.1"
-dependencies = [
- "heck",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "unicode-ident"
