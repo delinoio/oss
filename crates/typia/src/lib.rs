@@ -163,17 +163,30 @@ fn coerce_stringified_path(root: &mut Value, path: &[JsonPathSegment]) -> bool {
         _ => return false,
     };
 
-    let LlmJsonParseResult::Success { data } = parse_lenient_json_value(&raw) else {
+    let Some(coerced) = parse_stringified_non_string(&raw) else {
         return false;
     };
-
-    let original = Value::String(raw);
-    if data == original {
-        return false;
-    }
-
-    *target = data;
+    *target = coerced;
     true
+}
+
+fn parse_stringified_non_string(raw: &str) -> Option<Value> {
+    let mut cursor = raw.to_owned();
+    for _ in 0..MAX_PARSE_COERCION_ROUNDS {
+        let LlmJsonParseResult::Success { data } = parse_lenient_json_value(&cursor) else {
+            return None;
+        };
+        match data {
+            Value::String(next) => {
+                if next == cursor {
+                    return None;
+                }
+                cursor = next;
+            }
+            other => return Some(other),
+        }
+    }
+    None
 }
 
 fn value_mut_on_path<'a>(root: &'a mut Value, path: &[JsonPathSegment]) -> Option<&'a mut Value> {

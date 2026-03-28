@@ -179,6 +179,26 @@ fn parse_string_field_stays_string_without_coercion() {
 }
 
 #[test]
+fn parse_does_not_unquote_string_fields_to_pass_tags() {
+    let result = TaggedPayload::parse(r#"{"name":"\"abc\"","score":1,"tags":["ab"]}"#);
+
+    match result {
+        LlmJsonParseResult::Failure { data, errors, .. } => {
+            assert!(
+                errors.iter().any(|error| error.path == "$input.name"),
+                "expected name validation error"
+            );
+            let value = data.expect("expected parsed payload for debugging");
+            assert_eq!(
+                value.get("name"),
+                Some(&typia::serde_json::Value::String("\"abc\"".to_owned()))
+            );
+        }
+        other => panic!("expected failure, got {other:?}"),
+    }
+}
+
+#[test]
 fn parse_markdown_code_block_with_prefix() {
     let input = "Here is your result:\n```json\n{\"id\":2,\"name\":\"bob\"}\n```";
     let result = User::parse(input);
