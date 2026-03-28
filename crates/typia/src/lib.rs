@@ -229,7 +229,7 @@ fn parse_validation_path(path: &str) -> Option<Vec<JsonPathSegment>> {
                         let mut key = String::new();
                         let mut escaped = false;
 
-                        while let Some(next) = chars.next() {
+                        for next in chars.by_ref() {
                             if escaped {
                                 key.push(next);
                                 escaped = false;
