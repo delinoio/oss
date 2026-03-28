@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 description = "Rust version of typia.io derive macros for typia"
-homepage = "https://typia.io/"
+homepage = "https://github.com/delinoio/oss/tree/main/crates/typia-macros"
+repository = "https://github.com/delinoio/oss"
 readme = "README.md"
 publish = false
 
