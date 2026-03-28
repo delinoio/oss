@@ -20,6 +20,10 @@ Provide serde-based LLM JSON parsing utilities for Rust with a runtime crate (`t
 - Stable public API contract identifiers:
   - Runtime: `Validate`, `IValidation`, `IValidationError`, `LLMData`, `LlmJsonParseResult`, `LlmJsonParseError`
   - Macro: `#[derive(LLMData)]`
+- `LLMData::parse` performs parse-only coercion of stringified non-string JSON
+  values (object/array/number/boolean/null) before returning validation
+  failures, while direct `Validate::validate` / `validate_equals` calls remain
+  strict.
 - `LLMData` derive expansion must remain compatible with runtime trait bounds and helper types from `crates/typia`.
 - Lenient parse parity baseline is pinned to
   `samchon/typia@29a02742661d476ce5ef5414fe32acc7e97c0e6c` parse tests.

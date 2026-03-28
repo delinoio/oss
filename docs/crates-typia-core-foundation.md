@@ -37,6 +37,11 @@
   - `LLMData: Validate + serde::Serialize + DeserializeOwned + Sized`
 - `LLMData::parse` contract:
   - lenient parse first, then serde validation
+  - parse-only coercion stage retries serde validation by reparsing string values
+    on failing validation paths (`$input...`) with the lenient parser
+  - coercion candidates are applied only when string reparsing succeeds without
+    parser errors and produces a different JSON value
+  - coercion retries are bounded (`MAX_PARSE_COERCION_ROUNDS = 16`)
   - preserves original input on failure
   - includes partial parsed `serde_json::Value` when recoverable
   - incomplete/truncated inputs that can be recovered without parser-token errors

@@ -34,6 +34,9 @@ fn main() {
     let parsed = User::parse("{id: 1, name: \"alice\",}");
     println!("{parsed:?}");
 
+    let coercion = User::parse(r#""{\"id\":2,\"name\":\"bob\"}""#);
+    println!("{coercion:?}");
+
     let validated = User::validate(typia::serde_json::json!({ "id": 1, "name": "alice" }));
     if let IValidation::Success { data } = validated {
         println!("{}", data.stringify().unwrap());
@@ -65,6 +68,23 @@ Supported nesting tags:
 ## Lenient Parser Behaviors
 
 `LLMData::parse()` uses typia's internal lenient JSON parser before serde validation.
+
+`LLMData::parse()` also applies a parse-only coercion pass when validation
+fails:
+
+- follows validation error paths (`$input...`)
+- reparses string values with the lenient parser
+- replaces values only when reparsing succeeds and changes the JSON type/value
+- retries validation up to `MAX_PARSE_COERCION_ROUNDS = 16`
+
+This enables common LLM output recovery such as:
+
+- stringified object -> object (for struct/object targets)
+- stringified array -> array
+- stringified number/boolean/null -> number/boolean/null
+
+Direct `Validate::validate()` / `validate_equals()` calls remain strict and do
+not apply this coercion.
 
 Supported recovery behaviors:
 
