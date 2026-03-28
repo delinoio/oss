@@ -3,7 +3,9 @@ name = "typia-macros"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Proc-macro derive crate for typia"
+description = "Rust version of typia.io derive macros for typia"
+homepage = "https://typia.io/"
+readme = "README.md"
 publish = false
 
 [lib]
