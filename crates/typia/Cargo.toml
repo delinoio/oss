@@ -3,7 +3,10 @@ name = "typia"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Type-safe JSON schema validation for Rust"
+description = "Rust version of typia.io for type-safe JSON validation and LLM JSON parsing"
+homepage = "https://github.com/delinoio/oss/tree/main/crates/typia"
+repository = "https://github.com/delinoio/oss"
+readme = "README.md"
 publish = false
 
 [features]

@@ -1,6 +1,9 @@
 # typia
 
-`typia` provides serde-based LLM JSON utilities for Rust.
+> **Rust version of [typia.io](https://typia.io/).**
+
+`typia` is the Rust version of `typia.io`, providing serde-based type-safe
+validation and LLM JSON parsing utilities.
 
 ## Stable APIs
 
