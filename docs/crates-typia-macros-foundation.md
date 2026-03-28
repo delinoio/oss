@@ -18,8 +18,14 @@
 - Expansion contract:
   - derives for `struct` and `enum`
   - emits compile-time error for `union`
+  - supports `#[typia(tags(...))]` on fields with lowerCamelCase typia tag identifiers
+  - supports nested tag groups: `items(tags(...))`, `keys(tags(...))`, `values(tags(...))`
+  - validates tag-target compatibility and tag exclusivity at compile time
   - resolves runtime crate path through `proc-macro-crate` to support renamed `typia` dependencies
 - Generated impls must remain compatible with runtime trait contracts defined by `crates/typia`.
+- Derived output contract:
+  - always emits `impl LLMData`
+  - emits `impl Validate`
 
 ## Storage
 - No persistent storage contract.

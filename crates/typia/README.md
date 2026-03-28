@@ -4,9 +4,13 @@
 
 ## Stable APIs
 
+- `Validate` trait
+  - `validate(value: serde_json::Value) -> IValidation<Self>`
+  - `validate_equals(value: serde_json::Value) -> IValidation<Self>`
+- `IValidation<T>`
+- `IValidationError`
 - `LLMData` trait
   - `parse(input: &str) -> LlmJsonParseResult<Self>`
-  - `validate(value: serde_json::Value) -> Result<Self, serde_json::Error>`
   - `stringify(&self) -> Result<String, serde_json::Error>`
 - `LlmJsonParseResult<T>`
 - `LlmJsonParseError`
@@ -16,7 +20,7 @@
 
 ```rust
 use typia::{
-    LLMData,
+    IValidation, LLMData, Validate,
     serde::{Deserialize, Serialize},
 };
 
@@ -29,8 +33,34 @@ struct User {
 fn main() {
     let parsed = User::parse("{id: 1, name: \"alice\",}");
     println!("{parsed:?}");
+
+    let validated = User::validate(typia::serde_json::json!({ "id": 1, "name": "alice" }));
+    if let IValidation::Success { data } = validated {
+        println!("{}", data.stringify().unwrap());
+    }
 }
 ```
+
+## Derive Tags
+
+`#[derive(LLMData)]` supports typia-style field tags via `#[typia(tags(...))]`.
+
+```rust
+#[derive(Debug, Serialize, Deserialize, LLMData)]
+struct Product {
+    #[typia(tags(minLength(1), maxLength(20), pattern("^[a-z0-9-]+$")))]
+    slug: String,
+    #[typia(tags(minimum(0), maximum(100)))]
+    score: i32,
+    #[typia(tags(minItems(1), items(tags(minLength(2)))))]
+    labels: Vec<String>,
+}
+```
+
+Supported nesting tags:
+- `items(tags(...))`
+- `keys(tags(...))`
+- `values(tags(...))`
 
 ## Lenient Parser Behaviors
 

@@ -15,13 +15,26 @@
 ## Interfaces and Contracts
 - Stable component identifier: `core`.
 - Stable runtime identifiers:
+  - `Validate` trait
+  - `IValidation<T>`
+  - `IValidationError`
   - `LLMData` trait
   - `LlmJsonParseResult<T>`
   - `LlmJsonParseError`
+- `Validate` method contract:
+  - `validate(value: serde_json::Value) -> IValidation<Self>`
+  - `validate_equals(value: serde_json::Value) -> IValidation<Self>`
+- `IValidation<T>` contract:
+  - success discriminator result (`Success` / `Failure`)
+  - failure payload preserves original input value and accumulated validation errors
+- `IValidationError` contract:
+  - required fields: `path`, `expected`, `value`
+  - optional field: `description`
 - `LLMData` method contract:
   - `parse(input: &str) -> LlmJsonParseResult<Self>`
-  - `validate(value: serde_json::Value) -> Result<Self, serde_json::Error>`
   - `stringify(&self) -> Result<String, serde_json::Error>`
+- `LLMData` trait bound contract:
+  - `LLMData: Validate + serde::Serialize + DeserializeOwned + Sized`
 - `LLMData::parse` contract:
   - lenient parse first, then serde validation
   - preserves original input on failure
