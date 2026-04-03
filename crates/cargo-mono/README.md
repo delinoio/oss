@@ -8,11 +8,17 @@
 cargo mono list
 cargo mono changed [--base <ref>] [--include-uncommitted] [--direct-only]
 cargo mono bump [--all|--changed|--package <name>] --level <major|minor|patch|prerelease>
-cargo mono publish [--all|--changed|--package <name>] [--dry-run]
+cargo mono publish [--all|--changed|--package <name>] [--dry-run] [--max-attempts <count>]
 ```
 
 `cargo mono publish` always delegates to `cargo publish --no-verify`, including `--dry-run`
 execution.
+
+Retryable publish failures stay narrowly scoped to index propagation lag and registry rate
+limiting. Those failures retry indefinitely by default using capped exponential backoff (`2s`,
+`4s`, `8s`, `16s`, `32s`, then `60s`), and rate-limit retries honor `Retry-After` when present.
+Operators can cap retries with `--max-attempts <count>` or `CARGO_MONO_PUBLISH_MAX_ATTEMPTS`;
+the CLI flag takes precedence over the environment variable.
 
 ## Publish Tag Configuration
 
@@ -43,7 +49,7 @@ Coverage highlights:
 - `list`: workspace discovery and publishability reporting.
 - `changed`: base override, include/exclude filters, invalid glob rejection, direct-only vs dependent expansion, include-uncommitted behavior, and global-impact file handling.
 - `bump`: clean-tree preflight, non-publishable skip behavior, manifest/version/dependency updates, dependent patch propagation, and release commit creation (no tag creation).
-- `publish`: clean-tree preflight, fixed `--no-verify` delegation (including dry-run), unknown package validation, and allowlist-based publish tag creation.
+- `publish`: clean-tree preflight, fixed `--no-verify` delegation (including dry-run), unlimited retryable publish retries with optional caps, unknown package validation, and allowlist-based publish tag creation.
 - Cargo external-subcommand mode compatibility (`cargo mono ...`) and top-level help/version behavior outside workspaces.
 
 ## Local Validation

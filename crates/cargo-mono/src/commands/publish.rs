@@ -24,13 +24,15 @@ use crate::{
     CargoMonoApp,
 };
 
-const MAX_PUBLISH_ATTEMPTS: usize = 3;
 const CRATES_IO_SPARSE_INDEX_BASE_URL: &str = "https://index.crates.io";
+pub(super) const PUBLISH_MAX_ATTEMPTS_ENV: &str = "CARGO_MONO_PUBLISH_MAX_ATTEMPTS";
 pub(super) const PUBLISH_PREFETCH_CONCURRENCY_ENV: &str = "CARGO_MONO_PUBLISH_PREFETCH_CONCURRENCY";
 const DEFAULT_PREFETCH_CONCURRENCY: usize = 16;
 const MAX_PREFETCH_CONCURRENCY: usize = 64;
 const PREFETCH_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const PUBLISH_NO_VERIFY: bool = true;
+const INITIAL_RETRY_DELAY_SECONDS: u64 = 2;
+const MAX_RETRY_DELAY_SECONDS: u64 = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PublishFailureKind {
@@ -38,6 +40,119 @@ enum PublishFailureKind {
     IndexNotReady,
     RateLimited,
     Other,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PublishRetryReason {
+    IndexNotReady,
+    RateLimited,
+}
+
+impl PublishRetryReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::IndexNotReady => "index-not-ready",
+            Self::RateLimited => "rate-limited",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RetryLimit {
+    Unlimited,
+    Limited(usize),
+}
+
+impl RetryLimit {
+    fn allows_retry(self, attempts: usize) -> bool {
+        match self {
+            Self::Unlimited => true,
+            Self::Limited(max_attempts) => attempts < max_attempts,
+        }
+    }
+
+    fn max_attempts(self) -> Option<usize> {
+        match self {
+            Self::Unlimited => None,
+            Self::Limited(max_attempts) => Some(max_attempts),
+        }
+    }
+
+    fn as_log_value(self) -> String {
+        match self {
+            Self::Unlimited => "unlimited".to_string(),
+            Self::Limited(max_attempts) => max_attempts.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PublishRetryPolicy {
+    limit: RetryLimit,
+}
+
+impl PublishRetryPolicy {
+    fn from_sources(
+        cli_max_attempts: Option<usize>,
+        env_value: Option<&str>,
+    ) -> PublishRetryPolicyResolution {
+        if let Some(max_attempts) = cli_max_attempts {
+            return PublishRetryPolicyResolution {
+                policy: Self {
+                    limit: RetryLimit::Limited(max_attempts),
+                },
+                source: PublishRetryPolicySource::Cli,
+                invalid_env_value: None,
+            };
+        }
+
+        let parsed_env_max_attempts = env_value.and_then(parse_publish_max_attempts_override);
+        if let Some(max_attempts) = parsed_env_max_attempts {
+            return PublishRetryPolicyResolution {
+                policy: Self {
+                    limit: RetryLimit::Limited(max_attempts),
+                },
+                source: PublishRetryPolicySource::Env,
+                invalid_env_value: None,
+            };
+        }
+
+        PublishRetryPolicyResolution {
+            policy: Self {
+                limit: RetryLimit::Unlimited,
+            },
+            source: PublishRetryPolicySource::Default,
+            invalid_env_value: env_value
+                .filter(|raw| parse_publish_max_attempts_override(raw).is_none())
+                .map(str::to_string),
+        }
+    }
+
+    fn allows_retry(self, attempts: usize) -> bool {
+        self.limit.allows_retry(attempts)
+    }
+
+    fn max_attempts(self) -> Option<usize> {
+        self.limit.max_attempts()
+    }
+
+    fn limit_log_value(self) -> String {
+        self.limit.as_log_value()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PublishRetryPolicySource {
+    Default,
+    Cli,
+    Env,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PublishRetryPolicyResolution {
+    policy: PublishRetryPolicy,
+    source: PublishRetryPolicySource,
+    invalid_env_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -172,9 +287,56 @@ struct SparseIndexEntry {
     vers: String,
 }
 
+fn resolve_publish_retry_policy(cli_max_attempts: Option<usize>) -> PublishRetryPolicy {
+    let env_value = std::env::var(PUBLISH_MAX_ATTEMPTS_ENV).ok();
+    let resolution = PublishRetryPolicy::from_sources(cli_max_attempts, env_value.as_deref());
+
+    if let Some(invalid_env_value) = resolution.invalid_env_value.as_deref() {
+        warn!(
+            command_path = "cargo-mono.publish",
+            action = "resolve-retry-policy",
+            outcome = "invalid-max-attempts-override",
+            env_var = PUBLISH_MAX_ATTEMPTS_ENV,
+            env_value = %invalid_env_value,
+            configured_retry_limit = %resolution.policy.limit_log_value(),
+            "Invalid publish retry max-attempts override; defaulting to unlimited retries"
+        );
+    }
+
+    info!(
+        command_path = "cargo-mono.publish",
+        action = "resolve-retry-policy",
+        outcome = "resolved",
+        configured_retry_limit = %resolution.policy.limit_log_value(),
+        source = match resolution.source {
+            PublishRetryPolicySource::Default => "default",
+            PublishRetryPolicySource::Cli => "cli",
+            PublishRetryPolicySource::Env => "env",
+        },
+        "Resolved publish retry policy"
+    );
+
+    resolution.policy
+}
+
+fn parse_publish_max_attempts_override(raw: &str) -> Option<usize> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let parsed = trimmed.parse::<usize>().ok()?;
+    if parsed == 0 {
+        return None;
+    }
+
+    Some(parsed)
+}
+
 pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -> Result<i32> {
     let resolved = targeting::resolve_targets(&args.target, &args.changed, &app.workspace)?;
     let publish_tag_packages = app.workspace.publish_tag_packages();
+    let retry_policy = resolve_publish_retry_policy(args.max_attempts);
 
     let mode = if args.dry_run {
         PublishMode::DryRun
@@ -224,8 +386,12 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
     }
 
     let order = app.workspace.topological_order(&publishable_targets)?;
-    let prefetch_result =
-        prefetch_published_versions(&app.workspace, &order, args.registry.as_deref());
+    let prefetch_result = prefetch_published_versions(
+        &app.workspace,
+        &order,
+        args.registry.as_deref(),
+        retry_policy,
+    );
     let mut published = Vec::<PublishedPackage>::new();
     let mut failed = Vec::<FailedPackage>::new();
     let mut tags = Vec::<String>::new();
@@ -253,9 +419,8 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
         }
 
         let mut attempts = 0usize;
-        let mut published_or_skipped = false;
 
-        while attempts < MAX_PUBLISH_ATTEMPTS {
+        loop {
             attempts += 1;
             info!(
                 command_path = "cargo-mono.publish",
@@ -264,6 +429,7 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
                 action = "publish-package",
                 outcome = "attempt",
                 retry_attempt = attempts,
+                configured_retry_limit = %retry_policy.limit_log_value(),
                 mode = mode.as_str(),
                 no_verify = PUBLISH_NO_VERIFY,
                 "Publishing package"
@@ -283,7 +449,6 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
                     publish_tag_packages,
                     &mut tags,
                 )?;
-                published_or_skipped = true;
                 break;
             }
 
@@ -298,7 +463,6 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
                         name: package_name.clone(),
                         reason: PublishSkipReason::AlreadyPublished,
                     });
-                    published_or_skipped = true;
                     info!(
                         command_path = "cargo-mono.publish",
                         workspace_root = %app.workspace.root.display(),
@@ -311,7 +475,7 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
                     );
                     break;
                 }
-                PublishFailureKind::IndexNotReady if attempts < MAX_PUBLISH_ATTEMPTS => {
+                PublishFailureKind::IndexNotReady if retry_policy.allows_retry(attempts) => {
                     let delay = retry_delay(attempts);
                     info!(
                         command_path = "cargo-mono.publish",
@@ -319,13 +483,32 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
                         package = %package_name,
                         action = "publish-package",
                         outcome = "retry-index-propagation",
+                        retry_reason = PublishRetryReason::IndexNotReady.as_str(),
                         retry_attempt = attempts,
+                        configured_retry_limit = %retry_policy.limit_log_value(),
                         delay_seconds = delay.as_secs(),
                         "Retrying publish due to index propagation lag"
                     );
                     thread::sleep(delay);
                 }
-                PublishFailureKind::RateLimited if attempts < MAX_PUBLISH_ATTEMPTS => {
+                PublishFailureKind::IndexNotReady => {
+                    failed.push(FailedPackage {
+                        name: package_name.clone(),
+                        attempts,
+                        error: format_publish_retry_limit_failure(
+                            &package_name,
+                            attempts,
+                            PublishRetryReason::IndexNotReady,
+                            retry_policy
+                                .max_attempts()
+                                .expect("retry limit must exist when retry policy is exhausted"),
+                            args.dry_run,
+                            args.registry.as_deref(),
+                        ),
+                    });
+                    break;
+                }
+                PublishFailureKind::RateLimited if retry_policy.allows_retry(attempts) => {
                     let delay = resolve_retry_delay(attempts, retry_after_seconds);
                     info!(
                         command_path = "cargo-mono.publish",
@@ -333,13 +516,32 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
                         package = %package_name,
                         action = "publish-package",
                         outcome = "retry-rate-limited",
+                        retry_reason = PublishRetryReason::RateLimited.as_str(),
                         retry_attempt = attempts,
+                        configured_retry_limit = %retry_policy.limit_log_value(),
                         delay_seconds = delay.as_secs(),
                         retry_after_seconds = retry_after_seconds.unwrap_or_default(),
                         retry_after_present = retry_after_seconds.is_some(),
                         "Retrying publish due to rate limiting"
                     );
                     thread::sleep(delay);
+                }
+                PublishFailureKind::RateLimited => {
+                    failed.push(FailedPackage {
+                        name: package_name.clone(),
+                        attempts,
+                        error: format_publish_retry_limit_failure(
+                            &package_name,
+                            attempts,
+                            PublishRetryReason::RateLimited,
+                            retry_policy
+                                .max_attempts()
+                                .expect("retry limit must exist when retry policy is exhausted"),
+                            args.dry_run,
+                            args.registry.as_deref(),
+                        ),
+                    });
+                    break;
                 }
                 _ => {
                     failed.push(FailedPackage {
@@ -354,23 +556,9 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
                             args.registry.as_deref(),
                         ),
                     });
-                    published_or_skipped = true;
                     break;
                 }
             }
-        }
-
-        if !published_or_skipped {
-            failed.push(FailedPackage {
-                name: package_name.clone(),
-                attempts,
-                error: format_publish_retry_limit_failure(
-                    &package_name,
-                    attempts,
-                    args.dry_run,
-                    args.registry.as_deref(),
-                ),
-            });
         }
     }
 
@@ -525,6 +713,7 @@ fn prefetch_published_versions(
     workspace: &Workspace,
     ordered_packages: &[String],
     registry: Option<&str>,
+    retry_policy: PublishRetryPolicy,
 ) -> PublishPrefetchResult {
     if !should_prefetch_published_versions(registry) {
         info!(
@@ -596,7 +785,7 @@ fn prefetch_published_versions(
         "Prefetching published crate versions from crates.io sparse index"
     );
 
-    let lookup_results = run_parallel_sparse_index_lookup(&candidates, concurrency);
+    let lookup_results = run_parallel_sparse_index_lookup(&candidates, concurrency, retry_policy);
     let prefetch_result = merge_prefetch_lookup_results(lookup_results);
 
     for lookup_error in &prefetch_result.lookup_errors {
@@ -674,6 +863,7 @@ fn parse_prefetch_concurrency_value(raw: &str) -> Option<usize> {
 fn run_parallel_sparse_index_lookup(
     candidates: &[PublishPrefetchCandidate],
     concurrency: usize,
+    retry_policy: PublishRetryPolicy,
 ) -> Vec<PrefetchPackageLookupResult> {
     if candidates.is_empty() {
         return Vec::new();
@@ -708,7 +898,10 @@ fn run_parallel_sparse_index_lookup(
         for _ in 0..worker_count {
             let worker_queue = Arc::clone(&queue);
             let worker_client = http_client.clone();
-            handles.push(scope.spawn(move || prefetch_worker_loop(worker_queue, worker_client)));
+            handles
+                .push(scope.spawn(move || {
+                    prefetch_worker_loop(worker_queue, worker_client, retry_policy)
+                }));
         }
 
         handles
@@ -749,6 +942,7 @@ fn run_parallel_sparse_index_lookup(
 fn prefetch_worker_loop(
     queue: Arc<Mutex<VecDeque<PublishPrefetchCandidate>>>,
     client: reqwest::blocking::Client,
+    retry_policy: PublishRetryPolicy,
 ) -> Vec<PrefetchPackageLookupResult> {
     let mut results = Vec::new();
 
@@ -761,7 +955,11 @@ fn prefetch_worker_loop(
             break;
         };
 
-        results.push(lookup_sparse_index_version(&client, &candidate));
+        results.push(lookup_sparse_index_version(
+            &client,
+            &candidate,
+            retry_policy,
+        ));
     }
 
     results
@@ -770,11 +968,14 @@ fn prefetch_worker_loop(
 fn lookup_sparse_index_version(
     client: &reqwest::blocking::Client,
     candidate: &PublishPrefetchCandidate,
+    retry_policy: PublishRetryPolicy,
 ) -> PrefetchPackageLookupResult {
     let path = sparse_index_path_for_crate(&candidate.name);
     let request_url = format!("{CRATES_IO_SPARSE_INDEX_BASE_URL}/{path}");
 
-    for attempt in 1..=MAX_PUBLISH_ATTEMPTS {
+    let mut attempt = 0usize;
+    loop {
+        attempt += 1;
         let response = match client.get(&request_url).send() {
             Ok(response) => response,
             Err(error) => {
@@ -789,14 +990,16 @@ fn lookup_sparse_index_version(
         let status = response.status();
         if status == StatusCode::TOO_MANY_REQUESTS {
             let retry_after_seconds = parse_retry_after_seconds_from_headers(response.headers());
-            if attempt < MAX_PUBLISH_ATTEMPTS {
+            if retry_policy.allows_retry(attempt) {
                 let delay = resolve_retry_delay(attempt, retry_after_seconds);
                 info!(
                     command_path = "cargo-mono.publish",
                     package = %candidate.name,
                     action = "prefetch-published-versions",
                     outcome = "retry-rate-limited",
+                    retry_reason = PublishRetryReason::RateLimited.as_str(),
                     retry_attempt = attempt,
+                    configured_retry_limit = %retry_policy.limit_log_value(),
                     delay_seconds = delay.as_secs(),
                     retry_after_seconds = retry_after_seconds.unwrap_or_default(),
                     retry_after_present = retry_after_seconds.is_some(),
@@ -809,7 +1012,10 @@ fn lookup_sparse_index_version(
             return PrefetchPackageLookupResult::unknown(
                 candidate.name.clone(),
                 Some(status.as_u16()),
-                "sparse index rate limiting persisted after retry attempts".to_string(),
+                format!(
+                    "sparse index rate limiting reached the configured retry limit after \
+                     {attempt} attempts"
+                ),
             );
         }
 
@@ -845,12 +1051,6 @@ fn lookup_sparse_index_version(
             ),
         };
     }
-
-    PrefetchPackageLookupResult::unknown(
-        candidate.name.clone(),
-        None,
-        "sparse index lookup exhausted retry attempts".to_string(),
-    )
 }
 
 fn parse_publish_retry_after_seconds(stdout: &[u8], stderr: &[u8]) -> Option<u64> {
@@ -1032,6 +1232,8 @@ fn collect_publish_failure_details(output: &Output) -> String {
 fn format_publish_retry_limit_failure(
     package: &str,
     attempts: usize,
+    retry_reason: PublishRetryReason,
+    max_attempts: usize,
     dry_run: bool,
     registry: Option<&str>,
 ) -> String {
@@ -1040,7 +1242,8 @@ fn format_publish_retry_limit_failure(
         &[
             ("package", package.to_string()),
             ("attempts", attempts.to_string()),
-            ("max_attempts", MAX_PUBLISH_ATTEMPTS.to_string()),
+            ("max_attempts", max_attempts.to_string()),
+            ("retry_reason", retry_reason.as_str().to_string()),
             ("dry_run", dry_run.to_string()),
             ("no_verify", PUBLISH_NO_VERIFY.to_string()),
             ("registry", registry.unwrap_or("default").to_string()),
@@ -1111,11 +1314,11 @@ fn indent_multiline(raw: &str, prefix: &str) -> String {
 }
 
 fn retry_delay(attempt: usize) -> Duration {
-    match attempt {
-        1 => Duration::from_secs(2),
-        2 => Duration::from_secs(4),
-        _ => Duration::from_secs(8),
-    }
+    let exponent = attempt.saturating_sub(1).min(usize::BITS as usize - 1);
+    let delay_seconds = INITIAL_RETRY_DELAY_SECONDS
+        .saturating_mul(1_u64 << exponent)
+        .min(MAX_RETRY_DELAY_SECONDS);
+    Duration::from_secs(delay_seconds)
 }
 
 fn resolve_retry_delay(attempt: usize, retry_after_seconds: Option<u64>) -> Duration {
@@ -1267,13 +1470,67 @@ mod tests {
     }
 
     #[test]
-    fn format_publish_retry_limit_failure_includes_hint() {
-        let message = format_publish_retry_limit_failure("alpha", 3, false, Some("internal"));
+    fn parse_publish_max_attempts_override_accepts_positive_numbers() {
+        assert_eq!(parse_publish_max_attempts_override("1"), Some(1));
+        assert_eq!(parse_publish_max_attempts_override(" 5 "), Some(5));
+    }
+
+    #[test]
+    fn parse_publish_max_attempts_override_rejects_invalid_values() {
+        assert_eq!(parse_publish_max_attempts_override(""), None);
+        assert_eq!(parse_publish_max_attempts_override("0"), None);
+        assert_eq!(parse_publish_max_attempts_override("-1"), None);
+        assert_eq!(parse_publish_max_attempts_override("invalid"), None);
+    }
+
+    #[test]
+    fn publish_retry_policy_prefers_cli_over_env() {
+        let resolution = PublishRetryPolicy::from_sources(Some(7), Some("3"));
+        assert_eq!(resolution.policy.max_attempts(), Some(7));
+        assert_eq!(resolution.source, PublishRetryPolicySource::Cli);
+        assert_eq!(resolution.invalid_env_value, None);
+    }
+
+    #[test]
+    fn publish_retry_policy_uses_env_when_cli_is_absent() {
+        let resolution = PublishRetryPolicy::from_sources(None, Some("4"));
+        assert_eq!(resolution.policy.max_attempts(), Some(4));
+        assert_eq!(resolution.source, PublishRetryPolicySource::Env);
+        assert_eq!(resolution.invalid_env_value, None);
+    }
+
+    #[test]
+    fn publish_retry_policy_defaults_to_unlimited() {
+        let resolution = PublishRetryPolicy::from_sources(None, None);
+        assert_eq!(resolution.policy.max_attempts(), None);
+        assert_eq!(resolution.source, PublishRetryPolicySource::Default);
+        assert_eq!(resolution.invalid_env_value, None);
+    }
+
+    #[test]
+    fn publish_retry_policy_falls_back_to_unlimited_for_invalid_env() {
+        let resolution = PublishRetryPolicy::from_sources(None, Some("bogus"));
+        assert_eq!(resolution.policy.max_attempts(), None);
+        assert_eq!(resolution.source, PublishRetryPolicySource::Default);
+        assert_eq!(resolution.invalid_env_value, Some("bogus".to_string()));
+    }
+
+    #[test]
+    fn format_publish_retry_limit_failure_includes_configured_limit_and_reason() {
+        let message = format_publish_retry_limit_failure(
+            "alpha",
+            5,
+            PublishRetryReason::RateLimited,
+            5,
+            false,
+            Some("internal"),
+        );
         assert!(
             message.contains("Summary: `cargo publish` did not complete within retry attempts.")
         );
-        assert!(message.contains("attempts=3"));
-        assert!(message.contains("max_attempts=3"));
+        assert!(message.contains("attempts=5"));
+        assert!(message.contains("max_attempts=5"));
+        assert!(message.contains("retry_reason=rate-limited"));
         assert!(message.contains("no_verify=true"));
         assert!(message.contains("registry=internal"));
         assert!(message.contains("Hint: "));
@@ -1354,6 +1611,17 @@ mod tests {
     fn resolve_retry_delay_prefers_retry_after_seconds() {
         assert_eq!(resolve_retry_delay(1, Some(30)), Duration::from_secs(30));
         assert_eq!(resolve_retry_delay(2, None), Duration::from_secs(4));
+    }
+
+    #[test]
+    fn retry_delay_uses_capped_exponential_backoff() {
+        assert_eq!(retry_delay(1), Duration::from_secs(2));
+        assert_eq!(retry_delay(2), Duration::from_secs(4));
+        assert_eq!(retry_delay(3), Duration::from_secs(8));
+        assert_eq!(retry_delay(4), Duration::from_secs(16));
+        assert_eq!(retry_delay(5), Duration::from_secs(32));
+        assert_eq!(retry_delay(6), Duration::from_secs(60));
+        assert_eq!(retry_delay(7), Duration::from_secs(60));
     }
 
     #[test]

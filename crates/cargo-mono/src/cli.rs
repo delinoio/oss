@@ -81,6 +81,17 @@ fn default_exclude_path_patterns() -> Vec<String> {
     vec!["**/AGENTS.md".to_string()]
 }
 
+fn parse_positive_usize(raw: &str) -> std::result::Result<usize, String> {
+    let parsed = raw
+        .parse::<usize>()
+        .map_err(|_| format!("expected a positive integer, got `{raw}`"))?;
+    if parsed == 0 {
+        return Err("value must be greater than 0".to_string());
+    }
+
+    Ok(parsed)
+}
+
 #[derive(Debug, Clone, Args)]
 pub struct ChangedArgs {
     /// Base ref used for merge-base and diff calculation.
@@ -154,6 +165,9 @@ pub struct PublishArgs {
     /// Override publish registry.
     #[arg(long)]
     pub registry: Option<String>,
+    /// Stop retrying retryable publish failures after this many attempts.
+    #[arg(long, value_name = "COUNT", value_parser = parse_positive_usize)]
+    pub max_attempts: Option<usize>,
 }
 
 #[cfg(test)]
@@ -227,6 +241,22 @@ mod tests {
             args.exclude_path,
             vec!["**/*.md".to_string(), "docs/**".to_string()]
         );
+    }
+
+    #[test]
+    fn publish_accepts_max_attempts() {
+        let cli = Cli::parse_from(["cargo", "publish", "--max-attempts", "7"]);
+        let Command::Publish(args) = cli.command else {
+            panic!("expected publish command");
+        };
+
+        assert_eq!(args.max_attempts, Some(7));
+    }
+
+    #[test]
+    fn publish_rejects_zero_max_attempts() {
+        let parsed = Cli::try_parse_from(["cargo", "publish", "--max-attempts", "0"]);
+        assert!(parsed.is_err());
     }
 
     #[test]
