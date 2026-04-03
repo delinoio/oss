@@ -30,6 +30,7 @@ pub(super) const PUBLISH_PREFETCH_CONCURRENCY_ENV: &str = "CARGO_MONO_PUBLISH_PR
 const DEFAULT_PREFETCH_CONCURRENCY: usize = 16;
 const MAX_PREFETCH_CONCURRENCY: usize = 64;
 const PREFETCH_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const PUBLISH_NO_VERIFY: bool = true;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PublishFailureKind {
@@ -264,6 +265,7 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
                 outcome = "attempt",
                 retry_attempt = attempts,
                 mode = mode.as_str(),
+                no_verify = PUBLISH_NO_VERIFY,
                 "Publishing package"
             );
 
@@ -956,7 +958,11 @@ fn merge_prefetch_lookup_results(
 
 fn run_publish_command(package: &str, dry_run: bool, registry: Option<&str>) -> Result<Output> {
     let mut command = Command::new("cargo");
-    command.arg("publish").arg("-p").arg(package);
+    command
+        .arg("publish")
+        .arg("-p")
+        .arg(package)
+        .arg("--no-verify");
 
     if dry_run {
         command.arg("--dry-run");
@@ -973,6 +979,7 @@ fn run_publish_command(package: &str, dry_run: bool, registry: Option<&str>) -> 
             vec![
                 ("package", package.to_string()),
                 ("dry_run", dry_run.to_string()),
+                ("no_verify", PUBLISH_NO_VERIFY.to_string()),
                 ("registry", registry.unwrap_or("default").to_string()),
                 ("error", error.to_string()),
             ],
@@ -996,6 +1003,7 @@ fn format_publish_failure(
         ("attempt", attempts.to_string()),
         ("status", status.to_string()),
         ("dry_run", dry_run.to_string()),
+        ("no_verify", PUBLISH_NO_VERIFY.to_string()),
         ("registry", registry.unwrap_or("default").to_string()),
     ];
     if !details.is_empty() {
@@ -1034,6 +1042,7 @@ fn format_publish_retry_limit_failure(
             ("attempts", attempts.to_string()),
             ("max_attempts", MAX_PUBLISH_ATTEMPTS.to_string()),
             ("dry_run", dry_run.to_string()),
+            ("no_verify", PUBLISH_NO_VERIFY.to_string()),
             ("registry", registry.unwrap_or("default").to_string()),
         ],
         "Wait for index propagation or rate limits to clear, then rerun publish.",
@@ -1214,6 +1223,7 @@ mod tests {
         assert!(message.contains("package=alpha"));
         assert!(message.contains("attempt=1"));
         assert!(message.contains("status=exit status: 101"));
+        assert!(message.contains("no_verify=true"));
         assert!(message.contains("Hint: "));
     }
 
@@ -1229,6 +1239,7 @@ mod tests {
         );
         assert!(message.contains("details_excerpt=error: network timeout"));
         assert!(message.contains("dry_run=true"));
+        assert!(message.contains("no_verify=true"));
         assert!(message.contains("registry=default"));
         assert!(message.contains("Hint: "));
     }
@@ -1263,6 +1274,7 @@ mod tests {
         );
         assert!(message.contains("attempts=3"));
         assert!(message.contains("max_attempts=3"));
+        assert!(message.contains("no_verify=true"));
         assert!(message.contains("registry=internal"));
         assert!(message.contains("Hint: "));
     }
