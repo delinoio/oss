@@ -766,6 +766,67 @@ fn publish_dry_run_does_not_create_tags_even_with_allowlist() {
     assert_eq!(result["published"][0]["name"], json!("alpha"));
     assert_eq!(result["tags"], json!([]));
     assert!(git_tags(temp_dir.path()).is_empty());
+    assert_eq!(
+        read_fake_publish_args(temp_dir.path()),
+        vec![
+            "publish".to_string(),
+            "-p".to_string(),
+            "alpha".to_string(),
+            "--no-verify".to_string(),
+            "--dry-run".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn publish_exec_forwards_no_verify_to_cargo_publish() {
+    let temp_dir = init_mixed_publishability_workspace();
+
+    let mut command = cargo_mono_command_with_fake_publish(temp_dir.path());
+    command
+        .current_dir(temp_dir.path())
+        .args(["publish", "--allow-dirty", "--package", "alpha"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        read_fake_publish_args(temp_dir.path()),
+        vec![
+            "publish".to_string(),
+            "-p".to_string(),
+            "alpha".to_string(),
+            "--no-verify".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn publish_dry_run_forwards_no_verify_to_cargo_publish() {
+    let temp_dir = init_mixed_publishability_workspace();
+
+    let mut command = cargo_mono_command_with_fake_publish(temp_dir.path());
+    command
+        .current_dir(temp_dir.path())
+        .args([
+            "publish",
+            "--dry-run",
+            "--allow-dirty",
+            "--package",
+            "alpha",
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        read_fake_publish_args(temp_dir.path()),
+        vec![
+            "publish".to_string(),
+            "-p".to_string(),
+            "alpha".to_string(),
+            "--no-verify".to_string(),
+            "--dry-run".to_string(),
+        ]
+    );
 }
 
 #[test]
@@ -863,6 +924,8 @@ fn cargo_mono_command_with_fake_publish(working_dir: &Path) -> Command {
 set -euo pipefail
 
 if [ "${1-}" = "publish" ]; then
+  : "${FAKE_CARGO_PUBLISH_ARGS_FILE:?}"
+  printf '%s\n' "$@" > "${FAKE_CARGO_PUBLISH_ARGS_FILE}"
   exit 0
 fi
 
@@ -883,8 +946,22 @@ exec "${REAL_CARGO:?}" "$@"
 
     let mut command = cargo_mono_command();
     command.env("REAL_CARGO", env!("CARGO"));
+    command.env(
+        "FAKE_CARGO_PUBLISH_ARGS_FILE",
+        fake_publish_args_path(working_dir),
+    );
     command.env("PATH", path_with_prepend(&fake_bin_directory));
     command
+}
+
+fn fake_publish_args_path(working_dir: &Path) -> PathBuf {
+    working_dir.join(".fake-publish-args")
+}
+
+fn read_fake_publish_args(working_dir: &Path) -> Vec<String> {
+    let raw = fs::read_to_string(fake_publish_args_path(working_dir))
+        .expect("failed to read fake cargo publish args");
+    raw.lines().map(str::to_string).collect()
 }
 
 fn path_with_prepend(prefix: &Path) -> OsString {

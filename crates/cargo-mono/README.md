@@ -11,6 +11,9 @@ cargo mono bump [--all|--changed|--package <name>] --level <major|minor|patch|pr
 cargo mono publish [--all|--changed|--package <name>] [--dry-run]
 ```
 
+`cargo mono publish` always delegates to `cargo publish --no-verify`, including `--dry-run`
+execution.
+
 ## Publish Tag Configuration
 
 `cargo mono publish` can create local Git tags for published crates when opt-in allowlist
@@ -40,7 +43,7 @@ Coverage highlights:
 - `list`: workspace discovery and publishability reporting.
 - `changed`: base override, include/exclude filters, invalid glob rejection, direct-only vs dependent expansion, include-uncommitted behavior, and global-impact file handling.
 - `bump`: clean-tree preflight, non-publishable skip behavior, manifest/version/dependency updates, dependent patch propagation, and release commit creation (no tag creation).
-- `publish`: clean-tree preflight, non-publishable skip behavior, unknown package validation, and allowlist-based publish tag creation.
+- `publish`: clean-tree preflight, fixed `--no-verify` delegation (including dry-run), unknown package validation, and allowlist-based publish tag creation.
 - Cargo external-subcommand mode compatibility (`cargo mono ...`) and top-level help/version behavior outside workspaces.
 
 ## Local Validation

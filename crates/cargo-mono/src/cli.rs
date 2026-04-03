@@ -144,7 +144,8 @@ pub struct PublishArgs {
     pub target: TargetArgs,
     #[command(flatten)]
     pub changed: ChangedArgs,
-    /// Validate publish without uploading artifacts.
+    /// Run the publish flow without uploading artifacts; delegated Cargo
+    /// verification remains disabled.
     #[arg(long)]
     pub dry_run: bool,
     /// Allow execution with a dirty working tree.
