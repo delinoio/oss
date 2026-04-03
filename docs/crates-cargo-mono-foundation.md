@@ -20,6 +20,9 @@
 - `bump` must not create Git tags.
 - `publish` is the only command allowed to create release tags, and only for packages listed in `[workspace.metadata.cargo-mono.publish.tag].packages`.
 - `publish` must always delegate to `cargo publish --no-verify`, including when `cargo mono publish --dry-run` is used.
+- `publish` must treat only index propagation lag and registry rate limiting as retryable failures; other publish failures must still fail immediately.
+- Retryable `publish` failures must retry indefinitely by default with capped exponential backoff (`2s`, `4s`, `8s`, `16s`, `32s`, then `60s`), and rate-limit retries must honor `Retry-After` when present.
+- Operators must be able to cap retry attempts via `cargo mono publish --max-attempts <count>` or `CARGO_MONO_PUBLISH_MAX_ATTEMPTS`, with precedence `--max-attempts` > env > default unlimited retries.
 - Publish tag creation is opt-in by default (no config means no tags), must remain local-only (`git tag` without push), and must use `<crate>@v<version>` naming.
 - Remote tag publication is owned by CI automation: `.github/workflows/auto-publish.yml` must run `git push --tags` after a successful `publish` command, with checkout credential persistence disabled and authentication bound to `secrets.GH_TOKEN` (non-`GITHUB_TOKEN`) so downstream tag-triggered workflows run.
 - If `publish` tag configuration references unknown workspace packages, command execution must fail with `invalid-input`.
@@ -41,6 +44,7 @@
 ## Logging
 - Use structured `tracing` logs for release automation operations.
 - Include command phase, package target, and outcome status for debugging.
+- Retry logs must include retry reason, retry attempt number, configured retry-limit mode, and computed delay seconds.
 - Keep `CARGO_MONO_LOG_COLOR` semantics scoped to structured log rendering (separate from human result-output color controls).
 
 ## Error UX Contract

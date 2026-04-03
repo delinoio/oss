@@ -830,6 +830,138 @@ fn publish_dry_run_forwards_no_verify_to_cargo_publish() {
 }
 
 #[test]
+fn publish_retries_index_not_ready_past_three_attempts_by_default() {
+    let temp_dir = init_mixed_publishability_workspace();
+    write_fake_publish_sequence(
+        temp_dir.path(),
+        &[
+            "index-not-ready",
+            "index-not-ready",
+            "index-not-ready",
+            "success",
+        ],
+    );
+
+    let mut command = cargo_mono_command_with_fake_publish(temp_dir.path());
+    let output = run_success(command.current_dir(temp_dir.path()).args([
+        "--output",
+        "json",
+        "publish",
+        "--allow-dirty",
+        "--package",
+        "alpha",
+        "--registry",
+        "internal",
+    ]));
+
+    let result = parse_stdout_json(&output);
+    assert_eq!(result["published"][0]["name"], json!("alpha"));
+    assert_eq!(result["published"][0]["attempts"], json!(4));
+    assert_eq!(result["failed"], json!([]));
+    assert_eq!(read_fake_publish_attempt_count(temp_dir.path()), 4);
+}
+
+#[test]
+fn publish_respects_explicit_retry_limit() {
+    let temp_dir = init_mixed_publishability_workspace();
+    write_fake_publish_sequence(
+        temp_dir.path(),
+        &[
+            "index-not-ready",
+            "index-not-ready",
+            "index-not-ready",
+            "success",
+        ],
+    );
+
+    let mut command = cargo_mono_command_with_fake_publish(temp_dir.path());
+    let output = run_failure(command.current_dir(temp_dir.path()).args([
+        "--output",
+        "json",
+        "publish",
+        "--allow-dirty",
+        "--package",
+        "alpha",
+        "--registry",
+        "internal",
+        "--max-attempts",
+        "3",
+    ]));
+
+    let result = parse_stdout_json(&output);
+    assert_eq!(result["published"], json!([]));
+    assert_eq!(result["failed"][0]["name"], json!("alpha"));
+    assert_eq!(result["failed"][0]["attempts"], json!(3));
+    assert!(result["failed"][0]["error"]
+        .as_str()
+        .is_some_and(|message| message.contains("max_attempts=3")));
+    assert!(result["failed"][0]["error"]
+        .as_str()
+        .is_some_and(|message| message.contains("retry_reason=index-not-ready")));
+    assert_eq!(read_fake_publish_attempt_count(temp_dir.path()), 3);
+}
+
+#[test]
+fn publish_uses_env_retry_limit_when_cli_flag_is_absent() {
+    let temp_dir = init_mixed_publishability_workspace();
+    write_fake_publish_sequence(
+        temp_dir.path(),
+        &["index-not-ready", "index-not-ready", "success"],
+    );
+
+    let mut command = cargo_mono_command_with_fake_publish(temp_dir.path());
+    command.env("CARGO_MONO_PUBLISH_MAX_ATTEMPTS", "2");
+    let output = run_failure(command.current_dir(temp_dir.path()).args([
+        "--output",
+        "json",
+        "publish",
+        "--allow-dirty",
+        "--package",
+        "alpha",
+        "--registry",
+        "internal",
+    ]));
+
+    let result = parse_stdout_json(&output);
+    assert_eq!(result["published"], json!([]));
+    assert_eq!(result["failed"][0]["attempts"], json!(2));
+    assert!(result["failed"][0]["error"]
+        .as_str()
+        .is_some_and(|message| message.contains("max_attempts=2")));
+    assert_eq!(read_fake_publish_attempt_count(temp_dir.path()), 2);
+}
+
+#[test]
+fn publish_retries_rate_limits_using_retry_after_until_success() {
+    let temp_dir = init_mixed_publishability_workspace();
+    write_fake_publish_sequence(
+        temp_dir.path(),
+        &[
+            "rate-limited-retry-after-0",
+            "rate-limited-retry-after-0",
+            "success",
+        ],
+    );
+
+    let mut command = cargo_mono_command_with_fake_publish(temp_dir.path());
+    let output = run_success(command.current_dir(temp_dir.path()).args([
+        "--output",
+        "json",
+        "publish",
+        "--allow-dirty",
+        "--package",
+        "alpha",
+        "--registry",
+        "internal",
+    ]));
+
+    let result = parse_stdout_json(&output);
+    assert_eq!(result["published"][0]["attempts"], json!(3));
+    assert_eq!(result["failed"], json!([]));
+    assert_eq!(read_fake_publish_attempt_count(temp_dir.path()), 3);
+}
+
+#[test]
 fn publish_creates_tags_for_allowlisted_packages() {
     let temp_dir = init_mixed_publishability_workspace();
     write_publish_tag_allowlist(temp_dir.path(), &["alpha"]);
@@ -925,8 +1057,41 @@ set -euo pipefail
 
 if [ "${1-}" = "publish" ]; then
   : "${FAKE_CARGO_PUBLISH_ARGS_FILE:?}"
+  : "${FAKE_CARGO_PUBLISH_ATTEMPT_FILE:?}"
+  attempt=1
+  if [ -f "${FAKE_CARGO_PUBLISH_ATTEMPT_FILE}" ]; then
+    attempt=$(( $(cat "${FAKE_CARGO_PUBLISH_ATTEMPT_FILE}") + 1 ))
+  fi
+  printf '%s\n' "${attempt}" > "${FAKE_CARGO_PUBLISH_ATTEMPT_FILE}"
   printf '%s\n' "$@" > "${FAKE_CARGO_PUBLISH_ARGS_FILE}"
-  exit 0
+
+  scenario="success"
+  if [ -n "${FAKE_CARGO_PUBLISH_SCENARIO_FILE-}" ] && [ -f "${FAKE_CARGO_PUBLISH_SCENARIO_FILE}" ]; then
+    scenario="$(sed -n "${attempt}p" "${FAKE_CARGO_PUBLISH_SCENARIO_FILE}")"
+  fi
+
+  case "${scenario}" in
+    "" | "success")
+      exit 0
+      ;;
+    "index-not-ready")
+      printf '%s\n' 'failed to select a version for the requirement `alpha = "^0.1.0"`' >&2
+      exit 101
+      ;;
+    "rate-limited")
+      printf '%s\n' 'error: registry responded with 429 Too Many Requests' >&2
+      exit 101
+      ;;
+    "rate-limited-retry-after-0")
+      printf '%s\n' 'error: registry responded with 429 Too Many Requests' >&2
+      printf '%s\n' 'Retry-After: 0' >&2
+      exit 101
+      ;;
+    *)
+      printf 'unsupported fake cargo publish scenario: %s\n' "${scenario}" >&2
+      exit 1
+      ;;
+  esac
 fi
 
 exec "${REAL_CARGO:?}" "$@"
@@ -950,6 +1115,14 @@ exec "${REAL_CARGO:?}" "$@"
         "FAKE_CARGO_PUBLISH_ARGS_FILE",
         fake_publish_args_path(working_dir),
     );
+    command.env(
+        "FAKE_CARGO_PUBLISH_ATTEMPT_FILE",
+        fake_publish_attempts_path(working_dir),
+    );
+    command.env(
+        "FAKE_CARGO_PUBLISH_SCENARIO_FILE",
+        fake_publish_scenario_path(working_dir),
+    );
     command.env("PATH", path_with_prepend(&fake_bin_directory));
     command
 }
@@ -958,10 +1131,33 @@ fn fake_publish_args_path(working_dir: &Path) -> PathBuf {
     working_dir.join(".fake-publish-args")
 }
 
+fn fake_publish_attempts_path(working_dir: &Path) -> PathBuf {
+    working_dir.join(".fake-publish-attempts")
+}
+
+fn fake_publish_scenario_path(working_dir: &Path) -> PathBuf {
+    working_dir.join(".fake-publish-scenarios")
+}
+
 fn read_fake_publish_args(working_dir: &Path) -> Vec<String> {
     let raw = fs::read_to_string(fake_publish_args_path(working_dir))
         .expect("failed to read fake cargo publish args");
     raw.lines().map(str::to_string).collect()
+}
+
+fn read_fake_publish_attempt_count(working_dir: &Path) -> usize {
+    fs::read_to_string(fake_publish_attempts_path(working_dir))
+        .expect("failed to read fake cargo publish attempt count")
+        .trim()
+        .parse::<usize>()
+        .expect("fake cargo publish attempt count should be numeric")
+}
+
+fn write_fake_publish_sequence(working_dir: &Path, scenarios: &[&str]) {
+    let mut content = scenarios.join("\n");
+    content.push('\n');
+    fs::write(fake_publish_scenario_path(working_dir), content)
+        .expect("failed to write fake cargo publish scenarios");
 }
 
 fn path_with_prepend(prefix: &Path) -> OsString {
@@ -1204,6 +1400,17 @@ fn run_success(command: &mut Command) -> Output {
         output.status.success(),
         "command failed with status {}\nstdout:\n{}\nstderr:\n{}",
         output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+fn run_failure(command: &mut Command) -> Output {
+    let output = command.output().expect("failed to execute cargo-mono");
+    assert!(
+        !output.status.success(),
+        "command succeeded unexpectedly\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
