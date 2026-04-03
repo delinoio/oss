@@ -1,0 +1,15 @@
+diff --git a/dist/local-preview/client.js b/dist/local-preview/client.js
+index f14d091602c068664b73aff6a50c891315b902ff..373e5552895b7ffe643eca285bd1b5616b0e46b3 100644
+--- a/dist/local-preview/client.js
++++ b/dist/local-preview/client.js
+@@ -2,7 +2,9 @@ import fse from 'fs-extra';
+ import got from 'got';
+ import isOnline from 'is-online';
+ import { pipeline } from 'node:stream/promises';
+-import tar from 'tar';
++// tar@7 removed the default export, so Mintlify's preview client needs a
++// namespace import to remain compatible with the patched security release.
++import * as tar from 'tar';
+ import yaml from 'js-yaml';
+ import { DOT_MINTLIFY, DOT_MINTLIFY_LAST, VERSION_PATH, TAR_PATH, TARGET_MINT_VERSION_URL, MINT_VERSION_MAP_URL, } from '../constants.js';
+ import { restoreMintlifyLast, getTarUrl } from '../util.js';

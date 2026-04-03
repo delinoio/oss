@@ -11,6 +11,29 @@
     "lint": "turbo lint",
     "format": "turbo format"
   },
+  "pnpm": {
+    "overrides": {
+      "@expo/cli>tar": "7.5.11",
+      "@expo/plist>@xmldom/xmldom": "0.8.12",
+      "@mintlify/previewing>tar": "7.5.11",
+      "@mintlify/scraping>zod": "3.25.76",
+      "@mintlify/validation>zod": "3.25.76",
+      "@stoplight/spectral-core>minimatch": "3.1.5",
+      "@xmldom/xmldom": "0.8.12",
+      "axios": "1.14.0",
+      "engine.io>cookie": "0.7.2",
+      "express": "4.21.2",
+      "expo-dev-launcher>ajv": "8.18.0",
+      "http-proxy-agent>@tootallnate/once": "3.0.1",
+      "js-yaml": "4.1.1",
+      "lodash": "4.18.1",
+      "path-to-regexp": "0.1.13",
+      "qs": "6.15.0"
+    },
+    "patchedDependencies": {
+      "@mintlify/previewing@4.0.1031": "patches/@mintlify__previewing@4.0.1031.patch"
+    }
+  },
   "devDependencies": {
     "lefthook": "^2.1.4",
     "turbo": "^2.8.20"
