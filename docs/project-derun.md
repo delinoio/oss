@@ -18,12 +18,14 @@ Provide a Go CLI that preserves terminal fidelity for AI-agent workflows and bri
 - User-facing error messages must remain single-line and include deterministic `details` segments with safe diagnostic fields only (no secrets).
 - User-facing error messages must preserve compatibility tokens used by MCP/automation integrations (`session not found`, `parse <field>`, `session_id is required`, `cursor is required`).
 - Release artifact matrix and names must remain stable: `derun-linux-amd64.tar.gz`, `derun-darwin-amd64.tar.gz`, `derun-darwin-arm64.tar.gz`, `derun-windows-amd64.zip`.
+- Release signing must publish Sigstore bundle sidecars (`*.sigstore.json`) for each artifact and `SHA256SUMS`, and direct installers only support bundle-enabled releases.
 - Homebrew distribution must install `derun` from GitHub release prebuilt archives (darwin amd64/arm64 and linux amd64) instead of source builds.
 
 ## Change Policy
 - Update this index and `docs/cmds-derun-foundation.md` together whenever command shape or runtime contracts change.
 - Update this index and `docs/cmds-derun-foundation.md` together whenever user-facing error message contracts or compatibility tokens change.
 - Update `.github/workflows/release-derun.yml`, `scripts/release/update-homebrew.sh`, and `packaging/homebrew/templates/derun.rb.tmpl` in the same change when derun release artifact names, target matrix, or package-manager distribution contracts change.
+- Keep direct installer contracts in `scripts/install/derun.sh` and `scripts/install/derun.ps1` synchronized with release signing changes.
 - Align command lifecycle changes with `cmds/AGENTS.md` and root `AGENTS.md`.
 
 ## References

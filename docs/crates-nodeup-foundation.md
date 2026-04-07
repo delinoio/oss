@@ -18,6 +18,7 @@
 - Shim dispatch behavior must remain deterministic by executable name (`node`, `npm`, `npx`, `yarn`, `pnpm`).
 - Install/update command surfaces must preserve backward-compatible flags and outputs.
 - Homebrew installation must consume prebuilt release archives for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`; Linux arm64 must fail with a clear unsupported-platform message.
+- Direct install scripts must verify release artifacts with `SHA256SUMS` and Sigstore bundle sidecars (`<artifact>.sigstore.json`) via `cosign verify-blob --bundle`.
 - `yarn`/`pnpm` delegated execution must honor nearest `package.json` `packageManager` when present.
 - `packageManager` parsing contract is strict: `<manager>@<exact-semver>` with manager limited to `yarn|pnpm`.
 - `packageManager` manager-command mismatch must fail with `conflict`; malformed values must fail with `invalid-input`.
@@ -53,6 +54,7 @@
 - Workspace baseline: `cargo test --workspace --all-targets`
 - Release contract checks should align with `release-nodeup` workflow expectations.
 - Release assets must include both standalone prebuilt binaries (`nodeup-<os>-<arch>[.exe]`) and compressed archives (`nodeup-<os>-<arch>.tar.gz|zip`) for the supported release matrix.
+- Release signing outputs must include `SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json` sidecars; legacy `.sig`/`.pem` sidecars are out of scope for direct installation.
 - Homebrew release automation must render the prebuilt formula from release asset URLs and push tap updates directly to `delinoio/homebrew-tap` `main` with a dedicated tap-write credential.
 - Completion coverage must include successful script generation, invalid shell/scope validation, and JSON-mode raw output behavior.
 - Output color coverage must include flag/env precedence, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.

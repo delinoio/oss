@@ -48,11 +48,25 @@ function Verify-Checksum {
   }
 }
 
-function Verify-Signature {
+function Download-Bundle {
+  param(
+    [string]$BaseUrl,
+    [string]$AssetName,
+    [string]$BundlePath
+  )
+
+  try {
+    Invoke-WebRequest -Uri "$BaseUrl/$AssetName.sigstore.json" -OutFile $BundlePath
+  }
+  catch {
+    throw "[install.dexdex] direct installs require releases published with Sigstore bundle sidecars"
+  }
+}
+
+function Verify-Bundle {
   param(
     [string]$FilePath,
-    [string]$SignaturePath,
-    [string]$CertificatePath
+    [string]$BundlePath
   )
 
   if (-not (Get-Command cosign -ErrorAction SilentlyContinue)) {
@@ -60,8 +74,7 @@ function Verify-Signature {
   }
 
   cosign verify-blob `
-    --certificate $CertificatePath `
-    --signature $SignaturePath `
+    --bundle $BundlePath `
     --certificate-identity-regexp $WorkflowIdentityPattern `
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
     $FilePath | Out-Null
@@ -76,15 +89,13 @@ function Download-AndVerify {
   )
 
   $assetPath = Join-Path $TempDir $AssetName
-  $signaturePath = "$assetPath.sig"
-  $certificatePath = "$assetPath.pem"
+  $bundlePath = "$assetPath.sigstore.json"
 
   Invoke-WebRequest -Uri "$BaseUrl/$AssetName" -OutFile $assetPath
-  Invoke-WebRequest -Uri "$BaseUrl/$AssetName.sig" -OutFile $signaturePath
-  Invoke-WebRequest -Uri "$BaseUrl/$AssetName.pem" -OutFile $certificatePath
+  Download-Bundle -BaseUrl $BaseUrl -AssetName $AssetName -BundlePath $bundlePath
 
   Verify-Checksum -FilePath $assetPath -Sha256SumsPath $Sha256SumsPath -AssetName $AssetName
-  Verify-Signature -FilePath $assetPath -SignaturePath $signaturePath -CertificatePath $certificatePath
+  Verify-Bundle -FilePath $assetPath -BundlePath $bundlePath
 
   return $assetPath
 }

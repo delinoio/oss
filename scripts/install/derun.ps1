@@ -48,11 +48,25 @@ function Verify-Checksum {
   }
 }
 
-function Verify-Signature {
+function Download-Bundle {
+  param(
+    [string]$BaseUrl,
+    [string]$AssetName,
+    [string]$BundlePath
+  )
+
+  try {
+    Invoke-WebRequest -Uri "$BaseUrl/$AssetName.sigstore.json" -OutFile $BundlePath
+  }
+  catch {
+    throw "[install.derun] direct installs require releases published with Sigstore bundle sidecars"
+  }
+}
+
+function Verify-Bundle {
   param(
     [string]$FilePath,
-    [string]$SignaturePath,
-    [string]$CertificatePath
+    [string]$BundlePath
   )
 
   if (-not (Get-Command cosign -ErrorAction SilentlyContinue)) {
@@ -60,8 +74,7 @@ function Verify-Signature {
   }
 
   cosign verify-blob `
-    --certificate $CertificatePath `
-    --signature $SignaturePath `
+    --bundle $BundlePath `
     --certificate-identity-regexp $WorkflowIdentityPattern `
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
     $FilePath | Out-Null
@@ -78,17 +91,15 @@ function Install-Direct {
   try {
     $assetPath = Join-Path $tmpDir $assetName
     $sumsPath = Join-Path $tmpDir "SHA256SUMS"
-    $signaturePath = "$assetPath.sig"
-    $certificatePath = "$assetPath.pem"
+    $bundlePath = "$assetPath.sigstore.json"
 
     Write-Host "[install.derun] downloading $assetName"
     Invoke-WebRequest -Uri "$baseUrl/$assetName" -OutFile $assetPath
     Invoke-WebRequest -Uri "$baseUrl/SHA256SUMS" -OutFile $sumsPath
-    Invoke-WebRequest -Uri "$baseUrl/$assetName.sig" -OutFile $signaturePath
-    Invoke-WebRequest -Uri "$baseUrl/$assetName.pem" -OutFile $certificatePath
+    Download-Bundle -BaseUrl $baseUrl -AssetName $assetName -BundlePath $bundlePath
 
     Verify-Checksum -FilePath $assetPath -Sha256SumsPath $sumsPath -AssetName $assetName
-    Verify-Signature -FilePath $assetPath -SignaturePath $signaturePath -CertificatePath $certificatePath
+    Verify-Bundle -FilePath $assetPath -BundlePath $bundlePath
 
     $extractDir = Join-Path $tmpDir "extract"
     Expand-Archive -Path $assetPath -DestinationPath $extractDir -Force

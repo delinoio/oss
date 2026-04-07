@@ -19,9 +19,11 @@
 - Release artifact contract for distribution tooling:
   - Required asset names: `derun-linux-amd64.tar.gz`, `derun-darwin-amd64.tar.gz`, `derun-darwin-arm64.tar.gz`, `derun-windows-amd64.zip`.
   - Required build matrix: `linux/amd64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`.
+  - Required signing sidecars: `SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json`.
 - Homebrew `derun` formula contract:
   - Must install from GitHub release prebuilt tarballs (darwin amd64/arm64 and linux amd64).
   - Linux arm64 must fail explicitly as unsupported until a dedicated artifact is added.
+- Direct install scripts must verify release artifacts with `SHA256SUMS` and Sigstore bundle sidecars via `cosign verify-blob --bundle`.
 - User-facing error messages must remain single-line and follow stable style contracts:
   - Usage/validation: `invalid arguments: <reason>; details: <k=v,...>; hint: <how to fix>`
   - Runtime: `failed to <action>: <cause>; details: <k=v,...>`

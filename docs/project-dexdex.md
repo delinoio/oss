@@ -139,7 +139,8 @@ Recommended runtime environment keys:
 
 ## Release Distribution Contracts
 - Release workflow: `.github/workflows/release-dexdex.yml`.
-- GitHub Releases publish signed desktop and server artifacts (`SHA256SUMS` + cosign signatures).
+- GitHub Releases publish signed desktop and server artifacts (`SHA256SUMS` + `.sigstore.json` bundle sidecars).
+- Direct installers verify Sigstore bundle sidecars and only support bundle-enabled releases.
 - Homebrew distribution:
   - `dexdex` cask consumes the macOS desktop DMG release artifact.
   - `dexdex-main-server` and `dexdex-worker-server` formulas consume prebuilt server release artifacts for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`.

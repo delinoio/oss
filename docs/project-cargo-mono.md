@@ -21,7 +21,7 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 - `publish` retry overrides must remain operator-controlled through `--max-attempts <count>` and `CARGO_MONO_PUBLISH_MAX_ATTEMPTS`, with precedence `--max-attempts` > env > default unlimited retries.
 - Remote tag publication remains CI-owned: `auto-publish` pushes release tags with `git push --tags` after a successful `publish` run, with checkout credential persistence disabled and authentication bound to `secrets.GH_TOKEN` (non-`GITHUB_TOKEN`) so downstream tag-triggered workflows run.
 - Publish tag configuration must be opt-in through `[workspace.metadata.cargo-mono.publish.tag].packages`, and tag naming must remain `<crate>@v<version>`.
-- Tag release automation must detect `cargo-mono@v*` and produce signed multi-OS prebuilt artifacts without changing CLI command behavior.
+- Tag release automation must detect `cargo-mono@v*` and produce signed multi-OS prebuilt artifacts with Sigstore bundle sidecars (`*.sigstore.json`) without changing CLI command behavior.
 - Runtime failure messaging must follow the `Summary/Context/Hint` three-line contract while command behavior, output schema, and exit code semantics remain stable.
 - Dependency-cycle conflicts in package ordering must identify cycle package names and dependency scope in `Context` without changing CLI flags, command behavior, or JSON output schema.
 - Human output color controls must remain stable: global `--color <auto|always|never>`, `CARGO_MONO_OUTPUT_COLOR`, and `NO_COLOR` with precedence `--color` > `CARGO_MONO_OUTPUT_COLOR` > `NO_COLOR` > auto-detection.
