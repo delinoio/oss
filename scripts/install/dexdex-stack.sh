@@ -79,7 +79,19 @@ resolve_tag() {
   printf '%s%s\n' "$tag_prefix" "$version"
 }
 
-verify_signature() {
+download_bundle() {
+  local base_url="$1"
+  local artifact="$2"
+  local bundle_name="${artifact}.sigstore.json"
+
+  if ! curl -fsSLO "${base_url}/${bundle_name}"; then
+    echo "[install.dexdex] missing bundle sidecar: ${bundle_name}" >&2
+    echo "[install.dexdex] direct installs require releases published with Sigstore bundle sidecars" >&2
+    exit 1
+  fi
+}
+
+verify_bundle() {
   local artifact="$1"
 
   if ! command -v cosign >/dev/null 2>&1; then
@@ -88,8 +100,7 @@ verify_signature() {
   fi
 
   cosign verify-blob \
-    --certificate "${artifact}.pem" \
-    --signature "${artifact}.sig" \
+    --bundle "${artifact}.sigstore.json" \
     --certificate-identity-regexp "$workflow_identity" \
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
     "$artifact"
@@ -100,12 +111,11 @@ download_and_verify() {
   local asset_name="$2"
 
   curl -fsSLO "${base_url}/${asset_name}"
-  curl -fsSLO "${base_url}/${asset_name}.sig"
-  curl -fsSLO "${base_url}/${asset_name}.pem"
+  download_bundle "$base_url" "$asset_name"
 
   grep " ${asset_name}$" SHA256SUMS > "SHA256SUMS.${asset_name}"
   shasum -a 256 -c "SHA256SUMS.${asset_name}"
-  verify_signature "$asset_name"
+  verify_bundle "$asset_name"
 }
 
 install_via_package_manager() {

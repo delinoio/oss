@@ -51,11 +51,20 @@ require_cosign="${REQUIRE_COSIGN:-1}"
 
 pushd "$artifacts_dir" >/dev/null
 
-mapfile -t artifacts < <(
+find . -maxdepth 1 -type f \
+  \( -name '*.sigstore.json' -o -name '*.sig' -o -name '*.pem' \) \
+  -delete
+
+artifacts=()
+while IFS= read -r artifact; do
+  artifacts+=("$artifact")
+done < <(
   find . -maxdepth 1 -type f \
     ! -name 'SHA256SUMS' \
+    ! -name 'SHA256SUMS.sigstore.json' \
     ! -name 'SHA256SUMS.sig' \
     ! -name 'SHA256SUMS.pem' \
+    ! -name '*.sigstore.json' \
     ! -name '*.sig' \
     ! -name '*.pem' \
     -print | sed 's#^\./##' | LC_ALL=C sort
@@ -81,15 +90,13 @@ if command -v cosign >/dev/null 2>&1; then
   for artifact in "${artifacts[@]}"; do
     echo "[release.checksum] signing $artifact with cosign" >&2
     cosign sign-blob --yes \
-      --output-signature "${artifact}.sig" \
-      --output-certificate "${artifact}.pem" \
+      --bundle "${artifact}.sigstore.json" \
       "$artifact"
   done
 
   echo "[release.checksum] signing SHA256SUMS with cosign" >&2
   cosign sign-blob --yes \
-    --output-signature SHA256SUMS.sig \
-    --output-certificate SHA256SUMS.pem \
+    --bundle SHA256SUMS.sigstore.json \
     SHA256SUMS
 elif [ "$require_cosign" = "1" ]; then
   echo "[release.checksum] cosign is required but not available" >&2

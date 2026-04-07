@@ -66,11 +66,12 @@
 - Workspace validation baseline: `cargo test --workspace --all-targets`
 - CI alignment: `.github/workflows/CI.yml` Rust jobs
 - Release contract checks should align with `.github/workflows/release-cargo-mono.yml`.
+- Release signing outputs must use Sigstore bundle sidecars (`SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json`).
 
 ## Dependencies and Integrations
 - Integrates with Cargo workspace metadata and release workflows.
 - Integrates with root automation (`auto-publish`) through stable command contracts, including CI-driven tag publication.
-- Integrates with tag-based binary distribution automation (`release-cargo-mono`) through stable artifact naming and signing contracts.
+- Integrates with tag-based binary distribution automation (`release-cargo-mono`) through stable artifact naming and bundle-signing contracts.
 
 ## Change Triggers
 - Update `docs/project-cargo-mono.md` with this file when command identifiers or ownership changes.
