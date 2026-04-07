@@ -1,17 +1,34 @@
 class Nodeup < Formula
   desc "Rust-based Node.js version manager"
   homepage "https://github.com/delinoio/oss"
-  url "__SOURCE_URL__"
-  sha256 "__SOURCE_SHA256__"
+  version "__VERSION__"
   license "MIT"
 
-  depends_on "rust" => :build
+  on_macos do
+    if Hardware::CPU.intel?
+      url "__DARWIN_AMD64_URL__"
+      sha256 "__DARWIN_AMD64_SHA256__"
+    else
+      url "__DARWIN_ARM64_URL__"
+      sha256 "__DARWIN_ARM64_SHA256__"
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.intel?
+      url "__LINUX_AMD64_URL__"
+      sha256 "__LINUX_AMD64_SHA256__"
+    else
+      odie "nodeup prebuilt distribution currently supports Linux amd64 only"
+    end
+  end
 
   def install
-    system "cargo", "install", "--locked", "--path", "crates/nodeup", "--root", prefix
+    bin.install "nodeup"
   end
 
   test do
     assert_predicate bin/"nodeup", :exist?
+    assert_match version.to_s, shell_output("#{bin}/nodeup --version").strip
   end
 end
