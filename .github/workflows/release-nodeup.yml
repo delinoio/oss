@@ -85,10 +85,10 @@ jobs:
             archive_ext: zip
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-01-01
           target: ${{ matrix.target }}
@@ -128,7 +128,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nodeup-${{ matrix.asset_os }}-${{ matrix.asset_arch }}
           path: dist/*
@@ -145,10 +145,10 @@ jobs:
       DRY_RUN: ${{ needs.prepare.outputs.dry_run }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
 
@@ -164,7 +164,7 @@ jobs:
           find dist -maxdepth 1 -type f | sed 's#^#artifact: #' >&2
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.8.1
+        uses: sigstore/cosign-installer@v4.1.1
 
       - name: Generate checksums and signatures
         shell: bash

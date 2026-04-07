@@ -85,10 +85,10 @@ jobs:
             archive_ext: zip
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
@@ -116,7 +116,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: derun-${{ matrix.asset_os }}-${{ matrix.asset_arch }}
           path: dist/*
@@ -133,10 +133,10 @@ jobs:
       DRY_RUN: ${{ needs.prepare.outputs.dry_run }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
 
@@ -152,7 +152,7 @@ jobs:
           find dist -maxdepth 1 -type f | sed 's#^#artifact: #' >&2
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.8.1
+        uses: sigstore/cosign-installer@v4.1.1
 
       - name: Generate checksums and signatures
         shell: bash

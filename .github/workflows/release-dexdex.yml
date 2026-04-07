@@ -74,22 +74,22 @@ jobs:
             finder_pattern: '*.msi'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
 
@@ -145,7 +145,7 @@ jobs:
           cp "$found_artifact" "dist/${{ matrix.artifact_name }}"
 
       - name: Upload desktop artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dexdex-desktop-${{ runner.os }}
           path: dist/*
@@ -156,10 +156,10 @@ jobs:
     needs: prepare
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
@@ -201,7 +201,7 @@ jobs:
           TARGETS
 
       - name: Upload server artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dexdex-servers
           path: dist/*
@@ -219,10 +219,10 @@ jobs:
       DRY_RUN: ${{ needs.prepare.outputs.dry_run }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
 
@@ -238,7 +238,7 @@ jobs:
           find dist -maxdepth 1 -type f | sed 's#^#artifact: #' >&2
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.8.1
+        uses: sigstore/cosign-installer@v4.1.1
 
       - name: Generate checksums and signatures
         shell: bash

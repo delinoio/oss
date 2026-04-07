@@ -20,14 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             go:
@@ -62,7 +62,7 @@ jobs:
 
       - name: Setup Go
         if: ${{ steps.gate.outputs.run == 'true' }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
@@ -100,14 +100,14 @@ jobs:
           - windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             go:
@@ -142,7 +142,7 @@ jobs:
 
       - name: Setup Go
         if: ${{ steps.gate.outputs.run == 'true' }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
@@ -161,14 +161,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             rust:
@@ -207,7 +207,7 @@ jobs:
 
       - name: Install Rust toolchain
         if: ${{ steps.gate.outputs.run == 'true' }}
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-01-01
           components: rustfmt
@@ -225,14 +225,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             rust:
@@ -271,7 +271,7 @@ jobs:
 
       - name: Install Rust toolchain
         if: ${{ steps.gate.outputs.run == 'true' }}
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-01-01
           components: clippy
@@ -289,14 +289,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             rust:
@@ -335,7 +335,7 @@ jobs:
 
       - name: Install Rust toolchain
         if: ${{ steps.gate.outputs.run == 'true' }}
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: nightly-2026-01-01
 
@@ -352,26 +352,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: pnpm
@@ -416,26 +416,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: pnpm
@@ -480,26 +480,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: pnpm
@@ -544,26 +544,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: pnpm
@@ -608,26 +608,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: pnpm
@@ -672,26 +672,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             ci_workflow:
               - .github/workflows/CI.yml
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: pnpm
@@ -736,14 +736,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Filter changed paths
         id: filter
         if: ${{ github.event_name != 'workflow_dispatch' }}
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             ci_workflow:
@@ -761,12 +761,12 @@ jobs:
               - pnpm-lock.yaml
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10.26.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
 
@@ -813,7 +813,7 @@ jobs:
 
       - name: Setup Rust toolchain
         if: ${{ steps.gate.outputs.run == 'true' }}
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@v1
         with:
           toolchain: stable
 
