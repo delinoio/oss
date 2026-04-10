@@ -14,14 +14,41 @@ fn with_watch_command() -> Command {
 }
 
 #[test]
-fn help_lists_shell_and_exec_modes() {
+fn long_help_lists_command_inventory_sections() {
     with_watch_command()
         .arg("--help")
         .assert()
         .success()
         .stdout(predicate::str::contains("--shell"))
         .stdout(predicate::str::contains("exec"))
-        .stdout(predicate::str::contains("--no-hash"));
+        .stdout(predicate::str::contains("--no-hash"))
+        .stdout(predicate::str::contains("Wrapper commands:"))
+        .stdout(predicate::str::contains(
+            "env, nice, nohup, stdbuf, timeout",
+        ))
+        .stdout(predicate::str::contains(
+            "Dedicated built-in adapters and aliases:",
+        ))
+        .stdout(predicate::str::contains("cp, mv, install"))
+        .stdout(predicate::str::contains("find, ls, dir, vdir, du"))
+        .stdout(predicate::str::contains(
+            "Recognized but not auto-watchable commands:",
+        ))
+        .stdout(predicate::str::contains("echo, printf, seq, yes, sleep"))
+        .stdout(predicate::str::contains("exec --input escape hatch:"));
+}
+
+#[test]
+fn short_help_stays_compact() {
+    with_watch_command()
+        .arg("-h")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--shell"))
+        .stdout(predicate::str::contains("exec"))
+        .stdout(predicate::str::contains("--no-hash"))
+        .stdout(predicate::str::contains("Wrapper commands:").not())
+        .stdout(predicate::str::contains("Recognized but not auto-watchable commands:").not());
 }
 
 #[test]

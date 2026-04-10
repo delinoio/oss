@@ -42,6 +42,8 @@
 - Commands marked as `WritesWatchedInputs` must refresh the baseline snapshot after each run and suppress reruns caused only by their own writes while they were executing.
 - Path watch inputs must attach their OS watcher to the nearest existing directory so replace-style writers such as GNU `sed -i` do not orphan follow-up change detection on Linux.
 - Operator-facing documentation must explain the three command modes, the `exec --input` escape hatch, shell support boundaries, and why self-mutating commands do not loop on their own writes.
+- `with-watch --help` long help must enumerate the recognized delegated-command inventory, including wrapper commands, dedicated built-in adapters and aliases, generic read-path commands, safe current-directory defaults, and recognized-but-not-auto-watchable commands.
+- Recognized-but-not-auto-watchable commands must remain clearly labeled as requiring `exec --input` when operators want explicit rerun inputs.
 - Homebrew installation must consume prebuilt GitHub release archives for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`.
 
 ## Storage
