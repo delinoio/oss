@@ -148,6 +148,10 @@ impl SnapshotState {
     pub fn len(&self) -> usize {
         self.entries.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -236,7 +240,7 @@ fn capture_path_input(
         for entry in WalkDir::new(path).follow_links(true) {
             let entry = entry.map_err(|error| WithWatchError::Metadata {
                 path: path.to_path_buf(),
-                source: std::io::Error::new(std::io::ErrorKind::Other, error.to_string()),
+                source: std::io::Error::other(error.to_string()),
             })?;
             let entry_path = entry.path().to_path_buf();
             insert_existing_entry(&entry_path, mode, entries)?;
@@ -268,7 +272,7 @@ fn capture_glob_input(
     for entry in WalkDir::new(watch_anchor).follow_links(true) {
         let entry = entry.map_err(|error| WithWatchError::Metadata {
             path: watch_anchor.to_path_buf(),
-            source: std::io::Error::new(std::io::ErrorKind::Other, error.to_string()),
+            source: std::io::Error::other(error.to_string()),
         })?;
         let path = entry.path().to_path_buf();
         let normalized = normalize_path_string(&path);
@@ -434,8 +438,11 @@ mod tests {
         )
         .expect("path input");
 
-        let first = capture_snapshot(&[input.clone()], ChangeDetectionMode::ContentHash)
-            .expect("first snapshot");
+        let first = capture_snapshot(
+            std::slice::from_ref(&input),
+            ChangeDetectionMode::ContentHash,
+        )
+        .expect("first snapshot");
         thread::sleep(Duration::from_millis(20));
         fs::write(&file_path, "hello").expect("rewrite same content");
         let second =
@@ -456,7 +463,7 @@ mod tests {
         )
         .expect("path input");
 
-        let first = capture_snapshot(&[input.clone()], ChangeDetectionMode::MtimeOnly)
+        let first = capture_snapshot(std::slice::from_ref(&input), ChangeDetectionMode::MtimeOnly)
             .expect("first snapshot");
         thread::sleep(Duration::from_millis(20));
         fs::write(&file_path, "hello").expect("rewrite same content");

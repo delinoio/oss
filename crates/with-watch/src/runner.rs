@@ -141,37 +141,36 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
 
     loop {
         if let Some(active_child) = child.as_mut() {
-            match active_child
-                .try_wait()
-                .map_err(|source| WithWatchError::Wait {
-                    command: plan.delegated_command.display_name(),
-                    source,
-                })? {
-                Some(status) => {
-                    completed_runs += 1;
-                    let last_exit_code = exit_code_from_status(status);
-                    info!(
-                        completed_runs,
-                        last_exit_code,
-                        command_source = plan.source.as_str(),
-                        "Delegated command finished"
-                    );
-                    child = None;
+            if let Some(status) =
+                active_child
+                    .try_wait()
+                    .map_err(|source| WithWatchError::Wait {
+                        command: plan.delegated_command.display_name(),
+                        source,
+                    })?
+            {
+                completed_runs += 1;
+                let last_exit_code = exit_code_from_status(status);
+                info!(
+                    completed_runs,
+                    last_exit_code,
+                    command_source = plan.source.as_str(),
+                    "Delegated command finished"
+                );
+                child = None;
 
-                    if options
-                        .max_runs
-                        .is_some_and(|limit| completed_runs >= limit)
-                    {
-                        return Ok(last_exit_code);
-                    }
-
-                    if let Some(next_snapshot) = queued_snapshot.take() {
-                        baseline = next_snapshot;
-                        child = Some(spawn_command(&plan.delegated_command)?);
-                        continue;
-                    }
+                if options
+                    .max_runs
+                    .is_some_and(|limit| completed_runs >= limit)
+                {
+                    return Ok(last_exit_code);
                 }
-                None => {}
+
+                if let Some(next_snapshot) = queued_snapshot.take() {
+                    baseline = next_snapshot;
+                    child = Some(spawn_command(&plan.delegated_command)?);
+                    continue;
+                }
             }
         }
 
