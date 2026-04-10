@@ -84,6 +84,127 @@ fn pathless_allowlist_command_runs_once_with_test_hook() {
 
 #[cfg(unix)]
 #[test]
+fn ls_reruns_when_an_immediate_child_changes() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let watch_dir = temp_dir.path().join("watch");
+    let marker_dir = temp_dir.path().join("aux").join("markers");
+    fs::create_dir_all(&watch_dir).expect("create watch dir");
+
+    let mut child = ProcessCommand::new(assert_cmd::cargo::cargo_bin!("with-watch"))
+        .current_dir(&watch_dir)
+        .env("WITH_WATCH_TEST_MAX_RUNS", "2")
+        .env("WITH_WATCH_TEST_DEBOUNCE_MS", "25")
+        .env("WITH_WATCH_TEST_RUN_MARKER_DIR", &marker_dir)
+        .arg("ls")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn with-watch");
+
+    wait_for_path(&marker_dir.join("run-1.done"));
+    assert!(child.try_wait().expect("poll child").is_none());
+
+    fs::write(watch_dir.join("created.txt"), "alpha\n").expect("write immediate child");
+    wait_for_path(&marker_dir.join("run-2.done"));
+
+    let status = wait_for_child_exit(&mut child, Duration::from_secs(10));
+    assert!(status.success());
+}
+
+#[cfg(unix)]
+#[test]
+fn ls_does_not_rerun_for_nested_descendant_changes() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let watch_dir = temp_dir.path().join("watch");
+    let marker_dir = temp_dir.path().join("aux").join("markers");
+    let subdir = watch_dir.join("subdir");
+    fs::create_dir_all(&subdir).expect("create subdir");
+
+    let mut child = ProcessCommand::new(assert_cmd::cargo::cargo_bin!("with-watch"))
+        .current_dir(&watch_dir)
+        .env("WITH_WATCH_TEST_MAX_RUNS", "2")
+        .env("WITH_WATCH_TEST_DEBOUNCE_MS", "25")
+        .env("WITH_WATCH_TEST_RUN_MARKER_DIR", &marker_dir)
+        .arg("ls")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn with-watch");
+
+    wait_for_path(&marker_dir.join("run-1.done"));
+    fs::write(subdir.join("nested.txt"), "alpha\n").expect("write nested file");
+
+    assert_path_stays_absent(&marker_dir.join("run-2.done"), Duration::from_millis(300));
+    assert!(child.try_wait().expect("poll child").is_none());
+
+    child.kill().expect("kill child");
+    child.wait().expect("wait for child");
+}
+
+#[cfg(unix)]
+#[test]
+fn ls_recursive_reruns_for_nested_descendant_changes() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let watch_dir = temp_dir.path().join("watch");
+    let marker_dir = temp_dir.path().join("aux").join("markers");
+    let subdir = watch_dir.join("subdir");
+    fs::create_dir_all(&subdir).expect("create subdir");
+
+    let mut child = ProcessCommand::new(assert_cmd::cargo::cargo_bin!("with-watch"))
+        .current_dir(&watch_dir)
+        .env("WITH_WATCH_TEST_MAX_RUNS", "2")
+        .env("WITH_WATCH_TEST_DEBOUNCE_MS", "25")
+        .env("WITH_WATCH_TEST_RUN_MARKER_DIR", &marker_dir)
+        .args(["ls", "-R"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn with-watch");
+
+    wait_for_path(&marker_dir.join("run-1.done"));
+    fs::write(subdir.join("nested.txt"), "alpha\n").expect("write nested file");
+    wait_for_path(&marker_dir.join("run-2.done"));
+
+    let status = wait_for_child_exit(&mut child, Duration::from_secs(10));
+    assert!(status.success());
+}
+
+#[cfg(unix)]
+#[test]
+fn ls_directory_mode_does_not_rerun_for_directory_contents_changes() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let root_dir = temp_dir.path().join("root");
+    let marker_dir = temp_dir.path().join("aux").join("markers");
+    let listed_dir = root_dir.join("dir");
+    fs::create_dir_all(&listed_dir).expect("create listed dir");
+
+    let mut child = ProcessCommand::new(assert_cmd::cargo::cargo_bin!("with-watch"))
+        .current_dir(&root_dir)
+        .env("WITH_WATCH_TEST_MAX_RUNS", "2")
+        .env("WITH_WATCH_TEST_DEBOUNCE_MS", "25")
+        .env("WITH_WATCH_TEST_RUN_MARKER_DIR", &marker_dir)
+        .args(["ls", "-d", "dir"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn with-watch");
+
+    wait_for_path(&marker_dir.join("run-1.done"));
+    fs::write(listed_dir.join("child.txt"), "alpha\n").expect("write nested child");
+
+    assert_path_stays_absent(&marker_dir.join("run-2.done"), Duration::from_millis(300));
+    assert!(child.try_wait().expect("poll child").is_none());
+
+    child.kill().expect("kill child");
+    child.wait().expect("wait for child");
+}
+
+#[cfg(unix)]
+#[test]
 fn shell_mode_supports_operators_and_exits_after_one_run_with_test_hook() {
     let temp_dir = tempfile::tempdir().expect("create tempdir");
     let input_path = temp_dir.path().join("input.txt");
@@ -286,6 +407,15 @@ fn wait_for_path(path: &Path) {
         thread::sleep(Duration::from_millis(25));
     }
     panic!("timed out waiting for {}", path.display());
+}
+
+#[cfg(unix)]
+fn assert_path_stays_absent(path: &Path, duration: Duration) {
+    let deadline = std::time::Instant::now() + duration;
+    while std::time::Instant::now() < deadline {
+        assert!(!path.exists(), "expected {} to stay absent", path.display());
+        thread::sleep(Duration::from_millis(25));
+    }
 }
 
 #[cfg(unix)]

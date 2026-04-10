@@ -25,16 +25,19 @@
 - Publish tag naming must remain `with-watch@v<version>`.
 - Stable internal enums must remain aligned with the current v1 contract:
   - `ChangeDetectionMode::{ContentHash, MtimeOnly}`
-- `CommandSource::{Argv, Shell, Exec}`
-- `CommandAnalysisStatus::{Resolved, NoInputs, AmbiguousFallback}`
-- `CommandAdapterId` adapter categories used for built-in inference
-- `SideEffectProfile::{ReadOnly, WritesExcludedOutputs, WritesWatchedInputs}`
-- `WatchInput::{Path, Glob}`
-- `SnapshotEntryKind::{File, Directory, Missing}`
+  - `CommandSource::{Argv, Shell, Exec}`
+  - `CommandAnalysisStatus::{Resolved, NoInputs, AmbiguousFallback}`
+  - `CommandAdapterId` adapter categories used for built-in inference
+  - `SideEffectProfile::{ReadOnly, WritesExcludedOutputs, WritesWatchedInputs}`
+  - `PathSnapshotMode::{ContentPath, ContentTree, MetadataPath, MetadataChildren, MetadataTree}`
+  - `WatchInput::{Path, Glob}`
+  - `SnapshotEntryKind::{File, Directory, Missing}`
 - Shell mode must parse command-line expressions with `&&`, `||`, and `|`, while shell control-flow constructs remain out of scope for v1.
 - Shell redirects must treat `<` and `<>` targets as watched inputs and `>`, `>>`, `&>`, `&>>`, and `>|` targets as filtered outputs.
 - Generic watch planning must use adapter-driven inference for built-in command families and a conservative fallback for unknown tools.
 - Safe pathless `.` defaults are limited to `ls`, `dir`, `vdir`, `du`, and `find`.
+- `ls`, `dir`, and `vdir` must use metadata listing snapshots so the first run does not recurse through large trees before spawning the delegated command.
+- Plain `ls`/`dir`/`vdir` directory operands must watch only the named directory plus immediate children, `-R` must switch them to recursive metadata tree snapshots, and `-d`/`--directory` must watch only the named path entry.
 - Built-in inference must exclude known outputs, scripts, inline patterns, and opaque fallback operands from the watch set.
 - Wrapper commands (`env`, `nice`, `nohup`, `stdbuf`, and `timeout`) must unwrap to the delegated command before adapter selection.
 - `exec --input` remains the canonical explicit input contract when inference is insufficient, but command-side side-effect metadata may still be inferred for rerun suppression and logging.
@@ -55,7 +58,7 @@
 
 ## Logging
 - Use structured `tracing` logs for command planning, watcher setup, snapshot capture, debounce decisions, and rerun causes.
-- Logs must include `command_source`, `detection_mode`, input counts, `adapter_id`, `fallback_used`, `default_watch_root_used`, `filtered_output_count`, `side_effect_profile`, and rerun suppression outcomes.
+- Logs must include `command_source`, `detection_mode`, input counts, `adapter_id`, `fallback_used`, `default_watch_root_used`, `filtered_output_count`, `side_effect_profile`, snapshot modes, snapshot entry counts, snapshot capture elapsed time, and rerun suppression outcomes.
 
 ## Build and Test
 - Local validation: `cargo test -p with-watch`

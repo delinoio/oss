@@ -1,9 +1,9 @@
-use std::{ffi::OsString, path::Path};
+use std::{ffi::OsString, fs, path::Path};
 
 use crate::{
     error::Result,
     parser::{ParsedShellExpression, ShellRedirect, ShellRedirectOperator},
-    snapshot::{WatchInput, WatchInputKind},
+    snapshot::{absolutize, PathSnapshotMode, WatchInput, WatchInputKind},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -291,6 +291,7 @@ fn analyze_command_tokens(
         "split" => analyze_split(argv, redirects, cwd)?,
         "csplit" => analyze_csplit(argv, redirects, cwd)?,
         "tee" => analyze_tee(argv, redirects, cwd)?,
+        "ls" | "dir" | "vdir" => analyze_ls_like(argv, redirects, cwd)?,
         "grep" | "egrep" | "fgrep" => analyze_grep(argv, redirects, cwd)?,
         "sed" => analyze_sed(argv, redirects, cwd)?,
         "awk" | "gawk" | "mawk" | "nawk" => analyze_awk(argv, redirects, cwd)?,
@@ -320,7 +321,7 @@ fn analyze_command_tokens(
     Ok(analysis.finalize())
 }
 
-const DEFAULT_CURRENT_DIR_COMMANDS: &[&str] = &["ls", "dir", "vdir", "du"];
+const DEFAULT_CURRENT_DIR_COMMANDS: &[&str] = &["du"];
 const NONWATCHABLE_COMMANDS: &[&str] = &[
     "echo", "printf", "seq", "yes", "sleep", "date", "uname", "pwd", "true", "false", "basename",
     "dirname", "nproc", "printenv", "whoami", "logname", "users", "hostid", "numfmt", "mktemp",
@@ -1870,6 +1871,122 @@ fn analyze_default_current_dir_reader(
     Ok(analysis)
 }
 
+fn analyze_ls_like(
+    argv: &[String],
+    redirects: &[ShellRedirect],
+    cwd: &Path,
+) -> Result<SingleCommandAnalysis> {
+    let mut inputs = Vec::new();
+    let mut positional_only = false;
+    let mut recursive = false;
+    let mut directory_mode = false;
+    let mut index = 1usize;
+
+    while index < argv.len() {
+        let token = argv[index].as_str();
+        if !positional_only && token == "--" {
+            positional_only = true;
+            index += 1;
+            continue;
+        }
+
+        if !positional_only {
+            if token == "-R" || token == "--recursive" {
+                recursive = true;
+                index += 1;
+                continue;
+            }
+            if token == "-d" || token == "--directory" {
+                directory_mode = true;
+                index += 1;
+                continue;
+            }
+            if token.starts_with("--") {
+                index += 1;
+                continue;
+            }
+            if token.starts_with('-') && token != "-" {
+                recursive |= token.contains('R');
+                directory_mode |= token.contains('d');
+                index += 1;
+                continue;
+            }
+        }
+
+        push_inferred_path_with_mode(
+            &mut inputs,
+            token,
+            cwd,
+            ls_like_snapshot_mode(token, cwd, recursive, directory_mode),
+        )?;
+        index += 1;
+    }
+
+    if inputs.is_empty() {
+        push_inferred_path_with_mode(
+            &mut inputs,
+            ".",
+            cwd,
+            default_ls_snapshot_mode(recursive, directory_mode),
+        )?;
+    }
+
+    let mut analysis = SingleCommandAnalysis {
+        inputs,
+        adapter_ids: vec![CommandAdapterId::DefaultCurrentDir],
+        fallback_used: false,
+        default_watch_root_used: false,
+        filtered_output_count: 0,
+        side_effect_profile: SideEffectProfile::ReadOnly,
+        status: CommandAnalysisStatus::NoInputs,
+    };
+
+    if argv.len() == 1
+        || argv
+            .iter()
+            .skip(1)
+            .all(|token| token == "--" || (token.starts_with('-') && token != "-"))
+    {
+        analysis.default_watch_root_used = true;
+    }
+
+    apply_redirects(&mut analysis, redirects, cwd)?;
+    Ok(analysis)
+}
+
+fn default_ls_snapshot_mode(recursive: bool, directory_mode: bool) -> PathSnapshotMode {
+    if directory_mode {
+        PathSnapshotMode::MetadataPath
+    } else if recursive {
+        PathSnapshotMode::MetadataTree
+    } else {
+        PathSnapshotMode::MetadataChildren
+    }
+}
+
+fn ls_like_snapshot_mode(
+    raw: &str,
+    cwd: &Path,
+    recursive: bool,
+    directory_mode: bool,
+) -> PathSnapshotMode {
+    if directory_mode {
+        return PathSnapshotMode::MetadataPath;
+    }
+
+    let absolute_path = absolutize(raw, cwd);
+    match fs::metadata(&absolute_path) {
+        Ok(metadata) if metadata.is_dir() => {
+            if recursive {
+                PathSnapshotMode::MetadataTree
+            } else {
+                PathSnapshotMode::MetadataChildren
+            }
+        }
+        Ok(_) | Err(_) => PathSnapshotMode::MetadataPath,
+    }
+}
+
 fn analyze_non_watchable(
     _argv: &[String],
     redirects: &[ShellRedirect],
@@ -2080,28 +2197,33 @@ fn push_inferred_input(inputs: &mut Vec<WatchInput>, raw: &str, cwd: &Path) -> R
     Ok(())
 }
 
+fn push_inferred_path_with_mode(
+    inputs: &mut Vec<WatchInput>,
+    raw: &str,
+    cwd: &Path,
+    snapshot_mode: PathSnapshotMode,
+) -> Result<()> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "-" {
+        return Ok(());
+    }
+
+    let input =
+        WatchInput::path_with_snapshot_mode(trimmed, cwd, WatchInputKind::Inferred, snapshot_mode)?;
+
+    if !inputs.contains(&input) {
+        inputs.push(input);
+    }
+
+    Ok(())
+}
+
 fn has_glob_magic(raw: &str) -> bool {
     raw.contains('*') || raw.contains('?') || raw.contains('[')
 }
 
 fn path_exists(raw: &str, cwd: &Path) -> bool {
-    let expanded = expand_tilde(raw);
-    let path = Path::new(expanded.as_str());
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        cwd.join(path)
-    };
-    absolute.exists()
-}
-
-fn expand_tilde(raw: &str) -> String {
-    if let Some(suffix) = raw.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{home}/{suffix}");
-        }
-    }
-    raw.to_string()
+    absolutize(raw, cwd).exists()
 }
 
 fn is_path_shaped(token: &str) -> bool {
@@ -2159,13 +2281,16 @@ fn is_dynamic_shell_token(token: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
+    use std::{ffi::OsString, fs};
 
     use super::{
         analyze_argv, analyze_shell_expression, CommandAdapterId, CommandAnalysisStatus,
         SideEffectProfile,
     };
-    use crate::parser::parse_shell_expression;
+    use crate::{
+        parser::parse_shell_expression,
+        snapshot::{PathSnapshotMode, WatchInput},
+    };
 
     #[test]
     fn cp_watches_only_sources() {
@@ -2283,6 +2408,11 @@ mod tests {
 
         assert_eq!(analysis.inputs.len(), 1);
         assert!(analysis.default_watch_root_used);
+        assert_path_snapshot_mode(
+            &analysis.inputs[0],
+            cwd.path(),
+            PathSnapshotMode::MetadataChildren,
+        );
 
         let analysis = analyze_argv(&[OsString::from("find")], cwd.path()).expect("analyze");
         assert_eq!(analysis.inputs.len(), 1);
@@ -2315,6 +2445,61 @@ mod tests {
         .expect("analyze");
         assert_eq!(analysis.inputs.len(), 1);
         assert!(analysis.default_watch_root_used);
+    }
+
+    #[test]
+    fn ls_like_inputs_use_listing_snapshot_modes() {
+        let cwd = tempfile::tempdir().expect("create tempdir");
+        fs::create_dir_all(cwd.path().join("subdir").join("nested")).expect("create nested dir");
+        fs::write(cwd.path().join("file.txt"), "alpha\n").expect("write file");
+
+        let default_ls = analyze_argv(&[OsString::from("ls")], cwd.path()).expect("analyze");
+        assert_path_snapshot_mode(
+            &default_ls.inputs[0],
+            cwd.path(),
+            PathSnapshotMode::MetadataChildren,
+        );
+
+        let directory_ls = analyze_argv(
+            &[OsString::from("ls"), OsString::from("subdir")],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_path_snapshot_mode(
+            &directory_ls.inputs[0],
+            &cwd.path().join("subdir"),
+            PathSnapshotMode::MetadataChildren,
+        );
+
+        let recursive_ls = analyze_argv(
+            &[
+                OsString::from("ls"),
+                OsString::from("-R"),
+                OsString::from("subdir"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_path_snapshot_mode(
+            &recursive_ls.inputs[0],
+            &cwd.path().join("subdir"),
+            PathSnapshotMode::MetadataTree,
+        );
+
+        let directory_flag_ls = analyze_argv(
+            &[
+                OsString::from("ls"),
+                OsString::from("-d"),
+                OsString::from("subdir"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_path_snapshot_mode(
+            &directory_flag_ls.inputs[0],
+            &cwd.path().join("subdir"),
+            PathSnapshotMode::MetadataPath,
+        );
     }
 
     #[test]
@@ -2408,5 +2593,23 @@ mod tests {
 
         assert_eq!(analysis.inputs.len(), 1);
         assert_eq!(analysis.filtered_output_count, 1);
+    }
+
+    fn assert_path_snapshot_mode(
+        input: &WatchInput,
+        expected_path: &std::path::Path,
+        expected_snapshot_mode: PathSnapshotMode,
+    ) {
+        match input {
+            WatchInput::Path {
+                path,
+                snapshot_mode,
+                ..
+            } => {
+                assert_eq!(path, expected_path);
+                assert_eq!(*snapshot_mode, expected_snapshot_mode);
+            }
+            other => panic!("unexpected watch input: {other:?}"),
+        }
     }
 }

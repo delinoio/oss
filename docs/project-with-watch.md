@@ -21,6 +21,7 @@ Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbit
 - `exec --input` reruns the delegated command unchanged and must not inject changed paths into argv or environment variables.
 - Commands without safe inferred filesystem inputs must fail clearly and direct operators to `with-watch exec --input ...`.
 - Passthrough and shell modes must use adapter-driven input inference that excludes known outputs, scripts, and pattern operands from the watch set.
+- `ls`, `dir`, and `vdir` must use metadata listing snapshots instead of recursive file-content hashing: the default watch scope is immediate children, `-R` stays recursive, and `-d` watches only the named path.
 - Shell redirects must treat `<` and `<>` targets as watched inputs and `>`, `>>`, `&>`, `&>>`, and `>|` targets as filtered outputs.
 - Shell parsing support is limited to command-line expressions plus `&&`, `||`, and `|`; broader shell control-flow stays out of scope until documented otherwise.
 - Safe pathless default watch roots are limited to the built-in allowlist (`ls`, `dir`, `vdir`, `du`, and `find`).

@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
     process::{Child, Command, ExitStatus, Stdio},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use tracing::{debug, info, warn};
@@ -186,7 +186,8 @@ impl RunnerOptions {
 
 pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
     let mut watch_loop = WatchLoop::new(&plan.inputs)?;
-    let mut baseline = capture_snapshot(&plan.inputs, plan.detection_mode)?;
+    let mut baseline =
+        capture_snapshot_with_logging("initial-baseline", &plan.inputs, plan.detection_mode)?;
     let mut child = Some(spawn_command(&plan.delegated_command)?);
     let mut completed_runs = 0usize;
     let mut pending_rerun = false;
@@ -217,7 +218,8 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
             {
                 completed_runs += 1;
                 let last_exit_code = exit_code_from_status(status);
-                let post_run_snapshot = capture_snapshot(&plan.inputs, plan.detection_mode)?;
+                let post_run_snapshot =
+                    capture_snapshot_with_logging("post-run", &plan.inputs, plan.detection_mode)?;
                 let inputs_changed_since_baseline =
                     post_run_snapshot.is_meaningfully_different(&baseline, plan.detection_mode);
                 let additional_change_after_suppression = suppressed_self_change_snapshot
@@ -294,7 +296,8 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
         {
             handle_watch_events(&events);
 
-            let current_snapshot = capture_snapshot(&plan.inputs, plan.detection_mode)?;
+            let current_snapshot =
+                capture_snapshot_with_logging("event-rescan", &plan.inputs, plan.detection_mode)?;
             let reference_snapshot = if child.is_some()
                 && plan.metadata.side_effect_profile == SideEffectProfile::WritesWatchedInputs
             {
@@ -341,6 +344,40 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
             thread::sleep(Duration::from_millis(10));
         }
     }
+}
+
+fn capture_snapshot_with_logging(
+    phase: &str,
+    inputs: &[WatchInput],
+    detection_mode: ChangeDetectionMode,
+) -> Result<SnapshotState> {
+    let snapshot_modes = summarize_snapshot_modes(inputs);
+    let started_at = Instant::now();
+    let snapshot = capture_snapshot(inputs, detection_mode)?;
+
+    debug!(
+        phase,
+        detection_mode = detection_mode.as_str(),
+        snapshot_modes,
+        input_count = inputs.len(),
+        snapshot_entry_count = snapshot.len(),
+        elapsed_ms = started_at.elapsed().as_millis() as u64,
+        "Captured input snapshot"
+    );
+
+    Ok(snapshot)
+}
+
+fn summarize_snapshot_modes(inputs: &[WatchInput]) -> String {
+    let mut modes = Vec::new();
+    for input in inputs {
+        let snapshot_mode = input.snapshot_mode_label();
+        if !modes.contains(&snapshot_mode) {
+            modes.push(snapshot_mode);
+        }
+    }
+
+    modes.join(",")
 }
 
 fn handle_watch_events(events: &CollectedEvents) {
