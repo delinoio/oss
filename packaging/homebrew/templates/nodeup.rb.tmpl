@@ -18,8 +18,11 @@ class Nodeup < Formula
     if Hardware::CPU.intel?
       url "__LINUX_AMD64_URL__"
       sha256 "__LINUX_AMD64_SHA256__"
+    elsif Hardware::CPU.arm?
+      url "__LINUX_ARM64_URL__"
+      sha256 "__LINUX_ARM64_SHA256__"
     else
-      odie "nodeup prebuilt distribution currently supports Linux amd64 only"
+      odie "nodeup prebuilt distribution currently supports Linux amd64 and arm64 only"
     end
   end
 

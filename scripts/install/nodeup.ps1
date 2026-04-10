@@ -83,7 +83,13 @@ function Verify-Bundle {
 function Install-Direct {
   $tag = Resolve-Tag
   $baseUrl = "https://github.com/$Repo/releases/download/$tag"
-  $assetName = "nodeup-windows-amd64.zip"
+  $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+  $assetArch = switch ($architecture) {
+    "x64" { "amd64" }
+    "arm64" { "arm64" }
+    default { throw "[install.nodeup] unsupported Windows architecture: $architecture" }
+  }
+  $assetName = "nodeup-windows-$assetArch.zip"
 
   $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("nodeup-install-" + [System.Guid]::NewGuid().ToString("N"))
   New-Item -Path $tmpDir -ItemType Directory | Out-Null

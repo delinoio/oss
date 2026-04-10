@@ -13,6 +13,7 @@ Usage:
     [--darwin-amd64-url <url>] [--darwin-amd64-sha256 <sha>] \
     [--darwin-arm64-url <url>] [--darwin-arm64-sha256 <sha>] \
     [--linux-amd64-url <url>] [--linux-amd64-sha256 <sha>] \
+    [--linux-arm64-url <url>] [--linux-arm64-sha256 <sha>] \
     [--desktop-url <url>] [--desktop-sha256 <sha>] \
     [--tap-repo <owner/repo>] [--dry-run]
 
@@ -31,6 +32,10 @@ Options:
                          Linux amd64 prebuilt artifact URL (nodeup, with-watch, derun, and DexDex server formulas).
   --linux-amd64-sha256 <sha>
                          Linux amd64 prebuilt artifact SHA256 (nodeup, with-watch, derun, and DexDex server formulas).
+  --linux-arm64-url <url>
+                         Linux arm64 prebuilt artifact URL (nodeup and with-watch formulas).
+  --linux-arm64-sha256 <sha>
+                         Linux arm64 prebuilt artifact SHA256 (nodeup and with-watch formulas).
   --desktop-url <url>    Desktop installer URL (dexdex cask).
   --desktop-sha256 <sha> Desktop installer SHA256 (dexdex cask).
   --tap-repo <repo>      Homebrew tap repository (default: delinoio/homebrew-tap).
@@ -46,6 +51,8 @@ darwin_arm64_url=""
 darwin_arm64_sha256=""
 linux_amd64_url=""
 linux_amd64_sha256=""
+linux_arm64_url=""
+linux_arm64_sha256=""
 desktop_url=""
 desktop_sha256=""
 tap_repo="delinoio/homebrew-tap"
@@ -87,6 +94,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --linux-amd64-sha256)
       linux_amd64_sha256="${2:-}"
+      shift 2
+      ;;
+    --linux-arm64-url)
+      linux_arm64_url="${2:-}"
+      shift 2
+      ;;
+    --linux-arm64-sha256)
+      linux_arm64_sha256="${2:-}"
       shift 2
       ;;
     --desktop-url)
@@ -135,6 +150,11 @@ case "$project" in
       exit 1
     fi
 
+    if { [ "$project" = "nodeup" ] || [ "$project" = "with-watch" ]; } && { [ -z "$linux_arm64_url" ] || [ -z "$linux_arm64_sha256" ]; }; then
+      log "$project requires --linux-arm64-url and --linux-arm64-sha256"
+      exit 1
+    fi
+
     template_path="$repo_root/packaging/homebrew/templates/${project}.rb.tmpl"
     destination_path="Formula/${project}.rb"
 
@@ -151,6 +171,8 @@ case "$project" in
       -e "s|__DARWIN_ARM64_SHA256__|$darwin_arm64_sha256|g" \
       -e "s|__LINUX_AMD64_URL__|$linux_amd64_url|g" \
       -e "s|__LINUX_AMD64_SHA256__|$linux_amd64_sha256|g" \
+      -e "s|__LINUX_ARM64_URL__|$linux_arm64_url|g" \
+      -e "s|__LINUX_ARM64_SHA256__|$linux_arm64_sha256|g" \
       -e "s|__VERSION__|$version|g" \
       "$template_path" >"$rendered_file"
     ;;

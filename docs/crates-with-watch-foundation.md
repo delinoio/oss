@@ -41,7 +41,7 @@
 - Commands marked as `WritesWatchedInputs` must refresh the baseline snapshot after each run and suppress reruns caused only by their own writes while they were executing.
 - Path watch inputs must attach their OS watcher to the nearest existing directory so replace-style writers such as GNU `sed -i` do not orphan follow-up change detection on Linux.
 - Operator-facing documentation must explain the three command modes, the `exec --input` escape hatch, shell support boundaries, and why self-mutating commands do not loop on their own writes.
-- Homebrew installation must consume prebuilt GitHub release archives for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`.
+- Homebrew installation must consume prebuilt GitHub release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 
 ## Storage
 - `with-watch` does not persist project state.
@@ -64,7 +64,7 @@
 - Documentation changes should be checked against `cargo run -p with-watch -- --help` and the integration scenarios in `crates/with-watch/tests/cli.rs`.
 - Publishability validation: `cargo publish -p with-watch --dry-run`
 - Release contract checks should align with `.github/workflows/release-with-watch.yml`.
-- Release assets must include standalone binaries (`with-watch-<os>-<arch>[.exe]`) and compressed archives (`with-watch-<os>-<arch>.tar.gz|zip`) for the supported release matrix.
+- Release assets must include standalone binaries (`with-watch-<os>-<arch>[.exe]`) and compressed archives (`with-watch-<os>-<arch>.tar.gz|zip`) for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`.
 - Release signing outputs must include `SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json` sidecars.
 
 ## Dependencies and Integrations

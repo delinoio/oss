@@ -13,7 +13,7 @@ use tracing::{info, warn};
 
 use crate::{
     errors::{sanitize_url_text, NodeupError, Result},
-    types::NodeupChannel,
+    types::{NodeupChannel, PlatformTarget},
 };
 
 const DEFAULT_INDEX_URL: &str = "https://nodejs.org/download/release/index.json";
@@ -404,11 +404,15 @@ impl ReleaseIndexClient {
         })
     }
 
-    pub fn archive_url(&self, version: &str, target_segment: &str) -> String {
+    pub fn archive_url(&self, version: &str, target: PlatformTarget) -> String {
         let version = normalize_version(version);
         format!(
-            "{}/{}/node-{}-{}.tar.xz",
-            self.download_base_url, version, version, target_segment
+            "{}/{}/node-{}-{}.{}",
+            self.download_base_url,
+            version,
+            version,
+            target.archive_segment(),
+            target.archive_format().extension()
         )
     }
 
@@ -472,6 +476,31 @@ mod tests {
     fn normalize_version_prefixes_when_missing() {
         assert_eq!(normalize_version("22.1.0"), "v22.1.0");
         assert_eq!(normalize_version("v22.1.0"), "v22.1.0");
+    }
+
+    #[test]
+    fn archive_urls_follow_platform_specific_extensions() {
+        let dir = tempdir().unwrap();
+        let client = ReleaseIndexClient::with_urls(
+            dir.path().join("release-index.json"),
+            Duration::from_secs(60),
+            "https://example.com/index.json".to_string(),
+            "https://example.com/release".to_string(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            client.archive_url("22.1.0", PlatformTarget::LinuxArm64),
+            "https://example.com/release/v22.1.0/node-v22.1.0-linux-arm64.tar.xz"
+        );
+        assert_eq!(
+            client.archive_url("22.1.0", PlatformTarget::WindowsX64),
+            "https://example.com/release/v22.1.0/node-v22.1.0-win-x64.zip"
+        );
+        assert_eq!(
+            client.archive_url("22.1.0", PlatformTarget::WindowsArm64),
+            "https://example.com/release/v22.1.0/node-v22.1.0-win-arm64.zip"
+        );
     }
 
     #[test]
