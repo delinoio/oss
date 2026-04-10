@@ -14,14 +14,15 @@
 - Release engineers operating crate publication and binary distribution workflows
 
 ## Interfaces and Contracts
-- Root passthrough mode must remain `with-watch [--no-hash] <utility> [args...]`.
-- Shell mode must remain `with-watch [--no-hash] --shell '<expr>'`.
-- `exec` mode must remain `with-watch exec [--no-hash] --input <glob>... -- <command> [args...]`.
+- Root passthrough mode must remain `with-watch [--no-hash] [--clear] <utility> [args...]`.
+- Shell mode must remain `with-watch [--no-hash] [--clear] --shell '<expr>'`.
+- `exec` mode must remain `with-watch exec [--no-hash] [--clear] --input <glob>... -- <command> [args...]`.
 - The CLI must continue to reject mixed modes and empty delegated-command requests with operator-facing guidance.
 - Passthrough and shell modes must infer watch inputs before the first run; if inference does not produce safe filesystem inputs, the command must fail with `exec --input` guidance instead of guessing.
 - After watch input inference, watcher setup, and baseline snapshot capture succeed, all command modes must execute the delegated command immediately once before waiting for the first filesystem change event.
 - `exec --input` must accept repeatable explicit glob/path values, keep the delegated command unchanged, and remain the canonical fallback for otherwise ambiguous or pathless commands.
 - `--no-hash` must remain a global flag that switches rerun filtering from content hashes to metadata-only comparison.
+- `--clear` must remain a global flag that clears stdout before the initial run and each rerun only when stdout is a terminal.
 - `WW_LOG` must remain the only supported environment variable for configuring `with-watch` diagnostic `tracing` filters.
 - The default diagnostic log filter must remain `with_watch=off`, and `RUST_LOG` must not affect `with-watch` logging behavior.
 - Public crate installation must remain `cargo install with-watch`.
@@ -29,6 +30,7 @@
 - Stable internal enums must remain aligned with the current v1 contract:
   - `ChangeDetectionMode::{ContentHash, MtimeOnly}`
   - `CommandSource::{Argv, Shell, Exec}`
+  - `OutputRefreshMode::{Preserve, ClearTerminal}`
   - `CommandAnalysisStatus::{Resolved, NoInputs, AmbiguousFallback}`
   - `CommandAdapterId` adapter categories used for built-in inference
   - `SideEffectProfile::{ReadOnly, WritesExcludedOutputs, WritesWatchedInputs}`
@@ -64,12 +66,12 @@
 ## Logging
 - Use structured `tracing` logs for command planning, watcher setup, snapshot capture, debounce decisions, and rerun causes.
 - Diagnostic `tracing` logs are operator opt-in: they are disabled by default and enabled via `WW_LOG`.
-- Logs must include `command_source`, `detection_mode`, input counts, `adapter_id`, `fallback_used`, `default_watch_root_used`, `filtered_output_count`, `side_effect_profile`, snapshot modes, snapshot entry counts, snapshot capture elapsed time, and rerun suppression outcomes.
+- Logs must include `command_source`, `detection_mode`, `output_refresh_mode`, input counts, `adapter_id`, `fallback_used`, `default_watch_root_used`, `filtered_output_count`, `side_effect_profile`, snapshot modes, snapshot entry counts, snapshot capture elapsed time, and rerun suppression outcomes.
 
 ## Build and Test
 - Local validation: `cargo test -p with-watch`
 - Workspace validation baseline: `cargo test --workspace --all-targets`
-- Tests must cover CLI modes, immediate startup execution, shell parsing, adapter classification, fallback ambiguity handling, snapshot diffing, self-write suppression, and representative rerun flows.
+- Tests must cover CLI modes, immediate startup execution, shell parsing, adapter classification, fallback ambiguity handling, snapshot diffing, self-write suppression, TTY-only output clearing, and representative rerun flows.
 - Documentation changes should be checked against `cargo run -p with-watch -- --help` and the integration scenarios in `crates/with-watch/tests/cli.rs`.
 - Publishability validation: `cargo publish -p with-watch --dry-run`
 - Release contract checks should align with `.github/workflows/release-with-watch.yml`.

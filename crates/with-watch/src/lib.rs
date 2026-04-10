@@ -13,7 +13,7 @@ use analysis::{analyze_argv, analyze_shell_expression, CommandAnalysis, CommandA
 use cli::{Cli, CommandMode};
 use error::{Result, WithWatchError};
 use parser::parse_shell_expression;
-use runner::{ExecutionMetadata, ExecutionPlan, RunnerOptions};
+use runner::{ExecutionMetadata, ExecutionPlan, OutputRefreshMode, RunnerOptions};
 use snapshot::{ChangeDetectionMode, WatchInput, WatchInputKind};
 use tracing::debug;
 
@@ -21,13 +21,15 @@ pub fn run_cli(cli: Cli, options: RunnerOptions) -> Result<i32> {
     let mode = cli.command_mode()?;
     let cwd = std::env::current_dir().map_err(WithWatchError::CurrentDirectory)?;
     let detection_mode = cli.change_detection_mode();
-    let plan = build_execution_plan(mode, detection_mode, &cwd)?;
+    let output_refresh_mode = cli.output_refresh_mode();
+    let plan = build_execution_plan(mode, detection_mode, output_refresh_mode, &cwd)?;
     runner::run(plan, options)
 }
 
 fn build_execution_plan(
     mode: CommandMode,
     detection_mode: ChangeDetectionMode,
+    output_refresh_mode: OutputRefreshMode,
     cwd: &Path,
 ) -> Result<ExecutionPlan> {
     match mode {
@@ -39,6 +41,7 @@ fn build_execution_plan(
                 argv,
                 inputs,
                 detection_mode,
+                output_refresh_mode,
                 execution_metadata(&analysis),
             ))
         }
@@ -51,6 +54,7 @@ fn build_execution_plan(
                 expression,
                 inputs,
                 detection_mode,
+                output_refresh_mode,
                 execution_metadata(&analysis),
             ))
         }
@@ -62,6 +66,7 @@ fn build_execution_plan(
                 argv,
                 planned_inputs,
                 detection_mode,
+                output_refresh_mode,
                 execution_metadata(&analysis),
             ))
         }
