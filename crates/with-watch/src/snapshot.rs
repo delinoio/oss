@@ -68,7 +68,7 @@ pub enum WatchInput {
 impl WatchInput {
     pub fn path(raw: &str, cwd: &Path, kind: WatchInputKind) -> Result<Self> {
         let absolute_path = absolutize(raw, cwd);
-        let watch_anchor = nearest_existing_parent(&absolute_path).ok_or_else(|| {
+        let watch_anchor = path_watch_anchor(&absolute_path).ok_or_else(|| {
             WithWatchError::MissingWatchAnchor {
                 path: absolute_path.clone(),
             }
@@ -372,6 +372,17 @@ fn nearest_existing_parent(path: &Path) -> Option<PathBuf> {
     None
 }
 
+fn path_watch_anchor(path: &Path) -> Option<PathBuf> {
+    let nearest = nearest_existing_parent(path)?;
+    if nearest.is_dir() {
+        return Some(nearest);
+    }
+
+    // Watch the containing directory for file inputs so replace-style writers such
+    // as GNU `sed -i` do not orphan the watch after swapping the inode.
+    nearest.parent().map(Path::to_path_buf)
+}
+
 fn glob_anchor(raw: &str, cwd: &Path) -> PathBuf {
     let expanded = expand_tilde(raw);
     let original_path = PathBuf::from(&expanded);
@@ -420,6 +431,27 @@ mod tests {
 
         match input {
             WatchInput::Glob { watch_anchor, .. } => {
+                assert_eq!(watch_anchor, temp_dir.path());
+            }
+            other => panic!("unexpected watch input: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn path_inputs_anchor_to_parent_directory_for_files() {
+        let temp_dir = tempfile::tempdir().expect("create tempdir");
+        let input_path = temp_dir.path().join("input.txt");
+        fs::write(&input_path, "alpha\n").expect("write file");
+
+        let input = WatchInput::path(
+            input_path.to_string_lossy().as_ref(),
+            temp_dir.path(),
+            WatchInputKind::Inferred,
+        )
+        .expect("path input");
+
+        match input {
+            WatchInput::Path { watch_anchor, .. } => {
                 assert_eq!(watch_anchor, temp_dir.path());
             }
             other => panic!("unexpected watch input: {other:?}"),
