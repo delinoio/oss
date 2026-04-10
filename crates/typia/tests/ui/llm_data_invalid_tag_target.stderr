@@ -1,5 +1,0 @@
-error: tag `minLength` can only be applied to string targets
- --> tests/ui/llm_data_invalid_tag_target.rs:6:9
-  |
-6 |     id: u32,
-  |         ^^^
