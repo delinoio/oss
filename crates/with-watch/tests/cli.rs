@@ -129,7 +129,7 @@ fn passthrough_cp_does_not_rerun_from_its_own_output_write() {
 
     fs::write(&input_path, "beta\n").expect("rewrite input");
 
-    let status = child.wait().expect("wait for child");
+    let status = wait_for_child_exit(&mut child, Duration::from_secs(10));
     assert!(status.success());
     assert_eq!(
         fs::read_to_string(&output_path).expect("read output"),
@@ -142,12 +142,14 @@ fn passthrough_cp_does_not_rerun_from_its_own_output_write() {
 fn passthrough_sed_in_place_does_not_loop_on_its_own_write() {
     let temp_dir = tempfile::tempdir().expect("create tempdir");
     let input_path = temp_dir.path().join("input.txt");
+    let marker_dir = temp_dir.path().join("markers");
     fs::write(&input_path, "alpha\n").expect("write input");
 
     let mut child = ProcessCommand::new(assert_cmd::cargo::cargo_bin!("with-watch"))
         .current_dir(temp_dir.path())
         .env("WITH_WATCH_TEST_MAX_RUNS", "2")
         .env("WITH_WATCH_TEST_DEBOUNCE_MS", "25")
+        .env("WITH_WATCH_TEST_RUN_MARKER_DIR", &marker_dir)
         .args([
             "sed",
             "-i.bak",
@@ -162,12 +164,13 @@ fn passthrough_sed_in_place_does_not_loop_on_its_own_write() {
         .expect("spawn with-watch");
 
     wait_for_file_contents(&input_path, "beta\n");
-    thread::sleep(Duration::from_millis(150));
+    wait_for_path(&marker_dir.join("run-1.done"));
     assert!(child.try_wait().expect("poll child").is_none());
 
     fs::write(&input_path, "alpha\n").expect("rewrite input");
+    wait_for_path(&marker_dir.join("run-2.done"));
 
-    let status = child.wait().expect("wait for child");
+    let status = wait_for_child_exit(&mut child, Duration::from_secs(10));
     assert!(status.success());
     assert_eq!(
         fs::read_to_string(&input_path).expect("read input"),
@@ -210,7 +213,7 @@ fn exec_mode_reruns_when_an_explicit_input_changes() {
     thread::sleep(Duration::from_millis(50));
     fs::write(&input_path, "beta\n").expect("rewrite input");
 
-    let status = child.wait().expect("wait for child");
+    let status = wait_for_child_exit(&mut child, Duration::from_secs(10));
     assert!(status.success());
 
     let output = fs::read_to_string(&output_path).expect("read output");
@@ -232,6 +235,35 @@ fn wait_for_file_contents(path: &Path, expected_contents: &str) {
         "timed out waiting for contents `{expected_contents}` in {}",
         path.display()
     );
+}
+
+#[cfg(unix)]
+fn wait_for_path(path: &Path) {
+    for _ in 0..400 {
+        if path.exists() {
+            return;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    panic!("timed out waiting for {}", path.display());
+}
+
+#[cfg(unix)]
+fn wait_for_child_exit(
+    child: &mut std::process::Child,
+    timeout: Duration,
+) -> std::process::ExitStatus {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if let Some(status) = child.try_wait().expect("poll child") {
+            return status;
+        }
+        if std::time::Instant::now() >= deadline {
+            child.kill().expect("kill child after timeout");
+            panic!("timed out waiting for child process to exit");
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
 }
 
 #[cfg(unix)]

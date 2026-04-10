@@ -1,5 +1,7 @@
 use std::{
     ffi::OsString,
+    fs,
+    path::PathBuf,
     process::{Child, Command, ExitStatus, Stdio},
     thread,
     time::Duration,
@@ -16,6 +18,7 @@ use crate::{
 
 const DEFAULT_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const DEFAULT_DEBOUNCE_WINDOW: Duration = Duration::from_millis(200);
+const WITH_WATCH_TEST_RUN_MARKER_DIR_ENV: &str = "WITH_WATCH_TEST_RUN_MARKER_DIR";
 
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {
@@ -205,6 +208,7 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
                 baseline = post_run_snapshot;
                 pending_rerun = false;
                 child = None;
+                write_test_run_marker(completed_runs);
 
                 info!(
                     completed_runs,
@@ -336,4 +340,30 @@ fn spawn_shell(expression: &str) -> Result<Child> {
 
 fn exit_code_from_status(status: ExitStatus) -> i32 {
     status.code().unwrap_or(1)
+}
+
+fn write_test_run_marker(completed_runs: usize) {
+    let Ok(marker_dir) = std::env::var(WITH_WATCH_TEST_RUN_MARKER_DIR_ENV) else {
+        return;
+    };
+
+    let marker_path = PathBuf::from(marker_dir).join(format!("run-{completed_runs}.done"));
+    if let Some(parent) = marker_path.parent() {
+        if let Err(error) = fs::create_dir_all(parent) {
+            warn!(
+                path = parent.display().to_string(),
+                %error,
+                "Failed to create test run marker directory"
+            );
+            return;
+        }
+    }
+
+    if let Err(error) = fs::write(&marker_path, completed_runs.to_string()) {
+        warn!(
+            path = marker_path.display().to_string(),
+            %error,
+            "Failed to write test run marker"
+        );
+    }
 }
