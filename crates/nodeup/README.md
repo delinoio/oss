@@ -9,6 +9,43 @@
 - Use human-friendly output for operators and JSON output for automation.
 - Run `node`, `npm`, `npx`, `yarn`, and `pnpm` through one binary by executable-name dispatch.
 
+## Install
+
+Tag contract:
+
+- `nodeup@v<semver>`
+
+Package manager:
+
+- macOS/Linux: `brew install delinoio/tap/nodeup`
+
+Direct installers:
+
+```bash
+./scripts/install/nodeup.sh --version latest --method package-manager
+```
+
+```powershell
+./scripts/install/nodeup.ps1 -Version latest -Method direct
+```
+
+`cargo-binstall`:
+
+```bash
+cargo binstall nodeup --no-confirm
+```
+
+GitHub Actions:
+
+```yaml
+- uses: taiki-e/install-action@v2
+  with:
+    tool: cargo-binstall
+- run: cargo binstall nodeup --no-confirm
+```
+
+Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and require `cosign`.
+
 ## Quick Command Reference
 
 - `nodeup toolchain list [--quiet|--verbose]`

@@ -42,7 +42,22 @@ Script installer:
 ./scripts/install/nodeup.ps1 -Version latest -Method direct
 ```
 
-Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and only support bundle-enabled releases.
+`cargo-binstall`:
+
+```bash
+cargo binstall nodeup --no-confirm
+```
+
+GitHub Actions:
+
+```yaml
+- uses: taiki-e/install-action@v2
+  with:
+    tool: cargo-binstall
+- run: cargo binstall nodeup --no-confirm
+```
+
+Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`), require `cosign`, and only support bundle-enabled releases.
 `nodeup toolchain install` supports `macOS`, `Linux`, and `Windows` x64/arm64 hosts.
 
 ## Common workflows

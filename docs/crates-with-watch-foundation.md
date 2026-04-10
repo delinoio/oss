@@ -25,7 +25,9 @@
 - `--clear` must remain a global flag that clears stdout before the initial run and each rerun only when stdout is a terminal.
 - `WW_LOG` must remain the only supported environment variable for configuring `with-watch` diagnostic `tracing` filters.
 - The default diagnostic log filter must remain `with_watch=off`, and `RUST_LOG` must not affect `with-watch` logging behavior.
-- Public crate installation must remain `cargo install with-watch`.
+- Public crate installation must remain available via `cargo install with-watch`.
+- Direct installers must remain available at `scripts/install/with-watch.sh` and `scripts/install/with-watch.ps1`, and direct installs must verify `SHA256SUMS` plus Sigstore bundle sidecars via `cosign verify-blob --bundle`.
+- `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies.
 - Publish tag naming must remain `with-watch@v<version>`.
 - Stable internal enums must remain aligned with the current v1 contract:
   - `ChangeDetectionMode::{ContentHash, MtimeOnly}`
@@ -77,6 +79,7 @@
 - Release contract checks should align with `.github/workflows/release-with-watch.yml`.
 - Release assets must include standalone binaries (`with-watch-<os>-<arch>[.exe]`) and compressed archives (`with-watch-<os>-<arch>.tar.gz|zip`) for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`.
 - Release signing outputs must include `SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json` sidecars.
+- Install docs must keep Bash, PowerShell, `cargo-binstall`, and GitHub Actions usage aligned with the installer scripts and manifest metadata.
 
 ## Dependencies and Integrations
 - Uses `clap` for CLI parsing.
@@ -85,6 +88,7 @@
 - Uses `blake3` for content-hash-based rerun filtering.
 - Integrates with root `auto-publish` tag publication and `.github/workflows/release-with-watch.yml`.
 - Integrates with Homebrew tap automation through `scripts/release/update-homebrew.sh` and `packaging/homebrew/templates/with-watch.rb.tmpl`.
+- Integrates with direct installer scripts and `cargo-binstall` metadata for prebuilt binary distribution.
 
 ## Change Triggers
 - Update `docs/project-with-watch.md` with this file when command shape, detection behavior, release distribution, or ownership changes.

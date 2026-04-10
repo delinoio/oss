@@ -2,6 +2,39 @@
 
 `cargo-mono` is the external Cargo subcommand that powers `cargo mono` for Rust monorepo workflows.
 
+## Install
+
+Tag contract:
+
+- `cargo-mono@v<semver>`
+
+Direct installers:
+
+```bash
+./scripts/install/cargo-mono.sh --version latest --method direct
+```
+
+```powershell
+./scripts/install/cargo-mono.ps1 -Version latest -Method direct
+```
+
+`cargo-binstall`:
+
+```bash
+cargo binstall cargo-mono --no-confirm
+```
+
+GitHub Actions:
+
+```yaml
+- uses: taiki-e/install-action@v2
+  with:
+    tool: cargo-binstall
+- run: cargo binstall cargo-mono --no-confirm
+```
+
+Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and require `cosign`.
+
 ## Commands
 
 ```bash

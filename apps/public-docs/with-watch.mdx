@@ -21,11 +21,38 @@ Package manager:
 - macOS/Linux: `brew install delinoio/tap/with-watch`
 - Homebrew installs prebuilt archives on macOS Intel, macOS Apple Silicon, Linux amd64, and Linux arm64
 
+Direct installers:
+
+```bash
+./scripts/install/with-watch.sh --version latest --method package-manager
+```
+
+```powershell
+./scripts/install/with-watch.ps1 -Version latest -Method direct
+```
+
+`cargo-binstall`:
+
+```bash
+cargo binstall with-watch --no-confirm
+```
+
+GitHub Actions:
+
+```yaml
+- uses: taiki-e/install-action@v2
+  with:
+    tool: cargo-binstall
+- run: cargo binstall with-watch --no-confirm
+```
+
 Cargo:
 
 ```bash
 cargo install with-watch
 ```
+
+Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and require `cosign`.
 
 ## Quick start
 

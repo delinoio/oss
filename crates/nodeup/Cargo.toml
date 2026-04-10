@@ -5,6 +5,40 @@ edition = "2021"
 license = "MIT"
 description = "Rustup-like Node.js version manager"
 readme = "README.md"
+repository = "https://github.com/delinoio/oss"
+
+[package.metadata.binstall]
+disabled-strategies = ["quick-install", "compile"]
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/nodeup@v{ version }/nodeup-linux-amd64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "nodeup"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/nodeup@v{ version }/nodeup-linux-arm64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "nodeup"
+
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/nodeup@v{ version }/nodeup-darwin-amd64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "nodeup"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/nodeup@v{ version }/nodeup-darwin-arm64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "nodeup"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/nodeup@v{ version }/nodeup-windows-amd64.zip"
+pkg-fmt = "zip"
+bin-dir = "nodeup-windows-amd64.exe"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/nodeup@v{ version }/nodeup-windows-arm64.zip"
+pkg-fmt = "zip"
+bin-dir = "nodeup-windows-arm64.exe"
 
 [dependencies]
 clap = { version = "4.5.32", features = ["derive"] }
