@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/cargo-mono",
     "crates/nodeup",
+    "crates/with-watch",
     "crates/serde-feather",
     "crates/serde-feather-macros",
     "crates/rustia",

@@ -24,6 +24,10 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-nodeup.md`
 - `docs/crates-nodeup-foundation.md`
 
+### with-watch
+- `docs/project-with-watch.md`
+- `docs/crates-with-watch-foundation.md`
+
 ### derun
 - `docs/project-derun.md`
 - `docs/cmds-derun-foundation.md`
