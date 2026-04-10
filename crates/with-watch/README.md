@@ -2,6 +2,8 @@
 
 `with-watch` reruns a delegated command when its inferred or explicit filesystem inputs change.
 
+It executes the delegated command once immediately after input inference, watcher setup, and baseline capture, then waits for later filesystem changes to trigger reruns.
+
 ## Why use
 
 - Keep familiar POSIX/coreutils-style commands while adding automatic reruns.
@@ -63,6 +65,7 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 
 ## Rerun behavior
 
+- `with-watch` always performs one initial run after it has inferred inputs and armed the watcher, even before any external filesystem change occurs.
 - The default rerun filter compares content hashes, which avoids reruns from metadata churn alone.
 - `--no-hash` switches the filter to metadata-only comparison.
 - Commands that write excluded outputs such as `cp src.txt dest.txt` should rerun when the source input changes, not when the output file changes.
