@@ -12,7 +12,7 @@ use tracing::{debug, info, warn};
 use crate::{
     analysis::{CommandAdapterId, CommandAnalysisStatus, SideEffectProfile},
     error::{Result, WithWatchError},
-    snapshot::{capture_snapshot, ChangeDetectionMode, CommandSource, WatchInput},
+    snapshot::{capture_snapshot, ChangeDetectionMode, CommandSource, SnapshotState, WatchInput},
     watch::{CollectedEvents, WatchLoop},
 };
 
@@ -103,6 +103,27 @@ pub enum DelegatedCommand {
 }
 
 impl DelegatedCommand {
+    fn spawn_log_summary(&self) -> DelegatedCommandLogSummary {
+        match self {
+            Self::Argv(argv) => {
+                let program_name = argv
+                    .first()
+                    .map(program_name)
+                    .unwrap_or_else(|| "<missing>".to_string());
+                DelegatedCommandLogSummary {
+                    execution_kind: "argv",
+                    program_name,
+                    arg_count: argv.len().saturating_sub(1),
+                }
+            }
+            Self::Shell(_) => DelegatedCommandLogSummary {
+                execution_kind: "shell",
+                program_name: "sh".to_string(),
+                arg_count: 2,
+            },
+        }
+    }
+
     fn display_name(&self) -> String {
         match self {
             Self::Argv(argv) => argv
@@ -113,6 +134,13 @@ impl DelegatedCommand {
             Self::Shell(expression) => expression.clone(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DelegatedCommandLogSummary {
+    execution_kind: &'static str,
+    program_name: String,
+    arg_count: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -162,6 +190,7 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
     let mut child = Some(spawn_command(&plan.delegated_command)?);
     let mut completed_runs = 0usize;
     let mut pending_rerun = false;
+    let mut suppressed_self_change_snapshot = None::<SnapshotState>;
 
     info!(
         command_source = plan.source.as_str(),
@@ -191,11 +220,38 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
                 let post_run_snapshot = capture_snapshot(&plan.inputs, plan.detection_mode)?;
                 let inputs_changed_since_baseline =
                     post_run_snapshot.is_meaningfully_different(&baseline, plan.detection_mode);
-                let should_rerun = pending_rerun
-                    && plan.metadata.side_effect_profile != SideEffectProfile::WritesWatchedInputs
-                    && inputs_changed_since_baseline;
+                let additional_change_after_suppression = suppressed_self_change_snapshot
+                    .as_ref()
+                    .is_some_and(|snapshot| {
+                        post_run_snapshot.is_meaningfully_different(snapshot, plan.detection_mode)
+                    });
+                let should_rerun = if plan.metadata.side_effect_profile
+                    == SideEffectProfile::WritesWatchedInputs
+                {
+                    pending_rerun || additional_change_after_suppression
+                } else {
+                    pending_rerun && inputs_changed_since_baseline
+                };
 
                 if pending_rerun
+                    && plan.metadata.side_effect_profile == SideEffectProfile::WritesWatchedInputs
+                {
+                    debug!(
+                        rerun_queued = true,
+                        side_effect_profile = plan.metadata.side_effect_profile.as_str(),
+                        "Queued rerun after additional changes during self-mutating command \
+                         activity"
+                    );
+                } else if additional_change_after_suppression
+                    && plan.metadata.side_effect_profile == SideEffectProfile::WritesWatchedInputs
+                {
+                    debug!(
+                        rerun_queued = true,
+                        side_effect_profile = plan.metadata.side_effect_profile.as_str(),
+                        "Queued rerun because post-run state diverged from the suppressed \
+                         self-change snapshot"
+                    );
+                } else if suppressed_self_change_snapshot.is_some()
                     && plan.metadata.side_effect_profile == SideEffectProfile::WritesWatchedInputs
                 {
                     debug!(
@@ -207,6 +263,7 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
 
                 baseline = post_run_snapshot;
                 pending_rerun = false;
+                suppressed_self_change_snapshot = None;
                 child = None;
                 write_test_run_marker(completed_runs);
 
@@ -238,7 +295,17 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
             handle_watch_events(&events);
 
             let current_snapshot = capture_snapshot(&plan.inputs, plan.detection_mode)?;
-            if current_snapshot.is_meaningfully_different(&baseline, plan.detection_mode) {
+            let reference_snapshot = if child.is_some()
+                && plan.metadata.side_effect_profile == SideEffectProfile::WritesWatchedInputs
+            {
+                suppressed_self_change_snapshot
+                    .as_ref()
+                    .unwrap_or(&baseline)
+            } else {
+                &baseline
+            };
+
+            if current_snapshot.is_meaningfully_different(reference_snapshot, plan.detection_mode) {
                 debug!(
                     event_count = events.event_count,
                     path_count = events.path_count,
@@ -247,13 +314,24 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
                 );
 
                 if child.is_some() {
-                    pending_rerun = true;
+                    if plan.metadata.side_effect_profile == SideEffectProfile::WritesWatchedInputs
+                        && suppressed_self_change_snapshot.is_none()
+                    {
+                        suppressed_self_change_snapshot = Some(current_snapshot);
+                        debug!(
+                            rerun_suppressed = true,
+                            side_effect_profile = plan.metadata.side_effect_profile.as_str(),
+                            "Suppressed the first in-run snapshot change for a self-mutating \
+                             command"
+                        );
+                    } else {
+                        pending_rerun = true;
+                    }
                 } else {
                     baseline = current_snapshot;
                     child = Some(spawn_command(&plan.delegated_command)?);
                 }
             } else if child.is_some() {
-                pending_rerun = false;
                 debug!(
                     rerun_suppressed = true,
                     "Ignored non-meaningful filesystem churn"
@@ -283,10 +361,21 @@ fn handle_watch_events(events: &CollectedEvents) {
 }
 
 fn spawn_command(command: &DelegatedCommand) -> Result<Child> {
+    log_delegated_command_spawn(command);
     match command {
         DelegatedCommand::Argv(argv) => spawn_argv(argv),
         DelegatedCommand::Shell(expression) => spawn_shell(expression),
     }
+}
+
+fn log_delegated_command_spawn(command: &DelegatedCommand) {
+    let summary = command.spawn_log_summary();
+    info!(
+        execution_kind = summary.execution_kind,
+        program = summary.program_name,
+        arg_count = summary.arg_count,
+        "Spawning delegated command"
+    );
 }
 
 fn spawn_argv(argv: &[OsString]) -> Result<Child> {
@@ -294,13 +383,6 @@ fn spawn_argv(argv: &[OsString]) -> Result<Child> {
         .first()
         .cloned()
         .ok_or(WithWatchError::MissingCommand)?;
-    let display_name = argv
-        .iter()
-        .map(|value| value.to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    info!(command = display_name, "Spawning delegated argv command");
 
     Command::new(&program)
         .args(argv.iter().skip(1))
@@ -323,7 +405,6 @@ fn spawn_shell(expression: &str) -> Result<Child> {
 
     #[cfg(unix)]
     {
-        info!(expression, "Spawning delegated shell command");
         Command::new("/bin/sh")
             .arg("-c")
             .arg(expression)
@@ -336,6 +417,14 @@ fn spawn_shell(expression: &str) -> Result<Child> {
                 source,
             })
     }
+}
+
+fn program_name(program: &OsString) -> String {
+    std::path::Path::new(program)
+        .file_name()
+        .unwrap_or(program.as_os_str())
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn exit_code_from_status(status: ExitStatus) -> i32 {
@@ -365,5 +454,85 @@ fn write_test_run_marker(completed_runs: usize) {
             %error,
             "Failed to write test run marker"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        ffi::OsString,
+        io::{self, Write},
+        sync::{Arc, Mutex},
+    };
+
+    use tracing::Level;
+
+    use super::{log_delegated_command_spawn, DelegatedCommand};
+
+    #[test]
+    fn argv_spawn_logging_omits_argument_values() {
+        let output = capture_logs(|| {
+            log_delegated_command_spawn(&DelegatedCommand::Argv(vec![
+                OsString::from("env"),
+                OsString::from("TOKEN=secret"),
+                OsString::from("cmd"),
+            ]));
+        });
+
+        assert!(output.contains("execution_kind=\"argv\""));
+        assert!(output.contains("program=\"env\""));
+        assert!(output.contains("arg_count=2"));
+        assert!(!output.contains("TOKEN=secret"));
+        assert!(!output.contains("cmd"));
+    }
+
+    #[test]
+    fn shell_spawn_logging_omits_expression_text() {
+        let output = capture_logs(|| {
+            log_delegated_command_spawn(&DelegatedCommand::Shell(
+                "TOKEN=secret grep -f patterns.txt file.txt".to_string(),
+            ));
+        });
+
+        assert!(output.contains("execution_kind=\"shell\""));
+        assert!(output.contains("program=\"sh\""));
+        assert!(output.contains("arg_count=2"));
+        assert!(!output.contains("TOKEN=secret"));
+        assert!(!output.contains("patterns.txt"));
+    }
+
+    fn capture_logs(callback: impl FnOnce()) -> String {
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let writer = SharedWriter(buffer.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_target(false)
+            .with_level(false)
+            .without_time()
+            .with_max_level(Level::INFO)
+            .with_writer(move || writer.clone())
+            .finish();
+
+        tracing::subscriber::with_default(subscriber, callback);
+
+        let output = buffer.lock().expect("lock buffer").clone();
+        String::from_utf8(output).expect("utf8 log output")
+    }
+
+    #[derive(Clone)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for SharedWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0
+                .lock()
+                .expect("lock log buffer")
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
     }
 }

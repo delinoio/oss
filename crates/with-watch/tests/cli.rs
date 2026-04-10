@@ -222,6 +222,46 @@ fn exec_mode_reruns_when_an_explicit_input_changes() {
 }
 
 #[cfg(unix)]
+#[test]
+fn self_mutating_shell_command_reruns_after_external_change_during_execution() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let input_path = temp_dir.path().join("input.txt");
+    let marker_dir = temp_dir.path().join("markers");
+    fs::write(&input_path, "alpha\n").expect("write input");
+
+    let expression = format!(
+        "sed -i.bak -e 's/alpha/beta/' '{}' && sleep 1",
+        input_path.display()
+    );
+
+    let mut child = ProcessCommand::new(assert_cmd::cargo::cargo_bin!("with-watch"))
+        .current_dir(temp_dir.path())
+        .env("WITH_WATCH_TEST_MAX_RUNS", "2")
+        .env("WITH_WATCH_TEST_DEBOUNCE_MS", "25")
+        .env("WITH_WATCH_TEST_RUN_MARKER_DIR", &marker_dir)
+        .args(["--shell", &expression])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn with-watch");
+
+    wait_for_file_contents(&input_path, "beta\n");
+    assert!(child.try_wait().expect("poll child").is_none());
+    thread::sleep(Duration::from_millis(150));
+
+    fs::write(&input_path, "alpha\n").expect("rewrite input during sleep");
+    wait_for_path(&marker_dir.join("run-2.done"));
+
+    let status = wait_for_child_exit(&mut child, Duration::from_secs(10));
+    assert!(status.success());
+    assert_eq!(
+        fs::read_to_string(&input_path).expect("read input"),
+        "beta\n"
+    );
+}
+
+#[cfg(unix)]
 fn wait_for_file_contents(path: &Path, expected_contents: &str) {
     for _ in 0..80 {
         if let Ok(contents) = fs::read_to_string(path) {
