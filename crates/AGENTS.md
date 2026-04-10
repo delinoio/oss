@@ -9,6 +9,7 @@
 
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/nodeup`: Rust-based Node.js version manager.
+- `crates/with-watch`: Rust-based filesystem-watching command wrapper.
 - `crates/serde-feather`: Size-first serde runtime-facing core crate.
 - `crates/serde-feather-macros`: Proc-macro companion crate for serde-feather.
 - `crates/rustia`: Serde-based LLM JSON runtime crate.
@@ -38,6 +39,13 @@
 - Keep `publish` delegation aligned with the documented contract: `cargo mono publish` must invoke `cargo publish --no-verify` in both execute and dry-run modes.
 - Ensure release automation (`bump`, `publish`) logs include structured operational context.
 - Keep runtime error output on the fixed `Summary/Context/Hint` three-line contract and include only safe debugging context values.
+
+### with-watch-Specific Rules
+
+- Keep passthrough, shell, and `exec --input` command shapes stable and documented in `docs/project-with-watch.md` and `docs/crates-with-watch-foundation.md`.
+- Keep default rerun filtering content-hash-based, with `--no-hash` as the documented metadata-only override.
+- Keep shell support scoped to command-line expressions and do not silently broaden into shell-script control-flow without updating docs first.
+- Keep logs sufficient to explain inferred inputs, watcher anchors, snapshot counts, and rerun causes.
 
 ### serde-feather-Specific Rules
 

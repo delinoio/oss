@@ -46,6 +46,7 @@
 - `docs/<domain>-<project-or-component>-<contract>.md`: Canonical domain contract docs (`apps`, `cmds`, `servers`, `crates`, `protos`, `packages`).
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
 - `docs/project-nodeup.md`: Node.js version manager project index.
+- `docs/project-with-watch.md`: Command rerun watcher CLI project index.
 - `docs/project-derun.md`: Derun CLI project index.
 - `docs/project-ttl.md`: TTL compiler project index.
 - `docs/project-mpapp.md`: Expo mobile app project index.
@@ -57,6 +58,7 @@
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
 - `docs/project-dexdex.md`: DexDex multi-runtime project index.
+- `docs/crates-with-watch-foundation.md`: with-watch CLI and watcher foundation contract.
 - `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.
 - `docs/crates-rustia-llm-foundation.md`: Rustia aisdk tool adapter contract.
 - `docs/crates-rustia-macros-foundation.md`: Rustia macros derive contract.
@@ -85,6 +87,7 @@ Treat project IDs as stable enum-style values:
 enum ProjectId {
   CargoMono = "cargo-mono",
   Nodeup = "nodeup",
+  WithWatch = "with-watch",
   Derun = "derun",
   Ttl = "ttl",
   Mpapp = "mpapp",
@@ -102,6 +105,7 @@ enum ProjectId {
 ### Project Domain Ownership
 
 - `nodeup` -> `crates/nodeup`
+- `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
