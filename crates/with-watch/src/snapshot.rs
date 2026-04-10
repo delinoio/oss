@@ -4,7 +4,7 @@ use std::{
     fs::{self, File},
     io::Read,
     path::{Path, PathBuf},
-    time::SystemTime,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use globset::Glob;
@@ -50,12 +50,34 @@ pub enum WatchInputKind {
     Inferred,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathSnapshotMode {
+    ContentPath,
+    ContentTree,
+    MetadataPath,
+    MetadataChildren,
+    MetadataTree,
+}
+
+impl PathSnapshotMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ContentPath => "content-path",
+            Self::ContentTree => "content-tree",
+            Self::MetadataPath => "metadata-path",
+            Self::MetadataChildren => "metadata-children",
+            Self::MetadataTree => "metadata-tree",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WatchInput {
     Path {
         kind: WatchInputKind,
         path: PathBuf,
         watch_anchor: PathBuf,
+        snapshot_mode: PathSnapshotMode,
     },
     Glob {
         kind: WatchInputKind,
@@ -68,6 +90,17 @@ pub enum WatchInput {
 impl WatchInput {
     pub fn path(raw: &str, cwd: &Path, kind: WatchInputKind) -> Result<Self> {
         let absolute_path = absolutize(raw, cwd);
+        let snapshot_mode = default_path_snapshot_mode(&absolute_path);
+        Self::path_with_snapshot_mode(raw, cwd, kind, snapshot_mode)
+    }
+
+    pub fn path_with_snapshot_mode(
+        raw: &str,
+        cwd: &Path,
+        kind: WatchInputKind,
+        snapshot_mode: PathSnapshotMode,
+    ) -> Result<Self> {
+        let absolute_path = absolutize(raw, cwd);
         let watch_anchor = path_watch_anchor(&absolute_path).ok_or_else(|| {
             WithWatchError::MissingWatchAnchor {
                 path: absolute_path.clone(),
@@ -78,6 +111,7 @@ impl WatchInput {
             kind,
             path: absolute_path,
             watch_anchor,
+            snapshot_mode,
         })
     }
 
@@ -113,6 +147,13 @@ impl WatchInput {
     pub fn watch_anchor(&self) -> &Path {
         match self {
             Self::Path { watch_anchor, .. } | Self::Glob { watch_anchor, .. } => watch_anchor,
+        }
+    }
+
+    pub fn snapshot_mode_label(&self) -> &'static str {
+        match self {
+            Self::Path { snapshot_mode, .. } => snapshot_mode.as_str(),
+            Self::Glob { .. } => PathSnapshotMode::ContentTree.as_str(),
         }
     }
 }
@@ -168,10 +209,7 @@ impl SnapshotEntry {
         }
 
         match mode {
-            ChangeDetectionMode::ContentHash => match self.kind {
-                SnapshotEntryKind::File => self.digest == previous.digest,
-                SnapshotEntryKind::Directory | SnapshotEntryKind::Missing => true,
-            },
+            ChangeDetectionMode::ContentHash => self.digest == previous.digest,
             ChangeDetectionMode::MtimeOnly => self.modified == previous.modified,
         }
     }
@@ -199,8 +237,12 @@ pub fn capture_snapshot(inputs: &[WatchInput], mode: ChangeDetectionMode) -> Res
 
     for input in inputs {
         match input {
-            WatchInput::Path { path, .. } => {
-                capture_path_input(path, mode, &mut entries)?;
+            WatchInput::Path {
+                path,
+                snapshot_mode,
+                ..
+            } => {
+                capture_path_input(path, *snapshot_mode, mode, &mut entries)?;
             }
             WatchInput::Glob {
                 absolute_pattern,
@@ -217,18 +259,12 @@ pub fn capture_snapshot(inputs: &[WatchInput], mode: ChangeDetectionMode) -> Res
 
 fn capture_path_input(
     path: &Path,
+    snapshot_mode: PathSnapshotMode,
     mode: ChangeDetectionMode,
     entries: &mut BTreeMap<PathBuf, SnapshotEntry>,
 ) -> Result<()> {
     if !path.exists() {
-        entries.insert(
-            path.to_path_buf(),
-            SnapshotEntry {
-                kind: SnapshotEntryKind::Missing,
-                modified: None,
-                digest: None,
-            },
-        );
+        insert_missing_entry(path, snapshot_mode, mode, entries);
         return Ok(());
     }
 
@@ -236,17 +272,25 @@ fn capture_path_input(
         path: path.to_path_buf(),
         source,
     })?;
-    if metadata.is_dir() {
-        for entry in WalkDir::new(path).follow_links(true) {
-            let entry = entry.map_err(|error| WithWatchError::Metadata {
-                path: path.to_path_buf(),
-                source: std::io::Error::other(error.to_string()),
-            })?;
-            let entry_path = entry.path().to_path_buf();
-            insert_existing_entry(&entry_path, mode, entries)?;
+
+    match snapshot_mode {
+        PathSnapshotMode::ContentPath | PathSnapshotMode::MetadataPath => {
+            insert_existing_entry(path, &metadata, snapshot_mode, mode, entries)?;
         }
-    } else {
-        insert_existing_entry(path, mode, entries)?;
+        PathSnapshotMode::ContentTree | PathSnapshotMode::MetadataTree => {
+            if metadata.is_dir() {
+                capture_directory_tree(path, snapshot_mode, mode, entries)?;
+            } else {
+                insert_existing_entry(path, &metadata, snapshot_mode, mode, entries)?;
+            }
+        }
+        PathSnapshotMode::MetadataChildren => {
+            if metadata.is_dir() {
+                capture_directory_children(path, &metadata, snapshot_mode, mode, entries)?;
+            } else {
+                insert_existing_entry(path, &metadata, snapshot_mode, mode, entries)?;
+            }
+        }
     }
 
     Ok(())
@@ -277,8 +321,70 @@ fn capture_glob_input(
         let path = entry.path().to_path_buf();
         let normalized = normalize_path_string(&path);
         if matcher.is_match(&normalized) {
-            insert_existing_entry(&path, mode, entries)?;
+            let metadata = fs::metadata(&path).map_err(|source| WithWatchError::Metadata {
+                path: path.clone(),
+                source,
+            })?;
+            insert_existing_entry(
+                &path,
+                &metadata,
+                PathSnapshotMode::ContentTree,
+                mode,
+                entries,
+            )?;
         }
+    }
+
+    Ok(())
+}
+
+fn capture_directory_tree(
+    path: &Path,
+    snapshot_mode: PathSnapshotMode,
+    mode: ChangeDetectionMode,
+    entries: &mut BTreeMap<PathBuf, SnapshotEntry>,
+) -> Result<()> {
+    for entry in WalkDir::new(path).follow_links(true) {
+        let entry = entry.map_err(|error| WithWatchError::Metadata {
+            path: path.to_path_buf(),
+            source: std::io::Error::other(error.to_string()),
+        })?;
+        let entry_path = entry.path().to_path_buf();
+        let metadata = fs::metadata(&entry_path).map_err(|source| WithWatchError::Metadata {
+            path: entry_path.clone(),
+            source,
+        })?;
+        insert_existing_entry(&entry_path, &metadata, snapshot_mode, mode, entries)?;
+    }
+
+    Ok(())
+}
+
+fn capture_directory_children(
+    path: &Path,
+    metadata: &fs::Metadata,
+    snapshot_mode: PathSnapshotMode,
+    mode: ChangeDetectionMode,
+    entries: &mut BTreeMap<PathBuf, SnapshotEntry>,
+) -> Result<()> {
+    insert_existing_entry(path, metadata, snapshot_mode, mode, entries)?;
+
+    let read_dir = fs::read_dir(path).map_err(|source| WithWatchError::Metadata {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    for entry in read_dir {
+        let entry = entry.map_err(|source| WithWatchError::Metadata {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let entry_path = entry.path();
+        let child_metadata =
+            fs::metadata(&entry_path).map_err(|source| WithWatchError::Metadata {
+                path: entry_path.clone(),
+                source,
+            })?;
+        insert_existing_entry(&entry_path, &child_metadata, snapshot_mode, mode, entries)?;
     }
 
     Ok(())
@@ -286,25 +392,19 @@ fn capture_glob_input(
 
 fn insert_existing_entry(
     path: &Path,
+    metadata: &fs::Metadata,
+    snapshot_mode: PathSnapshotMode,
     mode: ChangeDetectionMode,
     entries: &mut BTreeMap<PathBuf, SnapshotEntry>,
 ) -> Result<()> {
-    let metadata = fs::metadata(path).map_err(|source| WithWatchError::Metadata {
-        path: path.to_path_buf(),
-        source,
-    })?;
-
     let kind = if metadata.is_dir() {
         SnapshotEntryKind::Directory
     } else {
         SnapshotEntryKind::File
     };
-    let modified = metadata.modified().ok();
-    let digest = if mode == ChangeDetectionMode::ContentHash && kind == SnapshotEntryKind::File {
-        Some(hash_file(path)?)
-    } else {
-        None
-    };
+    let modified = snapshot_entry_modified(kind, metadata);
+    let size = snapshot_entry_size(kind, metadata);
+    let digest = snapshot_digest(path, kind, modified, size, snapshot_mode, mode)?;
 
     entries.insert(
         path.to_path_buf(),
@@ -316,6 +416,78 @@ fn insert_existing_entry(
     );
 
     Ok(())
+}
+
+fn insert_missing_entry(
+    path: &Path,
+    snapshot_mode: PathSnapshotMode,
+    mode: ChangeDetectionMode,
+    entries: &mut BTreeMap<PathBuf, SnapshotEntry>,
+) {
+    let digest = if mode == ChangeDetectionMode::ContentHash {
+        Some(hash_metadata_tuple(
+            SnapshotEntryKind::Missing,
+            None,
+            None,
+            snapshot_mode,
+        ))
+    } else {
+        None
+    };
+
+    entries.insert(
+        path.to_path_buf(),
+        SnapshotEntry {
+            kind: SnapshotEntryKind::Missing,
+            modified: None,
+            digest,
+        },
+    );
+}
+
+fn snapshot_entry_size(kind: SnapshotEntryKind, metadata: &fs::Metadata) -> Option<u64> {
+    match kind {
+        SnapshotEntryKind::File => Some(metadata.len()),
+        SnapshotEntryKind::Directory | SnapshotEntryKind::Missing => None,
+    }
+}
+
+fn snapshot_entry_modified(kind: SnapshotEntryKind, metadata: &fs::Metadata) -> Option<SystemTime> {
+    match kind {
+        SnapshotEntryKind::File => metadata.modified().ok(),
+        SnapshotEntryKind::Directory | SnapshotEntryKind::Missing => None,
+    }
+}
+
+fn snapshot_digest(
+    path: &Path,
+    kind: SnapshotEntryKind,
+    modified: Option<SystemTime>,
+    size: Option<u64>,
+    snapshot_mode: PathSnapshotMode,
+    mode: ChangeDetectionMode,
+) -> Result<Option<blake3::Hash>> {
+    if mode != ChangeDetectionMode::ContentHash {
+        return Ok(None);
+    }
+
+    match snapshot_mode {
+        PathSnapshotMode::ContentPath | PathSnapshotMode::ContentTree => {
+            if kind == SnapshotEntryKind::File {
+                Ok(Some(hash_file(path)?))
+            } else {
+                Ok(None)
+            }
+        }
+        PathSnapshotMode::MetadataPath
+        | PathSnapshotMode::MetadataChildren
+        | PathSnapshotMode::MetadataTree => Ok(Some(hash_metadata_tuple(
+            kind,
+            modified,
+            size,
+            snapshot_mode,
+        ))),
+    }
 }
 
 fn hash_file(path: &Path) -> Result<blake3::Hash> {
@@ -342,7 +514,55 @@ fn hash_file(path: &Path) -> Result<blake3::Hash> {
     Ok(hasher.finalize())
 }
 
-fn absolutize(raw: &str, cwd: &Path) -> PathBuf {
+fn hash_metadata_tuple(
+    kind: SnapshotEntryKind,
+    modified: Option<SystemTime>,
+    size: Option<u64>,
+    snapshot_mode: PathSnapshotMode,
+) -> blake3::Hash {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(snapshot_mode.as_str().as_bytes());
+    hasher.update(kind.to_string().as_bytes());
+
+    if let Some(modified) = modified {
+        let (sign, duration) = if let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
+            (0u8, duration)
+        } else {
+            (
+                1u8,
+                UNIX_EPOCH
+                    .duration_since(modified)
+                    .unwrap_or(Duration::ZERO),
+            )
+        };
+        hasher.update(&[sign]);
+        hasher.update(&duration.as_secs().to_le_bytes());
+        hasher.update(&duration.subsec_nanos().to_le_bytes());
+    } else {
+        hasher.update(&[2u8]);
+    }
+
+    match size {
+        Some(size) => {
+            hasher.update(&[1u8]);
+            hasher.update(&size.to_le_bytes());
+        }
+        None => {
+            hasher.update(&[0u8]);
+        }
+    }
+
+    hasher.finalize()
+}
+
+fn default_path_snapshot_mode(path: &Path) -> PathSnapshotMode {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => PathSnapshotMode::ContentTree,
+        Ok(_) | Err(_) => PathSnapshotMode::ContentPath,
+    }
+}
+
+pub(crate) fn absolutize(raw: &str, cwd: &Path) -> PathBuf {
     let expanded = expand_tilde(raw);
     let path = PathBuf::from(expanded);
     if path.is_absolute() {
@@ -421,7 +641,8 @@ mod tests {
     use std::{fs, thread, time::Duration};
 
     use super::{
-        capture_snapshot, ChangeDetectionMode, SnapshotEntryKind, WatchInput, WatchInputKind,
+        capture_snapshot, ChangeDetectionMode, PathSnapshotMode, SnapshotEntryKind, WatchInput,
+        WatchInputKind,
     };
 
     #[test]
@@ -516,5 +737,78 @@ mod tests {
         assert_eq!(snapshot.len(), 1);
         let entry = snapshot.entries.values().next().expect("snapshot entry");
         assert_eq!(entry.kind, SnapshotEntryKind::Missing);
+    }
+
+    #[test]
+    fn metadata_children_excludes_nested_descendants() {
+        let temp_dir = tempfile::tempdir().expect("create tempdir");
+        let root = temp_dir.path().join("root");
+        fs::create_dir_all(root.join("nested")).expect("create nested dir");
+        fs::write(root.join("direct.txt"), "alpha").expect("write direct child");
+        fs::write(root.join("nested").join("deep.txt"), "beta").expect("write nested child");
+
+        let input =
+            metadata_path_input(temp_dir.path(), "root", PathSnapshotMode::MetadataChildren);
+        let snapshot =
+            capture_snapshot(&[input], ChangeDetectionMode::ContentHash).expect("capture snapshot");
+
+        assert!(snapshot.entries.contains_key(&root));
+        assert!(snapshot.entries.contains_key(&root.join("direct.txt")));
+        assert!(snapshot.entries.contains_key(&root.join("nested")));
+        assert!(!snapshot
+            .entries
+            .contains_key(&root.join("nested").join("deep.txt")));
+    }
+
+    #[test]
+    fn metadata_tree_includes_nested_descendants() {
+        let temp_dir = tempfile::tempdir().expect("create tempdir");
+        let root = temp_dir.path().join("root");
+        fs::create_dir_all(root.join("nested")).expect("create nested dir");
+        fs::write(root.join("nested").join("deep.txt"), "beta").expect("write nested child");
+
+        let input = metadata_path_input(temp_dir.path(), "root", PathSnapshotMode::MetadataTree);
+        let snapshot =
+            capture_snapshot(&[input], ChangeDetectionMode::ContentHash).expect("capture snapshot");
+
+        assert!(snapshot.entries.contains_key(&root));
+        assert!(snapshot.entries.contains_key(&root.join("nested")));
+        assert!(snapshot
+            .entries
+            .contains_key(&root.join("nested").join("deep.txt")));
+    }
+
+    #[test]
+    fn metadata_listing_hash_mode_tracks_metadata_without_file_content_hashing() {
+        let temp_dir = tempfile::tempdir().expect("create tempdir");
+        let root = temp_dir.path().join("root");
+        fs::create_dir_all(&root).expect("create root");
+        let file_path = root.join("file.txt");
+        fs::write(&file_path, "hello").expect("write file");
+
+        let input =
+            metadata_path_input(temp_dir.path(), "root", PathSnapshotMode::MetadataChildren);
+        let first = capture_snapshot(
+            std::slice::from_ref(&input),
+            ChangeDetectionMode::ContentHash,
+        )
+        .expect("first snapshot");
+
+        thread::sleep(Duration::from_millis(20));
+        fs::write(&file_path, "hello").expect("rewrite same content");
+
+        let second =
+            capture_snapshot(&[input], ChangeDetectionMode::ContentHash).expect("second snapshot");
+
+        assert!(second.is_meaningfully_different(&first, ChangeDetectionMode::ContentHash));
+    }
+
+    fn metadata_path_input(
+        cwd: &std::path::Path,
+        raw: &str,
+        snapshot_mode: PathSnapshotMode,
+    ) -> WatchInput {
+        WatchInput::path_with_snapshot_mode(raw, cwd, WatchInputKind::Explicit, snapshot_mode)
+            .expect("metadata path input")
     }
 }

@@ -41,6 +41,7 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 - Passthrough and shell modes use built-in command adapters before falling back to conservative path heuristics.
 - Known outputs, inline scripts, patterns, and shell output redirects are filtered out of the watch set.
 - Pathless defaults are intentionally narrow: only `ls`, `dir`, `vdir`, `du`, and `find` implicitly watch the current directory.
+- `ls`-style commands watch directory listings via metadata snapshots: plain `ls` watches immediate children, `ls -R` stays recursive, and `ls -d` watches only the named path.
 - `exec --input` remains the explicit escape hatch when a delegated command has no meaningful filesystem inputs or when fallback inference would be ambiguous.
 
 ## Recognized command inventory
@@ -104,6 +105,7 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 
 - `with-watch` always performs one initial run after it has inferred inputs and armed the watcher, even before any external filesystem change occurs.
 - The default rerun filter compares content hashes, which avoids reruns from metadata churn alone.
+- `ls`, `dir`, and `vdir` use metadata-based listing snapshots instead of hashing every file under the watched directory before the first run.
 - `--no-hash` switches the filter to metadata-only comparison.
 - Commands that write excluded outputs such as `cp src.txt dest.txt` should rerun when the source input changes, not when the output file changes.
 - Commands that mutate watched inputs directly, such as `sed -i.bak -e 's/old/new/' config.txt`, refresh their baseline after each run so they do not loop on their own writes.
