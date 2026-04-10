@@ -11,11 +11,14 @@
 ## Users and Operators
 - Developers who want POSIX/coreutils-style commands to rerun automatically when their inputs change
 - Maintainers validating generic watch planning and rerun behavior across platforms
+- Release engineers operating crate publication and binary distribution workflows
 
 ## Interfaces and Contracts
 - Root passthrough mode must remain `with-watch [--no-hash] <utility> [args...]`.
 - Shell mode must remain `with-watch [--no-hash] --shell '<expr>'`.
 - `exec` mode must remain `with-watch exec [--no-hash] --input <glob>... -- <command> [args...]`.
+- Public crate installation must remain `cargo install with-watch`.
+- Publish tag naming must remain `with-watch@v<version>`.
 - Stable internal enums must remain aligned with the current v1 contract:
   - `ChangeDetectionMode::{ContentHash, MtimeOnly}`
   - `CommandSource::{Argv, Shell, Exec}`
@@ -23,6 +26,7 @@
   - `SnapshotEntryKind::{File, Directory, Missing}`
 - Shell mode must parse command-line expressions with `&&`, `||`, and `|`, while shell control-flow constructs remain out of scope for v1.
 - Generic watch planning must infer inputs from delegated non-flag argument values and option values, while `exec --input` remains the canonical explicit input contract when inference is insufficient.
+- Homebrew installation must consume prebuilt GitHub release archives for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`.
 
 ## Storage
 - `with-watch` does not persist project state.
@@ -32,6 +36,7 @@
 - Delegated commands run with inherited stdio and current-process privileges.
 - `with-watch` must not rewrite delegated argv or inject changed-path placeholders into child processes in v1.
 - Logging must avoid printing secret environment values passed through delegated commands.
+- Release automation must publish checksum manifests and Sigstore bundle sidecars without exposing registry or tap-write credentials.
 
 ## Logging
 - Use structured `tracing` logs for command planning, watcher setup, snapshot capture, debounce decisions, and rerun causes.
@@ -40,6 +45,10 @@
 ## Build and Test
 - Local validation: `cargo test -p with-watch`
 - Workspace validation baseline: `cargo test --workspace --all-targets`
+- Publishability validation: `cargo publish -p with-watch --dry-run`
+- Release contract checks should align with `.github/workflows/release-with-watch.yml`.
+- Release assets must include standalone binaries (`with-watch-<os>-<arch>[.exe]`) and compressed archives (`with-watch-<os>-<arch>.tar.gz|zip`) for the supported release matrix.
+- Release signing outputs must include `SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json` sidecars.
 - Tests must cover CLI modes, shell parsing, input planning, snapshot diffing, and representative rerun flows.
 
 ## Dependencies and Integrations
@@ -47,9 +56,11 @@
 - Uses `starbase_args` for shell command-line parsing.
 - Uses `notify` for filesystem event delivery.
 - Uses `blake3` for content-hash-based rerun filtering.
+- Integrates with root `auto-publish` tag publication and `.github/workflows/release-with-watch.yml`.
+- Integrates with Homebrew tap automation through `scripts/release/update-homebrew.sh` and `packaging/homebrew/templates/with-watch.rb.tmpl`.
 
 ## Change Triggers
-- Update `docs/project-with-watch.md` with this file when command shape, detection behavior, or ownership changes.
+- Update `docs/project-with-watch.md` with this file when command shape, detection behavior, release distribution, or ownership changes.
 - Update `docs/README.md`, root `AGENTS.md`, and `crates/AGENTS.md` when project registration or policy changes.
 
 ## References

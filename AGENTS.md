@@ -343,6 +343,9 @@ Release automation baseline:
 - `release-derun` is defined in `.github/workflows/release-derun.yml`.
 - Trigger contract: runs on tag push `derun@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS derun release artifacts and updates Homebrew (`derun`) from GitHub release prebuilt archives (`darwin-amd64`, `darwin-arm64`, `linux-amd64`).
+- `release-with-watch` is defined in `.github/workflows/release-with-watch.yml`.
+- Trigger contract: runs on tag push `with-watch@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
+- Distribution contract: publishes signed multi-OS with-watch release artifacts, including standalone prebuilt binaries (`with-watch-<os>-<arch>[.exe]`) and archive assets (`with-watch-<os>-<arch>.tar.gz|zip`), then updates Homebrew (`with-watch`) from GitHub release prebuilt archives (`darwin-amd64`, `darwin-arm64`, `linux-amd64`).
 - `release-dexdex` is defined in `.github/workflows/release-dexdex.yml`.
 - Trigger contract: runs on tag push `dexdex@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed DexDex desktop + main/worker server artifacts and applies desktop signing/notarization secrets, then updates Homebrew (`dexdex`, `dexdex-main-server`, `dexdex-worker-server`) where DexDex server formulas consume prebuilt release artifacts for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`.

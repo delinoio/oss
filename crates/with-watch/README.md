@@ -2,6 +2,13 @@
 
 `with-watch` reruns a delegated command when its inferred or explicit filesystem inputs change.
 
+## Install
+
+```sh
+cargo install with-watch
+brew install delinoio/tap/with-watch
+```
+
 ## Examples
 
 ```sh
