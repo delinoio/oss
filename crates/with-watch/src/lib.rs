@@ -123,6 +123,9 @@ fn explicit_watch_inputs(raw_inputs: &[String], cwd: &Path) -> Result<Vec<WatchI
         };
         push_unique_input(&mut inputs, input);
     }
+    if inputs.is_empty() {
+        return Err(WithWatchError::NoWatchInputs);
+    }
     Ok(inputs)
 }
 
@@ -139,6 +142,7 @@ fn has_glob_magic(raw: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::explicit_watch_inputs;
+    use crate::error::WithWatchError;
 
     #[test]
     fn explicit_inputs_accept_globs_and_paths() {
@@ -150,5 +154,14 @@ mod tests {
         .expect("explicit inputs");
 
         assert_eq!(inputs.len(), 2);
+    }
+
+    #[test]
+    fn explicit_inputs_reject_blank_values() {
+        let temp_dir = tempfile::tempdir().expect("create tempdir");
+        let error = explicit_watch_inputs(&["   ".to_string(), "\t".to_string()], temp_dir.path())
+            .expect_err("blank inputs should fail");
+
+        assert!(matches!(error, WithWatchError::NoWatchInputs));
     }
 }

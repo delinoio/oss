@@ -1131,20 +1131,27 @@ fn analyze_grep(
                 index += 1;
                 continue;
             }
-            if let Some(value) = token.strip_prefix("-e") {
-                if !value.is_empty() {
-                    explicit_pattern = true;
-                    index += 1;
-                    continue;
+            if let Some(option) = parse_grep_short_pattern_option(token) {
+                explicit_pattern = true;
+                match option {
+                    GrepShortPatternOption::Inline => {}
+                    GrepShortPatternOption::Next => {
+                        index += 2;
+                        continue;
+                    }
+                    GrepShortPatternOption::FileInline(value) => {
+                        push_inferred_input(&mut inputs, value, cwd)?;
+                    }
+                    GrepShortPatternOption::FileNext => {
+                        if let Some(value) = argv.get(index + 1) {
+                            push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                        }
+                        index += 2;
+                        continue;
+                    }
                 }
-            }
-            if let Some(value) = token.strip_prefix("-f") {
-                if !value.is_empty() {
-                    explicit_pattern = true;
-                    push_inferred_input(&mut inputs, value, cwd)?;
-                    index += 1;
-                    continue;
-                }
+                index += 1;
+                continue;
             }
             if token.starts_with('-') {
                 index += 1;
@@ -1171,6 +1178,34 @@ fn analyze_grep(
     };
     apply_redirects(&mut analysis, redirects, cwd)?;
     Ok(analysis)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GrepShortPatternOption<'a> {
+    Inline,
+    Next,
+    FileInline(&'a str),
+    FileNext,
+}
+
+fn parse_grep_short_pattern_option(token: &str) -> Option<GrepShortPatternOption<'_>> {
+    if !token.starts_with('-') || token == "-" || token.starts_with("--") {
+        return None;
+    }
+
+    let flags = token.trim_start_matches('-');
+    for (index, flag) in flags.char_indices() {
+        let value = &flags[index + flag.len_utf8()..];
+        match flag {
+            'e' if value.is_empty() => return Some(GrepShortPatternOption::Next),
+            'e' => return Some(GrepShortPatternOption::Inline),
+            'f' if value.is_empty() => return Some(GrepShortPatternOption::FileNext),
+            'f' => return Some(GrepShortPatternOption::FileInline(value)),
+            _ => {}
+        }
+    }
+
+    None
 }
 
 fn analyze_sed(
@@ -1367,9 +1402,11 @@ fn analyze_find(
             index += 1;
             continue;
         }
-        if !saw_expression && FIND_GLOBAL_OPTIONS.contains(&token) {
-            index += 1;
-            continue;
+        if !saw_expression {
+            if let Some(next_index) = consume_find_global_option(argv, index) {
+                index = next_index;
+                continue;
+            }
         }
         if !saw_expression && !is_find_expression_token(token) {
             push_inferred_input(&mut inputs, token, cwd)?;
@@ -1398,7 +1435,31 @@ fn analyze_find(
     Ok(analysis)
 }
 
-const FIND_GLOBAL_OPTIONS: &[&str] = &["-H", "-L", "-P", "-D", "-O"];
+fn consume_find_global_option(argv: &[String], index: usize) -> Option<usize> {
+    let token = argv[index].as_str();
+    match token {
+        "-H" | "-L" | "-P" => Some(index + 1),
+        "-D" => Some((index + 2).min(argv.len())),
+        "-O" => {
+            if argv
+                .get(index + 1)
+                .is_some_and(|value| is_unsigned_integer(value))
+            {
+                Some(index + 2)
+            } else {
+                Some(index + 1)
+            }
+        }
+        _ if token.starts_with("-D") && token.len() > 2 => Some(index + 1),
+        _ if token.starts_with("-O") && token.len() > 2 => Some(index + 1),
+        _ => None,
+    }
+}
+
+fn is_unsigned_integer(token: &str) -> bool {
+    let trimmed = token.trim();
+    !trimmed.is_empty() && trimmed.chars().all(|character| character.is_ascii_digit())
+}
 
 fn analyze_xargs(
     argv: &[String],
@@ -2173,6 +2234,18 @@ mod tests {
         )
         .expect("analyze");
         assert_eq!(analysis.inputs.len(), 2);
+
+        let grouped = analyze_argv(
+            &[
+                OsString::from("grep"),
+                OsString::from("-rf"),
+                OsString::from("patterns.txt"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(grouped.inputs.len(), 2);
     }
 
     #[test]
@@ -2212,6 +2285,34 @@ mod tests {
         assert!(analysis.default_watch_root_used);
 
         let analysis = analyze_argv(&[OsString::from("find")], cwd.path()).expect("analyze");
+        assert_eq!(analysis.inputs.len(), 1);
+        assert!(analysis.default_watch_root_used);
+
+        let analysis = analyze_argv(
+            &[
+                OsString::from("find"),
+                OsString::from("-D"),
+                OsString::from("stat"),
+                OsString::from("-name"),
+                OsString::from("*.rs"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(analysis.inputs.len(), 1);
+        assert!(analysis.default_watch_root_used);
+
+        let analysis = analyze_argv(
+            &[
+                OsString::from("find"),
+                OsString::from("-O"),
+                OsString::from("3"),
+                OsString::from("-name"),
+                OsString::from("*.rs"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
         assert_eq!(analysis.inputs.len(), 1);
         assert!(analysis.default_watch_root_used);
     }

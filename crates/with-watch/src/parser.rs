@@ -140,9 +140,8 @@ fn build_shell_command(command: starbase_args::Command) -> Result<ShellCommand> 
                 shell_command.argv.push(flag);
             }
             starbase_args::Argument::Option(option, Some(value)) => {
-                shell_command
-                    .argv
-                    .push(format!("{option}={}", value.as_str()));
+                shell_command.argv.push(option);
+                shell_command.argv.push(value.as_str().to_string());
             }
             starbase_args::Argument::Option(option, None) => {
                 shell_command.argv.push(option);
@@ -248,6 +247,17 @@ mod tests {
         assert_eq!(command.redirects[0].target, "input.txt");
         assert_eq!(command.redirects[1].operator, ShellRedirectOperator::Write);
         assert_eq!(command.redirects[1].target, "output.txt");
+    }
+
+    #[test]
+    fn preserves_shell_option_values_as_separate_tokens() {
+        let parsed = parse_shell_expression("grep -f patterns.txt file.txt").expect("parse shell");
+
+        assert_eq!(parsed.commands.len(), 1);
+        assert_eq!(
+            parsed.commands[0].argv,
+            vec!["grep", "-f", "patterns.txt", "file.txt"]
+        );
     }
 
     #[test]
