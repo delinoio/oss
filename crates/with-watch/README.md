@@ -19,9 +19,11 @@ brew install delinoio/tap/with-watch
 
 ## Command modes
 
-- Passthrough mode: `with-watch [--no-hash] <utility> [args...]`
-- Shell mode: `with-watch [--no-hash] --shell '<expr>'`
-- Explicit-input mode: `with-watch exec [--no-hash] --input <glob>... -- <command> [args...]`
+- Passthrough mode: `with-watch [--no-hash] [--clear] <utility> [args...]`
+- Shell mode: `with-watch [--no-hash] [--clear] --shell '<expr>'`
+- Explicit-input mode: `with-watch exec [--no-hash] [--clear] --input <glob>... -- <command> [args...]`
+
+All modes also accept `--clear`, which clears the terminal before the initial run and each rerun when stdout is an interactive terminal.
 
 Use passthrough mode for a single delegated command, shell mode for simple command-line expressions that need `&&`, `||`, or `|`, and `exec --input` when you want to declare the watched files yourself.
 
@@ -29,6 +31,7 @@ Use passthrough mode for a single delegated command, shell mode for simple comma
 
 ```sh
 with-watch cat input.txt
+with-watch --clear cat input.txt
 with-watch cp src.txt dest.txt
 with-watch ls -l
 with-watch --shell 'cat src.txt | grep hello'
@@ -104,6 +107,7 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 ## Rerun behavior
 
 - `with-watch` always performs one initial run after it has inferred inputs and armed the watcher, even before any external filesystem change occurs.
+- `--clear` clears stdout before the initial run and each rerun only when stdout is a terminal; redirected and piped output remain unchanged.
 - The default rerun filter compares content hashes, which avoids reruns from metadata churn alone.
 - `ls`, `dir`, and `vdir` use metadata-based listing snapshots instead of hashing every file under the watched directory before the first run.
 - `--no-hash` switches the filter to metadata-only comparison.

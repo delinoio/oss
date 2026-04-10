@@ -5,6 +5,7 @@ use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use crate::{
     analysis::render_after_long_help,
     error::{Result, WithWatchError},
+    runner::OutputRefreshMode,
     snapshot::ChangeDetectionMode,
 };
 
@@ -18,6 +19,10 @@ pub struct Cli {
     /// Disable content hashing and compare only file metadata.
     #[arg(long, global = true)]
     pub no_hash: bool,
+
+    /// Clear the terminal before the initial run and each rerun.
+    #[arg(long, global = true)]
+    pub clear: bool,
 
     /// Run a quoted shell command line that may contain `&&`, `||`, or `|`.
     #[arg(long, global = true, value_name = "EXPR")]
@@ -78,6 +83,14 @@ impl Cli {
         }
     }
 
+    pub fn output_refresh_mode(&self) -> OutputRefreshMode {
+        if self.clear {
+            OutputRefreshMode::ClearTerminal
+        } else {
+            OutputRefreshMode::Preserve
+        }
+    }
+
     pub fn command_mode(&self) -> Result<CommandMode> {
         match (&self.shell, &self.command) {
             (Some(_), Some(_)) => Err(WithWatchError::ConflictingModes),
@@ -115,7 +128,7 @@ mod tests {
     use clap::Parser;
 
     use super::{Cli, CommandMode};
-    use crate::{error::WithWatchError, snapshot::ChangeDetectionMode};
+    use crate::{error::WithWatchError, runner::OutputRefreshMode, snapshot::ChangeDetectionMode};
 
     #[test]
     fn passthrough_mode_preserves_external_subcommand_arguments() {
@@ -140,6 +153,42 @@ mod tests {
             .expect_err("expected error");
 
         assert!(matches!(error, WithWatchError::ConflictingModes));
+    }
+
+    #[test]
+    fn passthrough_mode_accepts_clear_flag() {
+        let cli = Cli::parse_from(["with-watch", "--clear", "cat", "input.txt"]);
+        let mode = cli.command_mode().expect("command mode");
+
+        assert_eq!(cli.output_refresh_mode(), OutputRefreshMode::ClearTerminal);
+        assert!(matches!(mode, CommandMode::Passthrough { .. }));
+    }
+
+    #[test]
+    fn shell_mode_accepts_clear_flag() {
+        let cli = Cli::parse_from(["with-watch", "--clear", "--shell", "cat input.txt"]);
+        let mode = cli.command_mode().expect("command mode");
+
+        assert_eq!(cli.output_refresh_mode(), OutputRefreshMode::ClearTerminal);
+        assert!(matches!(mode, CommandMode::Shell { .. }));
+    }
+
+    #[test]
+    fn exec_mode_accepts_clear_flag() {
+        let cli = Cli::parse_from([
+            "with-watch",
+            "exec",
+            "--clear",
+            "--input",
+            "src/**/*.rs",
+            "--",
+            "cargo",
+            "test",
+        ]);
+        let mode = cli.command_mode().expect("command mode");
+
+        assert_eq!(cli.output_refresh_mode(), OutputRefreshMode::ClearTerminal);
+        assert!(matches!(mode, CommandMode::Exec { .. }));
     }
 
     #[test]
@@ -177,7 +226,9 @@ mod tests {
 
         assert!(!short_help.contains("Wrapper commands:"));
         assert!(!short_help.contains("Recognized but not auto-watchable commands:"));
+        assert!(short_help.contains("--clear"));
         assert!(long_help.contains("Wrapper commands:"));
         assert!(long_help.contains("Recognized but not auto-watchable commands:"));
+        assert!(long_help.contains("--clear"));
     }
 }

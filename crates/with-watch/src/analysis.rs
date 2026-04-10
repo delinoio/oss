@@ -494,15 +494,15 @@ pub fn render_after_long_help() -> String {
     let inventory = help_inventory();
 
     format!(
-        "Command modes:\n  Passthrough: with-watch [--no-hash] <utility> [args...]\n  Shell: \
-         with-watch [--no-hash] --shell '<expr>'\n  Explicit inputs: with-watch exec [--no-hash] \
-         --input <glob>... -- <command> [args...]\n\nWrapper commands:\n  {}\n\nDedicated \
-         built-in adapters and aliases:\n  {}\n\nGeneric read-path commands:\n  {}\n\nSafe \
-         current-directory defaults:\n  {}\n\nRecognized but not auto-watchable commands:\n  {}\n  \
-         These commands are recognized, but they do not expose stable filesystem inputs on their \
-         own.\n\nexec --input escape hatch:\n  Use `with-watch exec --input <glob>... -- \
-         <command> [args...]` when inference is ambiguous, when a command has no stable \
-         filesystem inputs, or when you want an explicit watch set.",
+        "Command modes:\n  Passthrough: with-watch [--no-hash] [--clear] <utility> [args...]\n  \
+         Shell: with-watch [--no-hash] [--clear] --shell '<expr>'\n  Explicit inputs: with-watch \
+         exec [--no-hash] [--clear] --input <glob>... -- <command> [args...]\n\nWrapper \
+         commands:\n  {}\n\nDedicated built-in adapters and aliases:\n  {}\n\nGeneric read-path \
+         commands:\n  {}\n\nSafe current-directory defaults:\n  {}\n\nRecognized but not \
+         auto-watchable commands:\n  {}\n  These commands are recognized, but they do not expose \
+         stable filesystem inputs on their own.\n\nexec --input escape hatch:\n  Use `with-watch \
+         exec --input <glob>... -- <command> [args...]` when inference is ambiguous, when a \
+         command has no stable filesystem inputs, or when you want an explicit watch set.",
         join_command_names(&inventory.wrapper_commands),
         join_command_names(&inventory.dedicated_built_ins),
         join_command_names(inventory.generic_read_path_commands),

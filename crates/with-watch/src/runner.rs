@@ -1,6 +1,7 @@
 use std::{
     ffi::OsString,
     fs,
+    io::{self, IsTerminal, Write},
     path::PathBuf,
     process::{Child, Command, ExitStatus, Stdio},
     thread,
@@ -18,12 +19,29 @@ use crate::{
 
 const DEFAULT_POLL_TIMEOUT: Duration = Duration::from_millis(50);
 const DEFAULT_DEBOUNCE_WINDOW: Duration = Duration::from_millis(200);
+const CLEAR_TERMINAL_SEQUENCE: &str = "\x1b[2J\x1b[H";
 const WITH_WATCH_TEST_RUN_MARKER_DIR_ENV: &str = "WITH_WATCH_TEST_RUN_MARKER_DIR";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputRefreshMode {
+    Preserve,
+    ClearTerminal,
+}
+
+impl OutputRefreshMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Preserve => "preserve",
+            Self::ClearTerminal => "clear-terminal",
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {
     pub source: CommandSource,
     pub detection_mode: ChangeDetectionMode,
+    pub output_refresh_mode: OutputRefreshMode,
     pub inputs: Vec<WatchInput>,
     pub delegated_command: DelegatedCommand,
     pub metadata: ExecutionMetadata,
@@ -34,11 +52,13 @@ impl ExecutionPlan {
         argv: Vec<OsString>,
         inputs: Vec<WatchInput>,
         detection_mode: ChangeDetectionMode,
+        output_refresh_mode: OutputRefreshMode,
         metadata: ExecutionMetadata,
     ) -> Self {
         Self {
             source: CommandSource::Argv,
             detection_mode,
+            output_refresh_mode,
             inputs,
             delegated_command: DelegatedCommand::Argv(argv),
             metadata,
@@ -49,11 +69,13 @@ impl ExecutionPlan {
         expression: String,
         inputs: Vec<WatchInput>,
         detection_mode: ChangeDetectionMode,
+        output_refresh_mode: OutputRefreshMode,
         metadata: ExecutionMetadata,
     ) -> Self {
         Self {
             source: CommandSource::Shell,
             detection_mode,
+            output_refresh_mode,
             inputs,
             delegated_command: DelegatedCommand::Shell(expression),
             metadata,
@@ -64,11 +86,13 @@ impl ExecutionPlan {
         argv: Vec<OsString>,
         inputs: Vec<WatchInput>,
         detection_mode: ChangeDetectionMode,
+        output_refresh_mode: OutputRefreshMode,
         metadata: ExecutionMetadata,
     ) -> Self {
         Self {
             source: CommandSource::Exec,
             detection_mode,
+            output_refresh_mode,
             inputs,
             delegated_command: DelegatedCommand::Argv(argv),
             metadata,
@@ -191,7 +215,10 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
     // v1 contract: after inference, watcher setup, and baseline capture succeed,
     // the delegated command must run immediately once before waiting for any
     // filesystem change events.
-    let mut child = Some(spawn_command(&plan.delegated_command)?);
+    let mut child = Some(spawn_command(
+        &plan.delegated_command,
+        plan.output_refresh_mode,
+    )?);
     let mut completed_runs = 0usize;
     let mut pending_rerun = false;
     let mut suppressed_self_change_snapshot = None::<SnapshotState>;
@@ -199,6 +226,7 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
     info!(
         command_source = plan.source.as_str(),
         detection_mode = plan.detection_mode.as_str(),
+        output_refresh_mode = plan.output_refresh_mode.as_str(),
         input_count = plan.inputs.len(),
         adapter_id = plan.metadata.adapter_field(),
         fallback_used = plan.metadata.fallback_used,
@@ -289,7 +317,10 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
                 }
 
                 if should_rerun {
-                    child = Some(spawn_command(&plan.delegated_command)?);
+                    child = Some(spawn_command(
+                        &plan.delegated_command,
+                        plan.output_refresh_mode,
+                    )?);
                     continue;
                 }
             }
@@ -336,7 +367,10 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
                     }
                 } else {
                     baseline = current_snapshot;
-                    child = Some(spawn_command(&plan.delegated_command)?);
+                    child = Some(spawn_command(
+                        &plan.delegated_command,
+                        plan.output_refresh_mode,
+                    )?);
                 }
             } else if child.is_some() {
                 debug!(
@@ -401,12 +435,45 @@ fn handle_watch_events(events: &CollectedEvents) {
     }
 }
 
-fn spawn_command(command: &DelegatedCommand) -> Result<Child> {
+fn spawn_command(
+    command: &DelegatedCommand,
+    output_refresh_mode: OutputRefreshMode,
+) -> Result<Child> {
+    prepare_output_for_run(output_refresh_mode)?;
     log_delegated_command_spawn(command);
     match command {
         DelegatedCommand::Argv(argv) => spawn_argv(argv),
         DelegatedCommand::Shell(expression) => spawn_shell(expression),
     }
+}
+
+fn prepare_output_for_run(output_refresh_mode: OutputRefreshMode) -> Result<()> {
+    let mut stdout = std::io::stdout();
+    let stdout_is_terminal = stdout.is_terminal();
+    let terminal_cleared =
+        refresh_output_before_run(output_refresh_mode, stdout_is_terminal, &mut stdout)
+            .map_err(WithWatchError::StdoutRefresh)?;
+
+    debug!(
+        output_refresh_mode = output_refresh_mode.as_str(),
+        stdout_is_terminal, terminal_cleared, "Prepared stdout for delegated command"
+    );
+
+    Ok(())
+}
+
+fn refresh_output_before_run<W: Write>(
+    output_refresh_mode: OutputRefreshMode,
+    stdout_is_terminal: bool,
+    output: &mut W,
+) -> io::Result<bool> {
+    if output_refresh_mode != OutputRefreshMode::ClearTerminal || !stdout_is_terminal {
+        return Ok(false);
+    }
+
+    output.write_all(CLEAR_TERMINAL_SEQUENCE.as_bytes())?;
+    output.flush()?;
+    Ok(true)
 }
 
 fn log_delegated_command_spawn(command: &DelegatedCommand) {
@@ -508,7 +575,10 @@ mod tests {
 
     use tracing::Level;
 
-    use super::{log_delegated_command_spawn, DelegatedCommand};
+    use super::{
+        log_delegated_command_spawn, refresh_output_before_run, DelegatedCommand,
+        OutputRefreshMode, CLEAR_TERMINAL_SEQUENCE,
+    };
 
     #[test]
     fn argv_spawn_logging_omits_argument_values() {
@@ -542,6 +612,44 @@ mod tests {
         assert!(!output.contains("patterns.txt"));
     }
 
+    #[test]
+    fn clear_refresh_mode_writes_escape_sequence_and_flushes_for_terminals() {
+        let mut writer = FlushTrackingWriter::default();
+
+        let cleared =
+            refresh_output_before_run(OutputRefreshMode::ClearTerminal, true, &mut writer)
+                .expect("clear terminal output");
+
+        assert!(cleared);
+        assert_eq!(writer.buffer, CLEAR_TERMINAL_SEQUENCE.as_bytes());
+        assert_eq!(writer.flush_count, 1);
+    }
+
+    #[test]
+    fn preserve_refresh_mode_does_not_write_escape_sequence() {
+        let mut writer = FlushTrackingWriter::default();
+
+        let cleared = refresh_output_before_run(OutputRefreshMode::Preserve, true, &mut writer)
+            .expect("skip refresh");
+
+        assert!(!cleared);
+        assert!(writer.buffer.is_empty());
+        assert_eq!(writer.flush_count, 0);
+    }
+
+    #[test]
+    fn clear_refresh_mode_skips_non_terminal_outputs() {
+        let mut writer = FlushTrackingWriter::default();
+
+        let cleared =
+            refresh_output_before_run(OutputRefreshMode::ClearTerminal, false, &mut writer)
+                .expect("skip non-terminal refresh");
+
+        assert!(!cleared);
+        assert!(writer.buffer.is_empty());
+        assert_eq!(writer.flush_count, 0);
+    }
+
     fn capture_logs(callback: impl FnOnce()) -> String {
         let buffer = Arc::new(Mutex::new(Vec::new()));
         let writer = SharedWriter(buffer.clone());
@@ -573,6 +681,24 @@ mod tests {
         }
 
         fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct FlushTrackingWriter {
+        buffer: Vec<u8>,
+        flush_count: usize,
+    }
+
+    impl Write for FlushTrackingWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.buffer.extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.flush_count += 1;
             Ok(())
         }
     }

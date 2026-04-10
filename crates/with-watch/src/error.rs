@@ -64,6 +64,8 @@ pub enum WithWatchError {
         #[source]
         source: io::Error,
     },
+    #[error("Failed to refresh stdout before running the delegated command: {0}")]
+    StdoutRefresh(#[source] io::Error),
     #[error("`--shell` execution is only supported on Unix-like platforms.")]
     UnsupportedShellPlatform,
 }
@@ -87,7 +89,8 @@ impl WithWatchError {
             | Self::WatcherCreate(_)
             | Self::WatchPath { .. }
             | Self::Spawn { .. }
-            | Self::Wait { .. } => 1,
+            | Self::Wait { .. }
+            | Self::StdoutRefresh(_) => 1,
         }
     }
 }

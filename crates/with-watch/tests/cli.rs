@@ -22,6 +22,7 @@ fn long_help_lists_command_inventory_sections() {
         .stdout(predicate::str::contains("--shell"))
         .stdout(predicate::str::contains("exec"))
         .stdout(predicate::str::contains("--no-hash"))
+        .stdout(predicate::str::contains("--clear"))
         .stdout(predicate::str::contains("Wrapper commands:"))
         .stdout(predicate::str::contains(
             "env, nice, nohup, stdbuf, timeout",
@@ -47,6 +48,7 @@ fn short_help_stays_compact() {
         .stdout(predicate::str::contains("--shell"))
         .stdout(predicate::str::contains("exec"))
         .stdout(predicate::str::contains("--no-hash"))
+        .stdout(predicate::str::contains("--clear"))
         .stdout(predicate::str::contains("Wrapper commands:").not())
         .stdout(predicate::str::contains("Recognized but not auto-watchable commands:").not());
 }
@@ -154,6 +156,23 @@ fn passthrough_mode_runs_immediately_once_at_startup_with_test_hook() {
         .assert()
         .success()
         .stdout(predicate::str::contains("hello"));
+}
+
+#[cfg(unix)]
+#[test]
+fn clear_flag_keeps_non_terminal_output_clean_during_initial_run() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let input_path = temp_dir.path().join("input.txt");
+    fs::write(&input_path, "hello\n").expect("write input");
+
+    with_watch_command()
+        .env("WITH_WATCH_TEST_MAX_RUNS", "1")
+        .args(["--clear", "cat", input_path.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"))
+        .stdout(predicate::str::contains("\u{1b}[2J").not())
+        .stdout(predicate::str::contains("\u{1b}[H").not());
 }
 
 #[cfg(unix)]
