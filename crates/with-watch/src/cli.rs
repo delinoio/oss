@@ -1,8 +1,9 @@
 use std::ffi::OsString;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 
 use crate::{
+    analysis::render_after_long_help,
     error::{Result, WithWatchError},
     snapshot::ChangeDetectionMode,
 };
@@ -60,6 +61,15 @@ pub enum CommandMode {
 }
 
 impl Cli {
+    pub fn command_with_inventory() -> clap::Command {
+        <Self as CommandFactory>::command().after_long_help(render_after_long_help())
+    }
+
+    pub fn parse_with_inventory() -> Self {
+        let matches = Self::command_with_inventory().get_matches();
+        Self::from_arg_matches(&matches).unwrap_or_else(|error| error.exit())
+    }
+
     pub fn change_detection_mode(&self) -> ChangeDetectionMode {
         if self.no_hash {
             ChangeDetectionMode::MtimeOnly
@@ -146,5 +156,28 @@ mod tests {
         ]);
 
         assert_eq!(cli.change_detection_mode(), ChangeDetectionMode::MtimeOnly);
+    }
+
+    #[test]
+    fn short_help_stays_compact_while_long_help_includes_inventory() {
+        let mut short_command = Cli::command_with_inventory();
+        let mut short_help = Vec::new();
+        short_command
+            .write_help(&mut short_help)
+            .expect("write short help");
+
+        let mut long_command = Cli::command_with_inventory();
+        let mut long_help = Vec::new();
+        long_command
+            .write_long_help(&mut long_help)
+            .expect("write long help");
+
+        let short_help = String::from_utf8(short_help).expect("short help utf8");
+        let long_help = String::from_utf8(long_help).expect("long help utf8");
+
+        assert!(!short_help.contains("Wrapper commands:"));
+        assert!(!short_help.contains("Recognized but not auto-watchable commands:"));
+        assert!(long_help.contains("Wrapper commands:"));
+        assert!(long_help.contains("Recognized but not auto-watchable commands:"));
     }
 }
