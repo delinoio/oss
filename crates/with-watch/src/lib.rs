@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod cli;
 pub mod error;
 pub mod logging;
@@ -8,11 +9,13 @@ pub mod watch;
 
 use std::path::Path;
 
+use analysis::{analyze_argv, analyze_shell_expression, CommandAnalysis, CommandAnalysisStatus};
 use cli::{Cli, CommandMode};
 use error::{Result, WithWatchError};
 use parser::parse_shell_expression;
-use runner::{ExecutionPlan, RunnerOptions};
+use runner::{ExecutionMetadata, ExecutionPlan, RunnerOptions};
 use snapshot::{ChangeDetectionMode, WatchInput, WatchInputKind};
+use tracing::debug;
 
 pub fn run_cli(cli: Cli, options: RunnerOptions) -> Result<i32> {
     let mode = cli.command_mode()?;
@@ -29,49 +32,81 @@ fn build_execution_plan(
 ) -> Result<ExecutionPlan> {
     match mode {
         CommandMode::Passthrough { argv } => {
-            let inputs = infer_watch_inputs_from_argv(&argv, cwd)?;
-            Ok(ExecutionPlan::passthrough(argv, inputs, detection_mode))
+            let analysis = analyze_argv(&argv, cwd)?;
+            log_analysis("passthrough", &analysis);
+            let inputs = require_inferred_inputs(&analysis)?;
+            Ok(ExecutionPlan::passthrough(
+                argv,
+                inputs,
+                detection_mode,
+                execution_metadata(&analysis),
+            ))
         }
         CommandMode::Shell { expression } => {
             let parsed = parse_shell_expression(&expression)?;
-            let inputs = infer_watch_inputs_from_values(&parsed.input_candidates, cwd)?;
-            Ok(ExecutionPlan::shell(expression, inputs, detection_mode))
+            let analysis = analyze_shell_expression(&parsed, cwd)?;
+            log_analysis("shell", &analysis);
+            let inputs = require_inferred_inputs(&analysis)?;
+            Ok(ExecutionPlan::shell(
+                expression,
+                inputs,
+                detection_mode,
+                execution_metadata(&analysis),
+            ))
         }
         CommandMode::Exec { inputs, argv } => {
+            let analysis = analyze_argv(&argv, cwd)?;
+            log_analysis("exec", &analysis);
             let planned_inputs = explicit_watch_inputs(&inputs, cwd)?;
-            Ok(ExecutionPlan::exec(argv, planned_inputs, detection_mode))
+            Ok(ExecutionPlan::exec(
+                argv,
+                planned_inputs,
+                detection_mode,
+                execution_metadata(&analysis),
+            ))
         }
     }
 }
 
-fn infer_watch_inputs_from_argv(
-    argv: &[std::ffi::OsString],
-    cwd: &Path,
-) -> Result<Vec<WatchInput>> {
-    if argv.is_empty() {
-        return Err(WithWatchError::MissingCommand);
+fn require_inferred_inputs(analysis: &CommandAnalysis) -> Result<Vec<WatchInput>> {
+    if analysis.status == CommandAnalysisStatus::Resolved && !analysis.inputs.is_empty() {
+        return Ok(analysis.inputs.clone());
     }
 
-    let mut values = Vec::new();
-    for raw in argv.iter().skip(1) {
-        push_watch_candidates_from_os(raw, &mut values);
-    }
+    debug!(
+        adapter_id = analysis.adapter_field(),
+        inference_status = analysis.status.as_str(),
+        fallback_used = analysis.fallback_used,
+        filtered_output_count = analysis.filtered_output_count,
+        "Command analysis did not yield safe inferred inputs"
+    );
 
-    infer_watch_inputs_from_values(&values, cwd)
+    Err(WithWatchError::NoWatchInputs)
 }
 
-fn infer_watch_inputs_from_values(values: &[String], cwd: &Path) -> Result<Vec<WatchInput>> {
-    let mut inputs = Vec::new();
-
-    for value in values {
-        push_watch_input_from_token(value, cwd, &mut inputs)?;
+fn execution_metadata(analysis: &CommandAnalysis) -> ExecutionMetadata {
+    ExecutionMetadata {
+        adapter_ids: analysis.adapter_ids.clone(),
+        fallback_used: analysis.fallback_used,
+        default_watch_root_used: analysis.default_watch_root_used,
+        filtered_output_count: analysis.filtered_output_count,
+        side_effect_profile: analysis.side_effect_profile,
+        status: analysis.status,
     }
+}
 
-    if inputs.is_empty() {
-        return Err(WithWatchError::NoWatchInputs);
-    }
-
-    Ok(inputs)
+fn log_analysis(mode: &str, analysis: &CommandAnalysis) {
+    debug!(
+        mode,
+        adapter_id = analysis.adapter_field(),
+        fallback_used = analysis.fallback_used,
+        default_watch_root_used = analysis.default_watch_root_used,
+        filtered_output_count = analysis.filtered_output_count,
+        side_effect_profile = analysis.side_effect_profile.as_str(),
+        inference_status = analysis.status.as_str(),
+        inferred_input_count = analysis.inputs.len(),
+        "Built command analysis"
+    );
 }
 
 fn explicit_watch_inputs(raw_inputs: &[String], cwd: &Path) -> Result<Vec<WatchInput>> {
@@ -91,46 +126,6 @@ fn explicit_watch_inputs(raw_inputs: &[String], cwd: &Path) -> Result<Vec<WatchI
     Ok(inputs)
 }
 
-fn push_watch_candidates_from_os(raw: &std::ffi::OsString, values: &mut Vec<String>) {
-    let text = raw.to_string_lossy();
-    push_watch_candidates_from_text(&text, values);
-}
-
-fn push_watch_candidates_from_text(raw: &str, values: &mut Vec<String>) {
-    if raw.is_empty() {
-        return;
-    }
-
-    if let Some((prefix, value)) = raw.split_once('=') {
-        if prefix.starts_with('-') && !value.is_empty() {
-            values.push(value.to_string());
-            return;
-        }
-    }
-
-    if raw.starts_with('-') {
-        return;
-    }
-
-    values.push(raw.to_string());
-}
-
-fn push_watch_input_from_token(raw: &str, cwd: &Path, inputs: &mut Vec<WatchInput>) -> Result<()> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Ok(());
-    }
-
-    let input = if has_glob_magic(trimmed) {
-        WatchInput::glob(trimmed, cwd)?
-    } else {
-        WatchInput::path(trimmed, cwd, WatchInputKind::Inferred)?
-    };
-
-    push_unique_input(inputs, input);
-    Ok(())
-}
-
 fn push_unique_input(inputs: &mut Vec<WatchInput>, input: WatchInput) {
     if !inputs.contains(&input) {
         inputs.push(input);
@@ -143,43 +138,7 @@ fn has_glob_magic(raw: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{ffi::OsString, fs, path::Path};
-
-    use super::{
-        explicit_watch_inputs, infer_watch_inputs_from_argv, infer_watch_inputs_from_values,
-    };
-    use crate::snapshot::WatchInputKind;
-
-    #[test]
-    fn infers_existing_and_missing_paths_from_passthrough_argv() {
-        let temp_dir = tempfile::tempdir().expect("create tempdir");
-        let existing = temp_dir.path().join("input.txt");
-        fs::write(&existing, "hello").expect("write input");
-
-        let inputs = infer_watch_inputs_from_argv(
-            &[
-                OsString::from("cp"),
-                existing.as_os_str().to_os_string(),
-                OsString::from("output.txt"),
-            ],
-            temp_dir.path(),
-        )
-        .expect("infer inputs");
-
-        assert_eq!(inputs.len(), 2);
-        assert!(inputs
-            .iter()
-            .any(|input| input.kind() == WatchInputKind::Inferred));
-    }
-
-    #[test]
-    fn inferred_values_require_at_least_one_candidate() {
-        let error =
-            infer_watch_inputs_from_values(&[], Path::new(".")).expect_err("expected error");
-        assert!(error
-            .to_string()
-            .contains("No watch inputs could be inferred"));
-    }
+    use super::explicit_watch_inputs;
 
     #[test]
     fn explicit_inputs_accept_globs_and_paths() {

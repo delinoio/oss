@@ -8,8 +8,9 @@ use std::{
 use tracing::{debug, info, warn};
 
 use crate::{
+    analysis::{CommandAdapterId, CommandAnalysisStatus, SideEffectProfile},
     error::{Result, WithWatchError},
-    snapshot::{capture_snapshot, ChangeDetectionMode, CommandSource, SnapshotState, WatchInput},
+    snapshot::{capture_snapshot, ChangeDetectionMode, CommandSource, WatchInput},
     watch::{CollectedEvents, WatchLoop},
 };
 
@@ -22,6 +23,7 @@ pub struct ExecutionPlan {
     pub detection_mode: ChangeDetectionMode,
     pub inputs: Vec<WatchInput>,
     pub delegated_command: DelegatedCommand,
+    pub metadata: ExecutionMetadata,
 }
 
 impl ExecutionPlan {
@@ -29,12 +31,14 @@ impl ExecutionPlan {
         argv: Vec<OsString>,
         inputs: Vec<WatchInput>,
         detection_mode: ChangeDetectionMode,
+        metadata: ExecutionMetadata,
     ) -> Self {
         Self {
             source: CommandSource::Argv,
             detection_mode,
             inputs,
             delegated_command: DelegatedCommand::Argv(argv),
+            metadata,
         }
     }
 
@@ -42,12 +46,14 @@ impl ExecutionPlan {
         expression: String,
         inputs: Vec<WatchInput>,
         detection_mode: ChangeDetectionMode,
+        metadata: ExecutionMetadata,
     ) -> Self {
         Self {
             source: CommandSource::Shell,
             detection_mode,
             inputs,
             delegated_command: DelegatedCommand::Shell(expression),
+            metadata,
         }
     }
 
@@ -55,13 +61,35 @@ impl ExecutionPlan {
         argv: Vec<OsString>,
         inputs: Vec<WatchInput>,
         detection_mode: ChangeDetectionMode,
+        metadata: ExecutionMetadata,
     ) -> Self {
         Self {
             source: CommandSource::Exec,
             detection_mode,
             inputs,
             delegated_command: DelegatedCommand::Argv(argv),
+            metadata,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExecutionMetadata {
+    pub adapter_ids: Vec<CommandAdapterId>,
+    pub fallback_used: bool,
+    pub default_watch_root_used: bool,
+    pub filtered_output_count: usize,
+    pub side_effect_profile: SideEffectProfile,
+    pub status: CommandAnalysisStatus,
+}
+
+impl ExecutionMetadata {
+    pub fn adapter_field(&self) -> String {
+        self.adapter_ids
+            .iter()
+            .map(|adapter| adapter.as_str())
+            .collect::<Vec<_>>()
+            .join(",")
     }
 }
 
@@ -130,12 +158,18 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
     let mut baseline = capture_snapshot(&plan.inputs, plan.detection_mode)?;
     let mut child = Some(spawn_command(&plan.delegated_command)?);
     let mut completed_runs = 0usize;
-    let mut queued_snapshot: Option<SnapshotState> = None;
+    let mut pending_rerun = false;
 
     info!(
         command_source = plan.source.as_str(),
         detection_mode = plan.detection_mode.as_str(),
         input_count = plan.inputs.len(),
+        adapter_id = plan.metadata.adapter_field(),
+        fallback_used = plan.metadata.fallback_used,
+        default_watch_root_used = plan.metadata.default_watch_root_used,
+        filtered_output_count = plan.metadata.filtered_output_count,
+        side_effect_profile = plan.metadata.side_effect_profile.as_str(),
+        analysis_status = plan.metadata.status.as_str(),
         "Starting with-watch run loop"
     );
 
@@ -151,13 +185,34 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
             {
                 completed_runs += 1;
                 let last_exit_code = exit_code_from_status(status);
+                let post_run_snapshot = capture_snapshot(&plan.inputs, plan.detection_mode)?;
+                let inputs_changed_since_baseline =
+                    post_run_snapshot.is_meaningfully_different(&baseline, plan.detection_mode);
+                let should_rerun = pending_rerun
+                    && plan.metadata.side_effect_profile != SideEffectProfile::WritesWatchedInputs
+                    && inputs_changed_since_baseline;
+
+                if pending_rerun
+                    && plan.metadata.side_effect_profile == SideEffectProfile::WritesWatchedInputs
+                {
+                    debug!(
+                        rerun_suppressed = true,
+                        side_effect_profile = plan.metadata.side_effect_profile.as_str(),
+                        "Suppressing rerun after self-mutating command activity"
+                    );
+                }
+
+                baseline = post_run_snapshot;
+                pending_rerun = false;
+                child = None;
+
                 info!(
                     completed_runs,
                     last_exit_code,
                     command_source = plan.source.as_str(),
+                    rerun_queued = should_rerun,
                     "Delegated command finished"
                 );
-                child = None;
 
                 if options
                     .max_runs
@@ -166,8 +221,7 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
                     return Ok(last_exit_code);
                 }
 
-                if let Some(next_snapshot) = queued_snapshot.take() {
-                    baseline = next_snapshot;
+                if should_rerun {
                     child = Some(spawn_command(&plan.delegated_command)?);
                     continue;
                 }
@@ -189,13 +243,17 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
                 );
 
                 if child.is_some() {
-                    queued_snapshot = Some(current_snapshot);
+                    pending_rerun = true;
                 } else {
                     baseline = current_snapshot;
                     child = Some(spawn_command(&plan.delegated_command)?);
                 }
-            } else {
-                queued_snapshot = None;
+            } else if child.is_some() {
+                pending_rerun = false;
+                debug!(
+                    rerun_suppressed = true,
+                    "Ignored non-meaningful filesystem churn"
+                );
             }
         } else if child.is_none() {
             thread::sleep(Duration::from_millis(10));

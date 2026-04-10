@@ -25,9 +25,9 @@ fn help_lists_shell_and_exec_modes() {
 }
 
 #[test]
-fn pathless_passthrough_guides_users_to_exec_input() {
+fn commands_without_filesystem_inputs_guide_users_to_exec_input() {
     with_watch_command()
-        .args(["ls", "-l"])
+        .args(["echo", "hello"])
         .assert()
         .failure()
         .stderr(predicate::str::contains(
@@ -71,6 +71,19 @@ fn passthrough_mode_runs_a_posix_utility_once_with_test_hook() {
 
 #[cfg(unix)]
 #[test]
+fn pathless_allowlist_command_runs_once_with_test_hook() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+
+    with_watch_command()
+        .current_dir(temp_dir.path())
+        .env("WITH_WATCH_TEST_MAX_RUNS", "1")
+        .args(["ls", "-l"])
+        .assert()
+        .success();
+}
+
+#[cfg(unix)]
+#[test]
 fn shell_mode_supports_operators_and_exits_after_one_run_with_test_hook() {
     let temp_dir = tempfile::tempdir().expect("create tempdir");
     let input_path = temp_dir.path().join("input.txt");
@@ -85,6 +98,81 @@ fn shell_mode_supports_operators_and_exits_after_one_run_with_test_hook() {
         .assert()
         .success()
         .stdout(predicate::str::contains("hello"));
+}
+
+#[cfg(unix)]
+#[test]
+fn passthrough_cp_does_not_rerun_from_its_own_output_write() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let input_path = temp_dir.path().join("input.txt");
+    let output_path = temp_dir.path().join("output.txt");
+    fs::write(&input_path, "alpha\n").expect("write input");
+
+    let mut child = ProcessCommand::new(assert_cmd::cargo::cargo_bin!("with-watch"))
+        .current_dir(temp_dir.path())
+        .env("WITH_WATCH_TEST_MAX_RUNS", "2")
+        .env("WITH_WATCH_TEST_DEBOUNCE_MS", "25")
+        .args([
+            "cp",
+            input_path.to_string_lossy().as_ref(),
+            output_path.to_string_lossy().as_ref(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn with-watch");
+
+    wait_for_file_contents(&output_path, "alpha\n");
+    thread::sleep(Duration::from_millis(150));
+    assert!(child.try_wait().expect("poll child").is_none());
+
+    fs::write(&input_path, "beta\n").expect("rewrite input");
+
+    let status = child.wait().expect("wait for child");
+    assert!(status.success());
+    assert_eq!(
+        fs::read_to_string(&output_path).expect("read output"),
+        "beta\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn passthrough_sed_in_place_does_not_loop_on_its_own_write() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let input_path = temp_dir.path().join("input.txt");
+    fs::write(&input_path, "alpha\n").expect("write input");
+
+    let mut child = ProcessCommand::new(assert_cmd::cargo::cargo_bin!("with-watch"))
+        .current_dir(temp_dir.path())
+        .env("WITH_WATCH_TEST_MAX_RUNS", "2")
+        .env("WITH_WATCH_TEST_DEBOUNCE_MS", "25")
+        .args([
+            "sed",
+            "-i.bak",
+            "-e",
+            "s/alpha/beta/",
+            input_path.to_string_lossy().as_ref(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn with-watch");
+
+    wait_for_file_contents(&input_path, "beta\n");
+    thread::sleep(Duration::from_millis(150));
+    assert!(child.try_wait().expect("poll child").is_none());
+
+    fs::write(&input_path, "alpha\n").expect("rewrite input");
+
+    let status = child.wait().expect("wait for child");
+    assert!(status.success());
+    assert_eq!(
+        fs::read_to_string(&input_path).expect("read input"),
+        "beta\n"
+    );
 }
 
 #[cfg(unix)]
@@ -128,6 +216,22 @@ fn exec_mode_reruns_when_an_explicit_input_changes() {
     let output = fs::read_to_string(&output_path).expect("read output");
     let lines = output.lines().collect::<Vec<_>>();
     assert_eq!(lines, vec!["alpha", "beta"]);
+}
+
+#[cfg(unix)]
+fn wait_for_file_contents(path: &Path, expected_contents: &str) {
+    for _ in 0..80 {
+        if let Ok(contents) = fs::read_to_string(path) {
+            if contents == expected_contents {
+                return;
+            }
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    panic!(
+        "timed out waiting for contents `{expected_contents}` in {}",
+        path.display()
+    );
 }
 
 #[cfg(unix)]
