@@ -2,6 +2,8 @@
 
 `with-watch` is a Rust-based command rerun watcher that repeats a delegated command when its inferred or explicit filesystem inputs change.
 
+It performs one initial run immediately after input inference, watcher setup, and baseline capture, then listens for later filesystem changes.
+
 ## Why use with-watch
 
 - Keep familiar CLI tools such as `cat`, `cp`, `sed`, and `find`.
@@ -78,6 +80,7 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 
 ## Rerun behavior
 
+- `with-watch` always performs one initial run after it has inferred inputs and armed the watcher, even before any external filesystem change occurs.
 - Default rerun filtering uses content hashes.
 - `--no-hash` switches to metadata-only comparison.
 - Self-mutating commands such as `sed -i.bak -e 's/old/new/' config.txt` refresh their baseline after each run so they do not loop on their own writes.
