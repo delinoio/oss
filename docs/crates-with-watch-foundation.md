@@ -35,6 +35,7 @@
 - Wrapper commands (`env`, `nice`, `nohup`, `stdbuf`, and `timeout`) must unwrap to the delegated command before adapter selection.
 - `exec --input` remains the canonical explicit input contract when inference is insufficient, but command-side side-effect metadata may still be inferred for rerun suppression and logging.
 - Commands marked as `WritesWatchedInputs` must refresh the baseline snapshot after each run and suppress reruns caused only by their own writes while they were executing.
+- Path watch inputs must attach their OS watcher to the nearest existing directory so replace-style writers such as GNU `sed -i` do not orphan follow-up change detection on Linux.
 - Homebrew installation must consume prebuilt GitHub release archives for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`.
 
 ## Storage

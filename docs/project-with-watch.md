@@ -22,6 +22,7 @@ Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbit
 - Shell redirects must treat `<` and `<>` targets as watched inputs and `>`, `>>`, `&>`, `&>>`, and `>|` targets as filtered outputs.
 - Safe pathless default watch roots are limited to the built-in allowlist (`ls`, `dir`, `vdir`, `du`, and `find`).
 - Commands that mutate watched inputs directly must refresh the baseline snapshot after each run and suppress self-triggered reruns caused by their own writes.
+- Path-based watch inputs must anchor watcher subscriptions at the nearest existing directory so replace-style writers keep emitting later external changes.
 - Public crate distribution must remain `cargo install with-watch`.
 - Publish tag eligibility must remain enabled through root `[workspace.metadata.cargo-mono.publish.tag].packages`, and release tag naming must remain `with-watch@v<version>`.
 - Release automation must publish signed GitHub Release assets for `linux/amd64`, `darwin/amd64`, `darwin/arm64`, and `windows/amd64`, including standalone binaries (`with-watch-<os>-<arch>[.exe]`) and archives (`with-watch-<os>-<arch>.tar.gz|zip`).
