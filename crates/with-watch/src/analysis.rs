@@ -1134,15 +1134,15 @@ fn analyze_grep(
             if let Some(option) = parse_grep_short_pattern_option(token) {
                 explicit_pattern = true;
                 match option {
-                    GrepShortPatternOption::PatternInline => {}
-                    GrepShortPatternOption::PatternNext => {
+                    GrepShortPatternOption::Inline => {}
+                    GrepShortPatternOption::Next => {
                         index += 2;
                         continue;
                     }
-                    GrepShortPatternOption::PatternFileInline(value) => {
+                    GrepShortPatternOption::FileInline(value) => {
                         push_inferred_input(&mut inputs, value, cwd)?;
                     }
-                    GrepShortPatternOption::PatternFileNext => {
+                    GrepShortPatternOption::FileNext => {
                         if let Some(value) = argv.get(index + 1) {
                             push_inferred_input(&mut inputs, value.as_str(), cwd)?;
                         }
@@ -1182,10 +1182,10 @@ fn analyze_grep(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GrepShortPatternOption<'a> {
-    PatternInline,
-    PatternNext,
-    PatternFileInline(&'a str),
-    PatternFileNext,
+    Inline,
+    Next,
+    FileInline(&'a str),
+    FileNext,
 }
 
 fn parse_grep_short_pattern_option(token: &str) -> Option<GrepShortPatternOption<'_>> {
@@ -1197,10 +1197,10 @@ fn parse_grep_short_pattern_option(token: &str) -> Option<GrepShortPatternOption
     for (index, flag) in flags.char_indices() {
         let value = &flags[index + flag.len_utf8()..];
         match flag {
-            'e' if value.is_empty() => return Some(GrepShortPatternOption::PatternNext),
-            'e' => return Some(GrepShortPatternOption::PatternInline),
-            'f' if value.is_empty() => return Some(GrepShortPatternOption::PatternFileNext),
-            'f' => return Some(GrepShortPatternOption::PatternFileInline(value)),
+            'e' if value.is_empty() => return Some(GrepShortPatternOption::Next),
+            'e' => return Some(GrepShortPatternOption::Inline),
+            'f' if value.is_empty() => return Some(GrepShortPatternOption::FileNext),
+            'f' => return Some(GrepShortPatternOption::FileInline(value)),
             _ => {}
         }
     }
