@@ -14,14 +14,41 @@ fn with_watch_command() -> Command {
 }
 
 #[test]
-fn help_lists_shell_and_exec_modes() {
+fn long_help_lists_command_inventory_sections() {
     with_watch_command()
         .arg("--help")
         .assert()
         .success()
         .stdout(predicate::str::contains("--shell"))
         .stdout(predicate::str::contains("exec"))
-        .stdout(predicate::str::contains("--no-hash"));
+        .stdout(predicate::str::contains("--no-hash"))
+        .stdout(predicate::str::contains("Wrapper commands:"))
+        .stdout(predicate::str::contains(
+            "env, nice, nohup, stdbuf, timeout",
+        ))
+        .stdout(predicate::str::contains(
+            "Dedicated built-in adapters and aliases:",
+        ))
+        .stdout(predicate::str::contains("cp, mv, install"))
+        .stdout(predicate::str::contains("find, ls, dir, vdir, du"))
+        .stdout(predicate::str::contains(
+            "Recognized but not auto-watchable commands:",
+        ))
+        .stdout(predicate::str::contains("echo, printf, seq, yes, sleep"))
+        .stdout(predicate::str::contains("exec --input escape hatch:"));
+}
+
+#[test]
+fn short_help_stays_compact() {
+    with_watch_command()
+        .arg("-h")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--shell"))
+        .stdout(predicate::str::contains("exec"))
+        .stdout(predicate::str::contains("--no-hash"))
+        .stdout(predicate::str::contains("Wrapper commands:").not())
+        .stdout(predicate::str::contains("Recognized but not auto-watchable commands:").not());
 }
 
 #[test]
@@ -55,7 +82,7 @@ fn shell_and_subcommand_cannot_be_combined() {
 
 #[cfg(unix)]
 #[test]
-fn passthrough_mode_runs_a_posix_utility_once_with_test_hook() {
+fn passthrough_mode_runs_immediately_once_at_startup_with_test_hook() {
     let temp_dir = tempfile::tempdir().expect("create tempdir");
     let input_path = temp_dir.path().join("input.txt");
     fs::write(&input_path, "hello\n").expect("write input");
@@ -71,7 +98,7 @@ fn passthrough_mode_runs_a_posix_utility_once_with_test_hook() {
 
 #[cfg(unix)]
 #[test]
-fn pathless_allowlist_command_runs_once_with_test_hook() {
+fn pathless_allowlist_command_runs_immediately_once_at_startup_with_test_hook() {
     let temp_dir = tempfile::tempdir().expect("create tempdir");
 
     with_watch_command()
@@ -84,7 +111,7 @@ fn pathless_allowlist_command_runs_once_with_test_hook() {
 
 #[cfg(unix)]
 #[test]
-fn shell_mode_supports_operators_and_exits_after_one_run_with_test_hook() {
+fn shell_mode_runs_immediately_once_at_startup_with_test_hook() {
     let temp_dir = tempfile::tempdir().expect("create tempdir");
     let input_path = temp_dir.path().join("input.txt");
     fs::write(&input_path, "hello\n").expect("write input");
@@ -98,6 +125,39 @@ fn shell_mode_supports_operators_and_exits_after_one_run_with_test_hook() {
         .assert()
         .success()
         .stdout(predicate::str::contains("hello"));
+}
+
+#[cfg(unix)]
+#[test]
+fn exec_mode_runs_immediately_once_at_startup_with_test_hook() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let input_path = temp_dir.path().join("input.txt");
+    let output_path = temp_dir.path().join("output.txt");
+    fs::write(&input_path, "alpha\n").expect("write input");
+
+    with_watch_command()
+        .current_dir(temp_dir.path())
+        .env("WITH_WATCH_TEST_MAX_RUNS", "1")
+        .args([
+            "exec",
+            "--input",
+            input_path.to_string_lossy().as_ref(),
+            "--",
+            "sh",
+            "-c",
+            &format!(
+                "cat '{}' > '{}'",
+                input_path.display(),
+                output_path.display()
+            ),
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(&output_path).expect("read output"),
+        "alpha\n"
+    );
 }
 
 #[cfg(unix)]

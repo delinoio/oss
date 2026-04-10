@@ -19,6 +19,7 @@
 - `exec` mode must remain `with-watch exec [--no-hash] --input <glob>... -- <command> [args...]`.
 - The CLI must continue to reject mixed modes and empty delegated-command requests with operator-facing guidance.
 - Passthrough and shell modes must infer watch inputs before the first run; if inference does not produce safe filesystem inputs, the command must fail with `exec --input` guidance instead of guessing.
+- After watch input inference, watcher setup, and baseline snapshot capture succeed, all command modes must execute the delegated command immediately once before waiting for the first filesystem change event.
 - `exec --input` must accept repeatable explicit glob/path values, keep the delegated command unchanged, and remain the canonical fallback for otherwise ambiguous or pathless commands.
 - `--no-hash` must remain a global flag that switches rerun filtering from content hashes to metadata-only comparison.
 - Public crate installation must remain `cargo install with-watch`.
@@ -41,6 +42,8 @@
 - Commands marked as `WritesWatchedInputs` must refresh the baseline snapshot after each run and suppress reruns caused only by their own writes while they were executing.
 - Path watch inputs must attach their OS watcher to the nearest existing directory so replace-style writers such as GNU `sed -i` do not orphan follow-up change detection on Linux.
 - Operator-facing documentation must explain the three command modes, the `exec --input` escape hatch, shell support boundaries, and why self-mutating commands do not loop on their own writes.
+- `with-watch --help` long help must enumerate the recognized delegated-command inventory, including wrapper commands, dedicated built-in adapters and aliases, generic read-path commands, safe current-directory defaults, and recognized-but-not-auto-watchable commands.
+- Recognized-but-not-auto-watchable commands must remain clearly labeled as requiring `exec --input` when operators want explicit rerun inputs.
 - Homebrew installation must consume prebuilt GitHub release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 
 ## Storage
@@ -60,7 +63,7 @@
 ## Build and Test
 - Local validation: `cargo test -p with-watch`
 - Workspace validation baseline: `cargo test --workspace --all-targets`
-- Tests must cover CLI modes, shell parsing, adapter classification, fallback ambiguity handling, snapshot diffing, self-write suppression, and representative rerun flows.
+- Tests must cover CLI modes, immediate startup execution, shell parsing, adapter classification, fallback ambiguity handling, snapshot diffing, self-write suppression, and representative rerun flows.
 - Documentation changes should be checked against `cargo run -p with-watch -- --help` and the integration scenarios in `crates/with-watch/tests/cli.rs`.
 - Publishability validation: `cargo publish -p with-watch --dry-run`
 - Release contract checks should align with `.github/workflows/release-with-watch.yml`.

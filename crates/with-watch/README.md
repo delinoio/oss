@@ -2,6 +2,8 @@
 
 `with-watch` reruns a delegated command when its inferred or explicit filesystem inputs change.
 
+It executes the delegated command once immediately after input inference, watcher setup, and baseline capture, then waits for later filesystem changes to trigger reruns.
+
 ## Why use
 
 - Keep familiar POSIX/coreutils-style commands while adding automatic reruns.
@@ -41,6 +43,43 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 - Pathless defaults are intentionally narrow: only `ls`, `dir`, `vdir`, `du`, and `find` implicitly watch the current directory.
 - `exec --input` remains the explicit escape hatch when a delegated command has no meaningful filesystem inputs or when fallback inference would be ambiguous.
 
+## Recognized command inventory
+
+`with-watch --help` lists the full recognized command inventory in the same order as the analyzer.
+
+Wrapper commands:
+
+- `env`, `nice`, `nohup`, `stdbuf`, `timeout`
+
+Dedicated built-in adapters and aliases:
+
+- `cp`, `mv`, `install`, `ln`, `link`, `rm`, `unlink`, `rmdir`, `shred`
+- `sort`, `uniq`, `split`, `csplit`, `tee`
+- `grep`, `egrep`, `fgrep`, `sed`
+- `awk`, `gawk`, `mawk`, `nawk`
+- `find`, `xargs`, `tar`, `touch`, `truncate`
+- `chmod`, `chown`, `chgrp`, `dd`
+
+Generic read-path commands:
+
+- `cat`, `tac`, `head`, `tail`, `wc`, `nl`, `od`, `cut`, `fmt`, `fold`, `paste`, `pr`, `tr`
+- `expand`, `unexpand`, `stat`, `readlink`, `realpath`
+- `md5sum`, `b2sum`, `cksum`, `sum`, `sha1sum`, `sha224sum`, `sha256sum`, `sha384sum`
+- `sha512sum`, `sha512_224sum`, `sha512_256sum`
+- `base32`, `base64`, `basenc`, `comm`, `join`, `cmp`, `tsort`, `shuf`
+
+Safe current-directory defaults:
+
+- `find`, `ls`, `dir`, `vdir`, `du`
+
+Recognized but not auto-watchable commands:
+
+- `echo`, `printf`, `seq`, `yes`, `sleep`, `date`, `uname`, `pwd`, `true`, `false`
+- `basename`, `dirname`, `nproc`, `printenv`, `whoami`, `logname`, `users`, `hostid`
+- `numfmt`, `mktemp`, `mkdir`, `mkfifo`, `mknod`
+
+These commands are recognized, but they do not expose stable filesystem inputs on their own. Use `exec --input` when you want them to rerun from explicit globs or paths.
+
 ## When to use exec --input
 
 Use `exec --input` when the delegated command does not read a stable filesystem input by itself, or when you want the watch set to be explicit.
@@ -63,6 +102,7 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 
 ## Rerun behavior
 
+- `with-watch` always performs one initial run after it has inferred inputs and armed the watcher, even before any external filesystem change occurs.
 - The default rerun filter compares content hashes, which avoids reruns from metadata churn alone.
 - `--no-hash` switches the filter to metadata-only comparison.
 - Commands that write excluded outputs such as `cp src.txt dest.txt` should rerun when the source input changes, not when the output file changes.

@@ -1,10 +1,9 @@
-use clap::Parser;
 use swc_malloc as _;
 use with_watch::{cli::Cli, error::WithWatchError, logging, run_cli, runner::RunnerOptions};
 
 fn main() {
     logging::init_logging();
-    let cli = Cli::parse();
+    let cli = Cli::parse_with_inventory();
     let options = RunnerOptions::from_environment();
 
     match run_cli(cli, options) {

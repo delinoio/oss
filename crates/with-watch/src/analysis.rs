@@ -7,6 +7,121 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExplicitCommandHandler {
+    EnvWrapper,
+    NiceWrapper,
+    NohupWrapper,
+    StdbufWrapper,
+    TimeoutWrapper,
+    CopyLike,
+    MoveLike,
+    Install,
+    LinkLike,
+    RemoveLike,
+    Sort,
+    Uniq,
+    Split,
+    Csplit,
+    Tee,
+    Grep,
+    Sed,
+    Awk,
+    Find,
+    Xargs,
+    Tar,
+    Touch,
+    Truncate,
+    ChangeAttributes,
+    Dd,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HelpInventoryGroup {
+    Wrapper,
+    DedicatedBuiltIn,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ExplicitCommandSpec {
+    aliases: &'static [&'static str],
+    handler: ExplicitCommandHandler,
+    help_group: HelpInventoryGroup,
+    safe_current_dir_default: bool,
+}
+
+impl ExplicitCommandSpec {
+    const fn wrapper(aliases: &'static [&'static str], handler: ExplicitCommandHandler) -> Self {
+        Self {
+            aliases,
+            handler,
+            help_group: HelpInventoryGroup::Wrapper,
+            safe_current_dir_default: false,
+        }
+    }
+
+    const fn dedicated(aliases: &'static [&'static str], handler: ExplicitCommandHandler) -> Self {
+        Self {
+            aliases,
+            handler,
+            help_group: HelpInventoryGroup::DedicatedBuiltIn,
+            safe_current_dir_default: false,
+        }
+    }
+
+    const fn dedicated_with_safe_current_dir_default(
+        aliases: &'static [&'static str],
+        handler: ExplicitCommandHandler,
+    ) -> Self {
+        Self {
+            aliases,
+            handler,
+            help_group: HelpInventoryGroup::DedicatedBuiltIn,
+            safe_current_dir_default: true,
+        }
+    }
+}
+
+const EXPLICIT_COMMAND_SPECS: &[ExplicitCommandSpec] = &[
+    ExplicitCommandSpec::wrapper(&["env"], ExplicitCommandHandler::EnvWrapper),
+    ExplicitCommandSpec::wrapper(&["nice"], ExplicitCommandHandler::NiceWrapper),
+    ExplicitCommandSpec::wrapper(&["nohup"], ExplicitCommandHandler::NohupWrapper),
+    ExplicitCommandSpec::wrapper(&["stdbuf"], ExplicitCommandHandler::StdbufWrapper),
+    ExplicitCommandSpec::wrapper(&["timeout"], ExplicitCommandHandler::TimeoutWrapper),
+    ExplicitCommandSpec::dedicated(&["cp"], ExplicitCommandHandler::CopyLike),
+    ExplicitCommandSpec::dedicated(&["mv"], ExplicitCommandHandler::MoveLike),
+    ExplicitCommandSpec::dedicated(&["install"], ExplicitCommandHandler::Install),
+    ExplicitCommandSpec::dedicated(&["ln", "link"], ExplicitCommandHandler::LinkLike),
+    ExplicitCommandSpec::dedicated(
+        &["rm", "unlink", "rmdir", "shred"],
+        ExplicitCommandHandler::RemoveLike,
+    ),
+    ExplicitCommandSpec::dedicated(&["sort"], ExplicitCommandHandler::Sort),
+    ExplicitCommandSpec::dedicated(&["uniq"], ExplicitCommandHandler::Uniq),
+    ExplicitCommandSpec::dedicated(&["split"], ExplicitCommandHandler::Split),
+    ExplicitCommandSpec::dedicated(&["csplit"], ExplicitCommandHandler::Csplit),
+    ExplicitCommandSpec::dedicated(&["tee"], ExplicitCommandHandler::Tee),
+    ExplicitCommandSpec::dedicated(&["grep", "egrep", "fgrep"], ExplicitCommandHandler::Grep),
+    ExplicitCommandSpec::dedicated(&["sed"], ExplicitCommandHandler::Sed),
+    ExplicitCommandSpec::dedicated(
+        &["awk", "gawk", "mawk", "nawk"],
+        ExplicitCommandHandler::Awk,
+    ),
+    ExplicitCommandSpec::dedicated_with_safe_current_dir_default(
+        &["find"],
+        ExplicitCommandHandler::Find,
+    ),
+    ExplicitCommandSpec::dedicated(&["xargs"], ExplicitCommandHandler::Xargs),
+    ExplicitCommandSpec::dedicated(&["tar"], ExplicitCommandHandler::Tar),
+    ExplicitCommandSpec::dedicated(&["touch"], ExplicitCommandHandler::Touch),
+    ExplicitCommandSpec::dedicated(&["truncate"], ExplicitCommandHandler::Truncate),
+    ExplicitCommandSpec::dedicated(
+        &["chmod", "chown", "chgrp"],
+        ExplicitCommandHandler::ChangeAttributes,
+    ),
+    ExplicitCommandSpec::dedicated(&["dd"], ExplicitCommandHandler::Dd),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandAdapterId {
     WrapperEnv,
     WrapperNice,
@@ -263,54 +378,21 @@ fn analyze_command_tokens(
     }
 
     let command_name = command_name(argv[0].as_str());
-    let mut analysis = match command_name.as_str() {
-        "env" => analyze_env_wrapper(argv, redirects, cwd)?,
-        "nice" => analyze_nice_wrapper(argv, redirects, cwd)?,
-        "nohup" => analyze_nohup_wrapper(argv, redirects, cwd)?,
-        "stdbuf" => analyze_stdbuf_wrapper(argv, redirects, cwd)?,
-        "timeout" => analyze_timeout_wrapper(argv, redirects, cwd)?,
-        "cp" => analyze_copy_like(
-            argv,
-            CommandAdapterId::CopyLike,
-            SideEffectProfile::WritesExcludedOutputs,
-            redirects,
-            cwd,
-        )?,
-        "mv" => analyze_copy_like(
-            argv,
-            CommandAdapterId::MoveLike,
-            SideEffectProfile::WritesWatchedInputs,
-            redirects,
-            cwd,
-        )?,
-        "install" => analyze_install(argv, redirects, cwd)?,
-        "ln" | "link" => analyze_link_like(argv, redirects, cwd)?,
-        "rm" | "unlink" | "rmdir" | "shred" => analyze_remove_like(argv, redirects, cwd)?,
-        "sort" => analyze_sort(argv, redirects, cwd)?,
-        "uniq" => analyze_uniq(argv, redirects, cwd)?,
-        "split" => analyze_split(argv, redirects, cwd)?,
-        "csplit" => analyze_csplit(argv, redirects, cwd)?,
-        "tee" => analyze_tee(argv, redirects, cwd)?,
-        "grep" | "egrep" | "fgrep" => analyze_grep(argv, redirects, cwd)?,
-        "sed" => analyze_sed(argv, redirects, cwd)?,
-        "awk" | "gawk" | "mawk" | "nawk" => analyze_awk(argv, redirects, cwd)?,
-        "find" => analyze_find(argv, redirects, cwd)?,
-        "xargs" => analyze_xargs(argv, redirects, cwd)?,
-        "tar" => analyze_tar(argv, redirects, cwd)?,
-        "touch" => analyze_touch_like(argv, CommandAdapterId::Touch, redirects, cwd)?,
-        "truncate" => analyze_touch_like(argv, CommandAdapterId::Truncate, redirects, cwd)?,
-        "chmod" | "chown" | "chgrp" => analyze_change_attributes(argv, redirects, cwd)?,
-        "dd" => analyze_dd(argv, redirects, cwd)?,
-        name if DEFAULT_CURRENT_DIR_COMMANDS.contains(&name) => {
-            analyze_default_current_dir_reader(argv, redirects, cwd)?
+    let mut analysis = if let Some(handler) = explicit_command_handler(command_name.as_str()) {
+        analyze_explicit_command(handler, argv, redirects, cwd)?
+    } else {
+        match command_name.as_str() {
+            name if DEFAULT_CURRENT_DIR_COMMANDS.contains(&name) => {
+                analyze_default_current_dir_reader(argv, redirects, cwd)?
+            }
+            name if NONWATCHABLE_COMMANDS.contains(&name) => {
+                analyze_non_watchable(argv, redirects, cwd)?
+            }
+            name if GENERIC_READ_PATH_COMMANDS.contains(&name) => {
+                analyze_generic_read_paths(argv, redirects, cwd)?
+            }
+            _ => analyze_fallback(argv, redirects, cwd)?,
         }
-        name if NONWATCHABLE_COMMANDS.contains(&name) => {
-            analyze_non_watchable(argv, redirects, cwd)?
-        }
-        name if GENERIC_READ_PATH_COMMANDS.contains(&name) => {
-            analyze_generic_read_paths(argv, redirects, cwd)?
-        }
-        _ => analyze_fallback(argv, redirects, cwd)?,
     };
 
     if analysis.adapter_ids.is_empty() {
@@ -365,6 +447,126 @@ const GENERIC_READ_PATH_COMMANDS: &[&str] = &[
     "tsort",
     "shuf",
 ];
+
+struct HelpInventory {
+    wrapper_commands: Vec<&'static str>,
+    dedicated_built_ins: Vec<&'static str>,
+    generic_read_path_commands: &'static [&'static str],
+    safe_current_dir_defaults: Vec<&'static str>,
+    non_watchable_commands: &'static [&'static str],
+}
+
+fn help_inventory() -> HelpInventory {
+    let mut wrapper_commands = Vec::new();
+    let mut dedicated_built_ins = Vec::new();
+    let mut safe_current_dir_defaults = Vec::new();
+
+    for spec in EXPLICIT_COMMAND_SPECS {
+        match spec.help_group {
+            HelpInventoryGroup::Wrapper => wrapper_commands.extend_from_slice(spec.aliases),
+            HelpInventoryGroup::DedicatedBuiltIn => {
+                dedicated_built_ins.extend_from_slice(spec.aliases)
+            }
+        }
+
+        if spec.safe_current_dir_default {
+            safe_current_dir_defaults.extend_from_slice(spec.aliases);
+        }
+    }
+
+    safe_current_dir_defaults.extend_from_slice(DEFAULT_CURRENT_DIR_COMMANDS);
+
+    HelpInventory {
+        wrapper_commands,
+        dedicated_built_ins,
+        generic_read_path_commands: GENERIC_READ_PATH_COMMANDS,
+        safe_current_dir_defaults,
+        non_watchable_commands: NONWATCHABLE_COMMANDS,
+    }
+}
+
+pub fn render_after_long_help() -> String {
+    let inventory = help_inventory();
+
+    format!(
+        "Command modes:\n  Passthrough: with-watch [--no-hash] <utility> [args...]\n  Shell: \
+         with-watch [--no-hash] --shell '<expr>'\n  Explicit inputs: with-watch exec [--no-hash] \
+         --input <glob>... -- <command> [args...]\n\nWrapper commands:\n  {}\n\nDedicated \
+         built-in adapters and aliases:\n  {}\n\nGeneric read-path commands:\n  {}\n\nSafe \
+         current-directory defaults:\n  {}\n\nRecognized but not auto-watchable commands:\n  {}\n  \
+         These commands are recognized, but they do not expose stable filesystem inputs on their \
+         own.\n\nexec --input escape hatch:\n  Use `with-watch exec --input <glob>... -- \
+         <command> [args...]` when inference is ambiguous, when a command has no stable \
+         filesystem inputs, or when you want an explicit watch set.",
+        join_command_names(&inventory.wrapper_commands),
+        join_command_names(&inventory.dedicated_built_ins),
+        join_command_names(inventory.generic_read_path_commands),
+        join_command_names(&inventory.safe_current_dir_defaults),
+        join_command_names(inventory.non_watchable_commands),
+    )
+}
+
+fn join_command_names(commands: &[&str]) -> String {
+    commands.join(", ")
+}
+
+fn explicit_command_handler(command_name: &str) -> Option<ExplicitCommandHandler> {
+    EXPLICIT_COMMAND_SPECS
+        .iter()
+        .find(|spec| spec.aliases.contains(&command_name))
+        .map(|spec| spec.handler)
+}
+
+fn analyze_explicit_command(
+    handler: ExplicitCommandHandler,
+    argv: &[String],
+    redirects: &[ShellRedirect],
+    cwd: &Path,
+) -> Result<SingleCommandAnalysis> {
+    match handler {
+        ExplicitCommandHandler::EnvWrapper => analyze_env_wrapper(argv, redirects, cwd),
+        ExplicitCommandHandler::NiceWrapper => analyze_nice_wrapper(argv, redirects, cwd),
+        ExplicitCommandHandler::NohupWrapper => analyze_nohup_wrapper(argv, redirects, cwd),
+        ExplicitCommandHandler::StdbufWrapper => analyze_stdbuf_wrapper(argv, redirects, cwd),
+        ExplicitCommandHandler::TimeoutWrapper => analyze_timeout_wrapper(argv, redirects, cwd),
+        ExplicitCommandHandler::CopyLike => analyze_copy_like(
+            argv,
+            CommandAdapterId::CopyLike,
+            SideEffectProfile::WritesExcludedOutputs,
+            redirects,
+            cwd,
+        ),
+        ExplicitCommandHandler::MoveLike => analyze_copy_like(
+            argv,
+            CommandAdapterId::MoveLike,
+            SideEffectProfile::WritesWatchedInputs,
+            redirects,
+            cwd,
+        ),
+        ExplicitCommandHandler::Install => analyze_install(argv, redirects, cwd),
+        ExplicitCommandHandler::LinkLike => analyze_link_like(argv, redirects, cwd),
+        ExplicitCommandHandler::RemoveLike => analyze_remove_like(argv, redirects, cwd),
+        ExplicitCommandHandler::Sort => analyze_sort(argv, redirects, cwd),
+        ExplicitCommandHandler::Uniq => analyze_uniq(argv, redirects, cwd),
+        ExplicitCommandHandler::Split => analyze_split(argv, redirects, cwd),
+        ExplicitCommandHandler::Csplit => analyze_csplit(argv, redirects, cwd),
+        ExplicitCommandHandler::Tee => analyze_tee(argv, redirects, cwd),
+        ExplicitCommandHandler::Grep => analyze_grep(argv, redirects, cwd),
+        ExplicitCommandHandler::Sed => analyze_sed(argv, redirects, cwd),
+        ExplicitCommandHandler::Awk => analyze_awk(argv, redirects, cwd),
+        ExplicitCommandHandler::Find => analyze_find(argv, redirects, cwd),
+        ExplicitCommandHandler::Xargs => analyze_xargs(argv, redirects, cwd),
+        ExplicitCommandHandler::Tar => analyze_tar(argv, redirects, cwd),
+        ExplicitCommandHandler::Touch => {
+            analyze_touch_like(argv, CommandAdapterId::Touch, redirects, cwd)
+        }
+        ExplicitCommandHandler::Truncate => {
+            analyze_touch_like(argv, CommandAdapterId::Truncate, redirects, cwd)
+        }
+        ExplicitCommandHandler::ChangeAttributes => analyze_change_attributes(argv, redirects, cwd),
+        ExplicitCommandHandler::Dd => analyze_dd(argv, redirects, cwd),
+    }
+}
 
 fn command_name(program: &str) -> String {
     Path::new(program)
@@ -2159,11 +2361,11 @@ fn is_dynamic_shell_token(token: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
+    use std::{collections::BTreeSet, ffi::OsString};
 
     use super::{
-        analyze_argv, analyze_shell_expression, CommandAdapterId, CommandAnalysisStatus,
-        SideEffectProfile,
+        analyze_argv, analyze_shell_expression, help_inventory, render_after_long_help,
+        CommandAdapterId, CommandAnalysisStatus, SideEffectProfile,
     };
     use crate::parser::parse_shell_expression;
 
@@ -2397,6 +2599,56 @@ mod tests {
 
         assert_eq!(analysis.adapter_ids, vec![CommandAdapterId::Fallback]);
         assert_eq!(analysis.status, CommandAnalysisStatus::NoInputs);
+    }
+
+    #[test]
+    fn help_inventory_preserves_source_order_and_grouping() {
+        let inventory = help_inventory();
+
+        assert_eq!(
+            inventory.wrapper_commands,
+            vec!["env", "nice", "nohup", "stdbuf", "timeout"]
+        );
+        assert_eq!(
+            inventory.safe_current_dir_defaults,
+            vec!["find", "ls", "dir", "vdir", "du"]
+        );
+        assert!(inventory
+            .dedicated_built_ins
+            .starts_with(&["cp", "mv", "install"]));
+        assert_eq!(
+            inventory.non_watchable_commands,
+            &[
+                "echo", "printf", "seq", "yes", "sleep", "date", "uname", "pwd", "true", "false",
+                "basename", "dirname", "nproc", "printenv", "whoami", "logname", "users", "hostid",
+                "numfmt", "mktemp", "mkdir", "mkfifo", "mknod",
+            ]
+        );
+
+        let dedicated_set = inventory
+            .dedicated_built_ins
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        assert!(dedicated_set.contains("find"));
+        assert!(dedicated_set.contains("grep"));
+        assert!(dedicated_set.contains("fgrep"));
+        assert!(dedicated_set.contains("chgrp"));
+    }
+
+    #[test]
+    fn long_help_appendix_renders_full_inventory_sections() {
+        let help = render_after_long_help();
+
+        assert!(help.contains("Command modes:"));
+        assert!(help.contains("Wrapper commands:"));
+        assert!(help.contains("Dedicated built-in adapters and aliases:"));
+        assert!(help.contains("Generic read-path commands:"));
+        assert!(help.contains("Safe current-directory defaults:"));
+        assert!(help.contains("Recognized but not auto-watchable commands:"));
+        assert!(help.contains("exec --input escape hatch:"));
+        assert!(help.contains("find, ls, dir, vdir, du"));
+        assert!(help.contains("echo, printf, seq, yes, sleep"));
     }
 
     #[test]
