@@ -11,6 +11,7 @@ use serde_json::Value;
 use serial_test::serial;
 use sha2::{Digest, Sha256};
 use xz2::write::XzEncoder;
+use zip::{write::FileOptions, ZipWriter};
 
 struct TestEnv {
     root: PathBuf,
@@ -94,9 +95,23 @@ impl TestEnv {
         archive_bytes: Vec<u8>,
         shasums_override: Option<HashMap<String, String>>,
     ) {
+        self.register_release_for_target(version, "linux-x64", archive_bytes, shasums_override);
+    }
+
+    fn register_release_for_target(
+        &self,
+        version: &str,
+        target: &str,
+        archive_bytes: Vec<u8>,
+        shasums_override: Option<HashMap<String, String>>,
+    ) {
         let version = normalize(version);
-        let segment = "linux-x64";
-        let archive_name = format!("node-{version}-{segment}.tar.xz");
+        let extension = if target.starts_with("win-") {
+            "zip"
+        } else {
+            "tar.xz"
+        };
+        let archive_name = format!("node-{version}-{target}.{extension}");
 
         let digest = Sha256::digest(&archive_bytes);
         let mut table = HashMap::new();
@@ -183,6 +198,23 @@ fn make_archive(version: &str, target: &str, scripts: &[(&str, &str)]) -> Vec<u8
     let mut encoder = XzEncoder::new(Vec::new(), 6);
     encoder.write_all(&tar_payload).unwrap();
     encoder.finish().unwrap()
+}
+
+fn make_windows_zip(files: &[(&str, &str)]) -> Vec<u8> {
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    {
+        let mut writer = ZipWriter::new(&mut cursor);
+        let options = FileOptions::default().unix_permissions(0o755);
+
+        for (file_name, file_body) in files {
+            writer.start_file(*file_name, options).unwrap();
+            writer.write_all(file_body.as_bytes()).unwrap();
+        }
+
+        writer.finish().unwrap();
+    }
+
+    cursor.into_inner()
 }
 
 fn make_npm_argv_script(prefix: &str) -> String {
@@ -633,7 +665,7 @@ fn toolchain_link_rejects_directory_without_node_binary() {
 
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Linked runtime path must contain `bin/node`"));
+    assert!(stderr.contains("Linked runtime path must contain a node executable under `bin/`"));
 }
 
 #[test]
@@ -665,7 +697,7 @@ fn json_toolchain_link_failure_emits_invalid_input_error_envelope() {
     assert!(payload["message"]
         .as_str()
         .unwrap()
-        .contains("Linked runtime path must contain `bin/node`"));
+        .contains("Linked runtime path must contain a node executable under `bin/`"));
 }
 
 #[test]
@@ -2101,11 +2133,85 @@ fn unsupported_platform_is_reported() {
     env.register_index(&[("22.1.0", Some("Jod"))]);
 
     let mut cmd = env.command();
-    cmd.env("NODEUP_FORCE_PLATFORM", "windows-x64")
+    cmd.env("NODEUP_FORCE_PLATFORM", "windows-x86")
         .args(["toolchain", "install", "22.1.0"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("supports macOS/Linux"));
+        .stderr(predicates::str::contains("supports macOS/Linux/Windows"));
+}
+
+#[test]
+#[serial]
+fn linux_arm64_platform_installs_from_tar_xz_archive() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release_for_target(
+        "22.1.0",
+        "linux-arm64",
+        make_archive(
+            "22.1.0",
+            "linux-arm64",
+            &[("node", "#!/bin/sh\necho arm64\n")],
+        ),
+        None,
+    );
+
+    let runtime_root = env.data_root.join("toolchains").join("v22.1.0");
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "linux-arm64")
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    assert!(runtime_root.join("bin").join("node").exists());
+}
+
+#[test]
+#[serial]
+fn windows_x64_platform_installs_from_zip_archive() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release_for_target(
+        "22.1.0",
+        "win-x64",
+        make_windows_zip(&[("node.exe", "node"), ("npm.cmd", "@echo off\r\n")]),
+        None,
+    );
+
+    let runtime_root = env.data_root.join("toolchains").join("v22.1.0");
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    assert!(runtime_root.join("bin").join("node.exe").exists());
+    assert!(runtime_root.join("bin").join("npm.cmd").exists());
+}
+
+#[test]
+#[serial]
+fn windows_arm64_platform_installs_from_zip_archive() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release_for_target(
+        "22.1.0",
+        "win-arm64",
+        make_windows_zip(&[("node.exe", "node"), ("npm.cmd", "@echo off\r\n")]),
+        None,
+    );
+
+    let runtime_root = env.data_root.join("toolchains").join("v22.1.0");
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-arm64")
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    assert!(runtime_root.join("bin").join("node.exe").exists());
 }
 
 #[test]

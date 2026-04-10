@@ -66,6 +66,7 @@
 - Workspace validation baseline: `cargo test --workspace --all-targets`
 - CI alignment: `.github/workflows/CI.yml` Rust jobs
 - Release contract checks should align with `.github/workflows/release-cargo-mono.yml`.
+- Release assets must cover `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`.
 - Release signing outputs must use Sigstore bundle sidecars (`SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json`).
 
 ## Dependencies and Integrations

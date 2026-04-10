@@ -158,7 +158,7 @@ pub enum ToolchainCommand {
     Link {
         /// Alias used to reference the linked runtime.
         name: String,
-        /// Path to a runtime directory containing `bin/node`.
+        /// Path to a runtime directory containing `bin/node` or `bin/node.exe`.
         path: String,
     },
 }

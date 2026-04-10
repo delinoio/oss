@@ -68,6 +68,11 @@ jobs:
             asset_os: linux
             asset_arch: amd64
             archive_ext: tar.gz
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset_os: linux
+            asset_arch: arm64
+            archive_ext: tar.gz
           - os: macos-15-intel
             target: x86_64-apple-darwin
             asset_os: darwin
@@ -82,6 +87,11 @@ jobs:
             target: x86_64-pc-windows-msvc
             asset_os: windows
             asset_arch: amd64
+            archive_ext: zip
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            asset_os: windows
+            asset_arch: arm64
             archive_ext: zip
     steps:
       - name: Checkout

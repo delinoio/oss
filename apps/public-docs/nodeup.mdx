@@ -25,12 +25,12 @@ Tag contract:
 Package manager:
 
 - macOS/Linux: `brew install delinoio/tap/nodeup`
-- Homebrew installs prebuilt archives on macOS Intel, macOS Apple Silicon, and Linux amd64
-- Linux arm64 is not yet published for the Homebrew package
+- Homebrew installs prebuilt archives on macOS Intel, macOS Apple Silicon, Linux amd64, and Linux arm64
 
 Windows direct install:
 
 - `./scripts/install/nodeup.ps1 -Version latest -Method direct`
+- The PowerShell installer selects the `windows/amd64` or `windows/arm64` archive automatically based on the host architecture
 
 Script installer:
 
@@ -43,6 +43,7 @@ Script installer:
 ```
 
 Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and only support bundle-enabled releases.
+`nodeup toolchain install` supports `macOS`, `Linux`, and `Windows` x64/arm64 hosts.
 
 ## Common workflows
 

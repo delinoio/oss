@@ -9,6 +9,7 @@ use crate::{
     errors::{NodeupError, Result},
     resolver::ResolvedRuntimeTarget,
     selectors::{is_reserved_channel_selector_token, is_valid_linked_name, RuntimeSelector},
+    store::runtime_executable_path,
     NodeupApp,
 };
 
@@ -397,12 +398,12 @@ fn link(
                 "Linked runtime path is not a directory: {}",
                 runtime_path.display()
             ),
-            "Provide a runtime directory that contains a `bin/node` executable.",
+            "Provide a runtime directory that contains a `bin/node` or `bin/node.exe` executable.",
         ));
     }
 
     let absolute = fs::canonicalize(&runtime_path)?;
-    let node_executable = absolute.join("bin").join("node");
+    let node_executable = runtime_executable_path(&absolute, "node");
     if !node_executable.exists() {
         info!(
             command_path = "nodeup.toolchain.link",
@@ -416,10 +417,11 @@ fn link(
         );
         return Err(NodeupError::invalid_input_with_hint(
             format!(
-                "Linked runtime path must contain `bin/node`: {}",
+                "Linked runtime path must contain a node executable under `bin/`: {}",
                 absolute.display()
             ),
-            "Verify the runtime root path and ensure `<path>/bin/node` exists before linking.",
+            "Verify the runtime root path and ensure `<path>/bin/node` or `<path>/bin/node.exe` \
+             exists before linking.",
         ));
     }
 
