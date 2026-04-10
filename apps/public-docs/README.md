@@ -23,3 +23,4 @@ pnpm --filter public-docs test
 - `nodeup.mdx`: Public project guide for `nodeup`.
 - `cargo-mono.mdx`: Public project guide for `cargo-mono`.
 - `derun.mdx`: Public project guide for `derun`.
+- `with-watch.mdx`: Public project guide for `with-watch`.

@@ -1,0 +1,89 @@
+# with-watch
+
+`with-watch` is a Rust-based command rerun watcher that repeats a delegated command when its inferred or explicit filesystem inputs change.
+
+## Why use with-watch
+
+- Keep familiar CLI tools such as `cat`, `cp`, `sed`, and `find`.
+- Let `with-watch` infer watched inputs for common file-oriented commands.
+- Declare explicit inputs with `exec --input` when you want fully predictable reruns.
+
+## Install
+
+Tag contract:
+
+- `with-watch@v<semver>`
+
+Package manager:
+
+- macOS/Linux: `brew install delinoio/tap/with-watch`
+
+Cargo:
+
+```bash
+cargo install with-watch
+```
+
+## Quick start
+
+Rerun a file reader when its input changes:
+
+```bash
+with-watch cat input.txt
+```
+
+Watch the current directory with a safe pathless default:
+
+```bash
+with-watch ls -l
+```
+
+Run a simple shell expression:
+
+```bash
+with-watch --shell 'cat input.txt | grep hello'
+```
+
+Provide explicit inputs for an arbitrary command:
+
+```bash
+with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
+```
+
+## Input inference model
+
+- Passthrough mode and `--shell` use built-in command adapters first.
+- Known outputs, inline scripts, and output redirects are filtered out of the watch set.
+- Safe pathless defaults are intentionally narrow: `ls`, `dir`, `vdir`, `du`, and `find`.
+- If `with-watch` cannot infer safe filesystem inputs, it fails instead of guessing.
+
+## When exec --input is required
+
+Some commands do not expose meaningful filesystem inputs on their own. For example, `echo hello` has nothing safe to watch.
+
+In those cases, use `exec --input` to declare the watch set explicitly:
+
+```bash
+with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
+```
+
+`with-watch` reruns the delegated command unchanged. It does not inject changed file paths into argv or environment variables.
+
+## Shell support boundaries
+
+- `--shell` supports command-line expressions with `&&`, `||`, and `|`.
+- Input redirects (`<`, `<>`) become watched inputs.
+- Output redirects (`>`, `>>`, `&>`, `&>>`, `>|`) are treated as outputs and filtered from watching.
+- Full shell control-flow is out of scope for v1.
+
+## Rerun behavior
+
+- Default rerun filtering uses content hashes.
+- `--no-hash` switches to metadata-only comparison.
+- Self-mutating commands such as `sed -i.bak -e 's/old/new/' config.txt` refresh their baseline after each run so they do not loop on their own writes.
+- Replace-style writers remain watchable because path inputs subscribe from the nearest existing directory anchor.
+
+## Related pages
+
+- [Projects Overview](projects-overview)
+- [Documentation Lifecycle](documentation-lifecycle)

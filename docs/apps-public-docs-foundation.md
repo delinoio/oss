@@ -15,6 +15,8 @@
 ## Interfaces and Contracts
 - Navigation and page ID contracts in `apps/public-docs/docs.json` must remain stable.
 - Public-facing routes and content groupings must map to canonical docs contracts.
+- Top-level product page IDs currently include `nodeup`, `cargo-mono`, `derun`, `with-watch`, and `dexdex`.
+- The `With Watch` tab must route to the stable page ID `with-watch` and keep the `Command Rerun Watcher` grouping unless contracts are updated together.
 - Breaking navigation changes require explicit migration notes.
 
 ## Storage

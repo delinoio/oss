@@ -47,6 +47,15 @@
         ]
       },
       {
+        "tab": "With Watch",
+        "groups": [
+          {
+            "group": "Command Rerun Watcher",
+            "pages": ["with-watch"]
+          }
+        ]
+      },
+      {
         "tab": "DexDex",
         "groups": [
           {
