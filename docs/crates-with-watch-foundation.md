@@ -22,6 +22,8 @@
 - After watch input inference, watcher setup, and baseline snapshot capture succeed, all command modes must execute the delegated command immediately once before waiting for the first filesystem change event.
 - `exec --input` must accept repeatable explicit glob/path values, keep the delegated command unchanged, and remain the canonical fallback for otherwise ambiguous or pathless commands.
 - `--no-hash` must remain a global flag that switches rerun filtering from content hashes to metadata-only comparison.
+- `WW_LOG` must remain the only supported environment variable for configuring `with-watch` diagnostic `tracing` filters.
+- The default diagnostic log filter must remain `with_watch=off`, and `RUST_LOG` must not affect `with-watch` logging behavior.
 - Public crate installation must remain `cargo install with-watch`.
 - Publish tag naming must remain `with-watch@v<version>`.
 - Stable internal enums must remain aligned with the current v1 contract:
@@ -61,6 +63,7 @@
 
 ## Logging
 - Use structured `tracing` logs for command planning, watcher setup, snapshot capture, debounce decisions, and rerun causes.
+- Diagnostic `tracing` logs are operator opt-in: they are disabled by default and enabled via `WW_LOG`.
 - Logs must include `command_source`, `detection_mode`, input counts, `adapter_id`, `fallback_used`, `default_watch_root_used`, `filtered_output_count`, `side_effect_profile`, snapshot modes, snapshot entry counts, snapshot capture elapsed time, and rerun suppression outcomes.
 
 ## Build and Test
