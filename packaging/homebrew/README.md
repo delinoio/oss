@@ -5,6 +5,7 @@ This directory contains Homebrew formula/cask templates rendered by `scripts/rel
 Supported package identifiers:
 
 - `nodeup` (prebuilt formula: `darwin/amd64`, `darwin/arm64`, `linux/amd64`)
+- `with-watch` (prebuilt formula: `darwin/amd64`, `darwin/arm64`, `linux/amd64`)
 - `derun`
 - `dexdex-main-server` (prebuilt formula: `darwin/amd64`, `darwin/arm64`, `linux/amd64`)
 - `dexdex-worker-server` (prebuilt formula: `darwin/amd64`, `darwin/arm64`, `linux/amd64`)

@@ -1,0 +1,247 @@
+name: Release with-watch
+
+on:
+  push:
+    tags:
+      - "with-watch@v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semver without v prefix (for example: 0.2.0)"
+        required: true
+      dry_run:
+        description: "If true, skip release publication and Homebrew tap push"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release-with-watch-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare metadata
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      dry_run: ${{ steps.meta.outputs.dry_run }}
+    steps:
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            tag="with-watch@v${{ github.event.inputs.version }}"
+            dry_run="${{ github.event.inputs.dry_run }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+            dry_run="false"
+          fi
+
+          version="${tag#with-watch@v}"
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.asset_os }}-${{ matrix.asset_arch }})
+    runs-on: ${{ matrix.os }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset_os: linux
+            asset_arch: amd64
+            archive_ext: tar.gz
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            asset_os: darwin
+            asset_arch: amd64
+            archive_ext: tar.gz
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset_os: darwin
+            asset_arch: arm64
+            archive_ext: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_os: windows
+            asset_arch: amd64
+            archive_ext: zip
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-01-01
+          target: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build with-watch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build -p with-watch --release --target "${{ matrix.target }}"
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          artifact_name="with-watch-${{ matrix.asset_os }}-${{ matrix.asset_arch }}.${{ matrix.archive_ext }}"
+          binary_name="with-watch-${{ matrix.asset_os }}-${{ matrix.asset_arch }}"
+          source_binary="target/${{ matrix.target }}/release/with-watch"
+
+          if [ "${{ matrix.asset_os }}" = "windows" ]; then
+            binary_name="${binary_name}.exe"
+            source_binary="${source_binary}.exe"
+          fi
+
+          cp "$source_binary" "dist/${binary_name}"
+
+          if [ "${{ matrix.asset_os }}" = "windows" ]; then
+            cp "$source_binary" "dist/with-watch.exe"
+            pwsh -NoLogo -NoProfile -Command "Compress-Archive -Path dist/with-watch.exe -DestinationPath dist/${artifact_name}"
+            rm -f "dist/with-watch.exe"
+          else
+            cp "$source_binary" "dist/with-watch"
+            tar -C dist -czf "dist/${artifact_name}" with-watch
+            rm -f "dist/with-watch"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: with-watch-${{ matrix.asset_os }}-${{ matrix.asset_arch }}
+          path: dist/*
+
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - build
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      DRY_RUN: ${{ needs.prepare.outputs.dry_run }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+
+      - name: Flatten artifact directory
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-dist
+          find dist -maxdepth 2 -type f -exec cp "{}" "release-dist/" \;
+          rm -rf dist
+          mv release-dist dist
+          find dist -maxdepth 1 -type f | sed 's#^#artifact: #' >&2
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4.1.1
+
+      - name: Generate checksums and signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./scripts/release/generate-checksums.sh
+          ./scripts/release/generate-checksums.sh --artifacts-dir dist
+
+      - name: Create GitHub release
+        if: env.DRY_RUN != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: dist/*
+          generate_release_notes: true
+
+      - name: Render Homebrew update
+        if: env.DRY_RUN == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          chmod +x ./scripts/release/update-homebrew.sh
+
+          darwin_amd64_asset="with-watch-darwin-amd64.tar.gz"
+          darwin_amd64_sha="$(grep " ${darwin_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          darwin_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${darwin_amd64_asset}"
+
+          darwin_arm64_asset="with-watch-darwin-arm64.tar.gz"
+          darwin_arm64_sha="$(grep " ${darwin_arm64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          darwin_arm64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${darwin_arm64_asset}"
+
+          linux_amd64_asset="with-watch-linux-amd64.tar.gz"
+          linux_amd64_sha="$(grep " ${linux_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          linux_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${linux_amd64_asset}"
+
+          ./scripts/release/update-homebrew.sh \
+            --project with-watch \
+            --version "$RELEASE_VERSION" \
+            --darwin-amd64-url "$darwin_amd64_url" \
+            --darwin-amd64-sha256 "$darwin_amd64_sha" \
+            --darwin-arm64-url "$darwin_arm64_url" \
+            --darwin-arm64-sha256 "$darwin_arm64_sha" \
+            --linux-amd64-url "$linux_amd64_url" \
+            --linux-amd64-sha256 "$linux_amd64_sha" \
+            --dry-run >/dev/null
+
+      - name: Submit Homebrew update
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          chmod +x ./scripts/release/update-homebrew.sh
+
+          darwin_amd64_asset="with-watch-darwin-amd64.tar.gz"
+          darwin_amd64_sha="$(grep " ${darwin_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          darwin_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${darwin_amd64_asset}"
+
+          darwin_arm64_asset="with-watch-darwin-arm64.tar.gz"
+          darwin_arm64_sha="$(grep " ${darwin_arm64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          darwin_arm64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${darwin_arm64_asset}"
+
+          linux_amd64_asset="with-watch-linux-amd64.tar.gz"
+          linux_amd64_sha="$(grep " ${linux_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          linux_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${linux_amd64_asset}"
+
+          ./scripts/release/update-homebrew.sh \
+            --project with-watch \
+            --version "$RELEASE_VERSION" \
+            --darwin-amd64-url "$darwin_amd64_url" \
+            --darwin-amd64-sha256 "$darwin_amd64_sha" \
+            --darwin-arm64-url "$darwin_arm64_url" \
+            --darwin-arm64-sha256 "$darwin_arm64_sha" \
+            --linux-amd64-url "$linux_amd64_url" \
+            --linux-amd64-sha256 "$linux_amd64_sha"
