@@ -51,6 +51,66 @@ fn short_help_stays_compact() {
         .stdout(predicate::str::contains("Recognized but not auto-watchable commands:").not());
 }
 
+#[cfg(unix)]
+#[test]
+fn tracing_logs_are_off_by_default() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let input_path = temp_dir.path().join("input.txt");
+    fs::write(&input_path, "hello\n").expect("write input");
+
+    with_watch_command()
+        .env_remove("WW_LOG")
+        .env_remove("RUST_LOG")
+        .env("WITH_WATCH_LOG_COLOR", "never")
+        .env("WITH_WATCH_TEST_MAX_RUNS", "1")
+        .arg("cat")
+        .arg(&input_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"))
+        .stdout(predicate::str::contains("Starting with-watch run loop").not());
+}
+
+#[cfg(unix)]
+#[test]
+fn ww_log_can_enable_startup_logs() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let input_path = temp_dir.path().join("input.txt");
+    fs::write(&input_path, "hello\n").expect("write input");
+
+    with_watch_command()
+        .env("WW_LOG", "with_watch=info")
+        .env_remove("RUST_LOG")
+        .env("WITH_WATCH_LOG_COLOR", "never")
+        .env("WITH_WATCH_TEST_MAX_RUNS", "1")
+        .arg("cat")
+        .arg(&input_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"))
+        .stdout(predicate::str::contains("Starting with-watch run loop"));
+}
+
+#[cfg(unix)]
+#[test]
+fn rust_log_does_not_enable_startup_logs() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let input_path = temp_dir.path().join("input.txt");
+    fs::write(&input_path, "hello\n").expect("write input");
+
+    with_watch_command()
+        .env_remove("WW_LOG")
+        .env("RUST_LOG", "with_watch=info")
+        .env("WITH_WATCH_LOG_COLOR", "never")
+        .env("WITH_WATCH_TEST_MAX_RUNS", "1")
+        .arg("cat")
+        .arg(&input_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello"))
+        .stdout(predicate::str::contains("Starting with-watch run loop").not());
+}
+
 #[test]
 fn commands_without_filesystem_inputs_guide_users_to_exec_input() {
     with_watch_command()

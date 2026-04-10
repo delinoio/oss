@@ -111,6 +111,14 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 - Commands that mutate watched inputs directly, such as `sed -i.bak -e 's/old/new/' config.txt`, refresh their baseline after each run so they do not loop on their own writes.
 - Path-based inputs anchor the watcher at the nearest existing directory so replace-style writers keep producing later external change events.
 
+## Logging
+
+- `with-watch` reads `tracing` filter directives only from `WW_LOG`.
+- Diagnostic logs are off by default. Set `WW_LOG=with_watch=info` or `WW_LOG=with_watch=debug` when you want planner and watcher details.
+- `RUST_LOG` does not configure `with-watch` logging.
+- `WITH_WATCH_LOG_COLOR` and `NO_COLOR` continue to control ANSI log coloring.
+- Fatal user-facing errors still print to stderr even when diagnostic logging is off.
+
 ## Troubleshooting
 
 - `No watch inputs could be inferred from the delegated command`: switch to `with-watch exec --input ... -- <command>`.

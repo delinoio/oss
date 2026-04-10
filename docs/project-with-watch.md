@@ -20,6 +20,8 @@ Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbit
 - The public CLI surface must keep exactly one delegated-command entrypoint per invocation: passthrough argv, `--shell`, or `exec --input`.
 - After watch input inference, watcher setup, and baseline snapshot capture succeed, `with-watch` must execute the delegated command immediately once before waiting for the first filesystem change event.
 - Default change detection must prefer content hashing, while `--no-hash` must switch the rerun filter to metadata-only comparison.
+- `WW_LOG` must remain the only supported environment variable for configuring `with-watch` diagnostic `tracing` logs, and the default diagnostic filter must remain `with_watch=off`.
+- `RUST_LOG` must not affect `with-watch` diagnostic logging.
 - `exec --input` reruns the delegated command unchanged and must not inject changed paths into argv or environment variables.
 - Commands without safe inferred filesystem inputs must fail clearly and direct operators to `with-watch exec --input ...`.
 - Passthrough and shell modes must use adapter-driven input inference that excludes known outputs, scripts, and pattern operands from the watch set.
