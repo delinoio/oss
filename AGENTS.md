@@ -77,8 +77,6 @@
 - `docs/protos-dexdex-plan-mode-contract.md`: DexDex plan-mode decision contract.
 - `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
 - `protos/dexdex/v1/dexdex.proto`: Shared DexDex Connect RPC service and enum/message contracts (`dexdex.v1`).
-- `.agents/skills/gh-pr-codex-review-loop`: Skill for iteratively applying PR feedback until Codex leaves a `:+1:` reaction, with Node.js helpers for approval checks and feedback aggregation (default actor set includes `chatgpt-codex-connector[bot]`).
-
 ### Project Identifier Contract
 
 Treat project IDs as stable enum-style values:
