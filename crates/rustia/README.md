@@ -1,9 +1,7 @@
 # rustia
 
-> **Rust version of [typia.io](https://typia.io/).**
-
-`rustia` is the Rust version of `typia.io`, providing serde-based type-safe
-validation and LLM JSON parsing utilities.
+`rustia` provides serde-based type-safe validation and LLM JSON parsing
+utilities for Rust.
 
 ## Stable APIs
 

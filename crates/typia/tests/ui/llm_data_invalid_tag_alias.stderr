@@ -1,5 +1,0 @@
-error: unsupported typia tag `minLen`
- --> tests/ui/llm_data_invalid_tag_alias.rs:5:18
-  |
-5 |     #[typia(tags(minLen(1)))]
-  |                  ^^^^^^
