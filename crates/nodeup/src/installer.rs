@@ -7,13 +7,14 @@ use std::{
 
 use sha2::{Digest, Sha256};
 use tracing::info;
+use zip::ZipArchive;
 
 use crate::{
     errors::{sanitize_url_text, NodeupError, Result},
     paths::NodeupPaths,
     release_index::{normalize_version, ReleaseIndexClient},
     store::Store,
-    types::PlatformTarget,
+    types::{ArchiveFormat, PlatformTarget},
 };
 
 #[derive(Debug, Clone)]
@@ -57,7 +58,7 @@ impl RuntimeInstaller {
         let target = PlatformTarget::from_host().ok_or_else(|| {
             NodeupError::unsupported_platform_with_hint(
                 format!(
-                    "nodeup currently supports macOS/Linux x64/arm64 only. host={}/{}",
+                    "nodeup currently supports macOS/Linux/Windows x64/arm64 only. host={}/{}",
                     std::env::consts::OS,
                     std::env::consts::ARCH
                 ),
@@ -75,7 +76,7 @@ impl RuntimeInstaller {
             });
         }
 
-        let archive_url = release_client.archive_url(&canonical_version, target.archive_segment());
+        let archive_url = release_client.archive_url(&canonical_version, target);
         let archive_url_sanitized = sanitize_url_text(&archive_url);
         let archive_filename = archive_url.rsplit('/').next().ok_or_else(|| {
             NodeupError::internal_with_hint(
@@ -173,7 +174,7 @@ impl RuntimeInstaller {
         }
 
         let runtime_dir = self.paths.runtime_dir(&canonical_version);
-        extract_archive_to_runtime(&archive_path, &runtime_dir)?;
+        extract_archive_to_runtime(&archive_path, &runtime_dir, target)?;
 
         Ok(InstallReport {
             version: canonical_version,
@@ -215,7 +216,11 @@ fn download_file(release_client: &ReleaseIndexClient, url: &str, destination: &P
     Ok(())
 }
 
-fn extract_archive_to_runtime(archive_path: &Path, runtime_dir: &Path) -> Result<()> {
+fn extract_archive_to_runtime(
+    archive_path: &Path,
+    runtime_dir: &Path,
+    target: PlatformTarget,
+) -> Result<()> {
     if runtime_dir.exists() {
         return Ok(());
     }
@@ -235,26 +240,146 @@ fn extract_archive_to_runtime(archive_path: &Path, runtime_dir: &Path) -> Result
         .prefix("nodeup-extract-")
         .tempdir_in(parent)?;
 
+    match target.archive_format() {
+        ArchiveFormat::TarXz => unpack_tar_xz_archive(archive_path, temp_dir.path())?,
+        ArchiveFormat::Zip => unpack_zip_archive(archive_path, temp_dir.path())?,
+    }
+
+    let extracted_root = normalize_runtime_root(temp_dir.path(), target)?;
+
+    fs::rename(extracted_root, runtime_dir)?;
+    Ok(())
+}
+
+fn unpack_tar_xz_archive(archive_path: &Path, destination: &Path) -> Result<()> {
     let archive_file = File::open(archive_path)?;
     let decoder = xz2::read::XzDecoder::new(archive_file);
     let mut archive = tar::Archive::new(decoder);
-    archive.unpack(temp_dir.path())?;
+    archive.unpack(destination)?;
+    Ok(())
+}
 
-    let extracted_root = fs::read_dir(temp_dir.path())?
-        .next()
-        .ok_or_else(|| {
+fn unpack_zip_archive(archive_path: &Path, destination: &Path) -> Result<()> {
+    let archive_file = File::open(archive_path)?;
+    let mut archive = ZipArchive::new(archive_file).map_err(|error| {
+        NodeupError::internal_with_hint(
+            format!(
+                "Failed to open zip archive {}: {error}",
+                archive_path.display()
+            ),
+            "Retry the install command. If it repeats, remove the archive and re-download.",
+        )
+    })?;
+
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|error| {
             NodeupError::internal_with_hint(
                 format!(
-                    "Archive unpack produced an empty directory (archive={}, temp_dir={})",
-                    archive_path.display(),
-                    temp_dir.path().display()
+                    "Failed to read zip entry {index} from {}: {error}",
+                    archive_path.display()
                 ),
                 "Retry the install command. If it repeats, remove the archive and re-download.",
             )
-        })??
-        .path();
+        })?;
 
-    fs::rename(extracted_root, runtime_dir)?;
+        let entry_path = entry.enclosed_name().ok_or_else(|| {
+            NodeupError::invalid_input_with_hint(
+                format!(
+                    "Zip archive contains an unsafe path (archive={}, entry={})",
+                    archive_path.display(),
+                    entry.name()
+                ),
+                "Retry later in case the upstream archive is incomplete, or inspect the archive \
+                 contents.",
+            )
+        })?;
+        let destination_path = destination.join(entry_path);
+
+        if entry.is_dir() {
+            fs::create_dir_all(&destination_path)?;
+            continue;
+        }
+
+        if let Some(parent) = destination_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let mut output = File::create(&destination_path)?;
+        std::io::copy(&mut entry, &mut output)?;
+        output.flush()?;
+
+        #[cfg(unix)]
+        if let Some(mode) = entry.unix_mode() {
+            use std::os::unix::fs::PermissionsExt;
+
+            fs::set_permissions(&destination_path, fs::Permissions::from_mode(mode))?;
+        }
+    }
+
+    Ok(())
+}
+
+fn normalize_runtime_root(extraction_dir: &Path, target: PlatformTarget) -> Result<PathBuf> {
+    let mut entries =
+        fs::read_dir(extraction_dir)?.collect::<std::result::Result<Vec<_>, std::io::Error>>()?;
+
+    if entries.is_empty() {
+        return Err(NodeupError::internal_with_hint(
+            format!(
+                "Archive unpack produced an empty directory (temp_dir={})",
+                extraction_dir.display()
+            ),
+            "Retry the install command. If it repeats, remove the archive and re-download.",
+        ));
+    }
+
+    if entries.len() == 1 && entries[0].file_type()?.is_dir() {
+        let extracted_root = entries.pop().unwrap().path();
+        if matches!(target.archive_format(), ArchiveFormat::Zip) {
+            normalize_windows_runtime_layout(&extracted_root)?;
+        }
+        return Ok(extracted_root);
+    }
+
+    let normalized_root = extraction_dir.join("nodeup-runtime");
+    fs::create_dir(&normalized_root)?;
+
+    if matches!(target.archive_format(), ArchiveFormat::Zip) {
+        let bin_dir = normalized_root.join("bin");
+        fs::create_dir(&bin_dir)?;
+        for entry in entries {
+            let destination = bin_dir.join(entry.file_name());
+            fs::rename(entry.path(), destination)?;
+        }
+    } else {
+        for entry in entries {
+            let destination = normalized_root.join(entry.file_name());
+            fs::rename(entry.path(), destination)?;
+        }
+    }
+
+    Ok(normalized_root)
+}
+
+fn normalize_windows_runtime_layout(runtime_root: &Path) -> Result<()> {
+    let bin_dir = runtime_root.join("bin");
+    if bin_dir.exists() {
+        return Ok(());
+    }
+
+    let entries =
+        fs::read_dir(runtime_root)?.collect::<std::result::Result<Vec<_>, std::io::Error>>()?;
+    fs::create_dir(&bin_dir)?;
+
+    for entry in entries {
+        let file_name = entry.file_name();
+        if file_name == "bin" {
+            continue;
+        }
+
+        fs::rename(entry.path(), bin_dir.join(file_name))?;
+    }
+
     Ok(())
 }
 
@@ -383,6 +508,8 @@ impl Drop for InstallLock {
 
 #[cfg(test)]
 mod tests {
+    use zip::{write::FileOptions, ZipWriter};
+
     use super::*;
     use crate::errors::ErrorKind;
 
@@ -399,6 +526,43 @@ mod tests {
         );
     }
 
+    fn make_test_tar_xz() -> Vec<u8> {
+        let mut tar_payload = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut tar_payload);
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(0o755);
+            header.set_size(4);
+            header.set_cksum();
+            builder
+                .append_data(
+                    &mut header,
+                    "node-v22.1.0-linux-arm64/bin/node",
+                    &b"echo"[..],
+                )
+                .unwrap();
+            builder.finish().unwrap();
+        }
+
+        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 6);
+        encoder.write_all(&tar_payload).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    fn make_test_zip() -> Vec<u8> {
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = ZipWriter::new(&mut cursor);
+            let options = FileOptions::default().unix_permissions(0o755);
+            writer.start_file("node.exe", options).unwrap();
+            writer.write_all(b"node").unwrap();
+            writer.start_file("npm.cmd", options).unwrap();
+            writer.write_all(b"npm").unwrap();
+            writer.finish().unwrap();
+        }
+        cursor.into_inner()
+    }
+
     #[test]
     fn computes_sha256_checksum() {
         let dir = tempfile::tempdir().unwrap();
@@ -408,6 +572,35 @@ mod tests {
             sha256_file(&path).unwrap(),
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
         );
+    }
+
+    #[test]
+    fn tar_xz_extracts_to_runtime_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("node-v22.1.0-linux-arm64.tar.xz");
+        let runtime_dir = dir.path().join("toolchains").join("v22.1.0");
+        fs::create_dir_all(runtime_dir.parent().unwrap()).unwrap();
+        fs::write(&archive_path, make_test_tar_xz()).unwrap();
+
+        extract_archive_to_runtime(&archive_path, &runtime_dir, PlatformTarget::LinuxArm64)
+            .unwrap();
+
+        assert!(runtime_dir.join("bin").join("node").exists());
+    }
+
+    #[test]
+    fn zip_extracts_and_normalizes_flat_windows_layout() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = dir.path().join("node-v22.1.0-win-arm64.zip");
+        let runtime_dir = dir.path().join("toolchains").join("v22.1.0");
+        fs::create_dir_all(runtime_dir.parent().unwrap()).unwrap();
+        fs::write(&archive_path, make_test_zip()).unwrap();
+
+        extract_archive_to_runtime(&archive_path, &runtime_dir, PlatformTarget::WindowsArm64)
+            .unwrap();
+
+        assert!(runtime_dir.join("bin").join("node.exe").exists());
+        assert!(runtime_dir.join("bin").join("npm.cmd").exists());
     }
 
     #[test]

@@ -8,7 +8,7 @@ use crate::{
     overrides::OverrideStore,
     release_index::{normalize_version, ReleaseIndexClient},
     selectors::RuntimeSelector,
-    store::Store,
+    store::{runtime_executable_path, Store},
     types::{OverrideLookupFallbackReason, RuntimeSelectorSource},
 };
 
@@ -38,7 +38,9 @@ impl ResolvedRuntime {
             ResolvedRuntimeTarget::Version { version } => {
                 store.runtime_executable(version, command)
             }
-            ResolvedRuntimeTarget::LinkedPath { path, .. } => path.join("bin").join(command),
+            ResolvedRuntimeTarget::LinkedPath { path, .. } => {
+                runtime_executable_path(path, command)
+            }
         }
     }
 

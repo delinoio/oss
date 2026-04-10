@@ -188,6 +188,9 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
     let mut watch_loop = WatchLoop::new(&plan.inputs)?;
     let mut baseline =
         capture_snapshot_with_logging("initial-baseline", &plan.inputs, plan.detection_mode)?;
+    // v1 contract: after inference, watcher setup, and baseline capture succeed,
+    // the delegated command must run immediately once before waiting for any
+    // filesystem change events.
     let mut child = Some(spawn_command(&plan.delegated_command)?);
     let mut completed_runs = 0usize;
     let mut pending_rerun = false;
@@ -203,6 +206,7 @@ pub fn run(plan: ExecutionPlan, options: RunnerOptions) -> Result<i32> {
         filtered_output_count = plan.metadata.filtered_output_count,
         side_effect_profile = plan.metadata.side_effect_profile.as_str(),
         analysis_status = plan.metadata.status.as_str(),
+        initial_run_armed = true,
         "Starting with-watch run loop"
     );
 

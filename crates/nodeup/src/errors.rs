@@ -55,7 +55,7 @@ fn default_hint_for_kind(kind: ErrorKind) -> &'static str {
             "Check the command arguments with `nodeup --help` and try again."
         }
         ErrorKind::UnsupportedPlatform => {
-            "Run this command on a supported macOS/Linux x64/arm64 host."
+            "Run this command on a supported macOS/Linux/Windows x64/arm64 host."
         }
         ErrorKind::Network => {
             "Check your network connection and retry. If it keeps failing, run again with \

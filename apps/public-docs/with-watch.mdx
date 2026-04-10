@@ -2,6 +2,8 @@
 
 `with-watch` is a Rust-based command rerun watcher that repeats a delegated command when its inferred or explicit filesystem inputs change.
 
+It performs one initial run immediately after input inference, watcher setup, and baseline capture, then listens for later filesystem changes.
+
 ## Why use with-watch
 
 - Keep familiar CLI tools such as `cat`, `cp`, `sed`, and `find`.
@@ -17,6 +19,7 @@ Tag contract:
 Package manager:
 
 - macOS/Linux: `brew install delinoio/tap/with-watch`
+- Homebrew installs prebuilt archives on macOS Intel, macOS Apple Silicon, Linux amd64, and Linux arm64
 
 Cargo:
 
@@ -57,6 +60,43 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 - Safe pathless defaults are intentionally narrow: `ls`, `dir`, `vdir`, `du`, and `find`.
 - If `with-watch` cannot infer safe filesystem inputs, it fails instead of guessing.
 
+## Recognized command inventory
+
+`with-watch --help` includes the full recognized command inventory in analyzer order.
+
+Wrapper commands:
+
+- `env`, `nice`, `nohup`, `stdbuf`, `timeout`
+
+Dedicated built-in adapters and aliases:
+
+- `cp`, `mv`, `install`, `ln`, `link`, `rm`, `unlink`, `rmdir`, `shred`
+- `sort`, `uniq`, `split`, `csplit`, `tee`
+- `grep`, `egrep`, `fgrep`, `sed`
+- `awk`, `gawk`, `mawk`, `nawk`
+- `find`, `xargs`, `tar`, `touch`, `truncate`
+- `chmod`, `chown`, `chgrp`, `dd`
+
+Generic read-path commands:
+
+- `cat`, `tac`, `head`, `tail`, `wc`, `nl`, `od`, `cut`, `fmt`, `fold`, `paste`, `pr`, `tr`
+- `expand`, `unexpand`, `stat`, `readlink`, `realpath`
+- `md5sum`, `b2sum`, `cksum`, `sum`, `sha1sum`, `sha224sum`, `sha256sum`, `sha384sum`
+- `sha512sum`, `sha512_224sum`, `sha512_256sum`
+- `base32`, `base64`, `basenc`, `comm`, `join`, `cmp`, `tsort`, `shuf`
+
+Safe current-directory defaults:
+
+- `find`, `ls`, `dir`, `vdir`, `du`
+
+Recognized but not auto-watchable commands:
+
+- `echo`, `printf`, `seq`, `yes`, `sleep`, `date`, `uname`, `pwd`, `true`, `false`
+- `basename`, `dirname`, `nproc`, `printenv`, `whoami`, `logname`, `users`, `hostid`
+- `numfmt`, `mktemp`, `mkdir`, `mkfifo`, `mknod`
+
+These commands are recognized, but they do not expose stable filesystem inputs on their own. Use `exec --input` when you want explicit watch inputs.
+
 ## When exec --input is required
 
 Some commands do not expose meaningful filesystem inputs on their own. For example, `echo hello` has nothing safe to watch.
@@ -78,6 +118,7 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 
 ## Rerun behavior
 
+- `with-watch` always performs one initial run after it has inferred inputs and armed the watcher, even before any external filesystem change occurs.
 - Default rerun filtering uses content hashes.
 - `--no-hash` switches to metadata-only comparison.
 - Self-mutating commands such as `sed -i.bak -e 's/old/new/' config.txt` refresh their baseline after each run so they do not loop on their own writes.

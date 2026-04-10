@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
+    env, fs,
     io::Write,
     path::{Path, PathBuf},
 };
@@ -104,7 +104,7 @@ impl Store {
     }
 
     pub fn runtime_executable(&self, version: &str, command: &str) -> PathBuf {
-        self.runtime_dir(version).join("bin").join(command)
+        runtime_executable_path(&self.runtime_dir(version), command)
     }
 
     pub fn remove_runtime(&self, version: &str) -> Result<()> {
@@ -123,6 +123,46 @@ impl Store {
 
     pub fn paths(&self) -> &NodeupPaths {
         &self.paths
+    }
+}
+
+pub fn runtime_executable_path(runtime_root: &Path, command: &str) -> PathBuf {
+    let bin_dir = runtime_root.join("bin");
+    for candidate in runtime_executable_candidates(command) {
+        let candidate_path = bin_dir.join(&candidate);
+        if candidate_path.exists() {
+            return candidate_path;
+        }
+    }
+
+    bin_dir.join(runtime_primary_executable_name(command))
+}
+
+fn runtime_executable_candidates(command: &str) -> Vec<String> {
+    let primary = runtime_primary_executable_name(command);
+    if primary == command {
+        vec![primary]
+    } else {
+        vec![primary, command.to_string()]
+    }
+}
+
+fn runtime_primary_executable_name(command: &str) -> String {
+    if runtime_host_is_windows() {
+        match command {
+            "node" => "node.exe".to_string(),
+            "npm" | "npx" | "yarn" | "pnpm" | "corepack" => format!("{command}.cmd"),
+            _ => format!("{command}.exe"),
+        }
+    } else {
+        command.to_string()
+    }
+}
+
+fn runtime_host_is_windows() -> bool {
+    match env::var("NODEUP_FORCE_PLATFORM") {
+        Ok(value) => value.starts_with("windows-"),
+        Err(_) => cfg!(windows),
     }
 }
 

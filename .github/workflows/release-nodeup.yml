@@ -68,6 +68,11 @@ jobs:
             asset_os: linux
             asset_arch: amd64
             archive_ext: tar.gz
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset_os: linux
+            asset_arch: arm64
+            archive_ext: tar.gz
           - os: macos-15-intel
             target: x86_64-apple-darwin
             asset_os: darwin
@@ -82,6 +87,11 @@ jobs:
             target: x86_64-pc-windows-msvc
             asset_os: windows
             asset_arch: amd64
+            archive_ext: zip
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            asset_os: windows
+            asset_arch: arm64
             archive_ext: zip
     steps:
       - name: Checkout
@@ -201,6 +211,10 @@ jobs:
           linux_amd64_sha="$(grep " ${linux_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
           linux_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${linux_amd64_asset}"
 
+          linux_arm64_asset="nodeup-linux-arm64.tar.gz"
+          linux_arm64_sha="$(grep " ${linux_arm64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          linux_arm64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${linux_arm64_asset}"
+
           ./scripts/release/update-homebrew.sh \
             --project nodeup \
             --version "$RELEASE_VERSION" \
@@ -210,6 +224,8 @@ jobs:
             --darwin-arm64-sha256 "$darwin_arm64_sha" \
             --linux-amd64-url "$linux_amd64_url" \
             --linux-amd64-sha256 "$linux_amd64_sha" \
+            --linux-arm64-url "$linux_arm64_url" \
+            --linux-arm64-sha256 "$linux_arm64_sha" \
             --dry-run >/dev/null
 
       - name: Submit Homebrew update
@@ -234,6 +250,10 @@ jobs:
           linux_amd64_sha="$(grep " ${linux_amd64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
           linux_amd64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${linux_amd64_asset}"
 
+          linux_arm64_asset="nodeup-linux-arm64.tar.gz"
+          linux_arm64_sha="$(grep " ${linux_arm64_asset}$" dist/SHA256SUMS | awk '{print $1}')"
+          linux_arm64_url="https://github.com/delinoio/oss/releases/download/${RELEASE_TAG}/${linux_arm64_asset}"
+
           ./scripts/release/update-homebrew.sh \
             --project nodeup \
             --version "$RELEASE_VERSION" \
@@ -242,4 +262,6 @@ jobs:
             --darwin-arm64-url "$darwin_arm64_url" \
             --darwin-arm64-sha256 "$darwin_arm64_sha" \
             --linux-amd64-url "$linux_amd64_url" \
-            --linux-amd64-sha256 "$linux_amd64_sha"
+            --linux-amd64-sha256 "$linux_amd64_sha" \
+            --linux-arm64-url "$linux_arm64_url" \
+            --linux-arm64-sha256 "$linux_arm64_sha"

@@ -163,11 +163,29 @@ impl OverrideLookupFallbackReason {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+pub enum ArchiveFormat {
+    TarXz,
+    Zip,
+}
+
+impl ArchiveFormat {
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::TarXz => "tar.xz",
+            Self::Zip => "zip",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum PlatformTarget {
     DarwinX64,
     DarwinArm64,
     LinuxX64,
     LinuxArm64,
+    WindowsX64,
+    WindowsArm64,
 }
 
 impl PlatformTarget {
@@ -177,6 +195,17 @@ impl PlatformTarget {
             Self::DarwinArm64 => "darwin-arm64",
             Self::LinuxX64 => "linux-x64",
             Self::LinuxArm64 => "linux-arm64",
+            Self::WindowsX64 => "win-x64",
+            Self::WindowsArm64 => "win-arm64",
+        }
+    }
+
+    pub fn archive_format(self) -> ArchiveFormat {
+        match self {
+            Self::DarwinX64 | Self::DarwinArm64 | Self::LinuxX64 | Self::LinuxArm64 => {
+                ArchiveFormat::TarXz
+            }
+            Self::WindowsX64 | Self::WindowsArm64 => ArchiveFormat::Zip,
         }
     }
 
@@ -190,6 +219,8 @@ impl PlatformTarget {
             ("macos", "aarch64") => Some(Self::DarwinArm64),
             ("linux", "x86_64") => Some(Self::LinuxX64),
             ("linux", "aarch64") => Some(Self::LinuxArm64),
+            ("windows", "x86_64") => Some(Self::WindowsX64),
+            ("windows", "aarch64") => Some(Self::WindowsArm64),
             _ => None,
         }
     }
@@ -200,6 +231,8 @@ impl PlatformTarget {
             "darwin-arm64" => Some(Self::DarwinArm64),
             "linux-x64" => Some(Self::LinuxX64),
             "linux-arm64" => Some(Self::LinuxArm64),
+            "windows-x64" => Some(Self::WindowsX64),
+            "windows-arm64" => Some(Self::WindowsArm64),
             _ => None,
         }
     }
