@@ -15,6 +15,7 @@ Provide the Mintlify-based public documentation site for user-facing product and
 ## Cross-Domain Invariants
 - Mintlify navigation IDs and docs structure must stay aligned with documented contracts.
 - User-facing content changes should be versioned alongside relevant contract updates.
+- Public project pages currently exposed in top-level navigation include `nodeup`, `cargo-mono`, `derun`, `with-watch`, and `dexdex`.
 
 ## Change Policy
 - Update this index and `docs/apps-public-docs-foundation.md` in the same change for navigation, runtime, or publishing workflow updates.
