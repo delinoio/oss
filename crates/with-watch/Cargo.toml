@@ -5,7 +5,7 @@ edition = "2021"
 license = "MIT"
 description = "Watch command inputs and rerun commands when they change"
 readme = "README.md"
-publish = false
+repository = "https://github.com/delinoio/oss"
 
 [dependencies]
 blake3 = "1.8.4"

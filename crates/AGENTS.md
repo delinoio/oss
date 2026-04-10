@@ -46,6 +46,7 @@
 - Keep default rerun filtering content-hash-based, with `--no-hash` as the documented metadata-only override.
 - Keep shell support scoped to command-line expressions and do not silently broaden into shell-script control-flow without updating docs first.
 - Keep logs sufficient to explain inferred inputs, watcher anchors, snapshot counts, and rerun causes.
+- Keep public release contracts aligned across root publish-tag allowlist, `.github/workflows/release-with-watch.yml`, and Homebrew packaging assets.
 
 ### serde-feather-Specific Rules
 

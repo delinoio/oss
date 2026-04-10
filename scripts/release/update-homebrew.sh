@@ -8,7 +8,7 @@ Render and optionally push Homebrew formula/cask updates.
 
 Usage:
   ./scripts/release/update-homebrew.sh \
-    --project <nodeup|derun|dexdex-main-server|dexdex-worker-server|dexdex> \
+    --project <nodeup|with-watch|derun|dexdex-main-server|dexdex-worker-server|dexdex> \
     --version <semver> \
     [--darwin-amd64-url <url>] [--darwin-amd64-sha256 <sha>] \
     [--darwin-arm64-url <url>] [--darwin-arm64-sha256 <sha>] \
@@ -20,17 +20,17 @@ Options:
   --project <id>         Package identifier.
   --version <semver>     Release version without v-prefix.
   --darwin-amd64-url <url>
-                         Darwin amd64 prebuilt artifact URL (nodeup, derun, and DexDex server formulas).
+                         Darwin amd64 prebuilt artifact URL (nodeup, with-watch, derun, and DexDex server formulas).
   --darwin-amd64-sha256 <sha>
-                         Darwin amd64 prebuilt artifact SHA256 (nodeup, derun, and DexDex server formulas).
+                         Darwin amd64 prebuilt artifact SHA256 (nodeup, with-watch, derun, and DexDex server formulas).
   --darwin-arm64-url <url>
-                         Darwin arm64 prebuilt artifact URL (nodeup, derun, and DexDex server formulas).
+                         Darwin arm64 prebuilt artifact URL (nodeup, with-watch, derun, and DexDex server formulas).
   --darwin-arm64-sha256 <sha>
-                         Darwin arm64 prebuilt artifact SHA256 (nodeup, derun, and DexDex server formulas).
+                         Darwin arm64 prebuilt artifact SHA256 (nodeup, with-watch, derun, and DexDex server formulas).
   --linux-amd64-url <url>
-                         Linux amd64 prebuilt artifact URL (nodeup, derun, and DexDex server formulas).
+                         Linux amd64 prebuilt artifact URL (nodeup, with-watch, derun, and DexDex server formulas).
   --linux-amd64-sha256 <sha>
-                         Linux amd64 prebuilt artifact SHA256 (nodeup, derun, and DexDex server formulas).
+                         Linux amd64 prebuilt artifact SHA256 (nodeup, with-watch, derun, and DexDex server formulas).
   --desktop-url <url>    Desktop installer URL (dexdex cask).
   --desktop-sha256 <sha> Desktop installer SHA256 (dexdex cask).
   --tap-repo <repo>      Homebrew tap repository (default: delinoio/homebrew-tap).
@@ -129,7 +129,7 @@ rendered_file=""
 destination_path=""
 
 case "$project" in
-  nodeup|derun|dexdex-main-server|dexdex-worker-server)
+  nodeup|with-watch|derun|dexdex-main-server|dexdex-worker-server)
     if [ -z "$darwin_amd64_url" ] || [ -z "$darwin_amd64_sha256" ] || [ -z "$darwin_arm64_url" ] || [ -z "$darwin_arm64_sha256" ] || [ -z "$linux_amd64_url" ] || [ -z "$linux_amd64_sha256" ]; then
       log "$project requires --darwin-amd64-url, --darwin-amd64-sha256, --darwin-arm64-url, --darwin-arm64-sha256, --linux-amd64-url, and --linux-amd64-sha256"
       exit 1
