@@ -1553,10 +1553,12 @@ fn analyze_ripgrep(
                     }
                     RipgrepShortOption::GlobInline
                     | RipgrepShortOption::TypeInline
-                    | RipgrepShortOption::TypeNotInline => {}
+                    | RipgrepShortOption::TypeNotInline
+                    | RipgrepShortOption::ControlValueInline => {}
                     RipgrepShortOption::GlobNext
                     | RipgrepShortOption::TypeNext
-                    | RipgrepShortOption::TypeNotNext => {
+                    | RipgrepShortOption::TypeNotNext
+                    | RipgrepShortOption::ControlValueNext => {
                         index += 2;
                         continue;
                     }
@@ -1603,6 +1605,8 @@ enum RipgrepShortOption<'a> {
     TypeNext,
     TypeNotInline,
     TypeNotNext,
+    ControlValueInline,
+    ControlValueNext,
 }
 
 fn parse_ripgrep_short_option(token: &str) -> Option<RipgrepShortOption<'_>> {
@@ -1624,6 +1628,12 @@ fn parse_ripgrep_short_option(token: &str) -> Option<RipgrepShortOption<'_>> {
             't' => return Some(RipgrepShortOption::TypeInline),
             'T' if value.is_empty() => return Some(RipgrepShortOption::TypeNotNext),
             'T' => return Some(RipgrepShortOption::TypeNotInline),
+            'A' | 'B' | 'C' | 'E' | 'M' | 'd' | 'j' | 'm' | 'r' if value.is_empty() => {
+                return Some(RipgrepShortOption::ControlValueNext);
+            }
+            'A' | 'B' | 'C' | 'E' | 'M' | 'd' | 'j' | 'm' | 'r' => {
+                return Some(RipgrepShortOption::ControlValueInline);
+            }
             _ => {}
         }
     }
@@ -1650,16 +1660,46 @@ fn analyze_silver_searcher(
         }
 
         if !positional_only {
-            if token == "-g" || token == "-G" || token == "--ignore" || token == "--path-to-ignore"
-            {
+            if token == "--ignore" {
                 index += 2;
                 continue;
             }
-            if token.starts_with("-g")
-                || token.starts_with("-G")
-                || token.starts_with("--ignore=")
-                || token.starts_with("--path-to-ignore=")
-            {
+            if token == "--path-to-ignore" {
+                if let Some(value) = argv.get(index + 1) {
+                    push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                }
+                index += 2;
+                continue;
+            }
+            if token.starts_with("--ignore=") {
+                index += 1;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--path-to-ignore=") {
+                push_inferred_input(&mut inputs, value, cwd)?;
+                index += 1;
+                continue;
+            }
+            if let Some(option) = parse_silver_searcher_short_option(token) {
+                match option {
+                    SilverSearcherShortOption::IgnoreInline
+                    | SilverSearcherShortOption::FileFilterInline => {}
+                    SilverSearcherShortOption::IgnoreNext
+                    | SilverSearcherShortOption::FileFilterNext => {
+                        index += 2;
+                        continue;
+                    }
+                    SilverSearcherShortOption::PathToIgnoreInline(value) => {
+                        push_inferred_input(&mut inputs, value, cwd)?;
+                    }
+                    SilverSearcherShortOption::PathToIgnoreNext => {
+                        if let Some(value) = argv.get(index + 1) {
+                            push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                        }
+                        index += 2;
+                        continue;
+                    }
+                }
                 index += 1;
                 continue;
             }
@@ -1688,6 +1728,38 @@ fn analyze_silver_searcher(
     };
     apply_redirects(&mut analysis, redirects, cwd)?;
     Ok(analysis)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SilverSearcherShortOption<'a> {
+    IgnoreInline,
+    IgnoreNext,
+    FileFilterInline,
+    FileFilterNext,
+    PathToIgnoreInline(&'a str),
+    PathToIgnoreNext,
+}
+
+fn parse_silver_searcher_short_option(token: &str) -> Option<SilverSearcherShortOption<'_>> {
+    if !token.starts_with('-') || token == "-" || token.starts_with("--") {
+        return None;
+    }
+
+    let flags = token.trim_start_matches('-');
+    for (index, flag) in flags.char_indices() {
+        let value = &flags[index + flag.len_utf8()..];
+        match flag {
+            'g' if value.is_empty() => return Some(SilverSearcherShortOption::IgnoreNext),
+            'g' => return Some(SilverSearcherShortOption::IgnoreInline),
+            'G' if value.is_empty() => return Some(SilverSearcherShortOption::FileFilterNext),
+            'G' => return Some(SilverSearcherShortOption::FileFilterInline),
+            'p' if value.is_empty() => return Some(SilverSearcherShortOption::PathToIgnoreNext),
+            'p' => return Some(SilverSearcherShortOption::PathToIgnoreInline(value)),
+            _ => {}
+        }
+    }
+
+    None
 }
 
 fn analyze_fd(
@@ -3386,6 +3458,61 @@ mod tests {
             vec![CommandAdapterId::Ripgrep]
         );
         assert_path_inputs(&rg_with_long_type, &[cwd.path().join("src")]);
+
+        let rg_with_inline_replace = analyze_argv(
+            &[
+                OsString::from("rg"),
+                OsString::from("-rfoo"),
+                OsString::from("TODO"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            rg_with_inline_replace.adapter_ids,
+            vec![CommandAdapterId::Ripgrep]
+        );
+        assert_path_inputs(&rg_with_inline_replace, &[cwd.path().join("src")]);
+
+        let ag_with_path_to_ignore = analyze_argv(
+            &[
+                OsString::from("ag"),
+                OsString::from("-p"),
+                OsString::from(".ignore"),
+                OsString::from("TODO"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            ag_with_path_to_ignore.adapter_ids,
+            vec![CommandAdapterId::SilverSearcher]
+        );
+        assert_path_inputs(
+            &ag_with_path_to_ignore,
+            &[cwd.path().join(".ignore"), cwd.path().join("src")],
+        );
+
+        let ag_with_inline_path_to_ignore = analyze_argv(
+            &[
+                OsString::from("ag"),
+                OsString::from("--path-to-ignore=.agignore"),
+                OsString::from("TODO"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            ag_with_inline_path_to_ignore.adapter_ids,
+            vec![CommandAdapterId::SilverSearcher]
+        );
+        assert_path_inputs(
+            &ag_with_inline_path_to_ignore,
+            &[cwd.path().join(".agignore"), cwd.path().join("src")],
+        );
     }
 
     #[test]
