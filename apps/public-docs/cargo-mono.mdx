@@ -22,16 +22,6 @@ Tag contract:
 
 - `cargo-mono@v<semver>`
 
-Direct installers:
-
-```bash
-./scripts/install/cargo-mono.sh --version latest --method direct
-```
-
-```powershell
-./scripts/install/cargo-mono.ps1 -Version latest -Method direct
-```
-
 `cargo-binstall`:
 
 ```bash
@@ -46,8 +36,6 @@ GitHub Actions:
     tool: cargo-binstall
 - run: cargo binstall cargo-mono --no-confirm
 ```
-
-Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and require `cosign`.
 
 ## Common workflows
 

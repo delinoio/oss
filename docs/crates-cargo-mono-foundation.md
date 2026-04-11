@@ -70,7 +70,8 @@
 - Release contract checks should align with `.github/workflows/release-cargo-mono.yml`.
 - Release assets must cover `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`.
 - Release signing outputs must use Sigstore bundle sidecars (`SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json`).
-- Install docs must keep Bash, PowerShell, `cargo-binstall`, and GitHub Actions usage aligned with the installer scripts and manifest metadata.
+- Install docs that choose to describe direct-install flows must keep Bash, PowerShell, `cargo-binstall`, and GitHub Actions usage aligned with the installer scripts and manifest metadata.
+- `apps/public-docs` is not required to surface repo-local direct-installer script examples.
 
 ## Dependencies and Integrations
 - Integrates with Cargo workspace metadata and release workflows.
