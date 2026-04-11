@@ -1508,6 +1508,37 @@ fn analyze_ripgrep(
                 index += 2;
                 continue;
             }
+            if matches!(
+                token,
+                "--pre"
+                    | "--dfa-size-limit"
+                    | "--encoding"
+                    | "--engine"
+                    | "--max-count"
+                    | "--threads"
+                    | "--max-depth"
+                    | "--max-filesize"
+                    | "--type-clear"
+                    | "--after-context"
+                    | "--before-context"
+                    | "--context"
+                    | "--color"
+                    | "--colors"
+                    | "--context-separator"
+                    | "--field-context-separator"
+                    | "--field-match-separator"
+                    | "--hostname-bin"
+                    | "--hyperlink-format"
+                    | "--max-columns"
+                    | "--path-separator"
+                    | "--replace"
+                    | "--sort"
+                    | "--sortr"
+                    | "--generate"
+            ) {
+                index += 2;
+                continue;
+            }
             if let Some(value) = token.strip_prefix("--file=") {
                 explicit_patterns = true;
                 push_inferred_input(&mut inputs, value, cwd)?;
@@ -1518,9 +1549,34 @@ fn analyze_ripgrep(
                 || token.starts_with("--glob=")
                 || token.starts_with("--iglob=")
                 || token.starts_with("--pre-glob=")
+                || token.starts_with("--pre=")
+                || token.starts_with("--dfa-size-limit=")
+                || token.starts_with("--encoding=")
+                || token.starts_with("--engine=")
+                || token.starts_with("--max-count=")
+                || token.starts_with("--threads=")
+                || token.starts_with("--max-depth=")
+                || token.starts_with("--max-filesize=")
                 || token.starts_with("--type-add=")
                 || token.starts_with("--type=")
                 || token.starts_with("--type-not=")
+                || token.starts_with("--type-clear=")
+                || token.starts_with("--after-context=")
+                || token.starts_with("--before-context=")
+                || token.starts_with("--context=")
+                || token.starts_with("--color=")
+                || token.starts_with("--colors=")
+                || token.starts_with("--context-separator=")
+                || token.starts_with("--field-context-separator=")
+                || token.starts_with("--field-match-separator=")
+                || token.starts_with("--hostname-bin=")
+                || token.starts_with("--hyperlink-format=")
+                || token.starts_with("--max-columns=")
+                || token.starts_with("--path-separator=")
+                || token.starts_with("--replace=")
+                || token.starts_with("--sort=")
+                || token.starts_with("--sortr=")
+                || token.starts_with("--generate=")
             {
                 explicit_patterns |= token.starts_with("--regexp=");
                 index += 1;
@@ -1812,6 +1868,7 @@ fn analyze_fd(
     let mut base_dir: Option<String> = None;
     let mut deferred_inputs = Vec::new();
     let mut deferred_search_roots = Vec::new();
+    let mut extension_filter_present = false;
     let mut positionals = Vec::new();
     let mut positional_only = false;
     let mut index = 1usize;
@@ -1846,6 +1903,11 @@ fn analyze_fd(
                 index += 2;
                 continue;
             }
+            if token == "--extension" {
+                extension_filter_present = true;
+                index += 2;
+                continue;
+            }
             if let Some(value) = token.strip_prefix("--search-path=") {
                 deferred_search_roots.push(value.to_owned());
                 index += 1;
@@ -1861,16 +1923,19 @@ fn analyze_fd(
                 index += 1;
                 continue;
             }
+            if token.starts_with("--extension=") {
+                extension_filter_present = true;
+                index += 1;
+                continue;
+            }
             if matches!(
                 token,
-                "-e" | "-E"
-                    | "-t"
+                "-E" | "-t"
                     | "-c"
                     | "-d"
                     | "-j"
                     | "-o"
                     | "-S"
-                    | "--extension"
                     | "--exclude"
                     | "--type"
                     | "--color"
@@ -1894,8 +1959,7 @@ fn analyze_fd(
                 index += 2;
                 continue;
             }
-            if token.starts_with("--extension=")
-                || token.starts_with("--exclude=")
+            if token.starts_with("--exclude=")
                 || token.starts_with("--type=")
                 || token.starts_with("--color=")
                 || token.starts_with("--max-depth=")
@@ -1930,6 +1994,14 @@ fn analyze_fd(
                         index += 2;
                         continue;
                     }
+                    FdShortOption::ExtensionInline => {
+                        extension_filter_present = true;
+                    }
+                    FdShortOption::ExtensionNext => {
+                        extension_filter_present = true;
+                        index += 2;
+                        continue;
+                    }
                     FdShortOption::ValueInline => {}
                     FdShortOption::ValueNext => {
                         index += 2;
@@ -1956,9 +2028,7 @@ fn analyze_fd(
 
     match positionals.len() {
         0 => {}
-        1 if deferred_search_roots.is_empty()
-            && path_exists(positionals[0].as_str(), fd_cwd.as_path()) =>
-        {
+        1 if extension_filter_present && deferred_search_roots.is_empty() => {
             deferred_search_roots.push(positionals.remove(0));
         }
         1 => {}
@@ -1993,6 +2063,8 @@ fn analyze_fd(
 enum FdShortOption<'a> {
     BaseDirectoryInline(&'a str),
     BaseDirectoryNext,
+    ExtensionInline,
+    ExtensionNext,
     ValueInline,
     ValueNext,
 }
@@ -2008,10 +2080,12 @@ fn parse_fd_short_option(token: &str) -> Option<FdShortOption<'_>> {
         match flag {
             'C' if value.is_empty() => return Some(FdShortOption::BaseDirectoryNext),
             'C' => return Some(FdShortOption::BaseDirectoryInline(value)),
-            'E' | 'S' | 'c' | 'd' | 'e' | 'j' | 'o' | 't' if value.is_empty() => {
+            'e' if value.is_empty() => return Some(FdShortOption::ExtensionNext),
+            'e' => return Some(FdShortOption::ExtensionInline),
+            'E' | 'S' | 'c' | 'd' | 'j' | 'o' | 't' if value.is_empty() => {
                 return Some(FdShortOption::ValueNext);
             }
-            'E' | 'S' | 'c' | 'd' | 'e' | 'j' | 'o' | 't' => {
+            'E' | 'S' | 'c' | 'd' | 'j' | 'o' | 't' => {
                 return Some(FdShortOption::ValueInline);
             }
             _ => {}
@@ -3621,6 +3695,23 @@ mod tests {
         );
         assert_path_inputs(&rg_with_long_type, &[cwd.path().join("src")]);
 
+        let rg_with_long_value_flag = analyze_argv(
+            &[
+                OsString::from("rg"),
+                OsString::from("--max-count"),
+                OsString::from("1"),
+                OsString::from("TODO"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            rg_with_long_value_flag.adapter_ids,
+            vec![CommandAdapterId::Ripgrep]
+        );
+        assert_path_inputs(&rg_with_long_value_flag, &[cwd.path().join("src")]);
+
         let rg_with_inline_replace = analyze_argv(
             &[
                 OsString::from("rg"),
@@ -3772,6 +3863,15 @@ mod tests {
             &analysis_without_explicit_pattern,
             &[cwd.path().join("src")],
         );
+
+        let analysis_with_single_positional_pattern =
+            analyze_argv(&[OsString::from("fd"), OsString::from("src")], cwd.path())
+                .expect("analyze");
+        assert_eq!(
+            analysis_with_single_positional_pattern.adapter_ids,
+            vec![CommandAdapterId::Fd]
+        );
+        assert!(analysis_with_single_positional_pattern.inputs.is_empty());
 
         let fallback = analyze_argv(
             &[
