@@ -1647,7 +1647,8 @@ fn analyze_silver_searcher(
     cwd: &Path,
 ) -> Result<SingleCommandAnalysis> {
     let mut inputs = Vec::new();
-    let mut consumed_pattern = false;
+    let mut filename_pattern_mode = false;
+    let mut positionals = Vec::new();
     let mut positional_only = false;
     let mut index = 1usize;
 
@@ -1660,7 +1661,16 @@ fn analyze_silver_searcher(
         }
 
         if !positional_only {
+            if token == "--filename-pattern" {
+                filename_pattern_mode = true;
+                index += 2;
+                continue;
+            }
             if token == "--ignore" {
+                index += 2;
+                continue;
+            }
+            if token == "--file-search-regex" {
                 index += 2;
                 continue;
             }
@@ -1669,6 +1679,15 @@ fn analyze_silver_searcher(
                     push_inferred_input(&mut inputs, value.as_str(), cwd)?;
                 }
                 index += 2;
+                continue;
+            }
+            if let Some(_value) = token.strip_prefix("--filename-pattern=") {
+                filename_pattern_mode = true;
+                index += 1;
+                continue;
+            }
+            if token.starts_with("--file-search-regex=") {
+                index += 1;
                 continue;
             }
             if token.starts_with("--ignore=") {
@@ -1682,10 +1701,16 @@ fn analyze_silver_searcher(
             }
             if let Some(option) = parse_silver_searcher_short_option(token) {
                 match option {
-                    SilverSearcherShortOption::IgnoreInline
-                    | SilverSearcherShortOption::FileFilterInline => {}
-                    SilverSearcherShortOption::IgnoreNext
-                    | SilverSearcherShortOption::FileFilterNext => {
+                    SilverSearcherShortOption::FilenamePatternInline => {
+                        filename_pattern_mode = true;
+                    }
+                    SilverSearcherShortOption::FileSearchRegexInline => {}
+                    SilverSearcherShortOption::FilenamePatternNext => {
+                        filename_pattern_mode = true;
+                        index += 2;
+                        continue;
+                    }
+                    SilverSearcherShortOption::FileSearchRegexNext => {
                         index += 2;
                         continue;
                     }
@@ -1709,12 +1734,15 @@ fn analyze_silver_searcher(
             }
         }
 
-        if consumed_pattern {
-            push_inferred_input(&mut inputs, token, cwd)?;
-        } else {
-            consumed_pattern = true;
-        }
+        positionals.push(token.to_owned());
         index += 1;
+    }
+
+    for (position, token) in positionals.into_iter().enumerate() {
+        if !filename_pattern_mode && position == 0 {
+            continue;
+        }
+        push_inferred_input(&mut inputs, token.as_str(), cwd)?;
     }
 
     let mut analysis = SingleCommandAnalysis {
@@ -1732,10 +1760,10 @@ fn analyze_silver_searcher(
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SilverSearcherShortOption<'a> {
-    IgnoreInline,
-    IgnoreNext,
-    FileFilterInline,
-    FileFilterNext,
+    FilenamePatternInline,
+    FilenamePatternNext,
+    FileSearchRegexInline,
+    FileSearchRegexNext,
     PathToIgnoreInline(&'a str),
     PathToIgnoreNext,
 }
@@ -1749,10 +1777,14 @@ fn parse_silver_searcher_short_option(token: &str) -> Option<SilverSearcherShort
     for (index, flag) in flags.char_indices() {
         let value = &flags[index + flag.len_utf8()..];
         match flag {
-            'g' if value.is_empty() => return Some(SilverSearcherShortOption::IgnoreNext),
-            'g' => return Some(SilverSearcherShortOption::IgnoreInline),
-            'G' if value.is_empty() => return Some(SilverSearcherShortOption::FileFilterNext),
-            'G' => return Some(SilverSearcherShortOption::FileFilterInline),
+            'g' if value.is_empty() => {
+                return Some(SilverSearcherShortOption::FilenamePatternNext);
+            }
+            'g' => return Some(SilverSearcherShortOption::FilenamePatternInline),
+            'G' if value.is_empty() => {
+                return Some(SilverSearcherShortOption::FileSearchRegexNext);
+            }
+            'G' => return Some(SilverSearcherShortOption::FileSearchRegexInline),
             'p' if value.is_empty() => return Some(SilverSearcherShortOption::PathToIgnoreNext),
             'p' => return Some(SilverSearcherShortOption::PathToIgnoreInline(value)),
             _ => {}
@@ -1780,7 +1812,7 @@ fn analyze_fd(
     let mut base_dir: Option<String> = None;
     let mut deferred_inputs = Vec::new();
     let mut deferred_search_roots = Vec::new();
-    let mut consumed_pattern = false;
+    let mut positionals = Vec::new();
     let mut positional_only = false;
     let mut index = 1usize;
 
@@ -1913,11 +1945,7 @@ fn analyze_fd(
             }
         }
 
-        if consumed_pattern {
-            deferred_search_roots.push(token.to_owned());
-        } else {
-            consumed_pattern = true;
-        }
+        positionals.push(token.to_owned());
         index += 1;
     }
 
@@ -1925,6 +1953,21 @@ fn analyze_fd(
         .as_deref()
         .map(|value| absolutize(value, cwd))
         .unwrap_or_else(|| cwd.to_path_buf());
+
+    match positionals.len() {
+        0 => {}
+        1 if deferred_search_roots.is_empty()
+            && path_exists(positionals[0].as_str(), fd_cwd.as_path()) =>
+        {
+            deferred_search_roots.push(positionals.remove(0));
+        }
+        1 => {}
+        _ => {
+            for token in positionals.into_iter().skip(1) {
+                deferred_search_roots.push(token);
+            }
+        }
+    }
 
     for input in deferred_inputs {
         push_inferred_input(&mut inputs, input.as_str(), fd_cwd.as_path())?;
@@ -3632,6 +3675,22 @@ mod tests {
             &ag_with_inline_path_to_ignore,
             &[cwd.path().join(".agignore"), cwd.path().join("src")],
         );
+
+        let ag_with_filename_pattern = analyze_argv(
+            &[
+                OsString::from("ag"),
+                OsString::from("-g"),
+                OsString::from("\\.rs$"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            ag_with_filename_pattern.adapter_ids,
+            vec![CommandAdapterId::SilverSearcher]
+        );
+        assert_path_inputs(&ag_with_filename_pattern, &[cwd.path().join("src")]);
     }
 
     #[test]
@@ -3693,6 +3752,25 @@ mod tests {
         assert_path_inputs(
             &analysis_with_base_directory,
             &[cwd.path().join("workspace/src")],
+        );
+
+        let analysis_without_explicit_pattern = analyze_argv(
+            &[
+                OsString::from("fd"),
+                OsString::from("-e"),
+                OsString::from("rs"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            analysis_without_explicit_pattern.adapter_ids,
+            vec![CommandAdapterId::Fd]
+        );
+        assert_path_inputs(
+            &analysis_without_explicit_pattern,
+            &[cwd.path().join("src")],
         );
 
         let fallback = analyze_argv(
