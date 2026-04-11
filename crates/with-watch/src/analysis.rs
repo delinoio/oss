@@ -1,4 +1,4 @@
-use std::{ffi::OsString, fs, path::Path};
+use std::{env, ffi::OsString, fs, path::Path};
 
 use crate::{
     error::Result,
@@ -24,16 +24,23 @@ enum ExplicitCommandHandler {
     Csplit,
     Tee,
     Grep,
+    Ripgrep,
+    SilverSearcher,
     Sed,
     Awk,
     Find,
     LsLike,
+    Fd,
     Xargs,
     Tar,
     Touch,
     Truncate,
     ChangeAttributes,
     Dd,
+    Protoc,
+    Flatc,
+    Thrift,
+    Capnp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +109,8 @@ const EXPLICIT_COMMAND_SPECS: &[ExplicitCommandSpec] = &[
     ExplicitCommandSpec::dedicated(&["csplit"], ExplicitCommandHandler::Csplit),
     ExplicitCommandSpec::dedicated(&["tee"], ExplicitCommandHandler::Tee),
     ExplicitCommandSpec::dedicated(&["grep", "egrep", "fgrep"], ExplicitCommandHandler::Grep),
+    ExplicitCommandSpec::dedicated(&["rg"], ExplicitCommandHandler::Ripgrep),
+    ExplicitCommandSpec::dedicated(&["ag"], ExplicitCommandHandler::SilverSearcher),
     ExplicitCommandSpec::dedicated(&["sed"], ExplicitCommandHandler::Sed),
     ExplicitCommandSpec::dedicated(
         &["awk", "gawk", "mawk", "nawk"],
@@ -115,6 +124,7 @@ const EXPLICIT_COMMAND_SPECS: &[ExplicitCommandSpec] = &[
         &["ls", "dir", "vdir"],
         ExplicitCommandHandler::LsLike,
     ),
+    ExplicitCommandSpec::dedicated(&["fd"], ExplicitCommandHandler::Fd),
     ExplicitCommandSpec::dedicated(&["xargs"], ExplicitCommandHandler::Xargs),
     ExplicitCommandSpec::dedicated(&["tar"], ExplicitCommandHandler::Tar),
     ExplicitCommandSpec::dedicated(&["touch"], ExplicitCommandHandler::Touch),
@@ -124,6 +134,10 @@ const EXPLICIT_COMMAND_SPECS: &[ExplicitCommandSpec] = &[
         ExplicitCommandHandler::ChangeAttributes,
     ),
     ExplicitCommandSpec::dedicated(&["dd"], ExplicitCommandHandler::Dd),
+    ExplicitCommandSpec::dedicated(&["protoc"], ExplicitCommandHandler::Protoc),
+    ExplicitCommandSpec::dedicated(&["flatc"], ExplicitCommandHandler::Flatc),
+    ExplicitCommandSpec::dedicated(&["thrift"], ExplicitCommandHandler::Thrift),
+    ExplicitCommandSpec::dedicated(&["capnp"], ExplicitCommandHandler::Capnp),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,9 +155,12 @@ pub enum CommandAdapterId {
     ReadPaths,
     DefaultCurrentDir,
     Grep,
+    Ripgrep,
+    SilverSearcher,
     Sed,
     Awk,
     Find,
+    Fd,
     Xargs,
     Tar,
     Sort,
@@ -155,6 +172,10 @@ pub enum CommandAdapterId {
     Truncate,
     ChangeAttributes,
     Dd,
+    Protoc,
+    Flatc,
+    Thrift,
+    CapnpCompile,
     NonWatchable,
     Fallback,
 }
@@ -175,9 +196,12 @@ impl CommandAdapterId {
             Self::ReadPaths => "read-paths",
             Self::DefaultCurrentDir => "default-current-dir",
             Self::Grep => "grep",
+            Self::Ripgrep => "ripgrep",
+            Self::SilverSearcher => "silver-searcher",
             Self::Sed => "sed",
             Self::Awk => "awk",
             Self::Find => "find",
+            Self::Fd => "fd",
             Self::Xargs => "xargs",
             Self::Tar => "tar",
             Self::Sort => "sort",
@@ -189,6 +213,10 @@ impl CommandAdapterId {
             Self::Truncate => "truncate",
             Self::ChangeAttributes => "change-attributes",
             Self::Dd => "dd",
+            Self::Protoc => "protoc",
+            Self::Flatc => "flatc",
+            Self::Thrift => "thrift",
+            Self::CapnpCompile => "capnp-compile",
             Self::NonWatchable => "non-watchable",
             Self::Fallback => "fallback",
         }
@@ -557,10 +585,13 @@ fn analyze_explicit_command(
         ExplicitCommandHandler::Csplit => analyze_csplit(argv, redirects, cwd),
         ExplicitCommandHandler::Tee => analyze_tee(argv, redirects, cwd),
         ExplicitCommandHandler::Grep => analyze_grep(argv, redirects, cwd),
+        ExplicitCommandHandler::Ripgrep => analyze_ripgrep(argv, redirects, cwd),
+        ExplicitCommandHandler::SilverSearcher => analyze_silver_searcher(argv, redirects, cwd),
         ExplicitCommandHandler::Sed => analyze_sed(argv, redirects, cwd),
         ExplicitCommandHandler::Awk => analyze_awk(argv, redirects, cwd),
         ExplicitCommandHandler::Find => analyze_find(argv, redirects, cwd),
         ExplicitCommandHandler::LsLike => analyze_ls_like(argv, redirects, cwd),
+        ExplicitCommandHandler::Fd => analyze_fd(argv, redirects, cwd),
         ExplicitCommandHandler::Xargs => analyze_xargs(argv, redirects, cwd),
         ExplicitCommandHandler::Tar => analyze_tar(argv, redirects, cwd),
         ExplicitCommandHandler::Touch => {
@@ -571,6 +602,10 @@ fn analyze_explicit_command(
         }
         ExplicitCommandHandler::ChangeAttributes => analyze_change_attributes(argv, redirects, cwd),
         ExplicitCommandHandler::Dd => analyze_dd(argv, redirects, cwd),
+        ExplicitCommandHandler::Protoc => analyze_protoc(argv, redirects, cwd),
+        ExplicitCommandHandler::Flatc => analyze_flatc(argv, redirects, cwd),
+        ExplicitCommandHandler::Thrift => analyze_thrift(argv, redirects, cwd),
+        ExplicitCommandHandler::Capnp => analyze_capnp(argv, redirects, cwd),
     }
 }
 
@@ -1416,6 +1451,340 @@ fn parse_grep_short_pattern_option(token: &str) -> Option<GrepShortPatternOption
     None
 }
 
+fn analyze_ripgrep(
+    argv: &[String],
+    redirects: &[ShellRedirect],
+    cwd: &Path,
+) -> Result<SingleCommandAnalysis> {
+    let mut inputs = Vec::new();
+    let mut explicit_patterns = false;
+    let mut files_mode = false;
+    let mut consumed_implicit_pattern = false;
+    let mut positional_only = false;
+    let mut index = 1usize;
+
+    while index < argv.len() {
+        let token = argv[index].as_str();
+        if !positional_only && token == "--" {
+            positional_only = true;
+            index += 1;
+            continue;
+        }
+
+        if !positional_only {
+            if token == "--files" {
+                files_mode = true;
+                index += 1;
+                continue;
+            }
+            if token == "-e" || token == "--regexp" {
+                explicit_patterns = true;
+                index += 2;
+                continue;
+            }
+            if token == "-f" || token == "--file" {
+                explicit_patterns = true;
+                if let Some(value) = argv.get(index + 1) {
+                    push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                }
+                index += 2;
+                continue;
+            }
+            if token == "-g"
+                || token == "--glob"
+                || token == "--iglob"
+                || token == "--pre-glob"
+                || token == "--type-add"
+            {
+                index += 2;
+                continue;
+            }
+            if token == "--ignore-file" {
+                if let Some(value) = argv.get(index + 1) {
+                    push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                }
+                index += 2;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--file=") {
+                explicit_patterns = true;
+                push_inferred_input(&mut inputs, value, cwd)?;
+                index += 1;
+                continue;
+            }
+            if token.starts_with("--regexp=")
+                || token.starts_with("--glob=")
+                || token.starts_with("--iglob=")
+                || token.starts_with("--pre-glob=")
+                || token.starts_with("--type-add=")
+                || token.starts_with("--type=")
+                || token.starts_with("--type-not=")
+            {
+                explicit_patterns |= token.starts_with("--regexp=");
+                index += 1;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--ignore-file=") {
+                push_inferred_input(&mut inputs, value, cwd)?;
+                index += 1;
+                continue;
+            }
+            if let Some(option) = parse_ripgrep_short_option(token) {
+                match option {
+                    RipgrepShortOption::PatternInline => explicit_patterns = true,
+                    RipgrepShortOption::PatternNext => {
+                        explicit_patterns = true;
+                        index += 2;
+                        continue;
+                    }
+                    RipgrepShortOption::PatternFileInline(value) => {
+                        explicit_patterns = true;
+                        push_inferred_input(&mut inputs, value, cwd)?;
+                    }
+                    RipgrepShortOption::PatternFileNext => {
+                        explicit_patterns = true;
+                        if let Some(value) = argv.get(index + 1) {
+                            push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                        }
+                        index += 2;
+                        continue;
+                    }
+                    RipgrepShortOption::GlobInline
+                    | RipgrepShortOption::TypeInline
+                    | RipgrepShortOption::TypeNotInline => {}
+                    RipgrepShortOption::GlobNext
+                    | RipgrepShortOption::TypeNext
+                    | RipgrepShortOption::TypeNotNext => {
+                        index += 2;
+                        continue;
+                    }
+                }
+                index += 1;
+                continue;
+            }
+            if token.starts_with('-') {
+                index += 1;
+                continue;
+            }
+        }
+
+        if files_mode || explicit_patterns || consumed_implicit_pattern {
+            push_inferred_input(&mut inputs, token, cwd)?;
+        } else {
+            consumed_implicit_pattern = true;
+        }
+        index += 1;
+    }
+
+    let mut analysis = SingleCommandAnalysis {
+        inputs,
+        adapter_ids: vec![CommandAdapterId::Ripgrep],
+        fallback_used: false,
+        default_watch_root_used: false,
+        filtered_output_count: 0,
+        side_effect_profile: SideEffectProfile::ReadOnly,
+        status: CommandAnalysisStatus::NoInputs,
+    };
+    apply_redirects(&mut analysis, redirects, cwd)?;
+    Ok(analysis)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RipgrepShortOption<'a> {
+    PatternInline,
+    PatternNext,
+    PatternFileInline(&'a str),
+    PatternFileNext,
+    GlobInline,
+    GlobNext,
+    TypeInline,
+    TypeNext,
+    TypeNotInline,
+    TypeNotNext,
+}
+
+fn parse_ripgrep_short_option(token: &str) -> Option<RipgrepShortOption<'_>> {
+    if !token.starts_with('-') || token == "-" || token.starts_with("--") {
+        return None;
+    }
+
+    let flags = token.trim_start_matches('-');
+    for (index, flag) in flags.char_indices() {
+        let value = &flags[index + flag.len_utf8()..];
+        match flag {
+            'e' if value.is_empty() => return Some(RipgrepShortOption::PatternNext),
+            'e' => return Some(RipgrepShortOption::PatternInline),
+            'f' if value.is_empty() => return Some(RipgrepShortOption::PatternFileNext),
+            'f' => return Some(RipgrepShortOption::PatternFileInline(value)),
+            'g' if value.is_empty() => return Some(RipgrepShortOption::GlobNext),
+            'g' => return Some(RipgrepShortOption::GlobInline),
+            't' if value.is_empty() => return Some(RipgrepShortOption::TypeNext),
+            't' => return Some(RipgrepShortOption::TypeInline),
+            'T' if value.is_empty() => return Some(RipgrepShortOption::TypeNotNext),
+            'T' => return Some(RipgrepShortOption::TypeNotInline),
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn analyze_silver_searcher(
+    argv: &[String],
+    redirects: &[ShellRedirect],
+    cwd: &Path,
+) -> Result<SingleCommandAnalysis> {
+    let mut inputs = Vec::new();
+    let mut consumed_pattern = false;
+    let mut positional_only = false;
+    let mut index = 1usize;
+
+    while index < argv.len() {
+        let token = argv[index].as_str();
+        if !positional_only && token == "--" {
+            positional_only = true;
+            index += 1;
+            continue;
+        }
+
+        if !positional_only {
+            if token == "-g" || token == "-G" || token == "--ignore" || token == "--path-to-ignore"
+            {
+                index += 2;
+                continue;
+            }
+            if token.starts_with("-g")
+                || token.starts_with("-G")
+                || token.starts_with("--ignore=")
+                || token.starts_with("--path-to-ignore=")
+            {
+                index += 1;
+                continue;
+            }
+            if token.starts_with('-') {
+                index += 1;
+                continue;
+            }
+        }
+
+        if consumed_pattern {
+            push_inferred_input(&mut inputs, token, cwd)?;
+        } else {
+            consumed_pattern = true;
+        }
+        index += 1;
+    }
+
+    let mut analysis = SingleCommandAnalysis {
+        inputs,
+        adapter_ids: vec![CommandAdapterId::SilverSearcher],
+        fallback_used: false,
+        default_watch_root_used: false,
+        filtered_output_count: 0,
+        side_effect_profile: SideEffectProfile::ReadOnly,
+        status: CommandAnalysisStatus::NoInputs,
+    };
+    apply_redirects(&mut analysis, redirects, cwd)?;
+    Ok(analysis)
+}
+
+fn analyze_fd(
+    argv: &[String],
+    redirects: &[ShellRedirect],
+    cwd: &Path,
+) -> Result<SingleCommandAnalysis> {
+    if argv.iter().skip(1).any(|token| {
+        matches!(
+            token.as_str(),
+            "-x" | "-X" | "--exec" | "--exec-batch" | "--list-details"
+        )
+    }) {
+        return analyze_fallback(argv, redirects, cwd);
+    }
+
+    let mut inputs = Vec::new();
+    let mut consumed_pattern = false;
+    let mut positional_only = false;
+    let mut index = 1usize;
+
+    while index < argv.len() {
+        let token = argv[index].as_str();
+        if !positional_only && token == "--" {
+            positional_only = true;
+            index += 1;
+            continue;
+        }
+
+        if !positional_only {
+            if token == "--search-path" {
+                if let Some(value) = argv.get(index + 1) {
+                    push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                }
+                index += 2;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--search-path=") {
+                push_inferred_input(&mut inputs, value, cwd)?;
+                index += 1;
+                continue;
+            }
+            if token == "-e"
+                || token == "-E"
+                || token == "-t"
+                || token == "-c"
+                || token == "-d"
+                || token == "--extension"
+                || token == "--exclude"
+                || token == "--type"
+                || token == "--color"
+                || token == "--max-depth"
+                || token == "--min-depth"
+            {
+                index += 2;
+                continue;
+            }
+            if token.starts_with("-e")
+                || token.starts_with("-E")
+                || token.starts_with("-t")
+                || token.starts_with("-c")
+                || token.starts_with("-d")
+                || token.starts_with("--extension=")
+                || token.starts_with("--exclude=")
+                || token.starts_with("--type=")
+                || token.starts_with("--color=")
+                || token.starts_with("--max-depth=")
+                || token.starts_with("--min-depth=")
+            {
+                index += 1;
+                continue;
+            }
+            if token.starts_with('-') {
+                index += 1;
+                continue;
+            }
+        }
+
+        if consumed_pattern {
+            push_inferred_input(&mut inputs, token, cwd)?;
+        } else {
+            consumed_pattern = true;
+        }
+        index += 1;
+    }
+
+    let mut analysis = SingleCommandAnalysis {
+        inputs,
+        adapter_ids: vec![CommandAdapterId::Fd],
+        fallback_used: false,
+        default_watch_root_used: false,
+        filtered_output_count: 0,
+        side_effect_profile: SideEffectProfile::ReadOnly,
+        status: CommandAnalysisStatus::NoInputs,
+    };
+    apply_redirects(&mut analysis, redirects, cwd)?;
+    Ok(analysis)
+}
+
 fn analyze_sed(
     argv: &[String],
     redirects: &[ShellRedirect],
@@ -2035,6 +2404,360 @@ fn analyze_dd(
     Ok(analysis)
 }
 
+fn analyze_protoc(
+    argv: &[String],
+    redirects: &[ShellRedirect],
+    cwd: &Path,
+) -> Result<SingleCommandAnalysis> {
+    if argv
+        .iter()
+        .skip(1)
+        .any(|token| token == "--plugin" || token.starts_with("--plugin="))
+    {
+        return analyze_fallback(argv, redirects, cwd);
+    }
+
+    let mut inputs = Vec::new();
+    let mut filtered_output_count = 0usize;
+    let mut positional_only = false;
+    let mut index = 1usize;
+
+    while index < argv.len() {
+        let token = argv[index].as_str();
+        if !positional_only && token == "--" {
+            positional_only = true;
+            index += 1;
+            continue;
+        }
+
+        if token.starts_with('@') {
+            push_inferred_input(&mut inputs, &token[1..], cwd)?;
+            index += 1;
+            continue;
+        }
+
+        if !positional_only {
+            if token == "-I" || token == "--proto_path" {
+                if let Some(value) = argv.get(index + 1) {
+                    push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                }
+                index += 2;
+                continue;
+            }
+            if token == "--descriptor_set_in" {
+                if let Some(value) = argv.get(index + 1) {
+                    push_split_inferred_inputs(&mut inputs, value.as_str(), cwd)?;
+                }
+                index += 2;
+                continue;
+            }
+            if token == "-o" || token == "--descriptor_set_out" || token == "--dependency_out" {
+                filtered_output_count += usize::from(argv.get(index + 1).is_some());
+                index += 2;
+                continue;
+            }
+            if token.starts_with("-I") && token.len() > 2 {
+                push_inferred_input(&mut inputs, &token[2..], cwd)?;
+                index += 1;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--proto_path=") {
+                push_inferred_input(&mut inputs, value, cwd)?;
+                index += 1;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--descriptor_set_in=") {
+                push_split_inferred_inputs(&mut inputs, value, cwd)?;
+                index += 1;
+                continue;
+            }
+            if token.starts_with("-o") && token.len() > 2 {
+                filtered_output_count += 1;
+                index += 1;
+                continue;
+            }
+            if token.starts_with("--descriptor_set_out=")
+                || token.starts_with("--dependency_out=")
+                || is_protoc_output_option(token)
+            {
+                filtered_output_count += 1;
+                index += 1;
+                continue;
+            }
+            if token.starts_with("--") && token.trim_start_matches('-').ends_with("_out") {
+                filtered_output_count += usize::from(argv.get(index + 1).is_some());
+                index += 2;
+                continue;
+            }
+            if token.starts_with('-') {
+                index += 1;
+                continue;
+            }
+        }
+
+        if token.ends_with(".proto") {
+            push_inferred_input(&mut inputs, token, cwd)?;
+        }
+        index += 1;
+    }
+
+    let mut analysis = SingleCommandAnalysis {
+        inputs,
+        adapter_ids: vec![CommandAdapterId::Protoc],
+        fallback_used: false,
+        default_watch_root_used: false,
+        filtered_output_count,
+        side_effect_profile: if filtered_output_count > 0 {
+            SideEffectProfile::WritesExcludedOutputs
+        } else {
+            SideEffectProfile::ReadOnly
+        },
+        status: CommandAnalysisStatus::NoInputs,
+    };
+    apply_redirects(&mut analysis, redirects, cwd)?;
+    Ok(analysis)
+}
+
+fn analyze_flatc(
+    argv: &[String],
+    redirects: &[ShellRedirect],
+    cwd: &Path,
+) -> Result<SingleCommandAnalysis> {
+    if argv.iter().skip(1).any(|token| token == "--") {
+        return analyze_fallback(argv, redirects, cwd);
+    }
+
+    let mut inputs = Vec::new();
+    let mut filtered_output_count = 0usize;
+    let mut index = 1usize;
+
+    while index < argv.len() {
+        let token = argv[index].as_str();
+        if token == "-I" || token == "--conform" || token == "--conform-includes" {
+            if let Some(value) = argv.get(index + 1) {
+                push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+            }
+            index += 2;
+            continue;
+        }
+        if token == "-o" {
+            filtered_output_count += usize::from(argv.get(index + 1).is_some());
+            index += 2;
+            continue;
+        }
+        if token.starts_with("-I") && token.len() > 2 {
+            push_inferred_input(&mut inputs, &token[2..], cwd)?;
+            index += 1;
+            continue;
+        }
+        if token.starts_with("-o") && token.len() > 2 {
+            filtered_output_count += 1;
+            index += 1;
+            continue;
+        }
+        if let Some(value) = token.strip_prefix("--conform=") {
+            push_inferred_input(&mut inputs, value, cwd)?;
+            index += 1;
+            continue;
+        }
+        if let Some(value) = token.strip_prefix("--conform-includes=") {
+            push_inferred_input(&mut inputs, value, cwd)?;
+            index += 1;
+            continue;
+        }
+        if token.starts_with('-') {
+            index += 1;
+            continue;
+        }
+
+        push_inferred_input(&mut inputs, token, cwd)?;
+        index += 1;
+    }
+
+    let mut analysis = SingleCommandAnalysis {
+        inputs,
+        adapter_ids: vec![CommandAdapterId::Flatc],
+        fallback_used: false,
+        default_watch_root_used: false,
+        filtered_output_count,
+        side_effect_profile: if filtered_output_count > 0 {
+            SideEffectProfile::WritesExcludedOutputs
+        } else {
+            SideEffectProfile::ReadOnly
+        },
+        status: CommandAnalysisStatus::NoInputs,
+    };
+    apply_redirects(&mut analysis, redirects, cwd)?;
+    Ok(analysis)
+}
+
+fn analyze_thrift(
+    argv: &[String],
+    redirects: &[ShellRedirect],
+    cwd: &Path,
+) -> Result<SingleCommandAnalysis> {
+    let mut inputs = Vec::new();
+    let mut filtered_output_count = 0usize;
+    let mut positional_only = false;
+    let mut index = 1usize;
+
+    while index < argv.len() {
+        let token = argv[index].as_str();
+        if !positional_only && token == "--" {
+            positional_only = true;
+            index += 1;
+            continue;
+        }
+
+        if !positional_only {
+            if token == "-I" {
+                if let Some(value) = argv.get(index + 1) {
+                    push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                }
+                index += 2;
+                continue;
+            }
+            if token == "-out" || token == "-o" {
+                filtered_output_count += usize::from(argv.get(index + 1).is_some());
+                index += 2;
+                continue;
+            }
+            if token == "--gen" {
+                index += 2;
+                continue;
+            }
+            if token == "-r" || token == "--recurse" || token.starts_with("--gen=") {
+                index += 1;
+                continue;
+            }
+            if token.starts_with("-I") && token.len() > 2 {
+                push_inferred_input(&mut inputs, &token[2..], cwd)?;
+                index += 1;
+                continue;
+            }
+            if token.starts_with("-out") && token.len() > 4 {
+                filtered_output_count += 1;
+                index += 1;
+                continue;
+            }
+            if token.starts_with("-o") && token.len() > 2 {
+                filtered_output_count += 1;
+                index += 1;
+                continue;
+            }
+            if token.starts_with('-') {
+                index += 1;
+                continue;
+            }
+        }
+
+        if token.ends_with(".thrift") {
+            push_inferred_input(&mut inputs, token, cwd)?;
+        }
+        index += 1;
+    }
+
+    let mut analysis = SingleCommandAnalysis {
+        inputs,
+        adapter_ids: vec![CommandAdapterId::Thrift],
+        fallback_used: false,
+        default_watch_root_used: false,
+        filtered_output_count,
+        side_effect_profile: if filtered_output_count > 0 {
+            SideEffectProfile::WritesExcludedOutputs
+        } else {
+            SideEffectProfile::ReadOnly
+        },
+        status: CommandAnalysisStatus::NoInputs,
+    };
+    apply_redirects(&mut analysis, redirects, cwd)?;
+    Ok(analysis)
+}
+
+fn analyze_capnp(
+    argv: &[String],
+    redirects: &[ShellRedirect],
+    cwd: &Path,
+) -> Result<SingleCommandAnalysis> {
+    if argv.get(1).map(String::as_str) != Some("compile") {
+        return analyze_fallback(argv, redirects, cwd);
+    }
+
+    let mut inputs = Vec::new();
+    let mut filtered_output_count = 0usize;
+    let mut positional_only = false;
+    let mut index = 2usize;
+
+    while index < argv.len() {
+        let token = argv[index].as_str();
+        if !positional_only && token == "--" {
+            positional_only = true;
+            index += 1;
+            continue;
+        }
+
+        if !positional_only {
+            if token == "-I" {
+                if let Some(value) = argv.get(index + 1) {
+                    push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                }
+                index += 2;
+                continue;
+            }
+            if token == "-o" {
+                filtered_output_count += usize::from(argv.get(index + 1).is_some());
+                index += 2;
+                continue;
+            }
+            if token.starts_with("-I") && token.len() > 2 {
+                push_inferred_input(&mut inputs, &token[2..], cwd)?;
+                index += 1;
+                continue;
+            }
+            if token.starts_with("-o") && token.len() > 2 {
+                filtered_output_count += 1;
+                index += 1;
+                continue;
+            }
+            if token.starts_with('-') {
+                index += 1;
+                continue;
+            }
+        }
+
+        if token.ends_with(".capnp") {
+            push_inferred_input(&mut inputs, token, cwd)?;
+        }
+        index += 1;
+    }
+
+    let mut analysis = SingleCommandAnalysis {
+        inputs,
+        adapter_ids: vec![CommandAdapterId::CapnpCompile],
+        fallback_used: false,
+        default_watch_root_used: false,
+        filtered_output_count,
+        side_effect_profile: if filtered_output_count > 0 {
+            SideEffectProfile::WritesExcludedOutputs
+        } else {
+            SideEffectProfile::ReadOnly
+        },
+        status: CommandAnalysisStatus::NoInputs,
+    };
+    apply_redirects(&mut analysis, redirects, cwd)?;
+    Ok(analysis)
+}
+
+fn is_protoc_output_option(token: &str) -> bool {
+    token.starts_with("--")
+        && token
+            .trim_start_matches('-')
+            .split_once('=')
+            .map(|(name, _)| name)
+            .unwrap_or_else(|| token.trim_start_matches('-'))
+            .ends_with("_out")
+}
+
 fn analyze_default_current_dir_reader(
     argv: &[String],
     redirects: &[ShellRedirect],
@@ -2385,6 +3108,14 @@ fn is_path_option_name(option_name: &str) -> bool {
     )
 }
 
+fn push_split_inferred_inputs(inputs: &mut Vec<WatchInput>, raw: &str, cwd: &Path) -> Result<()> {
+    for value in env::split_paths(&OsString::from(raw)) {
+        let value = value.to_string_lossy();
+        push_inferred_input(inputs, value.as_ref(), cwd)?;
+    }
+    Ok(())
+}
+
 fn push_inferred_input(inputs: &mut Vec<WatchInput>, raw: &str, cwd: &Path) -> Result<()> {
     let trimmed = raw.trim();
     if trimmed.is_empty() || trimmed == "-" {
@@ -2488,7 +3219,7 @@ fn is_dynamic_shell_token(token: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeSet, ffi::OsString, fs};
+    use std::{collections::BTreeSet, env, ffi::OsString, fs, path::PathBuf};
 
     use super::{
         analyze_argv, analyze_shell_expression, help_inventory, render_after_long_help,
@@ -2581,6 +3312,97 @@ mod tests {
     }
 
     #[test]
+    fn ripgrep_and_ag_watch_roots_but_not_patterns() {
+        let cwd = tempfile::tempdir().expect("create tempdir");
+        let pattern_file = cwd.path().join("patterns.txt");
+        let ignore_file = cwd.path().join(".rgignore");
+
+        let rg = analyze_argv(
+            &[
+                OsString::from("rg"),
+                OsString::from("TODO"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(rg.adapter_ids, vec![CommandAdapterId::Ripgrep]);
+        assert_path_inputs(&rg, &[cwd.path().join("src")]);
+
+        let rg_with_pattern_files = analyze_argv(
+            &[
+                OsString::from("rg"),
+                OsString::from("-g"),
+                OsString::from("*.rs"),
+                OsString::from("-f"),
+                pattern_file.clone().into_os_string(),
+                OsString::from("--ignore-file"),
+                ignore_file.clone().into_os_string(),
+                OsString::from("crates/with-watch"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            rg_with_pattern_files.adapter_ids,
+            vec![CommandAdapterId::Ripgrep]
+        );
+        assert_path_inputs(
+            &rg_with_pattern_files,
+            &[
+                pattern_file,
+                ignore_file,
+                cwd.path().join("crates/with-watch"),
+            ],
+        );
+
+        let ag = analyze_argv(
+            &[
+                OsString::from("ag"),
+                OsString::from("TODO"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(ag.adapter_ids, vec![CommandAdapterId::SilverSearcher]);
+        assert_path_inputs(&ag, &[cwd.path().join("src")]);
+    }
+
+    #[test]
+    fn fd_uses_query_pattern_then_roots_and_exec_variants_fall_back() {
+        let cwd = tempfile::tempdir().expect("create tempdir");
+        fs::create_dir_all(cwd.path().join("proto")).expect("create proto dir");
+        fs::create_dir_all(cwd.path().join("src")).expect("create src dir");
+
+        let analysis = analyze_argv(
+            &[
+                OsString::from("fd"),
+                OsString::from("\\.proto$"),
+                OsString::from("proto"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(analysis.adapter_ids, vec![CommandAdapterId::Fd]);
+        assert_path_inputs(&analysis, &[cwd.path().join("proto")]);
+
+        let fallback = analyze_argv(
+            &[
+                OsString::from("fd"),
+                OsString::from("-x"),
+                OsString::from("echo"),
+                OsString::from("{}"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(fallback.adapter_ids, vec![CommandAdapterId::Fallback]);
+        assert_path_inputs(&fallback, &[cwd.path().join("src")]);
+    }
+
+    #[test]
     fn sed_and_awk_ignore_inline_scripts() {
         let cwd = tempfile::tempdir().expect("create tempdir");
         let sed = analyze_argv(
@@ -2605,6 +3427,145 @@ mod tests {
         )
         .expect("analyze");
         assert_eq!(awk.inputs.len(), 1);
+    }
+
+    #[test]
+    fn schema_codegen_adapters_watch_inputs_and_filter_outputs() {
+        let cwd = tempfile::tempdir().expect("create tempdir");
+        let descriptor_set = env::join_paths([
+            cwd.path().join("first.binpb"),
+            cwd.path().join("second.binpb"),
+        ])
+        .expect("join descriptor set paths");
+
+        let protoc = analyze_argv(
+            &[
+                OsString::from("protoc"),
+                OsString::from("-I"),
+                OsString::from("proto"),
+                OsString::from("--descriptor_set_in"),
+                descriptor_set.clone(),
+                OsString::from("proto/service.proto"),
+                OsString::from("--go_out"),
+                OsString::from("gen"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(protoc.adapter_ids, vec![CommandAdapterId::Protoc]);
+        assert_eq!(protoc.filtered_output_count, 1);
+        assert_eq!(
+            protoc.side_effect_profile,
+            SideEffectProfile::WritesExcludedOutputs
+        );
+        assert_path_inputs(
+            &protoc,
+            &[
+                cwd.path().join("proto"),
+                cwd.path().join("first.binpb"),
+                cwd.path().join("second.binpb"),
+                cwd.path().join("proto/service.proto"),
+            ],
+        );
+
+        let flatc = analyze_argv(
+            &[
+                OsString::from("flatc"),
+                OsString::from("--rust"),
+                OsString::from("-I"),
+                OsString::from("schemas/include"),
+                OsString::from("--conform"),
+                OsString::from("base.fbs"),
+                OsString::from("-o"),
+                OsString::from("gen"),
+                OsString::from("schema.fbs"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(flatc.adapter_ids, vec![CommandAdapterId::Flatc]);
+        assert_eq!(flatc.filtered_output_count, 1);
+        assert_path_inputs(
+            &flatc,
+            &[
+                cwd.path().join("schemas/include"),
+                cwd.path().join("base.fbs"),
+                cwd.path().join("schema.fbs"),
+            ],
+        );
+
+        let thrift = analyze_argv(
+            &[
+                OsString::from("thrift"),
+                OsString::from("--gen"),
+                OsString::from("go"),
+                OsString::from("-out"),
+                OsString::from("gen"),
+                OsString::from("-I"),
+                OsString::from("idl"),
+                OsString::from("api.thrift"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(thrift.adapter_ids, vec![CommandAdapterId::Thrift]);
+        assert_eq!(thrift.filtered_output_count, 1);
+        assert_path_inputs(
+            &thrift,
+            &[cwd.path().join("idl"), cwd.path().join("api.thrift")],
+        );
+
+        let capnp = analyze_argv(
+            &[
+                OsString::from("capnp"),
+                OsString::from("compile"),
+                OsString::from("-ocapnp"),
+                OsString::from("-I"),
+                OsString::from("schemas"),
+                OsString::from("schema.capnp"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(capnp.adapter_ids, vec![CommandAdapterId::CapnpCompile]);
+        assert_eq!(capnp.filtered_output_count, 1);
+        assert_path_inputs(
+            &capnp,
+            &[cwd.path().join("schemas"), cwd.path().join("schema.capnp")],
+        );
+    }
+
+    #[test]
+    fn schema_codegen_fallback_cases_stay_explicit() {
+        let cwd = tempfile::tempdir().expect("create tempdir");
+        fs::create_dir_all(cwd.path().join("src")).expect("create src dir");
+
+        let protoc_plugin = analyze_argv(
+            &[
+                OsString::from("protoc"),
+                OsString::from("--plugin=protoc-gen-custom=/tmp/plugin"),
+                OsString::from("src/service.proto"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(protoc_plugin.adapter_ids, vec![CommandAdapterId::Fallback]);
+        assert_path_inputs(&protoc_plugin, &[cwd.path().join("src/service.proto")]);
+
+        let capnp_non_compile = analyze_argv(
+            &[
+                OsString::from("capnp"),
+                OsString::from("eval"),
+                OsString::from("schema.capnp"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            capnp_non_compile.adapter_ids,
+            vec![CommandAdapterId::Fallback]
+        );
+        assert_path_inputs(&capnp_non_compile, &[cwd.path().join("schema.capnp")]);
     }
 
     #[test]
@@ -2823,6 +3784,13 @@ mod tests {
         assert!(dedicated_set.contains("find"));
         assert!(dedicated_set.contains("grep"));
         assert!(dedicated_set.contains("fgrep"));
+        assert!(dedicated_set.contains("rg"));
+        assert!(dedicated_set.contains("ag"));
+        assert!(dedicated_set.contains("fd"));
+        assert!(dedicated_set.contains("protoc"));
+        assert!(dedicated_set.contains("flatc"));
+        assert!(dedicated_set.contains("thrift"));
+        assert!(dedicated_set.contains("capnp"));
         assert!(dedicated_set.contains("chgrp"));
     }
 
@@ -2837,6 +3805,9 @@ mod tests {
         assert!(help.contains("Safe current-directory defaults:"));
         assert!(help.contains("Recognized but not auto-watchable commands:"));
         assert!(help.contains("exec --input escape hatch:"));
+        assert!(help.contains("grep, egrep, fgrep, rg, ag"));
+        assert!(help.contains("fd, xargs"));
+        assert!(help.contains("protoc, flatc, thrift, capnp"));
         assert!(help.contains("find, ls, dir, vdir, du"));
         assert!(help.contains("echo, printf, seq, yes, sleep"));
     }
@@ -2868,5 +3839,18 @@ mod tests {
             }
             other => panic!("unexpected watch input: {other:?}"),
         }
+    }
+
+    fn assert_path_inputs(analysis: &super::CommandAnalysis, expected_paths: &[PathBuf]) {
+        let actual = analysis
+            .inputs
+            .iter()
+            .map(|input| match input {
+                WatchInput::Path { path, .. } => path.clone(),
+                other => panic!("unexpected non-path watch input: {other:?}"),
+            })
+            .collect::<BTreeSet<_>>();
+        let expected = expected_paths.iter().cloned().collect::<BTreeSet<_>>();
+        assert_eq!(actual, expected);
     }
 }
