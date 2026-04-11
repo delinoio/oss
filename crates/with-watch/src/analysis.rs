@@ -1993,6 +1993,7 @@ fn analyze_fd(
                     | "--format"
                     | "--ignore-contain"
                     | "--max-results"
+                    | "--and"
             ) {
                 index += 2;
                 continue;
@@ -2016,6 +2017,7 @@ fn analyze_fd(
                 || token.starts_with("--format=")
                 || token.starts_with("--ignore-contain=")
                 || token.starts_with("--max-results=")
+                || token.starts_with("--and=")
             {
                 index += 1;
                 continue;
@@ -3904,6 +3906,22 @@ mod tests {
             &analysis_with_value_flags,
             &[cwd.path().join(".fdignore"), cwd.path().join("src")],
         );
+
+        let analysis_with_additional_pattern = analyze_argv(
+            &[
+                OsString::from("fd"),
+                OsString::from("--and"),
+                OsString::from("foo"),
+                OsString::from("bar"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            analysis_with_additional_pattern.adapter_ids,
+            vec![CommandAdapterId::Fd]
+        );
+        assert!(analysis_with_additional_pattern.inputs.is_empty());
 
         let analysis_with_base_directory = analyze_argv(
             &[
