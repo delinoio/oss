@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-mono"
-version = "0.6.6"
+version = "0.6.7"
 dependencies = [
  "assert_cmd",
  "cargo_metadata",
