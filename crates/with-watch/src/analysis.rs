@@ -2729,6 +2729,8 @@ fn analyze_protoc(
 
     let mut inputs = Vec::new();
     let mut filtered_output_count = 0usize;
+    let mut has_explicit_import_root = false;
+    let mut has_proto_operand = false;
     let mut positional_only = false;
     let mut index = 1usize;
 
@@ -2749,6 +2751,7 @@ fn analyze_protoc(
         if !positional_only {
             if token == "-I" || token == "--proto_path" {
                 if let Some(value) = argv.get(index + 1) {
+                    has_explicit_import_root = true;
                     push_inferred_input(&mut inputs, value.as_str(), cwd)?;
                 }
                 index += 2;
@@ -2767,11 +2770,13 @@ fn analyze_protoc(
                 continue;
             }
             if token.starts_with("-I") && token.len() > 2 {
+                has_explicit_import_root = true;
                 push_inferred_input(&mut inputs, &token[2..], cwd)?;
                 index += 1;
                 continue;
             }
             if let Some(value) = token.strip_prefix("--proto_path=") {
+                has_explicit_import_root = true;
                 push_inferred_input(&mut inputs, value, cwd)?;
                 index += 1;
                 continue;
@@ -2806,9 +2811,14 @@ fn analyze_protoc(
         }
 
         if token.ends_with(".proto") {
+            has_proto_operand = true;
             push_inferred_input(&mut inputs, token, cwd)?;
         }
         index += 1;
+    }
+
+    if has_proto_operand && !has_explicit_import_root {
+        push_inferred_input(&mut inputs, ".", cwd)?;
     }
 
     let mut analysis = SingleCommandAnalysis {
@@ -3952,6 +3962,26 @@ mod tests {
                 cwd.path().join("second.binpb"),
                 cwd.path().join("proto/service.proto"),
             ],
+        );
+
+        let protoc_with_implicit_import_root = analyze_argv(
+            &[
+                OsString::from("protoc"),
+                OsString::from("service.proto"),
+                OsString::from("--go_out"),
+                OsString::from("gen"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            protoc_with_implicit_import_root.adapter_ids,
+            vec![CommandAdapterId::Protoc]
+        );
+        assert_eq!(protoc_with_implicit_import_root.filtered_output_count, 1);
+        assert_path_inputs(
+            &protoc_with_implicit_import_root,
+            &[cwd.path().to_path_buf(), cwd.path().join("service.proto")],
         );
 
         let flatc = analyze_argv(

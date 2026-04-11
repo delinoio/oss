@@ -47,7 +47,7 @@
 - Plain `ls`/`dir`/`vdir` directory operands must watch only the named directory plus immediate children, `-R` must switch them to recursive metadata tree snapshots, and `-d`/`--directory` must watch only the named path entry.
 - Built-in inference must exclude known outputs, scripts, inline patterns, and opaque fallback operands from the watch set.
 - First-class search adapters must cover `grep`, `rg`, `ag`, and `fd`; inline search patterns, globs, and type filters must be treated as control data while explicit search roots and file-valued pattern/ignore inputs stay watchable.
-- First-class schema/codegen adapters must cover `protoc`, `flatc`, `thrift`, and `capnp compile`; explicit schema inputs, include/import roots, descriptor/arg files, and conform-reference inputs stay watchable while generated output paths remain filtered.
+- First-class schema/codegen adapters must cover `protoc`, `flatc`, `thrift`, and `capnp compile`; explicit schema inputs, include/import roots, descriptor/arg files, and conform-reference inputs stay watchable while generated output paths remain filtered. When `protoc` runs without `--proto_path`, the current working directory stays watchable as the implicit import root.
 - Wrapper commands (`env`, `nice`, `nohup`, `stdbuf`, and `timeout`) must unwrap to the delegated command before adapter selection.
 - `exec --input` remains the canonical explicit input contract when inference is insufficient, but command-side side-effect metadata may still be inferred for rerun suppression and logging.
 - Commands marked as `WritesWatchedInputs` must refresh the baseline snapshot after each run and suppress reruns caused only by their own writes while they were executing.
