@@ -30,6 +30,7 @@
 - Preserve rustup-like shim behavior: symlink strategy plus executable-name dispatch.
 - Keep channel and command identifiers stable and documented.
 - Record storage and download behavior in project docs whenever changed.
+- Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.
 
 ### cargo-mono-Specific Rules
 
@@ -39,6 +40,7 @@
 - Keep `publish` delegation aligned with the documented contract: `cargo mono publish` must invoke `cargo publish --no-verify` in both execute and dry-run modes.
 - Ensure release automation (`bump`, `publish`) logs include structured operational context.
 - Keep runtime error output on the fixed `Summary/Context/Hint` three-line contract and include only safe debugging context values.
+- Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.
 
 ### with-watch-Specific Rules
 
@@ -48,6 +50,7 @@
 - Keep shell support scoped to command-line expressions and do not silently broaden into shell-script control-flow without updating docs first.
 - Keep logs sufficient to explain inferred inputs, watcher anchors, snapshot counts, and rerun causes.
 - Keep public release contracts aligned across root publish-tag allowlist, `.github/workflows/release-with-watch.yml`, and Homebrew packaging assets.
+- Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.
 
 ### serde-feather-Specific Rules
 

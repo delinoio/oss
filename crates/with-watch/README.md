@@ -17,6 +17,29 @@ cargo install with-watch
 brew install delinoio/tap/with-watch
 ```
 
+```sh
+./scripts/install/with-watch.sh --version latest --method package-manager
+```
+
+```powershell
+./scripts/install/with-watch.ps1 -Version latest -Method direct
+```
+
+```sh
+cargo binstall with-watch --no-confirm
+```
+
+GitHub Actions:
+
+```yaml
+- uses: taiki-e/install-action@v2
+  with:
+    tool: cargo-binstall
+- run: cargo binstall with-watch --no-confirm
+```
+
+Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and require `cosign`.
+
 ## Command modes
 
 - Passthrough mode: `with-watch [--no-hash] [--clear] <utility> [args...]`

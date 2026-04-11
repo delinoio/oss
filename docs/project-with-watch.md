@@ -32,7 +32,9 @@ Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbit
 - Safe pathless default watch roots are limited to the built-in allowlist (`ls`, `dir`, `vdir`, `du`, and `find`).
 - Commands that mutate watched inputs directly must refresh the baseline snapshot after each run and suppress self-triggered reruns caused by their own writes.
 - Path-based watch inputs must anchor watcher subscriptions at the nearest existing directory so replace-style writers keep emitting later external changes.
-- Public crate distribution must remain `cargo install with-watch`.
+- Public crate installation must continue to support `cargo install with-watch`.
+- Direct installers must remain available at `scripts/install/with-watch.sh` and `scripts/install/with-watch.ps1`; direct installs must verify `SHA256SUMS` entries and Sigstore bundle sidecars and require `cosign`.
+- `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable third-party quick-install and compile fallback strategies.
 - Publish tag eligibility must remain enabled through root `[workspace.metadata.cargo-mono.publish.tag].packages`, and release tag naming must remain `with-watch@v<version>`.
 - Release automation must publish signed GitHub Release assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, including standalone binaries (`with-watch-<os>-<arch>[.exe]`) and archives (`with-watch-<os>-<arch>.tar.gz|zip`).
 - Homebrew installation must consume prebuilt `with-watch` release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
@@ -40,6 +42,7 @@ Provide a Rust-based CLI wrapper that reruns delegated shell utilities and arbit
 ## Change Policy
 - Update this index and `docs/crates-with-watch-foundation.md` together when CLI shape, watch inference behavior, operator guidance, release automation, side-effect suppression, or storage/logging contracts change.
 - Update root `Cargo.toml`, `.github/workflows/release-with-watch.yml`, `scripts/release/update-homebrew.sh`, and `packaging/homebrew/templates/with-watch.rb.tmpl` in the same change when with-watch release tags, artifact names, or package-manager distribution contracts change.
+- Keep `scripts/install/with-watch.sh`, `scripts/install/with-watch.ps1`, and `crates/with-watch/Cargo.toml` synchronized with release asset names and signing contracts.
 - Keep root `AGENTS.md` and `crates/AGENTS.md` aligned with ownership and project-ID changes.
 
 ## References

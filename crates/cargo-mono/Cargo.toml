@@ -4,6 +4,40 @@ version = "0.6.6"
 edition = "2021"
 license = "MIT"
 description = "Cargo subcommand for Rust monorepo management"
+repository = "https://github.com/delinoio/oss"
+
+[package.metadata.binstall]
+disabled-strategies = ["quick-install", "compile"]
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/cargo-mono@v{ version }/cargo-mono-linux-amd64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "cargo-mono"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/cargo-mono@v{ version }/cargo-mono-linux-arm64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "cargo-mono"
+
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/cargo-mono@v{ version }/cargo-mono-darwin-amd64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "cargo-mono"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/cargo-mono@v{ version }/cargo-mono-darwin-arm64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "cargo-mono"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/cargo-mono@v{ version }/cargo-mono-windows-amd64.zip"
+pkg-fmt = "zip"
+bin-dir = "cargo-mono.exe"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/cargo-mono@v{ version }/cargo-mono-windows-arm64.zip"
+pkg-fmt = "zip"
+bin-dir = "cargo-mono.exe"
 
 [dependencies]
 cargo_metadata = "0.19.2"

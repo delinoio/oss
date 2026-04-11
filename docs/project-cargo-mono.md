@@ -22,6 +22,8 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 - Remote tag publication remains CI-owned: `auto-publish` pushes release tags with `git push --tags` after a successful `publish` run, with checkout credential persistence disabled and authentication bound to `secrets.GH_TOKEN` (non-`GITHUB_TOKEN`) so downstream tag-triggered workflows run.
 - Publish tag configuration must be opt-in through `[workspace.metadata.cargo-mono.publish.tag].packages`, and tag naming must remain `<crate>@v<version>`.
 - Tag release automation must detect `cargo-mono@v*` and produce signed prebuilt artifacts for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, plus Sigstore bundle sidecars (`*.sigstore.json`) without changing CLI command behavior.
+- Direct installers must remain available at `scripts/install/cargo-mono.sh` and `scripts/install/cargo-mono.ps1`; direct installs must verify `SHA256SUMS` entries and Sigstore bundle sidecars and require `cosign`.
+- `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable third-party quick-install and compile fallback strategies.
 - Runtime failure messaging must follow the `Summary/Context/Hint` three-line contract while command behavior, output schema, and exit code semantics remain stable.
 - Dependency-cycle conflicts in package ordering must identify cycle package names and dependency scope in `Context` without changing CLI flags, command behavior, or JSON output schema.
 - Human output color controls must remain stable: global `--color <auto|always|never>`, `CARGO_MONO_OUTPUT_COLOR`, and `NO_COLOR` with precedence `--color` > `CARGO_MONO_OUTPUT_COLOR` > `NO_COLOR` > auto-detection.
@@ -29,6 +31,7 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 
 ## Change Policy
 - Update this index and `docs/crates-cargo-mono-foundation.md` together when command shape, release workflow, or ownership changes.
+- Keep `scripts/install/cargo-mono.sh`, `scripts/install/cargo-mono.ps1`, and `crates/cargo-mono/Cargo.toml` synchronized with release asset names and signing contracts.
 - Keep `crates/AGENTS.md` and root `AGENTS.md` aligned with structural changes.
 
 ## References

@@ -26,6 +26,8 @@
 - Publish tag creation is opt-in by default (no config means no tags), must remain local-only (`git tag` without push), and must use `<crate>@v<version>` naming.
 - Remote tag publication is owned by CI automation: `.github/workflows/auto-publish.yml` must run `git push --tags` after a successful `publish` command, with checkout credential persistence disabled and authentication bound to `secrets.GH_TOKEN` (non-`GITHUB_TOKEN`) so downstream tag-triggered workflows run.
 - If `publish` tag configuration references unknown workspace packages, command execution must fail with `invalid-input`.
+- Direct installers must remain available at `scripts/install/cargo-mono.sh` and `scripts/install/cargo-mono.ps1`, and direct installs must verify `SHA256SUMS` plus Sigstore bundle sidecars via `cosign verify-blob --bundle`.
+- `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies.
 - Human-output color contract:
   - Global CLI flag: `--color <auto|always|never>`.
   - Environment override: `CARGO_MONO_OUTPUT_COLOR=auto|always|never`.
@@ -68,11 +70,13 @@
 - Release contract checks should align with `.github/workflows/release-cargo-mono.yml`.
 - Release assets must cover `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`.
 - Release signing outputs must use Sigstore bundle sidecars (`SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json`).
+- Install docs must keep Bash, PowerShell, `cargo-binstall`, and GitHub Actions usage aligned with the installer scripts and manifest metadata.
 
 ## Dependencies and Integrations
 - Integrates with Cargo workspace metadata and release workflows.
 - Integrates with root automation (`auto-publish`) through stable command contracts, including CI-driven tag publication.
 - Integrates with tag-based binary distribution automation (`release-cargo-mono`) through stable artifact naming and bundle-signing contracts.
+- Integrates with direct installer scripts and `cargo-binstall` metadata for prebuilt binary distribution.
 
 ## Change Triggers
 - Update `docs/project-cargo-mono.md` with this file when command identifiers or ownership changes.
