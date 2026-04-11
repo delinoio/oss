@@ -1726,8 +1726,28 @@ fn analyze_silver_searcher(
                 index += 2;
                 continue;
             }
+            if token == "--ignore-dir"
+                || token == "--depth"
+                || token == "--max-count"
+                || token == "--pager"
+                || token == "--workers"
+            {
+                index += 2;
+                continue;
+            }
             if token == "--file-search-regex" {
                 index += 2;
+                continue;
+            }
+            if token == "--after" || token == "--before" || token == "--context" {
+                if argv
+                    .get(index + 1)
+                    .is_some_and(|value| looks_like_integer(value.as_str()))
+                {
+                    index += 2;
+                } else {
+                    index += 1;
+                }
                 continue;
             }
             if token == "--path-to-ignore" {
@@ -1746,7 +1766,16 @@ fn analyze_silver_searcher(
                 index += 1;
                 continue;
             }
-            if token.starts_with("--ignore=") {
+            if token.starts_with("--ignore=")
+                || token.starts_with("--ignore-dir=")
+                || token.starts_with("--depth=")
+                || token.starts_with("--max-count=")
+                || token.starts_with("--pager=")
+                || token.starts_with("--workers=")
+                || token.starts_with("--after=")
+                || token.starts_with("--before=")
+                || token.starts_with("--context=")
+            {
                 index += 1;
                 continue;
             }
@@ -1777,6 +1806,11 @@ fn analyze_silver_searcher(
                         if let Some(value) = argv.get(index + 1) {
                             push_inferred_input(&mut inputs, value.as_str(), cwd)?;
                         }
+                        index += 2;
+                        continue;
+                    }
+                    SilverSearcherShortOption::ControlValueInline => {}
+                    SilverSearcherShortOption::ControlValueNext => {
                         index += 2;
                         continue;
                     }
@@ -1822,6 +1856,8 @@ enum SilverSearcherShortOption<'a> {
     FileSearchRegexNext,
     PathToIgnoreInline(&'a str),
     PathToIgnoreNext,
+    ControlValueInline,
+    ControlValueNext,
 }
 
 fn parse_silver_searcher_short_option(token: &str) -> Option<SilverSearcherShortOption<'_>> {
@@ -1841,6 +1877,8 @@ fn parse_silver_searcher_short_option(token: &str) -> Option<SilverSearcherShort
                 return Some(SilverSearcherShortOption::FileSearchRegexNext);
             }
             'G' => return Some(SilverSearcherShortOption::FileSearchRegexInline),
+            'm' if value.is_empty() => return Some(SilverSearcherShortOption::ControlValueNext),
+            'm' => return Some(SilverSearcherShortOption::ControlValueInline),
             'p' if value.is_empty() => return Some(SilverSearcherShortOption::PathToIgnoreNext),
             'p' => return Some(SilverSearcherShortOption::PathToIgnoreInline(value)),
             _ => {}
@@ -3024,6 +3062,13 @@ fn analyze_capnp(
                 index += 2;
                 continue;
             }
+            if token == "--import-path" {
+                if let Some(value) = argv.get(index + 1) {
+                    push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                }
+                index += 2;
+                continue;
+            }
             if token == "-o" {
                 filtered_output_count += usize::from(argv.get(index + 1).is_some());
                 index += 2;
@@ -3031,6 +3076,11 @@ fn analyze_capnp(
             }
             if token.starts_with("-I") && token.len() > 2 {
                 push_inferred_input(&mut inputs, &token[2..], cwd)?;
+                index += 1;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--import-path=") {
+                push_inferred_input(&mut inputs, value, cwd)?;
                 index += 1;
                 continue;
             }
@@ -3480,6 +3530,10 @@ fn has_glob_magic(raw: &str) -> bool {
     raw.contains('*') || raw.contains('?') || raw.contains('[')
 }
 
+fn looks_like_integer(raw: &str) -> bool {
+    raw.parse::<i64>().is_ok()
+}
+
 fn path_exists(raw: &str, cwd: &Path) -> bool {
     absolutize(raw, cwd).exists()
 }
@@ -3777,6 +3831,22 @@ mod tests {
             &[cwd.path().join(".agignore"), cwd.path().join("src")],
         );
 
+        let ag_with_long_value_flag = analyze_argv(
+            &[
+                OsString::from("ag"),
+                OsString::from("--depth"),
+                OsString::from("2"),
+                OsString::from("TODO"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            ag_with_long_value_flag.adapter_ids,
+            vec![CommandAdapterId::SilverSearcher]
+        );
+        assert!(ag_with_long_value_flag.inputs.is_empty());
+
         let ag_with_filename_pattern = analyze_argv(
             &[
                 OsString::from("ag"),
@@ -4047,6 +4117,27 @@ mod tests {
         assert_eq!(capnp.filtered_output_count, 1);
         assert_path_inputs(
             &capnp,
+            &[cwd.path().join("schemas"), cwd.path().join("schema.capnp")],
+        );
+
+        let capnp_with_long_import_path = analyze_argv(
+            &[
+                OsString::from("capnp"),
+                OsString::from("compile"),
+                OsString::from("--import-path=schemas"),
+                OsString::from("-oc++"),
+                OsString::from("schema.capnp"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            capnp_with_long_import_path.adapter_ids,
+            vec![CommandAdapterId::CapnpCompile]
+        );
+        assert_eq!(capnp_with_long_import_path.filtered_output_count, 1);
+        assert_path_inputs(
+            &capnp_with_long_import_path,
             &[cwd.path().join("schemas"), cwd.path().join("schema.capnp")],
         );
     }
