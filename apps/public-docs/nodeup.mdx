@@ -27,21 +27,6 @@ Package manager:
 - macOS/Linux: `brew install delinoio/tap/nodeup`
 - Homebrew installs prebuilt archives on macOS Intel, macOS Apple Silicon, Linux amd64, and Linux arm64
 
-Windows direct install:
-
-- `./scripts/install/nodeup.ps1 -Version latest -Method direct`
-- The PowerShell installer selects the `windows/amd64` or `windows/arm64` archive automatically based on the host architecture
-
-Script installer:
-
-```bash
-./scripts/install/nodeup.sh --version latest --method package-manager
-```
-
-```powershell
-./scripts/install/nodeup.ps1 -Version latest -Method direct
-```
-
 `cargo-binstall`:
 
 ```bash
@@ -57,7 +42,6 @@ GitHub Actions:
 - run: cargo binstall nodeup --no-confirm
 ```
 
-Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`), require `cosign`, and only support bundle-enabled releases.
 `nodeup toolchain install` supports `macOS`, `Linux`, and `Windows` x64/arm64 hosts.
 
 ## Common workflows
