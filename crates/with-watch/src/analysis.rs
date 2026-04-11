@@ -1494,6 +1494,8 @@ fn analyze_ripgrep(
                 || token == "--glob"
                 || token == "--iglob"
                 || token == "--pre-glob"
+                || token == "--type"
+                || token == "--type-not"
                 || token == "--type-add"
             {
                 index += 2;
@@ -3367,6 +3369,23 @@ mod tests {
         .expect("analyze");
         assert_eq!(ag.adapter_ids, vec![CommandAdapterId::SilverSearcher]);
         assert_path_inputs(&ag, &[cwd.path().join("src")]);
+
+        let rg_with_long_type = analyze_argv(
+            &[
+                OsString::from("rg"),
+                OsString::from("--type"),
+                OsString::from("rust"),
+                OsString::from("TODO"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            rg_with_long_type.adapter_ids,
+            vec![CommandAdapterId::Ripgrep]
+        );
+        assert_path_inputs(&rg_with_long_type, &[cwd.path().join("src")]);
     }
 
     #[test]
