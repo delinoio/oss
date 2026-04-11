@@ -1777,6 +1777,9 @@ fn analyze_fd(
     }
 
     let mut inputs = Vec::new();
+    let mut base_dir: Option<String> = None;
+    let mut deferred_inputs = Vec::new();
+    let mut deferred_search_roots = Vec::new();
     let mut consumed_pattern = false;
     let mut positional_only = false;
     let mut index = 1usize;
@@ -1792,43 +1795,115 @@ fn analyze_fd(
         if !positional_only {
             if token == "--search-path" {
                 if let Some(value) = argv.get(index + 1) {
-                    push_inferred_input(&mut inputs, value.as_str(), cwd)?;
+                    deferred_search_roots.push(value.clone());
+                }
+                index += 2;
+                continue;
+            }
+            if token == "--ignore-file" {
+                if let Some(value) = argv.get(index + 1) {
+                    deferred_inputs.push(value.clone());
+                }
+                index += 2;
+                continue;
+            }
+            if token == "--base-directory" {
+                if let Some(value) = argv.get(index + 1) {
+                    base_dir = Some(value.clone());
                 }
                 index += 2;
                 continue;
             }
             if let Some(value) = token.strip_prefix("--search-path=") {
-                push_inferred_input(&mut inputs, value, cwd)?;
+                deferred_search_roots.push(value.to_owned());
                 index += 1;
                 continue;
             }
-            if token == "-e"
-                || token == "-E"
-                || token == "-t"
-                || token == "-c"
-                || token == "-d"
-                || token == "--extension"
-                || token == "--exclude"
-                || token == "--type"
-                || token == "--color"
-                || token == "--max-depth"
-                || token == "--min-depth"
-            {
+            if let Some(value) = token.strip_prefix("--ignore-file=") {
+                deferred_inputs.push(value.to_owned());
+                index += 1;
+                continue;
+            }
+            if let Some(value) = token.strip_prefix("--base-directory=") {
+                base_dir = Some(value.to_owned());
+                index += 1;
+                continue;
+            }
+            if matches!(
+                token,
+                "-e" | "-E"
+                    | "-t"
+                    | "-c"
+                    | "-d"
+                    | "-j"
+                    | "-o"
+                    | "-S"
+                    | "--extension"
+                    | "--exclude"
+                    | "--type"
+                    | "--color"
+                    | "--max-depth"
+                    | "--min-depth"
+                    | "--threads"
+                    | "--size"
+                    | "--owner"
+                    | "--changed-within"
+                    | "--changed-before"
+                    | "--changed-after"
+                    | "--change-newer-than"
+                    | "--change-older-than"
+                    | "--newer"
+                    | "--older"
+                    | "--path-separator"
+                    | "--format"
+                    | "--ignore-contain"
+                    | "--max-results"
+            ) {
                 index += 2;
                 continue;
             }
-            if token.starts_with("-e")
-                || token.starts_with("-E")
-                || token.starts_with("-t")
-                || token.starts_with("-c")
-                || token.starts_with("-d")
-                || token.starts_with("--extension=")
+            if token.starts_with("--extension=")
                 || token.starts_with("--exclude=")
                 || token.starts_with("--type=")
                 || token.starts_with("--color=")
                 || token.starts_with("--max-depth=")
                 || token.starts_with("--min-depth=")
+                || token.starts_with("--threads=")
+                || token.starts_with("--size=")
+                || token.starts_with("--owner=")
+                || token.starts_with("--changed-within=")
+                || token.starts_with("--changed-before=")
+                || token.starts_with("--changed-after=")
+                || token.starts_with("--change-newer-than=")
+                || token.starts_with("--change-older-than=")
+                || token.starts_with("--newer=")
+                || token.starts_with("--older=")
+                || token.starts_with("--path-separator=")
+                || token.starts_with("--format=")
+                || token.starts_with("--ignore-contain=")
+                || token.starts_with("--max-results=")
             {
+                index += 1;
+                continue;
+            }
+            if let Some(option) = parse_fd_short_option(token) {
+                match option {
+                    FdShortOption::BaseDirectoryInline(value) => {
+                        base_dir = Some(value.to_owned());
+                    }
+                    FdShortOption::BaseDirectoryNext => {
+                        if let Some(value) = argv.get(index + 1) {
+                            base_dir = Some(value.clone());
+                        }
+                        index += 2;
+                        continue;
+                    }
+                    FdShortOption::ValueInline => {}
+                    FdShortOption::ValueNext => {
+                        index += 2;
+                        continue;
+                    }
+                }
                 index += 1;
                 continue;
             }
@@ -1839,11 +1914,23 @@ fn analyze_fd(
         }
 
         if consumed_pattern {
-            push_inferred_input(&mut inputs, token, cwd)?;
+            deferred_search_roots.push(token.to_owned());
         } else {
             consumed_pattern = true;
         }
         index += 1;
+    }
+
+    let fd_cwd = base_dir
+        .as_deref()
+        .map(|value| absolutize(value, cwd))
+        .unwrap_or_else(|| cwd.to_path_buf());
+
+    for input in deferred_inputs {
+        push_inferred_input(&mut inputs, input.as_str(), fd_cwd.as_path())?;
+    }
+    for root in deferred_search_roots {
+        push_inferred_input(&mut inputs, root.as_str(), fd_cwd.as_path())?;
     }
 
     let mut analysis = SingleCommandAnalysis {
@@ -1857,6 +1944,38 @@ fn analyze_fd(
     };
     apply_redirects(&mut analysis, redirects, cwd)?;
     Ok(analysis)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FdShortOption<'a> {
+    BaseDirectoryInline(&'a str),
+    BaseDirectoryNext,
+    ValueInline,
+    ValueNext,
+}
+
+fn parse_fd_short_option(token: &str) -> Option<FdShortOption<'_>> {
+    if !token.starts_with('-') || token == "-" || token.starts_with("--") {
+        return None;
+    }
+
+    let flags = token.trim_start_matches('-');
+    for (index, flag) in flags.char_indices() {
+        let value = &flags[index + flag.len_utf8()..];
+        match flag {
+            'C' if value.is_empty() => return Some(FdShortOption::BaseDirectoryNext),
+            'C' => return Some(FdShortOption::BaseDirectoryInline(value)),
+            'E' | 'S' | 'c' | 'd' | 'e' | 'j' | 'o' | 't' if value.is_empty() => {
+                return Some(FdShortOption::ValueNext);
+            }
+            'E' | 'S' | 'c' | 'd' | 'e' | 'j' | 'o' | 't' => {
+                return Some(FdShortOption::ValueInline);
+            }
+            _ => {}
+        }
+    }
+
+    None
 }
 
 fn analyze_sed(
@@ -3520,6 +3639,7 @@ mod tests {
         let cwd = tempfile::tempdir().expect("create tempdir");
         fs::create_dir_all(cwd.path().join("proto")).expect("create proto dir");
         fs::create_dir_all(cwd.path().join("src")).expect("create src dir");
+        fs::create_dir_all(cwd.path().join("workspace/src")).expect("create nested src dir");
 
         let analysis = analyze_argv(
             &[
@@ -3532,6 +3652,48 @@ mod tests {
         .expect("analyze");
         assert_eq!(analysis.adapter_ids, vec![CommandAdapterId::Fd]);
         assert_path_inputs(&analysis, &[cwd.path().join("proto")]);
+
+        let analysis_with_value_flags = analyze_argv(
+            &[
+                OsString::from("fd"),
+                OsString::from("--ignore-file"),
+                OsString::from(".fdignore"),
+                OsString::from("--max-results"),
+                OsString::from("1"),
+                OsString::from("TODO"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            analysis_with_value_flags.adapter_ids,
+            vec![CommandAdapterId::Fd]
+        );
+        assert_path_inputs(
+            &analysis_with_value_flags,
+            &[cwd.path().join(".fdignore"), cwd.path().join("src")],
+        );
+
+        let analysis_with_base_directory = analyze_argv(
+            &[
+                OsString::from("fd"),
+                OsString::from("--base-directory"),
+                OsString::from("workspace"),
+                OsString::from("TODO"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            analysis_with_base_directory.adapter_ids,
+            vec![CommandAdapterId::Fd]
+        );
+        assert_path_inputs(
+            &analysis_with_base_directory,
+            &[cwd.path().join("workspace/src")],
+        );
 
         let fallback = analyze_argv(
             &[
