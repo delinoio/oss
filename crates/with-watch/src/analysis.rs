@@ -1906,7 +1906,6 @@ fn analyze_fd(
     let mut base_dir: Option<String> = None;
     let mut deferred_inputs = Vec::new();
     let mut deferred_search_roots = Vec::new();
-    let mut extension_filter_present = false;
     let mut positionals = Vec::new();
     let mut positional_only = false;
     let mut index = 1usize;
@@ -1942,7 +1941,6 @@ fn analyze_fd(
                 continue;
             }
             if token == "--extension" {
-                extension_filter_present = true;
                 index += 2;
                 continue;
             }
@@ -1962,7 +1960,6 @@ fn analyze_fd(
                 continue;
             }
             if token.starts_with("--extension=") {
-                extension_filter_present = true;
                 index += 1;
                 continue;
             }
@@ -2034,11 +2031,8 @@ fn analyze_fd(
                         index += 2;
                         continue;
                     }
-                    FdShortOption::ExtensionInline => {
-                        extension_filter_present = true;
-                    }
+                    FdShortOption::ExtensionInline => {}
                     FdShortOption::ExtensionNext => {
-                        extension_filter_present = true;
                         index += 2;
                         continue;
                     }
@@ -2068,9 +2062,6 @@ fn analyze_fd(
 
     match positionals.len() {
         0 => {}
-        1 if extension_filter_present && deferred_search_roots.is_empty() => {
-            deferred_search_roots.push(positionals.remove(0));
-        }
         1 => {}
         _ => {
             for token in positionals.into_iter().skip(1) {
@@ -3957,10 +3948,24 @@ mod tests {
             analysis_without_explicit_pattern.adapter_ids,
             vec![CommandAdapterId::Fd]
         );
-        assert_path_inputs(
-            &analysis_without_explicit_pattern,
-            &[cwd.path().join("src")],
+        assert!(analysis_without_explicit_pattern.inputs.is_empty());
+
+        let analysis_with_catch_all_pattern = analyze_argv(
+            &[
+                OsString::from("fd"),
+                OsString::from("-e"),
+                OsString::from("rs"),
+                OsString::from("."),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            analysis_with_catch_all_pattern.adapter_ids,
+            vec![CommandAdapterId::Fd]
         );
+        assert_path_inputs(&analysis_with_catch_all_pattern, &[cwd.path().join("src")]);
 
         let analysis_with_single_positional_pattern =
             analyze_argv(&[OsString::from("fd"), OsString::from("src")], cwd.path())
