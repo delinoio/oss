@@ -1809,6 +1809,18 @@ fn analyze_silver_searcher(
                         index += 2;
                         continue;
                     }
+                    SilverSearcherShortOption::OptionalNumericValueInline => {}
+                    SilverSearcherShortOption::OptionalNumericValueNext => {
+                        if argv
+                            .get(index + 1)
+                            .is_some_and(|value| looks_like_integer(value.as_str()))
+                        {
+                            index += 2;
+                        } else {
+                            index += 1;
+                        }
+                        continue;
+                    }
                     SilverSearcherShortOption::ControlValueInline => {}
                     SilverSearcherShortOption::ControlValueNext => {
                         index += 2;
@@ -1856,6 +1868,8 @@ enum SilverSearcherShortOption<'a> {
     FileSearchRegexNext,
     PathToIgnoreInline(&'a str),
     PathToIgnoreNext,
+    OptionalNumericValueInline,
+    OptionalNumericValueNext,
     ControlValueInline,
     ControlValueNext,
 }
@@ -1877,6 +1891,12 @@ fn parse_silver_searcher_short_option(token: &str) -> Option<SilverSearcherShort
                 return Some(SilverSearcherShortOption::FileSearchRegexNext);
             }
             'G' => return Some(SilverSearcherShortOption::FileSearchRegexInline),
+            'A' | 'B' | 'C' if value.is_empty() => {
+                return Some(SilverSearcherShortOption::OptionalNumericValueNext);
+            }
+            'A' | 'B' | 'C' => {
+                return Some(SilverSearcherShortOption::OptionalNumericValueInline);
+            }
             'm' if value.is_empty() => return Some(SilverSearcherShortOption::ControlValueNext),
             'm' => return Some(SilverSearcherShortOption::ControlValueInline),
             'p' if value.is_empty() => return Some(SilverSearcherShortOption::PathToIgnoreNext),
@@ -3839,6 +3859,22 @@ mod tests {
             vec![CommandAdapterId::SilverSearcher]
         );
         assert!(ag_with_long_value_flag.inputs.is_empty());
+
+        let ag_with_short_context_flag = analyze_argv(
+            &[
+                OsString::from("ag"),
+                OsString::from("-A"),
+                OsString::from("2"),
+                OsString::from("TODO"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            ag_with_short_context_flag.adapter_ids,
+            vec![CommandAdapterId::SilverSearcher]
+        );
+        assert!(ag_with_short_context_flag.inputs.is_empty());
 
         let ag_with_filename_pattern = analyze_argv(
             &[
