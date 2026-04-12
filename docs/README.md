@@ -4,6 +4,12 @@
 `docs/` is the source of truth for repository contracts.
 Each project must have one project index document and one or more domain contract documents.
 
+## Documentation Editing Rules
+- These rules apply to documentation authoring and editing work, not general conversational summaries.
+- Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
+- If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
+- If a documentation change affects repository or domain policy boundaries, update or create the relevant `AGENTS.md` file in the same change when needed.
+
 ## Naming Rules
 - Project index docs: `docs/project-<project-id>.md`
 - Domain contract docs: `docs/<domain>-<project-or-component>-<contract>.md`

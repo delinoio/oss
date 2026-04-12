@@ -4,6 +4,7 @@
 - All repository-wide rules must be defined in the appropriate AGENTS.md.
 - List files in `docs/` before starting each task, and keep `docs/` up-to-date.
 - After completing each task, update the relevant `AGENTS.md` and `docs/` files in the same change when policies, structure, or contracts changed.
+- For documentation authoring and editing tasks, do not arbitrarily omit, delete, or simplify requested or source-backed content; if content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret; if the documentation change affects repository or domain policy boundaries, update or create the relevant `AGENTS.md` file in the same change when needed.
 - Write all code and comments in English.
 - When introducing a workaround, leave sufficient comments that explain why it exists, its scope, and the conditions for removing it.
 - Prefer enum types over strings whenever possible.
@@ -354,6 +355,7 @@ Release automation baseline:
 - New project creation is blocked until its project index doc and at least one domain contract doc exist.
 - Documentation-only project onboarding may use `planned` paths, but runtime implementation must not begin before canonical paths are created and documented.
 - Repository-wide and domain rules must be maintained in the appropriate `AGENTS.md`.
+- Documentation policy updates and documentation changes that introduce or modify repository/domain policy guidance must update the relevant `AGENTS.md` files in the same change, and documentation edits must not silently omit or reinterpret ambiguous requested or source-backed content without user confirmation.
 - When user-facing documentation content changes, update relevant pages in `apps/public-docs` in the same change set as needed.
 - Run `git commit` only after `git add`; once files are staged, create the commit without unnecessary delay.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
