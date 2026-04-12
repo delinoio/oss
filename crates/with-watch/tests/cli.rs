@@ -31,6 +31,9 @@ fn long_help_lists_command_inventory_sections() {
             "Dedicated built-in adapters and aliases:",
         ))
         .stdout(predicate::str::contains("cp, mv, install"))
+        .stdout(predicate::str::contains("grep, egrep, fgrep, rg, ag"))
+        .stdout(predicate::str::contains("fd, xargs"))
+        .stdout(predicate::str::contains("protoc, flatc, thrift, capnp"))
         .stdout(predicate::str::contains("find, ls, dir, vdir, du"))
         .stdout(predicate::str::contains(
             "Recognized but not auto-watchable commands:",

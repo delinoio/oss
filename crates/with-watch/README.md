@@ -7,7 +7,7 @@ It executes the delegated command once immediately after input inference, watche
 ## Why use
 
 - Keep familiar POSIX/coreutils-style commands while adding automatic reruns.
-- Let `with-watch` infer watched inputs for common read/write utilities such as `cat`, `cp`, `sed`, and `find`.
+- Let `with-watch` infer watched inputs for common read/write utilities, search tools, and schema/codegen commands such as `cat`, `rg`, `fd`, `protoc`, and `find`.
 - Fall back to explicit `exec --input` globs when inference would be ambiguous or when the delegated command has no meaningful filesystem inputs.
 
 ## Install
@@ -57,7 +57,9 @@ with-watch cat input.txt
 with-watch --clear cat input.txt
 with-watch cp src.txt dest.txt
 with-watch ls -l
+with-watch rg TODO src
 with-watch --shell 'cat src.txt | grep hello'
+with-watch protoc -I proto proto/service.proto --go_out gen
 with-watch sed -i.bak -e 's/old/new/' config.txt
 with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 ```
@@ -66,6 +68,8 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 
 - Passthrough and shell modes use built-in command adapters before falling back to conservative path heuristics.
 - Known outputs, inline scripts, patterns, and shell output redirects are filtered out of the watch set.
+- Search adapters such as `rg`, `ag`, and `fd` watch explicit search roots and file-valued pattern/ignore inputs without treating patterns, globs, or type filters as watched paths.
+- Schema/codegen adapters such as `protoc`, `flatc`, `thrift`, and `capnp compile` watch source files plus include/import roots while filtering output directories and generated artifacts.
 - Pathless defaults are intentionally narrow: only `ls`, `dir`, `vdir`, `du`, and `find` implicitly watch the current directory.
 - `ls`-style commands watch directory listings via metadata snapshots: plain `ls` watches immediate children, `ls -R` stays recursive, and `ls -d` watches only the named path.
 - `exec --input` remains the explicit escape hatch when a delegated command has no meaningful filesystem inputs or when fallback inference would be ambiguous.
@@ -82,10 +86,10 @@ Dedicated built-in adapters and aliases:
 
 - `cp`, `mv`, `install`, `ln`, `link`, `rm`, `unlink`, `rmdir`, `shred`
 - `sort`, `uniq`, `split`, `csplit`, `tee`
-- `grep`, `egrep`, `fgrep`, `sed`
+- `grep`, `egrep`, `fgrep`, `rg`, `ag`, `sed`
 - `awk`, `gawk`, `mawk`, `nawk`
-- `find`, `xargs`, `tar`, `touch`, `truncate`
-- `chmod`, `chown`, `chgrp`, `dd`
+- `find`, `fd`, `xargs`, `tar`, `touch`, `truncate`
+- `chmod`, `chown`, `chgrp`, `dd`, `protoc`, `flatc`, `thrift`, `capnp`
 
 Generic read-path commands:
 

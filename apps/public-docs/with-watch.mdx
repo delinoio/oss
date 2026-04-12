@@ -6,8 +6,8 @@ It performs one initial run immediately after input inference, watcher setup, an
 
 ## Why use with-watch
 
-- Keep familiar CLI tools such as `cat`, `cp`, `sed`, and `find`.
-- Let `with-watch` infer watched inputs for common file-oriented commands.
+- Keep familiar CLI tools such as `cat`, `cp`, `sed`, `rg`, `protoc`, and `find`.
+- Let `with-watch` infer watched inputs for common file-oriented, search, and schema/codegen commands.
 - Declare explicit inputs with `exec --input` when you want fully predictable reruns.
 
 ## Install
@@ -56,10 +56,22 @@ Watch the current directory with a safe pathless default:
 with-watch ls -l
 ```
 
+Search a source tree without watching the pattern itself:
+
+```bash
+with-watch rg TODO src
+```
+
 Run a simple shell expression:
 
 ```bash
 with-watch --shell 'cat input.txt | grep hello'
+```
+
+Watch proto inputs and rerun codegen when schemas change:
+
+```bash
+with-watch protoc -I proto proto/service.proto --go_out gen
 ```
 
 Provide explicit inputs for an arbitrary command:
@@ -72,6 +84,8 @@ with-watch exec --input 'src/**/*.rs' -- cargo test -p with-watch
 
 - Passthrough mode and `--shell` use built-in command adapters first.
 - Known outputs, inline scripts, and output redirects are filtered out of the watch set.
+- Search adapters such as `rg`, `ag`, and `fd` watch explicit search roots and file-valued pattern/ignore inputs without treating patterns, globs, or type filters as watched paths.
+- Schema/codegen adapters such as `protoc`, `flatc`, `thrift`, and `capnp compile` watch source files plus include/import roots while filtering output directories and generated artifacts.
 - Safe pathless defaults are intentionally narrow: `ls`, `dir`, `vdir`, `du`, and `find`.
 - If `with-watch` cannot infer safe filesystem inputs, it fails instead of guessing.
 
@@ -87,10 +101,10 @@ Dedicated built-in adapters and aliases:
 
 - `cp`, `mv`, `install`, `ln`, `link`, `rm`, `unlink`, `rmdir`, `shred`
 - `sort`, `uniq`, `split`, `csplit`, `tee`
-- `grep`, `egrep`, `fgrep`, `sed`
+- `grep`, `egrep`, `fgrep`, `rg`, `ag`, `sed`
 - `awk`, `gawk`, `mawk`, `nawk`
-- `find`, `xargs`, `tar`, `touch`, `truncate`
-- `chmod`, `chown`, `chgrp`, `dd`
+- `find`, `fd`, `xargs`, `tar`, `touch`, `truncate`
+- `chmod`, `chown`, `chgrp`, `dd`, `protoc`, `flatc`, `thrift`, `capnp`
 
 Generic read-path commands:
 
