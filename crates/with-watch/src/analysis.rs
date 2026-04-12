@@ -1917,7 +1917,8 @@ fn analyze_fd(
         matches!(
             token.as_str(),
             "-x" | "-X" | "--exec" | "--exec-batch" | "--list-details"
-        )
+        ) || token.starts_with("--exec=")
+            || token.starts_with("--exec-batch=")
     }) {
         return analyze_fallback(argv, redirects, cwd);
     }
@@ -2794,9 +2795,23 @@ fn analyze_protoc(
         }
 
         if token.starts_with('@') {
-            push_inferred_input(&mut inputs, &token[1..], cwd)?;
-            index += 1;
-            continue;
+            let mut analysis = analyze_fallback(argv, redirects, cwd)?;
+            analysis.status = CommandAnalysisStatus::AmbiguousFallback;
+            for argfile_token in argv.iter().skip(1).filter(|value| value.starts_with('@')) {
+                let literal_argfile_path = absolutize(argfile_token, cwd);
+                analysis.inputs.retain(|input| {
+                    !matches!(
+                        input,
+                        WatchInput::Path { path, .. } if path == &literal_argfile_path
+                    )
+                });
+                if let Some(argfile_path) = argfile_token.strip_prefix('@') {
+                    if !argfile_path.is_empty() {
+                        push_inferred_input(&mut analysis.inputs, argfile_path, cwd)?;
+                    }
+                }
+            }
+            return Ok(analysis);
         }
 
         if !positional_only {
@@ -4025,6 +4040,21 @@ mod tests {
         .expect("analyze");
         assert_eq!(fallback.adapter_ids, vec![CommandAdapterId::Fallback]);
         assert_path_inputs(&fallback, &[cwd.path().join("src")]);
+
+        let inline_exec_fallback = analyze_argv(
+            &[
+                OsString::from("fd"),
+                OsString::from("--exec-batch=echo"),
+                OsString::from("src"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            inline_exec_fallback.adapter_ids,
+            vec![CommandAdapterId::Fallback]
+        );
+        assert_path_inputs(&inline_exec_fallback, &[cwd.path().join("src")]);
     }
 
     #[test]
@@ -4217,6 +4247,28 @@ mod tests {
         .expect("analyze");
         assert_eq!(protoc_plugin.adapter_ids, vec![CommandAdapterId::Fallback]);
         assert_path_inputs(&protoc_plugin, &[cwd.path().join("src/service.proto")]);
+
+        fs::write(
+            cwd.path().join("args.txt"),
+            "--proto_path=src src/service.proto",
+        )
+        .expect("write args file");
+        let protoc_argfile = analyze_argv(
+            &[
+                OsString::from("protoc"),
+                OsString::from("@args.txt"),
+                OsString::from("--go_out"),
+                OsString::from("gen"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(protoc_argfile.adapter_ids, vec![CommandAdapterId::Fallback]);
+        assert_eq!(
+            protoc_argfile.status,
+            CommandAnalysisStatus::AmbiguousFallback
+        );
+        assert_path_inputs(&protoc_argfile, &[cwd.path().join("args.txt")]);
 
         let capnp_non_compile = analyze_argv(
             &[
