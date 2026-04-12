@@ -116,6 +116,74 @@ fn rust_log_does_not_enable_startup_logs() {
         .stdout(predicate::str::contains("Starting with-watch run loop").not());
 }
 
+#[cfg(unix)]
+#[test]
+fn sort_control_options_do_not_inflate_runtime_inferred_input_count() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let input_path = temp_dir.path().join("input.txt");
+    fs::write(&input_path, "b 2\na 1\n").expect("write input");
+
+    with_watch_command()
+        .env("WW_LOG", "with_watch=debug")
+        .env("WITH_WATCH_LOG_COLOR", "never")
+        .env("WITH_WATCH_TEST_MAX_RUNS", "1")
+        .arg("sort")
+        .arg("-k")
+        .arg("2,2")
+        .arg(&input_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Built command analysis"))
+        .stdout(predicate::str::contains("adapter_id=\"sort\""))
+        .stdout(predicate::str::contains("inferred_input_count=1"));
+}
+
+#[cfg(unix)]
+#[test]
+fn uniq_control_options_do_not_inflate_runtime_inferred_input_count() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let input_path = temp_dir.path().join("input.txt");
+    fs::write(&input_path, "aa hello\naa hello\n").expect("write input");
+
+    with_watch_command()
+        .env("WW_LOG", "with_watch=debug")
+        .env("WITH_WATCH_LOG_COLOR", "never")
+        .env("WITH_WATCH_TEST_MAX_RUNS", "1")
+        .arg("uniq")
+        .arg("-f")
+        .arg("1")
+        .arg("-s")
+        .arg("2")
+        .arg(&input_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Built command analysis"))
+        .stdout(predicate::str::contains("adapter_id=\"uniq\""))
+        .stdout(predicate::str::contains("inferred_input_count=1"));
+}
+
+#[cfg(unix)]
+#[test]
+fn touch_time_option_does_not_inflate_runtime_inferred_input_count() {
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let input_path = temp_dir.path().join("input.txt");
+
+    with_watch_command()
+        .current_dir(temp_dir.path())
+        .env("WW_LOG", "with_watch=debug")
+        .env("WITH_WATCH_LOG_COLOR", "never")
+        .env("WITH_WATCH_TEST_MAX_RUNS", "1")
+        .arg("touch")
+        .arg("-t")
+        .arg("202401010101")
+        .arg(&input_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Built command analysis"))
+        .stdout(predicate::str::contains("adapter_id=\"touch\""))
+        .stdout(predicate::str::contains("inferred_input_count=1"));
+}
+
 #[test]
 fn commands_without_filesystem_inputs_guide_users_to_exec_input() {
     with_watch_command()
