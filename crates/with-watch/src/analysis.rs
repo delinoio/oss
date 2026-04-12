@@ -2837,7 +2837,8 @@ fn analyze_protoc(
             }
             if token.starts_with("-I") && token.len() > 2 {
                 has_explicit_import_root = true;
-                push_inferred_input(&mut inputs, &token[2..], cwd)?;
+                let value = token.strip_prefix("-I=").unwrap_or(&token[2..]);
+                push_inferred_input(&mut inputs, value, cwd)?;
                 index += 1;
                 continue;
             }
@@ -4141,6 +4142,30 @@ mod tests {
         assert_path_inputs(
             &protoc_with_implicit_import_root,
             &[cwd.path().to_path_buf(), cwd.path().join("service.proto")],
+        );
+
+        let protoc_with_equals_import_root = analyze_argv(
+            &[
+                OsString::from("protoc"),
+                OsString::from("-I=proto"),
+                OsString::from("proto/service.proto"),
+                OsString::from("--go_out"),
+                OsString::from("gen"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(
+            protoc_with_equals_import_root.adapter_ids,
+            vec![CommandAdapterId::Protoc]
+        );
+        assert_eq!(protoc_with_equals_import_root.filtered_output_count, 1);
+        assert_path_inputs(
+            &protoc_with_equals_import_root,
+            &[
+                cwd.path().join("proto"),
+                cwd.path().join("proto/service.proto"),
+            ],
         );
 
         let flatc = analyze_argv(
