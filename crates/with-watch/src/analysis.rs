@@ -550,6 +550,132 @@ fn explicit_command_handler(command_name: &str) -> Option<ExplicitCommandHandler
         .map(|spec| spec.handler)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OptionValueDisposition {
+    Control,
+    InputPath,
+    OutputPath,
+}
+
+fn consume_required_option_value(
+    token: &str,
+    argv: &[String],
+    index: &mut usize,
+    short_names: &[&str],
+    long_names: &[&str],
+    disposition: OptionValueDisposition,
+    inputs: &mut Vec<WatchInput>,
+    filtered_output_count: &mut usize,
+    cwd: &Path,
+) -> Result<bool> {
+    let Some(value) = match_required_option_value(token, argv, index, short_names, long_names)
+    else {
+        return Ok(false);
+    };
+    apply_option_value(value, disposition, inputs, filtered_output_count, cwd)?;
+    Ok(true)
+}
+
+fn consume_optional_option_value(
+    token: &str,
+    index: &mut usize,
+    short_names: &[&str],
+    long_names: &[&str],
+) -> bool {
+    if match_optional_option_value(token, short_names, long_names).is_some() {
+        *index += 1;
+        true
+    } else {
+        false
+    }
+}
+
+fn match_required_option_value<'a>(
+    token: &'a str,
+    argv: &'a [String],
+    index: &mut usize,
+    short_names: &[&str],
+    long_names: &[&str],
+) -> Option<Option<&'a str>> {
+    for short_name in short_names {
+        if token == *short_name {
+            let value = argv.get(*index + 1).map(|value| value.as_str());
+            *index += 1 + usize::from(value.is_some());
+            return Some(value);
+        }
+        if token.starts_with(short_name) && token.len() > short_name.len() {
+            *index += 1;
+            return Some(Some(&token[short_name.len()..]));
+        }
+    }
+
+    for long_name in long_names {
+        if token == *long_name {
+            let value = argv.get(*index + 1).map(|value| value.as_str());
+            *index += 1 + usize::from(value.is_some());
+            return Some(value);
+        }
+        if let Some(value) = token.strip_prefix(long_name) {
+            if let Some(value) = value.strip_prefix('=') {
+                *index += 1;
+                return Some(Some(value));
+            }
+        }
+    }
+
+    None
+}
+
+fn match_optional_option_value<'a>(
+    token: &'a str,
+    short_names: &[&str],
+    long_names: &[&str],
+) -> Option<Option<&'a str>> {
+    for short_name in short_names {
+        if token == *short_name {
+            return Some(None);
+        }
+        if token.starts_with(short_name) && token.len() > short_name.len() {
+            return Some(Some(&token[short_name.len()..]));
+        }
+    }
+
+    for long_name in long_names {
+        if token == *long_name {
+            return Some(None);
+        }
+        if let Some(value) = token.strip_prefix(long_name) {
+            if let Some(value) = value.strip_prefix('=') {
+                return Some(Some(value));
+            }
+        }
+    }
+
+    None
+}
+
+fn apply_option_value(
+    value: Option<&str>,
+    disposition: OptionValueDisposition,
+    inputs: &mut Vec<WatchInput>,
+    filtered_output_count: &mut usize,
+    cwd: &Path,
+) -> Result<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+
+    match disposition {
+        OptionValueDisposition::Control => {}
+        OptionValueDisposition::InputPath => push_inferred_input(inputs, value, cwd)?,
+        OptionValueDisposition::OutputPath => {
+            *filtered_output_count += 1;
+        }
+    }
+
+    Ok(())
+}
+
 fn analyze_explicit_command(
     handler: ExplicitCommandHandler,
     argv: &[String],
@@ -815,7 +941,7 @@ fn analyze_copy_like(
 ) -> Result<SingleCommandAnalysis> {
     let mut inputs = Vec::new();
     let mut filtered_output_count = 0usize;
-    let mut target_directory = None::<String>;
+    let mut target_directory = false;
     let mut operands = Vec::new();
     let mut positional_only = false;
     let mut index = 1usize;
@@ -829,15 +955,51 @@ fn analyze_copy_like(
         }
 
         if !positional_only {
-            if token == "-t" || token == "--target-directory" {
-                if let Some(value) = argv.get(index + 1) {
-                    target_directory = Some(value.clone());
-                }
-                index += 2;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-t"],
+                &["--target-directory"],
+                OptionValueDisposition::OutputPath,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
+                target_directory = true;
                 continue;
             }
-            if let Some(value) = token.strip_prefix("--target-directory=") {
-                target_directory = Some(value.to_string());
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-S"],
+                &["--suffix"],
+                OptionValueDisposition::Control,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
+                continue;
+            }
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &[],
+                &["--context", "--reflink"],
+                OptionValueDisposition::Control,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
+                continue;
+            }
+            if consume_optional_option_value(token, &mut index, &[], &["--backup"]) {
+                continue;
+            }
+            if token == "-t" || token == "--target-directory" {
+                target_directory = true;
                 index += 1;
                 continue;
             }
@@ -851,8 +1013,7 @@ fn analyze_copy_like(
         index += 1;
     }
 
-    if target_directory.is_some() {
-        filtered_output_count += 1;
+    if target_directory {
         for operand in operands {
             push_inferred_input(&mut inputs, operand.as_str(), cwd)?;
         }
@@ -899,8 +1060,7 @@ fn analyze_install(
 ) -> Result<SingleCommandAnalysis> {
     let mut inputs = Vec::new();
     let mut filtered_output_count = 0usize;
-    let mut target_directory = None::<String>;
-    let mut compare_reference = None::<String>;
+    let mut target_directory = false;
     let mut operands = Vec::new();
     let mut positional_only = false;
     let mut index = 1usize;
@@ -914,32 +1074,70 @@ fn analyze_install(
         }
 
         if !positional_only {
-            if token == "-t" || token == "--target-directory" {
-                if let Some(value) = argv.get(index + 1) {
-                    target_directory = Some(value.clone());
-                }
-                index += 2;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-t"],
+                &["--target-directory"],
+                OptionValueDisposition::OutputPath,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
+                target_directory = true;
                 continue;
             }
             if token == "-C" || token == "--compare" {
                 index += 1;
                 continue;
             }
-            if token == "--compare-with" {
-                if let Some(value) = argv.get(index + 1) {
-                    compare_reference = Some(value.clone());
-                }
-                index += 2;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-S", "-g", "-m", "-o"],
+                &[
+                    "--group",
+                    "--mode",
+                    "--owner",
+                    "--strip-program",
+                    "--suffix",
+                ],
+                OptionValueDisposition::Control,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
                 continue;
             }
-            if let Some(value) = token.strip_prefix("--target-directory=") {
-                target_directory = Some(value.to_string());
-                index += 1;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &[],
+                &["--compare-with"],
+                OptionValueDisposition::InputPath,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
                 continue;
             }
-            if let Some(value) = token.strip_prefix("--compare-with=") {
-                compare_reference = Some(value.to_string());
-                index += 1;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &[],
+                &["--context"],
+                OptionValueDisposition::Control,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
+                continue;
+            }
+            if consume_optional_option_value(token, &mut index, &[], &["--backup"]) {
                 continue;
             }
             if token.starts_with('-') {
@@ -952,12 +1150,7 @@ fn analyze_install(
         index += 1;
     }
 
-    if let Some(compare_reference) = compare_reference {
-        push_inferred_input(&mut inputs, compare_reference.as_str(), cwd)?;
-    }
-
-    if let Some(_target_directory) = target_directory {
-        filtered_output_count += 1;
+    if target_directory {
         for operand in operands {
             push_inferred_input(&mut inputs, operand.as_str(), cwd)?;
         }
@@ -1056,35 +1249,51 @@ fn analyze_sort(
             continue;
         }
         if !positional_only {
-            if token == "-o" || token == "--output" {
-                if argv.get(index + 1).is_some() {
-                    filtered_output_count += 1;
-                }
-                index += 2;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-o"],
+                &["--output"],
+                OptionValueDisposition::OutputPath,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
                 continue;
             }
-            if token == "--files0-from" {
-                if let Some(value) = argv.get(index + 1) {
-                    push_inferred_input(&mut inputs, value.as_str(), cwd)?;
-                }
-                index += 2;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &[],
+                &["--files0-from", "--random-source"],
+                OptionValueDisposition::InputPath,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
                 continue;
             }
-            if token.starts_with("-o") && token.len() > 2 {
-                filtered_output_count += 1;
-                index += 1;
-                continue;
-            }
-            if let Some(value) = token.strip_prefix("--output=") {
-                if !value.is_empty() {
-                    filtered_output_count += 1;
-                }
-                index += 1;
-                continue;
-            }
-            if let Some(value) = token.strip_prefix("--files0-from=") {
-                push_inferred_input(&mut inputs, value, cwd)?;
-                index += 1;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-k", "-S", "-T", "-t"],
+                &[
+                    "--batch-size",
+                    "--buffer-size",
+                    "--compress-program",
+                    "--field-separator",
+                    "--key",
+                    "--parallel",
+                    "--temporary-directory",
+                ],
+                OptionValueDisposition::Control,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
                 continue;
             }
             if token.starts_with('-') {
@@ -1138,9 +1347,28 @@ fn analyze_uniq(
             index += 1;
             continue;
         }
-        if !positional_only && token.starts_with('-') {
-            index += 1;
-            continue;
+        if !positional_only {
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-f", "-s", "-w"],
+                &["--check-chars", "--skip-chars", "--skip-fields"],
+                OptionValueDisposition::Control,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
+                continue;
+            }
+            if consume_optional_option_value(token, &mut index, &[], &["--all-repeated", "--group"])
+            {
+                continue;
+            }
+            if token.starts_with('-') {
+                index += 1;
+                continue;
+            }
         }
         operands.push(argv[index].clone());
         index += 1;
@@ -1191,36 +1419,34 @@ fn analyze_split(
             continue;
         }
         if !positional_only {
-            if token == "--filter"
-                || token == "--separator"
-                || token == "--additional-suffix"
-                || token == "--number"
-            {
-                index += 2;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-a", "-b", "-C", "-l", "-n", "-t"],
+                &[
+                    "--additional-suffix",
+                    "--bytes",
+                    "--filter",
+                    "--line-bytes",
+                    "--lines",
+                    "--number",
+                    "--separator",
+                    "--suffix-length",
+                ],
+                OptionValueDisposition::Control,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
                 continue;
             }
-            if token == "-n"
-                || token == "-a"
-                || token == "-b"
-                || token == "-C"
-                || token == "-l"
-                || token == "-t"
-            {
-                index += 2;
-                continue;
-            }
-            if token.starts_with("--filter=")
-                || token.starts_with("--separator=")
-                || token.starts_with("--additional-suffix=")
-                || token.starts_with("--number=")
-                || token.starts_with("-n")
-                || token.starts_with("-a")
-                || token.starts_with("-b")
-                || token.starts_with("-C")
-                || token.starts_with("-l")
-                || token.starts_with("-t")
-            {
-                index += 1;
+            if consume_optional_option_value(
+                token,
+                &mut index,
+                &[],
+                &["--hex-suffixes", "--numeric-suffixes"],
+            ) {
                 continue;
             }
             if token.starts_with('-') {
@@ -1274,19 +1500,33 @@ fn analyze_csplit(
             continue;
         }
         if !positional_only {
-            if token == "-f" || token == "--prefix" || token == "-b" || token == "--suffix-format" {
-                if token == "-f" || token == "--prefix" {
-                    filtered_output_count += 1;
-                }
-                index += 2;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-f"],
+                &["--prefix"],
+                OptionValueDisposition::OutputPath,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
                 continue;
             }
-            if token.starts_with("--prefix=") {
-                filtered_output_count += 1;
-                index += 1;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-b", "-n"],
+                &["--digits", "--suffix-format"],
+                OptionValueDisposition::Control,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
                 continue;
             }
-            if token.starts_with("--suffix-format=") || token.starts_with('-') {
+            if token.starts_with('-') {
                 index += 1;
                 continue;
             }
@@ -2406,6 +2646,7 @@ fn analyze_xargs(
     cwd: &Path,
 ) -> Result<SingleCommandAnalysis> {
     let mut inputs = Vec::new();
+    let mut filtered_output_count = 0usize;
     let mut index = 1usize;
 
     while index < argv.len() {
@@ -2413,34 +2654,46 @@ fn analyze_xargs(
         if token == "--" {
             break;
         }
-        if token == "-a" || token == "--arg-file" {
-            if let Some(value) = argv.get(index + 1) {
-                push_inferred_input(&mut inputs, value.as_str(), cwd)?;
-            }
-            index += 2;
+        if consume_required_option_value(
+            token,
+            argv,
+            &mut index,
+            &["-a"],
+            &["--arg-file"],
+            OptionValueDisposition::InputPath,
+            &mut inputs,
+            &mut filtered_output_count,
+            cwd,
+        )? {
             continue;
         }
-        if token == "-I" || token == "-i" || token == "--replace" {
-            index += 2;
+        if consume_required_option_value(
+            token,
+            argv,
+            &mut index,
+            &["-I", "-E", "-L", "-P", "-d", "-n", "-s"],
+            &[
+                "--delimiter",
+                "--max-args",
+                "--max-chars",
+                "--max-lines",
+                "--max-procs",
+                "--process-slot-var",
+            ],
+            OptionValueDisposition::Control,
+            &mut inputs,
+            &mut filtered_output_count,
+            cwd,
+        )? {
             continue;
         }
-        if token == "-n"
-            || token == "-L"
-            || token == "-s"
-            || token == "-P"
-            || token == "-E"
-            || token == "--delimiter"
-            || token == "--eof"
-            || token == "--max-args"
-            || token == "--max-lines"
-            || token == "--max-procs"
-            || token == "--max-chars"
-        {
-            index += 2;
+        if consume_optional_option_value(
+            token,
+            &mut index,
+            &["-e", "-i", "-l"],
+            &["--eof", "--max-lines", "--replace"],
+        ) {
             continue;
-        }
-        if let Some(value) = token.strip_prefix("--arg-file=") {
-            push_inferred_input(&mut inputs, value, cwd)?;
         }
         index += 1;
     }
@@ -2631,6 +2884,7 @@ fn analyze_touch_like(
     cwd: &Path,
 ) -> Result<SingleCommandAnalysis> {
     let mut inputs = Vec::new();
+    let mut filtered_output_count = 0usize;
     let mut positional_only = false;
     let mut index = 1usize;
 
@@ -2642,16 +2896,30 @@ fn analyze_touch_like(
             continue;
         }
         if !positional_only {
-            if token == "-r" || token == "--reference" {
-                if let Some(value) = argv.get(index + 1) {
-                    push_inferred_input(&mut inputs, value.as_str(), cwd)?;
-                }
-                index += 2;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-r"],
+                &["--reference"],
+                OptionValueDisposition::InputPath,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
                 continue;
             }
-            if let Some(value) = token.strip_prefix("--reference=") {
-                push_inferred_input(&mut inputs, value, cwd)?;
-                index += 1;
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &["-d", "-s", "-t"],
+                &["--date", "--size", "--time"],
+                OptionValueDisposition::Control,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
                 continue;
             }
             if token.starts_with('-') {
@@ -2668,7 +2936,7 @@ fn analyze_touch_like(
         adapter_ids: vec![adapter_id],
         fallback_used: false,
         default_watch_root_used: false,
-        filtered_output_count: 0,
+        filtered_output_count,
         side_effect_profile: SideEffectProfile::WritesWatchedInputs,
         status: CommandAnalysisStatus::NoInputs,
     };
@@ -2682,6 +2950,7 @@ fn analyze_change_attributes(
     cwd: &Path,
 ) -> Result<SingleCommandAnalysis> {
     let mut inputs = Vec::new();
+    let mut filtered_output_count = 0usize;
     let mut positional_only = false;
     let mut index = 1usize;
     let mut metadata_arg_consumed = false;
@@ -2694,6 +2963,19 @@ fn analyze_change_attributes(
             continue;
         }
         if !positional_only {
+            if consume_required_option_value(
+                token,
+                argv,
+                &mut index,
+                &[],
+                &["--from"],
+                OptionValueDisposition::Control,
+                &mut inputs,
+                &mut filtered_output_count,
+                cwd,
+            )? {
+                continue;
+            }
             if token == "--reference" {
                 if let Some(value) = argv.get(index + 1) {
                     push_inferred_input(&mut inputs, value.as_str(), cwd)?;
@@ -2724,7 +3006,7 @@ fn analyze_change_attributes(
         adapter_ids: vec![CommandAdapterId::ChangeAttributes],
         fallback_used: false,
         default_watch_root_used: false,
-        filtered_output_count: 0,
+        filtered_output_count,
         side_effect_profile: SideEffectProfile::WritesWatchedInputs,
         status: CommandAnalysisStatus::NoInputs,
     };
@@ -3676,6 +3958,51 @@ mod tests {
     }
 
     #[test]
+    fn copy_and_install_consume_control_option_values() {
+        let cwd = tempfile::tempdir().expect("create tempdir");
+
+        let cp = analyze_argv(
+            &[
+                OsString::from("cp"),
+                OsString::from("-S"),
+                OsString::from(".bak"),
+                OsString::from("src.txt"),
+                OsString::from("dest.txt"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(cp.adapter_ids, vec![CommandAdapterId::CopyLike]);
+        assert_eq!(cp.filtered_output_count, 1);
+        assert_eq!(
+            cp.side_effect_profile,
+            SideEffectProfile::WritesExcludedOutputs
+        );
+        assert_path_inputs(&cp, &[cwd.path().join("src.txt")]);
+
+        let install = analyze_argv(
+            &[
+                OsString::from("install"),
+                OsString::from("-S"),
+                OsString::from(".bak"),
+                OsString::from("--strip-program"),
+                OsString::from("strip"),
+                OsString::from("src.txt"),
+                OsString::from("dest.txt"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(install.adapter_ids, vec![CommandAdapterId::Install]);
+        assert_eq!(install.filtered_output_count, 1);
+        assert_eq!(
+            install.side_effect_profile,
+            SideEffectProfile::WritesExcludedOutputs
+        );
+        assert_path_inputs(&install, &[cwd.path().join("src.txt")]);
+    }
+
+    #[test]
     fn grep_ignores_pattern_but_keeps_pattern_files() {
         let cwd = tempfile::tempdir().expect("create tempdir");
         let analysis = analyze_argv(
@@ -4086,6 +4413,45 @@ mod tests {
     }
 
     #[test]
+    fn sort_and_uniq_consume_control_values_without_watching_them() {
+        let cwd = tempfile::tempdir().expect("create tempdir");
+
+        let sort = analyze_argv(
+            &[
+                OsString::from("sort"),
+                OsString::from("-k"),
+                OsString::from("2,2"),
+                OsString::from("-T"),
+                OsString::from("tmp"),
+                OsString::from("input.txt"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(sort.adapter_ids, vec![CommandAdapterId::Sort]);
+        assert_eq!(sort.filtered_output_count, 0);
+        assert_eq!(sort.side_effect_profile, SideEffectProfile::ReadOnly);
+        assert_path_inputs(&sort, &[cwd.path().join("input.txt")]);
+
+        let uniq = analyze_argv(
+            &[
+                OsString::from("uniq"),
+                OsString::from("-f"),
+                OsString::from("1"),
+                OsString::from("-s"),
+                OsString::from("2"),
+                OsString::from("input.txt"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(uniq.adapter_ids, vec![CommandAdapterId::Uniq]);
+        assert_eq!(uniq.filtered_output_count, 0);
+        assert_eq!(uniq.side_effect_profile, SideEffectProfile::ReadOnly);
+        assert_path_inputs(&uniq, &[cwd.path().join("input.txt")]);
+    }
+
+    #[test]
     fn schema_codegen_adapters_watch_inputs_and_filter_outputs() {
         let cwd = tempfile::tempdir().expect("create tempdir");
         let descriptor_set = env::join_paths([
@@ -4440,6 +4806,120 @@ mod tests {
         )
         .expect("analyze");
         assert_eq!(extract.inputs.len(), 1);
+    }
+
+    #[test]
+    fn split_csplit_touch_truncate_xargs_and_chown_consume_option_values() {
+        let cwd = tempfile::tempdir().expect("create tempdir");
+
+        let split = analyze_argv(
+            &[
+                OsString::from("split"),
+                OsString::from("--suffix-length"),
+                OsString::from("3"),
+                OsString::from("input.txt"),
+                OsString::from("out-"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(split.adapter_ids, vec![CommandAdapterId::Split]);
+        assert_eq!(split.filtered_output_count, 1);
+        assert_eq!(
+            split.side_effect_profile,
+            SideEffectProfile::WritesExcludedOutputs
+        );
+        assert_path_inputs(&split, &[cwd.path().join("input.txt")]);
+
+        let csplit = analyze_argv(
+            &[
+                OsString::from("csplit"),
+                OsString::from("-n"),
+                OsString::from("3"),
+                OsString::from("input.txt"),
+                OsString::from("/re/"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(csplit.adapter_ids, vec![CommandAdapterId::Csplit]);
+        assert_eq!(csplit.filtered_output_count, 0);
+        assert_eq!(
+            csplit.side_effect_profile,
+            SideEffectProfile::WritesExcludedOutputs
+        );
+        assert_path_inputs(&csplit, &[cwd.path().join("input.txt")]);
+
+        let touch = analyze_argv(
+            &[
+                OsString::from("touch"),
+                OsString::from("-d"),
+                OsString::from("2024-01-01 00:00"),
+                OsString::from("file.txt"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(touch.adapter_ids, vec![CommandAdapterId::Touch]);
+        assert_eq!(touch.filtered_output_count, 0);
+        assert_eq!(
+            touch.side_effect_profile,
+            SideEffectProfile::WritesWatchedInputs
+        );
+        assert_path_inputs(&touch, &[cwd.path().join("file.txt")]);
+
+        let truncate = analyze_argv(
+            &[
+                OsString::from("truncate"),
+                OsString::from("-s"),
+                OsString::from("0"),
+                OsString::from("file.txt"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(truncate.adapter_ids, vec![CommandAdapterId::Truncate]);
+        assert_eq!(truncate.filtered_output_count, 0);
+        assert_eq!(
+            truncate.side_effect_profile,
+            SideEffectProfile::WritesWatchedInputs
+        );
+        assert_path_inputs(&truncate, &[cwd.path().join("file.txt")]);
+
+        let xargs = analyze_argv(
+            &[
+                OsString::from("xargs"),
+                OsString::from("-d"),
+                OsString::from("\\n"),
+                OsString::from("-a"),
+                OsString::from("paths.txt"),
+                OsString::from("echo"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(xargs.adapter_ids, vec![CommandAdapterId::Xargs]);
+        assert_eq!(xargs.filtered_output_count, 0);
+        assert_eq!(xargs.side_effect_profile, SideEffectProfile::ReadOnly);
+        assert_path_inputs(&xargs, &[cwd.path().join("paths.txt")]);
+
+        let chown = analyze_argv(
+            &[
+                OsString::from("chown"),
+                OsString::from("--from"),
+                OsString::from("old-owner"),
+                OsString::from("new-owner"),
+                OsString::from("file.txt"),
+            ],
+            cwd.path(),
+        )
+        .expect("analyze");
+        assert_eq!(chown.adapter_ids, vec![CommandAdapterId::ChangeAttributes]);
+        assert_eq!(
+            chown.side_effect_profile,
+            SideEffectProfile::WritesWatchedInputs
+        );
+        assert_path_inputs(&chown, &[cwd.path().join("file.txt")]);
     }
 
     #[test]
