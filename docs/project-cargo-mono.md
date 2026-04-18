@@ -19,6 +19,7 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 - `publish` must delegate to `cargo publish --no-verify` for all package uploads and dry-run executions.
 - Retryable `publish` failures remain narrowly scoped to index propagation lag and registry rate limiting, and must retry indefinitely by default with capped exponential backoff (`2s`, `4s`, `8s`, `16s`, `32s`, then `60s`) while honoring `Retry-After` when present.
 - `publish` retry overrides must remain operator-controlled through `--max-attempts <count>` and `CARGO_MONO_PUBLISH_MAX_ATTEMPTS`, with precedence `--max-attempts` > env > default unlimited retries.
+- `publish` crates.io sparse-index prefetch must not enforce a separate client-side HTTP timeout; sparse index requests must rely on the HTTP client's default timeout behavior.
 - Remote tag publication remains CI-owned: `auto-publish` pushes release tags with `git push --tags` after a successful `publish` run, with checkout credential persistence disabled and authentication bound to `secrets.GH_TOKEN` (non-`GITHUB_TOKEN`) so downstream tag-triggered workflows run.
 - Publish tag configuration must be opt-in through `[workspace.metadata.cargo-mono.publish.tag].packages`, and tag naming must remain `<crate>@v<version>`.
 - Tag release automation must detect `cargo-mono@v*` and produce signed prebuilt artifacts for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, plus Sigstore bundle sidecars (`*.sigstore.json`) without changing CLI command behavior.
