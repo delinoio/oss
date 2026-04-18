@@ -12,7 +12,7 @@ use reqwest::{
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     cli::PublishArgs,
@@ -30,6 +30,18 @@ pub(super) const PUBLISH_PREFETCH_CONCURRENCY_ENV: &str = "CARGO_MONO_PUBLISH_PR
 const DEFAULT_PREFETCH_CONCURRENCY: usize = 16;
 const MAX_PREFETCH_CONCURRENCY: usize = 64;
 const PREFETCH_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const SPARSE_INDEX_DIAGNOSTIC_PREVIEW_CHARS: usize = 160;
+const SPARSE_INDEX_DIAGNOSTIC_PREVIEW_BYTES: usize = 96;
+const SPARSE_INDEX_ALLOWLISTED_RESPONSE_HEADERS: &[&str] = &[
+    "content-type",
+    "content-encoding",
+    "transfer-encoding",
+    "etag",
+    "server",
+    "via",
+    "x-cache",
+    "x-served-by",
+];
 const PUBLISH_NO_VERIFY: bool = true;
 const INITIAL_RETRY_DELAY_SECONDS: u64 = 2;
 const MAX_RETRY_DELAY_SECONDS: u64 = 60;
@@ -285,6 +297,28 @@ impl PrefetchPackageLookupResult {
 #[derive(Debug, Deserialize)]
 struct SparseIndexEntry {
     vers: String,
+}
+
+#[derive(Debug, Clone)]
+struct SparseIndexResponseMetadata {
+    status: StatusCode,
+    content_length: Option<u64>,
+    header_snapshot: String,
+    content_type: String,
+    content_encoding: String,
+}
+
+impl SparseIndexResponseMetadata {
+    fn from_response(response: &reqwest::blocking::Response) -> Self {
+        let headers = response.headers();
+        Self {
+            status: response.status(),
+            content_length: response.content_length(),
+            header_snapshot: format_sparse_index_header_snapshot(headers),
+            content_type: sparse_index_header_value_or_na(Some(headers), "content-type"),
+            content_encoding: sparse_index_header_value_or_na(Some(headers), "content-encoding"),
+        }
+    }
 }
 
 fn resolve_publish_retry_policy(cli_max_attempts: Option<usize>) -> PublishRetryPolicy {
@@ -976,18 +1010,74 @@ fn lookup_sparse_index_version(
     let mut attempt = 0usize;
     loop {
         attempt += 1;
+        debug!(
+            command_path = "cargo-mono.publish",
+            package = %candidate.name,
+            package_version = %candidate.version,
+            action = "prefetch-published-versions",
+            phase = "request",
+            outcome = "started",
+            attempt,
+            sparse_path = %path,
+            request_url = %request_url,
+            "Starting sparse index lookup request"
+        );
         let response = match client.get(&request_url).send() {
             Ok(response) => response,
             Err(error) => {
+                let source = flatten_error_source_chain(&error);
+                debug!(
+                    command_path = "cargo-mono.publish",
+                    package = %candidate.name,
+                    package_version = %candidate.version,
+                    action = "prefetch-published-versions",
+                    phase = "request",
+                    outcome = "failed",
+                    attempt,
+                    sparse_path = %path,
+                    request_url = %request_url,
+                    source = %source,
+                    "Sparse index lookup request failed"
+                );
                 return PrefetchPackageLookupResult::unknown(
                     candidate.name.clone(),
                     None,
-                    format!("sparse index request failed: {error}"),
-                )
+                    format!(
+                        "sparse index request failed: {}",
+                        format_sparse_index_failure_details(
+                            "request",
+                            attempt,
+                            &path,
+                            None,
+                            Some(&error),
+                            &[],
+                        )
+                    ),
+                );
             }
         };
 
-        let status = response.status();
+        let response_metadata = SparseIndexResponseMetadata::from_response(&response);
+        debug!(
+            command_path = "cargo-mono.publish",
+            package = %candidate.name,
+            package_version = %candidate.version,
+            action = "prefetch-published-versions",
+            phase = "response",
+            outcome = "received",
+            attempt,
+            sparse_path = %path,
+            request_url = %request_url,
+            http_status = response_metadata.status.as_u16(),
+            content_length = response_metadata.content_length.unwrap_or_default(),
+            content_length_present = response_metadata.content_length.is_some(),
+            response_headers = %response_metadata.header_snapshot,
+            content_type = %response_metadata.content_type,
+            content_encoding = %response_metadata.content_encoding,
+            "Received sparse index lookup response"
+        );
+
+        let status = response_metadata.status;
         if status == StatusCode::TOO_MANY_REQUESTS {
             let retry_after_seconds = parse_retry_after_seconds_from_headers(response.headers());
             if retry_policy.allows_retry(attempt) {
@@ -1014,7 +1104,15 @@ fn lookup_sparse_index_version(
                 Some(status.as_u16()),
                 format!(
                     "sparse index rate limiting reached the configured retry limit after \
-                     {attempt} attempts"
+                     {attempt} attempts: {}",
+                    format_sparse_index_failure_details(
+                        "response-status",
+                        attempt,
+                        &path,
+                        Some(&response_metadata),
+                        None,
+                        &[],
+                    )
                 ),
             );
         }
@@ -1023,34 +1121,325 @@ fn lookup_sparse_index_version(
             return PrefetchPackageLookupResult::not_published(candidate.name.clone());
         }
         if !status.is_success() {
+            debug!(
+                command_path = "cargo-mono.publish",
+                package = %candidate.name,
+                package_version = %candidate.version,
+                action = "prefetch-published-versions",
+                phase = "response-status",
+                outcome = "unexpected-status",
+                attempt,
+                sparse_path = %path,
+                request_url = %request_url,
+                http_status = status.as_u16(),
+                response_headers = %response_metadata.header_snapshot,
+                content_type = %response_metadata.content_type,
+                content_encoding = %response_metadata.content_encoding,
+                "Sparse index lookup returned unexpected status"
+            );
             return PrefetchPackageLookupResult::unknown(
                 candidate.name.clone(),
                 Some(status.as_u16()),
-                format!("sparse index returned unexpected status {status}"),
+                format!(
+                    "sparse index returned unexpected status {status}: {}",
+                    format_sparse_index_failure_details(
+                        "response-status",
+                        attempt,
+                        &path,
+                        Some(&response_metadata),
+                        None,
+                        &[],
+                    )
+                ),
             );
         }
 
-        let body = match response.text() {
-            Ok(body) => body,
+        let body_bytes = match response.bytes() {
+            Ok(body) => {
+                debug!(
+                    command_path = "cargo-mono.publish",
+                    package = %candidate.name,
+                    package_version = %candidate.version,
+                    action = "prefetch-published-versions",
+                    phase = "body-read",
+                    outcome = "completed",
+                    attempt,
+                    sparse_path = %path,
+                    request_url = %request_url,
+                    http_status = status.as_u16(),
+                    byte_count = body.len(),
+                    content_length = response_metadata.content_length.unwrap_or_default(),
+                    content_length_present = response_metadata.content_length.is_some(),
+                    response_headers = %response_metadata.header_snapshot,
+                    content_type = %response_metadata.content_type,
+                    content_encoding = %response_metadata.content_encoding,
+                    "Read sparse index response body"
+                );
+                body
+            }
             Err(error) => {
+                let source = flatten_error_source_chain(&error);
+                debug!(
+                    command_path = "cargo-mono.publish",
+                    package = %candidate.name,
+                    package_version = %candidate.version,
+                    action = "prefetch-published-versions",
+                    phase = "body-read",
+                    outcome = "failed",
+                    attempt,
+                    sparse_path = %path,
+                    request_url = %request_url,
+                    http_status = status.as_u16(),
+                    content_length = response_metadata.content_length.unwrap_or_default(),
+                    content_length_present = response_metadata.content_length.is_some(),
+                    response_headers = %response_metadata.header_snapshot,
+                    content_type = %response_metadata.content_type,
+                    content_encoding = %response_metadata.content_encoding,
+                    source = %source,
+                    "Failed to read sparse index response body"
+                );
                 return PrefetchPackageLookupResult::unknown(
                     candidate.name.clone(),
-                    None,
-                    format!("failed to read sparse index response body: {error}"),
-                )
+                    Some(status.as_u16()),
+                    format!(
+                        "failed to read sparse index response body: {}",
+                        format_sparse_index_failure_details(
+                            "body-read",
+                            attempt,
+                            &path,
+                            Some(&response_metadata),
+                            Some(&error),
+                            &[],
+                        )
+                    ),
+                );
+            }
+        };
+
+        let body = match String::from_utf8(body_bytes.to_vec()) {
+            Ok(body) => body,
+            Err(error) => {
+                let source = flatten_error_source_chain(&error);
+                let body_preview = format_sparse_index_byte_preview(error.as_bytes());
+                debug!(
+                    command_path = "cargo-mono.publish",
+                    package = %candidate.name,
+                    package_version = %candidate.version,
+                    action = "prefetch-published-versions",
+                    phase = "utf8-decode",
+                    outcome = "failed",
+                    attempt,
+                    sparse_path = %path,
+                    request_url = %request_url,
+                    http_status = status.as_u16(),
+                    byte_count = error.as_bytes().len(),
+                    response_headers = %response_metadata.header_snapshot,
+                    content_type = %response_metadata.content_type,
+                    content_encoding = %response_metadata.content_encoding,
+                    body_preview = %body_preview,
+                    source = %source,
+                    "Failed to decode sparse index response body as UTF-8"
+                );
+                return PrefetchPackageLookupResult::unknown(
+                    candidate.name.clone(),
+                    Some(status.as_u16()),
+                    format!(
+                        "failed to decode sparse index response body as UTF-8: {}",
+                        format_sparse_index_failure_details(
+                            "utf8-decode",
+                            attempt,
+                            &path,
+                            Some(&response_metadata),
+                            Some(&error),
+                            &[("byte_count", error.as_bytes().len().to_string())],
+                        )
+                    ),
+                );
             }
         };
 
         return match sparse_index_has_version(&body, &candidate.version) {
             Ok(true) => PrefetchPackageLookupResult::already_published(candidate.name.clone()),
             Ok(false) => PrefetchPackageLookupResult::not_published(candidate.name.clone()),
-            Err(error) => PrefetchPackageLookupResult::unknown(
-                candidate.name.clone(),
-                None,
-                format!("failed to parse sparse index record: {error}"),
-            ),
+            Err(error) => {
+                let source = flatten_error_source_chain(&error);
+                let line_preview = sparse_index_parse_line_preview(&body, error.line());
+                debug!(
+                    command_path = "cargo-mono.publish",
+                    package = %candidate.name,
+                    package_version = %candidate.version,
+                    action = "prefetch-published-versions",
+                    phase = "json-parse",
+                    outcome = "failed",
+                    attempt,
+                    sparse_path = %path,
+                    request_url = %request_url,
+                    http_status = status.as_u16(),
+                    response_headers = %response_metadata.header_snapshot,
+                    content_type = %response_metadata.content_type,
+                    content_encoding = %response_metadata.content_encoding,
+                    line = error.line(),
+                    column = error.column(),
+                    line_preview = %line_preview,
+                    source = %source,
+                    "Failed to parse sparse index response body"
+                );
+                PrefetchPackageLookupResult::unknown(
+                    candidate.name.clone(),
+                    Some(status.as_u16()),
+                    format!(
+                        "failed to parse sparse index record: {}",
+                        format_sparse_index_failure_details(
+                            "json-parse",
+                            attempt,
+                            &path,
+                            Some(&response_metadata),
+                            Some(&error),
+                            &[
+                                ("line", error.line().to_string()),
+                                ("column", error.column().to_string()),
+                            ],
+                        )
+                    ),
+                )
+            }
         };
     }
+}
+
+fn format_sparse_index_header_snapshot(headers: &HeaderMap) -> String {
+    let pairs = SPARSE_INDEX_ALLOWLISTED_RESPONSE_HEADERS
+        .iter()
+        .filter_map(|name| {
+            sparse_index_header_value(headers, name).map(|value| format!("{name}={value}"))
+        })
+        .collect::<Vec<_>>();
+
+    if pairs.is_empty() {
+        "none".to_string()
+    } else {
+        pairs.join(", ")
+    }
+}
+
+fn sparse_index_header_value_or_na(headers: Option<&HeaderMap>, name: &str) -> String {
+    headers
+        .and_then(|headers| sparse_index_header_value(headers, name))
+        .unwrap_or_else(|| "n/a".to_string())
+}
+
+fn sparse_index_header_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    let value = headers.get(name)?;
+    Some(match value.to_str() {
+        Ok(raw) => truncate_sparse_index_preview(raw),
+        Err(_) => "<non-utf8>".to_string(),
+    })
+}
+
+fn flatten_error_source_chain(error: &dyn std::error::Error) -> String {
+    let mut parts = vec![error.to_string()];
+    let mut current = error.source();
+    while let Some(source) = current {
+        parts.push(source.to_string());
+        current = source.source();
+    }
+
+    let flattened = truncate_sparse_index_preview(&parts.join(" -> "));
+    if flattened.is_empty() {
+        "unknown".to_string()
+    } else {
+        flattened
+    }
+}
+
+fn truncate_sparse_index_preview(raw: &str) -> String {
+    let normalized = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = normalized.chars();
+    let truncated = chars
+        .by_ref()
+        .take(SPARSE_INDEX_DIAGNOSTIC_PREVIEW_CHARS)
+        .collect::<String>();
+    if chars.next().is_some() {
+        return format!("{truncated}...(truncated)");
+    }
+
+    truncated
+}
+
+fn format_sparse_index_text_preview(raw: &str) -> String {
+    let preview = truncate_sparse_index_preview(raw);
+    if preview.is_empty() {
+        "empty".to_string()
+    } else {
+        preview
+    }
+}
+
+fn format_sparse_index_byte_preview(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return "empty".to_string();
+    }
+
+    let sample_len = bytes.len().min(SPARSE_INDEX_DIAGNOSTIC_PREVIEW_BYTES);
+    let preview =
+        truncate_sparse_index_preview(String::from_utf8_lossy(&bytes[..sample_len]).as_ref());
+    if bytes.len() > sample_len && !preview.ends_with("...(truncated)") {
+        return format!("{preview}...(truncated)");
+    }
+
+    if preview.is_empty() {
+        "empty".to_string()
+    } else {
+        preview
+    }
+}
+
+fn sparse_index_parse_line_preview(index_body: &str, line_number: usize) -> String {
+    let line = index_body
+        .lines()
+        .nth(line_number.saturating_sub(1))
+        .unwrap_or_default();
+    format_sparse_index_text_preview(line)
+}
+
+fn format_sparse_index_failure_details(
+    phase: &str,
+    attempt: usize,
+    path: &str,
+    metadata: Option<&SparseIndexResponseMetadata>,
+    source: Option<&dyn std::error::Error>,
+    extra_context: &[(&str, String)],
+) -> String {
+    let status = metadata
+        .map(|metadata| metadata.status.as_u16().to_string())
+        .unwrap_or_else(|| "n/a".to_string());
+    let content_type = metadata
+        .map(|metadata| metadata.content_type.clone())
+        .unwrap_or_else(|| "n/a".to_string());
+    let content_encoding = metadata
+        .map(|metadata| metadata.content_encoding.clone())
+        .unwrap_or_else(|| "n/a".to_string());
+
+    let mut context = vec![
+        format!("phase={phase}"),
+        format!("attempt={attempt}"),
+        format!("path={path}"),
+        format!("status={status}"),
+        format!("content_type={content_type}"),
+        format!("content_encoding={content_encoding}"),
+    ];
+
+    context.extend(
+        extra_context
+            .iter()
+            .map(|(key, value)| format!("{key}={value}")),
+    );
+
+    if let Some(source) = source {
+        context.push(format!("source={}", flatten_error_source_chain(source)));
+    }
+
+    context.join(", ")
 }
 
 fn parse_publish_retry_after_seconds(stdout: &[u8], stderr: &[u8]) -> Option<u64> {
@@ -1363,9 +1752,39 @@ fn classify_publish_failure(output: &Output) -> PublishFailureKind {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BTreeSet, process::Command};
+    use std::{collections::BTreeSet, io, process::Command};
 
     use super::*;
+
+    #[derive(Debug)]
+    struct TestError {
+        message: &'static str,
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    }
+
+    impl std::fmt::Display for TestError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.message)
+        }
+    }
+
+    impl std::error::Error for TestError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            self.source
+                .as_deref()
+                .map(|source| source as &(dyn std::error::Error + 'static))
+        }
+    }
+
+    fn sparse_index_response_metadata() -> SparseIndexResponseMetadata {
+        SparseIndexResponseMetadata {
+            status: StatusCode::OK,
+            content_length: Some(12),
+            header_snapshot: "content-type=text/plain, x-cache=HIT".to_string(),
+            content_type: "text/plain".to_string(),
+            content_encoding: "n/a".to_string(),
+        }
+    }
 
     fn output_with_stderr(stderr: &str) -> Output {
         let mut output = Command::new("cargo")
@@ -1543,6 +1962,108 @@ mod tests {
         assert_eq!(sparse_index_path_for_crate("abc"), "3/a/abc");
         assert_eq!(sparse_index_path_for_crate("serde"), "se/rd/serde");
         assert_eq!(sparse_index_path_for_crate("Serde"), "se/rd/serde");
+    }
+
+    #[test]
+    fn format_sparse_index_header_snapshot_uses_allowlist_only() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "content-type",
+            " text/plain ; charset=utf-8 "
+                .parse()
+                .expect("valid header"),
+        );
+        headers.insert("x-cache", "HIT".parse().expect("valid header"));
+        headers.insert(
+            "authorization",
+            "Bearer super-secret".parse().expect("valid header"),
+        );
+
+        assert_eq!(
+            format_sparse_index_header_snapshot(&headers),
+            "content-type=text/plain ; charset=utf-8, x-cache=HIT"
+        );
+    }
+
+    #[test]
+    fn flatten_error_source_chain_joins_nested_sources() {
+        let error = TestError {
+            message: "top level",
+            source: Some(Box::new(TestError {
+                message: "middle layer",
+                source: Some(Box::new(io::Error::other("root cause"))),
+            })),
+        };
+
+        assert_eq!(
+            flatten_error_source_chain(&error),
+            "top level -> middle layer -> root cause"
+        );
+    }
+
+    #[test]
+    fn sparse_index_preview_helpers_sanitize_and_truncate() {
+        let text_preview = format_sparse_index_text_preview(&format!(
+            "alpha\n{}\nomega",
+            "x".repeat(SPARSE_INDEX_DIAGNOSTIC_PREVIEW_CHARS)
+        ));
+        assert!(text_preview.starts_with("alpha "));
+        assert!(text_preview.ends_with("...(truncated)"));
+
+        let byte_preview = format_sparse_index_byte_preview(&vec![
+            b'a';
+            SPARSE_INDEX_DIAGNOSTIC_PREVIEW_BYTES
+                + 8
+        ]);
+        assert!(byte_preview.starts_with("aaaaaaaa"));
+        assert!(byte_preview.ends_with("...(truncated)"));
+    }
+
+    #[test]
+    fn format_sparse_index_failure_details_captures_body_read_context() {
+        let metadata = sparse_index_response_metadata();
+        let error = io::Error::new(io::ErrorKind::InvalidData, "error decoding response body");
+        let details = format_sparse_index_failure_details(
+            "body-read",
+            3,
+            "sw/c_/swc_common",
+            Some(&metadata),
+            Some(&error),
+            &[],
+        );
+
+        assert!(details.contains("phase=body-read"));
+        assert!(details.contains("attempt=3"));
+        assert!(details.contains("path=sw/c_/swc_common"));
+        assert!(details.contains("status=200"));
+        assert!(details.contains("content_type=text/plain"));
+        assert!(details.contains("content_encoding=n/a"));
+        assert!(details.contains("source=error decoding response body"));
+    }
+
+    #[test]
+    fn format_sparse_index_failure_details_captures_utf8_decode_context() {
+        let metadata = sparse_index_response_metadata();
+        let error = String::from_utf8(vec![0x66, 0x6f, 0x80]).expect_err("must be invalid utf-8");
+        let details = format_sparse_index_failure_details(
+            "utf8-decode",
+            2,
+            "sw/c_/swc_common",
+            Some(&metadata),
+            Some(&error),
+            &[("byte_count", error.as_bytes().len().to_string())],
+        );
+
+        assert!(details.contains("phase=utf8-decode"));
+        assert!(details.contains("status=200"));
+        assert!(details.contains("byte_count=3"));
+        assert!(details.contains("source=invalid utf-8 sequence"));
+    }
+
+    #[test]
+    fn sparse_index_parse_line_preview_returns_target_line() {
+        let body = "first line\n  {invalid json}\nthird line";
+        assert_eq!(sparse_index_parse_line_preview(body, 2), "{invalid json}");
     }
 
     #[test]
