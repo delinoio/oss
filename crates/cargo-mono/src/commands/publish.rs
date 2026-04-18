@@ -29,7 +29,6 @@ pub(super) const PUBLISH_MAX_ATTEMPTS_ENV: &str = "CARGO_MONO_PUBLISH_MAX_ATTEMP
 pub(super) const PUBLISH_PREFETCH_CONCURRENCY_ENV: &str = "CARGO_MONO_PUBLISH_PREFETCH_CONCURRENCY";
 const DEFAULT_PREFETCH_CONCURRENCY: usize = 16;
 const MAX_PREFETCH_CONCURRENCY: usize = 64;
-const PREFETCH_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const PUBLISH_NO_VERIFY: bool = true;
 const INITIAL_RETRY_DELAY_SECONDS: u64 = 2;
 const MAX_RETRY_DELAY_SECONDS: u64 = 60;
@@ -869,10 +868,7 @@ fn run_parallel_sparse_index_lookup(
         return Vec::new();
     }
 
-    let http_client = match reqwest::blocking::Client::builder()
-        .timeout(PREFETCH_HTTP_TIMEOUT)
-        .build()
-    {
+    let http_client = match reqwest::blocking::Client::builder().build() {
         Ok(client) => client,
         Err(error) => {
             return candidates
