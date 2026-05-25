@@ -20,6 +20,7 @@
 - `bump` must not create Git tags.
 - `publish` is the only command allowed to create release tags, and only for packages listed in `[workspace.metadata.cargo-mono.publish.tag].packages`.
 - `publish` must always delegate to `cargo publish --no-verify`, including when `cargo mono publish --dry-run` is used.
+- `publish` package ordering must be derived from manifest-declared workspace path dependencies, including optional feature-gated dependencies and normal, build, dev, and target-specific dependency declarations.
 - `publish` must treat only index propagation lag and registry rate limiting as retryable failures; other publish failures must still fail immediately.
 - Retryable `publish` failures must retry indefinitely by default with capped exponential backoff (`2s`, `4s`, `8s`, `16s`, `32s`, then `60s`), and rate-limit retries must honor `Retry-After` when present.
 - Operators must be able to cap retry attempts via `cargo mono publish --max-attempts <count>` or `CARGO_MONO_PUBLISH_MAX_ATTEMPTS`, with precedence `--max-attempts` > env > default unlimited retries.
@@ -76,6 +77,7 @@
 
 ## Dependencies and Integrations
 - Integrates with Cargo workspace metadata and release workflows.
+- Publish ordering uses workspace package manifest dependency declarations rather than only Cargo's default-feature resolve graph, so optional workspace path dependencies are published before dependents that expose them behind features.
 - Integrates with root automation (`auto-publish`) through stable command contracts, including CI-driven tag publication.
 - Integrates with tag-based binary distribution automation (`release-cargo-mono`) through stable artifact naming and bundle-signing contracts.
 - Integrates with direct installer scripts and `cargo-binstall` metadata for prebuilt binary distribution.
