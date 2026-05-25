@@ -385,6 +385,15 @@ pub fn execute(args: &PublishArgs, output: OutputSettings, app: &CargoMonoApp) -
     }
 
     let order = app.workspace.topological_order(&publishable_targets)?;
+    info!(
+        command_path = "cargo-mono.publish",
+        workspace_root = %app.workspace.root.display(),
+        action = "resolve-publish-order",
+        outcome = "resolved",
+        package_count = order.len(),
+        order_sample = %format_publish_order_sample(&order, 8),
+        "Resolved publish package order"
+    );
     let prefetch_result = prefetch_published_versions(
         &app.workspace,
         &order,
@@ -1307,6 +1316,26 @@ fn indent_multiline(raw: &str, prefix: &str) -> String {
         .map(|line| format!("{prefix}{line}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn format_publish_order_sample(order: &[String], limit: usize) -> String {
+    if order.is_empty() {
+        return "none".to_string();
+    }
+
+    let visible_count = order.len().min(limit);
+    let mut sample = order
+        .iter()
+        .take(visible_count)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("|");
+
+    if order.len() > visible_count {
+        sample.push_str(&format!("|...(+{} more)", order.len() - visible_count));
+    }
+
+    sample
 }
 
 fn retry_delay(attempt: usize) -> Duration {

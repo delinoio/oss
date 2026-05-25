@@ -17,6 +17,7 @@ Provide a Cargo subcommand for Rust monorepo lifecycle management, including ver
 - Release automation integration must keep stable command semantics.
 - Release tagging responsibility is split by command: `bump` must not create Git tags, while `publish` may create local Git tags for configured packages.
 - `publish` must delegate to `cargo publish --no-verify` for all package uploads and dry-run executions.
+- `publish` package ordering must include all manifest-declared workspace path dependencies, including optional feature-gated dependencies that are absent from Cargo's default-feature resolve graph.
 - Retryable `publish` failures remain narrowly scoped to index propagation lag and registry rate limiting, and must retry indefinitely by default with capped exponential backoff (`2s`, `4s`, `8s`, `16s`, `32s`, then `60s`) while honoring `Retry-After` when present.
 - `publish` retry overrides must remain operator-controlled through `--max-attempts <count>` and `CARGO_MONO_PUBLISH_MAX_ATTEMPTS`, with precedence `--max-attempts` > env > default unlimited retries.
 - `publish` crates.io sparse-index prefetch must not enforce a separate client-side HTTP timeout; sparse index requests must rely on the HTTP client's default timeout behavior.

@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use cargo_metadata::{MetadataCommand, PackageId};
+use cargo_metadata::MetadataCommand;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use semver::Version;
 use serde::Serialize;
@@ -52,7 +52,6 @@ impl Workspace {
             .cloned()
             .collect::<BTreeSet<_>>();
 
-        let mut id_to_name = HashMap::<PackageId, String>::new();
         let mut packages = BTreeMap::<String, WorkspacePackage>::new();
 
         for package in metadata
@@ -125,7 +124,6 @@ impl Workspace {
                 publishable,
             };
 
-            id_to_name.insert(package.id.clone(), package.name.clone());
             packages.insert(package.name.clone(), entry);
         }
 
@@ -138,26 +136,35 @@ impl Workspace {
             .map(|name| (name.clone(), BTreeSet::new()))
             .collect::<BTreeMap<_, _>>();
 
-        if let Some(resolve) = metadata.resolve {
-            for node in resolve.nodes {
-                let Some(node_name) = id_to_name.get(&node.id) else {
+        let package_name_by_directory = packages
+            .values()
+            .map(|package| (package.directory.clone(), package.name.clone()))
+            .collect::<BTreeMap<_, _>>();
+
+        for package in metadata
+            .packages
+            .iter()
+            .filter(|pkg| workspace_members.contains(&pkg.id))
+        {
+            let package_name = package.name.clone();
+            for dependency in &package.dependencies {
+                let Some(dependency_path) = dependency.path.as_ref() else {
+                    continue;
+                };
+                let dependency_path =
+                    normalize_dependency_path(&root, dependency_path.as_std_path());
+                let Some(dependency_name) = package_name_by_directory.get(&dependency_path) else {
                     continue;
                 };
 
-                for dependency in node.deps {
-                    let Some(dependency_name) = id_to_name.get(&dependency.pkg) else {
-                        continue;
-                    };
-
-                    dependencies
-                        .entry(node_name.clone())
-                        .or_default()
-                        .insert(dependency_name.clone());
-                    dependents
-                        .entry(dependency_name.clone())
-                        .or_default()
-                        .insert(node_name.clone());
-                }
+                dependencies
+                    .entry(package_name.clone())
+                    .or_default()
+                    .insert(dependency_name.clone());
+                dependents
+                    .entry(dependency_name.clone())
+                    .or_default()
+                    .insert(package_name.clone());
             }
         }
         let workspace_package_names = packages.keys().cloned().collect::<BTreeSet<_>>();
@@ -578,6 +585,14 @@ fn path_is_excluded_by_filters(
         include_path_globset.is_some_and(|globset| globset.is_match(&normalized_path));
     let excluded = exclude_path_globset.is_some_and(|globset| globset.is_match(&normalized_path));
     excluded && !include_override
+}
+
+fn normalize_dependency_path(root: &Path, dependency_path: &Path) -> PathBuf {
+    if dependency_path.is_absolute() {
+        dependency_path.to_path_buf()
+    } else {
+        root.join(dependency_path)
+    }
 }
 
 fn format_string_sample(values: &[String], limit: usize) -> String {

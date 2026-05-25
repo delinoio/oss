@@ -830,6 +830,38 @@ fn publish_dry_run_forwards_no_verify_to_cargo_publish() {
 }
 
 #[test]
+fn publish_orders_optional_workspace_dependency_before_dependent() {
+    let temp_dir = init_optional_dependency_workspace();
+
+    let mut command = cargo_mono_command_with_fake_publish(temp_dir.path());
+    let output = run_success(command.current_dir(temp_dir.path()).args([
+        "--output",
+        "json",
+        "publish",
+        "--allow-dirty",
+        "--registry",
+        "internal",
+        "--package",
+        "app",
+        "--package",
+        "compat",
+    ]));
+
+    let result = parse_stdout_json(&output);
+    assert_eq!(
+        result["published"],
+        json!([
+            { "name": "compat", "attempts": 1 },
+            { "name": "app", "attempts": 1 }
+        ])
+    );
+    assert_eq!(
+        read_fake_publish_packages(temp_dir.path()),
+        vec!["compat".to_string(), "app".to_string()]
+    );
+}
+
+#[test]
 fn publish_retries_index_not_ready_past_three_attempts_by_default() {
     let temp_dir = init_mixed_publishability_workspace();
     write_fake_publish_sequence(
@@ -1058,12 +1090,31 @@ set -euo pipefail
 if [ "${1-}" = "publish" ]; then
   : "${FAKE_CARGO_PUBLISH_ARGS_FILE:?}"
   : "${FAKE_CARGO_PUBLISH_ATTEMPT_FILE:?}"
+  : "${FAKE_CARGO_PUBLISH_LOG_FILE:?}"
   attempt=1
   if [ -f "${FAKE_CARGO_PUBLISH_ATTEMPT_FILE}" ]; then
     attempt=$(( $(cat "${FAKE_CARGO_PUBLISH_ATTEMPT_FILE}") + 1 ))
   fi
   printf '%s\n' "${attempt}" > "${FAKE_CARGO_PUBLISH_ATTEMPT_FILE}"
   printf '%s\n' "$@" > "${FAKE_CARGO_PUBLISH_ARGS_FILE}"
+
+  published_package=""
+  while [ "$#" -gt 0 ]; do
+    arg="$1"
+    shift
+    case "${arg}" in
+      -p | --package)
+        published_package="${1-}"
+        if [ "$#" -gt 0 ]; then
+          shift
+        fi
+        ;;
+      --package=*)
+        published_package="${arg#--package=}"
+        ;;
+    esac
+  done
+  printf '%s\n' "${published_package}" >> "${FAKE_CARGO_PUBLISH_LOG_FILE}"
 
   scenario="success"
   if [ -n "${FAKE_CARGO_PUBLISH_SCENARIO_FILE-}" ] && [ -f "${FAKE_CARGO_PUBLISH_SCENARIO_FILE}" ]; then
@@ -1120,6 +1171,10 @@ exec "${REAL_CARGO:?}" "$@"
         fake_publish_attempts_path(working_dir),
     );
     command.env(
+        "FAKE_CARGO_PUBLISH_LOG_FILE",
+        fake_publish_log_path(working_dir),
+    );
+    command.env(
         "FAKE_CARGO_PUBLISH_SCENARIO_FILE",
         fake_publish_scenario_path(working_dir),
     );
@@ -1133,6 +1188,10 @@ fn fake_publish_args_path(working_dir: &Path) -> PathBuf {
 
 fn fake_publish_attempts_path(working_dir: &Path) -> PathBuf {
     working_dir.join(".fake-publish-attempts")
+}
+
+fn fake_publish_log_path(working_dir: &Path) -> PathBuf {
+    working_dir.join(".fake-publish-log")
 }
 
 fn fake_publish_scenario_path(working_dir: &Path) -> PathBuf {
@@ -1151,6 +1210,12 @@ fn read_fake_publish_attempt_count(working_dir: &Path) -> usize {
         .trim()
         .parse::<usize>()
         .expect("fake cargo publish attempt count should be numeric")
+}
+
+fn read_fake_publish_packages(working_dir: &Path) -> Vec<String> {
+    let raw = fs::read_to_string(fake_publish_log_path(working_dir))
+        .expect("failed to read fake cargo publish package log");
+    raw.lines().map(str::to_string).collect()
 }
 
 fn write_fake_publish_sequence(working_dir: &Path, scenarios: &[&str]) {
@@ -1299,6 +1364,76 @@ alpha = { path = "../alpha", version = "0.1.0" }
         "pub fn gamma() -> &'static str { \"gamma\" }\n",
     )
     .expect("failed to write gamma source");
+
+    run_git(root, &["init", "-q"]);
+    run_git(root, &["config", "user.name", "test"]);
+    run_git(root, &["config", "user.email", "test@example.com"]);
+    run_git(root, &["add", "."]);
+    run_git(
+        root,
+        &[
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ],
+    );
+
+    temp_dir
+}
+
+fn init_optional_dependency_workspace() -> tempfile::TempDir {
+    let temp_dir = tempfile::tempdir().expect("failed to create tempdir");
+    let root = temp_dir.path();
+
+    fs::create_dir_all(root.join("crates/app/src")).expect("failed to create app directory");
+    fs::create_dir_all(root.join("crates/compat/src")).expect("failed to create compat directory");
+
+    fs::write(
+        root.join("Cargo.toml"),
+        r#"[workspace]
+members = ["crates/app", "crates/compat"]
+resolver = "2"
+"#,
+    )
+    .expect("failed to write workspace manifest");
+    fs::write(
+        root.join("crates/app/Cargo.toml"),
+        r#"[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[features]
+compat = ["dep:compat"]
+
+[dependencies]
+compat = { path = "../compat", version = "0.1.0", optional = true }
+"#,
+    )
+    .expect("failed to write app manifest");
+    fs::write(
+        root.join("crates/compat/Cargo.toml"),
+        r#"[package]
+name = "compat"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+"#,
+    )
+    .expect("failed to write compat manifest");
+    fs::write(root.join("crates/app/src/lib.rs"), "pub fn app() {}\n")
+        .expect("failed to write app source");
+    fs::write(
+        root.join("crates/compat/src/lib.rs"),
+        "pub fn compat() {}\n",
+    )
+    .expect("failed to write compat source");
 
     run_git(root, &["init", "-q"]);
     run_git(root, &["config", "user.name", "test"]);
