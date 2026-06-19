@@ -449,7 +449,10 @@ fn manifest_creation_root() -> Result<PathBuf> {
 }
 
 fn manifest_creation_root_from(start: &Path) -> PathBuf {
-    find_git_root(start).unwrap_or(start).to_path_buf()
+    find_git_root(start)
+        .or_else(|| find_manifest_root(start))
+        .unwrap_or(start)
+        .to_path_buf()
 }
 
 fn find_manifest_root(start: &Path) -> Option<&Path> {
@@ -533,14 +536,15 @@ mod tests {
 
     #[test]
     fn global_home_falls_back_to_userprofile_after_invalid_home() {
+        let userprofile = tempfile::tempdir().expect("userprofile");
         let home = binpm_home_from_values(
             None,
             Some(PathBuf::from("relative-home")),
-            Some(PathBuf::from("/tmp/userprofile")),
+            Some(userprofile.path().to_path_buf()),
         )
         .expect("global home");
 
-        assert_eq!(home, PathBuf::from("/tmp/userprofile/.binpm"));
+        assert_eq!(home, userprofile.path().join(".binpm"));
     }
 
     #[test]
@@ -606,6 +610,17 @@ mod tests {
         let nested = temp_dir.path().join("nested").join("deeper");
         std::fs::create_dir_all(&nested).expect("create nested dir");
         std::fs::write(nested.join("binpm.toml"), "version = 1\n").expect("write manifest");
+
+        assert_eq!(manifest_creation_root_from(&nested), temp_dir.path());
+    }
+
+    #[test]
+    fn manifest_creation_root_uses_manifest_ancestor_without_git_ancestor() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n")
+            .expect("write manifest");
+        let nested = temp_dir.path().join("nested").join("deeper");
+        std::fs::create_dir_all(&nested).expect("create nested dir");
 
         assert_eq!(manifest_creation_root_from(&nested), temp_dir.path());
     }

@@ -112,6 +112,27 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
 }
 
 #[test]
+fn init_from_nested_directory_detects_existing_manifest_without_git() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let nested_dir = temp_dir.path().join("packages").join("cli");
+    fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let mut command = binpm();
+
+    command
+        .current_dir(&nested_dir)
+        .arg("init")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Refusing to overwrite existing manifest",
+        ));
+
+    assert!(!nested_dir.join("binpm.toml").exists());
+}
+
+#[test]
 fn env_prints_shell_path_exports() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
