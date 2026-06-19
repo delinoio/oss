@@ -463,19 +463,11 @@ fn find_git_root(start: &Path) -> Option<&Path> {
 }
 
 fn binpm_home() -> Result<PathBuf> {
-    if let Some(home) = env_path("BINPM_HOME") {
-        return absolute_global_home("BINPM_HOME", home);
-    }
-
-    if let Some(home) = env_path("HOME") {
-        return absolute_global_home("HOME", home.join(".binpm"));
-    }
-
-    if let Some(home) = env_path("USERPROFILE") {
-        return absolute_global_home("USERPROFILE", home.join(".binpm"));
-    }
-
-    Err(BinpmError::MissingGlobalHome)
+    binpm_home_from_values(
+        env_path("BINPM_HOME"),
+        env_path("HOME"),
+        env_path("USERPROFILE"),
+    )
 }
 
 fn env_path(name: &str) -> Option<PathBuf> {
@@ -492,6 +484,35 @@ fn absolute_global_home(name: &'static str, path: PathBuf) -> Result<PathBuf> {
     }
 }
 
+fn binpm_home_from_values(
+    binpm_home: Option<PathBuf>,
+    home: Option<PathBuf>,
+    userprofile: Option<PathBuf>,
+) -> Result<PathBuf> {
+    if let Some(home) = binpm_home {
+        return absolute_global_home("BINPM_HOME", home);
+    }
+
+    let home_error = if let Some(home) = home {
+        match absolute_global_home("HOME", home.join(".binpm")) {
+            Ok(home) => return Ok(home),
+            Err(error) => Some(error),
+        }
+    } else {
+        None
+    };
+
+    if let Some(home) = userprofile {
+        return absolute_global_home("USERPROFILE", home.join(".binpm"));
+    }
+
+    if let Some(error) = home_error {
+        return Err(error);
+    }
+
+    Err(BinpmError::MissingGlobalHome)
+}
+
 fn path_state(path: &Path) -> &'static str {
     if path.exists() {
         "present"
@@ -502,12 +523,33 @@ fn path_state(path: &Path) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use super::{
-        lockfile_digest, manifest_creation_root_from, project_root_from, shell_path, shell_quote,
+        binpm_home_from_values, lockfile_digest, manifest_creation_root_from, project_root_from,
+        shell_path, shell_quote,
     };
     use crate::cli::Shell;
+
+    #[test]
+    fn global_home_falls_back_to_userprofile_after_invalid_home() {
+        let home = binpm_home_from_values(
+            None,
+            Some(PathBuf::from("relative-home")),
+            Some(PathBuf::from("/tmp/userprofile")),
+        )
+        .expect("global home");
+
+        assert_eq!(home, PathBuf::from("/tmp/userprofile/.binpm"));
+    }
+
+    #[test]
+    fn global_home_keeps_invalid_home_error_without_userprofile() {
+        let error = binpm_home_from_values(None, Some(PathBuf::from("relative-home")), None)
+            .expect_err("invalid home");
+
+        assert!(error.to_string().contains("Invalid HOME"));
+    }
 
     #[test]
     fn missing_lockfile_has_stable_empty_digest() {
