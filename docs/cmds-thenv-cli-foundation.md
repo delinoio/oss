@@ -16,7 +16,7 @@
 - Stable CLI subcommands are `push`, `pull`, `list`, and `rotate`.
 - Secret lifecycle mapping must remain explicit: `push` (create/update), `pull` (read), `rotate` (version rollover).
 - Authentication, trust bootstrap, and key management flows must be deterministic.
-- Output contracts must align with server API and web console expectations, including audit and policy semantics.
+- Output contracts must align with server API expectations, including audit and policy semantics.
 
 ## Storage
 - Stores local trust metadata and encrypted material according to explicit path contracts.
@@ -37,14 +37,12 @@
 
 ## Dependencies and Integrations
 - Integrates with `servers/thenv` APIs.
-- Integrates with `apps/devkit/src/apps/thenv` UX expectations.
 
 ## Change Triggers
 - Update `docs/project-thenv.md` and this file when CLI command shape or trust boundaries change.
-- Keep compatibility synchronized with `docs/servers-thenv-server-foundation.md` and `docs/apps-thenv-web-console-foundation.md`.
+- Keep compatibility synchronized with `docs/servers-thenv-server-foundation.md`.
 
 ## References
 - `docs/project-thenv.md`
 - `docs/servers-thenv-server-foundation.md`
-- `docs/apps-thenv-web-console-foundation.md`
 - `docs/domain-template.md`

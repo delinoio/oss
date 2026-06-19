@@ -36,7 +36,7 @@ When working in a specific directory, apply the rules from that directory and al
 ### Monorepo Structure Map
 
 - `docs/`: Source of truth for project contracts and repository documentation.
-- `apps/`: User-facing apps (Next.js and React Native).
+- `apps/`: User-facing apps (React Native and documentation web surfaces).
 - `crates/`: Rust crates and Rust-based tooling.
 - `protos/`: Shared Connect RPC proto contracts used by multi-runtime projects.
 - `cmds/`: Go command tools for workflow orchestration.
@@ -56,9 +56,6 @@ When working in a specific directory, apply the rules from that directory and al
 - `docs/project-derun.md`: Derun CLI project index.
 - `docs/project-ttl.md`: TTL compiler project index.
 - `docs/project-mpapp.md`: Expo mobile app project index.
-- `docs/project-devkit.md`: Devkit host platform project index.
-- `docs/project-devkit-commit-tracker.md`: Commit Tracker multi-component project index.
-- `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app project index.
 - `docs/project-thenv.md`: Thenv multi-component project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
@@ -74,9 +71,6 @@ enum ProjectId {
   Derun = "derun",
   Ttl = "ttl",
   Mpapp = "mpapp",
-  Devkit = "devkit",
-  DevkitCommitTracker = "devkit-commit-tracker",
-  DevkitRemoteFilePicker = "devkit-remote-file-picker",
   Thenv = "thenv",
   SerdeFeather = "serde-feather",
   PublicDocs = "public-docs",
@@ -90,10 +84,7 @@ enum ProjectId {
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
 - `mpapp` -> `apps/mpapp`
-- `devkit` -> `apps/devkit`
-- `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`, `servers/commit-tracker`, `cmds/commit-tracker`
-- `devkit-remote-file-picker` -> `apps/devkit/src/apps/remote-file-picker`
-- `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
+- `thenv` -> `cmds/thenv`, `servers/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `public-docs` -> `apps/public-docs`
 
@@ -103,57 +94,19 @@ enum ProjectId {
 - `ttlc run` requires `--task` and accepts optional `--args <json>` with default `{}`.
 - `ttlc run` response payload includes `result`, `run_trace`, and root-task `cache_analysis`.
 
-### Devkit Mini-App Identifier Contract
-
-```ts
-enum DevkitMiniAppId {
-  CommitTracker = "commit-tracker",
-  RemoteFilePicker = "remote-file-picker",
-  Thenv = "thenv",
-}
-```
-
-### Commit Tracker Component Contract
-
-`devkit-commit-tracker` is a single project with three active components:
-
-```ts
-enum CommitTrackerComponent {
-  WebApp = "web-app",
-  ApiServer = "api-server",
-  Collector = "collector",
-}
-```
-
-Component mapping:
-- `WebApp` -> `apps/devkit/src/apps/commit-tracker`
-- `ApiServer` -> `servers/commit-tracker`
-- `Collector` -> `cmds/commit-tracker`
-
-### Devkit Routing Contract
-
-All Devkit mini apps must be exposed at `/apps/<id>`.
-
-Examples:
-- `/apps/commit-tracker`
-- `/apps/remote-file-picker`
-- `/apps/thenv`
-
 ### Thenv Component Contract
 
-`thenv` is a three-component project with fixed mapping:
+`thenv` is a two-component project with fixed mapping:
 
 ```ts
 enum ThenvComponent {
   Cli = "cli",
   Server = "server",
-  WebConsole = "web-console",
 }
 ```
 
 - `Cli` -> `cmds/thenv`
 - `Server` -> `servers/thenv`
-- `WebConsole` -> `apps/devkit/src/apps/thenv`
 
 ### Serde Feather Component Contract
 
@@ -197,7 +150,7 @@ enum SerdeFeatherComponent {
 
 - Apply this contract to all open/new GitHub issues.
 - Use issue titles in the format `<domain>: <description>`.
-- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`, `devkit/thenv`).
+- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`, `thenv`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not use bracket-style project prefixes like `[serde-feather]`.
 - Use the following Markdown section order for issue bodies:
@@ -246,8 +199,6 @@ Coverage expectations:
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - `rust-test`: runs `cargo test --workspace --all-targets`.
-- `node-devkit-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter devkit... test`.
-- `node-devkit-build`: runs `pnpm install --frozen-lockfile` and `pnpm --filter devkit... build`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
@@ -301,29 +252,8 @@ Release automation baseline:
 
 ### Scope in This Domain
 
-- `apps/devkit`: Next.js 16 micro-app platform.
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/public-docs`: Mintlify public documentation app.
-
-### Devkit Identifier Contract
-
-Treat Devkit mini app IDs as stable enum-style values:
-
-```ts
-enum DevkitMiniAppId {
-  CommitTracker = "commit-tracker",
-  RemoteFilePicker = "remote-file-picker",
-  Thenv = "thenv",
-}
-```
-
-### Devkit Rules
-
-- Mini app code must live at `apps/devkit/src/apps/<id>`.
-- Mini app identifiers must be stable kebab-case values.
-- Mini app routes must follow `/apps/<id>`.
-- Shared shell concerns belong to Devkit platform modules, not mini app internals.
-- New mini apps require a project index doc and an app-domain contract doc before implementation.
 
 ### mpapp Rules
 
@@ -335,11 +265,6 @@ enum DevkitMiniAppId {
 - `public-docs` must remain Mintlify-based unless a documented architecture decision changes it.
 - Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
-
-### Multi-Component Contract Sync
-
-- `devkit-commit-tracker` app changes must update `docs/apps-devkit-commit-tracker-web-app-foundation.md` and `docs/project-devkit-commit-tracker.md`.
-- `thenv` web console changes must update `docs/apps-thenv-web-console-foundation.md` and `docs/project-thenv.md`.
 
 ### Testing and Validation
 
@@ -365,12 +290,10 @@ enum DevkitMiniAppId {
 
 - `cmds/derun`: Go tool for AI coding-agent workflow orchestration.
 - `cmds/thenv`: Secure `.env` sharing CLI.
-- `cmds/commit-tracker`: Commit Tracker collector component.
 - `cmds/ttlc`: TTL compiler CLI for `.ttl` parsing/type-checking, Go code generation, `run` task execution, and cache-aware task execution contracts.
 
 ### Command Component Contract
 
-- `cmds/commit-tracker` is the `Collector` component for `devkit-commit-tracker`.
 - `cmds/thenv` is the `Cli` component for `thenv`.
 - `cmds/ttlc` command runtime is defined in `docs/cmds-ttl-foundation.md`.
 - TTL language semantics are defined in `docs/cmds-ttl-language-contract.md`.
@@ -392,7 +315,6 @@ enum DevkitMiniAppId {
 - Run relevant Go tests (`go test`) when code in this domain changes.
 - Update `docs/project-derun.md` and `docs/cmds-derun-foundation.md` whenever derun command contracts change.
 - Update `docs/project-thenv.md` and `docs/cmds-thenv-cli-foundation.md` whenever thenv CLI operations or trust boundaries change.
-- Update `docs/project-devkit-commit-tracker.md` and `docs/cmds-devkit-commit-tracker-collector-foundation.md` whenever collector contracts change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-foundation.md` whenever TTL compiler command shape, cache backend, or runtime boundaries change.
 - Update `docs/project-ttl.md` and `docs/cmds-ttl-language-contract.md` whenever TTL syntax/type/invalidation/code-generation contracts change.
 
@@ -472,7 +394,6 @@ enum DevkitMiniAppId {
 ### Scope in This Domain
 
 - `servers/thenv`: Backend for secure environment sharing.
-- `servers/commit-tracker`: Commit Tracker API server component.
 
 ### Server Language and Data Rules
 
@@ -508,12 +429,10 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 
 - Changes to server interfaces must be synchronized with related CLI and app contracts.
 - Update `docs/project-thenv.md` and `docs/servers-thenv-server-foundation.md` for every thenv interface or trust model update.
-- Update `docs/project-devkit-commit-tracker.md` and `docs/servers-devkit-commit-tracker-api-server-foundation.md` for every commit-tracker API contract update.
 
 ### Multi-Component Contract Sync
 
-- `servers/commit-tracker` changes must keep collector and web contracts synchronized.
-- `servers/thenv` changes must keep CLI and web-console contracts synchronized.
+- `servers/thenv` changes must keep CLI contracts synchronized.
 
 ### Testing and Validation
 

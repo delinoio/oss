@@ -19,8 +19,6 @@ main() {
 	(
 		cd "${REPO_ROOT}"
 		go generate ./servers/thenv
-		go generate ./servers/commit-tracker
-		go generate ./servers/remote-file-picker
 	)
 
 	log "protobuf Go generation completed"
