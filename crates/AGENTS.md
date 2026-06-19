@@ -7,7 +7,7 @@
 
 ### Scope in This Domain
 
-- Planned `crates/binpm`: Rust-based Node-free binary package manager for GitHub Release assets.
+- Planned `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/with-watch`: Rust-based filesystem-watching command wrapper.
@@ -38,14 +38,25 @@
 
 - Keep `binpm` documentation-only until `crates/binpm` is intentionally scaffolded in an implementation change.
 - Preserve `~/.binpm` as the canonical global home directory for binpm-managed binaries, package records, global cache entries, and temporary extraction state.
-- Treat `~/.binpm/cache` as the user-level global GitHub Release asset cache shared by all binpm installs for the same account.
-- Keep cache management command identifiers stable as `binpm cache list`, `binpm cache prune`, and `binpm cache clean`.
-- Ensure cache reuse is always verified against GitHub asset digests, upstream checksum/signature material, or locally recorded SHA-256 metadata before extraction or install finalization.
+- Treat `~/.binpm/cache` as the user-level global release asset cache shared by all binpm installs for the same account.
+- Keep cache management and diagnostic command identifiers stable as `binpm cache list`, `binpm cache prune`, `binpm cache clean`, and `binpm cache key`.
+- Ensure cache reuse is always verified against provider asset digests, upstream checksum material, successfully verified signatures, or locally recorded SHA-256 metadata before extraction or install finalization.
 - Keep cache cleanup behavior separate from uninstall behavior: cache pruning and cleaning must not remove package records or executable links/copies under `~/.binpm/bin`.
+- Keep `binpm cache key` read-only; it must not download, install, or populate cache entries.
+- Keep source identifiers aligned with the documented enum contract: `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
+- Keep GitLab release selection stable by excluding upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
+- Keep GitLab release asset link selection HTTPS-only before candidate scoring and download, including final redirect targets.
+- Keep GitLab generated `assets.sources` source archives out of installable asset scoring.
 - Preserve `binpm.toml` and `binpm.lock` as the canonical project-local declaration and resolution files, with project-local executables installed under `$repoRoot/.binpm/bin`.
+- Keep target-specific asset overrides under `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.
 - Keep committed `binpm.lock` target-specific and deterministic; install timestamps and other machine-local metadata belong in uncommitted package records or logs.
-- Keep GitHub Release asset selection deterministic and documented by OS, CPU architecture, and libc/ABI environment.
+- Keep committed `binpm.lock` URLs sanitized and free of query strings, fragments, credentials, and expiring signed download parameters.
+- Keep local `binpm remove` cleanup aligned with project-local package records when they exist.
+- Keep release asset selection deterministic and documented by OS, CPU architecture, and libc/ABI environment.
 - Keep checksum/signature fallback behavior aligned with `docs/project-binpm.md` and `docs/crates-binpm-foundation.md`.
+- Keep strict verification behavior aligned with `--require-verified` and `binpm verify --require-verified`; signature material must count only after successful verification under a documented trust policy.
+- Keep local `binpm install`, `binpm update`, and `binpm x` behavior aligned with `--frozen-lockfile`, default `CI=true` frozen behavior, and `--no-frozen-lockfile`.
+- Keep `--no-confirm` stable for script compatibility and future dangerous-operation confirmation prompts.
 - Keep `binpm x` command execution aligned with the local manifest contract: use manifest-declared tools or explicit `--package`, prepend project-local bin directories to `PATH`, and do not infer GitHub repositories from command names.
 
 ### cargo-mono-Specific Rules
