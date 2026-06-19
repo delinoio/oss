@@ -7,6 +7,7 @@
 ## Runtime and Language
 - Runtime: Mintlify web documentation app
 - Primary language: Markdown/JSON content with web build tooling
+- This app is an existing documented exception to the repository default that new static sites under `apps/` use Rsbuild/Rspress-style toolchains.
 
 ## Users and Operators
 - External users reading public product documentation
@@ -35,6 +36,7 @@
 ## Build and Test
 - Local validation: `pnpm --filter public-docs test`
 - CI alignment: `node-public-docs-test`
+- Deployment remains Mintlify-aligned for this existing app unless a documented architecture decision migrates it to the default Cloudflare Pages static-site deployment model.
 
 ## Dependencies and Integrations
 - Integrates with repository contract docs under `docs/`.
@@ -46,4 +48,5 @@
 
 ## References
 - `docs/project-public-docs.md`
+- `docs/repository-defaults.md`
 - `docs/domain-template.md`

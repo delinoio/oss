@@ -29,12 +29,14 @@ Use direct links to `docs/<domain>-<project-or-component>-<contract>.md` files.
 ## Cross-Domain Invariants
 Document rules that must remain consistent across domain boundaries.
 Include route IDs, component IDs, protocol ownership, and compatibility rules when relevant.
+Document any project-level deviations from `docs/repository-defaults.md`.
 
 ## Change Policy
 Document which documents must be updated together when contracts, ownership, or interfaces change.
 
 ## References
 Link to related project index documents, templates, and other canonical contracts.
+Include `docs/repository-defaults.md`.
 
 ## Checklist for New Project Index Docs
 - The file name uses `project-` prefix and kebab-case ID.
