@@ -327,8 +327,8 @@ fn print_env(shell: Shell, global_bin: &Path, local_bin: &Path) {
         }
         Shell::Powershell => {
             println!(
-                "$env:PATH = {local} + [System.IO.Path]::PathSeparator + {global} + \
-                 [System.IO.Path]::PathSeparator + $env:PATH"
+                "$env:PATH = {local} + [System.IO.Path]::PathSeparator + {global} + $(if \
+                 ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} else {{ '' }})"
             );
         }
     }

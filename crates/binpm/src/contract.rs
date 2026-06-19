@@ -367,7 +367,7 @@ impl TargetLibc {
         match (is_musl, is_msvc, is_gnu, is_linux) {
             (true, _, _, _) => Self::Musl,
             (_, true, _, _) => Self::Msvc,
-            (_, _, true, _) | (_, _, _, true) => Self::Gnu,
+            (_, _, true, _) => Self::Gnu,
             _ => Self::Any,
         }
     }
@@ -530,6 +530,14 @@ mod tests {
         assert_eq!(
             TargetLibc::from_current_cfg(false, false, true, false),
             TargetLibc::Gnu
+        );
+    }
+
+    #[test]
+    fn does_not_guess_gnu_for_unknown_current_linux_libc() {
+        assert_eq!(
+            TargetLibc::from_current_cfg(false, false, false, true),
+            TargetLibc::Any
         );
     }
 

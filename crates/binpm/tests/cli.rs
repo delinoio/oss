@@ -361,6 +361,25 @@ fn env_powershell_uses_runtime_path_separator() {
 }
 
 #[test]
+fn env_powershell_avoids_trailing_separator_when_path_is_unset() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", "/tmp/binpm-home")
+        .args(["env", "--shell", "powershell"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("if ($env:PATH)"))
+        .stdout(predicate::str::contains("else { '' }"))
+        .stdout(predicate::str::contains(
+            "[System.IO.Path]::PathSeparator + $env:PATH",
+        ));
+}
+
+#[test]
 fn install_validates_source_before_not_implemented_error() {
     let mut command = binpm();
 
