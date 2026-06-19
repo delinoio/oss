@@ -153,6 +153,7 @@ fn split_version<'source>(
         Some((source, version)) if !source.is_empty() && !version.is_empty() => {
             Ok((source, Some(version.to_string())))
         }
+        Some(("", _)) => Err(invalid_source(raw, "source path cannot be empty")),
         Some((_, "")) => Err(invalid_source(raw, "source version cannot be empty")),
         _ => Ok((remainder, None)),
     }
@@ -306,6 +307,7 @@ impl TargetArch {
             "x86_64" => Ok(Self::X86_64),
             "aarch64" => Ok(Self::Aarch64),
             "i686" => Ok(Self::I686),
+            "x86" if target_triple.is_some_and(is_i686_target_triple) => Ok(Self::I686),
             "arm" if target_triple.is_some_and(is_armv7_target_triple) => Ok(Self::Armv7),
             raw => Err(BinpmError::UnsupportedTargetComponent {
                 component: "architecture",
@@ -326,6 +328,10 @@ impl TargetArch {
             }),
         }
     }
+}
+
+fn is_i686_target_triple(target_triple: &str) -> bool {
+    target_triple.starts_with("i686-")
 }
 
 fn is_armv7_target_triple(target_triple: &str) -> bool {
@@ -498,6 +504,16 @@ mod tests {
     }
 
     #[test]
+    fn rejects_version_delimiter_before_source_path() {
+        for raw in [
+            "github:@owner/repo",
+            "gitlab:@gitlab.example.com/platform/tool",
+        ] {
+            assert_invalid_source(raw);
+        }
+    }
+
+    #[test]
     fn normalizes_target_aliases() {
         let target = HostTarget::from_str("macos-arm64-universal").expect("target");
 
@@ -545,8 +561,24 @@ mod tests {
     }
 
     #[test]
+    fn rejects_non_i686_current_x86_arch() {
+        let error = TargetArch::from_current_cfg("x86", Some("i586-unknown-linux-gnu"))
+            .expect_err("unsupported x86 target");
+
+        assert_unsupported_component(error, "architecture", "x86");
+    }
+
+    #[test]
     fn preserves_current_i686_arch() {
         let arch = TargetArch::from_current_cfg("i686", None).expect("i686 architecture");
+
+        assert_eq!(arch, TargetArch::I686);
+    }
+
+    #[test]
+    fn maps_current_x86_i686_target_triple_to_i686_arch() {
+        let arch = TargetArch::from_current_cfg("x86", Some("i686-unknown-linux-gnu"))
+            .expect("i686 architecture");
 
         assert_eq!(arch, TargetArch::I686);
     }
