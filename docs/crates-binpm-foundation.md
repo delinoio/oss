@@ -63,8 +63,10 @@
 - `binpm.toml` is the committed local tool declaration file. It must use TOML, `version = 1`, and `[tools.<cmd>]` tables keyed by the local command name.
 - In `binpm.toml`, each tool entry must include `source = "github:owner/repo"`, may include `version = "<release>"`, and may include `bin = "<upstream-binary-name>"` when the executable selected from the release differs from the local command name or needs explicit disambiguation.
 - `binpm add <cmd> github:owner/repo[@version]` must persist the package source without the version suffix in `source`; when a version is supplied, it must persist that value in `version`.
-- `binpm.lock` is the committed local resolution file. It must use TOML, `version = 1`, and `[tools.<cmd>]` records keyed by the local command name.
-- Each `binpm.lock` tool record must include package spec, resolved owner/repo, requested version when present, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive or bare asset, installed binary path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `local`), install timestamp, and whether upstream signature material was available.
+- `binpm.lock` is the committed deterministic local resolution file. It must use TOML, `version = 1`, `[tools.<cmd>]` command tables keyed by local command name, and `[tools.<cmd>.targets.<target-key>]` records keyed by normalized target.
+- The lockfile target key format must be `<target_os>-<target_arch>-<target_libc>`, using the enum-style values from the runtime target model.
+- Each `binpm.lock` target record must include package spec, resolved owner/repo, requested version when present, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive or bare asset, installed binary path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `local`), and whether upstream signature material was available.
+- `binpm.lock` must not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata; those values belong in uncommitted package records or logs.
 - Lockfile target and checksum fields must use the same enum-style values as the runtime target model and checksum source model; implementation types should preserve those values as enums rather than free-form strings.
 
 Example `binpm.toml`:
@@ -85,6 +87,9 @@ version = 1
 
 [tools.rg]
 source = "github:BurntSushi/ripgrep"
+
+[tools.rg.targets.darwin-aarch64-any]
+package_spec = "github:BurntSushi/ripgrep@14.1.1"
 owner = "BurntSushi"
 repo = "ripgrep"
 requested_version = "14.1.1"
@@ -100,7 +105,6 @@ installed_path = ".binpm/bin/rg"
 sha256 = "<hex-encoded-sha256>"
 checksum_source = "github-digest"
 signature_available = false
-installed_at = "2026-06-19T00:00:00Z"
 ```
 
 ### Binary Release Pattern Catalog
@@ -148,7 +152,10 @@ installed_at = "2026-06-19T00:00:00Z"
 - When GitHub asset metadata does not expose a digest, `binpm` must compute SHA-256 after download and use the local digest as both the cache key and the install manifest verification value.
 - Cache lookup for assets without GitHub-provided digests may use source metadata to find a prior local digest, but source owner/repo, release tag, asset name, or URL alone must not make bytes reusable without SHA-256 revalidation.
 - Cache metadata must preserve the source owner/repo, release tag, asset name, asset URL, byte size when known, checksum source, creation timestamp, and last-used timestamp when known.
-- Global install manifests and local lockfile records must record package spec, resolved owner/repo, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive, installed binary path, cache key when available, cache path when available, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `local`), install timestamp, and whether upstream signature material was available.
+- Global package records under `~/.binpm/packages` are required machine-local install records for `binpm install github:owner/repo[@version]`.
+- Global package records must record package spec, resolved owner/repo, requested version when present, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive or bare asset, installed binary path, cache key, cache path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `local`), install timestamp, and whether upstream signature material was available.
+- Project-local package records under `$repoRoot/.binpm/packages`, when implemented, are uncommitted machine-local install records and must use the same metadata fields as global package records.
+- Committed `binpm.lock` target records must preserve deterministic resolution metadata only: package spec, resolved owner/repo, requested version when present, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive or bare asset, installed binary path, SHA-256 digest, checksum source, and whether upstream signature material was available.
 - The global cache is separate from installed package records and executable links or copies. Removing cache entries must not remove package manifests or files under `~/.binpm/bin`.
 - Temporary extraction and cache population must be atomic: incomplete global downloads and extraction directories stay under `~/.binpm/tmp`, and incomplete project-local downloads and extraction directories stay under `$repoRoot/.binpm/tmp`.
 - Failed installs must not update cache entries, package records, `binpm.lock`, `~/.binpm/bin`, or `$repoRoot/.binpm/bin`.

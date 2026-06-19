@@ -24,7 +24,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - Global cache reuse must never bypass GitHub asset digest, upstream checksum, signature, or locally recorded SHA-256 verification.
 - Cache management commands must preserve installed package records and `~/.binpm/bin` entries unless a separate uninstall contract explicitly changes that behavior.
 - Project-local tooling must use `binpm.toml` at the repository root as the committed local tool manifest.
-- Project-local tooling must use `binpm.lock` at the repository root as the committed resolution record for release tags, assets, targets, selected binaries, checksums, and installed paths.
+- Project-local tooling must use `binpm.lock` at the repository root as the committed deterministic resolution record for release tags, target-specific assets, selected binaries, checksums, and installed paths.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`; other project-local binpm runtime state must stay under `$repoRoot/.binpm`.
 - `binpm x CMD [args...]` must run commands from the local manifest or from an explicitly supplied `--package`; it must not guess a GitHub repository from `CMD`.
 - `binpm` must not require Node.js, npm, pnpm, yarn, or Bun to install native binary tools.
