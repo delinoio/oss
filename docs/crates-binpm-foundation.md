@@ -26,11 +26,12 @@
 - Target alias normalization must include:
   - OS aliases: `darwin`, `macos`, `mac`, `osx` -> `darwin`; `windows`, `win`, `win32` -> `windows`
   - Architecture aliases: `x86_64`, `amd64`, `x64` -> `x86_64`; `aarch64`, `arm64` -> `aarch64`; `i686`, `i386`, `x86`, `ia32` -> `i686`
-  - Libc/ABI aliases: `gnu`, `glibc` -> `gnu`; `musl`, `alpine` -> `musl`; `msvc` -> `msvc`; missing libc -> `any`
+  - Libc/ABI aliases: `gnu`, `glibc` -> `gnu`; `musl`, `alpine` -> `musl`; `msvc` -> `msvc`; explicit `static`, `portable`, `universal`, or `any` -> `any`; missing Linux libc remains `unknown` during candidate scoring.
 - Asset selection must be score-based, deterministic, and stable across identical release asset lists:
   - Exact OS + arch + libc match wins over all partial matches.
-  - Exact OS + arch with missing libc is accepted only when no exact libc candidate exists.
-  - Exact OS + arch + `any` beats an asset with conflicting libc.
+  - Exact OS + arch + `any` beats missing-libc candidates and assets with conflicting libc.
+  - On Linux `gnu` hosts, exact OS + arch with missing libc may be accepted as a glibc-compatible fallback only when no exact `gnu` or `any` candidate exists.
+  - On Linux `musl` hosts, missing-libc candidates must not be accepted unless the asset has an explicit `static`, `portable`, `universal`, or `any` signal; otherwise resolution must fail instead of installing a likely glibc-linked binary.
   - Universal macOS assets may match `darwin/x86_64` and `darwin/aarch64` only when no exact-arch macOS asset exists.
   - If scores tie, prefer the candidate with a recognized tool-specific naming pattern, then shorter normalized filename, then lexicographic filename order.
 - Preferred installable artifact kinds:
@@ -79,14 +80,15 @@
 - Installed package records: `~/.binpm/packages`
 - Download cache: `~/.binpm/cache`
 - Temporary downloads and extraction roots: `~/.binpm/tmp`
-- Local install manifests must record package spec, resolved owner/repo, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive, installed binary path, SHA-256 digest, install timestamp, and whether upstream checksum or signature material was available.
+- Local install manifests must record package spec, resolved owner/repo, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive, installed binary path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `local`), install timestamp, and whether upstream signature material was available.
 - Temporary extraction must be atomic: incomplete downloads and extraction directories stay under `~/.binpm/tmp` and must not update package records or `~/.binpm/bin`.
 
 ## Security
 - `binpm` must use HTTPS GitHub API and release asset URLs.
 - GitHub tokens may be read from documented environment variables in the future, but tokens and authorization headers must never be logged.
+- If the GitHub Release asset metadata exposes a SHA-256 `digest`, `binpm` must verify the downloaded asset against that digest before considering checksum sidecars or local fallback hashes.
 - If an upstream checksum manifest or sidecar exists, `binpm` must verify the selected asset before installation.
-- If no checksum or signature exists, `binpm` must warn, compute SHA-256 locally, store it in the install manifest, and verify future reinstalls or cache reuse against that recorded digest.
+- If no GitHub asset digest, checksum sidecar, checksum manifest, or signature exists, `binpm` must warn, compute SHA-256 locally, store it in the install manifest, and verify future reinstalls or cache reuse against that recorded digest.
 - Checksum, signature, SBOM, and provenance files are metadata inputs only; they must not be installed as binaries.
 - URL diagnostics in errors and logs must omit query strings and fragments.
 - Archive extraction must reject absolute paths, parent-directory traversal, unsafe symlinks, and files that would escape the package extraction root.
@@ -101,7 +103,7 @@
 ## Build and Test
 - No Rust validation command is required while `binpm` remains documentation-only.
 - When runtime code is introduced, local validation must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.
-- Heuristic tests must cover OS aliases, architecture aliases, libc aliases, exact libc preference, missing-libc fallback, source archive rejection, sidecar rejection, desktop installer de-prioritization, cargo-binstall candidates, cargo-dist candidates, GoReleaser candidates, Bun/Deno candidates, and ambiguous archive contents.
+- Heuristic tests must cover OS aliases, architecture aliases, libc aliases, exact libc preference, Linux glibc missing-libc fallback, Linux musl missing-libc rejection, source archive rejection, sidecar rejection, desktop installer de-prioritization, cargo-binstall candidates, cargo-dist candidates, GoReleaser candidates, Bun/Deno candidates, and ambiguous archive contents.
 - Storage tests must cover atomic install behavior, cache digest verification, manifest updates, and unsafe archive path rejection.
 
 ## Dependencies and Integrations
@@ -118,6 +120,7 @@
 ## References
 - `docs/project-binpm.md`
 - `docs/domain-template.md`
+- GitHub Release asset API: https://docs.github.com/en/rest/releases/releases
 - GoReleaser archives: https://goreleaser.com/customization/package/archives/
 - GoReleaser Go builder: https://goreleaser.com/customization/builds/builders/go/
 - cargo-binstall support metadata: https://github.com/cargo-bins/cargo-binstall/blob/main/SUPPORT.md
