@@ -298,19 +298,18 @@ impl TargetArch {
     }
 
     fn current() -> Result<Self, BinpmError> {
-        Self::from_current(std::env::consts::ARCH)
+        Self::from_current_cfg(
+            std::env::consts::ARCH,
+            cfg!(all(target_arch = "arm", target_abi = "eabihf")),
+        )
     }
 
-    fn from_current(raw: &str) -> Result<Self, BinpmError> {
-        Self::from_current_with_armv7(raw, cfg!(all(target_arch = "arm", target_feature = "v7")))
-    }
-
-    fn from_current_with_armv7(raw: &str, is_armv7: bool) -> Result<Self, BinpmError> {
+    fn from_current_cfg(raw: &str, is_armv7_eabihf: bool) -> Result<Self, BinpmError> {
         match raw {
             "x86_64" => Ok(Self::X86_64),
             "aarch64" => Ok(Self::Aarch64),
             "x86" | "i686" => Ok(Self::I686),
-            "arm" if is_armv7 => Ok(Self::Armv7),
+            "arm" if is_armv7_eabihf => Ok(Self::Armv7),
             raw => Err(BinpmError::UnsupportedTargetComponent {
                 component: "architecture",
                 raw: raw.to_string(),
@@ -506,21 +505,22 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_current_arch_without_x86_64_fallback() {
-        let error = TargetArch::from_current("riscv64").expect_err("unsupported architecture");
+        let error =
+            TargetArch::from_current_cfg("riscv64", false).expect_err("unsupported architecture");
 
         assert_unsupported_component(error, "architecture", "riscv64");
     }
 
     #[test]
     fn rejects_ambiguous_current_arm_arch() {
-        let error = TargetArch::from_current_with_armv7("arm", false).expect_err("ambiguous arm");
+        let error = TargetArch::from_current_cfg("arm", false).expect_err("ambiguous arm");
 
         assert_unsupported_component(error, "architecture", "arm");
     }
 
     #[test]
-    fn preserves_known_current_armv7_arch() {
-        let arch = TargetArch::from_current_with_armv7("arm", true).expect("armv7 architecture");
+    fn preserves_current_armv7_eabihf_arch() {
+        let arch = TargetArch::from_current_cfg("arm", true).expect("armv7 architecture");
 
         assert_eq!(arch, TargetArch::Armv7);
     }
