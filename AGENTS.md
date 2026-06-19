@@ -59,7 +59,7 @@
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
-- `docs/crates-binpm-foundation.md`: binpm Rust CLI, GitHub Release binary selection, global cache, and local tooling contract.
+- `docs/crates-binpm-foundation.md`: binpm Rust CLI, release asset source selection, global cache, and local tooling contract.
 - `docs/crates-with-watch-foundation.md`: with-watch CLI and watcher foundation contract.
 - `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.
 - `docs/crates-rustia-llm-foundation.md`: Rustia aisdk tool adapter contract.
@@ -114,9 +114,15 @@ enum ProjectId {
 ### binpm Cache Contract
 
 - `~/.binpm/cache` is the user-level global asset cache shared by all `binpm` installs for the same account.
-- `binpm` cache reuse must be validated with the strongest available integrity source: GitHub asset digest, upstream checksum or signature material, or locally recorded SHA-256 metadata.
-- Cache management command identifiers are `list`, `prune`, and `clean` under `binpm cache`.
+- `binpm` cache reuse must be validated with the strongest available integrity source: provider asset digest, upstream checksum or signature material, or locally recorded SHA-256 metadata.
+- Cache management and diagnostic command identifiers are `list`, `prune`, `clean`, and `key` under `binpm cache`.
 - `binpm cache prune` and `binpm cache clean` must not remove installed package records or executable links/copies under `~/.binpm/bin`.
+- `binpm cache key` must be read-only and must not download, install, or populate cache entries.
+
+### binpm Source Contract
+
+- Stable `binpm` source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
+- Direct URLs, registries, and package-manager backends remain out of scope until documented in `docs/crates-binpm-foundation.md`.
 
 ### binpm Local Tooling Contract
 
@@ -124,6 +130,10 @@ enum ProjectId {
 - `binpm.lock` is the committed deterministic project-local resolution file and must keep target-specific records.
 - `binpm.lock` must not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`.
+- Local target-specific asset overrides must use `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.
+- Local `binpm install`, `binpm update`, and `binpm x` must honor `--frozen-lockfile`; `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.
+- `binpm verify --require-verified` must fail when no provider digest, upstream checksum sidecar, upstream checksum manifest, or signature material is available.
+- `--no-confirm` is a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
 
 ### Devkit Mini-App Identifier Contract
 
