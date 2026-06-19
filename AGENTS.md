@@ -49,6 +49,7 @@
 - `docs/project-binpm.md`: binpm binary package manager project index.
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
 - `docs/project-nodeup.md`: Node.js version manager project index.
+- `docs/apps-nodeup-docs-foundation.md`: nodeup Rspress static documentation app contract.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
 - `docs/project-derun.md`: Derun CLI project index.
 - `docs/project-ttl.md`: TTL compiler project index.
@@ -85,7 +86,7 @@ enum ProjectId {
 
 ### Project Domain Ownership
 
-- `nodeup` -> `crates/nodeup`
+- `nodeup` -> `crates/nodeup`, `apps/nodeup-docs`
 - `binpm` -> planned `crates/binpm`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`

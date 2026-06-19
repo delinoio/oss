@@ -31,7 +31,8 @@
       ],
       "outputs": [
         "dist/**",
-        ".next/**"
+        ".next/**",
+        "doc_build/**"
       ]
     },
     "build":{
@@ -57,7 +58,8 @@
       ],
       "outputs": [
         "dist/**",
-        ".next/**"
+        ".next/**",
+        "doc_build/**"
       ]
     },
     "test": {},

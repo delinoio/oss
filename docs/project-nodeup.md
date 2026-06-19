@@ -8,9 +8,11 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 
 ## Domain Ownership Map
 - `crates/nodeup`
+- `apps/nodeup-docs`
 
 ## Domain Contract Documents
 - `docs/crates-nodeup-foundation.md`
+- `docs/apps-nodeup-docs-foundation.md`
 
 ## Cross-Domain Invariants
 - Stable channel naming and runtime dispatch semantics must be preserved.
@@ -24,9 +26,13 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable third-party quick-install and compile fallback strategies.
 - Homebrew installation must use prebuilt `nodeup` release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - `nodeup` runtime installation and shim dispatch must support `macOS`, `Linux`, and `Windows` x64/arm64 hosts while leaving x86 hosts out of scope.
+- `nodeup-docs` must use the stable package name `nodeup-docs`, canonical path `apps/nodeup-docs`, local dev port `46250`, and Rspress/Rsbuild-style static documentation tooling.
+- `nodeup-docs` must deploy as a static site through Cloudflare Pages by default, aligned with `docs/repository-defaults.md`.
+- `nodeup-docs` public routes must keep `/` and `/guide/getting-started` stable unless route migrations are documented in `docs/apps-nodeup-docs-foundation.md`.
 
 ## Change Policy
 - Update this index and `docs/crates-nodeup-foundation.md` in the same change for behavior or storage contract updates.
+- Update this index and `docs/apps-nodeup-docs-foundation.md` in the same change for `nodeup-docs` route, runtime, validation, or deployment contract updates.
 - Keep `scripts/install/nodeup.sh`, `scripts/install/nodeup.ps1`, and `crates/nodeup/Cargo.toml` synchronized with release asset names and signing contracts.
 - Keep release and install contracts synchronized with root and `crates/AGENTS.md` rules.
 
