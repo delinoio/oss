@@ -420,16 +420,33 @@ fn find_git_root(start: &Path) -> Option<&Path> {
 }
 
 fn binpm_home() -> Result<PathBuf> {
-    env_path("BINPM_HOME")
-        .or_else(|| env_path("HOME").map(|home| home.join(".binpm")))
-        .or_else(|| env_path("USERPROFILE").map(|home| home.join(".binpm")))
-        .ok_or(BinpmError::MissingGlobalHome)
+    if let Some(home) = env_path("BINPM_HOME") {
+        return absolute_global_home("BINPM_HOME", home);
+    }
+
+    if let Some(home) = env_path("HOME") {
+        return absolute_global_home("HOME", home.join(".binpm"));
+    }
+
+    if let Some(home) = env_path("USERPROFILE") {
+        return absolute_global_home("USERPROFILE", home.join(".binpm"));
+    }
+
+    Err(BinpmError::MissingGlobalHome)
 }
 
 fn env_path(name: &str) -> Option<PathBuf> {
     std::env::var_os(name)
         .filter(|value| !value.as_os_str().is_empty())
         .map(PathBuf::from)
+}
+
+fn absolute_global_home(name: &'static str, path: PathBuf) -> Result<PathBuf> {
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Err(BinpmError::InvalidGlobalHome { name, path })
+    }
 }
 
 fn path_state(path: &Path) -> &'static str {

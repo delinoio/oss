@@ -38,6 +38,8 @@ pub enum BinpmError {
     },
     #[error("Failed to determine binpm global home. Set BINPM_HOME, HOME, or USERPROFILE.")]
     MissingGlobalHome,
+    #[error("Invalid {name}: binpm global home must be an absolute path, got `{path}`.")]
+    InvalidGlobalHome { name: &'static str, path: PathBuf },
 }
 
 impl BinpmError {
@@ -51,7 +53,8 @@ impl BinpmError {
             Self::CurrentDirectory(_)
             | Self::WriteFile { .. }
             | Self::ReadFile { .. }
-            | Self::MissingGlobalHome => 1,
+            | Self::MissingGlobalHome
+            | Self::InvalidGlobalHome { .. } => 1,
         }
     }
 }

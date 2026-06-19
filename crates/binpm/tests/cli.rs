@@ -115,6 +115,40 @@ fn env_ignores_empty_home_overrides() {
 }
 
 #[test]
+fn env_rejects_relative_binpm_home() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", "tmp/binpm-home")
+        .args(["env", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("Invalid BINPM_HOME"))
+        .stderr(predicate::str::contains("absolute path"));
+}
+
+#[test]
+fn env_rejects_relative_home_fallback() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("HOME", "relative-home")
+        .args(["env", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("Invalid HOME"))
+        .stderr(predicate::str::contains("absolute path"));
+}
+
+#[test]
 fn env_fails_when_global_home_cannot_be_resolved() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut command = binpm();
