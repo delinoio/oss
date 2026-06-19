@@ -25,7 +25,9 @@
   - `github:<host>/owner/repo[@version]` addresses GitHub Enterprise Releases on an explicit host.
   - `gitlab:<host>/<namespace...>/<project>[@version]` addresses GitLab Releases on GitLab.com, GitLab Self-Managed, or GitLab Dedicated hosts.
 - Direct URLs, registries, and package-manager backends are out of scope until documented separately.
-- When `@version` is omitted, `binpm` must select the latest stable release exposed by the source provider; GitHub sources must ignore draft and prerelease releases.
+- When `@version` is omitted, `binpm` must select the latest stable release exposed by the source provider:
+  - GitHub sources must ignore draft and prerelease releases.
+  - GitLab sources must list releases in descending `released_at` order and choose the first release whose `released_at` is not in the future and whose API response does not set `upcoming_release = true`.
 - Explicit versions may be written with or without a leading `v`; release tag matching must try the exact input first, then the opposite `v` prefix form.
 - Commands with both local and global scope must default to local when a local `binpm.toml` is discovered; otherwise they must default to global. Such commands must document `--local` and `--global` overrides.
 - `--frozen-lockfile` on local `binpm install`, `binpm update`, and `binpm x` must fail when the command would need to create or modify `binpm.lock`; `CI=true` must enable this behavior by default, and `--no-frozen-lockfile` is the explicit local-development escape hatch.
@@ -68,6 +70,7 @@
 - Preferred installable artifact kinds:
   - Archives: `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, `.zip`
   - Bare executables: extensionless POSIX binaries and `.exe` for Windows
+- GitLab release asset links are eligible only when the resolved download URL uses HTTPS. If `direct_asset_url` is present, it is the preferred download URL; otherwise the link `url` may be used only when it is HTTPS. Non-HTTPS GitLab asset links must be rejected before candidate scoring, and a release with no HTTPS-eligible installable links must fail deterministically.
 - Non-installable or sidecar artifact kinds must be excluded from binary selection:
   - Source archives such as `source.tar.gz`, `source.zip`, GitHub-generated source links, and files containing `src` or `source` without a target token.
   - Checksum, signature, provenance, and metadata files such as `.sha256`, `.sha512`, `SHA256SUMS`, `checksums.txt`, `.sig`, `.asc`, `.minisig`, `.sigstore.json`, `.sbom.json`, `dist-manifest.json`, and `latest.json`.
@@ -85,7 +88,7 @@
 - Multi-binary releases must keep the existing `[tools.<cmd>]` model: each local command has its own declaration, while multiple commands may share the same source, release asset, cache entry, and package bytes.
 - `binpm.lock` is the committed deterministic local resolution file. It must use TOML, `version = 1`, `[tools.<cmd>]` command tables keyed by local command name, and `[tools.<cmd>.targets.<target-key>]` records keyed by normalized target.
 - The lockfile target key format must be `<target_os>-<target_arch>-<target_libc>`, using the enum-style values from the runtime target model.
-- Each `binpm.lock` target record must include package spec, normalized source, source provider, source host, source path, requested version when present, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive or bare asset, installed binary path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `signature`, `local`), and whether upstream signature material was available.
+- Each `binpm.lock` target record must include package spec, normalized source, source provider, source host, source path, requested version when present, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive or bare asset, installed binary path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `signature`, `local`), whether upstream signature material was available, and whether signature verification succeeded.
 - Lockfile records for multiple commands that share an upstream asset must preserve command-specific selected binary and installed path fields while allowing cache keys to deduplicate by verified asset bytes.
 - `binpm.lock` must not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata; those values belong in uncommitted package records or logs.
 - Lockfile target and checksum fields must use the same enum-style values as the runtime target model and checksum source model; implementation types should preserve those values as enums rather than free-form strings.
@@ -133,6 +136,7 @@ installed_path = ".binpm/bin/rg"
 sha256 = "<hex-encoded-sha256>"
 checksum_source = "github-digest"
 signature_available = false
+signature_verified = false
 ```
 
 ### Binary Release Pattern Catalog
@@ -182,9 +186,9 @@ signature_available = false
 - Cache metadata must preserve the source provider, source host, source path, release tag, asset name, asset URL, byte size when known, checksum source, creation timestamp, and last-used timestamp when known.
 - Cache metadata may reference more than one installed command or package record for the same verified asset bytes.
 - Global package records under `~/.binpm/packages` are required machine-local install records for `binpm install <source>`.
-- Global package records must record package spec, normalized source, source provider, source host, source path, requested version when present, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive or bare asset, installed binary path, cache key, cache path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `signature`, `local`), install timestamp, and whether upstream signature material was available.
+- Global package records must record package spec, normalized source, source provider, source host, source path, requested version when present, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive or bare asset, installed binary path, cache key, cache path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `signature`, `local`), install timestamp, whether upstream signature material was available, and whether signature verification succeeded.
 - Project-local package records under `$repoRoot/.binpm/packages`, when implemented, are uncommitted machine-local install records and must use the same metadata fields as global package records.
-- Committed `binpm.lock` target records must preserve deterministic resolution metadata only: package spec, normalized source, source provider, source host, source path, requested version when present, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive or bare asset, installed binary path, SHA-256 digest, checksum source, and whether upstream signature material was available.
+- Committed `binpm.lock` target records must preserve deterministic resolution metadata only: package spec, normalized source, source provider, source host, source path, requested version when present, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive or bare asset, installed binary path, SHA-256 digest, checksum source, whether upstream signature material was available, and whether signature verification succeeded.
 - The global cache is separate from installed package records and executable links or copies. Removing cache entries must not remove package manifests or files under `~/.binpm/bin`.
 - Temporary extraction and cache population must be atomic: incomplete global downloads and extraction directories stay under `~/.binpm/tmp`, and incomplete project-local downloads and extraction directories stay under `$repoRoot/.binpm/tmp`.
 - Failed installs must not update cache entries, package records, `binpm.lock`, `~/.binpm/bin`, or `$repoRoot/.binpm/bin`.
@@ -195,9 +199,11 @@ signature_available = false
 - Source-provider tokens may be read from documented environment variables in the future, but tokens and authorization headers must never be logged.
 - If provider release asset metadata exposes a trusted SHA-256 digest, `binpm` must verify the downloaded asset against that digest before considering checksum sidecars or local fallback hashes.
 - If an upstream checksum manifest or sidecar exists, `binpm` must verify the selected asset before installation.
-- If no provider asset digest, checksum sidecar, checksum manifest, or signature exists, `binpm` must warn, compute SHA-256 locally, store it in the install manifest, and verify future reinstalls or cache reuse against that recorded digest.
-- `--require-verified` and `binpm verify --require-verified` must fail unless the selected asset has at least one trusted verification source: provider digest, upstream checksum sidecar, upstream checksum manifest, or signature material.
-- Cache hits must be revalidated before extraction or install finalization using the strongest available integrity source: provider asset digest, upstream checksum material, signature verification, or the locally recorded install manifest digest.
+- Signature material may satisfy strict verification only after a verifier successfully validates the selected asset under a documented trust policy. Raw `.sig`, `.asc`, `.minisig`, Sigstore bundle, or other signature sidecar presence alone must not count as verified bytes.
+- Until a signature verifier and trust policy are documented, `signature` must not be the only trusted verification source accepted by `--require-verified`.
+- If no provider asset digest, checksum sidecar, checksum manifest, or successfully verified signature exists, `binpm` must warn, compute SHA-256 locally, store it in the install manifest, and verify future reinstalls or cache reuse against that recorded digest.
+- `--require-verified` and `binpm verify --require-verified` must fail unless the selected asset has at least one trusted verification source: provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature under a documented trust policy.
+- Cache hits must be revalidated before extraction or install finalization using the strongest available integrity source: provider asset digest, upstream checksum material, successfully verified signature, or the locally recorded install manifest digest.
 - If cache revalidation fails, `binpm` must discard the corrupted cache entry and redownload the asset. If the redownloaded bytes fail the trusted integrity source, installation must fail.
 - Checksum, signature, SBOM, and provenance files are metadata inputs only; they must not be installed as binaries.
 - URL diagnostics in errors and logs must omit query strings and fragments.

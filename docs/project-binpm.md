@@ -16,7 +16,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `binpm` must be implemented as a Rust CLI before runtime behavior is introduced.
 - The canonical project path is planned as `crates/binpm`; no runtime skeleton exists until implementation begins.
 - Stable source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
-- Versionless installs must resolve to the latest stable release exposed by the source provider; GitHub sources must exclude draft and prerelease releases.
+- Versionless installs must resolve to the latest stable release exposed by the source provider; GitHub sources must exclude draft and prerelease releases, and GitLab sources must exclude upcoming releases or releases with future `released_at` values.
 - Binary selection must be deterministic and target-aware across operating system, CPU architecture, and libc or ABI environment.
 - The asset selection heuristic must remain fully documented in `docs/crates-binpm-foundation.md` before implementation changes alter scoring behavior.
 - `~/.binpm` remains the canonical global home directory for globally installed binaries, package records, cache entries, and temporary extraction state.
@@ -31,8 +31,8 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `binpm x CMD [args...]` must run commands from the local manifest or from an explicitly supplied `--package`; it must not guess a GitHub repository from `CMD`.
 - Local `install`, `update`, and `x` must honor `--frozen-lockfile`; `CI=true` enables frozen lockfile behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.
 - `binpm` must not require Node.js, npm, pnpm, yarn, or Bun to install native binary tools.
-- Installs without upstream checksum or signature material are allowed in v1 only with an explicit warning and locally recorded SHA-256 metadata.
-- `--require-verified` and `binpm verify --require-verified` must fail unless provider digest, upstream checksum sidecar, upstream checksum manifest, or signature material is available.
+- Installs without upstream checksum material or successfully verified signature material are allowed in v1 only with an explicit warning and locally recorded SHA-256 metadata.
+- `--require-verified` and `binpm verify --require-verified` must fail unless provider digest, upstream checksum sidecar, upstream checksum manifest, or a successfully verified signature under a documented trust policy is available.
 - `--no-confirm` must remain a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
 - `binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, `binpm outdated`, and `binpm cache key` must not mutate manifests, lockfiles, package records, cache entries, or executables.
 
