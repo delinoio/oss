@@ -36,6 +36,8 @@ pub enum BinpmError {
         #[source]
         source: io::Error,
     },
+    #[error("Failed to determine binpm global home. Set BINPM_HOME, HOME, or USERPROFILE.")]
+    MissingGlobalHome,
 }
 
 impl BinpmError {
@@ -46,7 +48,10 @@ impl BinpmError {
             | Self::InvalidTargetKey { .. }
             | Self::UnsupportedTargetComponent { .. }
             | Self::ManifestExists { .. } => 2,
-            Self::CurrentDirectory(_) | Self::WriteFile { .. } | Self::ReadFile { .. } => 1,
+            Self::CurrentDirectory(_)
+            | Self::WriteFile { .. }
+            | Self::ReadFile { .. }
+            | Self::MissingGlobalHome => 1,
         }
     }
 }

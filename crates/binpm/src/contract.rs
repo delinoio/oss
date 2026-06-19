@@ -85,7 +85,7 @@ fn parse_source_spec(raw: &str) -> Result<SourceSpec, BinpmError> {
         .split_once(':')
         .ok_or_else(|| invalid_source(raw, "missing provider prefix"))?;
 
-    let (remainder, version) = split_version(remainder);
+    let (remainder, version) = split_version(raw, remainder)?;
 
     match provider_raw {
         "github" => parse_github_source(raw, remainder, version),
@@ -145,12 +145,16 @@ fn parse_gitlab_source(
     })
 }
 
-fn split_version(remainder: &str) -> (&str, Option<String>) {
+fn split_version<'source>(
+    raw: &str,
+    remainder: &'source str,
+) -> Result<(&'source str, Option<String>), BinpmError> {
     match remainder.rsplit_once('@') {
         Some((source, version)) if !source.is_empty() && !version.is_empty() => {
-            (source, Some(version.to_string()))
+            Ok((source, Some(version.to_string())))
         }
-        _ => (remainder, None),
+        Some((_, "")) => Err(invalid_source(raw, "source version cannot be empty")),
+        _ => Ok((remainder, None)),
     }
 }
 
@@ -457,6 +461,19 @@ mod tests {
             "gitlab:gitlab.example.com/platform/tool/",
         ] {
             assert_invalid_source(raw);
+        }
+    }
+
+    #[test]
+    fn rejects_empty_source_version() {
+        let error = SourceSpec::from_str("github:owner/repo@").expect_err("empty version");
+
+        match error {
+            BinpmError::InvalidSourceSpec { raw, message } => {
+                assert_eq!(raw, "github:owner/repo@");
+                assert_eq!(message, "source version cannot be empty");
+            }
+            other => panic!("expected InvalidSourceSpec, got {other:?}"),
         }
     }
 

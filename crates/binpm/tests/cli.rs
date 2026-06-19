@@ -82,6 +82,23 @@ fn env_prints_shell_path_exports() {
 }
 
 #[test]
+fn env_fails_when_global_home_cannot_be_resolved() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .args(["env", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "Failed to determine binpm global home",
+        ));
+}
+
+#[test]
 fn env_routes_enabled_logs_to_stderr() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut command = binpm();
@@ -286,4 +303,16 @@ fn install_validates_source_before_not_implemented_error() {
         .failure()
         .code(2)
         .stderr(predicate::str::contains("Invalid source spec"));
+}
+
+#[test]
+fn install_rejects_empty_source_version() {
+    let mut command = binpm();
+
+    command
+        .args(["install", "github:owner/repo@"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("source version cannot be empty"));
 }

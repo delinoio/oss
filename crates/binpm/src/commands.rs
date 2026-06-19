@@ -218,7 +218,7 @@ fn doctor() -> Result<i32> {
     let project_root = project_root()?;
     let manifest_path = project_root.join(MANIFEST_FILE);
     let lockfile_path = project_root.join(LOCKFILE_FILE);
-    let home = binpm_home();
+    let home = binpm_home()?;
 
     info!(
         command = "doctor",
@@ -298,7 +298,7 @@ fn init(args: InitArgs) -> Result<i32> {
 
 fn env_cmd(args: EnvArgs) -> Result<i32> {
     let project_root = project_root()?;
-    let home = binpm_home();
+    let home = binpm_home()?;
     let global_bin = home.join("bin");
     let local_bin = project_root.join(".binpm").join("bin");
 
@@ -419,12 +419,12 @@ fn find_git_root(start: &Path) -> Option<&Path> {
     start.ancestors().find(|path| path.join(".git").exists())
 }
 
-fn binpm_home() -> PathBuf {
+fn binpm_home() -> Result<PathBuf> {
     std::env::var_os("BINPM_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".binpm")))
         .or_else(|| std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".binpm")))
-        .unwrap_or_else(|| PathBuf::from(".binpm"))
+        .ok_or(BinpmError::MissingGlobalHome)
 }
 
 fn path_state(path: &Path) -> &'static str {
