@@ -16,6 +16,8 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
    - List files in `docs/` before starting work, and use `docs/` as the source of truth for project contracts.
    - Confirm `gh auth status` works.
    - If the user provided a PR number or URL, use it; otherwise use `gh pr view --json number,url,baseRefName,headRefName`.
+   - Before making repair commits, confirm the worktree is clean with `git status --short`. If it is dirty, stop and ask how to handle the pre-existing changes.
+   - If the user provided a PR number or URL, check out the PR branch with `gh pr checkout <pr>` before making commits. Otherwise, assert that the current branch matches the PR `headRefName`; if it does not, stop before changing files.
    - Run `node .agents/skills/repair-pr/scripts/repair-pr.mjs status --pr <pr>` to collect merge state, unresolved `chatgpt-codex-connector[bot]` review threads, and failing checks.
 
 2. Resolve merge conflicts first.
@@ -31,7 +33,7 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
    - Group related actionable threads by behavior or file, implement the smallest correct fix, and update relevant `docs/` or `AGENTS.md` files when contracts, policies, or structure changed.
    - Run focused tests for each repair group.
    - Commit each coherent review-fix group.
-   - After the relevant fix is committed, resolve each handled thread with `node .agents/skills/repair-pr/scripts/repair-pr.mjs resolve-thread <thread-id>`.
+   - Record each handled thread id, but do not resolve review threads until the final push succeeds.
    - If a review comment is ambiguous or would cause a regression, leave the thread unresolved and report the blocker.
 
 4. Fix CI failures.
@@ -44,6 +46,7 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
    - Run repository-required verification from `AGENTS.md` when feasible. At minimum, run checks for the touched domains: `cargo test` from the root after Rust changes, `pnpm test` from the relevant frontend directory after frontend changes, and the closest focused checks for other domains.
    - Re-run `node .agents/skills/repair-pr/scripts/repair-pr.mjs status --pr <pr>` once for a final summary.
    - If any commits were created, push once with `git push` for the current branch. Because this workflow merges instead of rebasing, do not force-push.
+   - After the final push succeeds, resolve each handled review thread with `node .agents/skills/repair-pr/scripts/repair-pr.mjs resolve-thread <thread-id>`.
    - Do not start a monitoring loop or keep polling checks after the final status check.
 
 ## Helper
