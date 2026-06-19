@@ -15,7 +15,11 @@
 - Operators troubleshooting binary resolution, download, extraction, and local installation behavior.
 
 ## Interfaces and Contracts
-- Canonical install command: `binpm install github:owner/repo[@version]`.
+- Canonical global install command: `binpm install github:owner/repo[@version]`.
+- Canonical local declaration command: `binpm add <cmd> github:owner/repo[@version]`.
+- Canonical local sync command: `binpm install`.
+- Canonical local execution command: `binpm x CMD [args...]`.
+- Canonical one-off execution command: `binpm x --package github:owner/repo[@version] CMD [args...]`.
 - `github:owner/repo` is the canonical v1 package spec. Direct URLs, registries, and non-GitHub hosts are out of scope until documented separately.
 - When `@version` is omitted, `binpm` must select the latest stable GitHub Release by ignoring draft and prerelease releases.
 - Explicit versions may be written with or without a leading `v`; release tag matching must try the exact input first, then the opposite `v` prefix form.
@@ -23,6 +27,11 @@
   - `binpm cache list` must report cached assets with digest, byte size when known, source owner/repo, release tag, asset name, last-used timestamp when known, and whether installed package manifests currently reference the entry.
   - `binpm cache prune` must remove only cache entries that are not referenced by installed package manifests.
   - `binpm cache clean` must remove all cache entries while preserving installed package records and executable links or copies under `~/.binpm/bin`.
+- `binpm add <cmd> github:owner/repo[@version]` must declare `<cmd>` in `binpm.toml`, install the selected executable into `$repoRoot/.binpm/bin`, and update `binpm.lock`.
+- `binpm install` without a package spec must sync the local `binpm.toml` manifest into `$repoRoot/.binpm/bin` and update `binpm.lock`; `binpm install github:owner/repo[@version]` keeps the global install behavior.
+- `binpm x CMD [args...]` must resolve `CMD` from `binpm.toml`, install it on demand when the lockfile or local executable is missing or stale, prepend `$repoRoot/.binpm/bin` to `PATH`, preserve the caller's current working directory, and forward every argument after `CMD` to the executed command.
+- `binpm x --package github:owner/repo[@version] CMD [args...]` must install or reuse the explicit package in a temporary or cache-backed execution context, prepend that context and `$repoRoot/.binpm/bin` to `PATH` when a local project exists, and run `CMD [args...]`.
+- If `CMD` is absent from the local manifest and no explicit `--package` is provided, `binpm x` must fail with a clear hint to run `binpm add <cmd> github:owner/repo[@version]` or retry with `--package`; it must not infer a GitHub repository from the command name.
 - The host target model must be enum-driven and include:
   - OS: `linux`, `darwin`, `windows`, `freebsd`
   - CPU architecture: `x86_64`, `aarch64`, `i686`, `armv7`
@@ -48,6 +57,51 @@
 - Desktop or system package formats are de-prioritized and must not be installed by default in v1: `.deb`, `.rpm`, `.apk`, `.pkg.tar.zst`, `.dmg`, `.msi`, `.pkg`, `.AppImage`, `.flatpak`, `.snap`.
 - Archive extraction must locate one or more executable files by executable permission, Windows `.exe` suffix, expected package name, and target-aware filename tokens.
 - If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates.
+
+## Local Manifest and Lockfile
+- The local project root is the nearest ancestor containing `binpm.toml`; commands that create `binpm.toml` must use the current Git worktree root when available, otherwise the current directory.
+- `binpm.toml` is the committed local tool declaration file. It must use TOML, `version = 1`, and `[tools.<cmd>]` tables keyed by the local command name.
+- In `binpm.toml`, each tool entry must include `source = "github:owner/repo"`, may include `version = "<release>"`, and may include `bin = "<upstream-binary-name>"` when the executable selected from the release differs from the local command name or needs explicit disambiguation.
+- `binpm add <cmd> github:owner/repo[@version]` must persist the package source without the version suffix in `source`; when a version is supplied, it must persist that value in `version`.
+- `binpm.lock` is the committed local resolution file. It must use TOML, `version = 1`, and `[tools.<cmd>]` records keyed by the local command name.
+- Each `binpm.lock` tool record must include package spec, resolved owner/repo, requested version when present, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive or bare asset, installed binary path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `local`), install timestamp, and whether upstream signature material was available.
+- Lockfile target and checksum fields must use the same enum-style values as the runtime target model and checksum source model; implementation types should preserve those values as enums rather than free-form strings.
+
+Example `binpm.toml`:
+
+```toml
+version = 1
+
+[tools.rg]
+source = "github:BurntSushi/ripgrep"
+version = "14.1.1"
+bin = "rg"
+```
+
+Example `binpm.lock`:
+
+```toml
+version = 1
+
+[tools.rg]
+source = "github:BurntSushi/ripgrep"
+owner = "BurntSushi"
+repo = "ripgrep"
+requested_version = "14.1.1"
+release_tag = "14.1.1"
+asset_name = "ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
+asset_url = "https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-aarch64-apple-darwin.tar.gz"
+target_os = "darwin"
+target_arch = "aarch64"
+target_libc = "any"
+archive_format = "tar.gz"
+selected_binary = "ripgrep-14.1.1-aarch64-apple-darwin/rg"
+installed_path = ".binpm/bin/rg"
+sha256 = "<hex-encoded-sha256>"
+checksum_source = "github-digest"
+signature_available = false
+installed_at = "2026-06-19T00:00:00Z"
+```
 
 ### Binary Release Pattern Catalog
 - Rust cargo-binstall defaults:
@@ -79,19 +133,25 @@
   - `.minisig` files are verification sidecars and must not be selected as installable binaries.
 
 ## Storage
-- Home directory: `~/.binpm`
-- Executable link or copy directory: `~/.binpm/bin`
-- Installed package records: `~/.binpm/packages`
+- Global home directory: `~/.binpm`
+- Global executable link or copy directory: `~/.binpm/bin`
+- Global installed package records: `~/.binpm/packages`
 - User-level global asset cache: `~/.binpm/cache`
-- Temporary downloads and extraction roots: `~/.binpm/tmp`
+- Global temporary downloads and extraction roots: `~/.binpm/tmp`
+- Project-local manifest: `$repoRoot/binpm.toml`
+- Project-local lockfile: `$repoRoot/binpm.lock`
+- Project-local executable link or copy directory: `$repoRoot/.binpm/bin`
+- Project-local temporary downloads and extraction roots: `$repoRoot/.binpm/tmp`
+- Project-local package records may be stored under `$repoRoot/.binpm/packages` as runtime implementation detail, but committed resolution data must live in `binpm.lock`.
 - The global cache stores GitHub Release asset original bytes, not extracted package directories or installed binaries.
 - Cache entries must be content-addressed by `sha256:<hex>` when GitHub Release asset metadata exposes a SHA-256 `digest`.
 - When GitHub asset metadata does not expose a digest, `binpm` must compute SHA-256 after download and use the local digest as both the cache key and the install manifest verification value.
 - Cache lookup for assets without GitHub-provided digests may use source metadata to find a prior local digest, but source owner/repo, release tag, asset name, or URL alone must not make bytes reusable without SHA-256 revalidation.
 - Cache metadata must preserve the source owner/repo, release tag, asset name, asset URL, byte size when known, checksum source, creation timestamp, and last-used timestamp when known.
-- Local install manifests must record package spec, resolved owner/repo, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive, installed binary path, cache key, cache path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `local`), install timestamp, and whether upstream signature material was available.
+- Global install manifests and local lockfile records must record package spec, resolved owner/repo, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive, installed binary path, cache key when available, cache path when available, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `local`), install timestamp, and whether upstream signature material was available.
 - The global cache is separate from installed package records and executable links or copies. Removing cache entries must not remove package manifests or files under `~/.binpm/bin`.
-- Temporary extraction and cache population must be atomic: incomplete downloads and extraction directories stay under `~/.binpm/tmp` and must not update cache entries, package records, or `~/.binpm/bin`.
+- Temporary extraction and cache population must be atomic: incomplete global downloads and extraction directories stay under `~/.binpm/tmp`, and incomplete project-local downloads and extraction directories stay under `$repoRoot/.binpm/tmp`.
+- Failed installs must not update cache entries, package records, `binpm.lock`, `~/.binpm/bin`, or `$repoRoot/.binpm/bin`.
 - Concurrent installs for the same asset must use temporary files plus atomic rename or a cache lock so partial downloads are never visible as reusable cache entries.
 
 ## Security
@@ -107,27 +167,30 @@
 - Archive extraction must reject absolute paths, parent-directory traversal, unsafe symlinks, and files that would escape the package extraction root.
 
 ## Logging
-- Use structured `tracing` logs for release lookup, target normalization, asset candidate scoring, checksum discovery, download, extraction, binary discovery, and install finalization.
+- Use structured `tracing` logs for manifest discovery, lockfile parsing, release lookup, target normalization, asset candidate scoring, checksum discovery, download, extraction, binary discovery, install finalization, and `binpm x` command execution.
 - Candidate scoring logs must include normalized package spec, release tag, asset name, detected OS, detected architecture, detected libc/ABI, artifact kind, score, and rejection reason when applicable.
 - Download and cache logs must include sanitized URL origin, asset name, byte count when known, cache hit or miss state, cache key, cache path, cache action, cache validation source, cache reused state, cache eviction state, retry attempt, and final outcome.
-- Install logs must include package spec, release tag, selected asset, selected archive member or bare executable, installed path, and manifest path.
+- Install logs must include package spec, release tag, selected asset, selected archive member or bare executable, installed path, manifest path, lockfile path when local, and whether the install is global or project-local.
 - Stable cache log keys include `cache_key`, `cache_path`, `cache_action`, `cache_validation_source`, `cache_reused`, `cache_evicted`, and `cache_bytes`.
+- `binpm x` logs must include local project root when present, resolved command, explicit package spec when used, PATH entries added by binpm, install-on-demand state, process exit status, and whether command resolution came from `binpm.toml` or `--package`.
 - Human CLI output may be concise, but debug logs must be sufficient to reconstruct why a candidate won or lost.
 
 ## Build and Test
 - No Rust validation command is required while `binpm` remains documentation-only.
 - When runtime code is introduced, local validation must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.
 - Heuristic tests must cover OS aliases, architecture aliases, libc aliases, exact libc preference, Linux glibc missing-libc fallback, Linux musl missing-libc rejection, source archive rejection, sidecar rejection, desktop installer de-prioritization, cargo-binstall candidates, cargo-dist candidates, GoReleaser candidates, Bun/Deno candidates, and ambiguous archive contents.
-- Storage tests must cover atomic install behavior, cache miss download and digest recording, cache hit reuse after verification, digest mismatch eviction and redownload, concurrent partial download isolation, manifest updates, cache command behavior for `list`, `prune`, and `clean`, and unsafe archive path rejection.
+- Storage tests must cover atomic install behavior, cache miss download and digest recording, cache hit reuse after verification, digest mismatch eviction and redownload, concurrent partial download isolation, `binpm.toml` updates, `binpm.lock` updates, global install records, project-local install records, stale lock reinstall behavior, cache command behavior for `list`, `prune`, and `clean`, and unsafe archive path rejection.
+- Execution tests must cover `binpm x` local PATH behavior, argument forwarding, current-working-directory preservation, explicit `--package` execution, missing-manifest failure, missing-command failure, and install-on-demand from a valid lockfile.
 
 ## Dependencies and Integrations
 - Integrates with GitHub Releases through the GitHub API and release asset downloads.
 - Depends on archive extraction support for common release formats.
 - May integrate with checksum and signature tooling later, but v1 must work without Node.js or language-specific package managers.
+- Uses npm `npx` and `npm exec` only as behavioral references for PATH-based command execution and argument forwarding.
 - Does not integrate with npm, pnpm, yarn, Bun, Cargo install, cargo-binstall, Homebrew, apt, rpm, or system package managers as install backends in v1.
 
 ## Change Triggers
-- Update `docs/project-binpm.md` with this file when CLI shape, storage layout, cache behavior, security policy, target model, or asset selection heuristics change.
+- Update `docs/project-binpm.md` with this file when CLI shape, local manifest or lockfile format, storage layout, cache behavior, security policy, target model, or asset selection heuristics change.
 - Update root `AGENTS.md` and `crates/AGENTS.md` when `binpm` project ownership, planned path status, or Rust-domain policy changes.
 - Update implementation tests in the same change set when heuristic scoring rules are implemented or changed.
 
@@ -136,6 +199,7 @@
 - `docs/domain-template.md`
 - GitHub Release asset API: https://docs.github.com/en/rest/releases/assets
 - GitHub Release asset digest changelog: https://github.blog/changelog/2025-06-03-releases-now-expose-digests-for-release-assets/
+- npm exec and npx behavior reference: https://docs.npmjs.com/cli/v11/commands/npm-exec/
 - GoReleaser archives: https://goreleaser.com/customization/package/archives/
 - GoReleaser Go builder: https://goreleaser.com/customization/builds/builders/go/
 - cargo-binstall support metadata: https://github.com/cargo-bins/cargo-binstall/blob/main/SUPPORT.md

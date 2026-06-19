@@ -210,6 +210,7 @@ tmp/
 # Local hidden work directories
 .local/
 .tmp/
+.binpm/
 
 # Local derun/Codex integration artifacts
 .derun-state/
