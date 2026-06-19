@@ -509,14 +509,15 @@ mod tests {
         let cache_file = dir.path().join("release-index.json");
         let now = unix_epoch_seconds();
         let server = MockServer::start();
+        let index_url = server.url("/index.json");
         let cached_entries = vec![ReleaseEntry {
             version: "v24.14.0".to_string(),
             lts: serde_json::Value::String("Krypton".to_string()),
         }];
         let payload = ReleaseIndexCachePayload {
             schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
-            index_url: server.url("/index.json"),
-            fetched_at_epoch_seconds: now,
+            index_url: index_url.clone(),
+            fetched_at_epoch_seconds: now.saturating_sub(1),
             entries: cached_entries.clone(),
         };
         fs::write(&cache_file, serde_json::to_vec(&payload).unwrap()).unwrap();
@@ -531,7 +532,7 @@ mod tests {
         let client = ReleaseIndexClient::with_urls(
             cache_file,
             Duration::from_secs(600),
-            server.url("/index.json"),
+            index_url,
             server.url("/release"),
         )
         .unwrap();
