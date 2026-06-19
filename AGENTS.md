@@ -134,6 +134,7 @@ enum ProjectId {
 
 - `binpm.toml` is the committed project-local tool declaration file.
 - `binpm.lock` is the committed deterministic project-local resolution file and must keep target-specific records.
+- `binpm init` manifest creation must target the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory.
 - `binpm.lock` must not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata.
 - `binpm.lock` must store sanitized canonical asset URLs only, never query strings, fragments, credential-bearing URLs, or expiring signed download URLs.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`.
