@@ -30,7 +30,7 @@
 ### Monorepo Structure Map
 
 - `docs/`: Source of truth for project contracts and repository documentation.
-- `apps/`: User-facing apps (Next.js and React Native).
+- `apps/`: User-facing apps (React Native and documentation web surfaces).
 - `crates/`: Rust crates and Rust-based tooling.
 - `protos/`: Shared Connect RPC proto contracts used by multi-runtime projects.
 - `cmds/`: Go command tools for workflow orchestration.
@@ -52,9 +52,6 @@
 - `docs/project-derun.md`: Derun CLI project index.
 - `docs/project-ttl.md`: TTL compiler project index.
 - `docs/project-mpapp.md`: Expo mobile app project index.
-- `docs/project-devkit.md`: Devkit host platform project index.
-- `docs/project-devkit-commit-tracker.md`: Commit Tracker scaffold project index.
-- `docs/project-devkit-remote-file-picker.md`: Remote File Picker mini app project index.
 - `docs/project-thenv.md`: Thenv multi-component project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
@@ -78,9 +75,6 @@ enum ProjectId {
   Derun = "derun",
   Ttl = "ttl",
   Mpapp = "mpapp",
-  Devkit = "devkit",
-  DevkitCommitTracker = "devkit-commit-tracker",
-  DevkitRemoteFilePicker = "devkit-remote-file-picker",
   Thenv = "thenv",
   SerdeFeather = "serde-feather",
   Rustia = "rustia",
@@ -97,10 +91,7 @@ enum ProjectId {
 - `derun` -> `cmds/derun`
 - `ttl` -> `cmds/ttlc`
 - `mpapp` -> `apps/mpapp`
-- `devkit` -> `apps/devkit`
-- `devkit-commit-tracker` -> `apps/devkit/src/apps/commit-tracker`
-- `devkit-remote-file-picker` -> `apps/devkit/src/apps/remote-file-picker`
-- `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
+- `thenv` -> `cmds/thenv`, `servers/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`
@@ -140,57 +131,19 @@ enum ProjectId {
 - `binpm verify --require-verified` must fail when no provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature under a documented trust policy is available.
 - `--no-confirm` is a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
 
-### Devkit Mini-App Identifier Contract
-
-```ts
-enum DevkitMiniAppId {
-  CommitTracker = "commit-tracker",
-  RemoteFilePicker = "remote-file-picker",
-  Thenv = "thenv",
-}
-```
-
-### Commit Tracker Component Contract
-
-`devkit-commit-tracker` is currently scaffold-only in the Devkit app, while backend and collector components remain reserved for future reactivation:
-
-```ts
-enum CommitTrackerComponent {
-  WebApp = "web-app",
-  ApiServer = "api-server",
-  Collector = "collector",
-}
-```
-
-Component mapping:
-- `WebApp` -> `apps/devkit/src/apps/commit-tracker`
-- `ApiServer` -> planned (no active canonical path)
-- `Collector` -> planned (no active canonical path)
-
-### Devkit Routing Contract
-
-All Devkit mini apps must be exposed at `/apps/<id>`.
-
-Examples:
-- `/apps/commit-tracker`
-- `/apps/remote-file-picker`
-- `/apps/thenv`
-
 ### Thenv Component Contract
 
-`thenv` is a three-component project with fixed mapping:
+`thenv` is a two-component project with fixed mapping:
 
 ```ts
 enum ThenvComponent {
   Cli = "cli",
   Server = "server",
-  WebConsole = "web-console",
 }
 ```
 
 - `Cli` -> `cmds/thenv`
 - `Server` -> `servers/thenv`
-- `WebConsole` -> `apps/devkit/src/apps/thenv`
 
 ### Serde Feather Component Contract
 
@@ -250,7 +203,7 @@ enum RustiaComponent {
 
 - Apply this contract to all open/new GitHub issues.
 - Use issue titles in the format `<domain>: <description>`.
-- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`, `devkit/thenv`).
+- `<domain>` must use stable lowercase identifiers from project/domain contracts (for example: `ttl`, `nodeup`, `serde-feather`, `thenv`).
 - `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
 - Do not use bracket-style project prefixes like `[serde-feather]`.
 - Use the following Markdown section order for issue bodies:
@@ -301,8 +254,6 @@ Coverage expectations:
 - `rust-fmt`: runs `cargo fmt --all --check`.
 - `rust-clippy`: runs `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - `rust-test`: runs `cargo test --workspace --all-targets`.
-- `node-devkit-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter devkit... test`.
-- `node-devkit-build`: runs `pnpm install --frozen-lockfile` and `pnpm --filter devkit... build`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.

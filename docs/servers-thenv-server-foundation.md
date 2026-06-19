@@ -9,12 +9,12 @@
 - Primary language: Go
 
 ## Users and Operators
-- CLI and web-console clients performing secret management operations
+- CLI clients performing secret management operations
 - Operators enforcing policy, audit, and availability targets
 
 ## Interfaces and Contracts
 - Stable component identifier: `server`.
-- API contracts for secret lifecycle operations must align with CLI and web console semantics.
+- API contracts for secret lifecycle operations must align with CLI semantics.
 - Trust/bootstrap and policy evaluation contracts must remain explicit and versioned.
 
 ## Storage
@@ -34,15 +34,14 @@
 - Repository baseline: `go test ./...`
 
 ## Dependencies and Integrations
-- Client integrations: `cmds/thenv` and `apps/devkit/src/apps/thenv`.
+- Client integrations: `cmds/thenv`.
 - Shared policy model must remain aligned with thenv project-level trust invariants.
 
 ## Change Triggers
 - Update `docs/project-thenv.md` and this file for server API, policy, or storage changes.
-- Synchronize trust model changes with CLI and web console thenv docs.
+- Synchronize trust model changes with CLI thenv docs.
 
 ## References
 - `docs/project-thenv.md`
 - `docs/cmds-thenv-cli-foundation.md`
-- `docs/apps-thenv-web-console-foundation.md`
 - `docs/domain-template.md`

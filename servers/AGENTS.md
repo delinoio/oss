@@ -8,8 +8,6 @@
 ### Scope in This Domain
 
 - `servers/thenv`: Backend for secure environment sharing.
-- `servers/commit-tracker`: Commit Tracker API server for metric ingestion, querying, and PR comparison.
-- `servers/remote-file-picker`: Remote File Picker API server for signed-URL upload orchestration.
 
 ### Server Language and Data Rules
 
@@ -48,7 +46,7 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 
 ### Multi-Component Contract Sync
 
-- `servers/thenv` changes must keep CLI and web-console contracts synchronized.
+- `servers/thenv` changes must keep CLI contracts synchronized.
 
 ### Testing and Validation
 

@@ -10,29 +10,8 @@
 
 ### Scope in This Domain
 
-- `apps/devkit`: Next.js 16 micro-app platform.
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/public-docs`: Mintlify public documentation app.
-
-### Devkit Identifier Contract
-
-Treat Devkit mini app IDs as stable enum-style values:
-
-```ts
-enum DevkitMiniAppId {
-  CommitTracker = "commit-tracker",
-  RemoteFilePicker = "remote-file-picker",
-  Thenv = "thenv",
-}
-```
-
-### Devkit Rules
-
-- Mini app code must live at `apps/devkit/src/apps/<id>`.
-- Mini app identifiers must be stable kebab-case values.
-- Mini app routes must follow `/apps/<id>`.
-- Shared shell concerns belong to Devkit platform modules, not mini app internals.
-- New mini apps require a project index doc and an app-domain contract doc before implementation.
 
 ### mpapp Rules
 
@@ -44,11 +23,6 @@ enum DevkitMiniAppId {
 - `public-docs` must remain Mintlify-based unless a documented architecture decision changes it.
 - Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
-
-### Multi-Component Contract Sync
-
-- `devkit-commit-tracker` app changes must update `docs/apps-devkit-commit-tracker-web-app-foundation.md` and `docs/project-devkit-commit-tracker.md`.
-- `thenv` web console changes must update `docs/apps-thenv-web-console-foundation.md` and `docs/project-thenv.md`.
 
 ### Testing and Validation
 

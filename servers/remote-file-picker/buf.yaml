@@ -1,9 +1,0 @@
-version: v2
-deps:
-  - buf.build/protocolbuffers/wellknowntypes
-lint:
-  use:
-    - DEFAULT
-breaking:
-  use:
-    - FILE

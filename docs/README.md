@@ -46,25 +46,12 @@ Each project must have one project index document and one or more domain contrac
 - `docs/project-mpapp.md`
 - `docs/apps-mpapp-foundation.md`
 
-### devkit
-- `docs/project-devkit.md`
-- `docs/apps-devkit-foundation.md`
-
-### devkit-remote-file-picker
-- `docs/project-devkit-remote-file-picker.md`
-- `docs/apps-devkit-remote-file-picker-foundation.md`
-
 ### public-docs
 - `docs/project-public-docs.md`
 - `docs/apps-public-docs-foundation.md`
 
-### devkit-commit-tracker
-- `docs/project-devkit-commit-tracker.md`
-- `docs/apps-devkit-commit-tracker-web-app-foundation.md`
-
 ### thenv
 - `docs/project-thenv.md`
-- `docs/apps-thenv-web-console-foundation.md`
 - `docs/servers-thenv-server-foundation.md`
 - `docs/cmds-thenv-cli-foundation.md`
 

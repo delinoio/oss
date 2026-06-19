@@ -1,7 +1,7 @@
 # Project: thenv
 
 ## Goal
-Define secure `.env` sharing workflows across CLI, server, and the active Devkit web console.
+Define secure `.env` sharing workflows across the CLI and server components.
 
 ## Project ID
 `thenv`
@@ -9,26 +9,22 @@ Define secure `.env` sharing workflows across CLI, server, and the active Devkit
 ## Domain Ownership Map
 - `cmds/thenv` (`cli`)
 - `servers/thenv` (`server`)
-- `apps/devkit/src/apps/thenv` (`web-console`)
 
 ## Domain Contract Documents
 - `docs/cmds-thenv-cli-foundation.md`
 - `docs/servers-thenv-server-foundation.md`
-- `docs/apps-thenv-web-console-foundation.md`
 
 ## Cross-Domain Invariants
-- Component identifiers remain stable: `cli`, `server`, `web-console`.
-- Trust boundaries and redaction rules must remain consistent across all components.
+- Component identifiers remain stable: `cli`, `server`.
+- Trust boundaries and redaction rules must remain consistent across both components.
 - Secret lifecycle operations must use shared semantic contracts for push (create/update), pull (read), activate, and rotate flows.
-- Policy and audit contracts must remain aligned across CLI, server, and web console behavior.
-- Devkit web-console component is active with full Connect RPC integration to the thenv server.
+- Policy and audit contracts must remain aligned across CLI and server behavior.
 
 ## Change Policy
 - Security or interface changes require synchronized updates to this index and all affected component docs.
-- CLI, server, and web console contracts must remain aligned on permissions, auditing, and error taxonomy.
+- CLI and server contracts must remain aligned on permissions, auditing, and error taxonomy.
 
 ## References
-- `docs/project-devkit.md`
 - `docs/project-template.md`
 - `docs/domain-template.md`
 - `docs/README.md`
