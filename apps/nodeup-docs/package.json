@@ -1,0 +1,16 @@
+{
+  "name": "nodeup-docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:app": "echo 'nodeup-docs: no prepare step'",
+    "dev": "rspress dev --port 46250",
+    "build": "rspress build",
+    "preview": "rspress preview --port 46251",
+    "test": "rspress build"
+  },
+  "devDependencies": {
+    "@rspress/core": "^2.0.0"
+  }
+}
