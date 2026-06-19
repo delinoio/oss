@@ -82,6 +82,25 @@ fn env_prints_shell_path_exports() {
 }
 
 #[test]
+fn env_routes_enabled_logs_to_stderr() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_LOG", "binpm=info")
+        .env("BINPM_LOG_COLOR", "never")
+        .env("BINPM_HOME", "/tmp/binpm-home")
+        .args(["env", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Rendered PATH environment commands").not())
+        .stderr(predicate::str::contains(
+            "Rendered PATH environment commands",
+        ));
+}
+
+#[test]
 fn env_from_nested_directory_uses_git_root_local_bin() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
@@ -143,6 +162,25 @@ fn cache_key_from_nested_directory_uses_git_root_lockfile() {
         .success()
         .stdout(predicate::str::contains(expected_digest))
         .stdout(predicate::str::contains(empty_digest).not());
+}
+
+#[test]
+fn cache_key_routes_enabled_logs_to_stderr() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    fs::write(temp_dir.path().join("binpm.lock"), "root lock\n").expect("write lockfile");
+    let expected_digest = format!("{:x}", Sha256::digest(b"root lock\n"));
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_LOG", "binpm=info")
+        .env("BINPM_LOG_COLOR", "never")
+        .args(["cache", "key"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(expected_digest))
+        .stdout(predicate::str::contains("Computed binpm cache key").not())
+        .stderr(predicate::str::contains("Computed binpm cache key"));
 }
 
 #[test]

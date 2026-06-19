@@ -9,6 +9,7 @@ pub fn init_logging() {
     let env_filter = resolve_env_filter_from_environment();
     let _ = tracing_subscriber::fmt()
         .with_env_filter(env_filter)
+        .with_writer(std::io::stderr)
         .with_ansi(log_color_enabled())
         .with_target(false)
         .with_level(true)
