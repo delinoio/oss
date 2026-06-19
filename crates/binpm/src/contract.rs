@@ -149,7 +149,7 @@ fn split_version<'source>(
     raw: &str,
     remainder: &'source str,
 ) -> Result<(&'source str, Option<String>), BinpmError> {
-    match remainder.rsplit_once('@') {
+    match remainder.split_once('@') {
         Some((source, version)) if !source.is_empty() && !version.is_empty() => {
             Ok((source, Some(version.to_string())))
         }
@@ -308,7 +308,7 @@ impl TargetArch {
         match raw {
             "x86_64" => Ok(Self::X86_64),
             "aarch64" => Ok(Self::Aarch64),
-            "x86" | "i686" => Ok(Self::I686),
+            "i686" => Ok(Self::I686),
             "arm" if is_armv7_eabihf => Ok(Self::Armv7),
             raw => Err(BinpmError::UnsupportedTargetComponent {
                 component: "architecture",
@@ -460,6 +460,16 @@ mod tests {
     }
 
     #[test]
+    fn parses_source_version_with_at_sign() {
+        let spec = SourceSpec::from_str("github:owner/repo@tool@v1.0.0").expect("source");
+
+        assert_eq!(spec.provider, SourceProvider::GitHub);
+        assert_eq!(spec.host, "github.com");
+        assert_eq!(spec.path, "owner/repo");
+        assert_eq!(spec.version.as_deref(), Some("tool@v1.0.0"));
+    }
+
+    #[test]
     fn rejects_empty_source_path_segments() {
         for raw in [
             "github:/owner/repo",
@@ -516,6 +526,20 @@ mod tests {
         let error = TargetArch::from_current_cfg("arm", false).expect_err("ambiguous arm");
 
         assert_unsupported_component(error, "architecture", "arm");
+    }
+
+    #[test]
+    fn rejects_ambiguous_current_x86_arch() {
+        let error = TargetArch::from_current_cfg("x86", false).expect_err("ambiguous x86");
+
+        assert_unsupported_component(error, "architecture", "x86");
+    }
+
+    #[test]
+    fn preserves_current_i686_arch() {
+        let arch = TargetArch::from_current_cfg("i686", false).expect("i686 architecture");
+
+        assert_eq!(arch, TargetArch::I686);
     }
 
     #[test]
