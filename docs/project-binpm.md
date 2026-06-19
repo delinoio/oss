@@ -20,11 +20,14 @@ Provide a Rust-based, Node-free binary package manager for installing command-li
 - Binary selection must be deterministic and target-aware across operating system, CPU architecture, and libc or ABI environment.
 - The asset selection heuristic must remain fully documented in `docs/crates-binpm-foundation.md` before implementation changes alter scoring behavior.
 - `~/.binpm` is the canonical home directory for installed binaries, package records, cache entries, and temporary extraction state.
+- `~/.binpm/cache` is the user-level global asset cache shared by all `binpm` installs for the same account.
+- Global cache reuse must never bypass GitHub asset digest, upstream checksum, signature, or locally recorded SHA-256 verification.
+- Cache management commands must preserve installed package records and `~/.binpm/bin` entries unless a separate uninstall contract explicitly changes that behavior.
 - `binpm` must not require Node.js, npm, pnpm, yarn, or Bun to install native binary tools.
 - Installs without upstream checksum or signature material are allowed in v1 only with an explicit warning and locally recorded SHA-256 metadata.
 
 ## Change Policy
-- Update this index and `docs/crates-binpm-foundation.md` together when CLI shape, target selection, storage layout, security behavior, or heuristic scoring changes.
+- Update this index and `docs/crates-binpm-foundation.md` together when CLI shape, target selection, storage layout, cache behavior, security behavior, or heuristic scoring changes.
 - Update root `AGENTS.md` and `crates/AGENTS.md` when `binpm` ownership, planned path status, or repository policy boundaries change.
 - Create the planned `crates/binpm` path and add it to the Rust workspace in the same change set where runtime implementation begins.
 

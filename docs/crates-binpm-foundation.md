@@ -19,6 +19,10 @@
 - `github:owner/repo` is the canonical v1 package spec. Direct URLs, registries, and non-GitHub hosts are out of scope until documented separately.
 - When `@version` is omitted, `binpm` must select the latest stable GitHub Release by ignoring draft and prerelease releases.
 - Explicit versions may be written with or without a leading `v`; release tag matching must try the exact input first, then the opposite `v` prefix form.
+- Cache management commands for v1:
+  - `binpm cache list` must report cached assets with digest, byte size when known, source owner/repo, release tag, asset name, last-used timestamp when known, and whether installed package manifests currently reference the entry.
+  - `binpm cache prune` must remove only cache entries that are not referenced by installed package manifests.
+  - `binpm cache clean` must remove all cache entries while preserving installed package records and executable links or copies under `~/.binpm/bin`.
 - The host target model must be enum-driven and include:
   - OS: `linux`, `darwin`, `windows`, `freebsd`
   - CPU architecture: `x86_64`, `aarch64`, `i686`, `armv7`
@@ -78,10 +82,17 @@
 - Home directory: `~/.binpm`
 - Executable link or copy directory: `~/.binpm/bin`
 - Installed package records: `~/.binpm/packages`
-- Download cache: `~/.binpm/cache`
+- User-level global asset cache: `~/.binpm/cache`
 - Temporary downloads and extraction roots: `~/.binpm/tmp`
-- Local install manifests must record package spec, resolved owner/repo, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive, installed binary path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `local`), install timestamp, and whether upstream signature material was available.
-- Temporary extraction must be atomic: incomplete downloads and extraction directories stay under `~/.binpm/tmp` and must not update package records or `~/.binpm/bin`.
+- The global cache stores GitHub Release asset original bytes, not extracted package directories or installed binaries.
+- Cache entries must be content-addressed by `sha256:<hex>` when GitHub Release asset metadata exposes a SHA-256 `digest`.
+- When GitHub asset metadata does not expose a digest, `binpm` must compute SHA-256 after download and use the local digest as both the cache key and the install manifest verification value.
+- Cache lookup for assets without GitHub-provided digests may use source metadata to find a prior local digest, but source owner/repo, release tag, asset name, or URL alone must not make bytes reusable without SHA-256 revalidation.
+- Cache metadata must preserve the source owner/repo, release tag, asset name, asset URL, byte size when known, checksum source, creation timestamp, and last-used timestamp when known.
+- Local install manifests must record package spec, resolved owner/repo, release tag, asset name, asset URL, target OS, target architecture, target libc/ABI, archive format, selected binary path inside the archive, installed binary path, cache key, cache path, SHA-256 digest, checksum source (`github-digest`, `sidecar`, `manifest`, `local`), install timestamp, and whether upstream signature material was available.
+- The global cache is separate from installed package records and executable links or copies. Removing cache entries must not remove package manifests or files under `~/.binpm/bin`.
+- Temporary extraction and cache population must be atomic: incomplete downloads and extraction directories stay under `~/.binpm/tmp` and must not update cache entries, package records, or `~/.binpm/bin`.
+- Concurrent installs for the same asset must use temporary files plus atomic rename or a cache lock so partial downloads are never visible as reusable cache entries.
 
 ## Security
 - `binpm` must use HTTPS GitHub API and release asset URLs.
@@ -89,6 +100,8 @@
 - If the GitHub Release asset metadata exposes a SHA-256 `digest`, `binpm` must verify the downloaded asset against that digest before considering checksum sidecars or local fallback hashes.
 - If an upstream checksum manifest or sidecar exists, `binpm` must verify the selected asset before installation.
 - If no GitHub asset digest, checksum sidecar, checksum manifest, or signature exists, `binpm` must warn, compute SHA-256 locally, store it in the install manifest, and verify future reinstalls or cache reuse against that recorded digest.
+- Cache hits must be revalidated before extraction or install finalization using the strongest available integrity source: GitHub asset digest, upstream checksum material, signature verification, or the locally recorded install manifest digest.
+- If cache revalidation fails, `binpm` must discard the corrupted cache entry and redownload the asset. If the redownloaded bytes fail the trusted integrity source, installation must fail.
 - Checksum, signature, SBOM, and provenance files are metadata inputs only; they must not be installed as binaries.
 - URL diagnostics in errors and logs must omit query strings and fragments.
 - Archive extraction must reject absolute paths, parent-directory traversal, unsafe symlinks, and files that would escape the package extraction root.
@@ -96,15 +109,16 @@
 ## Logging
 - Use structured `tracing` logs for release lookup, target normalization, asset candidate scoring, checksum discovery, download, extraction, binary discovery, and install finalization.
 - Candidate scoring logs must include normalized package spec, release tag, asset name, detected OS, detected architecture, detected libc/ABI, artifact kind, score, and rejection reason when applicable.
-- Download logs must include sanitized URL origin, asset name, byte count when known, cache hit or miss state, retry attempt, and final outcome.
+- Download and cache logs must include sanitized URL origin, asset name, byte count when known, cache hit or miss state, cache key, cache path, cache action, cache validation source, cache reused state, cache eviction state, retry attempt, and final outcome.
 - Install logs must include package spec, release tag, selected asset, selected archive member or bare executable, installed path, and manifest path.
+- Stable cache log keys include `cache_key`, `cache_path`, `cache_action`, `cache_validation_source`, `cache_reused`, `cache_evicted`, and `cache_bytes`.
 - Human CLI output may be concise, but debug logs must be sufficient to reconstruct why a candidate won or lost.
 
 ## Build and Test
 - No Rust validation command is required while `binpm` remains documentation-only.
 - When runtime code is introduced, local validation must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.
 - Heuristic tests must cover OS aliases, architecture aliases, libc aliases, exact libc preference, Linux glibc missing-libc fallback, Linux musl missing-libc rejection, source archive rejection, sidecar rejection, desktop installer de-prioritization, cargo-binstall candidates, cargo-dist candidates, GoReleaser candidates, Bun/Deno candidates, and ambiguous archive contents.
-- Storage tests must cover atomic install behavior, cache digest verification, manifest updates, and unsafe archive path rejection.
+- Storage tests must cover atomic install behavior, cache miss download and digest recording, cache hit reuse after verification, digest mismatch eviction and redownload, concurrent partial download isolation, manifest updates, cache command behavior for `list`, `prune`, and `clean`, and unsafe archive path rejection.
 
 ## Dependencies and Integrations
 - Integrates with GitHub Releases through the GitHub API and release asset downloads.
@@ -113,14 +127,15 @@
 - Does not integrate with npm, pnpm, yarn, Bun, Cargo install, cargo-binstall, Homebrew, apt, rpm, or system package managers as install backends in v1.
 
 ## Change Triggers
-- Update `docs/project-binpm.md` with this file when CLI shape, storage layout, security policy, target model, or asset selection heuristics change.
+- Update `docs/project-binpm.md` with this file when CLI shape, storage layout, cache behavior, security policy, target model, or asset selection heuristics change.
 - Update root `AGENTS.md` and `crates/AGENTS.md` when `binpm` project ownership, planned path status, or Rust-domain policy changes.
 - Update implementation tests in the same change set when heuristic scoring rules are implemented or changed.
 
 ## References
 - `docs/project-binpm.md`
 - `docs/domain-template.md`
-- GitHub Release asset API: https://docs.github.com/en/rest/releases/releases
+- GitHub Release asset API: https://docs.github.com/en/rest/releases/assets
+- GitHub Release asset digest changelog: https://github.blog/changelog/2025-06-03-releases-now-expose-digests-for-release-assets/
 - GoReleaser archives: https://goreleaser.com/customization/package/archives/
 - GoReleaser Go builder: https://goreleaser.com/customization/builds/builders/go/
 - cargo-binstall support metadata: https://github.com/cargo-bins/cargo-binstall/blob/main/SUPPORT.md
