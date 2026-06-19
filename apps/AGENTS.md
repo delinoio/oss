@@ -14,6 +14,7 @@
 ### Scope in This Domain
 
 - `apps/mpapp`: Expo React Native mobile app.
+- `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Mintlify public documentation app.
 
 ### mpapp Rules
@@ -28,8 +29,16 @@
 - Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
 
+### nodeup-docs Rules
+
+- `nodeup-docs` must remain Rspress-based unless `docs/project-nodeup.md` and `docs/apps-nodeup-docs-foundation.md` document a replacement.
+- `nodeup-docs` must use Cloudflare Pages as the default static deployment target unless the app contract documents a replacement.
+- Rspress routes and navigation in `apps/nodeup-docs/rspress.config.ts` must stay aligned with `docs/apps-nodeup-docs-foundation.md`.
+- When Nodeup user-facing runtime, release, installer, shim, completion, package-manager, or color-control behavior changes, update related `apps/nodeup-docs` pages in the same change set.
+
 ### Testing and Validation
 
 - If frontend code changes in this domain, run `pnpm test` before finishing.
+- If `apps/nodeup-docs` changes, run `pnpm --filter nodeup-docs test` before finishing.
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.

@@ -8,9 +8,11 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 
 ## Domain Ownership Map
 - `crates/nodeup`
+- `apps/nodeup-docs`
 
 ## Domain Contract Documents
 - `docs/crates-nodeup-foundation.md`
+- `docs/apps-nodeup-docs-foundation.md`
 
 ## Cross-Domain Invariants
 - Stable channel naming and runtime dispatch semantics must be preserved.
@@ -24,11 +26,14 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable third-party quick-install and compile fallback strategies.
 - Homebrew installation must use prebuilt `nodeup` release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - `nodeup` runtime installation and shim dispatch must support `macOS`, `Linux`, and `Windows` x64/arm64 hosts while leaving x86 hosts out of scope.
+- `apps/nodeup-docs` must use the repository-default Rspress/Rsbuild-family static documentation toolchain and Cloudflare Pages deployment contract unless this project index and `docs/apps-nodeup-docs-foundation.md` document a replacement.
+- Nodeup documentation routes exposed by `apps/nodeup-docs` must stay aligned with runtime, release, installer, shim, completion, package-manager, and color-control contracts.
 
 ## Change Policy
-- Update this index and `docs/crates-nodeup-foundation.md` in the same change for behavior or storage contract updates.
+- Update this index, `docs/crates-nodeup-foundation.md`, and `docs/apps-nodeup-docs-foundation.md` in the same change for behavior or storage contract updates that affect Nodeup documentation.
+- Update this index and `docs/apps-nodeup-docs-foundation.md` in the same change for `apps/nodeup-docs` path, route, toolchain, validation, or deployment contract updates.
 - Keep `scripts/install/nodeup.sh`, `scripts/install/nodeup.ps1`, and `crates/nodeup/Cargo.toml` synchronized with release asset names and signing contracts.
-- Keep release and install contracts synchronized with root and `crates/AGENTS.md` rules.
+- Keep release, install, and documentation-app contracts synchronized with root, `crates/AGENTS.md`, and `apps/AGENTS.md` rules.
 
 ## References
 - `docs/project-template.md`
