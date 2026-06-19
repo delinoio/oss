@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::Path};
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -6,6 +6,58 @@ use sha2::{Digest, Sha256};
 
 fn binpm() -> Command {
     Command::new(env!("CARGO_BIN_EXE_binpm"))
+}
+
+fn bash_path(path: &Path) -> String {
+    let raw = path.display().to_string();
+    #[cfg(windows)]
+    {
+        windows_path_for_posix_shell(&raw).unwrap_or(raw)
+    }
+    #[cfg(not(windows))]
+    {
+        raw
+    }
+}
+
+#[cfg(windows)]
+fn windows_path_for_posix_shell(raw: &str) -> Option<String> {
+    if let Some(unc) = raw
+        .strip_prefix(r"\\?\UNC\")
+        .or_else(|| raw.strip_prefix(r"\\.\UNC\"))
+    {
+        return Some(format!("//{}", unc.replace('\\', "/")));
+    }
+
+    let raw = raw
+        .strip_prefix(r"\\?\")
+        .or_else(|| raw.strip_prefix(r"\\.\"))
+        .unwrap_or(raw);
+
+    if let Some(unc) = raw.strip_prefix(r"\\") {
+        return Some(format!("//{}", unc.replace('\\', "/")));
+    }
+
+    let bytes = raw.as_bytes();
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/')
+    {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        let rest = raw[2..].replace('\\', "/");
+        return Some(format!("/{drive}{rest}"));
+    }
+
+    None
+}
+
+fn posix_single_quote(raw: &str) -> String {
+    format!("'{}'", raw.replace('\'', "'\\''"))
+}
+
+fn bash_quote_path(path: &Path) -> String {
+    posix_single_quote(&bash_path(path))
 }
 
 #[test]
@@ -62,19 +114,22 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
 #[test]
 fn env_prints_shell_path_exports() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
     let local_bin = fs::canonicalize(temp_dir.path())
         .expect("canonical temp dir")
         .join(".binpm")
         .join("bin");
+    let global_bin = home.join("bin");
     let expected = format!(
-        "export PATH='{}':'/tmp/binpm-home/bin'${{PATH:+:$PATH}}",
-        local_bin.display()
+        "export PATH={}:{}${{PATH:+:$PATH}}",
+        bash_quote_path(&local_bin),
+        bash_quote_path(&global_bin)
     );
     let mut command = binpm();
 
     command
         .current_dir(temp_dir.path())
-        .env("BINPM_HOME", "/tmp/binpm-home")
+        .env("BINPM_HOME", &home)
         .args(["env", "--shell", "bash"])
         .assert()
         .success()
@@ -84,12 +139,13 @@ fn env_prints_shell_path_exports() {
 #[test]
 fn env_bash_avoids_empty_path_segment_when_path_is_unset() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
     let mut command = binpm();
 
     command
         .current_dir(temp_dir.path())
         .env_clear()
-        .env("BINPM_HOME", "/tmp/binpm-home")
+        .env("BINPM_HOME", &home)
         .args(["env", "--shell", "bash"])
         .assert()
         .success()
@@ -100,17 +156,19 @@ fn env_bash_avoids_empty_path_segment_when_path_is_unset() {
 #[test]
 fn env_ignores_empty_home_overrides() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let fallback_home = temp_dir.path().join("fallback-home");
+    let fallback_bin = fallback_home.join(".binpm").join("bin");
     let mut command = binpm();
 
     command
         .current_dir(temp_dir.path())
         .env_clear()
         .env("BINPM_HOME", "")
-        .env("HOME", "/tmp/fallback-home")
+        .env("HOME", &fallback_home)
         .args(["env", "--shell", "bash"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("'/tmp/fallback-home/.binpm/bin'"))
+        .stdout(predicate::str::contains(bash_quote_path(&fallback_bin)))
         .stdout(predicate::str::contains("''").not());
 }
 
@@ -168,13 +226,14 @@ fn env_fails_when_global_home_cannot_be_resolved() {
 #[test]
 fn env_routes_enabled_logs_to_stderr() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
     let mut command = binpm();
 
     command
         .current_dir(temp_dir.path())
         .env("BINPM_LOG", "binpm=info")
         .env("BINPM_LOG_COLOR", "never")
-        .env("BINPM_HOME", "/tmp/binpm-home")
+        .env("BINPM_HOME", &home)
         .args(["env", "--shell", "bash"])
         .assert()
         .success()
@@ -187,6 +246,7 @@ fn env_routes_enabled_logs_to_stderr() {
 #[test]
 fn env_from_nested_directory_uses_git_root_local_bin() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
     fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
     let nested_dir = temp_dir.path().join("packages").join("cli");
     fs::create_dir_all(&nested_dir).expect("create nested dir");
@@ -198,17 +258,18 @@ fn env_from_nested_directory_uses_git_root_local_bin() {
 
     command
         .current_dir(&nested_dir)
-        .env("BINPM_HOME", "/tmp/binpm-home")
+        .env("BINPM_HOME", &home)
         .args(["env", "--shell", "bash"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(root_bin.display().to_string()))
-        .stdout(predicate::str::contains(nested_bin.display().to_string()).not());
+        .stdout(predicate::str::contains(bash_path(&root_bin)))
+        .stdout(predicate::str::contains(bash_path(&nested_bin)).not());
 }
 
 #[test]
 fn env_from_nested_directory_uses_manifest_ancestor_without_git() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
     fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
     let nested_dir = temp_dir.path().join("packages").join("cli");
     fs::create_dir_all(&nested_dir).expect("create nested dir");
@@ -220,12 +281,12 @@ fn env_from_nested_directory_uses_manifest_ancestor_without_git() {
 
     command
         .current_dir(&nested_dir)
-        .env("BINPM_HOME", "/tmp/binpm-home")
+        .env("BINPM_HOME", &home)
         .args(["env", "--shell", "bash"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(root_bin.display().to_string()))
-        .stdout(predicate::str::contains(nested_bin.display().to_string()).not());
+        .stdout(predicate::str::contains(bash_path(&root_bin)))
+        .stdout(predicate::str::contains(bash_path(&nested_bin)).not());
 }
 
 #[test]
@@ -325,19 +386,22 @@ fn env_escapes_bash_paths_before_printing_shell_code() {
 #[test]
 fn env_fish_preserves_paths_before_directories_exist() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
     let local_bin = fs::canonicalize(temp_dir.path())
         .expect("canonical temp dir")
         .join(".binpm")
         .join("bin");
+    let global_bin = home.join("bin");
     let expected = format!(
-        "set -gx PATH '{}' '/tmp/binpm-home/bin' $PATH",
-        local_bin.display()
+        "set -gx PATH '{}' '{}' $PATH",
+        local_bin.display(),
+        global_bin.display()
     );
     let mut command = binpm();
 
     command
         .current_dir(temp_dir.path())
-        .env("BINPM_HOME", "/tmp/binpm-home")
+        .env("BINPM_HOME", &home)
         .args(["env", "--shell", "fish"])
         .assert()
         .success()
@@ -348,11 +412,12 @@ fn env_fish_preserves_paths_before_directories_exist() {
 #[test]
 fn env_powershell_uses_runtime_path_separator() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
     let mut command = binpm();
 
     command
         .current_dir(temp_dir.path())
-        .env("BINPM_HOME", "/tmp/binpm-home")
+        .env("BINPM_HOME", &home)
         .args(["env", "--shell", "powershell"])
         .assert()
         .success()
@@ -363,12 +428,13 @@ fn env_powershell_uses_runtime_path_separator() {
 #[test]
 fn env_powershell_avoids_trailing_separator_when_path_is_unset() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
     let mut command = binpm();
 
     command
         .current_dir(temp_dir.path())
         .env_clear()
-        .env("BINPM_HOME", "/tmp/binpm-home")
+        .env("BINPM_HOME", &home)
         .args(["env", "--shell", "powershell"])
         .assert()
         .success()
