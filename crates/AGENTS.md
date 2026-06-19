@@ -7,6 +7,7 @@
 
 ### Scope in This Domain
 
+- Planned `crates/binpm`: Rust-based Node-free binary package manager for GitHub Release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/with-watch`: Rust-based filesystem-watching command wrapper.
@@ -21,6 +22,7 @@
 - Add new crates as explicit workspace members in root `Cargo.toml`.
 - Keep crate naming aligned with project IDs when possible.
 - Document behavior contracts in project index docs and relevant crate-domain docs before large implementation changes.
+- Planned crate paths must not be added as workspace members until the crate skeleton exists.
 - For new package scaffolding, default `publish = false` until publish contracts are explicitly approved.
 - Prefer minimal default features and keep optional capabilities opt-in for size-sensitive crates.
 - Keep proc-macro crates and runtime crates separated by explicit crate boundaries.
@@ -31,6 +33,13 @@
 - Keep channel and command identifiers stable and documented.
 - Record storage and download behavior in project docs whenever changed.
 - Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.
+
+### binpm-Specific Rules
+
+- Keep `binpm` documentation-only until `crates/binpm` is intentionally scaffolded in an implementation change.
+- Preserve `~/.binpm` as the canonical home directory for binpm-managed binaries, package records, cache entries, and temporary extraction state.
+- Keep GitHub Release asset selection deterministic and documented by OS, CPU architecture, and libc/ABI environment.
+- Keep checksum/signature fallback behavior aligned with `docs/project-binpm.md` and `docs/crates-binpm-foundation.md`.
 
 ### cargo-mono-Specific Rules
 

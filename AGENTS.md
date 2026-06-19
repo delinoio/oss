@@ -45,6 +45,7 @@
 - `docs/domain-template.md`: Required structure for domain-level contract docs.
 - `docs/project-<id>.md`: Canonical project index docs (ownership + domain-doc index + cross-domain invariants).
 - `docs/<domain>-<project-or-component>-<contract>.md`: Canonical domain contract docs (`apps`, `cmds`, `servers`, `crates`, `protos`, `packages`).
+- `docs/project-binpm.md`: binpm binary package manager project index.
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
 - `docs/project-nodeup.md`: Node.js version manager project index.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
@@ -58,6 +59,7 @@
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
+- `docs/crates-binpm-foundation.md`: binpm Rust CLI and GitHub Release binary selection contract.
 - `docs/crates-with-watch-foundation.md`: with-watch CLI and watcher foundation contract.
 - `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.
 - `docs/crates-rustia-llm-foundation.md`: Rustia aisdk tool adapter contract.
@@ -69,6 +71,7 @@ Treat project IDs as stable enum-style values:
 
 ```ts
 enum ProjectId {
+  Binpm = "binpm",
   CargoMono = "cargo-mono",
   Nodeup = "nodeup",
   WithWatch = "with-watch",
@@ -88,6 +91,7 @@ enum ProjectId {
 ### Project Domain Ownership
 
 - `nodeup` -> `crates/nodeup`
+- `binpm` -> planned `crates/binpm`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
 - `derun` -> `cmds/derun`
