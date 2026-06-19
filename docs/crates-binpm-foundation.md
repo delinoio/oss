@@ -2,8 +2,8 @@
 
 ## Scope
 - Project/component: `binpm` crate foundation contract
-- Canonical path: planned `crates/binpm`
-- Implementation status: documentation-only onboarding; do not create runtime code until a later implementation change
+- Canonical path: `crates/binpm`
+- Implementation status: runtime implementation has begun with a Rust CLI skeleton, clap command surface, typed contract foundations, structured tracing setup, centralized errors, README, and tests
 
 ## Runtime and Language
 - Runtime: Rust CLI
@@ -15,6 +15,13 @@
 - Operators troubleshooting binary resolution, download, extraction, and local installation behavior.
 
 ## Interfaces and Contracts
+- The initial Rust crate must expose the full documented command surface through clap before package-manager behavior is implemented.
+- Initial command dispatch may return explicit not-yet-implemented errors for flows whose release lookup, asset selection, download, cache mutation, extraction, install, update, remove, verification, explanation, listing, info, outdated, or process execution behavior is not yet implemented.
+- Initial safe commands may implement read-only or bootstrap behavior when they do not violate storage or mutation contracts:
+  - `binpm init` may create `binpm.toml` containing `version = 1`.
+  - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories.
+  - `binpm doctor` may report manifest, lockfile, and global home state without mutation.
+  - `binpm cache key` may print a deterministic key for the current target and current-directory `binpm.lock`, using an empty lockfile digest when the file is absent.
 - Canonical global install command: `binpm install <source>`.
 - Canonical local declaration command: `binpm add <cmd> <source>`.
 - Canonical local sync command: `binpm install`.
@@ -213,6 +220,7 @@ signature_verified = false
 
 ## Logging
 - Use structured `tracing` logs for manifest discovery, lockfile parsing, release lookup, target normalization, asset candidate scoring, checksum discovery, download, extraction, binary discovery, install finalization, and `binpm x` command execution.
+- The initial skeleton uses `BINPM_LOG` as the binpm-specific `tracing_subscriber` env filter, defaults to `binpm=off`, and supports `BINPM_LOG_COLOR` plus `NO_COLOR` for ANSI color control.
 - Candidate scoring logs must include normalized package spec, source provider, source host, release tag, asset name, detected OS, detected architecture, detected libc/ABI, artifact kind, score, and rejection reason when applicable.
 - Download and cache logs must include sanitized URL origin, asset name, byte count when known, cache hit or miss state, cache key, cache path, cache action, cache validation source, cache reused state, cache eviction state, retry attempt, and final outcome.
 - Install logs must include package spec, release tag, selected asset, selected archive member or bare executable, installed path, manifest path, lockfile path when local, and whether the install is global or project-local.
@@ -222,8 +230,8 @@ signature_verified = false
 - Human CLI output may be concise, but debug logs must be sufficient to reconstruct why a candidate won or lost.
 
 ## Build and Test
-- No Rust validation command is required while `binpm` remains documentation-only.
-- When runtime code is introduced, local validation must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.
+- Local validation for binpm runtime changes must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.
+- Initial skeleton tests must cover clap command availability, source spec parsing, target alias normalization, logging defaults, `init`, `env`, and read-only cache key foundations.
 - Heuristic tests must cover OS aliases, architecture aliases, libc aliases, exact libc preference, Linux glibc missing-libc fallback, Linux musl missing-libc rejection, source archive rejection, sidecar rejection, desktop installer de-prioritization, cargo-binstall candidates, cargo-dist candidates, GoReleaser candidates, Bun/Deno candidates, and ambiguous archive contents.
 - Storage tests must cover atomic install behavior, cache miss download and digest recording, cache hit reuse after verification, digest mismatch eviction and redownload, concurrent partial download isolation, `binpm.toml` updates, `binpm.lock` updates, global install records, project-local install records, stale lock reinstall behavior, cache command behavior for `list`, `prune`, `clean`, and `key`, multi-command cache sharing, and unsafe archive path rejection.
 - Execution tests must cover `binpm x` local PATH behavior, argument forwarding, current-working-directory preservation, explicit `--package` execution, missing-manifest failure, missing-command failure, install-on-demand from a valid lockfile, frozen-lockfile failures, `--no-frozen-lockfile` override behavior, and read-only diagnostics for `doctor`, `explain`, and `verify`.

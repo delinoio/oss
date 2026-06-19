@@ -7,7 +7,7 @@
 
 ### Scope in This Domain
 
-- Planned `crates/binpm`: Rust-based Node-free binary package manager for release assets.
+- `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/with-watch`: Rust-based filesystem-watching command wrapper.
@@ -36,7 +36,8 @@
 
 ### binpm-Specific Rules
 
-- Keep `binpm` documentation-only until `crates/binpm` is intentionally scaffolded in an implementation change.
+- Keep `binpm` runtime work in `crates/binpm` aligned with `docs/project-binpm.md` and `docs/crates-binpm-foundation.md`.
+- Keep the initial binpm skeleton explicit about unimplemented package-manager flows; do not silently perform partial installs, updates, cache mutations, removals, verification, explanation, or command execution before the corresponding contract-backed implementation exists.
 - Preserve `~/.binpm` as the canonical global home directory for binpm-managed binaries, package records, global cache entries, and temporary extraction state.
 - Treat `~/.binpm/cache` as the user-level global release asset cache shared by all binpm installs for the same account.
 - Keep cache management and diagnostic command identifiers stable as `binpm cache list`, `binpm cache prune`, `binpm cache clean`, and `binpm cache key`.

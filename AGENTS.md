@@ -86,7 +86,7 @@ enum ProjectId {
 ### Project Domain Ownership
 
 - `nodeup` -> `crates/nodeup`
-- `binpm` -> planned `crates/binpm`
+- `binpm` -> `crates/binpm`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
 - `derun` -> `cmds/derun`
@@ -199,7 +199,7 @@ enum RustiaComponent {
 - Create project path skeleton and add `.gitkeep` if implementation is not started.
 - Add `docs/project-<project-id>.md` using `docs/project-template.md`.
 - Add at least one domain contract doc using `docs/domain-template.md`.
-- Documentation-only phase may mark canonical paths as `planned` before creating path skeletons; create the skeleton in the same change where runtime implementation begins.
+- Documentation-only phase may mark canonical paths as `planned` before creating path skeletons; create the skeleton and add explicit workspace membership in the same change where Rust runtime implementation begins.
 - Update root and domain `AGENTS.md` files when project ownership or contracts change.
 - Ensure path and naming contracts are consistent across docs and AGENTS rules.
 
