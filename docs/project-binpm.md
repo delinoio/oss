@@ -16,7 +16,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `binpm` must be implemented as a Rust CLI before runtime behavior is introduced.
 - The canonical project path is planned as `crates/binpm`; no runtime skeleton exists until implementation begins.
 - Stable source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
-- Versionless installs must resolve to the latest stable release exposed by the source provider; GitHub sources must exclude draft and prerelease releases, and GitLab sources must exclude upcoming releases or releases with future `released_at` values.
+- Versionless installs must resolve to the latest stable release exposed by the source provider; GitHub sources must exclude draft and prerelease releases, and GitLab sources must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
 - Binary selection must be deterministic and target-aware across operating system, CPU architecture, and libc or ABI environment.
 - The asset selection heuristic must remain fully documented in `docs/crates-binpm-foundation.md` before implementation changes alter scoring behavior.
 - `~/.binpm` remains the canonical global home directory for globally installed binaries, package records, cache entries, and temporary extraction state.
@@ -26,6 +26,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `binpm cache key` must be a read-only diagnostic command that prints a current-target CI cache key derived from `binpm.lock`.
 - Project-local tooling must use `binpm.toml` at the repository root as the committed local tool manifest.
 - Project-local tooling must use `binpm.lock` at the repository root as the committed deterministic resolution record for release tags, target-specific assets, selected binaries, checksums, and installed paths.
+- Committed lockfiles must store sanitized canonical asset URLs only, never credential-bearing or expiring download URLs.
 - Local target-specific asset overrides must live under `[tools.<cmd>.targets.<target-key>]` and must preserve deterministic lockfile output.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`; other project-local binpm runtime state must stay under `$repoRoot/.binpm`.
 - `binpm x CMD [args...]` must run commands from the local manifest or from an explicitly supplied `--package`; it must not guess a GitHub repository from `CMD`.
@@ -35,6 +36,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `--require-verified` and `binpm verify --require-verified` must fail unless provider digest, upstream checksum sidecar, upstream checksum manifest, or a successfully verified signature under a documented trust policy is available.
 - `--no-confirm` must remain a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
 - `binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, `binpm outdated`, and `binpm cache key` must not mutate manifests, lockfiles, package records, cache entries, or executables.
+- `binpm remove` must clean project-local package records when they exist so removed tools are not reported as installed.
 
 ## Change Policy
 - Update this index and `docs/crates-binpm-foundation.md` together when CLI shape, local manifest or lockfile format, target selection, storage layout, cache behavior, security behavior, or heuristic scoring changes.

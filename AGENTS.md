@@ -122,8 +122,9 @@ enum ProjectId {
 ### binpm Source Contract
 
 - Stable `binpm` source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
-- GitLab versionless installs must exclude upcoming releases and releases with future `released_at` values.
-- GitLab release asset links must resolve to HTTPS download URLs before candidate scoring.
+- GitLab versionless installs must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
+- GitLab release asset links must use HTTPS link URLs and HTTPS final redirect targets before candidate scoring or download.
+- GitLab generated `assets.sources` source archives must not be selected as installable assets.
 - Direct URLs, registries, and package-manager backends remain out of scope until documented in `docs/crates-binpm-foundation.md`.
 
 ### binpm Local Tooling Contract
@@ -131,7 +132,9 @@ enum ProjectId {
 - `binpm.toml` is the committed project-local tool declaration file.
 - `binpm.lock` is the committed deterministic project-local resolution file and must keep target-specific records.
 - `binpm.lock` must not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata.
+- `binpm.lock` must store sanitized canonical asset URLs only, never query strings, fragments, credential-bearing URLs, or expiring signed download URLs.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`.
+- Local `binpm remove` must clean project-local package records when they exist.
 - Local target-specific asset overrides must use `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.
 - Local `binpm install`, `binpm update`, and `binpm x` must honor `--frozen-lockfile`; `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.
 - `binpm verify --require-verified` must fail when no provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature under a documented trust policy is available.

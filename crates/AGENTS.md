@@ -44,11 +44,14 @@
 - Keep cache cleanup behavior separate from uninstall behavior: cache pruning and cleaning must not remove package records or executable links/copies under `~/.binpm/bin`.
 - Keep `binpm cache key` read-only; it must not download, install, or populate cache entries.
 - Keep source identifiers aligned with the documented enum contract: `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
-- Keep GitLab release selection stable by excluding upcoming releases and releases with future `released_at` values.
-- Keep GitLab release asset link selection HTTPS-only before candidate scoring.
+- Keep GitLab release selection stable by excluding upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
+- Keep GitLab release asset link selection HTTPS-only before candidate scoring and download, including final redirect targets.
+- Keep GitLab generated `assets.sources` source archives out of installable asset scoring.
 - Preserve `binpm.toml` and `binpm.lock` as the canonical project-local declaration and resolution files, with project-local executables installed under `$repoRoot/.binpm/bin`.
 - Keep target-specific asset overrides under `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.
 - Keep committed `binpm.lock` target-specific and deterministic; install timestamps and other machine-local metadata belong in uncommitted package records or logs.
+- Keep committed `binpm.lock` URLs sanitized and free of query strings, fragments, credentials, and expiring signed download parameters.
+- Keep local `binpm remove` cleanup aligned with project-local package records when they exist.
 - Keep release asset selection deterministic and documented by OS, CPU architecture, and libc/ABI environment.
 - Keep checksum/signature fallback behavior aligned with `docs/project-binpm.md` and `docs/crates-binpm-foundation.md`.
 - Keep strict verification behavior aligned with `--require-verified` and `binpm verify --require-verified`; signature material must count only after successful verification under a documented trust policy.
