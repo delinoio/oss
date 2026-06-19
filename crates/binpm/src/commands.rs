@@ -214,14 +214,15 @@ fn update(args: UpdateArgs) -> Result<i32> {
 }
 
 fn doctor() -> Result<i32> {
-    let cwd = current_dir()?;
-    let manifest_path = cwd.join(MANIFEST_FILE);
-    let lockfile_path = cwd.join(LOCKFILE_FILE);
+    let project_root = project_root()?;
+    let manifest_path = project_root.join(MANIFEST_FILE);
+    let lockfile_path = project_root.join(LOCKFILE_FILE);
     let home = binpm_home();
 
     info!(
         command = "doctor",
         read_only = true,
+        project_root = %project_root.display(),
         manifest_path = %manifest_path.display(),
         lockfile_path = %lockfile_path.display(),
         binpm_home = %home.display(),
@@ -270,7 +271,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
 }
 
 fn init(args: InitArgs) -> Result<i32> {
-    let project_root = project_root()?;
+    let project_root = manifest_creation_root()?;
     let manifest_path = project_root.join(MANIFEST_FILE);
 
     if manifest_path.exists() && !args.force {
@@ -392,11 +393,29 @@ fn project_root() -> Result<PathBuf> {
 }
 
 fn project_root_from(start: &Path) -> PathBuf {
-    start
-        .ancestors()
-        .find(|path| path.join(".git").exists())
+    find_manifest_root(start)
+        .or_else(|| find_git_root(start))
         .unwrap_or(start)
         .to_path_buf()
+}
+
+fn manifest_creation_root() -> Result<PathBuf> {
+    let cwd = current_dir()?;
+    Ok(manifest_creation_root_from(&cwd))
+}
+
+fn manifest_creation_root_from(start: &Path) -> PathBuf {
+    find_git_root(start).unwrap_or(start).to_path_buf()
+}
+
+fn find_manifest_root(start: &Path) -> Option<&Path> {
+    start
+        .ancestors()
+        .find(|path| path.join(MANIFEST_FILE).exists())
+}
+
+fn find_git_root(start: &Path) -> Option<&Path> {
+    start.ancestors().find(|path| path.join(".git").exists())
 }
 
 fn binpm_home() -> PathBuf {
@@ -419,7 +438,7 @@ fn path_state(path: &Path) -> &'static str {
 mod tests {
     use std::path::Path;
 
-    use super::{lockfile_digest, project_root_from, shell_quote};
+    use super::{lockfile_digest, manifest_creation_root_from, project_root_from, shell_quote};
     use crate::cli::Shell;
 
     #[test]
@@ -441,6 +460,44 @@ mod tests {
         std::fs::create_dir_all(&nested).expect("create nested dir");
 
         assert_eq!(project_root_from(&nested), temp_dir.path());
+    }
+
+    #[test]
+    fn project_root_uses_nearest_manifest_ancestor() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n")
+            .expect("write manifest");
+        let nested = temp_dir.path().join("nested").join("deeper");
+        std::fs::create_dir_all(&nested).expect("create nested dir");
+
+        assert_eq!(project_root_from(&nested), temp_dir.path());
+    }
+
+    #[test]
+    fn project_root_prefers_manifest_ancestor_over_git_ancestor() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
+        let package = temp_dir.path().join("packages").join("cli");
+        std::fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n")
+            .expect("write root manifest");
+        std::fs::create_dir_all(&package).expect("create package dir");
+        std::fs::write(package.join("binpm.toml"), "version = 1\n")
+            .expect("write package manifest");
+        let nested = package.join("nested");
+        std::fs::create_dir(&nested).expect("create nested dir");
+
+        assert_eq!(project_root_from(&nested), package);
+    }
+
+    #[test]
+    fn manifest_creation_root_uses_git_ancestor_before_manifest_ancestor() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
+        let nested = temp_dir.path().join("nested").join("deeper");
+        std::fs::create_dir_all(&nested).expect("create nested dir");
+        std::fs::write(nested.join("binpm.toml"), "version = 1\n").expect("write manifest");
+
+        assert_eq!(manifest_creation_root_from(&nested), temp_dir.path());
     }
 
     #[test]

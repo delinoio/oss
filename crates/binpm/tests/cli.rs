@@ -104,6 +104,28 @@ fn env_from_nested_directory_uses_git_root_local_bin() {
 }
 
 #[test]
+fn env_from_nested_directory_uses_manifest_ancestor_without_git() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let nested_dir = temp_dir.path().join("packages").join("cli");
+    fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let canonical_root = fs::canonicalize(temp_dir.path()).expect("canonical temp dir");
+    let canonical_nested = fs::canonicalize(&nested_dir).expect("canonical nested dir");
+    let root_bin = canonical_root.join(".binpm").join("bin");
+    let nested_bin = canonical_nested.join(".binpm").join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(&nested_dir)
+        .env("BINPM_HOME", "/tmp/binpm-home")
+        .args(["env", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(root_bin.display().to_string()))
+        .stdout(predicate::str::contains(nested_bin.display().to_string()).not());
+}
+
+#[test]
 fn cache_key_from_nested_directory_uses_git_root_lockfile() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
@@ -121,6 +143,45 @@ fn cache_key_from_nested_directory_uses_git_root_lockfile() {
         .success()
         .stdout(predicate::str::contains(expected_digest))
         .stdout(predicate::str::contains(empty_digest).not());
+}
+
+#[test]
+fn cache_key_from_nested_directory_uses_manifest_ancestor_lockfile_without_git() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
+    fs::write(temp_dir.path().join("binpm.lock"), "root lock\n").expect("write lockfile");
+    let nested_dir = temp_dir.path().join("packages").join("cli");
+    fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let expected_digest = format!("{:x}", Sha256::digest(b"root lock\n"));
+    let empty_digest = format!("{:x}", Sha256::digest([]));
+    let mut command = binpm();
+
+    command
+        .current_dir(&nested_dir)
+        .args(["cache", "key"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(expected_digest))
+        .stdout(predicate::str::contains(empty_digest).not());
+}
+
+#[test]
+fn doctor_from_nested_directory_reports_git_root_state() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
+    fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
+    fs::write(temp_dir.path().join("binpm.lock"), "root lock\n").expect("write lockfile");
+    let nested_dir = temp_dir.path().join("packages").join("cli");
+    fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let mut command = binpm();
+
+    command
+        .current_dir(&nested_dir)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("manifest: present"))
+        .stdout(predicate::str::contains("lockfile: present"));
 }
 
 #[test]
