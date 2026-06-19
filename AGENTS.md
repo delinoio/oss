@@ -87,7 +87,7 @@ enum ProjectId {
 ### Project Domain Ownership
 
 - `nodeup` -> `crates/nodeup`, `apps/nodeup-docs`
-- `binpm` -> planned `crates/binpm`
+- `binpm` -> `crates/binpm`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
 - `derun` -> `cmds/derun`
@@ -134,6 +134,7 @@ enum ProjectId {
 
 - `binpm.toml` is the committed project-local tool declaration file.
 - `binpm.lock` is the committed deterministic project-local resolution file and must keep target-specific records.
+- `binpm init` manifest creation must target the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory.
 - `binpm.lock` must not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata.
 - `binpm.lock` must store sanitized canonical asset URLs only, never query strings, fragments, credential-bearing URLs, or expiring signed download URLs.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`.
@@ -200,7 +201,7 @@ enum RustiaComponent {
 - Create project path skeleton and add `.gitkeep` if implementation is not started.
 - Add `docs/project-<project-id>.md` using `docs/project-template.md`.
 - Add at least one domain contract doc using `docs/domain-template.md`.
-- Documentation-only phase may mark canonical paths as `planned` before creating path skeletons; create the skeleton in the same change where runtime implementation begins.
+- Documentation-only phase may mark canonical paths as `planned` before creating path skeletons; create the skeleton and add explicit workspace membership in the same change where Rust runtime implementation begins.
 - Update root and domain `AGENTS.md` files when project ownership or contracts change.
 - Ensure path and naming contracts are consistent across docs and AGENTS rules.
 

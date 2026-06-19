@@ -7,7 +7,7 @@
 
 ### Scope in This Domain
 
-- Planned `crates/binpm`: Rust-based Node-free binary package manager for release assets.
+- `crates/binpm`: Rust-based Node-free binary package manager for release assets.
 - `crates/cargo-mono`: Cargo-based Rust monorepo management CLI.
 - `crates/nodeup`: Rust-based Node.js version manager.
 - `crates/with-watch`: Rust-based filesystem-watching command wrapper.
@@ -36,7 +36,8 @@
 
 ### binpm-Specific Rules
 
-- Keep `binpm` documentation-only until `crates/binpm` is intentionally scaffolded in an implementation change.
+- Keep `binpm` runtime work in `crates/binpm` aligned with `docs/project-binpm.md` and `docs/crates-binpm-foundation.md`.
+- Keep the initial binpm skeleton explicit about unimplemented package-manager flows; do not silently perform partial installs, updates, cache mutations, removals, verification, explanation, or command execution before the corresponding contract-backed implementation exists.
 - Preserve `~/.binpm` as the canonical global home directory for binpm-managed binaries, package records, global cache entries, and temporary extraction state.
 - Treat `~/.binpm/cache` as the user-level global release asset cache shared by all binpm installs for the same account.
 - Keep cache management and diagnostic command identifiers stable as `binpm cache list`, `binpm cache prune`, `binpm cache clean`, and `binpm cache key`.
@@ -48,6 +49,7 @@
 - Keep GitLab release asset link selection HTTPS-only before candidate scoring and download, including final redirect targets.
 - Keep GitLab generated `assets.sources` source archives out of installable asset scoring.
 - Preserve `binpm.toml` and `binpm.lock` as the canonical project-local declaration and resolution files, with project-local executables installed under `$repoRoot/.binpm/bin`.
+- Keep `binpm init` manifest creation rooted at the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory.
 - Keep target-specific asset overrides under `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.
 - Keep committed `binpm.lock` target-specific and deterministic; install timestamps and other machine-local metadata belong in uncommitted package records or logs.
 - Keep committed `binpm.lock` URLs sanitized and free of query strings, fragments, credentials, and expiring signed download parameters.

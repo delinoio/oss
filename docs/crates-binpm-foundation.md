@@ -2,8 +2,8 @@
 
 ## Scope
 - Project/component: `binpm` crate foundation contract
-- Canonical path: planned `crates/binpm`
-- Implementation status: documentation-only onboarding; do not create runtime code until a later implementation change
+- Canonical path: `crates/binpm`
+- Implementation status: runtime implementation has begun with a Rust CLI skeleton, clap command surface, typed contract foundations, structured tracing setup, centralized errors, README, and tests
 
 ## Runtime and Language
 - Runtime: Rust CLI
@@ -15,6 +15,13 @@
 - Operators troubleshooting binary resolution, download, extraction, and local installation behavior.
 
 ## Interfaces and Contracts
+- The initial Rust crate must expose the full documented command surface through clap before package-manager behavior is implemented.
+- Initial command dispatch may return explicit not-yet-implemented errors for flows whose release lookup, asset selection, download, cache mutation, extraction, install, update, remove, verification, explanation, listing, info, outdated, or process execution behavior is not yet implemented.
+- Initial safe commands may implement read-only or bootstrap behavior when they do not violate storage or mutation contracts:
+  - `binpm init` may create `binpm.toml` containing `version = 1`.
+  - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories.
+  - `binpm doctor` may report manifest, lockfile, and global home state without mutation.
+  - `binpm cache key` may print a deterministic key for the current target and project-root `binpm.lock`, using an empty lockfile digest when the file is absent.
 - Canonical global install command: `binpm install <source>`.
 - Canonical local declaration command: `binpm add <cmd> <source>`.
 - Canonical local sync command: `binpm install`.
@@ -47,6 +54,7 @@
 - `binpm verify [--local|--global] [--require-verified]` must validate lockfile records, package records, cache bytes, and installed executable records without mutating state.
 - `binpm init` must create a minimal `binpm.toml` with `version = 1` at the project root when one does not already exist; it must not install tools by default.
 - `binpm env --shell <shell>` must print shell-specific environment commands for adding binpm-managed binary directories to `PATH`; it must not modify shell profiles by default.
+- On Windows, `binpm env --shell bash` and `binpm env --shell zsh` must render drive-letter and UNC paths in POSIX shell form so colon-separated `PATH` exports remain valid.
 - `binpm add <cmd> <source>` must declare `<cmd>` in `binpm.toml`, install the selected executable into `$repoRoot/.binpm/bin`, and update `binpm.lock`.
 - `binpm install` without a package spec must sync the local `binpm.toml` manifest into `$repoRoot/.binpm/bin` and update `binpm.lock`; `binpm install <source>` keeps the global install behavior.
 - `binpm x CMD [args...]` must resolve `CMD` from `binpm.toml`, install it on demand when the lockfile or local executable is missing or stale, prepend `$repoRoot/.binpm/bin` to `PATH`, preserve the caller's current working directory, and forward every argument after `CMD` to the executed command.
@@ -56,6 +64,7 @@
   - OS: `linux`, `darwin`, `windows`, `freebsd`
   - CPU architecture: `x86_64`, `aarch64`, `i686`, `armv7`
   - libc or ABI environment: `gnu`, `musl`, `msvc`, `any`
+- Current-host target detection must reject unsupported operating systems and CPU architectures with an unsupported-target error; it must not default unknown OS values to `linux`, unknown architecture values to `x86_64`, or generic 32-bit ARM hard-float targets to `armv7` unless the compile target triple is explicitly `armv7-*`.
 - Target alias normalization must include:
   - OS aliases: `darwin`, `macos`, `mac`, `osx` -> `darwin`; `windows`, `win`, `win32` -> `windows`
   - Architecture aliases: `x86_64`, `amd64`, `x64` -> `x86_64`; `aarch64`, `arm64` -> `aarch64`; `i686`, `i386`, `x86`, `ia32` -> `i686`
@@ -80,7 +89,7 @@
 - If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates.
 
 ## Local Manifest and Lockfile
-- The local project root is the nearest ancestor containing `binpm.toml`; commands that create `binpm.toml` must use the current Git worktree root when available, otherwise the current directory.
+- The local project root is the nearest ancestor containing `binpm.toml`; commands that create `binpm.toml` must use the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory.
 - `binpm.toml` is the committed local tool declaration file. It must use TOML, `version = 1`, and `[tools.<cmd>]` tables keyed by the local command name.
 - In `binpm.toml`, each tool entry must include `source = "<source-without-version>"`, may include `version = "<release>"`, and may include `bin = "<upstream-binary-name>"` when the executable selected from the release differs from the local command name or needs explicit disambiguation.
 - `binpm add <cmd> <source>` must persist the package source without the version suffix in `source`; when a version is supplied, it must persist that value in `version`.
@@ -213,6 +222,7 @@ signature_verified = false
 
 ## Logging
 - Use structured `tracing` logs for manifest discovery, lockfile parsing, release lookup, target normalization, asset candidate scoring, checksum discovery, download, extraction, binary discovery, install finalization, and `binpm x` command execution.
+- The initial skeleton uses `BINPM_LOG` as the binpm-specific `tracing_subscriber` env filter, defaults to `binpm=off`, and supports `BINPM_LOG_COLOR` plus `NO_COLOR` for ANSI color control.
 - Candidate scoring logs must include normalized package spec, source provider, source host, release tag, asset name, detected OS, detected architecture, detected libc/ABI, artifact kind, score, and rejection reason when applicable.
 - Download and cache logs must include sanitized URL origin, asset name, byte count when known, cache hit or miss state, cache key, cache path, cache action, cache validation source, cache reused state, cache eviction state, retry attempt, and final outcome.
 - Install logs must include package spec, release tag, selected asset, selected archive member or bare executable, installed path, manifest path, lockfile path when local, and whether the install is global or project-local.
@@ -222,8 +232,8 @@ signature_verified = false
 - Human CLI output may be concise, but debug logs must be sufficient to reconstruct why a candidate won or lost.
 
 ## Build and Test
-- No Rust validation command is required while `binpm` remains documentation-only.
-- When runtime code is introduced, local validation must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.
+- Local validation for binpm runtime changes must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.
+- Initial skeleton tests must cover clap command availability, source spec parsing, target alias normalization, logging defaults, `init`, `env`, and read-only cache key foundations.
 - Heuristic tests must cover OS aliases, architecture aliases, libc aliases, exact libc preference, Linux glibc missing-libc fallback, Linux musl missing-libc rejection, source archive rejection, sidecar rejection, desktop installer de-prioritization, cargo-binstall candidates, cargo-dist candidates, GoReleaser candidates, Bun/Deno candidates, and ambiguous archive contents.
 - Storage tests must cover atomic install behavior, cache miss download and digest recording, cache hit reuse after verification, digest mismatch eviction and redownload, concurrent partial download isolation, `binpm.toml` updates, `binpm.lock` updates, global install records, project-local install records, stale lock reinstall behavior, cache command behavior for `list`, `prune`, `clean`, and `key`, multi-command cache sharing, and unsafe archive path rejection.
 - Execution tests must cover `binpm x` local PATH behavior, argument forwarding, current-working-directory preservation, explicit `--package` execution, missing-manifest failure, missing-command failure, install-on-demand from a valid lockfile, frozen-lockfile failures, `--no-frozen-lockfile` override behavior, and read-only diagnostics for `doctor`, `explain`, and `verify`.

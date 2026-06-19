@@ -7,17 +7,19 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 `binpm`
 
 ## Domain Ownership Map
-- Planned: `crates/binpm`
+- `crates/binpm`
 
 ## Domain Contract Documents
 - `docs/crates-binpm-foundation.md`
 
 ## Cross-Domain Invariants
-- `binpm` must be implemented as a Rust CLI before runtime behavior is introduced.
-- The canonical project path is planned as `crates/binpm`; no runtime skeleton exists until implementation begins.
+- `binpm` is implemented as a Rust CLI under `crates/binpm`.
+- The initial runtime skeleton includes clap-based command parsing, enum-backed contract foundations, structured `tracing` setup, centralized CLI error handling, README/test scaffolding, and minimal safe implementations for `binpm init`, `binpm env`, `binpm doctor`, and `binpm cache key`.
+- Release lookup, asset scoring, downloads, cache mutation, extraction, install, update, remove, verify, explain, list, info, outdated, and `x` execution flows must remain explicit not-yet-implemented errors until their documented storage and verification behavior is implemented.
 - Stable source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
 - Versionless installs must resolve to the latest stable release exposed by the source provider; GitHub sources must exclude draft and prerelease releases, and GitLab sources must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
 - Binary selection must be deterministic and target-aware across operating system, CPU architecture, and libc or ABI environment.
+- Current-host target detection must fail clearly for unsupported operating systems or CPU architectures instead of mapping them to a supported fallback target.
 - The asset selection heuristic must remain fully documented in `docs/crates-binpm-foundation.md` before implementation changes alter scoring behavior.
 - `~/.binpm` remains the canonical global home directory for globally installed binaries, package records, cache entries, and temporary extraction state.
 - `~/.binpm/cache` is the user-level global asset cache shared by all `binpm` installs for the same account.
@@ -41,7 +43,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 ## Change Policy
 - Update this index and `docs/crates-binpm-foundation.md` together when CLI shape, local manifest or lockfile format, target selection, storage layout, cache behavior, security behavior, or heuristic scoring changes.
 - Update root `AGENTS.md` and `crates/AGENTS.md` when `binpm` ownership, planned path status, or repository policy boundaries change.
-- Create the planned `crates/binpm` path and add it to the Rust workspace in the same change set where runtime implementation begins.
+- Keep `crates/binpm` as an explicit Rust workspace member while runtime implementation continues.
 
 ## References
 - `docs/project-template.md`
