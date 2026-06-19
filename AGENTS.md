@@ -63,6 +63,7 @@
 - `docs/crates-rustia-llm-foundation.md`: Rustia aisdk tool adapter contract.
 - `docs/crates-rustia-macros-foundation.md`: Rustia macros derive contract.
 - `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
+- `docs/apps-nodeup-docs-foundation.md`: Nodeup Rspress documentation app, route, validation, and Cloudflare Pages deployment contract.
 ### Project Identifier Contract
 
 Treat project IDs as stable enum-style values:
@@ -85,7 +86,7 @@ enum ProjectId {
 
 ### Project Domain Ownership
 
-- `nodeup` -> `crates/nodeup`
+- `nodeup` -> `crates/nodeup`, `apps/nodeup-docs`
 - `binpm` -> planned `crates/binpm`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
@@ -267,6 +268,7 @@ Coverage expectations:
 - `rust-test`: runs `cargo test --workspace --all-targets`.
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
+- `node-nodeup-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter nodeup-docs test`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
 
