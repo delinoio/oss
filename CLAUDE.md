@@ -62,9 +62,7 @@ When working in a specific directory, apply the rules from that directory and al
 - `docs/project-thenv.md`: Thenv multi-component project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
-- `docs/project-dexdex.md`: DexDex multi-runtime project index.
 - `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
-- `protos/dexdex/v1/dexdex.proto`: Shared DexDex Connect RPC service and enum/message contracts (`dexdex.v1`).
 ### Project Identifier Contract
 
 Treat project IDs as stable enum-style values:
@@ -82,7 +80,6 @@ enum ProjectId {
   Thenv = "thenv",
   SerdeFeather = "serde-feather",
   PublicDocs = "public-docs",
-  DexDex = "dexdex",
 }
 ```
 
@@ -99,7 +96,6 @@ enum ProjectId {
 - `thenv` -> `cmds/thenv`, `servers/thenv`, `apps/devkit/src/apps/thenv`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `public-docs` -> `apps/public-docs`
-- `dexdex` -> `servers/dexdex-main-server`, `servers/dexdex-worker-server`, `apps/dexdex`, `protos/dexdex`
 
 ### TTL Command Contract
 
@@ -172,22 +168,6 @@ enum SerdeFeatherComponent {
 
 - `Core` -> `crates/serde-feather`
 - `Macros` -> `crates/serde-feather-macros`
-
-### DexDex Component Contract
-
-`dexdex` is a three-component project with fixed mapping:
-
-```ts
-enum DexDexComponent {
-  MainServer = "main-server",
-  WorkerServer = "worker-server",
-  DesktopApp = "desktop-app",
-}
-```
-
-- `MainServer` -> `servers/dexdex-main-server`
-- `WorkerServer` -> `servers/dexdex-worker-server`
-- `DesktopApp` -> `apps/dexdex`
 
 ### Documentation-First Policy
 
@@ -271,13 +251,7 @@ Coverage expectations:
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
-- `node-dexdex-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter dexdex test`.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
-
-DexDex desktop packaging CI baseline:
-- `.github/workflows/dexdex-desktop-build.yml` runs on `workflow_dispatch` and weekly schedule.
-- Matrix contract: `ubuntu-latest`, `macos-latest`, `windows-latest`.
-- Build command contract: `pnpm --filter dexdex tauri:build`.
 
 Change-scoped execution rules:
 - CI uses path-based change detection to skip unaffected domain jobs by default.
@@ -297,9 +271,6 @@ Release automation baseline:
 - `release-derun` is defined in `.github/workflows/release-derun.yml`.
 - Trigger contract: runs on tag push `derun@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS derun release artifacts and updates Homebrew (`derun`).
-- `release-dexdex` is defined in `.github/workflows/release-dexdex.yml`.
-- Trigger contract: runs on tag push `dexdex@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
-- Distribution contract: publishes signed DexDex desktop + main/worker server artifacts, applies desktop signing/notarization secrets, and updates Homebrew (`dexdex`, `dexdex-main-server`, `dexdex-worker-server`).
 
 ### Documentation Lifecycle Rules
 
@@ -333,7 +304,6 @@ Release automation baseline:
 - `apps/devkit`: Next.js 16 micro-app platform.
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/public-docs`: Mintlify public documentation app.
-- `apps/dexdex`: Tauri desktop app (React + TypeScript frontend with Rust backend).
 
 ### Devkit Identifier Contract
 
@@ -366,22 +336,10 @@ enum DevkitMiniAppId {
 - Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
 
-### dexdex Rules
-
-- `dexdex` app boundaries must keep business communication Connect RPC-first.
-- Tauri bindings are integration/runtime adapters and must not become the primary business contract surface.
-- `LOCAL` and `REMOTE` workspace modes must converge to the same post-resolution UX and business flow behavior.
-- DexDex desktop contract consumption must use shared proto definitions from `protos/dexdex/v1` as the source of truth.
-- Keep DexDex desktop app contracts synchronized with `docs/apps-dexdex-desktop-app-foundation.md` and `docs/project-dexdex.md`.
-- Global shortcut question-handoff behavior (default binding, waiting-session routing, empty fallback) must remain aligned with DexDex app/server/proto contracts.
-- Menu bar tray behavior remains status-only unless docs explicitly expand scope; status derivation must use active-workspace contract semantics.
-- Session fork UX must keep parent-session immutability guarantees and remain limited to documented lifecycle actions.
-
 ### Multi-Component Contract Sync
 
 - `devkit-commit-tracker` app changes must update `docs/apps-devkit-commit-tracker-web-app-foundation.md` and `docs/project-devkit-commit-tracker.md`.
 - `thenv` web console changes must update `docs/apps-thenv-web-console-foundation.md` and `docs/project-thenv.md`.
-- `dexdex` desktop app changes must update `docs/apps-dexdex-desktop-app-foundation.md` and `docs/project-dexdex.md`.
 
 ### Testing and Validation
 
@@ -515,15 +473,12 @@ enum DevkitMiniAppId {
 
 - `servers/thenv`: Backend for secure environment sharing.
 - `servers/commit-tracker`: Commit Tracker API server component.
-- `servers/dexdex-main-server`: DexDex control-plane Go server scaffold.
-- `servers/dexdex-worker-server`: DexDex execution-plane Go server scaffold.
 
 ### Server Language and Data Rules
 
 - Servers in this domain must be implemented in Go.
 - SQL queries and type-safe data access must use `sqlc`.
 - Protobuf definitions should live at `proto/<service_name>/v1/*.proto` unless a project contract explicitly uses a shared cross-runtime proto root.
-- DexDex server contracts use shared proto definitions at `protos/dexdex/v1/*.proto`.
 - Each server project must provide a local protobuf generation script and a `go generate` entrypoint.
 - Keep API boundaries explicit and versionable.
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
@@ -554,16 +509,11 @@ Scaffold-only service projects may start with a smaller structure (`main.go` + `
 - Changes to server interfaces must be synchronized with related CLI and app contracts.
 - Update `docs/project-thenv.md` and `docs/servers-thenv-server-foundation.md` for every thenv interface or trust model update.
 - Update `docs/project-devkit-commit-tracker.md` and `docs/servers-devkit-commit-tracker-api-server-foundation.md` for every commit-tracker API contract update.
-- Update `docs/project-dexdex.md` and relevant DexDex server-domain docs for every server interface or ownership contract update.
-- DexDex session-fork support decisions must be capability-driven and normalized by `main-server`/`worker-server`; unsupported fork requests must map to `FAILED_PRECONDITION`.
-- DexDex worker provider-native fork payloads must remain worker-internal diagnostics and must not be exposed through public server/app contracts.
-- DexDex workspace work-status aggregation semantics for tray rendering must stay synchronized with proto and desktop app contracts.
 
 ### Multi-Component Contract Sync
 
 - `servers/commit-tracker` changes must keep collector and web contracts synchronized.
 - `servers/thenv` changes must keep CLI and web-console contracts synchronized.
-- `servers/dexdex-main-server` and `servers/dexdex-worker-server` changes must keep proto and desktop contracts synchronized.
 
 ### Testing and Validation
 

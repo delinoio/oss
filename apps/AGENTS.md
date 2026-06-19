@@ -13,7 +13,6 @@
 - `apps/devkit`: Next.js 16 micro-app platform.
 - `apps/mpapp`: Expo React Native mobile app.
 - `apps/public-docs`: Mintlify public documentation app.
-- `apps/dexdex`: Tauri desktop app (React + TypeScript frontend with Rust backend).
 
 ### Devkit Identifier Contract
 
@@ -46,30 +45,10 @@ enum DevkitMiniAppId {
 - Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/apps-public-docs-foundation.md`.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
 
-### dexdex Rules
-
-- `dexdex` app boundaries must keep business communication Connect RPC-first.
-- Tauri bindings are integration/runtime adapters and must not become the primary business contract surface.
-- `LOCAL` and `REMOTE` workspace modes must converge to the same post-resolution UX and business flow behavior.
-- DexDex desktop contract consumption must use shared proto definitions from `protos/dexdex/v1` as the source of truth.
-- Keep DexDex desktop app contracts synchronized with:
-  - `docs/apps-dexdex-desktop-app-foundation.md`
-  - `docs/apps-dexdex-ui-contract.md`
-  - `docs/apps-dexdex-user-guide-contract.md`
-  - `docs/apps-dexdex-notification-contract.md`
-  - `docs/apps-dexdex-workspace-connectivity-contract.md`
-  - `docs/project-dexdex.md`
-- Global shortcut question-handoff behavior (default binding, waiting-session routing, empty fallback) must remain aligned with DexDex app/server/proto contracts.
-- Menu bar tray behavior remains status-only unless docs explicitly expand scope; status derivation must use active-workspace contract semantics.
-- Session fork UX must keep parent-session immutability guarantees and remain limited to documented lifecycle actions.
-- Single critical-input forms in DexDex must auto-focus the input when shown.
-- DexDex dialog UIs must close with `Esc`.
-
 ### Multi-Component Contract Sync
 
 - `devkit-commit-tracker` app changes must update `docs/apps-devkit-commit-tracker-web-app-foundation.md` and `docs/project-devkit-commit-tracker.md`.
 - `thenv` web console changes must update `docs/apps-thenv-web-console-foundation.md` and `docs/project-thenv.md`.
-- `dexdex` desktop app changes must update all relevant DexDex app contracts (`docs/apps-dexdex-*.md`) and `docs/project-dexdex.md`.
 
 ### Testing and Validation
 
