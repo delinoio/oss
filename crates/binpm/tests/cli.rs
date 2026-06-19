@@ -2,6 +2,7 @@ use std::fs;
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use sha2::{Digest, Sha256};
 
 fn binpm() -> Command {
     Command::new(env!("CARGO_BIN_EXE_binpm"))
@@ -103,6 +104,26 @@ fn env_from_nested_directory_uses_git_root_local_bin() {
 }
 
 #[test]
+fn cache_key_from_nested_directory_uses_git_root_lockfile() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
+    fs::write(temp_dir.path().join("binpm.lock"), "root lock\n").expect("write lockfile");
+    let nested_dir = temp_dir.path().join("packages").join("cli");
+    fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let expected_digest = format!("{:x}", Sha256::digest(b"root lock\n"));
+    let empty_digest = format!("{:x}", Sha256::digest([]));
+    let mut command = binpm();
+
+    command
+        .current_dir(&nested_dir)
+        .args(["cache", "key"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(expected_digest))
+        .stdout(predicate::str::contains(empty_digest).not());
+}
+
+#[test]
 fn env_escapes_bash_paths_before_printing_shell_code() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm $(touch x) `cmd` 'home'");
@@ -116,6 +137,44 @@ fn env_escapes_bash_paths_before_printing_shell_code() {
         .success()
         .stdout(predicate::str::contains("'\\''home'\\''/bin'"))
         .stdout(predicate::str::contains("\"$PATH\""));
+}
+
+#[test]
+fn env_fish_preserves_paths_before_directories_exist() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let expected = format!(
+        "set -gx PATH '{}' '/tmp/binpm-home/bin' $PATH",
+        local_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", "/tmp/binpm-home")
+        .args(["env", "--shell", "fish"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(expected))
+        .stdout(predicate::str::contains("fish_add_path").not());
+}
+
+#[test]
+fn env_powershell_uses_runtime_path_separator() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", "/tmp/binpm-home")
+        .args(["env", "--shell", "powershell"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("[System.IO.Path]::PathSeparator"))
+        .stdout(predicate::str::contains(" + ';' + ").not());
 }
 
 #[test]

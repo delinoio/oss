@@ -147,8 +147,8 @@ fn cache(command: CacheCommand) -> Result<i32> {
 }
 
 fn cache_key() -> Result<i32> {
-    let cwd = current_dir()?;
-    let lockfile_path = cwd.join(LOCKFILE_FILE);
+    let project_root = project_root()?;
+    let lockfile_path = project_root.join(LOCKFILE_FILE);
     let target = HostTarget::current();
     let digest = lockfile_digest(&lockfile_path)?;
     let cache_key = format!("binpm-v1-{}-{digest}", target.key());
@@ -321,11 +321,13 @@ fn print_env(shell: Shell, global_bin: &Path, local_bin: &Path) {
             println!("export PATH={local}:{global}:\"$PATH\"");
         }
         Shell::Fish => {
-            println!("fish_add_path {local}");
-            println!("fish_add_path {global}");
+            println!("set -gx PATH {local} {global} $PATH");
         }
         Shell::Powershell => {
-            println!("$env:PATH = {local} + ';' + {global} + ';' + $env:PATH");
+            println!(
+                "$env:PATH = {local} + [System.IO.Path]::PathSeparator + {global} + \
+                 [System.IO.Path]::PathSeparator + $env:PATH"
+            );
         }
     }
 }
