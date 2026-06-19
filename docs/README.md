@@ -22,6 +22,10 @@ Each project must have one project index document and one or more domain contrac
 
 ## Project Catalog
 
+### binpm
+- `docs/project-binpm.md`
+- `docs/crates-binpm-foundation.md`
+
 ### cargo-mono
 - `docs/project-cargo-mono.md`
 - `docs/crates-cargo-mono-foundation.md`
