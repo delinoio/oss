@@ -64,7 +64,7 @@
   - OS: `linux`, `darwin`, `windows`, `freebsd`
   - CPU architecture: `x86_64`, `aarch64`, `i686`, `armv7`
   - libc or ABI environment: `gnu`, `musl`, `msvc`, `any`
-- Current-host target detection must reject unsupported operating systems and CPU architectures with an unsupported-target error; it must not default unknown OS values to `linux` or unknown architecture values to `x86_64`.
+- Current-host target detection must reject unsupported operating systems and CPU architectures with an unsupported-target error; it must not default unknown OS values to `linux`, unknown architecture values to `x86_64`, or generic 32-bit ARM hard-float targets to `armv7` unless the compile target triple is explicitly `armv7-*`.
 - Target alias normalization must include:
   - OS aliases: `darwin`, `macos`, `mac`, `osx` -> `darwin`; `windows`, `win`, `win32` -> `windows`
   - Architecture aliases: `x86_64`, `amd64`, `x64` -> `x86_64`; `aarch64`, `arm64` -> `aarch64`; `i686`, `i386`, `x86`, `ia32` -> `i686`

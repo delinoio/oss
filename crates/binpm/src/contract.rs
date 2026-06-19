@@ -298,18 +298,15 @@ impl TargetArch {
     }
 
     fn current() -> Result<Self, BinpmError> {
-        Self::from_current_cfg(
-            std::env::consts::ARCH,
-            cfg!(all(target_arch = "arm", target_abi = "eabihf")),
-        )
+        Self::from_current_cfg(std::env::consts::ARCH, option_env!("BINPM_TARGET_TRIPLE"))
     }
 
-    fn from_current_cfg(raw: &str, is_armv7_eabihf: bool) -> Result<Self, BinpmError> {
+    fn from_current_cfg(raw: &str, target_triple: Option<&str>) -> Result<Self, BinpmError> {
         match raw {
             "x86_64" => Ok(Self::X86_64),
             "aarch64" => Ok(Self::Aarch64),
             "i686" => Ok(Self::I686),
-            "arm" if is_armv7_eabihf => Ok(Self::Armv7),
+            "arm" if target_triple.is_some_and(is_armv7_target_triple) => Ok(Self::Armv7),
             raw => Err(BinpmError::UnsupportedTargetComponent {
                 component: "architecture",
                 raw: raw.to_string(),
@@ -329,6 +326,10 @@ impl TargetArch {
             }),
         }
     }
+}
+
+fn is_armv7_target_triple(target_triple: &str) -> bool {
+    target_triple.starts_with("armv7")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -516,35 +517,44 @@ mod tests {
     #[test]
     fn rejects_unsupported_current_arch_without_x86_64_fallback() {
         let error =
-            TargetArch::from_current_cfg("riscv64", false).expect_err("unsupported architecture");
+            TargetArch::from_current_cfg("riscv64", None).expect_err("unsupported architecture");
 
         assert_unsupported_component(error, "architecture", "riscv64");
     }
 
     #[test]
     fn rejects_ambiguous_current_arm_arch() {
-        let error = TargetArch::from_current_cfg("arm", false).expect_err("ambiguous arm");
+        let error = TargetArch::from_current_cfg("arm", None).expect_err("ambiguous arm");
+
+        assert_unsupported_component(error, "architecture", "arm");
+    }
+
+    #[test]
+    fn rejects_arm_eabihf_without_armv7_target_triple() {
+        let error = TargetArch::from_current_cfg("arm", Some("arm-unknown-linux-gnueabihf"))
+            .expect_err("ambiguous arm eabihf");
 
         assert_unsupported_component(error, "architecture", "arm");
     }
 
     #[test]
     fn rejects_ambiguous_current_x86_arch() {
-        let error = TargetArch::from_current_cfg("x86", false).expect_err("ambiguous x86");
+        let error = TargetArch::from_current_cfg("x86", None).expect_err("ambiguous x86");
 
         assert_unsupported_component(error, "architecture", "x86");
     }
 
     #[test]
     fn preserves_current_i686_arch() {
-        let arch = TargetArch::from_current_cfg("i686", false).expect("i686 architecture");
+        let arch = TargetArch::from_current_cfg("i686", None).expect("i686 architecture");
 
         assert_eq!(arch, TargetArch::I686);
     }
 
     #[test]
     fn preserves_current_armv7_eabihf_arch() {
-        let arch = TargetArch::from_current_cfg("arm", true).expect("armv7 architecture");
+        let arch = TargetArch::from_current_cfg("arm", Some("armv7-unknown-linux-gnueabihf"))
+            .expect("armv7 architecture");
 
         assert_eq!(arch, TargetArch::Armv7);
     }
