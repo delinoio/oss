@@ -99,7 +99,7 @@ fn parse_github_source(
     remainder: &str,
     version: Option<String>,
 ) -> Result<SourceSpec, BinpmError> {
-    let segments = non_empty_segments(remainder);
+    let segments = path_segments(raw, remainder)?;
     match segments.as_slice() {
         [owner, repo] => Ok(SourceSpec {
             provider: SourceProvider::GitHub,
@@ -126,7 +126,7 @@ fn parse_gitlab_source(
     remainder: &str,
     version: Option<String>,
 ) -> Result<SourceSpec, BinpmError> {
-    let segments = non_empty_segments(remainder);
+    let segments = path_segments(raw, remainder)?;
     if segments.len() < 3 {
         return Err(invalid_source(
             raw,
@@ -154,10 +154,16 @@ fn split_version(remainder: &str) -> (&str, Option<String>) {
     }
 }
 
-fn non_empty_segments(raw: &str) -> Vec<&str> {
-    raw.split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect()
+fn path_segments<'a>(raw: &str, path: &'a str) -> Result<Vec<&'a str>, BinpmError> {
+    let segments: Vec<_> = path.split('/').collect();
+    if segments.iter().any(|segment| segment.is_empty()) {
+        return Err(invalid_source(
+            raw,
+            "source path segments must not be empty",
+        ));
+    }
+
+    Ok(segments)
 }
 
 fn invalid_source(raw: &str, message: impl Into<String>) -> BinpmError {
@@ -441,6 +447,20 @@ mod tests {
     }
 
     #[test]
+    fn rejects_empty_source_path_segments() {
+        for raw in [
+            "github:/owner/repo",
+            "github:owner//repo",
+            "github:owner/repo/",
+            "gitlab:/gitlab.example.com/platform/tool",
+            "gitlab:gitlab.example.com/platform//tool",
+            "gitlab:gitlab.example.com/platform/tool/",
+        ] {
+            assert_invalid_source(raw);
+        }
+    }
+
+    #[test]
     fn normalizes_target_aliases() {
         let target = HostTarget::from_str("macos-arm64-universal").expect("target");
 
@@ -480,6 +500,15 @@ mod tests {
         let serialized = serde_json::to_string(&value).expect("serialize enum");
 
         assert_eq!(serialized, format!("\"{expected}\""));
+    }
+
+    fn assert_invalid_source(raw: &str) {
+        match SourceSpec::from_str(raw).expect_err("invalid source") {
+            BinpmError::InvalidSourceSpec { raw: error_raw, .. } => {
+                assert_eq!(error_raw, raw);
+            }
+            other => panic!("expected InvalidSourceSpec, got {other:?}"),
+        }
     }
 
     fn assert_unsupported_component(
