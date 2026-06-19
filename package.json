@@ -13,22 +13,35 @@
   },
   "pnpm": {
     "overrides": {
-      "@expo/cli>tar": "7.5.11",
-      "@expo/plist>@xmldom/xmldom": "0.8.12",
-      "@mintlify/previewing>tar": "7.5.11",
+      "@expo/cli>tar": "7.5.16",
+      "@expo/plist>@xmldom/xmldom": "0.8.13",
+      "@mintlify/previewing>tar": "7.5.16",
       "@mintlify/scraping>zod": "3.25.76",
       "@mintlify/validation>zod": "3.25.76",
       "@stoplight/spectral-core>minimatch": "3.1.5",
-      "@xmldom/xmldom": "0.8.12",
-      "axios": "1.14.0",
+      "@xmldom/xmldom": "0.8.13",
+      "axios": "1.16.0",
+      "basic-ftp": "5.3.1",
+      "brace-expansion@>=5.0.0 <5.0.6": "5.0.6",
       "engine.io>cookie": "0.7.2",
+      "esbuild": "0.28.1",
       "express": "4.21.2",
       "expo-dev-launcher>ajv": "8.18.0",
+      "fast-uri": "3.1.2",
+      "follow-redirects": "1.16.0",
+      "form-data": "4.0.6",
       "http-proxy-agent>@tootallnate/once": "3.0.1",
-      "js-yaml": "4.1.1",
+      "ip-address": "10.1.1",
+      "js-yaml": "4.2.0",
       "lodash": "4.18.1",
       "path-to-regexp": "0.1.13",
-      "qs": "6.15.0"
+      "postcss": "8.5.10",
+      "qs": "6.15.2",
+      "shell-quote": "1.8.4",
+      "uuid": "11.1.1",
+      "ws@>=6.0.0 <6.2.4": "6.2.4",
+      "ws@>=7.0.0 <7.5.11": "7.5.11",
+      "ws@>=8.0.0 <8.21.0": "8.21.0"
     },
     "patchedDependencies": {
       "@mintlify/previewing@4.0.1031": "patches/@mintlify__previewing@4.0.1031.patch"
@@ -36,6 +49,6 @@
   },
   "devDependencies": {
     "lefthook": "^2.1.4",
-    "turbo": "^2.8.20"
+    "turbo": "^2.9.14"
   }
 }

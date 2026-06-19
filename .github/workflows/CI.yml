@@ -391,7 +391,7 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
-            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            affected_json="$(pnpm dlx turbo@2.9.14 query affected --packages "${WORKSPACE}")"
             printf '%s\n' "${affected_json}"
             run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
           fi
@@ -455,7 +455,7 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
-            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            affected_json="$(pnpm dlx turbo@2.9.14 query affected --packages "${WORKSPACE}")"
             printf '%s\n' "${affected_json}"
             run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
           fi
@@ -519,7 +519,7 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
-            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            affected_json="$(pnpm dlx turbo@2.9.14 query affected --packages "${WORKSPACE}")"
             printf '%s\n' "${affected_json}"
             run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
           fi
@@ -583,7 +583,7 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
-            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            affected_json="$(pnpm dlx turbo@2.9.14 query affected --packages "${WORKSPACE}")"
             printf '%s\n' "${affected_json}"
             run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
           fi
@@ -647,7 +647,7 @@ jobs:
           if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
             run=true
           else
-            affected_json="$(pnpm dlx turbo@2.8.20 query affected --packages "${WORKSPACE}")"
+            affected_json="$(pnpm dlx turbo@2.9.14 query affected --packages "${WORKSPACE}")"
             printf '%s\n' "${affected_json}"
             run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
           fi
