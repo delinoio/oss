@@ -335,12 +335,52 @@ fn print_env(shell: Shell, global_bin: &Path, local_bin: &Path) {
 }
 
 fn shell_quote(shell: Shell, path: &Path) -> String {
-    let raw = path.display().to_string();
+    let raw = shell_path(shell, &path.display().to_string());
     match shell {
         Shell::Bash | Shell::Zsh => posix_single_quote(&raw),
         Shell::Fish => fish_single_quote(&raw),
         Shell::Powershell => powershell_single_quote(&raw),
     }
+}
+
+fn shell_path(shell: Shell, raw: &str) -> String {
+    match shell {
+        Shell::Bash | Shell::Zsh => {
+            windows_path_for_posix_shell(raw).unwrap_or_else(|| raw.to_owned())
+        }
+        Shell::Fish | Shell::Powershell => raw.to_owned(),
+    }
+}
+
+fn windows_path_for_posix_shell(raw: &str) -> Option<String> {
+    if let Some(unc) = raw
+        .strip_prefix(r"\\?\UNC\")
+        .or_else(|| raw.strip_prefix(r"\\.\UNC\"))
+    {
+        return Some(format!("//{}", unc.replace('\\', "/")));
+    }
+
+    let raw = raw
+        .strip_prefix(r"\\?\")
+        .or_else(|| raw.strip_prefix(r"\\.\"))
+        .unwrap_or(raw);
+
+    if let Some(unc) = raw.strip_prefix(r"\\") {
+        return Some(format!("//{}", unc.replace('\\', "/")));
+    }
+
+    let bytes = raw.as_bytes();
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/')
+    {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        let rest = raw[2..].replace('\\', "/");
+        return Some(format!("/{drive}{}", rest));
+    }
+
+    None
 }
 
 fn posix_single_quote(raw: &str) -> String {
@@ -461,7 +501,9 @@ fn path_state(path: &Path) -> &'static str {
 mod tests {
     use std::path::Path;
 
-    use super::{lockfile_digest, manifest_creation_root_from, project_root_from, shell_quote};
+    use super::{
+        lockfile_digest, manifest_creation_root_from, project_root_from, shell_path, shell_quote,
+    };
     use crate::cli::Shell;
 
     #[test]
@@ -545,5 +587,37 @@ mod tests {
         let path = Path::new("/tmp/binpm'home");
 
         assert_eq!(shell_quote(Shell::Bash, path), "'/tmp/binpm'\\''home'");
+    }
+
+    #[test]
+    fn bash_env_converts_windows_drive_paths_to_posix_paths() {
+        assert_eq!(
+            shell_path(Shell::Bash, r"C:\Users\me\.binpm\bin"),
+            "/c/Users/me/.binpm/bin"
+        );
+    }
+
+    #[test]
+    fn zsh_env_converts_windows_verbatim_drive_paths_to_posix_paths() {
+        assert_eq!(
+            shell_path(Shell::Zsh, r"\\?\C:\repo\.binpm\bin"),
+            "/c/repo/.binpm/bin"
+        );
+    }
+
+    #[test]
+    fn bash_env_converts_windows_unc_paths_to_posix_paths() {
+        assert_eq!(
+            shell_path(Shell::Bash, r"\\server\share\.binpm\bin"),
+            "//server/share/.binpm/bin"
+        );
+    }
+
+    #[test]
+    fn powershell_env_preserves_windows_paths() {
+        assert_eq!(
+            shell_path(Shell::Powershell, r"C:\Users\me\.binpm\bin"),
+            r"C:\Users\me\.binpm\bin"
+        );
     }
 }
