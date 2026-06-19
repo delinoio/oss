@@ -1,4 +1,4 @@
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
@@ -108,13 +108,25 @@ pub struct ExecArgs {
     #[command(flatten)]
     pub lockfile: LockfileArgs,
 
-    /// Command to execute.
-    #[arg(required = true)]
-    pub cmd: String,
+    /// Command to execute followed by arguments forwarded to it.
+    #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
+    pub command: Vec<OsString>,
+}
 
-    /// Arguments forwarded to the executed command.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    pub args: Vec<OsString>,
+impl ExecArgs {
+    pub fn cmd(&self) -> &OsStr {
+        self.command
+            .first()
+            .expect("clap requires at least one x command argument")
+            .as_os_str()
+    }
+
+    pub fn args(&self) -> &[OsString] {
+        match self.command.get(1) {
+            Some(separator) if separator == OsStr::new("--") => &self.command[2..],
+            _ => &self.command[1..],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -284,7 +296,7 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
+    use std::ffi::{OsStr, OsString};
 
     use clap::Parser;
 
@@ -334,14 +346,53 @@ mod tests {
         match cli.command {
             Command::Exec(exec) => {
                 assert_eq!(exec.package.as_deref(), Some("github:BurntSushi/ripgrep"));
-                assert_eq!(exec.cmd, "rg");
+                assert_eq!(exec.cmd(), OsStr::new("rg"));
                 assert_eq!(
-                    exec.args,
+                    exec.args(),
                     vec![
                         OsString::from("--files"),
                         OsString::from("-g"),
                         OsString::from("*.rs")
                     ]
+                );
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_x_command_help_as_forwarded_arg() {
+        let cli = Cli::try_parse_from(["binpm", "x", "rg", "--help"]).expect("parse x command");
+
+        match cli.command {
+            Command::Exec(exec) => {
+                assert_eq!(exec.cmd(), OsStr::new("rg"));
+                assert_eq!(exec.args(), vec![OsString::from("--help")]);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_x_command_package_flag_after_cmd_as_forwarded_arg() {
+        let cli = Cli::try_parse_from([
+            "binpm",
+            "x",
+            "--package",
+            "github:BurntSushi/ripgrep",
+            "rg",
+            "--package",
+            "literal",
+        ])
+        .expect("parse x command");
+
+        match cli.command {
+            Command::Exec(exec) => {
+                assert_eq!(exec.package.as_deref(), Some("github:BurntSushi/ripgrep"));
+                assert_eq!(exec.cmd(), OsStr::new("rg"));
+                assert_eq!(
+                    exec.args(),
+                    vec![OsString::from("--package"), OsString::from("literal")]
                 );
             }
             other => panic!("unexpected command: {other:?}"),

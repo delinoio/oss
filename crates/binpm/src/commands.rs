@@ -88,26 +88,29 @@ fn add(args: AddArgs) -> Result<i32> {
 }
 
 fn exec(args: ExecArgs) -> Result<i32> {
+    let resolved_command = args.cmd().to_string_lossy();
+    let forwarded_arg_count = args.args().len();
+
     if let Some(source) = &args.package {
         let spec = SourceSpec::from_str(source)?;
         info!(
             command = "x",
-            resolved_command = args.cmd,
+            resolved_command = %resolved_command,
             explicit_package = true,
             source_provider = spec.provider.as_str(),
             source_host = spec.host,
             source_path = spec.path,
             source_version = spec.version.as_deref().unwrap_or(""),
-            forwarded_arg_count = args.args.len(),
+            forwarded_arg_count,
             frozen_lockfile = args.lockfile.frozen_lockfile(),
             "Prepared explicit-package execution request"
         );
     } else {
         info!(
             command = "x",
-            resolved_command = args.cmd,
+            resolved_command = %resolved_command,
             explicit_package = false,
-            forwarded_arg_count = args.args.len(),
+            forwarded_arg_count,
             frozen_lockfile = args.lockfile.frozen_lockfile(),
             "Prepared local manifest execution request"
         );
