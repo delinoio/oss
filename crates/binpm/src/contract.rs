@@ -302,11 +302,15 @@ impl TargetArch {
     }
 
     fn from_current(raw: &str) -> Result<Self, BinpmError> {
+        Self::from_current_with_armv7(raw, cfg!(all(target_arch = "arm", target_feature = "v7")))
+    }
+
+    fn from_current_with_armv7(raw: &str, is_armv7: bool) -> Result<Self, BinpmError> {
         match raw {
             "x86_64" => Ok(Self::X86_64),
             "aarch64" => Ok(Self::Aarch64),
             "x86" | "i686" => Ok(Self::I686),
-            "arm" => Ok(Self::Armv7),
+            "arm" if is_armv7 => Ok(Self::Armv7),
             raw => Err(BinpmError::UnsupportedTargetComponent {
                 component: "architecture",
                 raw: raw.to_string(),
@@ -351,14 +355,20 @@ impl TargetLibc {
     }
 
     fn current() -> Self {
-        if cfg!(target_env = "musl") {
-            Self::Musl
-        } else if cfg!(target_env = "msvc") {
-            Self::Msvc
-        } else if cfg!(target_os = "linux") {
-            Self::Gnu
-        } else {
-            Self::Any
+        Self::from_current_cfg(
+            cfg!(target_env = "musl"),
+            cfg!(target_env = "msvc"),
+            cfg!(target_env = "gnu"),
+            cfg!(target_os = "linux"),
+        )
+    }
+
+    fn from_current_cfg(is_musl: bool, is_msvc: bool, is_gnu: bool, is_linux: bool) -> Self {
+        match (is_musl, is_msvc, is_gnu, is_linux) {
+            (true, _, _, _) => Self::Musl,
+            (_, true, _, _) => Self::Msvc,
+            (_, _, true, _) | (_, _, _, true) => Self::Gnu,
+            _ => Self::Any,
         }
     }
 
@@ -499,6 +509,28 @@ mod tests {
         let error = TargetArch::from_current("riscv64").expect_err("unsupported architecture");
 
         assert_unsupported_component(error, "architecture", "riscv64");
+    }
+
+    #[test]
+    fn rejects_ambiguous_current_arm_arch() {
+        let error = TargetArch::from_current_with_armv7("arm", false).expect_err("ambiguous arm");
+
+        assert_unsupported_component(error, "architecture", "arm");
+    }
+
+    #[test]
+    fn preserves_known_current_armv7_arch() {
+        let arch = TargetArch::from_current_with_armv7("arm", true).expect("armv7 architecture");
+
+        assert_eq!(arch, TargetArch::Armv7);
+    }
+
+    #[test]
+    fn preserves_current_gnu_libc_without_linux_os() {
+        assert_eq!(
+            TargetLibc::from_current_cfg(false, false, true, false),
+            TargetLibc::Gnu
+        );
     }
 
     #[test]
