@@ -3,6 +3,8 @@
 import { spawnSync } from "node:child_process";
 import { exit } from "node:process";
 
+const REVIEW_AUTHOR = "chatgpt-codex-connector[bot]";
+
 const args = process.argv.slice(2);
 const command = args[0];
 
@@ -31,7 +33,7 @@ function statusCommand(rawArgs) {
   const repo = parsePullRequestUrl(pr.url) ?? readCurrentRepo();
   const reviewThreads = readReviewThreads(repo, pr.number);
   const unresolvedThreads = reviewThreads.filter((thread) =>
-    isRelevantThread(thread, options.reviewAuthor),
+    isRelevantBotThread(thread),
   );
   const checks = readChecks(options.pr ?? String(pr.number));
   const failingChecks = checks.items.filter(isFailingCheck);
@@ -47,9 +49,9 @@ function statusCommand(rawArgs) {
       reviewDecision: pr.reviewDecision,
       isDraft: pr.isDraft,
     },
-    reviewAuthor: options.reviewAuthor,
+    reviewAuthor: REVIEW_AUTHOR,
     unresolvedReviewThreads: unresolvedThreads.map((thread) =>
-      formatThread(thread, options.reviewAuthor),
+      formatThread(thread),
     ),
     checks: {
       error: checks.error,
@@ -110,7 +112,6 @@ function parseStatusArgs(rawArgs) {
     help: false,
     json: false,
     pr: null,
-    reviewAuthor: null,
   };
 
   for (let i = 0; i < rawArgs.length; i += 1) {
@@ -124,10 +125,6 @@ function parseStatusArgs(rawArgs) {
       parsed.pr = requireValue(rawArgs, ++i, arg);
     } else if (arg.startsWith("--pr=")) {
       parsed.pr = arg.slice("--pr=".length);
-    } else if (arg === "--review-author") {
-      parsed.reviewAuthor = requireValue(rawArgs, ++i, arg);
-    } else if (arg.startsWith("--review-author=")) {
-      parsed.reviewAuthor = arg.slice("--review-author=".length);
     } else {
       fail(`Unknown status argument: ${arg}`);
     }
@@ -397,17 +394,13 @@ function readChecks(prArg) {
   }
 }
 
-function isRelevantThread(thread, reviewAuthor) {
+function isRelevantBotThread(thread) {
   if (thread.isResolved || thread.isOutdated) {
     return false;
   }
 
-  if (!reviewAuthor) {
-    return true;
-  }
-
   return (thread.comments?.nodes ?? []).some((comment) =>
-    authorLoginMatches(comment.author?.login, reviewAuthor),
+    authorLoginMatches(comment.author?.login, REVIEW_AUTHOR),
   );
 }
 
@@ -438,13 +431,11 @@ function isFailingCheck(check) {
   );
 }
 
-function formatThread(thread, reviewAuthor) {
+function formatThread(thread) {
   const comments = thread.comments?.nodes ?? [];
-  const selectedComment = reviewAuthor
-    ? comments.find((comment) =>
-        authorLoginMatches(comment.author?.login, reviewAuthor),
-      )
-    : comments[0];
+  const selectedComment = comments.find((comment) =>
+    authorLoginMatches(comment.author?.login, REVIEW_AUTHOR),
+  );
 
   return {
     id: thread.id,
@@ -478,9 +469,6 @@ function formatCheck(check) {
 
 function printStatusReport(report) {
   const pr = report.pullRequest;
-  const reviewLabel = report.reviewAuthor
-    ? `Unresolved ${report.reviewAuthor} review threads`
-    : "Unresolved review threads";
 
   process.stdout.write(`PR #${pr.number}: ${pr.title}\n`);
   process.stdout.write(`${pr.url}\n`);
@@ -490,7 +478,9 @@ function printStatusReport(report) {
   process.stdout.write(`Review decision: ${pr.reviewDecision ?? "unknown"}\n`);
   process.stdout.write(`Draft: ${pr.isDraft ? "yes" : "no"}\n\n`);
 
-  process.stdout.write(`${reviewLabel}: ${report.unresolvedReviewThreads.length}\n`);
+  process.stdout.write(
+    `Unresolved ${report.reviewAuthor} review threads: ${report.unresolvedReviewThreads.length}\n`,
+  );
   for (const thread of report.unresolvedReviewThreads) {
     const location = thread.line ? `${thread.path}:${thread.line}` : thread.path;
     const firstComment = thread.comments[0]?.body
@@ -526,7 +516,7 @@ function printGlobalHelp() {
   process.stdout.write(`Usage: repair-pr.mjs <command> [options]
 
 Commands:
-  status          Show PR merge state, unresolved review threads, and failing checks.
+  status          Show PR merge state, unresolved bot review threads, and failing checks.
   resolve-thread  Resolve a GitHub review thread by node id.
 
 Run "repair-pr.mjs <command> --help" for command-specific options.
@@ -538,7 +528,6 @@ function printStatusHelp() {
 
 Options:
   --pr <number-or-url>           PR to inspect. Defaults to the current branch PR.
-  --review-author <login>        Limit review threads to a specific author.
   --json                         Print machine-readable JSON.
   -h, --help                     Show this help.
 `);

@@ -1,13 +1,13 @@
 ---
 name: repair-pr
-description: One-shot pull request repair workflow for this repository. Use when asked to repair the current or specified PR by resolving merge conflicts, applying actionable unresolved review feedback, resolving handled review threads, fixing failing CI, committing coherent repair chunks, and pushing once at the end.
+description: One-shot pull request repair workflow for this repository. Use when asked to repair the current or specified PR by resolving merge conflicts, applying actionable unresolved review feedback from chatgpt-codex-connector[bot], resolving handled bot review threads, fixing failing CI, committing coherent repair chunks, and pushing once at the end.
 ---
 
 # Repair PR
 
 ## Goal
 
-Repair the current or specified GitHub PR once, then stop. Handle merge conflicts, actionable unresolved review feedback, and CI failures in that order. Commit after each coherent repair phase, but push only once after all local changes are complete.
+Repair the current or specified GitHub PR once, then stop. Handle merge conflicts, actionable unresolved review feedback from `chatgpt-codex-connector[bot]`, and CI failures in that order. Commit after each coherent repair phase, but push only once after all local changes are complete.
 
 ## Workflow
 
@@ -16,8 +16,7 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
    - List files in `docs/` before starting work, and use `docs/` as the source of truth for project contracts.
    - Confirm `gh auth status` works.
    - If the user provided a PR number or URL, use it; otherwise use `gh pr view --json number,url,baseRefName,headRefName`.
-   - Run `node .agents/skills/repair-pr/scripts/repair-pr.mjs status --pr <pr>` to collect merge state, unresolved review threads, and failing checks.
-   - Use `--review-author <login>` only when the user or task scope asks to focus on a specific reviewer or bot.
+   - Run `node .agents/skills/repair-pr/scripts/repair-pr.mjs status --pr <pr>` to collect merge state, unresolved `chatgpt-codex-connector[bot]` review threads, and failing checks.
 
 2. Resolve merge conflicts first.
    - Treat `mergeStateStatus: DIRTY` or GitHub reporting conflicts as the conflict signal.
@@ -26,9 +25,9 @@ Repair the current or specified GitHub PR once, then stop. Handle merge conflict
    - Resolve conflicts by reading source, fixtures, tests, `AGENTS.md`, and relevant `docs/` contracts. Do not choose `--ours` or `--theirs` blindly.
    - Run focused verification for the resolved area, then `git add` the intended files and commit the merge or conflict repair before moving on.
 
-3. Apply review feedback.
-   - Consider only unresolved, non-outdated review threads from the helper output.
-   - Ignore approvals, resolved threads, outdated threads, duplicates, and non-actionable notes.
+3. Apply bot review feedback.
+   - Consider only unresolved, non-outdated review threads with at least one comment authored by `chatgpt-codex-connector[bot]`.
+   - Ignore approvals, resolved threads, outdated threads, duplicates, non-actionable notes, and review threads that do not include `chatgpt-codex-connector[bot]` feedback.
    - Group related actionable threads by behavior or file, implement the smallest correct fix, and update relevant `docs/` or `AGENTS.md` files when contracts, policies, or structure changed.
    - Run focused tests for each repair group.
    - Commit each coherent review-fix group.
@@ -54,7 +53,6 @@ Use the helper from the repository root:
 ```bash
 node .agents/skills/repair-pr/scripts/repair-pr.mjs status
 node .agents/skills/repair-pr/scripts/repair-pr.mjs status --pr 123 --json
-node .agents/skills/repair-pr/scripts/repair-pr.mjs status --pr 123 --review-author chatgpt-codex-connector[bot]
 node .agents/skills/repair-pr/scripts/repair-pr.mjs resolve-thread PRRT_kwDO...
 ```
 
