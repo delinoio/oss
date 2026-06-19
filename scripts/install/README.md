@@ -16,4 +16,3 @@ Scripts:
 - `nodeup.sh` / `nodeup.ps1`
 - `with-watch.sh` / `with-watch.ps1`
 - `derun.sh` / `derun.ps1`
-- `dexdex-stack.sh` / `dexdex-stack.ps1`

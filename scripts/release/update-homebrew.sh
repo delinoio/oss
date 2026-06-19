@@ -8,36 +8,33 @@ Render and optionally push Homebrew formula/cask updates.
 
 Usage:
   ./scripts/release/update-homebrew.sh \
-    --project <nodeup|with-watch|derun|dexdex-main-server|dexdex-worker-server|dexdex> \
+    --project <nodeup|with-watch|derun> \
     --version <semver> \
     [--darwin-amd64-url <url>] [--darwin-amd64-sha256 <sha>] \
     [--darwin-arm64-url <url>] [--darwin-arm64-sha256 <sha>] \
     [--linux-amd64-url <url>] [--linux-amd64-sha256 <sha>] \
     [--linux-arm64-url <url>] [--linux-arm64-sha256 <sha>] \
-    [--desktop-url <url>] [--desktop-sha256 <sha>] \
     [--tap-repo <owner/repo>] [--dry-run]
 
 Options:
   --project <id>         Package identifier.
   --version <semver>     Release version without v-prefix.
   --darwin-amd64-url <url>
-                         Darwin amd64 prebuilt artifact URL (nodeup, with-watch, derun, and DexDex server formulas).
+                         Darwin amd64 prebuilt artifact URL (nodeup, with-watch, and derun formulas).
   --darwin-amd64-sha256 <sha>
-                         Darwin amd64 prebuilt artifact SHA256 (nodeup, with-watch, derun, and DexDex server formulas).
+                         Darwin amd64 prebuilt artifact SHA256 (nodeup, with-watch, and derun formulas).
   --darwin-arm64-url <url>
-                         Darwin arm64 prebuilt artifact URL (nodeup, with-watch, derun, and DexDex server formulas).
+                         Darwin arm64 prebuilt artifact URL (nodeup, with-watch, and derun formulas).
   --darwin-arm64-sha256 <sha>
-                         Darwin arm64 prebuilt artifact SHA256 (nodeup, with-watch, derun, and DexDex server formulas).
+                         Darwin arm64 prebuilt artifact SHA256 (nodeup, with-watch, and derun formulas).
   --linux-amd64-url <url>
-                         Linux amd64 prebuilt artifact URL (nodeup, with-watch, derun, and DexDex server formulas).
+                         Linux amd64 prebuilt artifact URL (nodeup, with-watch, and derun formulas).
   --linux-amd64-sha256 <sha>
-                         Linux amd64 prebuilt artifact SHA256 (nodeup, with-watch, derun, and DexDex server formulas).
+                         Linux amd64 prebuilt artifact SHA256 (nodeup, with-watch, and derun formulas).
   --linux-arm64-url <url>
                          Linux arm64 prebuilt artifact URL (nodeup and with-watch formulas).
   --linux-arm64-sha256 <sha>
                          Linux arm64 prebuilt artifact SHA256 (nodeup and with-watch formulas).
-  --desktop-url <url>    Desktop installer URL (dexdex cask).
-  --desktop-sha256 <sha> Desktop installer SHA256 (dexdex cask).
   --tap-repo <repo>      Homebrew tap repository (default: delinoio/homebrew-tap).
   --dry-run              Render only; do not push to the tap repository.
 USAGE
@@ -53,8 +50,6 @@ linux_amd64_url=""
 linux_amd64_sha256=""
 linux_arm64_url=""
 linux_arm64_sha256=""
-desktop_url=""
-desktop_sha256=""
 tap_repo="delinoio/homebrew-tap"
 dry_run="0"
 
@@ -104,14 +99,6 @@ while [ "$#" -gt 0 ]; do
       linux_arm64_sha256="${2:-}"
       shift 2
       ;;
-    --desktop-url)
-      desktop_url="${2:-}"
-      shift 2
-      ;;
-    --desktop-sha256)
-      desktop_sha256="${2:-}"
-      shift 2
-      ;;
     --tap-repo)
       tap_repo="${2:-}"
       shift 2
@@ -144,7 +131,7 @@ rendered_file=""
 destination_path=""
 
 case "$project" in
-  nodeup|with-watch|derun|dexdex-main-server|dexdex-worker-server)
+  nodeup|with-watch|derun)
     if [ -z "$darwin_amd64_url" ] || [ -z "$darwin_amd64_sha256" ] || [ -z "$darwin_arm64_url" ] || [ -z "$darwin_arm64_sha256" ] || [ -z "$linux_amd64_url" ] || [ -z "$linux_amd64_sha256" ]; then
       log "$project requires --darwin-amd64-url, --darwin-amd64-sha256, --darwin-arm64-url, --darwin-arm64-sha256, --linux-amd64-url, and --linux-amd64-sha256"
       exit 1
@@ -173,27 +160,6 @@ case "$project" in
       -e "s|__LINUX_AMD64_SHA256__|$linux_amd64_sha256|g" \
       -e "s|__LINUX_ARM64_URL__|$linux_arm64_url|g" \
       -e "s|__LINUX_ARM64_SHA256__|$linux_arm64_sha256|g" \
-      -e "s|__VERSION__|$version|g" \
-      "$template_path" >"$rendered_file"
-    ;;
-  dexdex)
-    if [ -z "$desktop_url" ] || [ -z "$desktop_sha256" ]; then
-      log "dexdex cask requires --desktop-url and --desktop-sha256"
-      exit 1
-    fi
-
-    template_path="$repo_root/packaging/homebrew/templates/dexdex.rb.tmpl"
-    destination_path="Casks/dexdex.rb"
-
-    if [ ! -f "$template_path" ]; then
-      log "template not found: $template_path"
-      exit 1
-    fi
-
-    rendered_file="$(mktemp)"
-    sed \
-      -e "s|__DESKTOP_URL__|$desktop_url|g" \
-      -e "s|__DESKTOP_SHA256__|$desktop_sha256|g" \
       -e "s|__VERSION__|$version|g" \
       "$template_path" >"$rendered_file"
     ;;

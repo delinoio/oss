@@ -54,15 +54,6 @@
             "pages": ["with-watch"]
           }
         ]
-      },
-      {
-        "tab": "DexDex",
-        "groups": [
-          {
-            "group": "Desktop + Servers",
-            "pages": ["dexdex"]
-          }
-        ]
       }
     ]
   }

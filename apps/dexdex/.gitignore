@@ -1,2 +1,0 @@
-src-tauri/gen/
-EOF && git add apps/dexdex/.gitignore

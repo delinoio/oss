@@ -58,26 +58,11 @@
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
-- `docs/project-dexdex.md`: DexDex multi-runtime project index.
 - `docs/crates-with-watch-foundation.md`: with-watch CLI and watcher foundation contract.
 - `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.
 - `docs/crates-rustia-llm-foundation.md`: Rustia aisdk tool adapter contract.
 - `docs/crates-rustia-macros-foundation.md`: Rustia macros derive contract.
-- `docs/apps-dexdex-desktop-app-foundation.md`: DexDex app runtime and integration foundation contract.
-- `docs/apps-dexdex-ui-contract.md`: DexDex UI and interaction contract.
-- `docs/apps-dexdex-user-guide-contract.md`: DexDex end-user workflow contract.
-- `docs/apps-dexdex-notification-contract.md`: DexDex notification UX and delivery contract.
-- `docs/apps-dexdex-workspace-connectivity-contract.md`: DexDex workspace connectivity model contract.
-- `docs/servers-dexdex-main-server-foundation.md`: DexDex main-server control-plane contract.
-- `docs/servers-dexdex-worker-server-foundation.md`: DexDex worker-server execution contract.
-- `docs/servers-dexdex-event-streaming-contract.md`: DexDex workspace event-stream contract.
-- `docs/servers-dexdex-pr-management-contract.md`: DexDex PR polling and remediation contract.
-- `docs/protos-dexdex-v1-contract.md`: DexDex v1 proto summary contract.
-- `docs/protos-dexdex-api-contract.md`: DexDex Connect RPC API contract.
-- `docs/protos-dexdex-entities-contract.md`: DexDex entity and enum contract.
-- `docs/protos-dexdex-plan-mode-contract.md`: DexDex plan-mode decision contract.
 - `docs/cmds-ttl-language-contract.md`: TTL language syntax/type/invalidation/code-generation contract.
-- `protos/dexdex/v1/dexdex.proto`: Shared DexDex Connect RPC service and enum/message contracts (`dexdex.v1`).
 ### Project Identifier Contract
 
 Treat project IDs as stable enum-style values:
@@ -97,7 +82,6 @@ enum ProjectId {
   SerdeFeather = "serde-feather",
   Rustia = "rustia",
   PublicDocs = "public-docs",
-  DexDex = "dexdex",
 }
 ```
 
@@ -116,7 +100,6 @@ enum ProjectId {
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`
-- `dexdex` -> `servers/dexdex-main-server`, `servers/dexdex-worker-server`, `apps/dexdex`, `protos/dexdex`
 
 ### TTL Command Contract
 
@@ -206,22 +189,6 @@ enum RustiaComponent {
 - `Llm` -> `crates/rustia-llm`
 - `Macros` -> `crates/rustia-macros`
 
-### DexDex Component Contract
-
-`dexdex` is a three-component project with fixed mapping:
-
-```ts
-enum DexDexComponent {
-  MainServer = "main-server",
-  WorkerServer = "worker-server",
-  DesktopApp = "desktop-app",
-}
-```
-
-- `MainServer` -> `servers/dexdex-main-server`
-- `WorkerServer` -> `servers/dexdex-worker-server`
-- `DesktopApp` -> `apps/dexdex`
-
 ### Documentation-First Policy
 
 - New project creation requires `docs/project-<id>.md` and at least one `docs/<domain>-<project-or-component>-<contract>.md` before runtime implementation.
@@ -306,20 +273,12 @@ Coverage expectations:
 - `node-mpapp-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp test`.
 - `node-mpapp-lint`: runs `pnpm install --frozen-lockfile` and `pnpm --filter mpapp lint`.
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter public-docs test`.
-- `node-dexdex-test`: runs `pnpm install --frozen-lockfile` and `pnpm --filter dexdex test`.
-- `node-dexdex-ios-build`: runs `pnpm install --frozen-lockfile`, `pnpm --filter dexdex exec vite build`, `pnpm --filter dexdex exec tauri ios init --ci`, and `pnpm --filter dexdex exec tauri ios build --ci --debug --target aarch64-sim --config '{"build":{"beforeBuildCommand":"true"}}'` on `macos-latest`.
 - `ci-result`: provides a single aggregate status that fails when any executed domain job fails or is cancelled.
-
-DexDex desktop packaging CI baseline:
-- `.github/workflows/dexdex-desktop-build.yml` runs on `workflow_dispatch` and weekly schedule.
-- Matrix contract: `ubuntu-latest`, `macos-latest`, `windows-latest`.
-- Build command contract: `pnpm --filter dexdex tauri:build`.
 
 Change-scoped execution rules:
 - CI jobs perform self-gating (there is no standalone `detect-changes` job).
 - Go and Rust jobs use in-job path-based change detection via `dorny/paths-filter`.
 - Node jobs use in-job Turbo affected detection via `pnpm dlx turbo@2.8.20 query affected --packages <workspace>`.
-- `node-dexdex-ios-build` applies an additional in-job path gate before Turbo detection; outside `workflow_dispatch` and `.github/workflows/CI.yml` changes, it runs only when DexDex iOS-related files changed (`apps/dexdex/src/**`, `apps/dexdex/src-tauri/**`, `apps/dexdex/public/**`, `apps/dexdex/index.html`, `apps/dexdex/package.json`, `apps/dexdex/tsconfig.json`, `apps/dexdex/vite.config.ts`, `apps/dexdex/buf.yaml`, `apps/dexdex/buf.gen.yaml`, `pnpm-lock.yaml`) and Turbo reports `dexdex` as affected.
 - Changes to `.github/workflows/CI.yml` force all `go`, `node`, and `rust` domain jobs to run.
 - `workflow_dispatch` runs all domain jobs regardless of changed paths.
 - When build or test commands change in project contracts, update this section and `.github/workflows/CI.yml` in the same commit.
@@ -345,9 +304,6 @@ Release automation baseline:
 - `release-with-watch` is defined in `.github/workflows/release-with-watch.yml`.
 - Trigger contract: runs on tag push `with-watch@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS with-watch release artifacts for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, including standalone prebuilt binaries (`with-watch-<os>-<arch>[.exe]`) and archive assets (`with-watch-<os>-<arch>.tar.gz|zip`), then updates Homebrew (`with-watch`) from GitHub release prebuilt archives (`darwin-amd64`, `darwin-arm64`, `linux-amd64`, `linux-arm64`).
-- `release-dexdex` is defined in `.github/workflows/release-dexdex.yml`.
-- Trigger contract: runs on tag push `dexdex@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
-- Distribution contract: publishes signed DexDex desktop + main/worker server artifacts and applies desktop signing/notarization secrets, then updates Homebrew (`dexdex`, `dexdex-main-server`, `dexdex-worker-server`) where DexDex server formulas consume prebuilt release artifacts for `darwin/amd64`, `darwin/arm64`, and `linux/amd64`.
 
 ### Documentation Lifecycle Rules
 
