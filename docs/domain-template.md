@@ -18,6 +18,9 @@ Declare the project/component and canonical implementation paths owned by this d
 
 ## Runtime and Language
 Declare runtime and primary language.
+If unspecified for a new project, the default primary language is Golang.
+For build tooling, prefer Rspack-family tools when they fit the runtime and deployment target.
+Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default unless documented otherwise.
 
 ## Users and Operators
 List primary users, operators, or system actors for this component.
@@ -25,9 +28,12 @@ List primary users, operators, or system actors for this component.
 ## Interfaces and Contracts
 Document public interfaces and stable identifiers.
 Include route patterns, command shapes, RPC/API contracts, and component integration boundaries.
+New persisted entities should use UUID v7 identifiers by default unless a documented issue requires another ID shape.
+AI-based search should default to Cloudflare AI Search unless the contract documents another backend.
 
 ## Storage
 Document persistent data, cache, and local file contracts.
+File handling should default to Cloudflare R2 object storage plus signed URLs for upload and download access unless documented otherwise.
 
 ## Security
 Document trust boundaries, secrets handling, authorization, and data safety constraints.
@@ -46,6 +52,7 @@ Declare what related docs and AGENTS contracts must be updated when this contrac
 
 ## References
 Link to the owning `docs/project-<id>.md` index and any related contract docs.
+Include `docs/repository-defaults.md`.
 
 ## Checklist for Domain Contract Docs
 - The file name follows domain prefix rules.

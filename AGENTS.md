@@ -41,6 +41,7 @@
 ### Canonical Directory Map
 
 - `docs/README.md`: Canonical docs catalog and naming rules.
+- `docs/repository-defaults.md`: Repository-wide default technology choices.
 - `docs/project-template.md`: Required structure for `project-<id>` index docs.
 - `docs/domain-template.md`: Required structure for domain-level contract docs.
 - `docs/project-<id>.md`: Canonical project index docs (ownership + domain-doc index + cross-domain invariants).
@@ -95,6 +96,16 @@ enum ProjectId {
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `rustia` -> `crates/rustia`, `crates/rustia-llm`, `crates/rustia-macros`
 - `public-docs` -> `apps/public-docs`
+
+### Repository Default Technology Choices
+
+- Follow `docs/repository-defaults.md` when a more specific project or domain contract does not choose a different approach.
+- New persisted entities should use UUID v7 identifiers by default unless a documented compatibility, storage, protocol, or product issue requires another ID shape.
+- AI-based search should default to Cloudflare AI Search unless a project contract documents a different backend and migration boundary.
+- When a new project does not specify its primary language, default to Golang.
+- Prefer Rspack-family build tools when possible, including Rsbuild and Rspress for app and documentation surfaces.
+- Static sites under `apps/` should use Rsbuild/Rspress-style toolchains and deploy to Cloudflare Pages by default. Existing documented exceptions remain valid until their project contract changes.
+- File handling should default to Cloudflare R2 object storage plus signed URLs for upload and download access unless a project contract documents another storage or access pattern.
 
 ### TTL Command Contract
 
