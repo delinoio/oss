@@ -59,7 +59,7 @@
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
-- `docs/crates-binpm-foundation.md`: binpm Rust CLI and GitHub Release binary selection contract.
+- `docs/crates-binpm-foundation.md`: binpm Rust CLI, GitHub Release binary selection, and global cache contract.
 - `docs/crates-with-watch-foundation.md`: with-watch CLI and watcher foundation contract.
 - `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.
 - `docs/crates-rustia-llm-foundation.md`: Rustia aisdk tool adapter contract.
@@ -110,6 +110,13 @@ enum ProjectId {
 - `cmds/ttlc` command identifiers are `build`, `check`, `explain`, and `run`.
 - `ttlc run` requires `--task` and accepts optional `--args <json>` with default `{}`.
 - `ttlc run` response payload includes `result`, `run_trace`, and root-task `cache_analysis`.
+
+### binpm Cache Contract
+
+- `~/.binpm/cache` is the user-level global asset cache shared by all `binpm` installs for the same account.
+- `binpm` cache reuse must be validated with the strongest available integrity source: GitHub asset digest, upstream checksum or signature material, or locally recorded SHA-256 metadata.
+- Cache management command identifiers are `list`, `prune`, and `clean` under `binpm cache`.
+- `binpm cache prune` and `binpm cache clean` must not remove installed package records or executable links/copies under `~/.binpm/bin`.
 
 ### Devkit Mini-App Identifier Contract
 

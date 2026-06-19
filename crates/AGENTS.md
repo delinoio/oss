@@ -37,7 +37,11 @@
 ### binpm-Specific Rules
 
 - Keep `binpm` documentation-only until `crates/binpm` is intentionally scaffolded in an implementation change.
-- Preserve `~/.binpm` as the canonical home directory for binpm-managed binaries, package records, cache entries, and temporary extraction state.
+- Preserve `~/.binpm` as the canonical home directory for binpm-managed binaries, package records, global cache entries, and temporary extraction state.
+- Treat `~/.binpm/cache` as the user-level global GitHub Release asset cache shared by all binpm installs for the same account.
+- Keep cache management command identifiers stable as `binpm cache list`, `binpm cache prune`, and `binpm cache clean`.
+- Ensure cache reuse is always verified against GitHub asset digests, upstream checksum/signature material, or locally recorded SHA-256 metadata before extraction or install finalization.
+- Keep cache cleanup behavior separate from uninstall behavior: cache pruning and cleaning must not remove package records or executable links/copies under `~/.binpm/bin`.
 - Keep GitHub Release asset selection deterministic and documented by OS, CPU architecture, and libc/ABI environment.
 - Keep checksum/signature fallback behavior aligned with `docs/project-binpm.md` and `docs/crates-binpm-foundation.md`.
 
