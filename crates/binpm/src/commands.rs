@@ -320,7 +320,7 @@ fn print_env(shell: Shell, global_bin: &Path, local_bin: &Path) {
     let local = shell_quote(shell, local_bin);
     match shell {
         Shell::Bash | Shell::Zsh => {
-            println!("export PATH={local}:{global}:\"$PATH\"");
+            println!("export PATH={local}:{global}${{PATH:+:$PATH}}");
         }
         Shell::Fish => {
             println!("set -gx PATH {local} {global} $PATH");
@@ -420,11 +420,16 @@ fn find_git_root(start: &Path) -> Option<&Path> {
 }
 
 fn binpm_home() -> Result<PathBuf> {
-    std::env::var_os("BINPM_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".binpm")))
-        .or_else(|| std::env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".binpm")))
+    env_path("BINPM_HOME")
+        .or_else(|| env_path("HOME").map(|home| home.join(".binpm")))
+        .or_else(|| env_path("USERPROFILE").map(|home| home.join(".binpm")))
         .ok_or(BinpmError::MissingGlobalHome)
+}
+
+fn env_path(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name)
+        .filter(|value| !value.as_os_str().is_empty())
+        .map(PathBuf::from)
 }
 
 fn path_state(path: &Path) -> &'static str {

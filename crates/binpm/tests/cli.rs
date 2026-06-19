@@ -67,7 +67,7 @@ fn env_prints_shell_path_exports() {
         .join(".binpm")
         .join("bin");
     let expected = format!(
-        "export PATH='{}':'/tmp/binpm-home/bin':\"$PATH\"",
+        "export PATH='{}':'/tmp/binpm-home/bin'${{PATH:+:$PATH}}",
         local_bin.display()
     );
     let mut command = binpm();
@@ -79,6 +79,39 @@ fn env_prints_shell_path_exports() {
         .assert()
         .success()
         .stdout(predicate::str::contains(expected));
+}
+
+#[test]
+fn env_bash_avoids_empty_path_segment_when_path_is_unset() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", "/tmp/binpm-home")
+        .args(["env", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("${PATH:+:$PATH}"))
+        .stdout(predicate::str::contains(":\"$PATH\"").not());
+}
+
+#[test]
+fn env_ignores_empty_home_overrides() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", "")
+        .env("HOME", "/tmp/fallback-home")
+        .args(["env", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("'/tmp/fallback-home/.binpm/bin'"))
+        .stdout(predicate::str::contains("''").not());
 }
 
 #[test]
@@ -252,7 +285,7 @@ fn env_escapes_bash_paths_before_printing_shell_code() {
         .assert()
         .success()
         .stdout(predicate::str::contains("'\\''home'\\''/bin'"))
-        .stdout(predicate::str::contains("\"$PATH\""));
+        .stdout(predicate::str::contains("${PATH:+:$PATH}"));
 }
 
 #[test]
