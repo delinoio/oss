@@ -22,15 +22,18 @@ pub enum BinpmError {
     },
     #[error("Failed to determine the current working directory: {0}")]
     CurrentDirectory(#[source] io::Error),
-    #[error("Failed to write `{path}`: {source}")]
+    #[error("Failed to write `{}`: {source}", path.display())]
     WriteFile {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("Refusing to overwrite existing manifest `{path}`. Use `--force` to replace it.")]
+    #[error(
+        "Refusing to overwrite existing manifest `{}`. Use `--force` to replace it.",
+        path.display()
+    )]
     ManifestExists { path: PathBuf },
-    #[error("Failed to read `{path}`: {source}")]
+    #[error("Failed to read `{}`: {source}", path.display())]
     ReadFile {
         path: PathBuf,
         #[source]
@@ -38,7 +41,10 @@ pub enum BinpmError {
     },
     #[error("Failed to determine binpm global home. Set BINPM_HOME, HOME, or USERPROFILE.")]
     MissingGlobalHome,
-    #[error("Invalid {name}: binpm global home must be an absolute path, got `{path}`.")]
+    #[error(
+        "Invalid {name}: binpm global home must be an absolute path, got `{}`.",
+        path.display()
+    )]
     InvalidGlobalHome { name: &'static str, path: PathBuf },
 }
 
