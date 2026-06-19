@@ -175,12 +175,12 @@ pub struct HostTarget {
 }
 
 impl HostTarget {
-    pub fn current() -> Self {
-        Self {
-            os: TargetOs::current(),
-            arch: TargetArch::current(),
+    pub fn current() -> Result<Self, BinpmError> {
+        Ok(Self {
+            os: TargetOs::current()?,
+            arch: TargetArch::current()?,
             libc: TargetLibc::current(),
-        }
+        })
     }
 
     pub fn key(&self) -> String {
@@ -234,12 +234,20 @@ impl TargetOs {
         }
     }
 
-    fn current() -> Self {
-        match std::env::consts::OS {
-            "macos" => Self::Darwin,
-            "windows" => Self::Windows,
-            "freebsd" => Self::FreeBsd,
-            _ => Self::Linux,
+    fn current() -> Result<Self, BinpmError> {
+        Self::from_current(std::env::consts::OS)
+    }
+
+    fn from_current(raw: &str) -> Result<Self, BinpmError> {
+        match raw {
+            "linux" => Ok(Self::Linux),
+            "macos" => Ok(Self::Darwin),
+            "windows" => Ok(Self::Windows),
+            "freebsd" => Ok(Self::FreeBsd),
+            raw => Err(BinpmError::UnsupportedTargetComponent {
+                component: "os",
+                raw: raw.to_string(),
+            }),
         }
     }
 
@@ -279,12 +287,20 @@ impl TargetArch {
         }
     }
 
-    fn current() -> Self {
-        match std::env::consts::ARCH {
-            "aarch64" => Self::Aarch64,
-            "x86" | "i686" => Self::I686,
-            "arm" => Self::Armv7,
-            _ => Self::X86_64,
+    fn current() -> Result<Self, BinpmError> {
+        Self::from_current(std::env::consts::ARCH)
+    }
+
+    fn from_current(raw: &str) -> Result<Self, BinpmError> {
+        match raw {
+            "x86_64" => Ok(Self::X86_64),
+            "aarch64" => Ok(Self::Aarch64),
+            "x86" | "i686" => Ok(Self::I686),
+            "arm" => Ok(Self::Armv7),
+            raw => Err(BinpmError::UnsupportedTargetComponent {
+                component: "architecture",
+                raw: raw.to_string(),
+            }),
         }
     }
 
@@ -390,6 +406,7 @@ mod tests {
         ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceProvider, SourceSpec, TargetArch,
         TargetLibc, TargetOs,
     };
+    use crate::error::BinpmError;
 
     #[test]
     fn parses_github_dot_com_source_without_host() {
@@ -434,6 +451,20 @@ mod tests {
     }
 
     #[test]
+    fn rejects_unsupported_current_os_without_linux_fallback() {
+        let error = TargetOs::from_current("openbsd").expect_err("unsupported os");
+
+        assert_unsupported_component(error, "os", "openbsd");
+    }
+
+    #[test]
+    fn rejects_unsupported_current_arch_without_x86_64_fallback() {
+        let error = TargetArch::from_current("riscv64").expect_err("unsupported architecture");
+
+        assert_unsupported_component(error, "architecture", "riscv64");
+    }
+
+    #[test]
     fn serializes_documented_contract_values() {
         assert_json_string(Scope::Local, "local");
         assert_json_string(SourceProvider::GitHub, "github");
@@ -449,5 +480,19 @@ mod tests {
         let serialized = serde_json::to_string(&value).expect("serialize enum");
 
         assert_eq!(serialized, format!("\"{expected}\""));
+    }
+
+    fn assert_unsupported_component(
+        error: BinpmError,
+        expected_component: &str,
+        expected_raw: &str,
+    ) {
+        match error {
+            BinpmError::UnsupportedTargetComponent { component, raw } => {
+                assert_eq!(component, expected_component);
+                assert_eq!(raw, expected_raw);
+            }
+            other => panic!("expected UnsupportedTargetComponent, got {other:?}"),
+        }
     }
 }

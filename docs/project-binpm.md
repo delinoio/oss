@@ -19,6 +19,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - Stable source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
 - Versionless installs must resolve to the latest stable release exposed by the source provider; GitHub sources must exclude draft and prerelease releases, and GitLab sources must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
 - Binary selection must be deterministic and target-aware across operating system, CPU architecture, and libc or ABI environment.
+- Current-host target detection must fail clearly for unsupported operating systems or CPU architectures instead of mapping them to a supported fallback target.
 - The asset selection heuristic must remain fully documented in `docs/crates-binpm-foundation.md` before implementation changes alter scoring behavior.
 - `~/.binpm` remains the canonical global home directory for globally installed binaries, package records, cache entries, and temporary extraction state.
 - `~/.binpm/cache` is the user-level global asset cache shared by all `binpm` installs for the same account.

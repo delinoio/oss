@@ -149,14 +149,15 @@ fn cache(command: CacheCommand) -> Result<i32> {
 fn cache_key() -> Result<i32> {
     let project_root = project_root()?;
     let lockfile_path = project_root.join(LOCKFILE_FILE);
-    let target = HostTarget::current();
+    let target = HostTarget::current()?;
     let digest = lockfile_digest(&lockfile_path)?;
-    let cache_key = format!("binpm-v1-{}-{digest}", target.key());
+    let target_key = target.key();
+    let cache_key = format!("binpm-v1-{target_key}-{digest}");
 
     info!(
         command = "cache key",
         read_only = true,
-        target = target.key(),
+        target = target_key,
         lockfile_path = %lockfile_path.display(),
         "Computed binpm cache key"
     );
