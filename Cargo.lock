@@ -201,6 +201,7 @@ dependencies = [
  "clap",
  "predicates",
  "serde",
+ "serde_json",
  "sha2",
  "swc_malloc",
  "tempfile",

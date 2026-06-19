@@ -5,10 +5,12 @@ use serde::{Deserialize, Serialize};
 use crate::error::BinpmError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum Scope {
+    #[serde(rename = "local")]
     Local,
+    #[serde(rename = "global")]
     Global,
+    #[serde(rename = "auto")]
     Auto,
 }
 
@@ -61,9 +63,10 @@ impl FromStr for SourceSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum SourceProvider {
+    #[serde(rename = "github")]
     GitHub,
+    #[serde(rename = "gitlab")]
     GitLab,
 }
 
@@ -210,11 +213,14 @@ impl FromStr for HostTarget {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum TargetOs {
+    #[serde(rename = "linux")]
     Linux,
+    #[serde(rename = "darwin")]
     Darwin,
+    #[serde(rename = "windows")]
     Windows,
+    #[serde(rename = "freebsd")]
     FreeBsd,
 }
 
@@ -252,11 +258,14 @@ impl TargetOs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum TargetArch {
+    #[serde(rename = "x86_64")]
     X86_64,
+    #[serde(rename = "aarch64")]
     Aarch64,
+    #[serde(rename = "i686")]
     I686,
+    #[serde(rename = "armv7")]
     Armv7,
 }
 
@@ -294,11 +303,14 @@ impl TargetArch {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum TargetLibc {
+    #[serde(rename = "gnu")]
     Gnu,
+    #[serde(rename = "musl")]
     Musl,
+    #[serde(rename = "msvc")]
     Msvc,
+    #[serde(rename = "any")]
     Any,
 }
 
@@ -339,24 +351,34 @@ impl TargetLibc {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum ChecksumSource {
+    #[serde(rename = "github-digest")]
     GitHubDigest,
+    #[serde(rename = "sidecar")]
     Sidecar,
+    #[serde(rename = "manifest")]
     Manifest,
+    #[serde(rename = "signature")]
     Signature,
+    #[serde(rename = "local")]
     Local,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum ArchiveFormat {
+    #[serde(rename = "tar.gz")]
     TarGz,
+    #[serde(rename = "tgz")]
     Tgz,
+    #[serde(rename = "tar.xz")]
     TarXz,
+    #[serde(rename = "txz")]
     Txz,
+    #[serde(rename = "tar.zst")]
     TarZst,
+    #[serde(rename = "zip")]
     Zip,
+    #[serde(rename = "bare-executable")]
     BareExecutable,
 }
 
@@ -364,7 +386,10 @@ pub enum ArchiveFormat {
 mod tests {
     use std::str::FromStr;
 
-    use super::{HostTarget, SourceProvider, SourceSpec, TargetArch, TargetLibc, TargetOs};
+    use super::{
+        ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceProvider, SourceSpec, TargetArch,
+        TargetLibc, TargetOs,
+    };
 
     #[test]
     fn parses_github_dot_com_source_without_host() {
@@ -406,5 +431,23 @@ mod tests {
         assert_eq!(target.arch, TargetArch::Aarch64);
         assert_eq!(target.libc, TargetLibc::Any);
         assert_eq!(target.key(), "darwin-aarch64-any");
+    }
+
+    #[test]
+    fn serializes_documented_contract_values() {
+        assert_json_string(Scope::Local, "local");
+        assert_json_string(SourceProvider::GitHub, "github");
+        assert_json_string(TargetOs::FreeBsd, "freebsd");
+        assert_json_string(TargetArch::X86_64, "x86_64");
+        assert_json_string(TargetLibc::Any, "any");
+        assert_json_string(ChecksumSource::GitHubDigest, "github-digest");
+        assert_json_string(ArchiveFormat::TarGz, "tar.gz");
+        assert_json_string(ArchiveFormat::BareExecutable, "bare-executable");
+    }
+
+    fn assert_json_string(value: impl serde::Serialize, expected: &str) {
+        let serialized = serde_json::to_string(&value).expect("serialize enum");
+
+        assert_eq!(serialized, format!("\"{expected}\""));
     }
 }

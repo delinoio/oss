@@ -21,7 +21,7 @@
   - `binpm init` may create `binpm.toml` containing `version = 1`.
   - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories.
   - `binpm doctor` may report manifest, lockfile, and global home state without mutation.
-  - `binpm cache key` may print a deterministic key for the current target and current-directory `binpm.lock`, using an empty lockfile digest when the file is absent.
+  - `binpm cache key` may print a deterministic key for the current target and project-root `binpm.lock`, using an empty lockfile digest when the file is absent.
 - Canonical global install command: `binpm install <source>`.
 - Canonical local declaration command: `binpm add <cmd> <source>`.
 - Canonical local sync command: `binpm install`.
