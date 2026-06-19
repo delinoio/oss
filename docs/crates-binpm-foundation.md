@@ -3,7 +3,7 @@
 ## Scope
 - Project/component: `binpm` crate foundation contract
 - Canonical path: `crates/binpm`
-- Implementation status: runtime implementation has begun with a Rust CLI skeleton, clap command surface, typed contract foundations, structured tracing setup, centralized errors, README, and tests
+- Implementation status: runtime implementation has begun with a Rust CLI skeleton, clap command surface, typed contract foundations, source parsing, provider release lookup clients, source-form explain diagnostics, deterministic asset candidate scoring, structured tracing setup, centralized errors, README, and tests
 
 ## Runtime and Language
 - Runtime: Rust CLI
@@ -51,6 +51,7 @@
 - `binpm update [cmd...] [--local|--global]` must update selected tools or all tools in scope to the latest stable release allowed by their source declarations; local updates must update `binpm.lock` and installed project-local executables.
 - `binpm doctor` must inspect manifest discovery, lockfile readability, package records, cache state, installed executable records, PATH visibility, and provider configuration without mutating state.
 - `binpm explain <cmd-or-source> [--local|--global]` must explain source parsing, release selection, target normalization, asset candidate scoring, binary discovery, and verification decisions without mutating state.
+- Source-form `binpm explain <source>` may perform read-only GitHub or GitLab release API lookup and must print the normalized source, provider API URL, release decision, normalized target, selected asset when one is eligible, candidate scores, and rejection reasons. Local command explanation may remain not implemented until manifest and lockfile resolution is implemented.
 - `binpm verify [--local|--global] [--require-verified]` must validate lockfile records, package records, cache bytes, and installed executable records without mutating state.
 - `binpm init` must create a minimal `binpm.toml` with `version = 1` at the project root when one does not already exist; it must not install tools by default.
 - `binpm env --shell <shell>` must print shell-specific environment commands for adding binpm-managed binary directories to `PATH`; it must not modify shell profiles by default.
@@ -76,6 +77,7 @@
   - On Linux `musl` hosts, missing-libc candidates must not be accepted unless the asset has an explicit `static`, `portable`, `universal`, or `any` signal; otherwise resolution must fail instead of installing a likely glibc-linked binary.
   - Universal macOS assets may match `darwin/x86_64` and `darwin/aarch64` only when no exact-arch macOS asset exists.
   - If scores tie, prefer the candidate with a recognized tool-specific naming pattern, then shorter normalized filename, then lexicographic filename order.
+- Target tokenization for asset scoring treats punctuation, hyphens, and underscores as separators after preserving `x86_64` as the `x64` alias, so Rust target triples, GoReleaser underscore names, Bun names, and Deno names all normalize through the same enum-backed OS, architecture, and libc/ABI aliases.
 - Preferred installable artifact kinds:
   - Archives: `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, `.zip`
   - Bare executables: extensionless POSIX binaries and `.exe` for Windows
@@ -87,6 +89,7 @@
 - Desktop or system package formats are de-prioritized and must not be installed by default in v1: `.deb`, `.rpm`, `.apk`, `.pkg.tar.zst`, `.dmg`, `.msi`, `.pkg`, `.AppImage`, `.flatpak`, `.snap`.
 - Archive extraction must locate one or more executable files by executable permission, Windows `.exe` suffix, expected package name, and target-aware filename tokens.
 - If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates.
+- The current foundation implements binary discovery as a deterministic member-list heuristic used by tests; full archive extraction and install finalization remain separate implementation work.
 
 ## Local Manifest and Lockfile
 - The local project root is the nearest ancestor containing `binpm.toml`; commands that create `binpm.toml` must use the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory.

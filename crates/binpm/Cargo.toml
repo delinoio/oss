@@ -9,7 +9,9 @@ repository = "https://github.com/delinoio/oss"
 publish = false
 
 [dependencies]
+chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
 clap = { version = "4.5.32", features = ["derive"] }
+reqwest = { version = "0.12.14", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1.0.219", features = ["derive"] }
 sha2 = "0.10.8"
 swc_malloc = "1.2.5"
