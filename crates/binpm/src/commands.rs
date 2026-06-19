@@ -270,8 +270,8 @@ fn verify(args: VerifyArgs) -> Result<i32> {
 }
 
 fn init(args: InitArgs) -> Result<i32> {
-    let cwd = current_dir()?;
-    let manifest_path = cwd.join(MANIFEST_FILE);
+    let project_root = project_root()?;
+    let manifest_path = project_root.join(MANIFEST_FILE);
 
     if manifest_path.exists() && !args.force {
         return Err(BinpmError::ManifestExists {
@@ -295,9 +295,10 @@ fn init(args: InitArgs) -> Result<i32> {
 }
 
 fn env_cmd(args: EnvArgs) -> Result<i32> {
+    let project_root = project_root()?;
     let home = binpm_home();
     let global_bin = home.join("bin");
-    let local_bin = PathBuf::from(".binpm").join("bin");
+    let local_bin = project_root.join(".binpm").join("bin");
 
     info!(
         command = "env",
@@ -313,20 +314,41 @@ fn env_cmd(args: EnvArgs) -> Result<i32> {
 }
 
 fn print_env(shell: Shell, global_bin: &Path, local_bin: &Path) {
-    let global = global_bin.display();
-    let local = local_bin.display();
+    let global = shell_quote(shell, global_bin);
+    let local = shell_quote(shell, local_bin);
     match shell {
         Shell::Bash | Shell::Zsh => {
-            println!("export PATH=\"{local}:{global}:$PATH\"");
+            println!("export PATH={local}:{global}:\"$PATH\"");
         }
         Shell::Fish => {
             println!("fish_add_path {local}");
             println!("fish_add_path {global}");
         }
         Shell::Powershell => {
-            println!("$env:PATH = \"{local};{global};$env:PATH\"");
+            println!("$env:PATH = {local} + ';' + {global} + ';' + $env:PATH");
         }
     }
+}
+
+fn shell_quote(shell: Shell, path: &Path) -> String {
+    let raw = path.display().to_string();
+    match shell {
+        Shell::Bash | Shell::Zsh => posix_single_quote(&raw),
+        Shell::Fish => fish_single_quote(&raw),
+        Shell::Powershell => powershell_single_quote(&raw),
+    }
+}
+
+fn posix_single_quote(raw: &str) -> String {
+    format!("'{}'", raw.replace('\'', "'\\''"))
+}
+
+fn fish_single_quote(raw: &str) -> String {
+    format!("'{}'", raw.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+fn powershell_single_quote(raw: &str) -> String {
+    format!("'{}'", raw.replace('\'', "''"))
 }
 
 fn log_read_only_scope(command: &'static str, scope: Scope) {
@@ -362,6 +384,19 @@ fn current_dir() -> Result<PathBuf> {
     std::env::current_dir().map_err(BinpmError::CurrentDirectory)
 }
 
+fn project_root() -> Result<PathBuf> {
+    let cwd = current_dir()?;
+    Ok(project_root_from(&cwd))
+}
+
+fn project_root_from(start: &Path) -> PathBuf {
+    start
+        .ancestors()
+        .find(|path| path.join(".git").exists())
+        .unwrap_or(start)
+        .to_path_buf()
+}
+
 fn binpm_home() -> PathBuf {
     std::env::var_os("BINPM_HOME")
         .map(PathBuf::from)
@@ -380,7 +415,10 @@ fn path_state(path: &Path) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::lockfile_digest;
+    use std::path::Path;
+
+    use super::{lockfile_digest, project_root_from, shell_quote};
+    use crate::cli::Shell;
 
     #[test]
     fn missing_lockfile_has_stable_empty_digest() {
@@ -391,5 +429,39 @@ mod tests {
             digest,
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
+    }
+
+    #[test]
+    fn project_root_uses_nearest_git_ancestor() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
+        let nested = temp_dir.path().join("nested").join("deeper");
+        std::fs::create_dir_all(&nested).expect("create nested dir");
+
+        assert_eq!(project_root_from(&nested), temp_dir.path());
+    }
+
+    #[test]
+    fn project_root_falls_back_to_start_without_git_ancestor() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+
+        assert_eq!(project_root_from(temp_dir.path()), temp_dir.path());
+    }
+
+    #[test]
+    fn bash_env_paths_are_single_quoted() {
+        let path = Path::new("/tmp/binpm home/$(touch x)/`cmd`");
+
+        assert_eq!(
+            shell_quote(Shell::Bash, path),
+            "'/tmp/binpm home/$(touch x)/`cmd`'"
+        );
+    }
+
+    #[test]
+    fn bash_env_paths_escape_single_quotes() {
+        let path = Path::new("/tmp/binpm'home");
+
+        assert_eq!(shell_quote(Shell::Bash, path), "'/tmp/binpm'\\''home'");
     }
 }

@@ -1,3 +1,5 @@
+use std::fs;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 
@@ -37,17 +39,83 @@ fn init_writes_minimal_manifest() {
 }
 
 #[test]
-fn env_prints_shell_path_exports() {
+fn init_from_nested_directory_writes_manifest_at_git_root() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
+    let nested_dir = temp_dir.path().join("packages").join("cli");
+    fs::create_dir_all(&nested_dir).expect("create nested dir");
     let mut command = binpm();
 
     command
+        .current_dir(&nested_dir)
+        .arg("init")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("created"));
+
+    let manifest = fs::read_to_string(temp_dir.path().join("binpm.toml")).expect("read manifest");
+    assert_eq!(manifest, "version = 1\n");
+    assert!(!nested_dir.join("binpm.toml").exists());
+}
+
+#[test]
+fn env_prints_shell_path_exports() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let expected = format!(
+        "export PATH='{}':'/tmp/binpm-home/bin':\"$PATH\"",
+        local_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
         .env("BINPM_HOME", "/tmp/binpm-home")
         .args(["env", "--shell", "bash"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            ".binpm/bin:/tmp/binpm-home/bin:$PATH",
-        ));
+        .stdout(predicate::str::contains(expected));
+}
+
+#[test]
+fn env_from_nested_directory_uses_git_root_local_bin() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
+    let nested_dir = temp_dir.path().join("packages").join("cli");
+    fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let canonical_root = fs::canonicalize(temp_dir.path()).expect("canonical temp dir");
+    let canonical_nested = fs::canonicalize(&nested_dir).expect("canonical nested dir");
+    let root_bin = canonical_root.join(".binpm").join("bin");
+    let nested_bin = canonical_nested.join(".binpm").join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(&nested_dir)
+        .env("BINPM_HOME", "/tmp/binpm-home")
+        .args(["env", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(root_bin.display().to_string()))
+        .stdout(predicate::str::contains(nested_bin.display().to_string()).not());
+}
+
+#[test]
+fn env_escapes_bash_paths_before_printing_shell_code() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm $(touch x) `cmd` 'home'");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("'\\''home'\\''/bin'"))
+        .stdout(predicate::str::contains("\"$PATH\""));
 }
 
 #[test]
