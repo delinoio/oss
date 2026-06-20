@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::Write,
+    io::{ErrorKind, Write},
     path::{Component, Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -271,8 +271,15 @@ pub fn remove_package_record(paths: &ScopePaths, cmd: &str) -> Result<()> {
 
 pub fn list_package_records(paths: &ScopePaths) -> Result<Vec<(String, PackageRecord)>> {
     let mut records = Vec::new();
-    let Ok(entries) = fs::read_dir(&paths.packages) else {
-        return Ok(records);
+    let entries = match fs::read_dir(&paths.packages) {
+        Ok(entries) => entries,
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(records),
+        Err(source) => {
+            return Err(BinpmError::ReadFile {
+                path: paths.packages.clone(),
+                source,
+            })
+        }
     };
 
     for entry in entries {
@@ -302,8 +309,10 @@ pub fn write_cache_record(paths: &CachePaths, record: &CacheRecord) -> Result<()
 pub fn read_cache_records(paths: &CachePaths) -> Result<Vec<CacheRecord>> {
     let mut records = Vec::new();
     let root = paths.root.join("sha256");
-    let Ok(entries) = fs::read_dir(&root) else {
-        return Ok(records);
+    let entries = match fs::read_dir(&root) {
+        Ok(entries) => entries,
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(records),
+        Err(source) => return Err(BinpmError::ReadFile { path: root, source }),
     };
 
     for entry in entries {
@@ -804,11 +813,11 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::{
-        clean_cache, install_bare_executable, managed_installed_path, populate_cache_from_bytes,
-        prune_cache, read_cache_records, read_lockfile, referenced_cache_keys,
-        remove_installed_binary, sanitize_persisted_url, validate_command_name, verify_sha256,
-        write_cache_ref, write_lockfile, write_manifest, CachePaths, LockTool, Lockfile, Manifest,
-        PackageRecord, ResolvedAsset, ScopePaths,
+        clean_cache, install_bare_executable, list_package_records, managed_installed_path,
+        populate_cache_from_bytes, prune_cache, read_cache_records, read_lockfile,
+        referenced_cache_keys, remove_installed_binary, sanitize_persisted_url,
+        validate_command_name, verify_sha256, write_cache_ref, write_lockfile, write_manifest,
+        CachePaths, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset, ScopePaths,
     };
     use crate::{
         assets::{ArtifactKind, CandidateDecision},
@@ -846,6 +855,27 @@ mod tests {
         }
 
         validate_command_name("tool.exe").expect("basename command");
+    }
+
+    #[test]
+    fn missing_package_record_directory_is_empty_but_invalid_directory_errors() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let missing_paths = ScopePaths::local(temp_dir.path().join("missing"));
+        assert!(list_package_records(&missing_paths)
+            .expect("missing package dir")
+            .is_empty());
+
+        let invalid_root = temp_dir.path().join("invalid");
+        std::fs::create_dir_all(&invalid_root).expect("create invalid root");
+        std::fs::write(invalid_root.join("packages"), b"not a directory").expect("write file");
+        let invalid_paths = ScopePaths {
+            root: invalid_root.clone(),
+            bin: invalid_root.join("bin"),
+            packages: invalid_root.join("packages"),
+            tmp: invalid_root.join("tmp"),
+        };
+
+        assert!(list_package_records(&invalid_paths).is_err());
     }
 
     #[test]
@@ -1064,7 +1094,8 @@ mod tests {
             },
             decision: CandidateDecision {
                 asset_name: "tool-linux-x64".to_string(),
-                canonical_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64?token=secret".to_string(),
+                canonical_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64".to_string(),
+                download_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64?token=secret".to_string(),
                 kind: ArtifactKind::BareExecutable,
                 detected_os: Some(TargetOs::Linux),
                 detected_arch: Some(TargetArch::X86_64),

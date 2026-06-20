@@ -44,6 +44,7 @@ impl ArtifactKind {
 pub struct CandidateDecision {
     pub asset_name: String,
     pub canonical_url: String,
+    pub download_url: String,
     pub kind: ArtifactKind,
     pub detected_os: Option<TargetOs>,
     pub detected_arch: Option<TargetArch>,
@@ -205,10 +206,12 @@ fn score_asset(
     target: &HostTarget,
     asset: &ReleaseAsset,
 ) -> CandidateDecision {
-    let canonical_url = asset
+    let download_url = asset
         .provider_url
         .as_deref()
         .unwrap_or(&asset.url)
+        .to_string();
+    let canonical_url = download_url
         .split(['?', '#'])
         .next()
         .unwrap_or(&asset.url)
@@ -218,6 +221,7 @@ fn score_asset(
     let mut decision = CandidateDecision {
         asset_name: asset.name.clone(),
         canonical_url,
+        download_url,
         kind,
         detected_os: target_signal.os,
         detected_arch: target_signal.arch,
@@ -728,6 +732,21 @@ mod tests {
 
         assert_eq!(selected.selected.asset_name, "tool.exe");
         assert_eq!(selected.selected.detected_os, Some(TargetOs::Windows));
+    }
+
+    #[test]
+    fn keeps_runtime_download_url_separate_from_persisted_url() {
+        let linux = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let mut release_asset = asset("tool-x86_64-unknown-linux-gnu");
+        release_asset.url = "https://example.com/tool?token=secret#fragment".to_string();
+        let selected =
+            select_asset(SourceProvider::GitHub, &linux, &[release_asset]).expect("selected");
+
+        assert_eq!(
+            selected.selected.download_url,
+            "https://example.com/tool?token=secret#fragment"
+        );
+        assert_eq!(selected.selected.canonical_url, "https://example.com/tool");
     }
 
     #[test]

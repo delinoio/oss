@@ -108,6 +108,7 @@ fn add(args: AddArgs) -> Result<i32> {
             tools: BTreeMap::new(),
         }
     };
+    let prior_state = capture_local_tool_state(&root, &args.cmd)?;
     let record = install_local_tool(
         &root,
         &args.cmd,
@@ -126,7 +127,7 @@ fn add(args: AddArgs) -> Result<i32> {
         },
     );
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
-        rollback_local_install_state(&root, &args.cmd, &record);
+        rollback_local_install_state(&root, &args.cmd, &record, prior_state);
         return Err(error);
     }
     println!("added {}", args.cmd);
@@ -518,6 +519,7 @@ fn install_local_tool(
     let home = binpm_home()?;
     let scope_paths = ScopePaths::local(root.to_path_buf());
     let cache_paths = CachePaths::new(&home);
+    let prior_state = capture_local_tool_state(root, cmd)?;
     let record = install_resolved(
         &scope_paths,
         &cache_paths,
@@ -549,7 +551,7 @@ fn install_local_tool(
         .and_then(|_| write_package_record(&scope_paths, cmd, &record))
         .and_then(|_| write_cache_ref(&cache_paths, root, cmd, &record))
     {
-        rollback_failed_install(&scope_paths, cmd, &record, &cache_paths, Some(root))?;
+        rollback_local_install_state(root, cmd, &record, prior_state);
         return Err(error);
     }
     println!("installed {cmd} {}", record.installed_path);
@@ -582,7 +584,7 @@ fn install_resolved(
             asset: resolved.decision.asset_name,
         });
     }
-    let bytes = download_asset(&resolved.decision.canonical_url)?;
+    let bytes = download_asset(&resolved.decision.download_url)?;
     let (sha256, cache_asset) = populate_cache_from_bytes(cache_paths, &resolved, &bytes)?;
     let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
     install_bare_executable(&cache_asset, &installed_path)?;
@@ -640,8 +642,11 @@ fn install_local_from_lock(
     cache_paths.ensure()?;
     let cache_asset = cache_paths.asset_path(&record.sha256);
     if cache_asset.exists() {
-        crate::storage::verify_sha256(&cache_asset, &record.sha256)?;
-    } else {
+        if crate::storage::verify_sha256(&cache_asset, &record.sha256).is_err() {
+            remove_path_if_exists(&cache_asset)?;
+        }
+    }
+    if !cache_asset.exists() {
         let bytes = download_asset(&record.asset_url)?;
         let actual = format!("{:x}", Sha256::digest(&bytes));
         if actual != record.sha256 {
@@ -664,6 +669,7 @@ fn install_local_from_lock(
             decision: crate::assets::CandidateDecision {
                 asset_name: record.asset_name.clone(),
                 canonical_url: record.asset_url.clone(),
+                download_url: record.asset_url.clone(),
                 kind: ArtifactKind::BareExecutable,
                 detected_os: Some(record.target_os),
                 detected_arch: Some(record.target_arch),
@@ -805,6 +811,11 @@ fn select_manifest_asset(
                 .next()
                 .unwrap_or(&asset.url)
                 .to_string(),
+            download_url: asset
+                .provider_url
+                .as_deref()
+                .unwrap_or(&asset.url)
+                .to_string(),
             kind,
             detected_os: Some(target.os),
             detected_arch: Some(target.arch),
@@ -849,20 +860,59 @@ fn rollback_failed_install(
     Ok(())
 }
 
-fn rollback_local_install_state(root: &Path, cmd: &str, record: &PackageRecord) {
+#[derive(Debug, Clone)]
+struct LocalToolState {
+    lockfile: crate::storage::Lockfile,
+    package_record: Option<PackageRecord>,
+}
+
+fn capture_local_tool_state(root: &Path, cmd: &str) -> Result<LocalToolState> {
     let scope_paths = ScopePaths::local(root.to_path_buf());
-    let cache_paths = match binpm_home() {
-        Ok(home) => CachePaths::new(&home),
-        Err(_) => return,
+    let package_record = match read_package_record(&package_record_path(&scope_paths, cmd)) {
+        Ok(record) => Some(record),
+        Err(BinpmError::ReadFile { source, .. })
+            if source.kind() == std::io::ErrorKind::NotFound =>
+        {
+            None
+        }
+        Err(error) => return Err(error),
     };
+    Ok(LocalToolState {
+        lockfile: read_lockfile(&root.join(LOCKFILE_FILE))?,
+        package_record,
+    })
+}
+
+fn rollback_local_install_state(
+    root: &Path,
+    cmd: &str,
+    record: &PackageRecord,
+    prior_state: LocalToolState,
+) {
+    let scope_paths = ScopePaths::local(root.to_path_buf());
+    let cache_paths = binpm_home().ok().map(|home| CachePaths::new(&home));
     let _ = remove_installed_binary(&scope_paths, cmd, record);
-    let _ = remove_package_record(&scope_paths, cmd);
-    let _ = remove_cache_ref(&cache_paths, root, cmd);
-    let lockfile_path = root.join(LOCKFILE_FILE);
-    if let Ok(mut lockfile) = read_lockfile(&lockfile_path) {
-        lockfile.tools.remove(cmd);
-        let _ = write_lockfile(&lockfile_path, &lockfile);
+    match &prior_state.package_record {
+        Some(previous) => {
+            let _ = write_package_record(&scope_paths, cmd, previous);
+            if let Some(cache_paths) = &cache_paths {
+                let _ = write_cache_ref(cache_paths, root, cmd, previous);
+            }
+            let previous_path = PathBuf::from(&previous.installed_path);
+            if let (Some(cache_path), false) =
+                (previous.cache_path.as_ref(), previous_path.exists())
+            {
+                let _ = install_bare_executable(Path::new(cache_path), &previous_path);
+            }
+        }
+        None => {
+            let _ = remove_package_record(&scope_paths, cmd);
+            if let Some(cache_paths) = &cache_paths {
+                let _ = remove_cache_ref(cache_paths, root, cmd);
+            }
+        }
     }
+    let _ = write_lockfile(&root.join(LOCKFILE_FILE), &prior_state.lockfile);
 }
 
 fn download_asset(url: &str) -> Result<Vec<u8>> {
@@ -891,14 +941,6 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     validate_command_name(cmd)?;
     let manifest_path = root.join(MANIFEST_FILE);
     let lockfile_path = root.join(LOCKFILE_FILE);
-    let mut manifest = read_manifest(&manifest_path)?;
-    manifest.tools.remove(cmd);
-    write_manifest(&manifest_path, &manifest)?;
-
-    let mut lockfile = read_lockfile(&lockfile_path)?;
-    lockfile.tools.remove(cmd);
-    write_lockfile(&lockfile_path, &lockfile)?;
-
     let paths = ScopePaths::local(root.clone());
     let record_path = package_record_path(&paths, cmd);
     if record_path.exists() {
@@ -909,6 +951,14 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     remove_cache_ref(&CachePaths::new(&binpm_home()?), &root, cmd)?;
     remove_path_if_exists(&paths.bin.join(cmd))?;
     remove_path_if_exists(&paths.bin.join(format!("{cmd}.exe")))?;
+
+    let mut manifest = read_manifest(&manifest_path)?;
+    manifest.tools.remove(cmd);
+    write_manifest(&manifest_path, &manifest)?;
+
+    let mut lockfile = read_lockfile(&lockfile_path)?;
+    lockfile.tools.remove(cmd);
+    write_lockfile(&lockfile_path, &lockfile)?;
     println!("removed {cmd}");
     Ok(0)
 }
