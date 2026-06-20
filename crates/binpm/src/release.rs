@@ -26,6 +26,7 @@ pub struct ReleaseAsset {
     pub url: String,
     pub provider_url: Option<String>,
     pub source_archive: bool,
+    pub final_url_https: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,6 +118,7 @@ impl ReleaseClient for GitHubReleaseClient {
                             url: asset.browser_download_url,
                             provider_url: None,
                             source_archive: false,
+                            final_url_https: None,
                         })
                         .collect(),
                 }
@@ -171,6 +173,7 @@ impl ReleaseClient for GitLabReleaseClient {
             .map(|release| release.into_release(self.now))
             .collect::<Vec<_>>();
 
+        verify_gitlab_asset_redirects(&self.http, &mut releases)?;
         sort_gitlab_releases(&mut releases);
         Ok(releases)
     }
@@ -406,16 +409,52 @@ impl GitLabRelease {
                     url: link.url,
                     provider_url: link.direct_asset_url,
                     source_archive: false,
+                    final_url_https: None,
                 })
                 .chain(self.assets.sources.into_iter().map(|source| ReleaseAsset {
                     name: source.format,
                     url: source.url,
                     provider_url: None,
                     source_archive: true,
+                    final_url_https: None,
                 }))
                 .collect(),
         }
     }
+}
+
+fn verify_gitlab_asset_redirects(http: &Client, releases: &mut [Release]) -> Result<()> {
+    for release in releases {
+        for asset in &mut release.assets {
+            if asset.source_archive || !is_https_url(&asset.url) {
+                continue;
+            }
+
+            let url = asset.provider_url.as_deref().unwrap_or(&asset.url);
+            if !is_https_url(url) {
+                continue;
+            }
+
+            let response = http.head(url).send().map_err(BinpmError::ReleaseLookup)?;
+            let final_url = response.url().as_str().to_string();
+            let final_url_https = is_https_url(&final_url);
+            debug!(
+                release_tag = release.tag,
+                asset_name = asset.name,
+                asset_url = sanitize_url(url),
+                final_url = sanitize_url(&final_url),
+                final_url_https,
+                "Resolved GitLab asset redirect target"
+            );
+            asset.final_url_https = Some(final_url_https);
+        }
+    }
+
+    Ok(())
+}
+
+fn is_https_url(url: &str) -> bool {
+    url.to_ascii_lowercase().starts_with("https://")
 }
 
 #[derive(Debug, Default, Deserialize)]

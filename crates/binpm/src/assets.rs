@@ -283,6 +283,7 @@ fn gitlab_https_eligible(asset: &ReleaseAsset) -> bool {
             .as_deref()
             .map(is_https_url)
             .unwrap_or(true)
+        && asset.final_url_https.unwrap_or(true)
 }
 
 fn is_https_url(url: &str) -> bool {
@@ -497,12 +498,8 @@ fn is_npm_package_tarball_name(lower: &str) -> bool {
     stem == "package"
         || stem.match_indices('-').any(|(index, _)| {
             let (name, version) = stem.split_at(index);
-            is_npm_package_name(name) && is_semver_like(&version[1..])
+            !name.is_empty() && is_semver_like(&version[1..])
         })
-}
-
-fn is_npm_package_name(name: &str) -> bool {
-    name == "package" || name.contains("npm") || name.contains("node")
 }
 
 fn is_semver_like(version: &str) -> bool {
@@ -599,6 +596,7 @@ mod tests {
             url: format!("https://example.com/{name}"),
             provider_url: None,
             source_archive: false,
+            final_url_https: None,
         }
     }
 
@@ -641,6 +639,10 @@ mod tests {
         );
         assert_eq!(
             classify_artifact("nodeup-1.2.3-beta.1.tgz", false),
+            ArtifactKind::PackageMetadata
+        );
+        assert_eq!(
+            classify_artifact("rollup-linux-x64-gnu-4.9.5.tgz", false),
             ArtifactKind::PackageMetadata
         );
     }
@@ -814,6 +816,8 @@ mod tests {
         link.url = "http://example.com/tool.tar.gz".to_string();
         let mut direct = asset("tool-x86_64-unknown-linux-gnu.zip");
         direct.provider_url = Some("http://gitlab.example.com/direct.zip".to_string());
+        let mut redirected = asset("tool-x86_64-unknown-linux-gnu.tgz");
+        redirected.final_url_https = Some(false);
         let decisions = score_assets(SourceProvider::GitLab, &host, &[link, direct]);
 
         assert!(decisions.iter().all(|decision| !decision.eligible));
@@ -821,6 +825,13 @@ mod tests {
             .iter()
             .all(|decision| decision.rejection_reason.as_deref()
                 == Some("gitlab asset link is not HTTPS eligible")));
+
+        let redirected_decisions = score_assets(SourceProvider::GitLab, &host, &[redirected]);
+        assert!(!redirected_decisions[0].eligible);
+        assert_eq!(
+            redirected_decisions[0].rejection_reason.as_deref(),
+            Some("gitlab asset link is not HTTPS eligible")
+        );
     }
 
     #[test]
