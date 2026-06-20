@@ -121,7 +121,6 @@ impl PackageRecord {
 
     pub fn has_verified_source(&self) -> bool {
         self.checksum_source.is_upstream_verified()
-            || (self.checksum_source == ChecksumSource::Signature && self.signature_verified)
     }
 }
 
@@ -504,6 +503,22 @@ pub fn populate_cache_from_bytes(
     paths.ensure()?;
     let sha256 = format!("{:x}", Sha256::digest(bytes));
     let asset_path = paths.asset_path(&sha256);
+    let had_verified_asset = asset_path.exists() && verify_sha256(&asset_path, &sha256).is_ok();
+    let record = CacheRecord {
+        version: 1,
+        cache_key: cache_key(&sha256),
+        source_provider: resolved.source.provider,
+        source_host: resolved.source.host.clone(),
+        source_path: resolved.source.path.clone(),
+        release_tag: resolved.release_tag.clone(),
+        asset_name: resolved.decision.asset_name.clone(),
+        asset_url: sanitize_persisted_url(&resolved.decision.canonical_url)?,
+        byte_size: Some(bytes.len() as u64),
+        sha256: sha256.clone(),
+        checksum_source: resolved.checksum_source,
+        created_at: now_timestamp(),
+        last_used_at: Some(now_timestamp()),
+    };
 
     if asset_path.exists() {
         if verify_sha256(&asset_path, &sha256).is_ok() {
@@ -539,22 +554,12 @@ pub fn populate_cache_from_bytes(
         );
     }
 
-    let record = CacheRecord {
-        version: 1,
-        cache_key: cache_key(&sha256),
-        source_provider: resolved.source.provider,
-        source_host: resolved.source.host.clone(),
-        source_path: resolved.source.path.clone(),
-        release_tag: resolved.release_tag.clone(),
-        asset_name: resolved.decision.asset_name.clone(),
-        asset_url: sanitize_persisted_url(&resolved.decision.canonical_url)?,
-        byte_size: Some(bytes.len() as u64),
-        sha256: sha256.clone(),
-        checksum_source: resolved.checksum_source,
-        created_at: now_timestamp(),
-        last_used_at: Some(now_timestamp()),
-    };
-    write_cache_record(paths, &record)?;
+    if let Err(error) = write_cache_record(paths, &record) {
+        if !had_verified_asset {
+            let _ = remove_path_if_exists(&paths.entry_dir(&sha256));
+        }
+        return Err(error);
+    }
     Ok((sha256, asset_path))
 }
 
@@ -1142,6 +1147,36 @@ mod tests {
         let records = read_cache_records(&cache).expect("cache records");
         assert_eq!(records[0].sha256, expected);
         assert_eq!(records[0].checksum_source, ChecksumSource::GitHubDigest);
+    }
+
+    #[test]
+    fn package_records_do_not_trust_persisted_signature_flags() {
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::Signature;
+        record.signature_verified = true;
+
+        assert!(!record.has_verified_source());
+
+        record.checksum_source = ChecksumSource::GitHubDigest;
+
+        assert!(record.has_verified_source());
+    }
+
+    #[test]
+    fn cache_population_does_not_publish_asset_when_metadata_is_invalid() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let mut resolved = resolved_asset();
+        resolved.decision.canonical_url =
+            "https://github.com/owner/tool/releases/download/1.0.0/tool?token=secret".to_string();
+        let bytes = b"not cached";
+        let sha = format!("{:x}", Sha256::digest(bytes));
+
+        let error = populate_cache_from_bytes(&cache, &resolved, bytes)
+            .expect_err("metadata URL should be rejected");
+
+        assert!(error.to_string().contains("must not include query"));
+        assert!(!cache.entry_dir(&sha).exists());
     }
 
     #[test]

@@ -578,11 +578,7 @@ fn install_resolved(
     scope_paths.ensure()?;
     cache_paths.ensure()?;
     let resolved = resolve_asset(spec, tool)?;
-    if require_verified
-        && !(resolved.checksum_source.is_upstream_verified()
-            || (resolved.checksum_source == ChecksumSource::Signature
-                && resolved.signature_verified))
-    {
+    if require_verified && !resolved.checksum_source.is_upstream_verified() {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
         });
@@ -731,6 +727,7 @@ fn install_local_from_lock(
         populate_cache_from_bytes(&cache_paths, &resolved, &bytes)?;
     }
 
+    let prior_state = capture_local_tool_state(root, cmd)?;
     let scope_paths = ScopePaths::local(root.to_path_buf());
     let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
     install_bare_executable(&cache_paths.asset_path(&record.sha256), &installed_path)?;
@@ -744,8 +741,12 @@ fn install_local_from_lock(
     );
     runtime_record.installed_at = Some(chrono::Utc::now().to_rfc3339());
     runtime_record.installed_path = installed_path.display().to_string();
-    write_package_record(&scope_paths, cmd, &runtime_record)?;
-    write_cache_ref(&cache_paths, root, cmd, &runtime_record)?;
+    if let Err(error) = write_package_record(&scope_paths, cmd, &runtime_record)
+        .and_then(|_| write_cache_ref(&cache_paths, root, cmd, &runtime_record))
+    {
+        rollback_local_install_state(root, cmd, &runtime_record, prior_state);
+        return Err(error);
+    }
     println!("installed {cmd} {}", runtime_record.installed_path);
     Ok(runtime_record)
 }
@@ -782,10 +783,7 @@ fn assert_lock_matches_manifest_tool(
     target: &HostTarget,
     record: &PackageRecord,
 ) -> Result<()> {
-    let Some(tool) = tool else {
-        return Ok(());
-    };
-    if let Some(override_target) = tool.targets.get(&target.key()) {
+    if let Some(override_target) = manifest_target_override(tool, target)? {
         if record.asset_name != override_target.asset
             || record.selected_binary != override_target.bin
             || override_target
@@ -799,7 +797,7 @@ fn assert_lock_matches_manifest_tool(
         }
         return Ok(());
     }
-    if let Some(bin) = &tool.bin {
+    if let Some(bin) = tool.and_then(|tool| tool.bin.as_ref()) {
         if record.selected_binary != *bin {
             return Err(BinpmError::StaleLockfile {
                 path: root.join(LOCKFILE_FILE),
@@ -820,12 +818,10 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
             package: spec.to_string(),
             target: target.key(),
         })?;
-    let selected_binary = match tool.and_then(|tool| {
-        tool.targets
-            .get(&target.key())
-            .map(|override_target| override_target.bin.as_str())
-            .or(tool.bin.as_deref())
-    }) {
+    let selected_binary = match manifest_target_override(tool, &target)?
+        .map(|override_target| override_target.bin.as_str())
+        .or_else(|| tool.and_then(|tool| tool.bin.as_deref()))
+    {
         Some(bin) => bin.to_string(),
         None => decision.asset_name.clone(),
     };
@@ -893,11 +889,9 @@ fn manifest_checksum_source(
     tool: Option<&ManifestTool>,
     target: &HostTarget,
 ) -> Result<ChecksumSource> {
-    if let Some(checksum_source) = tool.and_then(|tool| {
-        tool.targets
-            .get(&target.key())
-            .and_then(|override_target| override_target.checksum_source)
-    }) {
+    if let Some(checksum_source) = manifest_target_override(tool, target)?
+        .and_then(|override_target| override_target.checksum_source)
+    {
         return Err(BinpmError::UnverifiedChecksumSourceOverride {
             checksum_source: checksum_source.as_str().to_string(),
         });
@@ -912,7 +906,7 @@ fn select_manifest_asset(
     assets: &[ReleaseAsset],
 ) -> Result<crate::assets::CandidateDecision> {
     let target_key = target.key();
-    if let Some(override_target) = tool.and_then(|tool| tool.targets.get(&target_key)) {
+    if let Some(override_target) = manifest_target_override(tool, target)? {
         let asset = assets
             .iter()
             .find(|asset| asset.name == override_target.asset)
@@ -999,6 +993,7 @@ fn rollback_failed_install(
 #[derive(Debug, Clone)]
 struct LocalToolState {
     lockfile: crate::storage::Lockfile,
+    lockfile_existed: bool,
     runtime: RuntimeToolState,
 }
 
@@ -1011,8 +1006,10 @@ struct LocalRemoveState {
 
 fn capture_local_tool_state(root: &Path, cmd: &str) -> Result<LocalToolState> {
     let scope_paths = ScopePaths::local(root.to_path_buf());
+    let lockfile_path = root.join(LOCKFILE_FILE);
     Ok(LocalToolState {
-        lockfile: read_lockfile(&root.join(LOCKFILE_FILE))?,
+        lockfile_existed: lockfile_path.exists(),
+        lockfile: read_lockfile(&lockfile_path)?,
         runtime: capture_runtime_tool_state(&scope_paths, cmd)?,
     })
 }
@@ -1073,7 +1070,30 @@ fn rollback_local_install_state(
             }
         }
     }
-    let _ = write_lockfile(&root.join(LOCKFILE_FILE), &prior_state.lockfile);
+    let lockfile_path = root.join(LOCKFILE_FILE);
+    if prior_state.lockfile_existed {
+        let _ = write_lockfile(&lockfile_path, &prior_state.lockfile);
+    } else {
+        let _ = remove_path_if_exists(&lockfile_path);
+    }
+}
+
+fn manifest_target_override<'tool>(
+    tool: Option<&'tool ManifestTool>,
+    target: &HostTarget,
+) -> Result<Option<&'tool crate::storage::ManifestTargetOverride>> {
+    let Some(tool) = tool else {
+        return Ok(None);
+    };
+    let target_key = target.key();
+    let mut selected = None;
+    for (raw_key, override_target) in &tool.targets {
+        let canonical_key = HostTarget::from_str(raw_key)?.key();
+        if canonical_key == target_key {
+            selected = Some(override_target);
+        }
+    }
+    Ok(selected)
 }
 
 fn restore_local_remove_state(root: &Path, cmd: &str, prior_state: LocalRemoveState) {
@@ -1263,9 +1283,12 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     };
     let mut checked = 0usize;
     let mut locked = BTreeSet::new();
+    let mut local_runtime_locks = BTreeMap::new();
     if let Some(root) = &root {
         let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
         let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
+        local_runtime_locks =
+            local_runtime_lock_records(&manifest, &lockfile, &HostTarget::current()?)?;
         let (lock_checked, lock_commands) = verify_lockfile_records(
             &root.join(LOCKFILE_FILE),
             lockfile,
@@ -1277,6 +1300,14 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     }
     for (cmd, record) in list_package_records(&paths)? {
         validate_command_name(&cmd)?;
+        if let Some(lock_record) = local_runtime_locks.get(&cmd) {
+            assert_runtime_record_matches_lock(
+                root.as_deref().expect("local root"),
+                &cmd,
+                lock_record,
+                &record,
+            )?;
+        }
         if args.require_verified && !record.has_verified_source() {
             return Err(BinpmError::VerificationRequired {
                 package: record.package_spec,
@@ -1297,6 +1328,58 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     }
     println!("checked {checked}");
     Ok(0)
+}
+
+fn local_runtime_lock_records(
+    manifest: &Manifest,
+    lockfile: &crate::storage::Lockfile,
+    target: &HostTarget,
+) -> Result<BTreeMap<String, PackageRecord>> {
+    let mut records = BTreeMap::new();
+    let target_key = target.key();
+    for cmd in manifest.tools.keys() {
+        let Some(record) = lockfile
+            .tools
+            .get(cmd)
+            .and_then(|tool| tool.targets.get(&target_key))
+        else {
+            continue;
+        };
+        records.insert(cmd.clone(), record.clone());
+    }
+    Ok(records)
+}
+
+fn assert_runtime_record_matches_lock(
+    root: &Path,
+    cmd: &str,
+    lock_record: &PackageRecord,
+    runtime_record: &PackageRecord,
+) -> Result<()> {
+    if runtime_record.source != lock_record.source
+        || runtime_record.source_provider != lock_record.source_provider
+        || runtime_record.source_host != lock_record.source_host
+        || runtime_record.source_path != lock_record.source_path
+        || runtime_record.requested_version != lock_record.requested_version
+        || runtime_record.release_tag != lock_record.release_tag
+        || runtime_record.asset_name != lock_record.asset_name
+        || runtime_record.asset_url != lock_record.asset_url
+        || runtime_record.target_os != lock_record.target_os
+        || runtime_record.target_arch != lock_record.target_arch
+        || runtime_record.target_libc != lock_record.target_libc
+        || runtime_record.archive_format != lock_record.archive_format
+        || runtime_record.selected_binary != lock_record.selected_binary
+        || runtime_record.sha256 != lock_record.sha256
+        || runtime_record.checksum_source != lock_record.checksum_source
+        || runtime_record.signature_available != lock_record.signature_available
+        || runtime_record.signature_verified != lock_record.signature_verified
+    {
+        return Err(BinpmError::StaleLockfile {
+            path: root.join(LOCKFILE_FILE),
+            cmd: cmd.to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn verify_lockfile_records(
@@ -1641,8 +1724,9 @@ mod tests {
 
     use super::{
         assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
-        binpm_home_from_values, deterministic_installed_path, github_sha256_digest,
-        lockfile_digest, manifest_checksum_source, manifest_creation_root_from,
+        assert_runtime_record_matches_lock, binpm_home_from_values, deterministic_installed_path,
+        github_sha256_digest, local_runtime_lock_records, lockfile_digest,
+        manifest_checksum_source, manifest_creation_root_from, manifest_target_override,
         manifest_tool_from_source, parse_manifest_source, project_root_from,
         restore_runtime_tool_state, select_manifest_asset, shell_path, shell_quote,
         verify_lockfile_records, ArtifactKind, RuntimeToolState,
@@ -1908,6 +1992,86 @@ mod tests {
             manifest_checksum_source(None, &target).expect("default checksum source"),
             ChecksumSource::Local
         );
+    }
+
+    #[test]
+    fn manifest_target_override_keys_are_normalized_and_validated() {
+        let target = linux_target();
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                "linux-amd64-glibc".to_string(),
+                ManifestTargetOverride {
+                    asset: "tool-linux".to_string(),
+                    bin: "tool".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+
+        let override_target =
+            manifest_target_override(Some(&tool), &target).expect("normalized override");
+
+        assert_eq!(override_target.expect("override").asset, "tool-linux");
+
+        let invalid_tool = ManifestTool {
+            targets: BTreeMap::from([(
+                "linux-amd64-surprise".to_string(),
+                ManifestTargetOverride {
+                    asset: "tool-linux".to_string(),
+                    bin: "tool".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+            ..tool
+        };
+
+        assert!(manifest_target_override(Some(&invalid_tool), &target).is_err());
+    }
+
+    #[test]
+    fn local_runtime_records_must_match_current_lock_record() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let lock_record = package_record();
+        let manifest = Manifest {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                ManifestTool {
+                    source: "github:owner/tool".to_string(),
+                    version: Some("1.0.0".to_string()),
+                    bin: None,
+                    targets: BTreeMap::new(),
+                },
+            )]),
+        };
+        let lockfile = Lockfile {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                LockTool {
+                    source: "github:owner/tool".to_string(),
+                    targets: BTreeMap::from([(target.key(), lock_record.clone())]),
+                },
+            )]),
+        };
+        let runtime_locks =
+            local_runtime_lock_records(&manifest, &lockfile, &target).expect("runtime locks");
+        let mut stale_runtime = lock_record.clone();
+        stale_runtime.sha256 = "def456".to_string();
+
+        let error = assert_runtime_record_matches_lock(
+            temp_dir.path(),
+            "tool",
+            &runtime_locks["tool"],
+            &stale_runtime,
+        )
+        .expect_err("stale runtime record");
+
+        assert!(error.to_string().contains("stale"));
     }
 
     #[test]
