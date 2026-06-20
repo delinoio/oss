@@ -101,6 +101,11 @@ pub enum BinpmError {
          for `{package}`."
     )]
     VerificationRequired { package: String },
+    #[error(
+        "Manifest checksum_source `{checksum_source}` is declarative only and cannot be used as \
+         verified checksum evidence."
+    )]
+    UnverifiedChecksumSourceOverride { checksum_source: String },
     #[error("SHA-256 mismatch for `{}`: expected {expected}, got {actual}.", path.display())]
     DigestMismatch {
         path: PathBuf,
@@ -155,6 +160,7 @@ impl BinpmError {
             | Self::AssetNotFound { .. }
             | Self::ArchiveExtractionNotImplemented { .. }
             | Self::VerificationRequired { .. }
+            | Self::UnverifiedChecksumSourceOverride { .. }
             | Self::UnsafeUrl { .. }
             | Self::UnsafeInstalledPath { .. } => 2,
         }

@@ -313,21 +313,21 @@ fn outdated(args: ScopedArgs) -> Result<i32> {
 }
 
 fn update(args: UpdateArgs) -> Result<i32> {
+    let frozen_lockfile = args.lockfile.frozen_lockfile();
     info!(
         command = "update",
         selected_scope = args.scope.scope().as_str(),
         selected_count = args.cmd.len(),
-        frozen_lockfile = args.lockfile.frozen_lockfile(),
+        frozen_lockfile,
         require_verified = args.require_verified,
         no_confirm = args.no_confirm,
         "Prepared update request"
     );
     match select_scope(args.scope.scope())? {
-        Scope::Local => install_local_manifest(
-            args.lockfile.frozen_lockfile(),
-            args.require_verified,
-            &args.cmd,
-        ),
+        Scope::Local if frozen_lockfile => Err(BinpmError::FrozenLockfile {
+            path: require_manifest_root()?.join(LOCKFILE_FILE),
+        }),
+        Scope::Local => install_local_manifest(false, args.require_verified, &args.cmd),
         Scope::Global => Err(BinpmError::NotImplemented {
             command: "update global",
         }),
@@ -634,6 +634,7 @@ fn install_local_from_lock(
             cmd: cmd.to_string(),
         });
     }
+    assert_lock_record_matches_source_and_target(&lockfile_path, cmd, spec, &target, &record)?;
     assert_lock_matches_manifest_tool(root, cmd, tool, &target, &record)?;
     if require_verified && !record.has_verified_source() {
         return Err(BinpmError::VerificationRequired {
@@ -715,6 +716,29 @@ fn install_local_from_lock(
     Ok(runtime_record)
 }
 
+fn assert_lock_record_matches_source_and_target(
+    lockfile_path: &Path,
+    cmd: &str,
+    spec: &SourceSpec,
+    target: &HostTarget,
+    record: &PackageRecord,
+) -> Result<()> {
+    if record.source != spec.source_without_version()
+        || record.source_provider != spec.provider
+        || record.source_host != spec.host
+        || record.source_path != spec.path
+        || record.target_os != target.os
+        || record.target_arch != target.arch
+        || record.target_libc != target.libc
+    {
+        return Err(BinpmError::StaleLockfile {
+            path: lockfile_path.to_path_buf(),
+            cmd: cmd.to_string(),
+        });
+    }
+    Ok(())
+}
+
 fn assert_lock_matches_manifest_tool(
     root: &Path,
     cmd: &str,
@@ -769,7 +793,7 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         Some(bin) => bin.to_string(),
         None => decision.asset_name.clone(),
     };
-    let checksum_source = manifest_checksum_source(tool, &target);
+    let checksum_source = manifest_checksum_source(tool, &target)?;
     Ok(ResolvedAsset {
         source: spec.clone(),
         release_tag: release.tag,
@@ -795,13 +819,20 @@ fn parse_manifest_source(raw: &str) -> Result<SourceSpec> {
     Ok(spec)
 }
 
-fn manifest_checksum_source(tool: Option<&ManifestTool>, target: &HostTarget) -> ChecksumSource {
-    tool.and_then(|tool| {
+fn manifest_checksum_source(
+    tool: Option<&ManifestTool>,
+    target: &HostTarget,
+) -> Result<ChecksumSource> {
+    if let Some(checksum_source) = tool.and_then(|tool| {
         tool.targets
             .get(&target.key())
             .and_then(|override_target| override_target.checksum_source)
-    })
-    .unwrap_or(ChecksumSource::Local)
+    }) {
+        return Err(BinpmError::UnverifiedChecksumSourceOverride {
+            checksum_source: checksum_source.as_str().to_string(),
+        });
+    }
+    Ok(ChecksumSource::Local)
 }
 
 fn select_manifest_asset(
@@ -957,8 +988,13 @@ fn rollback_local_install_state(
 fn restore_runtime_tool_state(paths: &ScopePaths, cmd: &str, prior_state: RuntimeToolState) {
     match &prior_state.package_record {
         Some(previous) => {
-            let _ = write_package_record(paths, cmd, previous);
             let previous_path = PathBuf::from(&previous.installed_path);
+            let expected_path = managed_installed_path(paths, cmd, previous.target_os);
+            if previous_path != expected_path {
+                let _ = remove_package_record(paths, cmd);
+                return;
+            }
+            let _ = write_package_record(paths, cmd, previous);
             if let Some(bytes) = prior_state.installed_bytes {
                 let _ = restore_executable_bytes(&previous_path, &bytes);
             } else if let Some(cache_path) = &previous.cache_path {
@@ -1007,6 +1043,7 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
         .map_err(BinpmError::ReleaseLookup)?
         .error_for_status()
         .map_err(BinpmError::ReleaseLookup)?;
+    sanitize_persisted_url(response.url().as_str())?;
     response
         .bytes()
         .map(|bytes| bytes.to_vec())
@@ -1403,12 +1440,15 @@ mod tests {
     use std::{
         collections::BTreeMap,
         path::{Path, PathBuf},
+        str::FromStr,
     };
 
     use super::{
-        assert_lock_matches_manifest_tool, binpm_home_from_values, deterministic_installed_path,
-        lockfile_digest, manifest_checksum_source, manifest_creation_root_from,
-        parse_manifest_source, project_root_from, select_manifest_asset, shell_path, shell_quote,
+        assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
+        binpm_home_from_values, deterministic_installed_path, lockfile_digest,
+        manifest_checksum_source, manifest_creation_root_from, parse_manifest_source,
+        project_root_from, restore_runtime_tool_state, select_manifest_asset, shell_path,
+        shell_quote, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -1535,7 +1575,7 @@ mod tests {
     }
 
     #[test]
-    fn manifest_target_override_controls_checksum_source() {
+    fn manifest_target_override_checksum_source_is_not_verification_evidence() {
         let target = linux_target();
         let tool = ManifestTool {
             source: "github:owner/tool".to_string(),
@@ -1551,14 +1591,79 @@ mod tests {
             )]),
         };
 
+        let error = manifest_checksum_source(Some(&tool), &target)
+            .expect_err("unverified checksum source override");
+
+        assert!(error.to_string().contains("cannot be used"));
         assert_eq!(
-            manifest_checksum_source(Some(&tool), &target),
-            ChecksumSource::Manifest
-        );
-        assert_eq!(
-            manifest_checksum_source(None, &target),
+            manifest_checksum_source(None, &target).expect("default checksum source"),
             ChecksumSource::Local
         );
+    }
+
+    #[test]
+    fn frozen_lock_rejects_mismatched_embedded_source() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let mut record = package_record();
+        record.source_path = "attacker/tool".to_string();
+
+        let error = assert_lock_record_matches_source_and_target(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &target,
+            &record,
+        )
+        .expect_err("stale lockfile");
+
+        assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn frozen_lock_rejects_mismatched_embedded_target() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let mut record = package_record();
+        record.target_arch = TargetArch::Aarch64;
+
+        let error = assert_lock_record_matches_source_and_target(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &target,
+            &record,
+        )
+        .expect_err("stale lockfile");
+
+        assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn rollback_skips_restoring_unmanaged_installed_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = crate::storage::ScopePaths::local(temp_dir.path().to_path_buf());
+        let outside = temp_dir.path().join("outside-tool");
+        std::fs::write(&outside, "original").expect("write outside file");
+        let mut record = package_record();
+        record.installed_path = outside.display().to_string();
+
+        restore_runtime_tool_state(
+            &paths,
+            "tool",
+            RuntimeToolState {
+                package_record: Some(record),
+                installed_bytes: Some(b"changed".to_vec()),
+            },
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(&outside).expect("read outside file"),
+            "original"
+        );
+        assert!(!crate::storage::package_record_path(&paths, "tool").exists());
     }
 
     #[test]
