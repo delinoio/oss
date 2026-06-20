@@ -2274,7 +2274,8 @@ fn require_manifest_root() -> Result<PathBuf> {
 }
 
 fn require_manifest_root_or_creation_root() -> Result<PathBuf> {
-    manifest_creation_root()
+    let cwd = current_dir()?;
+    Ok(manifest_root_or_creation_root_from(&cwd))
 }
 
 fn repo_name(spec: &SourceSpec) -> &str {
@@ -2762,6 +2763,12 @@ fn manifest_creation_root_from(start: &Path) -> PathBuf {
         .to_path_buf()
 }
 
+fn manifest_root_or_creation_root_from(start: &Path) -> PathBuf {
+    find_manifest_root(start)
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| manifest_creation_root_from(start))
+}
+
 fn find_manifest_root(start: &Path) -> Option<&Path> {
     start
         .ancestors()
@@ -2858,15 +2865,15 @@ mod tests {
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
         install_path_collision_key, local_runtime_lock_records,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_target_override,
-        manifest_tool_from_source, parse_manifest_source, project_root_from,
-        remove_global_tool_from_paths, remove_local_manifest_orphans, restore_local_remove_state,
-        restore_runtime_tool_state, select_explain_asset, select_manifest_asset, shell_path,
-        shell_quote, snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
-        validate_locked_record_artifact, validate_package_record_metadata,
-        validate_provider_digest_evidence, validate_selected_manifest_entries,
-        verify_lockfile_records, verify_runtime_cache_bytes, ArtifactKind, InstalledPackage,
-        LocalRemoveState, RuntimeToolState,
+        manifest_checksum_source, manifest_creation_root_from, manifest_root_or_creation_root_from,
+        manifest_target_override, manifest_tool_from_source, parse_manifest_source,
+        project_root_from, remove_global_tool_from_paths, remove_local_manifest_orphans,
+        restore_local_remove_state, restore_runtime_tool_state, select_explain_asset,
+        select_manifest_asset, shell_path, shell_quote, snapshot_cache_metadata,
+        source_install_scope, update_manifest_tool_source, validate_locked_record_artifact,
+        validate_package_record_metadata, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verify_lockfile_records, verify_runtime_cache_bytes,
+        ArtifactKind, InstalledPackage, LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4812,6 +4819,33 @@ mod tests {
         std::fs::write(nested.join("binpm.toml"), "version = 1\n").expect("write manifest");
 
         assert_eq!(manifest_creation_root_from(&nested), temp_dir.path());
+    }
+
+    #[test]
+    fn add_root_prefers_nearest_manifest_before_creation_root() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
+        let package = temp_dir.path().join("packages").join("cli");
+        std::fs::create_dir_all(&package).expect("create package dir");
+        std::fs::write(package.join("binpm.toml"), "version = 1\n")
+            .expect("write package manifest");
+        let nested = package.join("nested");
+        std::fs::create_dir(&nested).expect("create nested dir");
+
+        assert_eq!(manifest_root_or_creation_root_from(&nested), package);
+    }
+
+    #[test]
+    fn add_root_uses_creation_root_when_no_manifest_exists() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
+        let nested = temp_dir.path().join("nested").join("deeper");
+        std::fs::create_dir_all(&nested).expect("create nested dir");
+
+        assert_eq!(
+            manifest_root_or_creation_root_from(&nested),
+            temp_dir.path()
+        );
     }
 
     #[test]

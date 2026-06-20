@@ -766,6 +766,7 @@ pub fn validate_installed_binary_path(
 }
 
 pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Result<usize> {
+    ensure_dir(&paths.root)?;
     let mut removed = 0;
     for dir in cache_entry_dirs(paths)? {
         let cache_key = dir
@@ -844,6 +845,8 @@ pub fn write_cache_ref(
 
 pub fn remove_cache_ref(cache: &CachePaths, project_root: &Path, cmd: &str) -> Result<()> {
     validate_command_name(cmd)?;
+    ensure_dir(&cache.root)?;
+    ensure_dir(&cache.refs)?;
     remove_path_if_exists(&cache_ref_path(cache, project_root, cmd))
 }
 
@@ -1098,7 +1101,7 @@ mod tests {
         atomic_write_bytes, clean_cache, install_bare_executable, list_package_records,
         managed_installed_path, populate_cache_from_bytes, prune_cache, read_cache_records,
         read_lockfile, read_manifest, record_verified_cache_hit, referenced_cache_keys,
-        remove_installed_binary, sanitize_persisted_url, validate_command_name,
+        remove_cache_ref, remove_installed_binary, sanitize_persisted_url, validate_command_name,
         validate_download_url, validate_sha256_digest, verify_sha256, write_cache_ref,
         write_lockfile, write_manifest, CachePaths, LockTool, Lockfile, Manifest, PackageRecord,
         ResolvedAsset, ScopePaths,
@@ -1550,6 +1553,23 @@ created_at = "2026-01-01T00:00:00Z"
         assert!(!entry.exists());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn prune_cache_rejects_symlinked_cache_root_before_removing_entries() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        let outside_entry = outside.path().join("sha256").join("keep");
+        std::fs::create_dir_all(&outside_entry).expect("create outside entry");
+        std::fs::write(outside_entry.join("asset"), b"keep").expect("write outside asset");
+        std::os::unix::fs::symlink(outside.path(), &cache.root).expect("symlink cache root");
+
+        let error = prune_cache(&cache, &BTreeSet::new()).expect_err("symlinked cache root");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert!(outside_entry.exists());
+    }
+
     #[test]
     fn referenced_cache_keys_include_cross_project_refs() {
         let home = tempfile::tempdir().expect("home");
@@ -1563,6 +1583,40 @@ created_at = "2026-01-01T00:00:00Z"
         let referenced = referenced_cache_keys(&paths, None, &cache).expect("referenced keys");
 
         assert!(referenced.contains("sha256:cross-project"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_cache_ref_rejects_symlinked_refs_before_deleting_ref() {
+        let home = tempfile::tempdir().expect("home");
+        let outside = tempfile::tempdir().expect("outside");
+        let project = tempfile::tempdir().expect("project");
+        let cache = CachePaths::new(home.path());
+        let mut record = package_record();
+        record.cache_key = Some("sha256:cross-project".to_string());
+        write_cache_ref(
+            &CachePaths::new(outside.path()),
+            project.path(),
+            "tool",
+            &record,
+        )
+        .expect("write outside ref");
+        let outside_refs = CachePaths::new(outside.path()).refs;
+        let outside_ref_count = std::fs::read_dir(&outside_refs)
+            .expect("read outside refs")
+            .count();
+        std::fs::create_dir_all(&cache.root).expect("create cache root");
+        std::os::unix::fs::symlink(&outside_refs, &cache.refs).expect("symlink refs");
+
+        let error = remove_cache_ref(&cache, project.path(), "tool").expect_err("symlinked refs");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert_eq!(
+            std::fs::read_dir(&outside_refs)
+                .expect("read outside refs after remove")
+                .count(),
+            outside_ref_count
+        );
     }
 
     #[test]
