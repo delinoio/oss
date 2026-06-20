@@ -593,13 +593,12 @@ mod tests {
     fn stale_cache_fallback_is_used_when_refresh_fails() {
         let dir = tempdir().unwrap();
         let cache_file = dir.path().join("release-index.json");
-        let now = unix_epoch_seconds();
         let server = MockServer::start();
         let index_url = server.url("/index.json");
         let stale_payload = ReleaseIndexCachePayload {
             schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
             index_url: index_url.clone(),
-            fetched_at_epoch_seconds: now.saturating_sub(3600),
+            fetched_at_epoch_seconds: 1,
             entries: vec![ReleaseEntry {
                 version: "v22.11.0".to_string(),
                 lts: serde_json::Value::String("Jod".to_string()),
