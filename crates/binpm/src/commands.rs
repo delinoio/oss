@@ -22,7 +22,7 @@ use crate::{
         archive_format, clean_cache, deterministic_installed_path, install_bare_executable,
         installed_filename, list_package_records, managed_installed_path,
         package_record_from_resolved, package_record_path, populate_cache_from_bytes, prune_cache,
-        read_cache_record, read_cache_records, read_lockfile, read_manifest, read_package_record,
+        read_cache_records, read_lockfile, read_manifest, read_package_record,
         record_verified_cache_hit, referenced_cache_keys, remove_cache_ref,
         remove_installed_binary, remove_package_record, remove_path_if_exists,
         sanitize_persisted_url, validate_command_name, validate_download_url,
@@ -958,8 +958,9 @@ fn rollback_one_completed_local_install(
     )
 }
 
+#[cfg(test)]
 fn has_current_cache_record(cache_paths: &CachePaths, sha256: &str) -> Result<bool> {
-    match read_cache_record(cache_paths, sha256) {
+    match crate::storage::read_cache_record(cache_paths, sha256) {
         Ok(record) => Ok(record.is_some_and(|record| {
             record.sha256 == sha256 && record.cache_key == crate::storage::cache_key(sha256)
         })),
@@ -1020,6 +1021,8 @@ fn install_resolved(
                 deferred_cache_hit: Some(resolved),
                 cache_metadata_snapshot: None,
             });
+        } else if cache_asset.exists() {
+            remove_path_if_exists(&cache_asset)?;
         }
     }
     let bytes = download_asset(&resolved.decision.download_url)?;
@@ -1027,7 +1030,6 @@ fn install_resolved(
     let cache_asset = cache_paths.asset_path(&sha256);
     let had_verified_cache_entry =
         cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, &sha256).is_ok();
-    let had_cache_record = has_current_cache_record(cache_paths, &sha256)?;
     let cache_metadata_snapshot = if had_verified_cache_entry {
         Some(snapshot_cache_metadata(cache_paths, &sha256)?)
     } else {
@@ -1043,7 +1045,7 @@ fn install_resolved(
         }
     }
     let (sha256, cache_asset) = populate_cache_from_bytes(cache_paths, &resolved, &bytes)?;
-    let populated_cache_entry = !(had_verified_cache_entry && had_cache_record);
+    let populated_cache_entry = !had_verified_cache_entry;
     let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
     if let Err(error) = install_bare_executable(&cache_asset, &installed_path) {
         if populated_cache_entry {
@@ -1337,16 +1339,15 @@ fn validate_locked_record_current_release(
     target: &HostTarget,
     tool: Option<&ManifestTool>,
 ) -> Result<()> {
-    if manifest_target_override(tool, target)?
-        .map(|override_target| override_target.asset == record.asset_name)
-        .unwrap_or(false)
-    {
-        return Ok(());
-    }
-
     let mut spec = SourceSpec::from_str(&record.source)?;
-    spec.version = Some(record.release_tag.clone());
+    spec.version = record.requested_version.clone();
     let release = client_for_source(&spec)?.resolve_release(&spec)?.release;
+    if release.tag != record.release_tag {
+        return Err(BinpmError::StaleLockfile {
+            path: lockfile_path.to_path_buf(),
+            cmd: cmd.to_string(),
+        });
+    }
     let selected = select_manifest_asset(&spec, tool, target, &release.assets)?;
     if selected.asset_name != record.asset_name
         || selected_asset_display_url(&selected)? != record.asset_url
@@ -1356,7 +1357,32 @@ fn validate_locked_record_current_release(
             cmd: cmd.to_string(),
         });
     }
+    validate_locked_record_current_provider_digest(lockfile_path, cmd, record, &release.assets)?;
     Ok(())
+}
+
+fn validate_locked_record_current_provider_digest(
+    lockfile_path: &Path,
+    cmd: &str,
+    record: &PackageRecord,
+    assets: &[ReleaseAsset],
+) -> Result<()> {
+    if record.checksum_source != ChecksumSource::GitHubDigest {
+        return Ok(());
+    }
+    let current_digest = assets
+        .iter()
+        .find(|asset| asset.name == record.asset_name)
+        .and_then(|asset| github_sha256_digest(asset.digest.as_deref()));
+    if current_digest.as_deref() == Some(record.sha256.as_str())
+        && record.provider_digest_sha256.as_deref() == Some(record.sha256.as_str())
+    {
+        return Ok(());
+    }
+    Err(BinpmError::StaleLockfile {
+        path: lockfile_path.to_path_buf(),
+        cmd: cmd.to_string(),
+    })
 }
 
 fn locked_record_download_url(record: &PackageRecord) -> Result<String> {
@@ -2961,10 +2987,10 @@ mod tests {
         restore_local_remove_state, restore_runtime_tool_state, select_manifest_asset,
         selected_asset_display_url, shell_path, shell_quote, snapshot_cache_metadata,
         source_install_scope, update_manifest_tool_source, validate_locked_record_artifact,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries,
-        verify_lockfile_records, ArtifactKind, InstalledPackage, LocalRemoveState,
-        RuntimeToolState,
+        validate_locked_record_current_provider_digest, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verify_lockfile_records, ArtifactKind,
+        InstalledPackage, LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4482,7 +4508,33 @@ mod tests {
     }
 
     #[test]
-    fn lockfile_verify_honors_explicit_target_override_asset_names() {
+    fn frozen_lock_rejects_changed_github_provider_digest() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut record = package_record();
+        mark_github_verified(&mut record);
+        let changed_digest = "1111111111111111111111111111111111111111111111111111111111111111";
+        let assets = [ReleaseAsset {
+            name: record.asset_name.clone(),
+            url: record.asset_url.clone(),
+            provider_url: None,
+            digest: Some(format!("sha256:{changed_digest}")),
+            source_archive: false,
+            final_url_https: None,
+        }];
+
+        let error = validate_locked_record_current_provider_digest(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &record,
+            &assets,
+        )
+        .expect_err("changed digest rejected");
+
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
+    }
+
+    #[test]
+    fn frozen_lock_local_validation_honors_explicit_target_override_asset_names() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let target = linux_target();
         let mut record = package_record();
@@ -4501,28 +4553,23 @@ mod tests {
                 },
             )]),
         };
-        let manifest = Manifest {
-            version: 1,
-            tools: BTreeMap::from([("tool".to_string(), manifest_tool)]),
-        };
-        let lockfile = Lockfile {
-            version: 1,
-            tools: BTreeMap::from([(
-                "tool".to_string(),
-                LockTool {
-                    source: "github:owner/tool".to_string(),
-                    targets: BTreeMap::from([(target.key(), record)]),
-                },
-            )]),
-        };
 
-        verify_lockfile_records(
-            &temp_dir.path().join("binpm.lock"),
-            lockfile,
-            Some((&manifest, temp_dir.path())),
-            false,
+        assert_lock_matches_manifest_tool(
+            temp_dir.path(),
+            "tool",
+            Some(&manifest_tool),
+            &target,
+            &record,
         )
-        .expect("manifest override asset is accepted during verify");
+        .expect("manifest override metadata is accepted");
+        validate_locked_record_artifact(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &record,
+            &target,
+            Some(&manifest_tool),
+        )
+        .expect("manifest override asset is accepted locally");
     }
 
     #[test]
@@ -4831,6 +4878,35 @@ mod tests {
         let restored = fs::read_to_string(cache.metadata_path(&sha256)).expect("metadata");
         assert!(restored.contains("release_tag = \"1.0.0\""));
         assert!(!restored.contains("release_tag = \"2.0.0\""));
+    }
+
+    #[test]
+    fn failed_install_cleanup_preserves_existing_cache_asset_without_metadata() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        cache.ensure().expect("cache paths");
+        let bytes = b"cached tool";
+        let sha256 = format!("{:x}", Sha256::digest(bytes));
+        fs::create_dir_all(cache.entry_dir(&sha256)).expect("cache entry dir");
+        fs::write(cache.asset_path(&sha256), bytes).expect("cache asset");
+        let snapshot = snapshot_cache_metadata(&cache, &sha256).expect("metadata snapshot");
+        write_cache_record(&cache, &cache_record(&sha256)).expect("rewritten cache record");
+        let mut record = package_record();
+        record.sha256 = sha256.clone();
+        let install = InstalledPackage {
+            record,
+            populated_cache_entry: false,
+            deferred_cache_hit: None,
+            cache_metadata_snapshot: Some(snapshot),
+        };
+
+        cleanup_failed_install_cache(&cache, &sha256, None, &install).expect("cleanup cache");
+
+        assert_eq!(
+            fs::read(cache.asset_path(&sha256)).expect("cache asset"),
+            bytes
+        );
+        assert!(!cache.metadata_path(&sha256).exists());
     }
 
     #[test]
