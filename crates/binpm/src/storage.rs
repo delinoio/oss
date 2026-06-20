@@ -375,7 +375,16 @@ pub fn read_cache_records(paths: &CachePaths) -> Result<Vec<CacheRecord>> {
 
 fn cache_entry_dirs(paths: &CachePaths) -> Result<Vec<PathBuf>> {
     let root = paths.root.join("sha256");
-    ensure_dir(&root)?;
+    match fs::symlink_metadata(&root) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(BinpmError::UnsafeManagedDirectory { path: root });
+        }
+        Ok(_) => {}
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => {
+            return Err(BinpmError::ReadFile { path: root, source });
+        }
+    }
     let entries = match fs::read_dir(&root) {
         Ok(entries) => entries,
         Err(source) if source.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
@@ -1327,6 +1336,17 @@ mod tests {
         assert_eq!(second_sha, expected);
         assert_eq!(first_path, second_path);
         assert_eq!(read_cache_records(&cache).expect("records").len(), 1);
+    }
+
+    #[test]
+    fn read_cache_records_keeps_missing_cache_read_only() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+
+        assert!(read_cache_records(&cache)
+            .expect("missing cache records")
+            .is_empty());
+        assert!(!cache.root.join("sha256").exists());
     }
 
     #[test]

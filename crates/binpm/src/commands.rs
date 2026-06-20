@@ -685,9 +685,34 @@ fn install_local_manifest(
         }
     }
     let cache_paths = CachePaths::new(&binpm_home()?);
-    let mut committed_deferred_cache_hits: Vec<String> = Vec::new();
+    let mut committed_deferred_cache_hits: Vec<CacheMetadataSnapshot> = Vec::new();
     for completed_install in &completed {
         if let Some(resolved) = &completed_install.install.deferred_cache_hit {
+            let committed_cache_snapshot = match resolved
+                .provider_digest_sha256
+                .as_deref()
+                .map(|sha256| snapshot_cache_metadata(&cache_paths, sha256))
+                .transpose()
+            {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    let scope_paths = ScopePaths::local(root.clone());
+                    for (orphan_cmd, orphan_state) in orphan_states {
+                        restore_local_runtime_and_cache_ref(
+                            &root,
+                            &scope_paths,
+                            &cache_paths,
+                            &orphan_cmd,
+                            orphan_state,
+                        );
+                    }
+                    rollback_completed_local_installs_ref(&root, &completed, &cache_paths)?;
+                    for snapshot in committed_deferred_cache_hits {
+                        restore_cache_metadata(&cache_paths, &snapshot)?;
+                    }
+                    return Err(error);
+                }
+            };
             if let Err(error) = record_verified_cache_hit(&cache_paths, resolved) {
                 let scope_paths = ScopePaths::local(root.clone());
                 for (orphan_cmd, orphan_state) in orphan_states {
@@ -700,13 +725,16 @@ fn install_local_manifest(
                     );
                 }
                 rollback_completed_local_installs_ref(&root, &completed, &cache_paths)?;
-                for sha256 in committed_deferred_cache_hits {
-                    remove_unreferenced_cache_entry(&cache_paths, &sha256, Some(&root))?;
+                for snapshot in committed_deferred_cache_hits {
+                    restore_cache_metadata(&cache_paths, &snapshot)?;
+                }
+                if let Some(snapshot) = committed_cache_snapshot {
+                    restore_cache_metadata(&cache_paths, &snapshot)?;
                 }
                 return Err(error);
             }
-            if let Some(sha256) = &resolved.provider_digest_sha256 {
-                committed_deferred_cache_hits.push(sha256.clone());
+            if let Some(snapshot) = committed_cache_snapshot {
+                committed_deferred_cache_hits.push(snapshot);
             }
         }
     }
@@ -2398,15 +2426,19 @@ fn validate_package_record_metadata(
             expected: PathBuf::from(expected_cache_key),
         });
     }
-    if let Some(cache_path) = &record.cache_path {
-        let cache_path = Path::new(cache_path);
-        let expected_cache_path = cache_paths.asset_path(&record.sha256);
-        if cache_path != expected_cache_path {
-            return Err(BinpmError::UnsafeCachePath {
-                path: cache_path.to_path_buf(),
-                expected: expected_cache_path,
-            });
-        }
+    let expected_cache_path = cache_paths.asset_path(&record.sha256);
+    let Some(cache_path) = &record.cache_path else {
+        return Err(BinpmError::UnsafeCachePath {
+            path: PathBuf::from("<missing cache path>"),
+            expected: expected_cache_path,
+        });
+    };
+    let cache_path = Path::new(cache_path);
+    if cache_path != expected_cache_path {
+        return Err(BinpmError::UnsafeCachePath {
+            path: cache_path.to_path_buf(),
+            expected: expected_cache_path,
+        });
     }
     Ok(())
 }
@@ -2895,8 +2927,8 @@ mod tests {
         source_install_scope, update_manifest_tool_source, validate_locked_record_artifact,
         validate_package_record_metadata, validate_package_record_source_identity,
         validate_provider_digest_evidence, validate_selected_manifest_entries,
-        verify_lockfile_records, verify_runtime_cache_bytes, ArtifactKind, InstalledPackage,
-        LocalRemoveState, RuntimeToolState,
+        verify_lockfile_records, ArtifactKind, InstalledPackage, LocalRemoveState,
+        RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4583,16 +4615,17 @@ mod tests {
     }
 
     #[test]
-    fn runtime_cache_verify_uses_expected_cache_path_when_record_path_is_missing() {
+    fn package_record_verify_rejects_missing_cache_path() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let cache = CachePaths::new(temp_dir.path());
         let mut record = package_record();
         record.cache_key = Some(crate::storage::cache_key(&record.sha256));
         record.cache_path = None;
-        validate_package_record_metadata(&cache, &record).expect("metadata without cache path");
 
-        let error = verify_runtime_cache_bytes(&cache, &record).expect_err("missing cache asset");
+        let error =
+            validate_package_record_metadata(&cache, &record).expect_err("missing cache path");
 
+        assert!(error.to_string().contains("Unsafe cache path"));
         assert!(error
             .to_string()
             .contains(&cache.asset_path(&record.sha256).display().to_string()));
