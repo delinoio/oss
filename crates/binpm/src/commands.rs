@@ -1881,7 +1881,7 @@ fn remove_local_orphan_runtime(
     let prior_state = capture_runtime_tool_state(paths, cmd)?;
     let record_path = package_record_path(paths, cmd);
     let cleanup_result = (|| {
-        let (stale_installed_path, stale_target_os) = if record_path.exists() {
+        let stale_install = if record_path.exists() {
             let record = read_package_record(&record_path)?;
             let installed_path = managed_installed_path(paths, cmd, record.target_os);
             if !is_manifest_managed_installed_path(
@@ -1895,20 +1895,21 @@ fn remove_local_orphan_runtime(
                     Err(error) => return Err(error),
                 }
             }
-            (installed_path, record.target_os)
+            Some((installed_path, record.target_os))
         } else {
-            let target_os = HostTarget::current()?.os;
-            (current_platform_installed_path(paths, cmd), target_os)
+            None
         };
         remove_package_record(paths, cmd)?;
         remove_cache_ref(cache_paths, root, cmd)?;
-        if !is_manifest_managed_installed_path(
-            paths,
-            manifest_tools,
-            &stale_installed_path,
-            stale_target_os,
-        ) {
-            remove_path_if_exists(&stale_installed_path)?;
+        if let Some((stale_installed_path, stale_target_os)) = stale_install {
+            if !is_manifest_managed_installed_path(
+                paths,
+                manifest_tools,
+                &stale_installed_path,
+                stale_target_os,
+            ) {
+                remove_path_if_exists(&stale_installed_path)?;
+            }
         }
         Ok(())
     })();
@@ -3729,6 +3730,43 @@ mod tests {
 
         assert!(!paths.packages.join("tool.toml").exists());
         assert!(!installed_path.exists());
+        let lockfile = crate::storage::read_lockfile(&temp_dir.path().join(LOCKFILE_FILE))
+            .expect("read lockfile");
+        assert!(lockfile.tools.is_empty());
+    }
+
+    #[test]
+    fn manifest_sync_preserves_manual_binary_for_lock_only_orphan() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        let manual_path = paths.bin.join("tool");
+        fs::write(&manual_path, b"manual tool").expect("write manual binary");
+        write_lockfile(
+            &temp_dir.path().join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([(
+                            "linux-x86_64-gnu".to_string(),
+                            package_record(),
+                        )]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+
+        remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new(), false)
+            .expect("remove lock orphan");
+
+        assert_eq!(
+            fs::read(&manual_path).expect("manual binary remains"),
+            b"manual tool"
+        );
         let lockfile = crate::storage::read_lockfile(&temp_dir.path().join(LOCKFILE_FILE))
             .expect("read lockfile");
         assert!(lockfile.tools.is_empty());
