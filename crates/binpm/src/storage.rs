@@ -377,16 +377,29 @@ pub fn validate_download_url(raw: &str) -> Result<()> {
         .unwrap_or(without_fragment);
     let diagnostic_url = redact_url_credentials(without_query);
 
-    if !without_query.starts_with("https://") {
+    let parsed = reqwest::Url::parse(without_query).map_err(|_| BinpmError::UnsafeUrl {
+        url: diagnostic_url.clone(),
+        message: "persisted release asset URLs must be valid https URLs".to_string(),
+    })?;
+    let authority_start = without_query
+        .find("://")
+        .map(|index| index + 3)
+        .unwrap_or(0);
+    let authority = without_query[authority_start..]
+        .split('/')
+        .next()
+        .unwrap_or_default();
+    if authority.is_empty()
+        || parsed.scheme() != "https"
+        || parsed.host_str().is_none_or(str::is_empty)
+    {
         return Err(BinpmError::UnsafeUrl {
             url: diagnostic_url,
             message: "persisted release asset URLs must use https".to_string(),
         });
     }
 
-    let rest = without_query.trim_start_matches("https://");
-    let authority = rest.split('/').next().unwrap_or(rest);
-    if authority.contains('@') {
+    if !parsed.username().is_empty() || parsed.password().is_some() {
         return Err(BinpmError::UnsafeUrl {
             url: diagnostic_url,
             message: "persisted release asset URLs must not include credentials".to_string(),
@@ -1005,6 +1018,13 @@ mod tests {
 
         assert!(error.to_string().contains("credentials"));
         assert!(!error.to_string().contains("token"));
+    }
+
+    #[test]
+    fn rejects_malformed_https_urls_without_host() {
+        let error = validate_download_url("https:///tool").expect_err("missing host");
+
+        assert!(error.to_string().contains("must use https"));
     }
 
     #[test]

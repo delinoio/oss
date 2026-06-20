@@ -1402,11 +1402,20 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
 fn remove_global_tool(cmd: &str) -> Result<i32> {
     validate_command_name(cmd)?;
     let paths = ScopePaths::global(binpm_home()?);
+    remove_global_tool_from_paths(&paths, cmd)?;
+    println!("removed {cmd}");
+    Ok(0)
+}
+
+fn remove_global_tool_from_paths(paths: &ScopePaths, cmd: &str) -> Result<()> {
     let prior_state = capture_runtime_tool_state(&paths, cmd)?;
     let record_path = package_record_path(&paths, cmd);
     if record_path.exists() {
         let record = read_package_record(&record_path)?;
-        remove_installed_binary(&paths, cmd, &record)?;
+        match remove_installed_binary(&paths, cmd, &record) {
+            Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
+            Err(error) => return Err(error),
+        }
     }
     if let Err(error) = remove_package_record(&paths, cmd)
         .and_then(|_| remove_path_if_exists(&paths.bin.join(cmd)))
@@ -1415,8 +1424,7 @@ fn remove_global_tool(cmd: &str) -> Result<i32> {
         restore_runtime_tool_state(&paths, cmd, prior_state);
         return Err(error);
     }
-    println!("removed {cmd}");
-    Ok(0)
+    Ok(())
 }
 
 fn select_scope(scope: Scope) -> Result<Scope> {
@@ -1965,10 +1973,10 @@ mod tests {
         deterministic_installed_path, github_sha256_digest, local_runtime_lock_records,
         lock_targets_conflict_with_record, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        parse_manifest_source, project_root_from, restore_runtime_tool_state, select_explain_asset,
-        select_manifest_asset, shell_path, shell_quote, source_install_scope,
-        update_manifest_tool_source, validate_package_record_metadata, verify_lockfile_records,
-        ArtifactKind, RuntimeToolState,
+        parse_manifest_source, project_root_from, remove_global_tool_from_paths,
+        restore_runtime_tool_state, select_explain_asset, select_manifest_asset, shell_path,
+        shell_quote, source_install_scope, update_manifest_tool_source,
+        validate_package_record_metadata, verify_lockfile_records, ArtifactKind, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -2547,6 +2555,27 @@ mod tests {
             "original"
         );
         assert!(!crate::storage::package_record_path(&paths, "tool").exists());
+    }
+
+    #[test]
+    fn global_remove_skips_unsafe_installed_path_and_cleans_record() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
+        let outside = temp_dir.path().join("outside-tool");
+        std::fs::write(&outside, "original").expect("write outside file");
+        let mut record = package_record();
+        record.installed_path = outside.display().to_string();
+        write_package_record(&paths, "tool", &record).expect("write package record");
+        std::fs::write(paths.bin.join("tool"), "shim").expect("write bin candidate");
+
+        remove_global_tool_from_paths(&paths, "tool").expect("remove global tool");
+
+        assert_eq!(
+            std::fs::read_to_string(&outside).expect("read outside file"),
+            "original"
+        );
+        assert!(!crate::storage::package_record_path(&paths, "tool").exists());
+        assert!(!paths.bin.join("tool").exists());
     }
 
     #[test]
