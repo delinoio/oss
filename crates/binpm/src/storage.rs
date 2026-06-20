@@ -632,7 +632,7 @@ pub fn populate_cache_from_bytes(
     let sha256 = format!("{:x}", Sha256::digest(bytes));
     let asset_path = paths.asset_path(&sha256);
     reject_symlinked_managed_directory(&paths.entry_dir(&sha256))?;
-    let had_verified_asset = asset_path.exists() && verify_sha256(&asset_path, &sha256).is_ok();
+    let had_verified_asset = cache_asset_is_verified_regular(&asset_path, &sha256)?;
     let record = CacheRecord {
         version: 1,
         cache_key: cache_key(&sha256),
@@ -649,27 +649,25 @@ pub fn populate_cache_from_bytes(
         last_used_at: Some(now_timestamp()),
     };
 
-    if asset_path.exists() {
-        if verify_sha256(&asset_path, &sha256).is_ok() {
-            debug!(
-                cache_key = cache_key(&sha256),
-                cache_path = %asset_path.display(),
-                cache_action = "reuse",
-                cache_reused = true,
-                "Reused verified cache entry"
-            );
-        } else {
-            remove_path_if_exists(&asset_path)?;
-            atomic_write_bytes(&asset_path, bytes)?;
-            debug!(
-                cache_key = cache_key(&sha256),
-                cache_path = %asset_path.display(),
-                cache_action = "repair",
-                cache_reused = false,
-                cache_bytes = bytes.len(),
-                "Replaced corrupted cache entry"
-            );
-        }
+    if had_verified_asset {
+        debug!(
+            cache_key = cache_key(&sha256),
+            cache_path = %asset_path.display(),
+            cache_action = "reuse",
+            cache_reused = true,
+            "Reused verified cache entry"
+        );
+    } else if path_exists_no_follow(&asset_path)? {
+        remove_path_if_exists(&asset_path)?;
+        atomic_write_bytes(&asset_path, bytes)?;
+        debug!(
+            cache_key = cache_key(&sha256),
+            cache_path = %asset_path.display(),
+            cache_action = "repair",
+            cache_reused = false,
+            cache_bytes = bytes.len(),
+            "Replaced corrupted cache entry"
+        );
     } else {
         let dir = paths.entry_dir(&sha256);
         ensure_dir(&dir)?;
@@ -703,6 +701,7 @@ pub fn record_verified_cache_hit(paths: &CachePaths, resolved: &ResolvedAsset) -
             })?;
     validate_sha256_digest(sha256)?;
     let asset_path = paths.asset_path(sha256);
+    require_verified_regular_cache_asset(&asset_path, sha256)?;
     verify_sha256(&asset_path, sha256)?;
     let byte_size = fs::metadata(&asset_path)
         .map_err(|source| BinpmError::ReadFile {
@@ -737,6 +736,47 @@ pub fn install_bare_executable(cache_asset: &Path, installed_path: &Path) -> Res
     atomic_write_executable(installed_path, &bytes)
 }
 
+pub fn cache_asset_is_verified_regular(path: &Path, expected: &str) -> Result<bool> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(false),
+        Err(source) => {
+            return Err(BinpmError::ReadFile {
+                path: path.to_path_buf(),
+                source,
+            })
+        }
+    };
+    if !metadata.is_file() {
+        return Ok(false);
+    }
+    Ok(verify_sha256(path, expected).is_ok())
+}
+
+fn path_exists_no_follow(path: &Path) -> Result<bool> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(source) if source.kind() == ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(BinpmError::ReadFile {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+fn require_verified_regular_cache_asset(path: &Path, expected: &str) -> Result<()> {
+    let metadata = fs::symlink_metadata(path).map_err(|source| BinpmError::ReadFile {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(BinpmError::UnsafeManagedDirectory {
+            path: path.to_path_buf(),
+        });
+    }
+    verify_sha256(path, expected)
+}
+
 pub fn managed_installed_path(paths: &ScopePaths, cmd: &str, target_os: TargetOs) -> PathBuf {
     paths.bin.join(installed_filename(cmd, target_os))
 }
@@ -764,6 +804,7 @@ pub fn remove_installed_binary(
     record: &PackageRecord,
 ) -> Result<()> {
     let expected = validate_installed_binary_path(paths, cmd, record)?;
+    reject_symlinked_managed_directory(&paths.root)?;
     reject_symlinked_managed_directory(&paths.bin)?;
     remove_file_or_symlink_if_exists(&expected)
 }
@@ -1459,6 +1500,37 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn cache_population_replaces_symlinked_asset_without_reusing_target() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        let resolved = resolved_asset();
+        let bytes = b"good bytes";
+        let sha = format!("{:x}", Sha256::digest(bytes));
+        let asset_path = cache.asset_path(&sha);
+        let outside_asset = outside.path().join("asset");
+        std::fs::create_dir_all(cache.entry_dir(&sha)).expect("create digest entry");
+        std::fs::write(&outside_asset, bytes).expect("write outside asset");
+        std::os::unix::fs::symlink(&outside_asset, &asset_path).expect("symlink asset");
+
+        let (repaired_sha, repaired_path) =
+            populate_cache_from_bytes(&cache, &resolved, bytes).expect("repair symlink asset");
+
+        assert_eq!(repaired_sha, sha);
+        assert_eq!(repaired_path, asset_path);
+        assert_eq!(std::fs::read(&asset_path).expect("read cache asset"), bytes);
+        assert!(!std::fs::symlink_metadata(&asset_path)
+            .expect("asset metadata")
+            .file_type()
+            .is_symlink());
+        assert_eq!(
+            std::fs::read(&outside_asset).expect("read outside asset"),
+            bytes
+        );
+    }
+
     #[test]
     fn provider_digest_cache_hit_reuses_verified_asset_without_downloading_bytes() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -1954,6 +2026,28 @@ created_at = "2026-01-01T00:00:00Z"
 
         assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
         assert!(outside.join("tool").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_installed_binary_rejects_symlinked_scope_root_before_delete() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        let outside = temp_dir.path().join("outside-root");
+        std::fs::create_dir_all(outside.join("bin")).expect("create outside bin");
+        std::fs::write(outside.join("bin").join("tool"), b"do not remove")
+            .expect("write outside binary");
+        std::os::unix::fs::symlink(&outside, &paths.root).expect("symlink scope root");
+        let mut record = package_record();
+        record.installed_path = managed_installed_path(&paths, "tool", TargetOs::Linux)
+            .display()
+            .to_string();
+
+        let error =
+            remove_installed_binary(&paths, "tool", &record).expect_err("symlinked scope root");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert!(outside.join("bin").join("tool").exists());
     }
 
     #[cfg(unix)]

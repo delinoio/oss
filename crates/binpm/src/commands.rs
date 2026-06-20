@@ -19,8 +19,8 @@ use crate::{
     error::{BinpmError, Result},
     release::{client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset},
     storage::{
-        archive_format, clean_cache, deterministic_installed_path, install_bare_executable,
-        installed_filename, list_package_records, managed_installed_path,
+        archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
+        install_bare_executable, installed_filename, list_package_records, managed_installed_path,
         package_record_from_resolved, package_record_path, populate_cache_from_bytes, prune_cache,
         read_cache_records, read_lockfile, read_manifest, read_package_record,
         record_verified_cache_hit, referenced_cache_keys, remove_cache_ref,
@@ -1004,7 +1004,7 @@ fn install_resolved(
     ensure_no_package_record_install_path_collision(scope_paths, cmd, resolved.target.os)?;
     if let Some(expected) = &resolved.provider_digest_sha256 {
         let cache_asset = cache_paths.asset_path(expected);
-        if cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, expected).is_ok() {
+        if cache_asset_is_verified_regular(&cache_asset, expected)? {
             let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
             let record = package_record_from_resolved(
                 cmd,
@@ -1021,15 +1021,14 @@ fn install_resolved(
                 deferred_cache_hit: Some(resolved),
                 cache_metadata_snapshot: None,
             });
-        } else if cache_asset.exists() {
+        } else if cache_asset.symlink_metadata().is_ok() {
             remove_path_if_exists(&cache_asset)?;
         }
     }
     let bytes = download_asset(&resolved.decision.download_url)?;
     let sha256 = format!("{:x}", Sha256::digest(&bytes));
     let cache_asset = cache_paths.asset_path(&sha256);
-    let had_verified_cache_entry =
-        cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, &sha256).is_ok();
+    let had_verified_cache_entry = cache_asset_is_verified_regular(&cache_asset, &sha256)?;
     let cache_metadata_snapshot = if had_verified_cache_entry {
         Some(snapshot_cache_metadata(cache_paths, &sha256)?)
     } else {
@@ -1130,16 +1129,18 @@ fn install_local_from_lock(
     let cache_paths = CachePaths::new(&home);
     let scope_paths = ScopePaths::local(root.to_path_buf());
     let prior_state = capture_local_tool_state(root, cmd)?;
+    scope_paths.ensure()?;
     cache_paths.ensure()?;
     validate_sha256_digest(&record.sha256)?;
     ensure_no_package_record_install_path_collision(&scope_paths, cmd, target.os)?;
     let cache_asset = cache_paths.asset_path(&record.sha256);
     let mut populated_cache_entry = false;
-    if cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, &record.sha256).is_err()
+    if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)?
+        && cache_asset.symlink_metadata().is_ok()
     {
         remove_path_if_exists(&cache_asset)?;
     }
-    if !cache_asset.exists() {
+    if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
         let download_url = locked_record_download_url(&record)?;
         let bytes = download_asset(&download_url)?;
         let actual = format!("{:x}", Sha256::digest(&bytes));
@@ -2109,7 +2110,7 @@ fn restore_runtime_tool_state(paths: &ScopePaths, cmd: &str, prior_state: Runtim
             let previous_path = PathBuf::from(&previous.installed_path);
             let expected_path = managed_installed_path(paths, cmd, previous.target_os);
             if previous_path != expected_path {
-                let _ = remove_package_record(paths, cmd);
+                let _ = write_package_record(paths, cmd, previous);
                 return;
             }
             let _ = write_package_record(paths, cmd, previous);
@@ -4312,7 +4313,11 @@ mod tests {
             std::fs::read_to_string(&outside).expect("read outside file"),
             "original"
         );
-        assert!(!crate::storage::package_record_path(&paths, "tool").exists());
+        let restored = crate::storage::read_package_record(&crate::storage::package_record_path(
+            &paths, "tool",
+        ))
+        .expect("restored package record");
+        assert_eq!(restored.installed_path, outside.display().to_string());
     }
 
     #[test]
