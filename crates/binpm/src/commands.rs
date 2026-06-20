@@ -1408,20 +1408,20 @@ fn remove_global_tool(cmd: &str) -> Result<i32> {
 }
 
 fn remove_global_tool_from_paths(paths: &ScopePaths, cmd: &str) -> Result<()> {
-    let prior_state = capture_runtime_tool_state(&paths, cmd)?;
-    let record_path = package_record_path(&paths, cmd);
+    let prior_state = capture_runtime_tool_state(paths, cmd)?;
+    let record_path = package_record_path(paths, cmd);
     if record_path.exists() {
         let record = read_package_record(&record_path)?;
-        match remove_installed_binary(&paths, cmd, &record) {
+        match remove_installed_binary(paths, cmd, &record) {
             Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
             Err(error) => return Err(error),
         }
     }
-    if let Err(error) = remove_package_record(&paths, cmd)
+    if let Err(error) = remove_package_record(paths, cmd)
         .and_then(|_| remove_path_if_exists(&paths.bin.join(cmd)))
         .and_then(|_| remove_path_if_exists(&paths.bin.join(format!("{cmd}.exe"))))
     {
-        restore_runtime_tool_state(&paths, cmd, prior_state);
+        restore_runtime_tool_state(paths, cmd, prior_state);
         return Err(error);
     }
     Ok(())
