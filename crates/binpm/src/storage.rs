@@ -318,6 +318,7 @@ pub fn write_package_record(paths: &ScopePaths, cmd: &str, record: &PackageRecor
 
 pub fn remove_package_record(paths: &ScopePaths, cmd: &str) -> Result<()> {
     validate_command_name(cmd)?;
+    reject_symlinked_managed_directory(&paths.packages)?;
     remove_path_if_exists(&package_record_path(paths, cmd))
 }
 
@@ -761,6 +762,7 @@ pub fn remove_installed_binary(
     record: &PackageRecord,
 ) -> Result<()> {
     let expected = validate_installed_binary_path(paths, cmd, record)?;
+    reject_symlinked_managed_directory(&paths.bin)?;
     remove_path_if_exists(&expected)
 }
 
@@ -990,6 +992,22 @@ pub fn ensure_dir(path: &Path) -> Result<()> {
     })
 }
 
+fn reject_symlinked_managed_directory(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            Err(BinpmError::UnsafeManagedDirectory {
+                path: path.to_path_buf(),
+            })
+        }
+        Ok(_) => Ok(()),
+        Err(source) if source.kind() == ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(BinpmError::ReadFile {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
 pub fn remove_path_if_exists(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_dir() => {
@@ -1117,10 +1135,10 @@ mod tests {
         atomic_write_bytes, clean_cache, install_bare_executable, list_package_records,
         managed_installed_path, populate_cache_from_bytes, prune_cache, read_cache_records,
         read_lockfile, read_manifest, record_verified_cache_hit, referenced_cache_keys,
-        remove_cache_ref, remove_installed_binary, sanitize_persisted_url, validate_command_name,
-        validate_download_url, validate_sha256_digest, verify_sha256, write_cache_ref,
-        write_lockfile, write_manifest, CachePaths, LockTool, Lockfile, Manifest, PackageRecord,
-        ResolvedAsset, ScopePaths,
+        remove_cache_ref, remove_installed_binary, remove_package_record, sanitize_persisted_url,
+        validate_command_name, validate_download_url, validate_sha256_digest, verify_sha256,
+        write_cache_ref, write_lockfile, write_manifest, CachePaths, LockTool, Lockfile, Manifest,
+        PackageRecord, ResolvedAsset, ScopePaths,
     };
     use crate::{
         assets::{ArtifactKind, CandidateDecision},
@@ -1852,6 +1870,44 @@ created_at = "2026-01-01T00:00:00Z"
         remove_installed_binary(&paths, "tool", &record).expect("remove installed");
 
         assert!(!installed.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_installed_binary_rejects_symlinked_bin_before_delete() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        let outside = temp_dir.path().join("outside-bin");
+        std::fs::create_dir_all(&paths.root).expect("create scope root");
+        std::fs::create_dir_all(&outside).expect("create outside bin");
+        std::fs::write(outside.join("tool"), b"do not remove").expect("write outside binary");
+        std::os::unix::fs::symlink(&outside, &paths.bin).expect("symlink bin");
+        let mut record = package_record();
+        record.installed_path = managed_installed_path(&paths, "tool", TargetOs::Linux)
+            .display()
+            .to_string();
+
+        let error = remove_installed_binary(&paths, "tool", &record).expect_err("symlinked bin");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert!(outside.join("tool").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_package_record_rejects_symlinked_packages_before_delete() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        let outside = temp_dir.path().join("outside-packages");
+        std::fs::create_dir_all(&paths.root).expect("create scope root");
+        std::fs::create_dir_all(&outside).expect("create outside packages");
+        std::fs::write(outside.join("tool.toml"), b"do not remove").expect("write outside record");
+        std::os::unix::fs::symlink(&outside, &paths.packages).expect("symlink packages");
+
+        let error = remove_package_record(&paths, "tool").expect_err("symlinked packages");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert!(outside.join("tool.toml").exists());
     }
 
     fn resolved_asset() -> ResolvedAsset {

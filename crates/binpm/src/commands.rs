@@ -1660,28 +1660,11 @@ fn select_manifest_asset(
         });
     }
 
-    let tool_bin = tool.and_then(|tool| tool.bin.as_deref());
     let selection =
         select_asset(spec.provider, target, assets).ok_or_else(|| BinpmError::AssetNotFound {
             package: spec.to_string(),
             target: target_key.clone(),
         })?;
-    let eligible = selection
-        .decisions
-        .into_iter()
-        .filter(|decision| decision.eligible)
-        .collect::<Vec<_>>();
-    if let Some(bin) = tool_bin {
-        return eligible
-            .into_iter()
-            .find(|decision| {
-                decision.kind == ArtifactKind::BareExecutable && decision.asset_name == bin
-            })
-            .ok_or_else(|| BinpmError::AssetNotFound {
-                package: spec.to_string(),
-                target: target_key,
-            });
-    }
 
     Ok(selection.selected)
 }
@@ -4340,19 +4323,19 @@ mod tests {
     }
 
     #[test]
-    fn manifest_bin_override_constrains_bare_executable_selection() {
+    fn manifest_bin_does_not_override_scored_asset_selection() {
         let target = linux_target();
         let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
         let tool = ManifestTool {
             source: "github:owner/tool".to_string(),
             version: Some("1.0.0".to_string()),
-            bin: Some("tool-linux-secondary".to_string()),
+            bin: Some("rg".to_string()),
             targets: BTreeMap::new(),
         };
         let assets = [
             ReleaseAsset {
-                name: "tool-linux-primary".to_string(),
-                url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-primary"
+                name: "tool-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz"
                     .to_string(),
                 provider_url: None,
                 digest: None,
@@ -4360,8 +4343,8 @@ mod tests {
                 final_url_https: None,
             },
             ReleaseAsset {
-                name: "tool-linux-secondary".to_string(),
-                url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-secondary"
+                name: "tool-linux-x64".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
                     .to_string(),
                 provider_url: None,
                 digest: None,
@@ -4373,11 +4356,12 @@ mod tests {
         let selected =
             select_manifest_asset(&spec, Some(&tool), &target, &assets).expect("selected asset");
 
-        assert_eq!(selected.asset_name, "tool-linux-secondary");
+        assert_eq!(selected.asset_name, "tool-x86_64-unknown-linux-gnu.tar.gz");
+        assert!(matches!(selected.kind, ArtifactKind::Archive(_)));
     }
 
     #[test]
-    fn manifest_bin_override_rejects_non_matching_bare_executable() {
+    fn manifest_bin_does_not_require_matching_bare_executable_asset() {
         let target = linux_target();
         let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
         let tool = ManifestTool {
@@ -4395,10 +4379,10 @@ mod tests {
             final_url_https: None,
         }];
 
-        let error =
-            select_manifest_asset(&spec, Some(&tool), &target, &assets).expect_err("missing bin");
+        let selected =
+            select_manifest_asset(&spec, Some(&tool), &target, &assets).expect("selected asset");
 
-        assert!(error.to_string().contains("No installable asset"));
+        assert_eq!(selected.asset_name, "tool-linux-x64");
     }
 
     #[test]
