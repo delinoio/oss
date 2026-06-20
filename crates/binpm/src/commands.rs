@@ -426,12 +426,16 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
 
     match select_asset(spec.provider, &target, &selection.release.assets) {
         Some(selection) => {
-            println!("selected_asset: {}", selection.selected.asset_name);
-            println!("selected_asset_url: {}", selection.selected.canonical_url);
-            println!(
-                "selected_asset_score: {}",
-                selection.selected.score.unwrap_or_default()
-            );
+            if let Some(selected) = select_explain_asset(&selection.decisions) {
+                println!("selected_asset: {}", selected.asset_name);
+                println!("selected_asset_url: {}", selected.canonical_url);
+                println!(
+                    "selected_asset_score: {}",
+                    selected.score.unwrap_or_default()
+                );
+            } else {
+                println!("selected_asset: <none>");
+            }
             for decision in selection.decisions {
                 println!("{}", decision.explain_line());
             }
@@ -447,6 +451,14 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
     }
 
     Ok(0)
+}
+
+fn select_explain_asset(
+    decisions: &[crate::assets::CandidateDecision],
+) -> Option<&crate::assets::CandidateDecision> {
+    decisions
+        .iter()
+        .find(|decision| decision.eligible && decision.kind == ArtifactKind::BareExecutable)
 }
 
 fn release_api_url(spec: &SourceSpec) -> String {
@@ -740,6 +752,7 @@ fn install_local_from_lock(
     cache_paths.ensure()?;
     validate_sha256_digest(&record.sha256)?;
     let cache_asset = cache_paths.asset_path(&record.sha256);
+    let mut populated_cache_entry = false;
     if cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, &record.sha256).is_err()
     {
         remove_path_if_exists(&cache_asset)?;
@@ -785,12 +798,20 @@ fn install_local_from_lock(
             signature_verified: record.signature_verified,
         };
         populate_cache_from_bytes(&cache_paths, &resolved, &bytes)?;
+        populated_cache_entry = true;
     }
 
     let prior_state = capture_local_tool_state(root, cmd)?;
     let scope_paths = ScopePaths::local(root.to_path_buf());
     let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
-    install_bare_executable(&cache_paths.asset_path(&record.sha256), &installed_path)?;
+    if let Err(error) =
+        install_bare_executable(&cache_paths.asset_path(&record.sha256), &installed_path)
+    {
+        if populated_cache_entry {
+            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(root))?;
+        }
+        return Err(error);
+    }
     let mut runtime_record = record;
     runtime_record.cache_key = Some(crate::storage::cache_key(&runtime_record.sha256));
     runtime_record.cache_path = Some(
@@ -805,6 +826,9 @@ fn install_local_from_lock(
         .and_then(|_| write_cache_ref(&cache_paths, root, cmd, &runtime_record))
     {
         rollback_local_install_state(root, cmd, &runtime_record, prior_state);
+        if populated_cache_entry {
+            remove_unreferenced_cache_entry(&cache_paths, &runtime_record.sha256, Some(root))?;
+        }
         return Err(error);
     }
     println!("installed {cmd} {}", runtime_record.installed_path);
@@ -833,6 +857,18 @@ fn assert_lock_record_matches_source_and_target(
     }
     validate_sha256_digest(&record.sha256)?;
     sanitize_persisted_url(&record.asset_url)?;
+    if record.installed_path != deterministic_installed_path(cmd, target.os) {
+        return Err(BinpmError::StaleLockfile {
+            path: lockfile_path.to_path_buf(),
+            cmd: cmd.to_string(),
+        });
+    }
+    if record.cache_key.is_some() || record.cache_path.is_some() || record.installed_at.is_some() {
+        return Err(BinpmError::StaleLockfile {
+            path: lockfile_path.to_path_buf(),
+            cmd: cmd.to_string(),
+        });
+    }
     Ok(())
 }
 
@@ -1380,6 +1416,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
         "Prepared verification request"
     );
     let scope = select_scope(args.scope.scope())?;
+    let home = binpm_home()?;
     let root = match scope {
         Scope::Local => Some(require_manifest_root()?),
         Scope::Global => None,
@@ -1387,9 +1424,10 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     };
     let paths = match scope {
         Scope::Local => ScopePaths::local(root.clone().expect("local root is set")),
-        Scope::Global => ScopePaths::global(binpm_home()?),
+        Scope::Global => ScopePaths::global(home.clone()),
         Scope::Auto => unreachable!("select_scope never returns auto"),
     };
+    let cache_paths = CachePaths::new(&home);
     let mut checked = 0usize;
     let mut locked = BTreeSet::new();
     let mut local_runtime_locks = BTreeMap::new();
@@ -1422,6 +1460,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
                 package: record.package_spec,
             });
         }
+        validate_package_record_metadata(&cache_paths, &record)?;
         if let Some(cache_path) = &record.cache_path {
             let cache_path = Path::new(cache_path);
             if cache_path.exists() {
@@ -1437,6 +1476,25 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     }
     println!("checked {checked}");
     Ok(0)
+}
+
+fn validate_package_record_metadata(
+    cache_paths: &CachePaths,
+    record: &PackageRecord,
+) -> Result<()> {
+    sanitize_persisted_url(&record.asset_url)?;
+    validate_sha256_digest(&record.sha256)?;
+    if let Some(cache_path) = &record.cache_path {
+        let cache_path = Path::new(cache_path);
+        let expected_cache_path = cache_paths.asset_path(&record.sha256);
+        if cache_path != expected_cache_path {
+            return Err(BinpmError::UnsafeCachePath {
+                path: cache_path.to_path_buf(),
+                expected: expected_cache_path,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn local_runtime_lock_records(
@@ -1837,9 +1895,9 @@ mod tests {
         github_sha256_digest, local_runtime_lock_records, lock_targets_conflict_with_record,
         lockfile_digest, manifest_checksum_source, manifest_creation_root_from,
         manifest_target_override, manifest_tool_from_source, parse_manifest_source,
-        project_root_from, restore_runtime_tool_state, select_manifest_asset, shell_path,
-        shell_quote, update_manifest_tool_source, verify_lockfile_records, ArtifactKind,
-        RuntimeToolState,
+        project_root_from, restore_runtime_tool_state, select_explain_asset, select_manifest_asset,
+        shell_path, shell_quote, update_manifest_tool_source, validate_package_record_metadata,
+        verify_lockfile_records, ArtifactKind, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -1849,7 +1907,8 @@ mod tests {
         },
         release::ReleaseAsset,
         storage::{
-            LockTool, Lockfile, Manifest, ManifestTargetOverride, ManifestTool, PackageRecord,
+            CachePaths, LockTool, Lockfile, Manifest, ManifestTargetOverride, ManifestTool,
+            PackageRecord,
         },
     };
 
@@ -2371,6 +2430,38 @@ mod tests {
     }
 
     #[test]
+    fn explain_selection_prefers_installable_bare_executable_over_archive() {
+        let target = linux_target();
+        let assets = [
+            ReleaseAsset {
+                name: "tool-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz"
+                    .to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+            ReleaseAsset {
+                name: "tool-linux-x64".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
+                    .to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+        ];
+        let selection =
+            crate::assets::select_asset(SourceProvider::GitHub, &target, &assets).expect("asset");
+
+        let selected = select_explain_asset(&selection.decisions).expect("explain selection");
+
+        assert_eq!(selected.asset_name, "tool-linux-x64");
+        assert_eq!(selected.kind, ArtifactKind::BareExecutable);
+    }
+
+    #[test]
     fn frozen_lock_rejects_path_like_sha_before_cache_paths() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let target = linux_target();
@@ -2414,6 +2505,97 @@ mod tests {
 
         assert!(error.to_string().contains("must not include query"));
         assert!(!error.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn lockfile_verify_rejects_nondeterministic_installed_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut record = package_record();
+        record.installed_path = temp_dir
+            .path()
+            .join(".binpm/bin/tool")
+            .display()
+            .to_string();
+        record.checksum_source = ChecksumSource::GitHubDigest;
+        let lockfile = Lockfile {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                LockTool {
+                    source: "github:owner/tool".to_string(),
+                    targets: BTreeMap::from([("linux-x86_64-gnu".to_string(), record)]),
+                },
+            )]),
+        };
+
+        let error =
+            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
+                .expect_err("absolute installed path is stale");
+
+        assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn lockfile_verify_rejects_runtime_only_fields() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut record = package_record();
+        record.cache_key = Some("sha256:abcdef".to_string());
+        record.cache_path = Some("/tmp/binpm-cache/asset".to_string());
+        record.installed_at = Some("2026-06-20T00:00:00Z".to_string());
+        record.checksum_source = ChecksumSource::GitHubDigest;
+        let lockfile = Lockfile {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                LockTool {
+                    source: "github:owner/tool".to_string(),
+                    targets: BTreeMap::from([("linux-x86_64-gnu".to_string(), record)]),
+                },
+            )]),
+        };
+
+        let error =
+            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
+                .expect_err("runtime fields are stale");
+
+        assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn package_record_verify_rejects_query_bearing_asset_urls() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let mut record = package_record();
+        record.asset_url =
+            "https://github.com/owner/tool/releases/download/1.0.0/tool?token=secret".to_string();
+
+        let error =
+            validate_package_record_metadata(&cache, &record).expect_err("unsafe package URL");
+
+        assert!(error.to_string().contains("must not include query"));
+        assert!(!error.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn package_record_verify_rejects_unmanaged_cache_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let mut record = package_record();
+        record.cache_path = Some(
+            temp_dir
+                .path()
+                .join("outside-cache-asset")
+                .display()
+                .to_string(),
+        );
+
+        let error =
+            validate_package_record_metadata(&cache, &record).expect_err("unsafe cache path");
+
+        assert!(error.to_string().contains("Unsafe cache path"));
+        assert!(error
+            .to_string()
+            .contains(&cache.asset_path(&record.sha256).display().to_string()));
     }
 
     #[test]

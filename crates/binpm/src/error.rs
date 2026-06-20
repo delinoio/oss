@@ -122,6 +122,12 @@ pub enum BinpmError {
         expected.display()
     )]
     UnsafeInstalledPath { path: PathBuf, expected: PathBuf },
+    #[error(
+        "Unsafe cache path `{}`: expected cache asset path `{}`.",
+        path.display(),
+        expected.display()
+    )]
+    UnsafeCachePath { path: PathBuf, expected: PathBuf },
     #[error("Failed to determine binpm global home. Set BINPM_HOME, HOME, or USERPROFILE.")]
     MissingGlobalHome,
     #[error(
@@ -165,7 +171,8 @@ impl BinpmError {
             | Self::VerificationRequired { .. }
             | Self::UnverifiedChecksumSourceOverride { .. }
             | Self::UnsafeUrl { .. }
-            | Self::UnsafeInstalledPath { .. } => 2,
+            | Self::UnsafeInstalledPath { .. }
+            | Self::UnsafeCachePath { .. } => 2,
         }
     }
 }
