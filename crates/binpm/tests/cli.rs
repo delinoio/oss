@@ -515,7 +515,7 @@ fn install_rejects_empty_source_version() {
 }
 
 #[test]
-fn local_remove_cleans_corrupt_package_record_with_unsafe_installed_path() {
+fn local_remove_rejects_corrupt_package_record_with_unsafe_installed_path() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
@@ -574,18 +574,19 @@ signature_verified = false
         .env("BINPM_HOME", &home)
         .args(["remove", "--local", "tool"])
         .assert()
-        .success()
-        .stdout(predicate::str::contains("removed tool"));
+        .failure()
+        .stderr(predicate::str::contains("Unsafe installed path"));
 
-    assert!(!project
+    assert!(project
         .join(".binpm")
         .join("packages")
         .join("tool.toml")
         .exists());
     let manifest = fs::read_to_string(project.join("binpm.toml")).expect("read manifest");
     let lockfile = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
-    assert!(!manifest.contains("tools.tool"));
-    assert!(!lockfile.contains("tools.tool"));
+    assert!(manifest.contains("tools.tool"));
+    assert!(lockfile.contains("tools.tool"));
+    assert!(!project.join(".binpm").join("bin").join("tool").exists());
 }
 
 #[test]
@@ -687,14 +688,13 @@ source = "github:owner/tool-exe"
     )
     .expect("write lockfile");
     fs::write(project.join(".binpm").join("bin").join("tool"), "tool").expect("write tool");
-    fs::write(
-        project.join(".binpm").join("bin").join("tool.exe"),
-        "tool exe",
-    )
-    .expect("write tool.exe");
+    let tool_path = project.join(".binpm").join("bin").join("tool");
+    let tool_exe_path = project.join(".binpm").join("bin").join("tool.exe");
+    fs::write(&tool_exe_path, "tool exe").expect("write tool.exe");
     fs::write(
         project.join(".binpm").join("packages").join("tool.toml"),
-        r#"package_spec = "github:owner/tool@1.0.0"
+        format!(
+            r#"package_spec = "github:owner/tool@1.0.0"
 source = "github:owner/tool"
 source_provider = "github"
 source_host = "github.com"
@@ -708,12 +708,14 @@ target_arch = "x86_64"
 target_libc = "gnu"
 archive_format = "bare-executable"
 selected_binary = "tool-linux-x64"
-installed_path = ".binpm/bin/tool"
+installed_path = "{}"
 sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 checksum_source = "local"
 signature_available = false
 signature_verified = false
 "#,
+            tool_path.display()
+        ),
     )
     .expect("write tool package record");
     fs::write(
@@ -721,7 +723,8 @@ signature_verified = false
             .join(".binpm")
             .join("packages")
             .join("tool.exe.toml"),
-        r#"package_spec = "github:owner/tool-exe@1.0.0"
+        format!(
+            r#"package_spec = "github:owner/tool-exe@1.0.0"
 source = "github:owner/tool-exe"
 source_provider = "github"
 source_host = "github.com"
@@ -735,12 +738,14 @@ target_arch = "x86_64"
 target_libc = "gnu"
 archive_format = "bare-executable"
 selected_binary = "tool.exe"
-installed_path = ".binpm/bin/tool.exe"
+installed_path = "{}"
 sha256 = "abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123"
 checksum_source = "local"
 signature_available = false
 signature_verified = false
 "#,
+            tool_exe_path.display()
+        ),
     )
     .expect("write tool.exe package record");
     let mut command = binpm();

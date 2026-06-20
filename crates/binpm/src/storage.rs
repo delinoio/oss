@@ -318,6 +318,7 @@ pub fn write_package_record(paths: &ScopePaths, cmd: &str, record: &PackageRecor
 
 pub fn remove_package_record(paths: &ScopePaths, cmd: &str) -> Result<()> {
     validate_command_name(cmd)?;
+    reject_symlinked_managed_directory(&paths.root)?;
     reject_symlinked_managed_directory(&paths.packages)?;
     remove_path_if_exists(&package_record_path(paths, cmd))
 }
@@ -630,6 +631,7 @@ pub fn populate_cache_from_bytes(
     paths.ensure()?;
     let sha256 = format!("{:x}", Sha256::digest(bytes));
     let asset_path = paths.asset_path(&sha256);
+    reject_symlinked_managed_directory(&paths.entry_dir(&sha256))?;
     let had_verified_asset = asset_path.exists() && verify_sha256(&asset_path, &sha256).is_ok();
     let record = CacheRecord {
         version: 1,
@@ -763,7 +765,7 @@ pub fn remove_installed_binary(
 ) -> Result<()> {
     let expected = validate_installed_binary_path(paths, cmd, record)?;
     reject_symlinked_managed_directory(&paths.bin)?;
-    remove_path_if_exists(&expected)
+    remove_file_or_symlink_if_exists(&expected)
 }
 
 pub fn validate_installed_binary_path(
@@ -1021,6 +1023,27 @@ pub fn remove_path_if_exists(path: &Path) -> Result<()> {
             source,
         }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(source) => Err(BinpmError::ReadFile {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+fn remove_file_or_symlink_if_exists(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() => Err(BinpmError::RemovePath {
+            path: path.to_path_buf(),
+            source: std::io::Error::new(
+                ErrorKind::IsADirectory,
+                "refusing to remove directory as installed binary",
+            ),
+        }),
+        Ok(_) => fs::remove_file(path).map_err(|source| BinpmError::RemovePath {
+            path: path.to_path_buf(),
+            source,
+        }),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
         Err(source) => Err(BinpmError::ReadFile {
             path: path.to_path_buf(),
             source,
@@ -1409,6 +1432,31 @@ mod tests {
         assert_eq!(repaired_sha, sha);
         assert_eq!(repaired_path, asset_path);
         assert_eq!(std::fs::read(&asset_path).expect("read repaired"), bytes);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_population_rejects_symlinked_digest_entry_before_repair() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        let resolved = resolved_asset();
+        let bytes = b"good bytes";
+        let sha = format!("{:x}", Sha256::digest(bytes));
+        let outside_asset = outside.path().join("asset");
+        std::fs::create_dir_all(cache.root.join("sha256")).expect("create sha256 root");
+        std::fs::write(&outside_asset, b"bad bytes").expect("write outside asset");
+        std::os::unix::fs::symlink(outside.path(), cache.entry_dir(&sha))
+            .expect("symlink digest entry");
+
+        let error = populate_cache_from_bytes(&cache, &resolved, bytes)
+            .expect_err("symlinked digest entry");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert_eq!(
+            std::fs::read(&outside_asset).expect("read outside asset"),
+            b"bad bytes"
+        );
     }
 
     #[test]
@@ -1872,6 +1920,21 @@ created_at = "2026-01-01T00:00:00Z"
         assert!(!installed.exists());
     }
 
+    #[test]
+    fn remove_installed_binary_rejects_directory_at_expected_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        let installed = managed_installed_path(&paths, "tool", TargetOs::Linux);
+        std::fs::create_dir_all(installed.join("child")).expect("create installed directory");
+        let mut record = package_record();
+        record.installed_path = installed.display().to_string();
+
+        let error = remove_installed_binary(&paths, "tool", &record).expect_err("directory");
+
+        assert!(error.to_string().contains("Failed to remove"));
+        assert!(installed.join("child").exists());
+    }
+
     #[cfg(unix)]
     #[test]
     fn remove_installed_binary_rejects_symlinked_bin_before_delete() {
@@ -1908,6 +1971,26 @@ created_at = "2026-01-01T00:00:00Z"
 
         assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
         assert!(outside.join("tool.toml").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn remove_package_record_rejects_symlinked_scope_root_before_delete() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let project = temp_dir.path().join("project");
+        let paths = ScopePaths::local(project);
+        let outside = temp_dir.path().join("outside-root");
+        std::fs::create_dir_all(outside.join("packages")).expect("create outside packages");
+        std::fs::write(outside.join("packages").join("tool.toml"), b"do not remove")
+            .expect("write outside record");
+        std::fs::create_dir_all(paths.root.parent().expect("scope parent"))
+            .expect("create project");
+        std::os::unix::fs::symlink(&outside, &paths.root).expect("symlink scope root");
+
+        let error = remove_package_record(&paths, "tool").expect_err("symlinked root");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert!(outside.join("packages").join("tool.toml").exists());
     }
 
     fn resolved_asset() -> ResolvedAsset {

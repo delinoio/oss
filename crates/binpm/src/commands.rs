@@ -1806,6 +1806,7 @@ fn remove_local_manifest_orphans(
     let mut orphan_cmds = BTreeSet::new();
     for (cmd, _) in list_package_records(&scope_paths)? {
         if !manifest_tools.contains_key(&cmd) {
+            validate_command_name(&cmd)?;
             orphan_cmds.insert(cmd);
         }
     }
@@ -1814,6 +1815,7 @@ fn remove_local_manifest_orphans(
     let mut lockfile = read_lockfile(&lockfile_path)?;
     for cmd in lockfile.tools.keys() {
         if !manifest_tools.contains_key(cmd) {
+            validate_command_name(cmd)?;
             orphan_cmds.insert(cmd.clone());
         }
     }
@@ -1884,10 +1886,7 @@ fn remove_local_orphan_runtime(
                 &installed_path,
                 record.target_os,
             ) {
-                match remove_installed_binary(paths, cmd, &record) {
-                    Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
-                    Err(error) => return Err(error),
-                }
+                remove_installed_binary(paths, cmd, &record)?;
             }
             Some((installed_path, record.target_os))
         } else {
@@ -1908,6 +1907,9 @@ fn remove_local_orphan_runtime(
         Ok(())
     })();
     if let Err(error) = cleanup_result {
+        if matches!(error, BinpmError::UnsafeInstalledPath { .. }) {
+            return Err(error);
+        }
         restore_local_runtime_and_cache_ref(root, paths, cache_paths, cmd, prior_state);
         return Err(error);
     }
@@ -2007,11 +2009,13 @@ fn capture_local_manifest_orphan_states(
     let mut orphan_cmds = BTreeSet::new();
     for (cmd, _) in list_package_records(&scope_paths)? {
         if !manifest_tools.contains_key(&cmd) {
+            validate_command_name(&cmd)?;
             orphan_cmds.insert(cmd);
         }
     }
     for cmd in read_lockfile(&root.join(LOCKFILE_FILE))?.tools.keys() {
         if !manifest_tools.contains_key(cmd) {
+            validate_command_name(cmd)?;
             orphan_cmds.insert(cmd.clone());
         }
     }
@@ -2203,10 +2207,7 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
                 &installed_path,
                 record.target_os,
             ) {
-                match remove_installed_binary(&paths, cmd, &record) {
-                    Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
-                    Err(error) => return Err(error),
-                }
+                remove_installed_binary(&paths, cmd, &record)?;
             }
             Some((installed_path, record.target_os))
         } else {
@@ -2227,6 +2228,9 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
         Ok(())
     })();
     if let Err(error) = cleanup_result {
+        if matches!(error, BinpmError::UnsafeInstalledPath { .. }) {
+            return Err(error);
+        }
         restore_local_remove_state(&root, cmd, prior_state);
         return Err(error);
     }
@@ -2272,10 +2276,7 @@ fn remove_global_tool_from_paths(paths: &ScopePaths, cmd: &str) -> Result<()> {
     let record = read_package_record(&record_path)?;
     let stale_installed_path = managed_installed_path(paths, cmd, record.target_os);
     if !is_global_managed_installed_path(paths, cmd, &stale_installed_path)? {
-        match remove_installed_binary(paths, cmd, &record) {
-            Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
-            Err(error) => return Err(error),
-        }
+        remove_installed_binary(paths, cmd, &record)?;
     }
     if let Err(error) = remove_package_record(paths, cmd).and_then(|_| {
         if is_global_managed_installed_path(paths, cmd, &stale_installed_path)? {
@@ -3820,6 +3821,39 @@ mod tests {
     }
 
     #[test]
+    fn manifest_sync_rejects_invalid_lock_orphan_name_before_runtime_capture() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let victim = temp_dir.path().join("victim.toml");
+        fs::write(&victim, "do not read as package record").expect("write victim");
+        write_lockfile(
+            &temp_dir.path().join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "../../victim".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([(
+                            "linux-x86_64-gnu".to_string(),
+                            package_record(),
+                        )]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+
+        let error = remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new(), false)
+            .expect_err("invalid orphan command");
+
+        assert!(error.to_string().contains("Invalid command name"));
+        assert_eq!(
+            fs::read_to_string(&victim).expect("read victim"),
+            "do not read as package record"
+        );
+    }
+
+    #[test]
     fn frozen_manifest_sync_rejects_lock_orphans_without_removing_them() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let mut record = package_record();
@@ -4282,7 +4316,7 @@ mod tests {
     }
 
     #[test]
-    fn global_remove_skips_unsafe_installed_path_and_cleans_record() {
+    fn global_remove_rejects_unsafe_installed_path_and_preserves_state() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
         let outside = temp_dir.path().join("outside-tool");
@@ -4292,21 +4326,26 @@ mod tests {
         write_package_record(&paths, "tool", &record).expect("write package record");
         std::fs::write(paths.bin.join("tool"), "shim").expect("write bin candidate");
 
-        remove_global_tool_from_paths(&paths, "tool").expect("remove global tool");
+        let error = remove_global_tool_from_paths(&paths, "tool").expect_err("unsafe path");
 
+        assert!(error.to_string().contains("Unsafe installed path"));
         assert_eq!(
             std::fs::read_to_string(&outside).expect("read outside file"),
             "original"
         );
-        assert!(!crate::storage::package_record_path(&paths, "tool").exists());
-        assert!(!paths.bin.join("tool").exists());
+        assert!(crate::storage::package_record_path(&paths, "tool").exists());
+        assert_eq!(
+            std::fs::read_to_string(paths.bin.join("tool")).expect("read bin candidate"),
+            "shim"
+        );
     }
 
     #[test]
     fn global_remove_preserves_exe_sibling_for_linux_tool() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
-        let record = package_record();
+        let mut record = package_record();
+        record.installed_path = paths.bin.join("tool").display().to_string();
         write_package_record(&paths, "tool", &record).expect("write package record");
         std::fs::write(paths.bin.join("tool"), "linux tool").expect("write linux tool");
         std::fs::write(paths.bin.join("tool.exe"), "sibling tool").expect("write exe sibling");
