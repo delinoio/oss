@@ -56,7 +56,7 @@ fn install(args: InstallArgs) -> Result<i32> {
 
     if let Some(source) = &args.source {
         let spec = SourceSpec::from_str(source)?;
-        let scope = select_scope(requested_scope)?;
+        let scope = source_install_scope(requested_scope);
         info!(
             command = "install",
             scope = scope.as_str(),
@@ -116,24 +116,33 @@ fn add(args: AddArgs) -> Result<i32> {
             tools: BTreeMap::new(),
         }
     };
+    let manifest_tool = manifest.tools.get(&args.cmd).cloned();
     let prior_state = capture_local_tool_state(&root, &args.cmd)?;
     let record = install_local_tool(
         &root,
         &args.cmd,
         &spec,
-        None,
+        manifest_tool.as_ref(),
         args.lockfile.frozen_lockfile(),
         args.require_verified,
     )?;
-    manifest
-        .tools
-        .insert(args.cmd.clone(), manifest_tool_from_source(&spec));
+    manifest.tools.insert(
+        args.cmd.clone(),
+        update_manifest_tool_source(manifest_tool, &spec),
+    );
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         rollback_local_install_state(&root, &args.cmd, &record, prior_state);
         return Err(error);
     }
     println!("added {}", args.cmd);
     Ok(0)
+}
+
+fn source_install_scope(requested_scope: Scope) -> Scope {
+    match requested_scope {
+        Scope::Local => Scope::Local,
+        Scope::Global | Scope::Auto => Scope::Global,
+    }
 }
 
 fn exec(args: ExecArgs) -> Result<i32> {
@@ -1357,7 +1366,10 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     let cleanup_result = (|| {
         if record_path.exists() {
             let record = read_package_record(&record_path)?;
-            remove_installed_binary(&paths, cmd, &record)?;
+            match remove_installed_binary(&paths, cmd, &record) {
+                Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
+                Err(error) => return Err(error),
+            }
         }
         remove_package_record(&paths, cmd)?;
         remove_cache_ref(&CachePaths::new(&binpm_home()?), &root, cmd)?;
@@ -1954,14 +1966,15 @@ mod tests {
         lock_targets_conflict_with_record, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_target_override, manifest_tool_from_source,
         parse_manifest_source, project_root_from, restore_runtime_tool_state, select_explain_asset,
-        select_manifest_asset, shell_path, shell_quote, update_manifest_tool_source,
-        validate_package_record_metadata, verify_lockfile_records, ArtifactKind, RuntimeToolState,
+        select_manifest_asset, shell_path, shell_quote, source_install_scope,
+        update_manifest_tool_source, validate_package_record_metadata, verify_lockfile_records,
+        ArtifactKind, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
         contract::{
-            ArchiveFormat, ChecksumSource, HostTarget, SourceProvider, SourceSpec, TargetArch,
-            TargetLibc, TargetOs,
+            ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceProvider, SourceSpec,
+            TargetArch, TargetLibc, TargetOs,
         },
         release::ReleaseAsset,
         storage::{
@@ -1969,6 +1982,43 @@ mod tests {
             ManifestTool, PackageRecord, ScopePaths,
         },
     };
+
+    #[test]
+    fn source_installs_default_to_global_scope() {
+        assert_eq!(source_install_scope(Scope::Auto), Scope::Global);
+        assert_eq!(source_install_scope(Scope::Global), Scope::Global);
+        assert_eq!(source_install_scope(Scope::Local), Scope::Local);
+    }
+
+    #[test]
+    fn manifest_tool_source_update_preserves_overrides() {
+        let spec = SourceSpec::from_str("github:owner/new-tool@2.0.0").expect("source");
+        let mut targets = BTreeMap::new();
+        targets.insert(
+            "linux-x86_64-gnu".to_string(),
+            ManifestTargetOverride {
+                asset: "custom-asset".to_string(),
+                bin: "custom-bin".to_string(),
+                checksum_source: None,
+            },
+        );
+        let existing = ManifestTool {
+            source: "github:owner/old-tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("custom-bin".to_string()),
+            targets: targets.clone(),
+        };
+
+        let updated = update_manifest_tool_source(Some(existing), &spec);
+
+        assert_eq!(updated.source, "github:owner/new-tool");
+        assert_eq!(updated.version.as_deref(), Some("2.0.0"));
+        assert_eq!(updated.bin.as_deref(), Some("custom-bin"));
+        assert_eq!(
+            updated.targets.keys().collect::<Vec<_>>(),
+            targets.keys().collect::<Vec<_>>()
+        );
+    }
 
     #[test]
     fn global_home_falls_back_to_userprofile_after_invalid_home() {

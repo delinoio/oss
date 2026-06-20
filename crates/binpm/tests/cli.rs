@@ -489,3 +489,77 @@ fn install_rejects_empty_source_version() {
         .code(2)
         .stderr(predicate::str::contains("source version cannot be empty"));
 }
+
+#[test]
+fn local_remove_cleans_corrupt_package_record_with_unsafe_installed_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let unsafe_installed_path = temp_dir.path().join("outside-binpm-tool");
+    fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    let package_record = format!(
+        r#"package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux-x64"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux-x64"
+installed_path = "{}"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+checksum_source = "local"
+signature_available = false
+signature_verified = false
+"#,
+        unsafe_installed_path.display()
+    );
+    fs::write(
+        project.join(".binpm").join("packages").join("tool.toml"),
+        package_record,
+    )
+    .expect("write package record");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "tool"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed tool"));
+
+    assert!(!project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
+    let manifest = fs::read_to_string(project.join("binpm.toml")).expect("read manifest");
+    let lockfile = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
+    assert!(!manifest.contains("tools.tool"));
+    assert!(!lockfile.contains("tools.tool"));
+}
