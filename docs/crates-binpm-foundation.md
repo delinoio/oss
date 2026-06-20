@@ -3,7 +3,7 @@
 ## Scope
 - Project/component: `binpm` crate foundation contract
 - Canonical path: `crates/binpm`
-- Implementation status: runtime implementation has begun with a Rust CLI skeleton, clap command surface, typed contract foundations, source parsing, provider release lookup clients, source-form explain diagnostics, deterministic asset candidate scoring, structured tracing setup, centralized errors, README, and tests
+- Implementation status: runtime implementation has begun with a Rust CLI, clap command surface, typed contract foundations, source parsing, provider release lookup clients, source-form explain diagnostics, deterministic asset candidate scoring, TOML-backed local manifest and lockfile records, global and project-local package records, global cache metadata, sanitized persisted URLs, SHA-256 cache verification, atomic file writes, structured tracing setup, centralized errors, README, and tests
 
 ## Runtime and Language
 - Runtime: Rust CLI
@@ -15,13 +15,14 @@
 - Operators troubleshooting binary resolution, download, extraction, and local installation behavior.
 
 ## Interfaces and Contracts
-- The initial Rust crate must expose the full documented command surface through clap before package-manager behavior is implemented.
-- Initial command dispatch may return explicit not-yet-implemented errors for flows whose release lookup, asset selection, download, cache mutation, extraction, install, update, remove, verification, explanation, listing, info, outdated, or process execution behavior is not yet implemented.
-- Initial safe commands may implement read-only or bootstrap behavior when they do not violate storage or mutation contracts:
+- The Rust crate must expose the full documented command surface through clap.
+- Command dispatch must return explicit not-yet-implemented errors for flows whose release lookup, asset selection, download, cache mutation, extraction, install, update, remove, verification, explanation, listing, info, outdated, or process execution behavior is not yet implemented.
+- Implemented safe commands may perform read-only or bootstrap behavior when they do not violate storage or mutation contracts:
   - `binpm init` may create `binpm.toml` containing `version = 1`.
   - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories.
   - `binpm doctor` may report manifest, lockfile, and global home state without mutation.
   - `binpm cache key` may print a deterministic key for the current target and project-root `binpm.lock`, using an empty lockfile digest when the file is absent.
+- Current install finalization supports bare executable assets end to end. Archive assets are classified and selected by the asset scoring layer, but archive extraction and archive member installation still fail explicitly until the extraction implementation lands.
 - Canonical global install command: `binpm install <source>`.
 - Canonical local declaration command: `binpm add <cmd> <source>`.
 - Canonical local sync command: `binpm install`.
@@ -193,8 +194,10 @@ signature_verified = false
 - Project-local temporary downloads and extraction roots: `$repoRoot/.binpm/tmp`
 - Project-local package records may be stored under `$repoRoot/.binpm/packages` as runtime implementation detail, but committed resolution data must live in `binpm.lock`.
 - The global cache stores release asset original bytes, not extracted package directories or installed binaries.
+- The current concrete cache entry layout is `~/.binpm/cache/sha256/<hex>/asset` for original asset bytes plus `~/.binpm/cache/sha256/<hex>/record.toml` for cache metadata. The cache key string stored in package records is `sha256:<hex>`.
 - Cache entries must be content-addressed by `sha256:<hex>` when provider metadata exposes a trusted SHA-256 digest.
 - When provider metadata does not expose a trusted digest, `binpm` must compute SHA-256 after download and use the local digest as both the cache key and the install manifest verification value.
+- The current implementation records downloaded bare-executable assets with `checksum_source = "local"` unless a future provider digest, checksum sidecar, checksum manifest, or verified signature implementation supplies a stronger source.
 - Cache lookup for assets without provider-provided digests may use source metadata to find a prior local digest, but source provider, source host, source path, release tag, asset name, or URL alone must not make bytes reusable without SHA-256 revalidation.
 - Cache metadata must preserve the source provider, source host, source path, release tag, asset name, sanitized canonical asset URL, byte size when known, checksum source, creation timestamp, and last-used timestamp when known.
 - Cache metadata may reference more than one installed command or package record for the same verified asset bytes.
@@ -238,7 +241,7 @@ signature_verified = false
 - Local validation for binpm runtime changes must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.
 - Initial skeleton tests must cover clap command availability, source spec parsing, target alias normalization, logging defaults, `init`, `env`, and read-only cache key foundations.
 - Heuristic tests must cover OS aliases, architecture aliases, libc aliases, exact libc preference, Linux glibc missing-libc fallback, Linux musl missing-libc rejection, source archive rejection, sidecar rejection, desktop installer de-prioritization, cargo-binstall candidates, cargo-dist candidates, GoReleaser candidates, Bun/Deno candidates, and ambiguous archive contents.
-- Storage tests must cover atomic install behavior, cache miss download and digest recording, cache hit reuse after verification, digest mismatch eviction and redownload, concurrent partial download isolation, `binpm.toml` updates, `binpm.lock` updates, global install records, project-local install records, stale lock reinstall behavior, cache command behavior for `list`, `prune`, `clean`, and `key`, multi-command cache sharing, and unsafe archive path rejection.
+- Storage tests must cover atomic install behavior, cache miss download and digest recording, cache hit reuse after verification, digest mismatch eviction and redownload, concurrent partial download isolation, `binpm.toml` updates, `binpm.lock` updates, global install records, project-local install records, stale lock reinstall behavior, cache command behavior for `list`, `prune`, `clean`, and `key`, multi-command cache sharing, and unsafe archive path rejection. The current test suite covers atomic TOML writes, atomic bare-executable install writes, cache population/reuse by SHA-256, digest mismatch detection, cache prune/clean preservation boundaries, sanitized persisted URLs, and deterministic lockfile records without runtime cache paths.
 - Execution tests must cover `binpm x` local PATH behavior, argument forwarding, current-working-directory preservation, explicit `--package` execution, missing-manifest failure, missing-command failure, install-on-demand from a valid lockfile, frozen-lockfile failures, `--no-frozen-lockfile` override behavior, and read-only diagnostics for `doctor`, `explain`, and `verify`.
 
 ## Dependencies and Integrations

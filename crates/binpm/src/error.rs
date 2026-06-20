@@ -45,6 +45,60 @@ pub enum BinpmError {
         #[source]
         source: io::Error,
     },
+    #[error("Failed to create directory `{}`: {source}", path.display())]
+    CreateDirectory {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Failed to remove `{}`: {source}", path.display())]
+    RemovePath {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Failed to rename `{}` to `{}`: {source}", from.display(), to.display())]
+    RenamePath {
+        from: PathBuf,
+        to: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Failed to serialize `{}`: {source}", path.display())]
+    SerializeToml {
+        path: PathBuf,
+        #[source]
+        source: toml::ser::Error,
+    },
+    #[error("Failed to parse `{}`: {source}", path.display())]
+    ParseToml {
+        path: PathBuf,
+        #[source]
+        source: toml::de::Error,
+    },
+    #[error("Frozen lockfile prevents modifying `{}`.", path.display())]
+    FrozenLockfile { path: PathBuf },
+    #[error("No local binpm.toml manifest found from `{}`.", start.display())]
+    MissingManifest { start: PathBuf },
+    #[error("Tool `{cmd}` is not declared in `{}`.", manifest.display())]
+    MissingTool { cmd: String, manifest: PathBuf },
+    #[error("No installable asset matched `{package}` for target `{target}`.")]
+    AssetNotFound { package: String, target: String },
+    #[error("Archive extraction is not implemented for `{asset}` yet.")]
+    ArchiveExtractionNotImplemented { asset: String },
+    #[error(
+        "`--require-verified` requires upstream digest, checksum, or verified signature material \
+         for `{package}`."
+    )]
+    VerificationRequired { package: String },
+    #[error("SHA-256 mismatch for `{}`: expected {expected}, got {actual}.", path.display())]
+    DigestMismatch {
+        path: PathBuf,
+        expected: String,
+        actual: String,
+    },
+    #[error("Unsafe persisted URL `{url}`: {message}")]
+    UnsafeUrl { url: String, message: String },
     #[error("Failed to determine binpm global home. Set BINPM_HOME, HOME, or USERPROFILE.")]
     MissingGlobalHome,
     #[error(
@@ -66,10 +120,23 @@ impl BinpmError {
             Self::CurrentDirectory(_)
             | Self::WriteFile { .. }
             | Self::ReadFile { .. }
+            | Self::CreateDirectory { .. }
+            | Self::RemovePath { .. }
+            | Self::RenamePath { .. }
+            | Self::SerializeToml { .. }
+            | Self::ParseToml { .. }
+            | Self::DigestMismatch { .. }
             | Self::MissingGlobalHome
             | Self::InvalidGlobalHome { .. }
             | Self::ReleaseHttpClient(_)
             | Self::ReleaseLookup(_) => 1,
+            Self::FrozenLockfile { .. }
+            | Self::MissingManifest { .. }
+            | Self::MissingTool { .. }
+            | Self::AssetNotFound { .. }
+            | Self::ArchiveExtractionNotImplemented { .. }
+            | Self::VerificationRequired { .. }
+            | Self::UnsafeUrl { .. } => 2,
         }
     }
 }

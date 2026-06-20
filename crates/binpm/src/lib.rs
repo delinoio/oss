@@ -5,6 +5,7 @@ pub mod contract;
 pub mod error;
 pub mod logging;
 pub mod release;
+pub mod storage;
 
 use cli::Cli;
 use error::Result;

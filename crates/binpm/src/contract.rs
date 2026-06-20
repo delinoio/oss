@@ -406,6 +406,22 @@ pub enum ChecksumSource {
     Local,
 }
 
+impl ChecksumSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GitHubDigest => "github-digest",
+            Self::Sidecar => "sidecar",
+            Self::Manifest => "manifest",
+            Self::Signature => "signature",
+            Self::Local => "local",
+        }
+    }
+
+    pub fn is_upstream_verified(self) -> bool {
+        !matches!(self, Self::Local | Self::Signature)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ArchiveFormat {
     #[serde(rename = "tar.gz")]
@@ -422,6 +438,20 @@ pub enum ArchiveFormat {
     Zip,
     #[serde(rename = "bare-executable")]
     BareExecutable,
+}
+
+impl ArchiveFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::TarGz => "tar.gz",
+            Self::Tgz => "tgz",
+            Self::TarXz => "tar.xz",
+            Self::Txz => "txz",
+            Self::TarZst => "tar.zst",
+            Self::Zip => "zip",
+            Self::BareExecutable => "bare-executable",
+        }
+    }
 }
 
 #[cfg(test)]
