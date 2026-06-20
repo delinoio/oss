@@ -205,6 +205,7 @@ pub struct ResolvedAsset {
     pub decision: CandidateDecision,
     pub archive_format: ArchiveFormat,
     pub selected_binary: String,
+    pub provider_digest_sha256: Option<String>,
     pub checksum_source: ChecksumSource,
     pub signature_available: bool,
     pub signature_verified: bool,
@@ -313,24 +314,51 @@ pub fn write_cache_record(paths: &CachePaths, record: &CacheRecord) -> Result<()
 
 pub fn read_cache_records(paths: &CachePaths) -> Result<Vec<CacheRecord>> {
     let mut records = Vec::new();
+    for (_, record) in read_cache_record_entries(paths)? {
+        records.push(record);
+    }
+    records.sort_by(|left: &CacheRecord, right| left.cache_key.cmp(&right.cache_key));
+    Ok(records)
+}
+
+fn cache_entry_dirs(paths: &CachePaths) -> Result<Vec<PathBuf>> {
     let root = paths.root.join("sha256");
     let entries = match fs::read_dir(&root) {
         Ok(entries) => entries,
-        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(records),
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
         Err(source) => return Err(BinpmError::ReadFile { path: root, source }),
     };
 
+    let mut dirs = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|source| BinpmError::ReadFile {
             path: root.clone(),
             source,
         })?;
-        let path = entry.path().join("record.toml");
-        if path.exists() {
-            records.push(read_toml(&path)?);
+        if entry
+            .file_type()
+            .map_err(|source| BinpmError::ReadFile {
+                path: entry.path(),
+                source,
+            })?
+            .is_dir()
+        {
+            dirs.push(entry.path());
         }
     }
-    records.sort_by(|left: &CacheRecord, right| left.cache_key.cmp(&right.cache_key));
+    dirs.sort();
+    Ok(dirs)
+}
+
+fn read_cache_record_entries(paths: &CachePaths) -> Result<Vec<(PathBuf, CacheRecord)>> {
+    let mut records = Vec::new();
+    for dir in cache_entry_dirs(paths)? {
+        let path = dir.join("record.toml");
+        if path.exists() {
+            records.push((dir, read_toml::<CacheRecord>(&path)?));
+        }
+    }
+    records.sort_by(|left, right| left.1.cache_key.cmp(&right.1.cache_key));
     Ok(records)
 }
 
@@ -538,6 +566,15 @@ pub fn remove_installed_binary(
     cmd: &str,
     record: &PackageRecord,
 ) -> Result<()> {
+    let expected = validate_installed_binary_path(paths, cmd, record)?;
+    remove_path_if_exists(&expected)
+}
+
+pub fn validate_installed_binary_path(
+    paths: &ScopePaths,
+    cmd: &str,
+    record: &PackageRecord,
+) -> Result<PathBuf> {
     validate_command_name(cmd)?;
     let expected = managed_installed_path(paths, cmd, record.target_os);
     let recorded = PathBuf::from(&record.installed_path);
@@ -547,16 +584,15 @@ pub fn remove_installed_binary(
             expected,
         });
     }
-    remove_path_if_exists(&expected)
+    Ok(expected)
 }
 
 pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Result<usize> {
     let mut removed = 0;
-    for record in read_cache_records(paths)? {
+    for (dir, record) in read_cache_record_entries(paths)? {
         if referenced_keys.contains(&record.cache_key) {
             continue;
         }
-        let dir = paths.entry_dir(&record.sha256);
         remove_path_if_exists(&dir)?;
         removed += 1;
         info!(
@@ -571,7 +607,7 @@ pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Re
 }
 
 pub fn clean_cache(paths: &CachePaths) -> Result<usize> {
-    let count = read_cache_records(paths)?.len();
+    let count = cache_entry_dirs(paths)?.len();
     remove_path_if_exists(&paths.root)?;
     ensure_dir(&paths.root)?;
     Ok(count)
@@ -1043,6 +1079,40 @@ mod tests {
     }
 
     #[test]
+    fn prune_uses_enumerated_cache_directory_not_record_sha_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let entry = cache.root.join("sha256").join("entry");
+        let outside = temp_dir.path().join("outside");
+        std::fs::create_dir_all(&entry).expect("create entry");
+        std::fs::create_dir_all(&outside).expect("create outside");
+        std::fs::write(outside.join("keep"), b"keep").expect("write outside marker");
+        std::fs::write(
+            entry.join("record.toml"),
+            r#"
+version = 1
+cache_key = "sha256:entry"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+release_tag = "1.0.0"
+asset_name = "tool"
+asset_url = "https://example.com/tool"
+sha256 = "../../outside"
+checksum_source = "local"
+created_at = "2026-01-01T00:00:00Z"
+"#,
+        )
+        .expect("write record");
+
+        let removed = prune_cache(&cache, &BTreeSet::new()).expect("prune");
+
+        assert_eq!(removed, 1);
+        assert!(!entry.exists());
+        assert!(outside.join("keep").exists());
+    }
+
+    #[test]
     fn referenced_cache_keys_include_cross_project_refs() {
         let home = tempfile::tempdir().expect("home");
         let project = tempfile::tempdir().expect("project");
@@ -1084,6 +1154,21 @@ mod tests {
 
         assert_eq!(removed, 1);
         assert!(bin.join("tool").exists());
+    }
+
+    #[test]
+    fn clean_cache_removes_malformed_cache_records() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let entry = cache.root.join("sha256").join("bad");
+        std::fs::create_dir_all(&entry).expect("create bad entry");
+        std::fs::write(entry.join("record.toml"), "not = [valid").expect("write malformed");
+
+        let removed = clean_cache(&cache).expect("clean cache");
+
+        assert_eq!(removed, 1);
+        assert!(!entry.exists());
+        assert!(cache.root.exists());
     }
 
     #[test]
@@ -1190,6 +1275,7 @@ mod tests {
             },
             archive_format: ArchiveFormat::BareExecutable,
             selected_binary: "tool-linux-x64".to_string(),
+            provider_digest_sha256: None,
             checksum_source: ChecksumSource::Local,
             signature_available: false,
             signature_verified: false,

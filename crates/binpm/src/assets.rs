@@ -603,6 +603,7 @@ mod tests {
             name: name.to_string(),
             url: format!("https://example.com/{name}"),
             provider_url: None,
+            digest: None,
             source_archive: false,
             final_url_https: None,
         }

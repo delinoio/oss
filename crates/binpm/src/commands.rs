@@ -23,9 +23,10 @@ use crate::{
         package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
         read_lockfile, read_manifest, read_package_record, referenced_cache_keys, remove_cache_ref,
         remove_installed_binary, remove_package_record, remove_path_if_exists,
-        sanitize_persisted_url, validate_command_name, write_cache_ref, write_lockfile,
-        write_manifest, write_package_record, CachePaths, LockTool, Manifest, ManifestTool,
-        PackageRecord, ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
+        sanitize_persisted_url, validate_command_name, validate_installed_binary_path,
+        write_cache_ref, write_lockfile, write_manifest, write_package_record, CachePaths,
+        LockTool, Manifest, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths, LOCKFILE_FILE,
+        MANIFEST_FILE,
     },
 };
 
@@ -598,6 +599,16 @@ fn install_resolved(
         });
     }
     let bytes = download_asset(&resolved.decision.download_url)?;
+    if let Some(expected) = &resolved.provider_digest_sha256 {
+        let actual = format!("{:x}", Sha256::digest(&bytes));
+        if &actual != expected {
+            return Err(BinpmError::DigestMismatch {
+                path: cache_paths.asset_path(expected),
+                expected: expected.clone(),
+                actual,
+            });
+        }
+    }
     let (sha256, cache_asset) = populate_cache_from_bytes(cache_paths, &resolved, &bytes)?;
     let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
     install_bare_executable(&cache_asset, &installed_path)?;
@@ -694,6 +705,7 @@ fn install_local_from_lock(
             },
             archive_format: record.archive_format,
             selected_binary: record.selected_binary.clone(),
+            provider_digest_sha256: None,
             checksum_source: record.checksum_source,
             signature_available: record.signature_available,
             signature_verified: record.signature_verified,
@@ -797,7 +809,18 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         Some(bin) => bin.to_string(),
         None => decision.asset_name.clone(),
     };
-    let checksum_source = manifest_checksum_source(tool, &target)?;
+    let provider_digest_sha256 = release
+        .assets
+        .iter()
+        .find(|asset| asset.name == decision.asset_name)
+        .and_then(|asset| github_sha256_digest(asset.digest.as_deref()));
+    let checksum_source = if spec.provider == crate::contract::SourceProvider::GitHub
+        && provider_digest_sha256.is_some()
+    {
+        ChecksumSource::GitHubDigest
+    } else {
+        manifest_checksum_source(tool, &target)?
+    };
     Ok(ResolvedAsset {
         source: spec.clone(),
         release_tag: release.tag,
@@ -805,10 +828,24 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         decision,
         archive_format,
         selected_binary,
+        provider_digest_sha256,
         checksum_source,
         signature_available: false,
         signature_verified: false,
     })
+}
+
+fn github_sha256_digest(raw: Option<&str>) -> Option<String> {
+    let digest = raw?.strip_prefix("sha256:")?;
+    if digest.len() == 64
+        && digest
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    {
+        Some(digest.to_ascii_lowercase())
+    } else {
+        None
+    }
 }
 
 fn parse_manifest_source(raw: &str) -> Result<SourceSpec> {
@@ -940,9 +977,25 @@ struct LocalToolState {
     runtime: RuntimeToolState,
 }
 
+#[derive(Debug, Clone)]
+struct LocalRemoveState {
+    manifest: Manifest,
+    lockfile: crate::storage::Lockfile,
+    runtime: RuntimeToolState,
+}
+
 fn capture_local_tool_state(root: &Path, cmd: &str) -> Result<LocalToolState> {
     let scope_paths = ScopePaths::local(root.to_path_buf());
     Ok(LocalToolState {
+        lockfile: read_lockfile(&root.join(LOCKFILE_FILE))?,
+        runtime: capture_runtime_tool_state(&scope_paths, cmd)?,
+    })
+}
+
+fn capture_local_remove_state(root: &Path, cmd: &str) -> Result<LocalRemoveState> {
+    let scope_paths = ScopePaths::local(root.to_path_buf());
+    Ok(LocalRemoveState {
+        manifest: read_manifest(&root.join(MANIFEST_FILE))?,
         lockfile: read_lockfile(&root.join(LOCKFILE_FILE))?,
         runtime: capture_runtime_tool_state(&scope_paths, cmd)?,
     })
@@ -995,6 +1048,26 @@ fn rollback_local_install_state(
             }
         }
     }
+    let _ = write_lockfile(&root.join(LOCKFILE_FILE), &prior_state.lockfile);
+}
+
+fn restore_local_remove_state(root: &Path, cmd: &str, prior_state: LocalRemoveState) {
+    let scope_paths = ScopePaths::local(root.to_path_buf());
+    let cache_paths = binpm_home().ok().map(|home| CachePaths::new(&home));
+    restore_runtime_tool_state(&scope_paths, cmd, prior_state.runtime.clone());
+    match &prior_state.runtime.package_record {
+        Some(previous) => {
+            if let Some(cache_paths) = &cache_paths {
+                let _ = write_cache_ref(cache_paths, root, cmd, previous);
+            }
+        }
+        None => {
+            if let Some(cache_paths) = &cache_paths {
+                let _ = remove_cache_ref(cache_paths, root, cmd);
+            }
+        }
+    }
+    let _ = write_manifest(&root.join(MANIFEST_FILE), &prior_state.manifest);
     let _ = write_lockfile(&root.join(LOCKFILE_FILE), &prior_state.lockfile);
 }
 
@@ -1069,6 +1142,7 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     let manifest_path = root.join(MANIFEST_FILE);
     let lockfile_path = root.join(LOCKFILE_FILE);
     let paths = ScopePaths::local(root.clone());
+    let prior_state = capture_local_remove_state(&root, cmd)?;
     let record_path = package_record_path(&paths, cmd);
     if record_path.exists() {
         let record = read_package_record(&record_path)?;
@@ -1081,11 +1155,17 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
 
     let mut manifest = read_manifest(&manifest_path)?;
     manifest.tools.remove(cmd);
-    write_manifest(&manifest_path, &manifest)?;
+    if let Err(error) = write_manifest(&manifest_path, &manifest) {
+        restore_local_remove_state(&root, cmd, prior_state);
+        return Err(error);
+    }
 
     let mut lockfile = read_lockfile(&lockfile_path)?;
     lockfile.tools.remove(cmd);
-    write_lockfile(&lockfile_path, &lockfile)?;
+    if let Err(error) = write_lockfile(&lockfile_path, &lockfile) {
+        restore_local_remove_state(&root, cmd, prior_state);
+        return Err(error);
+    }
     println!("removed {cmd}");
     Ok(0)
 }
@@ -1159,9 +1239,14 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     let mut checked = 0usize;
     let mut locked = BTreeSet::new();
     if let Some(root) = &root {
+        let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
         let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
-        let (lock_checked, lock_commands) =
-            verify_lockfile_records(lockfile, args.require_verified)?;
+        let (lock_checked, lock_commands) = verify_lockfile_records(
+            &root.join(LOCKFILE_FILE),
+            lockfile,
+            Some((&manifest, root.as_path())),
+            args.require_verified,
+        )?;
         checked += lock_checked;
         locked = lock_commands;
     }
@@ -1178,7 +1263,8 @@ fn verify(args: VerifyArgs) -> Result<i32> {
                 crate::storage::verify_sha256(cache_path, &record.sha256)?;
             }
         }
-        crate::storage::verify_sha256(Path::new(&record.installed_path), &record.sha256)?;
+        let installed_path = validate_installed_binary_path(&paths, &cmd, &record)?;
+        crate::storage::verify_sha256(&installed_path, &record.sha256)?;
         println!("{cmd} verified {}", record.checksum_source.as_str());
         if !locked.contains(&cmd) {
             checked += 1;
@@ -1189,14 +1275,71 @@ fn verify(args: VerifyArgs) -> Result<i32> {
 }
 
 fn verify_lockfile_records(
+    lockfile_path: &Path,
     lockfile: crate::storage::Lockfile,
+    manifest: Option<(&Manifest, &Path)>,
     require_verified: bool,
 ) -> Result<(usize, BTreeSet<String>)> {
     let mut checked = 0usize;
     let mut locked = BTreeSet::new();
+    if let Some((manifest, root)) = manifest {
+        for (cmd, manifest_tool) in &manifest.tools {
+            validate_command_name(cmd)?;
+            let mut spec = parse_manifest_source(&manifest_tool.source)?;
+            spec.version = manifest_tool.version.clone();
+            let locked_tool = lockfile.tools.get(cmd).ok_or(BinpmError::FrozenLockfile {
+                path: lockfile_path.to_path_buf(),
+            })?;
+            if locked_tool.source != spec.source_without_version() || locked_tool.targets.is_empty()
+            {
+                return Err(BinpmError::StaleLockfile {
+                    path: lockfile_path.to_path_buf(),
+                    cmd: cmd.clone(),
+                });
+            }
+            for (target_key, record) in &locked_tool.targets {
+                let target = HostTarget::from_str(target_key)?;
+                if record.requested_version != spec.version {
+                    return Err(BinpmError::StaleLockfile {
+                        path: lockfile_path.to_path_buf(),
+                        cmd: cmd.clone(),
+                    });
+                }
+                assert_lock_record_matches_source_and_target(
+                    lockfile_path,
+                    cmd,
+                    &spec,
+                    &target,
+                    record,
+                )?;
+                assert_lock_matches_manifest_tool(root, cmd, Some(manifest_tool), &target, record)?;
+            }
+        }
+    }
     for (cmd, tool) in lockfile.tools {
         validate_command_name(&cmd)?;
         for (target_key, record) in tool.targets {
+            let target = HostTarget::from_str(&target_key)?;
+            let spec = SourceSpec::from_str(
+                &record
+                    .requested_version
+                    .as_ref()
+                    .map(|version| format!("{}@{version}", record.source))
+                    .unwrap_or_else(|| record.source.clone()),
+            )?;
+            if tool.source != record.source || tool.source != spec.source_without_version() {
+                return Err(BinpmError::StaleLockfile {
+                    path: lockfile_path.to_path_buf(),
+                    cmd: cmd.clone(),
+                });
+            }
+            assert_lock_record_matches_source_and_target(
+                lockfile_path,
+                &cmd,
+                &spec,
+                &target,
+                &record,
+            )?;
             if require_verified && !record.has_verified_source() {
                 return Err(BinpmError::VerificationRequired {
                     package: record.package_spec,
@@ -1473,10 +1616,11 @@ mod tests {
 
     use super::{
         assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
-        binpm_home_from_values, deterministic_installed_path, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_tool_from_source,
-        parse_manifest_source, project_root_from, restore_runtime_tool_state,
-        select_manifest_asset, shell_path, shell_quote, verify_lockfile_records, RuntimeToolState,
+        binpm_home_from_values, deterministic_installed_path, github_sha256_digest,
+        lockfile_digest, manifest_checksum_source, manifest_creation_root_from,
+        manifest_tool_from_source, parse_manifest_source, project_root_from,
+        restore_runtime_tool_state, select_manifest_asset, shell_path, shell_quote,
+        verify_lockfile_records, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -1485,7 +1629,9 @@ mod tests {
             TargetLibc, TargetOs,
         },
         release::ReleaseAsset,
-        storage::{LockTool, Lockfile, ManifestTargetOverride, ManifestTool, PackageRecord},
+        storage::{
+            LockTool, Lockfile, Manifest, ManifestTargetOverride, ManifestTool, PackageRecord,
+        },
     };
 
     #[test]
@@ -1615,6 +1761,7 @@ mod tests {
 
     #[test]
     fn strict_lockfile_verify_checks_every_target_record() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
         let mut linux_record = package_record();
         linux_record.checksum_source = ChecksumSource::GitHubDigest;
         let mut darwin_record = package_record();
@@ -1637,9 +1784,78 @@ mod tests {
         };
 
         let error =
-            verify_lockfile_records(lockfile, true).expect_err("unverified target is rejected");
+            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
+                .expect_err("unverified target is rejected");
 
         assert!(error.to_string().contains("github:owner/tool@1.0.0#darwin"));
+    }
+
+    #[test]
+    fn lockfile_verify_rejects_record_under_mismatched_target_key() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::GitHubDigest;
+        let lockfile = Lockfile {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                LockTool {
+                    source: "github:owner/tool".to_string(),
+                    targets: BTreeMap::from([("darwin-x86_64-any".to_string(), record)]),
+                },
+            )]),
+        };
+
+        let error =
+            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
+                .expect_err("mismatched target is stale");
+
+        assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn local_lockfile_verify_requires_manifest_tools() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let manifest = Manifest {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                ManifestTool {
+                    source: "github:owner/tool".to_string(),
+                    version: Some("1.0.0".to_string()),
+                    bin: None,
+                    targets: BTreeMap::new(),
+                },
+            )]),
+        };
+        let lockfile = Lockfile {
+            version: 1,
+            tools: BTreeMap::new(),
+        };
+
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            Some((&manifest, temp_dir.path())),
+            true,
+        )
+        .expect_err("manifest tool must be locked");
+
+        assert!(error.to_string().contains("Frozen lockfile"));
+    }
+
+    #[test]
+    fn github_digest_parser_accepts_only_sha256_digests() {
+        assert_eq!(
+            github_sha256_digest(Some(
+                "sha256:ABCDEFabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123"
+            ))
+            .as_deref(),
+            Some("abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123")
+        );
+        assert_eq!(github_sha256_digest(Some("md5:abc")), None);
+        assert_eq!(github_sha256_digest(Some("sha256:not-hex")), None);
+        assert_eq!(github_sha256_digest(None), None);
     }
 
     #[test]
@@ -1760,6 +1976,7 @@ mod tests {
             name: "tool-linux".to_string(),
             url: "https://gitlab.com/owner/tool/-/releases/v1/downloads/tool-linux".to_string(),
             provider_url: None,
+            digest: None,
             source_archive: false,
             final_url_https: Some(false),
         }];

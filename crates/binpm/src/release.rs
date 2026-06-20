@@ -26,6 +26,7 @@ pub struct ReleaseAsset {
     pub name: String,
     pub url: String,
     pub provider_url: Option<String>,
+    pub digest: Option<String>,
     pub source_archive: bool,
     pub final_url_https: Option<bool>,
 }
@@ -118,6 +119,7 @@ impl ReleaseClient for GitHubReleaseClient {
                             name: asset.name,
                             url: asset.browser_download_url,
                             provider_url: None,
+                            digest: asset.digest,
                             source_archive: false,
                             final_url_https: None,
                         })
@@ -364,6 +366,7 @@ struct GitHubRelease {
 struct GitHubAsset {
     name: String,
     browser_download_url: String,
+    digest: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -415,6 +418,7 @@ impl GitLabRelease {
                     name: link.name,
                     url: link.url,
                     provider_url: link.direct_asset_url,
+                    digest: None,
                     source_archive: false,
                     final_url_https: None,
                 })
@@ -422,6 +426,7 @@ impl GitLabRelease {
                     name: source.format,
                     url: source.url,
                     provider_url: None,
+                    digest: None,
                     source_archive: true,
                     final_url_https: None,
                 }))
@@ -734,6 +739,7 @@ mod tests {
                 name: "source".to_string(),
                 url: "https://example.com/source.tar.gz".to_string(),
                 provider_url: None,
+                digest: None,
                 source_archive: true,
                 final_url_https: None,
             }],
@@ -760,6 +766,7 @@ mod tests {
                     name: "tool-x86_64-unknown-linux-gnu.tar.gz.sha256".to_string(),
                     url: "https://127.0.0.1:9/tool.tar.gz.sha256".to_string(),
                     provider_url: None,
+                    digest: None,
                     source_archive: false,
                     final_url_https: None,
                 },
@@ -767,6 +774,7 @@ mod tests {
                     name: "tool.dmg".to_string(),
                     url: "https://127.0.0.1:9/tool.dmg".to_string(),
                     provider_url: None,
+                    digest: None,
                     source_archive: false,
                     final_url_https: None,
                 },
@@ -774,6 +782,7 @@ mod tests {
                     name: "latest.json".to_string(),
                     url: "https://127.0.0.1:9/latest.json".to_string(),
                     provider_url: None,
+                    digest: None,
                     source_archive: false,
                     final_url_https: None,
                 },
