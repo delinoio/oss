@@ -490,7 +490,7 @@ fn install_local_manifest(
             continue;
         }
         validate_command_name(&cmd)?;
-        let mut spec = SourceSpec::from_str(&tool.source)?;
+        let mut spec = parse_manifest_source(&tool.source)?;
         spec.version = tool.version.clone();
         install_local_tool(
             &root,
@@ -769,6 +769,7 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         Some(bin) => bin.to_string(),
         None => decision.asset_name.clone(),
     };
+    let checksum_source = manifest_checksum_source(tool, &target);
     Ok(ResolvedAsset {
         source: spec.clone(),
         release_tag: release.tag,
@@ -776,10 +777,31 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         decision,
         archive_format,
         selected_binary,
-        checksum_source: ChecksumSource::Local,
+        checksum_source,
         signature_available: false,
         signature_verified: false,
     })
+}
+
+fn parse_manifest_source(raw: &str) -> Result<SourceSpec> {
+    let spec = SourceSpec::from_str(raw)?;
+    if spec.version.is_some() {
+        return Err(BinpmError::InvalidSourceSpec {
+            raw: raw.to_string(),
+            message: "manifest tool sources must be versionless; use the `version` field"
+                .to_string(),
+        });
+    }
+    Ok(spec)
+}
+
+fn manifest_checksum_source(tool: Option<&ManifestTool>, target: &HostTarget) -> ChecksumSource {
+    tool.and_then(|tool| {
+        tool.targets
+            .get(&target.key())
+            .and_then(|override_target| override_target.checksum_source)
+    })
+    .unwrap_or(ChecksumSource::Local)
 }
 
 fn select_manifest_asset(
@@ -1385,8 +1407,8 @@ mod tests {
 
     use super::{
         assert_lock_matches_manifest_tool, binpm_home_from_values, deterministic_installed_path,
-        lockfile_digest, manifest_creation_root_from, project_root_from, select_manifest_asset,
-        shell_path, shell_quote,
+        lockfile_digest, manifest_checksum_source, manifest_creation_root_from,
+        parse_manifest_source, project_root_from, select_manifest_asset, shell_path, shell_quote,
     };
     use crate::{
         cli::Shell,
@@ -1502,6 +1524,41 @@ mod tests {
         .expect_err("stale lockfile");
 
         assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn manifest_source_rejects_embedded_version() {
+        let error = parse_manifest_source("github:owner/tool@1.0.0")
+            .expect_err("versioned manifest source");
+
+        assert!(error.to_string().contains("must be versionless"));
+    }
+
+    #[test]
+    fn manifest_target_override_controls_checksum_source() {
+        let target = linux_target();
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "tool-linux".to_string(),
+                    bin: "tool".to_string(),
+                    checksum_source: Some(ChecksumSource::Manifest),
+                },
+            )]),
+        };
+
+        assert_eq!(
+            manifest_checksum_source(Some(&tool), &target),
+            ChecksumSource::Manifest
+        );
+        assert_eq!(
+            manifest_checksum_source(None, &target),
+            ChecksumSource::Local
+        );
     }
 
     #[test]
