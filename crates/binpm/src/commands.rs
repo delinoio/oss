@@ -117,15 +117,9 @@ fn add(args: AddArgs) -> Result<i32> {
         args.lockfile.frozen_lockfile(),
         args.require_verified,
     )?;
-    manifest.tools.insert(
-        args.cmd.clone(),
-        ManifestTool {
-            source: spec.source_without_version(),
-            version: spec.version.clone(),
-            bin: None,
-            targets: BTreeMap::new(),
-        },
-    );
+    manifest
+        .tools
+        .insert(args.cmd.clone(), manifest_tool_from_source(&spec));
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         rollback_local_install_state(&root, &args.cmd, &record, prior_state);
         return Err(error);
@@ -465,7 +459,17 @@ fn install_local_source(
 ) -> Result<i32> {
     let root = require_manifest_root()?;
     let cmd = repo_name(&spec).to_string();
-    install_local_tool(&root, &cmd, &spec, None, frozen_lockfile, require_verified)?;
+    let prior_state = capture_local_tool_state(&root, &cmd)?;
+    let record = install_local_tool(&root, &cmd, &spec, None, frozen_lockfile, require_verified)?;
+    let manifest_path = root.join(MANIFEST_FILE);
+    let mut manifest = read_manifest(&manifest_path)?;
+    manifest
+        .tools
+        .insert(cmd.clone(), manifest_tool_from_source(&spec));
+    if let Err(error) = write_manifest(&manifest_path, &manifest) {
+        rollback_local_install_state(&root, &cmd, &record, prior_state);
+        return Err(error);
+    }
     Ok(0)
 }
 
@@ -819,6 +823,15 @@ fn parse_manifest_source(raw: &str) -> Result<SourceSpec> {
     Ok(spec)
 }
 
+fn manifest_tool_from_source(spec: &SourceSpec) -> ManifestTool {
+    ManifestTool {
+        source: spec.source_without_version(),
+        version: spec.version.clone(),
+        bin: None,
+        targets: BTreeMap::new(),
+    }
+}
+
 fn manifest_checksum_source(
     tool: Option<&ManifestTool>,
     target: &HostTarget,
@@ -1147,20 +1160,10 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     let mut locked = BTreeSet::new();
     if let Some(root) = &root {
         let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
-        let target_key = HostTarget::current()?.key();
-        for (cmd, tool) in lockfile.tools {
-            validate_command_name(&cmd)?;
-            if let Some(record) = tool.targets.get(&target_key) {
-                if args.require_verified && !record.has_verified_source() {
-                    return Err(BinpmError::VerificationRequired {
-                        package: record.package_spec.clone(),
-                    });
-                }
-                locked.insert(cmd.clone());
-                println!("{cmd} lock verified {}", record.checksum_source.as_str());
-                checked += 1;
-            }
-        }
+        let (lock_checked, lock_commands) =
+            verify_lockfile_records(lockfile, args.require_verified)?;
+        checked += lock_checked;
+        locked = lock_commands;
     }
     for (cmd, record) in list_package_records(&paths)? {
         validate_command_name(&cmd)?;
@@ -1183,6 +1186,31 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     }
     println!("checked {checked}");
     Ok(0)
+}
+
+fn verify_lockfile_records(
+    lockfile: crate::storage::Lockfile,
+    require_verified: bool,
+) -> Result<(usize, BTreeSet<String>)> {
+    let mut checked = 0usize;
+    let mut locked = BTreeSet::new();
+    for (cmd, tool) in lockfile.tools {
+        validate_command_name(&cmd)?;
+        for (target_key, record) in tool.targets {
+            if require_verified && !record.has_verified_source() {
+                return Err(BinpmError::VerificationRequired {
+                    package: record.package_spec,
+                });
+            }
+            locked.insert(cmd.clone());
+            println!(
+                "{cmd} lock verified {target_key} {}",
+                record.checksum_source.as_str()
+            );
+            checked += 1;
+        }
+    }
+    Ok((checked, locked))
 }
 
 fn init(args: InitArgs) -> Result<i32> {
@@ -1446,9 +1474,9 @@ mod tests {
     use super::{
         assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
         binpm_home_from_values, deterministic_installed_path, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, parse_manifest_source,
-        project_root_from, restore_runtime_tool_state, select_manifest_asset, shell_path,
-        shell_quote, RuntimeToolState,
+        manifest_checksum_source, manifest_creation_root_from, manifest_tool_from_source,
+        parse_manifest_source, project_root_from, restore_runtime_tool_state,
+        select_manifest_asset, shell_path, shell_quote, verify_lockfile_records, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -1457,7 +1485,7 @@ mod tests {
             TargetLibc, TargetOs,
         },
         release::ReleaseAsset,
-        storage::{ManifestTargetOverride, ManifestTool, PackageRecord},
+        storage::{LockTool, Lockfile, ManifestTargetOverride, ManifestTool, PackageRecord},
     };
 
     #[test]
@@ -1572,6 +1600,46 @@ mod tests {
             .expect_err("versioned manifest source");
 
         assert!(error.to_string().contains("must be versionless"));
+    }
+
+    #[test]
+    fn source_install_manifest_entry_keeps_version_separate() {
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let tool = manifest_tool_from_source(&spec);
+
+        assert_eq!(tool.source, "github:owner/tool");
+        assert_eq!(tool.version.as_deref(), Some("1.0.0"));
+        assert!(tool.bin.is_none());
+        assert!(tool.targets.is_empty());
+    }
+
+    #[test]
+    fn strict_lockfile_verify_checks_every_target_record() {
+        let mut linux_record = package_record();
+        linux_record.checksum_source = ChecksumSource::GitHubDigest;
+        let mut darwin_record = package_record();
+        darwin_record.target_os = TargetOs::Darwin;
+        darwin_record.target_libc = TargetLibc::Any;
+        darwin_record.package_spec = "github:owner/tool@1.0.0#darwin".to_string();
+        darwin_record.checksum_source = ChecksumSource::Local;
+        let lockfile = Lockfile {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                LockTool {
+                    source: "github:owner/tool".to_string(),
+                    targets: BTreeMap::from([
+                        ("linux-x86_64-gnu".to_string(), linux_record),
+                        ("darwin-x86_64-any".to_string(), darwin_record),
+                    ]),
+                },
+            )]),
+        };
+
+        let error =
+            verify_lockfile_records(lockfile, true).expect_err("unverified target is rejected");
+
+        assert!(error.to_string().contains("github:owner/tool@1.0.0#darwin"));
     }
 
     #[test]
