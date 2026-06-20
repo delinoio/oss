@@ -112,6 +112,8 @@ pub enum BinpmError {
         expected: String,
         actual: String,
     },
+    #[error("Provider digest evidence does not match the recorded SHA-256 for `{package}`.")]
+    ProviderDigestMismatch { package: String },
     #[error("Invalid SHA-256 digest `{value}`: expected 64 hexadecimal characters.")]
     InvalidSha256 { value: String },
     #[error("Unsafe persisted URL `{url}`: {message}")]
@@ -169,6 +171,7 @@ impl BinpmError {
             | Self::AssetNotFound { .. }
             | Self::ArchiveExtractionNotImplemented { .. }
             | Self::VerificationRequired { .. }
+            | Self::ProviderDigestMismatch { .. }
             | Self::UnverifiedChecksumSourceOverride { .. }
             | Self::UnsafeUrl { .. }
             | Self::UnsafeInstalledPath { .. }

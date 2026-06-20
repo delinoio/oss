@@ -105,6 +105,8 @@ pub struct PackageRecord {
     pub sha256: String,
     pub checksum_source: ChecksumSource,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_digest_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed_at: Option<String>,
     pub signature_available: bool,
     pub signature_verified: bool,
@@ -120,10 +122,9 @@ impl PackageRecord {
     }
 
     pub fn has_verified_source(&self) -> bool {
-        matches!(
-            (self.source_provider, self.checksum_source),
-            (SourceProvider::GitHub, ChecksumSource::GitHubDigest)
-        )
+        self.source_provider == SourceProvider::GitHub
+            && self.checksum_source == ChecksumSource::GitHubDigest
+            && self.provider_digest_sha256.as_deref() == Some(self.sha256.as_str())
     }
 }
 
@@ -816,6 +817,7 @@ pub fn package_record_from_resolved(
         cache_path,
         sha256,
         checksum_source: resolved.checksum_source,
+        provider_digest_sha256: resolved.provider_digest_sha256.clone(),
         installed_at,
         signature_available: resolved.signature_available,
         signature_verified: resolved.signature_verified,
@@ -1173,7 +1175,14 @@ mod tests {
 
         record.checksum_source = ChecksumSource::GitHubDigest;
 
+        assert!(!record.has_verified_source());
+
+        record.provider_digest_sha256 = Some(record.sha256.clone());
         assert!(record.has_verified_source());
+
+        record.provider_digest_sha256 =
+            Some("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string());
+        assert!(!record.has_verified_source());
 
         record.source_provider = SourceProvider::GitLab;
         assert!(!record.has_verified_source());
@@ -1478,6 +1487,7 @@ created_at = "2026-01-01T00:00:00Z"
             cache_path: None,
             sha256: "abc123".to_string(),
             checksum_source: ChecksumSource::Local,
+            provider_digest_sha256: None,
             installed_at: None,
             signature_available: false,
             signature_verified: false,

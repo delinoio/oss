@@ -747,6 +747,7 @@ fn install_local_from_lock(
             package: record.package_spec,
         });
     }
+    validate_provider_digest_evidence(&record)?;
     if record.archive_format != ArchiveFormat::BareExecutable {
         return Err(BinpmError::ArchiveExtractionNotImplemented {
             asset: record.asset_name,
@@ -1187,7 +1188,8 @@ fn capture_runtime_tool_state(paths: &ScopePaths, cmd: &str) -> Result<RuntimeTo
     };
     let installed_bytes = package_record
         .as_ref()
-        .and_then(|record| fs::read(&record.installed_path).ok());
+        .and_then(|record| validate_installed_binary_path(paths, cmd, record).ok())
+        .and_then(|path| fs::read(path).ok());
     Ok(RuntimeToolState {
         package_record,
         installed_bytes,
@@ -1328,14 +1330,14 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
         .map_err(BinpmError::ReleaseHttpClient)?
         .get(url)
         .send()
-        .map_err(BinpmError::ReleaseLookup)?
+        .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?
         .error_for_status()
-        .map_err(BinpmError::ReleaseLookup)?;
+        .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
     validate_download_url(response.url().as_str())?;
     response
         .bytes()
         .map(|bytes| bytes.to_vec())
-        .map_err(BinpmError::ReleaseLookup)
+        .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))
 }
 
 fn remove_local_tool(cmd: &str) -> Result<i32> {
@@ -1484,6 +1486,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
                 package: record.package_spec,
             });
         }
+        validate_provider_digest_evidence(&record)?;
         validate_package_record_metadata(&cache_paths, &record)?;
         if let Some(cache_path) = &record.cache_path {
             let cache_path = Path::new(cache_path);
@@ -1521,6 +1524,17 @@ fn validate_package_record_metadata(
     Ok(())
 }
 
+fn validate_provider_digest_evidence(record: &PackageRecord) -> Result<()> {
+    if record.checksum_source == ChecksumSource::GitHubDigest
+        && record.provider_digest_sha256.as_deref() != Some(record.sha256.as_str())
+    {
+        return Err(BinpmError::ProviderDigestMismatch {
+            package: record.package_spec.clone(),
+        });
+    }
+    Ok(())
+}
+
 fn local_runtime_lock_records(
     manifest: &Manifest,
     lockfile: &crate::storage::Lockfile,
@@ -1529,13 +1543,17 @@ fn local_runtime_lock_records(
     let mut records = BTreeMap::new();
     let target_key = target.key();
     for cmd in manifest.tools.keys() {
-        let Some(record) = lockfile
-            .tools
-            .get(cmd)
-            .and_then(|tool| tool.targets.get(&target_key))
-        else {
-            continue;
-        };
+        let locked_tool = lockfile.tools.get(cmd).ok_or(BinpmError::StaleLockfile {
+            path: PathBuf::from(LOCKFILE_FILE),
+            cmd: cmd.clone(),
+        })?;
+        let record = locked_tool
+            .targets
+            .get(&target_key)
+            .ok_or(BinpmError::StaleLockfile {
+                path: PathBuf::from(LOCKFILE_FILE),
+                cmd: cmd.clone(),
+            })?;
         records.insert(cmd.clone(), record.clone());
     }
     Ok(records)
@@ -1644,6 +1662,7 @@ fn verify_lockfile_records(
                     package: record.package_spec,
                 });
             }
+            validate_provider_digest_evidence(&record)?;
             locked.insert(cmd.clone());
             println!(
                 "{cmd} lock verified {target_key} {}",
@@ -1915,13 +1934,13 @@ mod tests {
 
     use super::{
         assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
-        assert_runtime_record_matches_lock, binpm_home_from_values, deterministic_installed_path,
-        github_sha256_digest, local_runtime_lock_records, lock_targets_conflict_with_record,
-        lockfile_digest, manifest_checksum_source, manifest_creation_root_from,
-        manifest_target_override, manifest_tool_from_source, parse_manifest_source,
-        project_root_from, restore_runtime_tool_state, select_explain_asset, select_manifest_asset,
-        shell_path, shell_quote, update_manifest_tool_source, validate_package_record_metadata,
-        verify_lockfile_records, ArtifactKind, RuntimeToolState,
+        assert_runtime_record_matches_lock, binpm_home_from_values, capture_runtime_tool_state,
+        deterministic_installed_path, github_sha256_digest, local_runtime_lock_records,
+        lock_targets_conflict_with_record, lockfile_digest, manifest_checksum_source,
+        manifest_creation_root_from, manifest_target_override, manifest_tool_from_source,
+        parse_manifest_source, project_root_from, restore_runtime_tool_state, select_explain_asset,
+        select_manifest_asset, shell_path, shell_quote, update_manifest_tool_source,
+        validate_package_record_metadata, verify_lockfile_records, ArtifactKind, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -1931,8 +1950,8 @@ mod tests {
         },
         release::ReleaseAsset,
         storage::{
-            CachePaths, LockTool, Lockfile, Manifest, ManifestTargetOverride, ManifestTool,
-            PackageRecord,
+            write_package_record, CachePaths, LockTool, Lockfile, Manifest, ManifestTargetOverride,
+            ManifestTool, PackageRecord, ScopePaths,
         },
     };
 
@@ -2117,7 +2136,7 @@ mod tests {
     fn strict_lockfile_verify_checks_every_target_record() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let mut linux_record = package_record();
-        linux_record.checksum_source = ChecksumSource::GitHubDigest;
+        mark_github_verified(&mut linux_record);
         let mut darwin_record = package_record();
         darwin_record.target_os = TargetOs::Darwin;
         darwin_record.target_libc = TargetLibc::Any;
@@ -2142,6 +2161,87 @@ mod tests {
                 .expect_err("unverified target is rejected");
 
         assert!(error.to_string().contains("github:owner/tool@1.0.0#darwin"));
+    }
+
+    #[test]
+    fn strict_lockfile_verify_rejects_digest_label_without_evidence() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::GitHubDigest;
+        let lockfile = Lockfile {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                LockTool {
+                    source: "github:owner/tool".to_string(),
+                    targets: BTreeMap::from([("linux-x86_64-gnu".to_string(), record)]),
+                },
+            )]),
+        };
+
+        let error =
+            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, false)
+                .expect_err("missing digest evidence is rejected");
+
+        assert!(error
+            .to_string()
+            .contains("Provider digest evidence does not match"));
+    }
+
+    #[test]
+    fn local_runtime_locks_require_current_target_record() {
+        let mut manifest = Manifest {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                ManifestTool {
+                    source: "github:owner/tool".to_string(),
+                    version: Some("1.0.0".to_string()),
+                    bin: None,
+                    targets: BTreeMap::new(),
+                },
+            )]),
+        };
+        let mut darwin_record = package_record();
+        darwin_record.target_os = TargetOs::Darwin;
+        darwin_record.target_libc = TargetLibc::Any;
+        let lockfile = Lockfile {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                LockTool {
+                    source: "github:owner/tool".to_string(),
+                    targets: BTreeMap::from([("darwin-x86_64-any".to_string(), darwin_record)]),
+                },
+            )]),
+        };
+
+        let error = local_runtime_lock_records(&manifest, &lockfile, &linux_target())
+            .expect_err("missing current target is stale");
+
+        assert!(error.to_string().contains("stale"));
+
+        manifest.tools.clear();
+        assert!(
+            local_runtime_lock_records(&manifest, &lockfile, &linux_target())
+                .expect("no manifest tools to verify")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn rollback_capture_ignores_unmanaged_installed_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        let mut record = package_record();
+        record.installed_path = "/dev/zero".to_string();
+        write_package_record(&paths, "tool", &record).expect("write package record");
+
+        let state = capture_runtime_tool_state(&paths, "tool").expect("capture runtime state");
+
+        assert!(state.package_record.is_some());
+        assert!(state.installed_bytes.is_none());
     }
 
     #[test]
@@ -2767,9 +2867,15 @@ mod tests {
             cache_path: None,
             sha256: "abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123".to_string(),
             checksum_source: ChecksumSource::Local,
+            provider_digest_sha256: None,
             installed_at: None,
             signature_available: false,
             signature_verified: false,
         }
+    }
+
+    fn mark_github_verified(record: &mut PackageRecord) {
+        record.checksum_source = ChecksumSource::GitHubDigest;
+        record.provider_digest_sha256 = Some(record.sha256.clone());
     }
 }
