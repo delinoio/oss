@@ -23,8 +23,8 @@ use crate::{
         install_bare_executable, installed_filename, list_package_records, managed_installed_path,
         package_record_from_resolved, package_record_path, populate_cache_from_bytes, prune_cache,
         read_cache_records, read_lockfile, read_manifest, read_package_record,
-        record_verified_cache_hit, referenced_cache_keys, remove_cache_ref,
-        remove_installed_binary, remove_package_record, remove_path_if_exists,
+        record_verified_cache_hit, referenced_cache_keys, reject_symlinked_cache_entry,
+        remove_cache_ref, remove_installed_binary, remove_package_record, remove_path_if_exists,
         sanitize_persisted_url, validate_command_name, validate_download_url,
         validate_installed_binary_path, validate_sha256_digest, write_cache_ref, write_lockfile,
         write_manifest, write_package_record, CachePaths, LockTool, Manifest, ManifestTool,
@@ -1004,6 +1004,7 @@ fn install_resolved(
     ensure_no_package_record_install_path_collision(scope_paths, cmd, resolved.target.os)?;
     if let Some(expected) = &resolved.provider_digest_sha256 {
         let cache_asset = cache_paths.asset_path(expected);
+        reject_symlinked_cache_entry(cache_paths, expected)?;
         if cache_asset_is_verified_regular(&cache_asset, expected)? {
             let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
             let record = package_record_from_resolved(

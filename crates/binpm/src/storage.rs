@@ -700,6 +700,7 @@ pub fn record_verified_cache_hit(paths: &CachePaths, resolved: &ResolvedAsset) -
                 value: String::new(),
             })?;
     validate_sha256_digest(sha256)?;
+    reject_symlinked_cache_entry(paths, sha256)?;
     let asset_path = paths.asset_path(sha256);
     require_verified_regular_cache_asset(&asset_path, sha256)?;
     verify_sha256(&asset_path, sha256)?;
@@ -775,6 +776,10 @@ fn require_verified_regular_cache_asset(path: &Path, expected: &str) -> Result<(
         });
     }
     verify_sha256(path, expected)
+}
+
+pub fn reject_symlinked_cache_entry(paths: &CachePaths, sha256: &str) -> Result<()> {
+    reject_symlinked_managed_directory(&paths.entry_dir(sha256))
 }
 
 pub fn managed_installed_path(paths: &ScopePaths, cmd: &str, target_os: TargetOs) -> PathBuf {
@@ -1551,6 +1556,32 @@ mod tests {
         let records = read_cache_records(&cache).expect("cache records");
         assert_eq!(records[0].sha256, expected);
         assert_eq!(records[0].checksum_source, ChecksumSource::GitHubDigest);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn provider_digest_cache_hit_rejects_symlinked_digest_entry() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        let mut resolved = resolved_asset();
+        let bytes = b"digest bytes";
+        let expected = format!("{:x}", Sha256::digest(bytes));
+        resolved.provider_digest_sha256 = Some(expected.clone());
+        resolved.checksum_source = ChecksumSource::GitHubDigest;
+        std::fs::create_dir_all(cache.root.join("sha256")).expect("create sha256 root");
+        std::fs::write(outside.path().join("asset"), bytes).expect("write outside asset");
+        std::os::unix::fs::symlink(outside.path(), cache.entry_dir(&expected))
+            .expect("symlink digest entry");
+
+        let error =
+            record_verified_cache_hit(&cache, &resolved).expect_err("symlinked digest entry");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert_eq!(
+            std::fs::read(outside.path().join("asset")).expect("read outside asset"),
+            bytes
+        );
     }
 
     #[test]
