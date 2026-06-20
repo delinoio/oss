@@ -1962,13 +1962,11 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     let paths = ScopePaths::local(root.clone());
     let prior_state = capture_local_remove_state(&root, cmd)?;
     let manifest = read_manifest(&manifest_path)?;
-    if !manifest.tools.contains_key(cmd) {
-        if !has_local_runtime_or_lock_state(cmd, &prior_state) {
-            return Err(BinpmError::MissingTool {
-                cmd: cmd.to_string(),
-                manifest: manifest_path,
-            });
-        }
+    if !manifest.tools.contains_key(cmd) && !has_local_runtime_or_lock_state(cmd, &prior_state) {
+        return Err(BinpmError::MissingTool {
+            cmd: cmd.to_string(),
+            manifest: manifest_path,
+        });
     }
     let record_path = package_record_path(&paths, cmd);
     let cleanup_result = (|| {
