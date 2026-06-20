@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
-use reqwest::{blocking::Client, header};
+use reqwest::{blocking::Client, header, Url};
 use serde::{de::DeserializeOwned, Deserialize};
 use tracing::{debug, info};
 
@@ -310,7 +310,12 @@ fn fetch_paginated_json<T>(
 where
     T: DeserializeOwned,
 {
-    let mut next_url = Some(releases_page_url(first_url));
+    let first_page_url = releases_page_url(first_url);
+    let pagination_origin = Url::parse(&first_page_url).map_err(|error| BinpmError::UnsafeUrl {
+        url: sanitize_url(&first_page_url),
+        message: format!("invalid release pagination URL: {error}"),
+    })?;
+    let mut next_url = Some(first_page_url);
     let mut visited_urls = BTreeSet::new();
     let mut items = Vec::new();
 
@@ -334,7 +339,10 @@ where
             .send()
             .and_then(|response| response.error_for_status())
             .map_err(BinpmError::ReleaseLookup)?;
-        next_url = next_page_url(response.headers().get(header::LINK));
+        next_url = match next_page_url(response.headers().get(header::LINK)) {
+            Some(url) => Some(validate_pagination_url(&pagination_origin, &url)?),
+            None => None,
+        };
 
         let mut page = response
             .json::<Vec<T>>()
@@ -369,6 +377,29 @@ fn next_page_url(link: Option<&header::HeaderValue>) -> Option<String> {
             None
         }
     })
+}
+
+fn validate_pagination_url(origin: &Url, next_url: &str) -> Result<String> {
+    let parsed = origin
+        .join(next_url)
+        .map_err(|error| BinpmError::UnsafeUrl {
+            url: sanitize_url(next_url),
+            message: format!("invalid release pagination URL: {error}"),
+        })?;
+
+    if parsed.scheme() != "https"
+        || parsed.scheme() != origin.scheme()
+        || parsed.host_str() != origin.host_str()
+        || parsed.port_or_known_default() != origin.port_or_known_default()
+    {
+        return Err(BinpmError::UnsafeUrl {
+            url: sanitize_url(parsed.as_str()),
+            message: "release pagination URL must stay on the original HTTPS API origin"
+                .to_string(),
+        });
+    }
+
+    Ok(parsed.to_string())
 }
 
 #[derive(Debug, Deserialize)]
@@ -616,8 +647,9 @@ mod tests {
 
     use super::{
         has_prerelease_tag, matching_tag_candidates, next_page_url, releases_page_url,
-        sanitize_url, select_release, sort_gitlab_releases, verify_gitlab_asset_redirects,
-        GitHubReleaseClient, GitLabRelease, GitLabReleaseClient, Release,
+        sanitize_url, select_release, sort_gitlab_releases, validate_pagination_url,
+        verify_gitlab_asset_redirects, GitHubReleaseClient, GitLabRelease, GitLabReleaseClient,
+        Release,
     };
     use crate::{contract::SourceSpec, release::ReleaseAsset};
 
@@ -676,6 +708,37 @@ mod tests {
             Some("https://api.example.com/releases?page=3")
         );
         assert_eq!(next_page_url(None), None);
+    }
+
+    #[test]
+    fn release_pagination_accepts_same_https_origin() {
+        let origin = reqwest::Url::parse("https://api.example.com/releases?per_page=100")
+            .expect("origin URL");
+
+        assert_eq!(
+            validate_pagination_url(&origin, "https://api.example.com/releases?page=2")
+                .expect("same origin"),
+            "https://api.example.com/releases?page=2"
+        );
+        assert_eq!(
+            validate_pagination_url(&origin, "/releases?page=2").expect("relative URL"),
+            "https://api.example.com/releases?page=2"
+        );
+    }
+
+    #[test]
+    fn release_pagination_rejects_unsafe_next_url() {
+        let origin = reqwest::Url::parse("https://api.example.com/releases?per_page=100")
+            .expect("origin URL");
+
+        let downgrade = validate_pagination_url(&origin, "http://api.example.com/releases?page=2")
+            .expect_err("http URL");
+        assert!(downgrade.to_string().contains("original HTTPS API origin"));
+
+        let other_host =
+            validate_pagination_url(&origin, "https://evil.example.com/releases?page=2")
+                .expect_err("different host");
+        assert!(other_host.to_string().contains("original HTTPS API origin"));
     }
 
     #[test]

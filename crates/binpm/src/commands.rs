@@ -134,10 +134,12 @@ fn add(args: AddArgs) -> Result<i32> {
     let record = install.record.clone();
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         rollback_local_install_state(&root, &args.cmd, &record, prior_state);
-        if install.populated_cache_entry {
-            let cache_paths = CachePaths::new(&binpm_home()?);
-            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(&root))?;
-        }
+        cleanup_failed_install_cache(
+            &CachePaths::new(&binpm_home()?),
+            &record.sha256,
+            Some(&root),
+            &install,
+        )?;
         return Err(error);
     }
     if let Err(error) = commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install) {
@@ -147,10 +149,12 @@ fn add(args: AddArgs) -> Result<i32> {
         } else {
             let _ = remove_path_if_exists(&manifest_path);
         }
-        if install.populated_cache_entry {
-            let cache_paths = CachePaths::new(&binpm_home()?);
-            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(&root))?;
-        }
+        cleanup_failed_install_cache(
+            &CachePaths::new(&binpm_home()?),
+            &record.sha256,
+            Some(&root),
+            &install,
+        )?;
         return Err(error);
     }
     println!("added {}", args.cmd);
@@ -2789,7 +2793,7 @@ mod tests {
         assert_local_runtime_records_complete, assert_lock_matches_manifest_tool,
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
-        commit_deferred_cache_hit, deterministic_installed_path,
+        cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
         ensure_no_global_install_path_collision, github_sha256_digest, has_current_cache_record,
         has_local_runtime_or_lock_state, local_runtime_lock_records,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
@@ -2797,7 +2801,7 @@ mod tests {
         manifest_tool_from_source, parse_manifest_source, project_root_from,
         remove_global_tool_from_paths, remove_local_manifest_orphans, restore_local_remove_state,
         restore_runtime_tool_state, select_explain_asset, select_manifest_asset, shell_path,
-        shell_quote, source_install_scope, update_manifest_tool_source,
+        shell_quote, snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
         validate_locked_record_artifact, validate_package_record_metadata,
         validate_provider_digest_evidence, verify_lockfile_records, verify_runtime_cache_bytes,
         ArtifactKind, InstalledPackage, LocalRemoveState, RuntimeToolState,
@@ -4433,6 +4437,36 @@ mod tests {
     }
 
     #[test]
+    fn failed_install_cleanup_restores_existing_cache_metadata() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        cache.ensure().expect("cache paths");
+        let bytes = b"cached tool";
+        let sha256 = format!("{:x}", Sha256::digest(bytes));
+        fs::create_dir_all(cache.entry_dir(&sha256)).expect("cache entry dir");
+        fs::write(cache.asset_path(&sha256), bytes).expect("cache asset");
+        let mut original = cache_record(&sha256);
+        original.release_tag = "1.0.0".to_string();
+        write_cache_record(&cache, &original).expect("original cache record");
+        let snapshot = snapshot_cache_metadata(&cache, &sha256).expect("metadata snapshot");
+        let mut rewritten = cache_record(&sha256);
+        rewritten.release_tag = "2.0.0".to_string();
+        write_cache_record(&cache, &rewritten).expect("rewritten cache record");
+        let install = InstalledPackage {
+            record: package_record(),
+            populated_cache_entry: false,
+            deferred_cache_hit: None,
+            cache_metadata_snapshot: Some(snapshot),
+        };
+
+        cleanup_failed_install_cache(&cache, &sha256, None, &install).expect("cleanup cache");
+
+        let restored = fs::read_to_string(cache.metadata_path(&sha256)).expect("metadata");
+        assert!(restored.contains("release_tag = \"1.0.0\""));
+        assert!(!restored.contains("release_tag = \"2.0.0\""));
+    }
+
+    #[test]
     fn current_cache_record_requires_matching_cache_key() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let cache = CachePaths::new(temp_dir.path());
@@ -4674,6 +4708,25 @@ mod tests {
             installed_at: None,
             signature_available: false,
             signature_verified: false,
+        }
+    }
+
+    fn cache_record(sha256: &str) -> CacheRecord {
+        CacheRecord {
+            version: 1,
+            cache_key: crate::storage::cache_key(sha256),
+            source_provider: SourceProvider::GitHub,
+            source_host: "github.com".to_string(),
+            source_path: "owner/tool".to_string(),
+            release_tag: "1.0.0".to_string(),
+            asset_name: "tool-linux".to_string(),
+            asset_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+                .to_string(),
+            byte_size: Some(11),
+            sha256: sha256.to_string(),
+            checksum_source: ChecksumSource::Local,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            last_used_at: None,
         }
     }
 
