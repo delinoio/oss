@@ -483,7 +483,10 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
         Some(selection) => {
             if let Some(selected) = select_explain_asset(&selection.decisions) {
                 println!("selected_asset: {}", selected.asset_name);
-                println!("selected_asset_url: {}", selected.canonical_url);
+                println!(
+                    "selected_asset_url: {}",
+                    selected_asset_display_url(selected)?
+                );
                 println!(
                     "selected_asset_score: {}",
                     selected.score.unwrap_or_default()
@@ -515,6 +518,10 @@ fn select_explain_asset(
         .iter()
         .find(|decision| decision.eligible && decision.kind == ArtifactKind::BareExecutable)
         .or_else(|| decisions.iter().find(|decision| decision.eligible))
+}
+
+fn selected_asset_display_url(decision: &crate::assets::CandidateDecision) -> Result<String> {
+    sanitize_persisted_url(&decision.canonical_url)
 }
 
 fn release_api_url(spec: &SourceSpec) -> String {
@@ -1123,6 +1130,7 @@ fn install_local_from_lock(
     }
     validate_provider_digest_evidence(&record)?;
     validate_locked_record_artifact(&lockfile_path, cmd, &record, &target, tool)?;
+    validate_locked_record_current_release(&lockfile_path, cmd, &record, &target, tool)?;
     if record.archive_format != ArchiveFormat::BareExecutable {
         return Err(BinpmError::ArchiveExtractionNotImplemented {
             asset: record.asset_name,
@@ -1331,6 +1339,33 @@ fn validate_locked_record_artifact(
                 target: target.key(),
             });
         }
+    }
+    Ok(())
+}
+
+fn validate_locked_record_current_release(
+    lockfile_path: &Path,
+    cmd: &str,
+    record: &PackageRecord,
+    target: &HostTarget,
+    tool: Option<&ManifestTool>,
+) -> Result<()> {
+    if manifest_target_override(tool, target)?
+        .map(|override_target| override_target.asset == record.asset_name)
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+
+    let mut spec = SourceSpec::from_str(&record.source)?;
+    spec.version = Some(record.release_tag.clone());
+    let release = client_for_source(&spec)?.resolve_release(&spec)?.release;
+    let selected = select_manifest_asset(&spec, tool, target, &release.assets)?;
+    if selected.asset_name != record.asset_name {
+        return Err(BinpmError::StaleLockfile {
+            path: lockfile_path.to_path_buf(),
+            cmd: cmd.to_string(),
+        });
     }
     Ok(())
 }
@@ -1630,15 +1665,7 @@ fn select_manifest_asset(
             });
     }
 
-    eligible
-        .iter()
-        .find(|decision| decision.kind == ArtifactKind::BareExecutable)
-        .cloned()
-        .or_else(|| eligible.into_iter().next())
-        .ok_or_else(|| BinpmError::AssetNotFound {
-            package: spec.to_string(),
-            target: target_key,
-        })
+    Ok(selection.selected)
 }
 
 fn rollback_failed_install(
@@ -2230,19 +2257,14 @@ fn remove_global_tool(cmd: &str) -> Result<i32> {
 fn remove_global_tool_from_paths(paths: &ScopePaths, cmd: &str) -> Result<()> {
     let prior_state = capture_runtime_tool_state(paths, cmd)?;
     let record_path = package_record_path(paths, cmd);
-    let stale_installed_path = if record_path.exists() {
-        let record = read_package_record(&record_path)?;
-        let installed_path = managed_installed_path(paths, cmd, record.target_os);
-        if !is_global_managed_installed_path(paths, cmd, &installed_path)? {
-            match remove_installed_binary(paths, cmd, &record) {
-                Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
-                Err(error) => return Err(error),
-            }
+    let record = read_package_record(&record_path)?;
+    let stale_installed_path = managed_installed_path(paths, cmd, record.target_os);
+    if !is_global_managed_installed_path(paths, cmd, &stale_installed_path)? {
+        match remove_installed_binary(paths, cmd, &record) {
+            Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
+            Err(error) => return Err(error),
         }
-        installed_path
-    } else {
-        current_platform_installed_path(paths, cmd)
-    };
+    }
     if let Err(error) = remove_package_record(paths, cmd).and_then(|_| {
         if is_global_managed_installed_path(paths, cmd, &stale_installed_path)? {
             Ok(())
@@ -2622,6 +2644,13 @@ fn verify_lockfile_records(
                 });
             }
             validate_provider_digest_evidence(&record)?;
+            validate_locked_record_current_release(
+                lockfile_path,
+                &cmd,
+                &record,
+                &target,
+                manifest_tool,
+            )?;
             locked.insert(cmd.clone());
             println!(
                 "{cmd} lock verified {target_key} {}",
@@ -2776,7 +2805,25 @@ fn not_implemented(command: &'static str) -> Result<i32> {
 fn lockfile_digest(path: &Path) -> Result<String> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            match fs::symlink_metadata(path) {
+                Ok(_) => {
+                    return Err(BinpmError::ReadFile {
+                        path: path.to_path_buf(),
+                        source: error,
+                    })
+                }
+                Err(metadata_error) if metadata_error.kind() == std::io::ErrorKind::NotFound => {
+                    Vec::new()
+                }
+                Err(source) => {
+                    return Err(BinpmError::ReadFile {
+                        path: path.to_path_buf(),
+                        source,
+                    })
+                }
+            }
+        }
         Err(source) => {
             return Err(BinpmError::ReadFile {
                 path: path.to_path_buf(),
@@ -2923,12 +2970,12 @@ mod tests {
         manifest_target_override, manifest_tool_from_source, parse_manifest_source,
         project_root_from, remove_global_tool_from_paths, remove_local_manifest_orphans,
         restore_local_remove_state, restore_runtime_tool_state, select_explain_asset,
-        select_manifest_asset, shell_path, shell_quote, snapshot_cache_metadata,
-        source_install_scope, update_manifest_tool_source, validate_locked_record_artifact,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries,
-        verify_lockfile_records, ArtifactKind, InstalledPackage, LocalRemoveState,
-        RuntimeToolState,
+        select_manifest_asset, selected_asset_display_url, shell_path, shell_quote,
+        snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
+        validate_locked_record_artifact, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verify_lockfile_records, ArtifactKind,
+        InstalledPackage, LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -3014,6 +3061,20 @@ mod tests {
             digest,
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn lockfile_digest_reports_broken_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let lockfile_path = temp_dir.path().join("binpm.lock");
+        symlink(temp_dir.path().join("missing.lock"), &lockfile_path).expect("broken symlink");
+
+        let error = lockfile_digest(&lockfile_path).expect_err("broken symlink is unreadable");
+
+        assert!(error.to_string().contains("Failed to read"));
     }
 
     #[test]
@@ -4114,6 +4175,23 @@ mod tests {
     }
 
     #[test]
+    fn global_remove_requires_package_record_before_deleting_binary() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
+        paths.ensure().expect("create paths");
+        std::fs::write(paths.bin.join("tool"), "manual tool").expect("write manual binary");
+
+        let error =
+            remove_global_tool_from_paths(&paths, "tool").expect_err("missing package record");
+
+        assert!(error.to_string().contains("Failed to read"));
+        assert_eq!(
+            std::fs::read_to_string(paths.bin.join("tool")).expect("read manual binary"),
+            "manual tool"
+        );
+    }
+
+    #[test]
     fn manifest_gitlab_overrides_reject_non_https_redirects() {
         let target = linux_target();
         let spec = SourceSpec {
@@ -4156,7 +4234,7 @@ mod tests {
     }
 
     #[test]
-    fn automatic_asset_selection_prefers_bare_executable_over_archive() {
+    fn automatic_asset_selection_honors_scored_release_selection() {
         let target = linux_target();
         let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
         let assets = [
@@ -4181,10 +4259,10 @@ mod tests {
         ];
 
         let selected =
-            select_manifest_asset(&spec, None, &target, &assets).expect("bare executable");
+            select_manifest_asset(&spec, None, &target, &assets).expect("selected asset");
 
-        assert_eq!(selected.asset_name, "tool-linux-x64");
-        assert_eq!(selected.kind, ArtifactKind::BareExecutable);
+        assert_eq!(selected.asset_name, "tool-x86_64-unknown-linux-gnu.tar.gz");
+        assert!(matches!(selected.kind, ArtifactKind::Archive(_)));
     }
 
     #[test]
@@ -4299,6 +4377,28 @@ mod tests {
 
         assert_eq!(selected.asset_name, "tool-linux-x64");
         assert_eq!(selected.kind, ArtifactKind::BareExecutable);
+    }
+
+    #[test]
+    fn explain_selected_asset_url_rejects_credentials_without_echoing_them() {
+        let decision = CandidateDecision {
+            asset_name: "tool".to_string(),
+            canonical_url: "https://token@example.com/tool".to_string(),
+            download_url: "https://token@example.com/tool".to_string(),
+            kind: ArtifactKind::BareExecutable,
+            detected_os: Some(TargetOs::Linux),
+            detected_arch: Some(TargetArch::X86_64),
+            detected_libc: Some(TargetLibc::Gnu),
+            score: Some(1),
+            eligible: true,
+            recognized_pattern: true,
+            rejection_reason: None,
+        };
+
+        let error = selected_asset_display_url(&decision).expect_err("credential URL rejected");
+
+        assert!(error.to_string().contains("credentials"));
+        assert!(!error.to_string().contains("token"));
     }
 
     #[test]
