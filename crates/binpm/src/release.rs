@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use reqwest::{blocking::Client, header};
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize};
 use tracing::{debug, info};
 
 use crate::{
@@ -9,6 +9,7 @@ use crate::{
 };
 
 const USER_AGENT: &str = concat!("binpm/", env!("CARGO_PKG_VERSION"));
+const RELEASES_PER_PAGE: u16 = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Release {
@@ -85,15 +86,11 @@ impl ReleaseClient for GitHubReleaseClient {
             "Looking up GitHub releases"
         );
 
-        let releases = self
-            .http
-            .get(&url)
-            .header(header::ACCEPT, "application/vnd.github+json")
-            .send()
-            .and_then(|response| response.error_for_status())
-            .map_err(BinpmError::ReleaseLookup)?
-            .json::<Vec<GitHubRelease>>()
-            .map_err(BinpmError::ReleaseLookup)?;
+        let releases = fetch_paginated_json::<GitHubRelease>(
+            &self.http,
+            &url,
+            Some("application/vnd.github+json"),
+        )?;
 
         Ok(releases
             .into_iter()
@@ -169,14 +166,7 @@ impl ReleaseClient for GitLabReleaseClient {
             "Looking up GitLab releases"
         );
 
-        let mut releases = self
-            .http
-            .get(&url)
-            .send()
-            .and_then(|response| response.error_for_status())
-            .map_err(BinpmError::ReleaseLookup)?
-            .json::<Vec<GitLabRelease>>()
-            .map_err(BinpmError::ReleaseLookup)?
+        let mut releases = fetch_paginated_json::<GitLabRelease>(&self.http, &url, None)?
             .into_iter()
             .map(|release| release.into_release(self.now))
             .collect::<Vec<_>>();
@@ -281,6 +271,74 @@ fn percent_encode_path(path: &str) -> String {
 
 fn sanitize_url(url: &str) -> String {
     url.split(['?', '#']).next().unwrap_or(url).to_string()
+}
+
+fn releases_page_url(url: &str) -> String {
+    let separator = if url.contains('?') { '&' } else { '?' };
+    format!("{url}{separator}per_page={RELEASES_PER_PAGE}")
+}
+
+fn fetch_paginated_json<T>(
+    http: &Client,
+    first_url: &str,
+    accept: Option<&'static str>,
+) -> Result<Vec<T>>
+where
+    T: DeserializeOwned,
+{
+    let mut next_url = Some(releases_page_url(first_url));
+    let mut items = Vec::new();
+
+    while let Some(url) = next_url {
+        debug!(
+            api_url = sanitize_url(&url),
+            "Fetching release metadata page"
+        );
+
+        let mut request = http.get(&url);
+        if let Some(accept) = accept {
+            request = request.header(header::ACCEPT, accept);
+        }
+
+        let response = request
+            .send()
+            .and_then(|response| response.error_for_status())
+            .map_err(BinpmError::ReleaseLookup)?;
+        next_url = next_page_url(response.headers().get(header::LINK));
+
+        let mut page = response
+            .json::<Vec<T>>()
+            .map_err(BinpmError::ReleaseLookup)?;
+        debug!(
+            page_release_count = page.len(),
+            has_next_page = next_url.is_some(),
+            "Fetched release metadata page"
+        );
+        items.append(&mut page);
+    }
+
+    Ok(items)
+}
+
+fn next_page_url(link: Option<&header::HeaderValue>) -> Option<String> {
+    let link = link?.to_str().ok()?;
+
+    link.split(',').find_map(|part| {
+        let (raw_url, raw_params) = part.trim().split_once(';')?;
+        let is_next = raw_params
+            .split(';')
+            .any(|param| param.trim() == r#"rel="next""#);
+
+        if is_next {
+            raw_url
+                .trim()
+                .strip_prefix('<')?
+                .strip_suffix('>')
+                .map(str::to_string)
+        } else {
+            None
+        }
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -388,19 +446,58 @@ fn parse_released_at(released_at: Option<&str>) -> Option<DateTime<Utc>> {
 }
 
 fn has_prerelease_tag(tag: &str) -> bool {
-    let normalized = tag.trim_start_matches('v');
-    normalized
-        .split_once('-')
-        .is_some_and(|(_, suffix)| !suffix.is_empty())
+    tag.split(|character: char| {
+        !(character.is_ascii_alphanumeric() || character == '.' || character == '-')
+    })
+    .any(is_semver_prerelease)
+}
+
+fn is_semver_prerelease(candidate: &str) -> bool {
+    let parts = candidate.split('-').collect::<Vec<_>>();
+
+    parts.windows(2).any(|window| {
+        let version_core = window[0].trim_start_matches('v');
+        let suffix = window[1];
+
+        !suffix.is_empty() && is_semver_core(version_core)
+    })
+}
+
+fn is_semver_core(candidate: &str) -> bool {
+    let mut parts = candidate.split('.');
+
+    let Some(major) = parts.next() else {
+        return false;
+    };
+    let Some(minor) = parts.next() else {
+        return false;
+    };
+    let Some(patch) = parts.next() else {
+        return false;
+    };
+
+    parts.next().is_none()
+        && is_numeric_identifier(major)
+        && is_numeric_identifier(minor)
+        && is_numeric_identifier(patch)
+}
+
+fn is_numeric_identifier(candidate: &str) -> bool {
+    !candidate.is_empty()
+        && candidate
+            .chars()
+            .all(|character| character.is_ascii_digit())
 }
 
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};
+    use reqwest::header;
 
     use super::{
-        matching_tag_candidates, select_release, sort_gitlab_releases, GitHubReleaseClient,
-        GitLabRelease, GitLabReleaseClient, Release,
+        has_prerelease_tag, matching_tag_candidates, next_page_url, releases_page_url,
+        select_release, sort_gitlab_releases, GitHubReleaseClient, GitLabRelease,
+        GitLabReleaseClient, Release,
     };
     use crate::contract::SourceSpec;
 
@@ -434,6 +531,31 @@ mod tests {
             GitLabReleaseClient::releases_api_url(&source),
             "https://gitlab.example.com/api/v4/projects/group%2Fsub%2Ftool/releases"
         );
+    }
+
+    #[test]
+    fn release_lookup_requests_maximum_page_size() {
+        assert_eq!(
+            releases_page_url("https://api.example.com/releases"),
+            "https://api.example.com/releases?per_page=100"
+        );
+        assert_eq!(
+            releases_page_url("https://api.example.com/releases?order_by=released_at"),
+            "https://api.example.com/releases?order_by=released_at&per_page=100"
+        );
+    }
+
+    #[test]
+    fn release_lookup_reads_next_link_header() {
+        let link = header::HeaderValue::from_static(
+            r#"<https://api.example.com/releases?page=3>; rel="next", <https://api.example.com/releases?page=9>; rel="last""#,
+        );
+
+        assert_eq!(
+            next_page_url(Some(&link)).as_deref(),
+            Some("https://api.example.com/releases?page=3")
+        );
+        assert_eq!(next_page_url(None), None);
     }
 
     #[test]
@@ -515,6 +637,15 @@ mod tests {
         assert!(!future.stable);
         assert!(!upcoming.stable);
         assert!(!prerelease.stable);
+    }
+
+    #[test]
+    fn gitlab_release_stability_keeps_stable_hyphenated_non_semver_tags() {
+        assert!(!has_prerelease_tag("v1.2.3"));
+        assert!(!has_prerelease_tag("tool-v1.2.3"));
+        assert!(!has_prerelease_tag("release-2026-06-19"));
+        assert!(has_prerelease_tag("v1.2.3-rc.1"));
+        assert!(has_prerelease_tag("tool-v1.2.3-beta.1"));
     }
 
     #[test]
