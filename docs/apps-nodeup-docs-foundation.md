@@ -17,11 +17,11 @@
 ## Interfaces and Contracts
 - The package name is `nodeup-docs`.
 - The app is registered through the existing `apps/*` pnpm workspace glob.
-- Stable documentation route IDs are `/`, `/getting-started`, and `/reference`.
+- Stable documentation route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
 - The development server uses fixed port `46250`.
 - Local production preview uses fixed port `46251`.
 - The production output directory is `doc_build`.
-- Content must stay aligned with the Nodeup project and crate contracts, especially release verification, supported host targets, shim behavior, shell completions, package-manager resolution, and color-control precedence.
+- Content must stay aligned with the Nodeup project and crate contracts, especially installation and verification flows, release verification, supported host targets, command behavior, runtime resolution precedence, shim behavior, shell completions, package-manager resolution, human/JSON output contracts, and color-control precedence.
 
 ## Storage
 - Source documentation is versioned in-repo under `apps/nodeup-docs/docs`.

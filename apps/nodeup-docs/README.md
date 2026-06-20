@@ -20,5 +20,13 @@ pnpm --filter nodeup-docs preview
 
 - `rspress.config.ts`: Rspress site configuration and navigation.
 - `docs/index.md`: Nodeup docs landing page.
+- `docs/installation.md`: Installation, verification, supported hosts, storage roots, and mirror configuration.
 - `docs/getting-started.md`: Installation and first-use guide.
-- `docs/reference.md`: CLI behavior and contract reference.
+- `docs/commands.md`: Full command reference and output shapes.
+- `docs/runtime-resolution.md`: Selector forms, runtime resolution precedence, overrides, defaults, and release index cache.
+- `docs/shims-and-package-managers.md`: Shim dispatch and `packageManager` handling for `yarn` and `pnpm`.
+- `docs/output.md`: Human/JSON output, error envelopes, color precedence, and logging.
+- `docs/completions.md`: Supported shells, command scopes, and raw completion output contract.
+- `docs/releases.md`: Release artifacts, signing sidecars, direct-installer verification, and runtime archives.
+- `docs/troubleshooting.md`: Common failure modes and validation commands.
+- `docs/reference.md`: Stable CLI behavior and route map reference.

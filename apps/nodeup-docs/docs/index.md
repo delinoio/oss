@@ -1,17 +1,48 @@
 # Nodeup
 
-Nodeup is a Rust-based Node.js version manager with predictable channel resolution, deterministic shell completions, and shim-based execution.
+Nodeup is a Rust-based Node.js version manager with predictable channel resolution, deterministic shell completions, and shim-based execution for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
 
-This app is the project-specific documentation surface for Nodeup. It follows the repository default for new static documentation apps: Rspress for the documentation toolchain and Cloudflare Pages for static deployment.
+Use Nodeup when you want a single CLI that can install Node.js runtimes, select the active runtime by explicit command, directory override, or global default, and dispatch common Node.js executable names through managed shims.
 
-## Documentation Scope
+## Start Here
 
-- Installing Nodeup from first-party release artifacts.
-- Selecting Node.js versions through stable channel names.
-- Understanding shim dispatch behavior across supported operating systems.
-- Keeping package-manager resolution from `package.json` deterministic.
-- Explaining shell completions and human output color controls.
+- [Install and verify Nodeup](/installation).
+- [Install a runtime and run a command](/getting-started).
+- [Read the complete command reference](/commands).
+- [Understand runtime resolution precedence](/runtime-resolution).
+- [Use managed shims and package-manager dispatch](/shims-and-package-managers).
+- [Integrate JSON output, colors, and logs](/output).
 
 ## Supported Hosts
 
-Nodeup runtime installation and shim dispatch target macOS, Linux, and Windows hosts on x64 and arm64 architectures. x86 hosts are outside the documented support scope.
+Nodeup runtime installation and shim dispatch target:
+
+- macOS x64 and arm64
+- Linux x64 and arm64
+- Windows x64 and arm64
+
+x86 hosts are outside the documented support scope.
+
+## Runtime Selectors
+
+Nodeup accepts exact Node.js versions with or without the `v` prefix, reserved channels, and linked runtime names:
+
+```bash
+nodeup toolchain install 22.1.0
+nodeup toolchain install v22.1.0
+nodeup default lts
+nodeup default current
+nodeup default latest
+nodeup toolchain link work-node /opt/node-v22
+```
+
+Reserved channel selectors are exact and lowercase: `lts`, `current`, and `latest`.
+
+## Validation Commands
+
+Use these commands from the repository root when changing Nodeup documentation:
+
+```bash
+pnpm --filter nodeup-docs test
+pnpm --filter nodeup-docs build
+```

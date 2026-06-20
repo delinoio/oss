@@ -27,7 +27,8 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Homebrew installation must use prebuilt `nodeup` release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - `nodeup` runtime installation and shim dispatch must support `macOS`, `Linux`, and `Windows` x64/arm64 hosts while leaving x86 hosts out of scope.
 - `apps/nodeup-docs` must use the repository-default Rspress/Rsbuild-family static documentation toolchain and Cloudflare Pages deployment contract unless this project index and `docs/apps-nodeup-docs-foundation.md` document a replacement.
-- Nodeup documentation routes exposed by `apps/nodeup-docs` must stay aligned with runtime, release, installer, shim, completion, package-manager, and color-control contracts.
+- Nodeup documentation routes exposed by `apps/nodeup-docs` are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
+- Nodeup documentation routes exposed by `apps/nodeup-docs` must stay aligned with runtime, release, installer, shim, completion, package-manager, human/JSON output, and color-control contracts.
 
 ## Change Policy
 - Update this index, `docs/crates-nodeup-foundation.md`, and `docs/apps-nodeup-docs-foundation.md` in the same change for behavior or storage contract updates that affect Nodeup documentation.

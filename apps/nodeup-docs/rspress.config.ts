@@ -8,8 +8,16 @@ export default defineConfig({
   themeConfig: {
     nav: [
       {
+        text: "Install",
+        link: "/installation",
+      },
+      {
         text: "Guide",
         link: "/getting-started",
+      },
+      {
+        text: "Commands",
+        link: "/commands",
       },
       {
         text: "Reference",
@@ -26,8 +34,40 @@ export default defineConfig({
               link: "/",
             },
             {
+              text: "Installation",
+              link: "/installation",
+            },
+            {
               text: "Getting Started",
               link: "/getting-started",
+            },
+            {
+              text: "Commands",
+              link: "/commands",
+            },
+            {
+              text: "Runtime Resolution",
+              link: "/runtime-resolution",
+            },
+            {
+              text: "Shims and Package Managers",
+              link: "/shims-and-package-managers",
+            },
+            {
+              text: "Output",
+              link: "/output",
+            },
+            {
+              text: "Completions",
+              link: "/completions",
+            },
+            {
+              text: "Releases",
+              link: "/releases",
+            },
+            {
+              text: "Troubleshooting",
+              link: "/troubleshooting",
             },
             {
               text: "Reference",
