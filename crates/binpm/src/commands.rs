@@ -108,7 +108,8 @@ fn add(args: AddArgs) -> Result<i32> {
     let root = require_manifest_root_or_creation_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
     validate_command_name(&args.cmd)?;
-    let mut manifest = if manifest_path.exists() {
+    let manifest_existed = manifest_path.exists();
+    let mut manifest = if manifest_existed {
         read_manifest(&manifest_path)?
     } else {
         Manifest {
@@ -116,7 +117,11 @@ fn add(args: AddArgs) -> Result<i32> {
             tools: BTreeMap::new(),
         }
     };
+    let prior_manifest = manifest.clone();
     let manifest_tool = manifest.tools.get(&args.cmd).cloned();
+    let next_manifest_tool = update_manifest_tool_source(manifest_tool.clone(), &spec);
+    manifest.tools.insert(args.cmd.clone(), next_manifest_tool);
+    ensure_no_selected_install_path_collisions(&manifest, std::slice::from_ref(&args.cmd))?;
     let prior_state = capture_local_tool_state(&root, &args.cmd)?;
     let install = install_local_tool(
         &root,
@@ -127,10 +132,6 @@ fn add(args: AddArgs) -> Result<i32> {
         args.require_verified,
     )?;
     let record = install.record.clone();
-    manifest.tools.insert(
-        args.cmd.clone(),
-        update_manifest_tool_source(manifest_tool, &spec),
-    );
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         rollback_local_install_state(&root, &args.cmd, &record, prior_state);
         if install.populated_cache_entry {
@@ -139,7 +140,19 @@ fn add(args: AddArgs) -> Result<i32> {
         }
         return Err(error);
     }
-    commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install)?;
+    if let Err(error) = commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install) {
+        rollback_local_install_state(&root, &args.cmd, &record, prior_state);
+        if manifest_existed {
+            let _ = write_manifest(&manifest_path, &prior_manifest);
+        } else {
+            let _ = remove_path_if_exists(&manifest_path);
+        }
+        if install.populated_cache_entry {
+            let cache_paths = CachePaths::new(&binpm_home()?);
+            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(&root))?;
+        }
+        return Err(error);
+    }
     println!("added {}", args.cmd);
     Ok(0)
 }
@@ -549,7 +562,13 @@ fn install_local_source(
     let cmd = repo_name(&spec).to_string();
     let manifest_path = root.join(MANIFEST_FILE);
     let mut manifest = read_manifest(&manifest_path)?;
+    let prior_manifest = manifest.clone();
     let manifest_tool = manifest.tools.get(&cmd).cloned();
+    manifest.tools.insert(
+        cmd.clone(),
+        update_manifest_tool_source(manifest_tool.clone(), &spec),
+    );
+    ensure_no_selected_install_path_collisions(&manifest, std::slice::from_ref(&cmd))?;
     let prior_state = capture_local_tool_state(&root, &cmd)?;
     let install = install_local_tool(
         &root,
@@ -560,10 +579,6 @@ fn install_local_source(
         require_verified,
     )?;
     let record = install.record.clone();
-    manifest.tools.insert(
-        cmd.clone(),
-        update_manifest_tool_source(manifest_tool, &spec),
-    );
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         rollback_local_install_state(&root, &cmd, &record, prior_state);
         if install.populated_cache_entry {
@@ -572,7 +587,15 @@ fn install_local_source(
         }
         return Err(error);
     }
-    commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install)?;
+    if let Err(error) = commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install) {
+        rollback_local_install_state(&root, &cmd, &record, prior_state);
+        let _ = write_manifest(&manifest_path, &prior_manifest);
+        if install.populated_cache_entry {
+            let cache_paths = CachePaths::new(&binpm_home()?);
+            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(&root))?;
+        }
+        return Err(error);
+    }
     Ok(0)
 }
 
@@ -592,6 +615,7 @@ fn install_local_manifest(
             });
         }
     }
+    ensure_no_selected_install_path_collisions(&manifest, selected)?;
     let mut completed = Vec::new();
     for (cmd, tool) in &manifest.tools {
         if !selected.is_empty() && !selected.contains(cmd) {
@@ -639,6 +663,11 @@ fn install_local_manifest(
             }
         }
     }
+    let orphan_states = if selected.is_empty() {
+        capture_local_manifest_orphan_states(&root, &manifest.tools)?
+    } else {
+        Vec::new()
+    };
     if selected.is_empty() {
         if let Err(error) = remove_local_manifest_orphans(&root, &manifest.tools, frozen_lockfile) {
             let cache_paths = CachePaths::new(&binpm_home()?);
@@ -663,9 +692,38 @@ fn install_local_manifest(
         }
     }
     let cache_paths = CachePaths::new(&binpm_home()?);
-    for (_, _, _, deferred_cache_hit, _) in completed {
+    for (_, _, _, deferred_cache_hit, _) in &completed {
         if let Some(resolved) = deferred_cache_hit {
-            record_verified_cache_hit(&cache_paths, &resolved)?;
+            if let Err(error) = record_verified_cache_hit(&cache_paths, resolved) {
+                let scope_paths = ScopePaths::local(root.clone());
+                for (orphan_cmd, orphan_state) in orphan_states {
+                    restore_local_runtime_and_cache_ref(
+                        &root,
+                        &scope_paths,
+                        &cache_paths,
+                        &orphan_cmd,
+                        orphan_state,
+                    );
+                }
+                for (completed_cmd, completed_record, populated_cache_entry, _, completed_state) in
+                    completed.iter().rev()
+                {
+                    rollback_local_install_state(
+                        &root,
+                        completed_cmd,
+                        completed_record,
+                        completed_state.clone(),
+                    );
+                    if *populated_cache_entry {
+                        remove_unreferenced_cache_entry(
+                            &cache_paths,
+                            &completed_record.sha256,
+                            Some(&root),
+                        )?;
+                    }
+                }
+                return Err(error);
+            }
         }
     }
     Ok(0)
@@ -796,16 +854,17 @@ fn install_resolved(
         let cache_asset = cache_paths.asset_path(expected);
         if cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, expected).is_ok() {
             let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
+            let record = package_record_from_resolved(
+                cmd,
+                &resolved,
+                expected.clone(),
+                &cache_asset,
+                &installed_path,
+                true,
+            )?;
             install_bare_executable(&cache_asset, &installed_path)?;
             return Ok(InstalledPackage {
-                record: package_record_from_resolved(
-                    cmd,
-                    &resolved,
-                    expected.clone(),
-                    &cache_asset,
-                    &installed_path,
-                    true,
-                )?,
+                record,
                 populated_cache_entry: false,
                 deferred_cache_hit: Some(resolved),
             });
@@ -1004,6 +1063,7 @@ fn assert_lock_record_matches_source_and_target(
         || record.target_os != target.os
         || record.target_arch != target.arch
         || record.target_libc != target.libc
+        || record.release_tag.trim().is_empty()
     {
         return Err(BinpmError::StaleLockfile {
             path: lockfile_path.to_path_buf(),
@@ -1647,6 +1707,49 @@ fn is_manifest_managed_installed_path(
         .any(|cmd| managed_installed_path(paths, cmd, target_os) == path)
 }
 
+fn ensure_no_selected_install_path_collisions(
+    manifest: &Manifest,
+    selected: &[String],
+) -> Result<()> {
+    let target = HostTarget::current()?;
+    let mut owners = BTreeMap::new();
+    for cmd in manifest.tools.keys() {
+        let path = deterministic_installed_path(cmd, target.os);
+        if let Some(existing) = owners.insert(path.clone(), cmd.clone()) {
+            if selected.is_empty() || selected.contains(cmd) || selected.contains(&existing) {
+                return Err(BinpmError::InstalledPathCollision {
+                    cmd: existing,
+                    other_cmd: cmd.clone(),
+                    path: PathBuf::from(path),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn capture_local_manifest_orphan_states(
+    root: &Path,
+    manifest_tools: &BTreeMap<String, ManifestTool>,
+) -> Result<Vec<(String, RuntimeToolState)>> {
+    let scope_paths = ScopePaths::local(root.to_path_buf());
+    let mut orphan_cmds = BTreeSet::new();
+    for (cmd, _) in list_package_records(&scope_paths)? {
+        if !manifest_tools.contains_key(&cmd) {
+            orphan_cmds.insert(cmd);
+        }
+    }
+    for cmd in read_lockfile(&root.join(LOCKFILE_FILE))?.tools.keys() {
+        if !manifest_tools.contains_key(cmd) {
+            orphan_cmds.insert(cmd.clone());
+        }
+    }
+    orphan_cmds
+        .into_iter()
+        .map(|cmd| Ok((cmd.clone(), capture_runtime_tool_state(&scope_paths, &cmd)?)))
+        .collect()
+}
+
 fn rollback_local_install_state(
     root: &Path,
     cmd: &str,
@@ -1817,20 +1920,37 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     let prior_state = capture_local_remove_state(&root, cmd)?;
     let record_path = package_record_path(&paths, cmd);
     let cleanup_result = (|| {
-        let stale_installed_path = if record_path.exists() {
+        let mut remaining_manifest = read_manifest(&manifest_path)?;
+        remaining_manifest.tools.remove(cmd);
+        let (stale_installed_path, stale_target_os) = if record_path.exists() {
             let record = read_package_record(&record_path)?;
             let installed_path = managed_installed_path(&paths, cmd, record.target_os);
-            match remove_installed_binary(&paths, cmd, &record) {
-                Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
-                Err(error) => return Err(error),
+            if !is_manifest_managed_installed_path(
+                &paths,
+                &remaining_manifest.tools,
+                &installed_path,
+                record.target_os,
+            ) {
+                match remove_installed_binary(&paths, cmd, &record) {
+                    Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
+                    Err(error) => return Err(error),
+                }
             }
-            installed_path
+            (installed_path, record.target_os)
         } else {
-            current_platform_installed_path(&paths, cmd)
+            let target_os = HostTarget::current()?.os;
+            (current_platform_installed_path(&paths, cmd), target_os)
         };
         remove_package_record(&paths, cmd)?;
         remove_cache_ref(&CachePaths::new(&binpm_home()?), &root, cmd)?;
-        remove_path_if_exists(&stale_installed_path)?;
+        if !is_manifest_managed_installed_path(
+            &paths,
+            &remaining_manifest.tools,
+            &stale_installed_path,
+            stale_target_os,
+        ) {
+            remove_path_if_exists(&stale_installed_path)?;
+        }
         Ok(())
     })();
     if let Err(error) = cleanup_result {

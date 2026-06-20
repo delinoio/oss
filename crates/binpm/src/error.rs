@@ -17,6 +17,15 @@ pub enum BinpmError {
     InvalidTargetKey { raw: String },
     #[error("Invalid command name `{cmd}`: command names must be executable basenames.")]
     InvalidCommandName { cmd: String },
+    #[error(
+        "Tool `{cmd}` and `{other_cmd}` both install to `{}` on this target.",
+        path.display()
+    )]
+    InstalledPathCollision {
+        cmd: String,
+        other_cmd: String,
+        path: PathBuf,
+    },
     #[error("Unsupported target component `{raw}` for {component}.")]
     UnsupportedTargetComponent {
         component: &'static str,
@@ -171,6 +180,7 @@ impl BinpmError {
             | Self::StaleLockfile { .. }
             | Self::MissingManifest { .. }
             | Self::MissingTool { .. }
+            | Self::InstalledPathCollision { .. }
             | Self::AssetNotFound { .. }
             | Self::ArchiveExtractionNotImplemented { .. }
             | Self::VerificationRequired { .. }
