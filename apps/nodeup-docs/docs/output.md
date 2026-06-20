@@ -31,7 +31,7 @@ Successful command payloads are pretty-printed JSON on stdout. Handled failures 
 {
   "kind": "invalid-input",
   "message": "<cause>. Hint: <next action>.",
-  "exit_code": 1
+  "exit_code": 2
 }
 ```
 

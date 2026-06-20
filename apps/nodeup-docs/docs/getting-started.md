@@ -73,6 +73,24 @@ Runtime resolution for normal dispatch is explicit selector, then nearest direct
 
 When the same binary is linked or copied as `node`, `npm`, `npx`, `yarn`, or `pnpm`, Nodeup detects the executable name and dispatches to the active runtime:
 
+macOS and Linux:
+
+```bash
+install_bin_dir="$(dirname "$(command -v nodeup)")"
+for alias in node npm npx yarn pnpm; do
+  ln -sfn nodeup "$install_bin_dir/$alias"
+done
+```
+
+Windows PowerShell:
+
+```powershell
+$InstallBin = Split-Path (Get-Command nodeup).Source
+foreach ($Alias in "node", "npm", "npx", "yarn", "pnpm") {
+  Copy-Item (Join-Path $InstallBin "nodeup.exe") (Join-Path $InstallBin "$Alias.exe") -Force
+}
+```
+
 ```bash
 node --version
 npm --version
@@ -97,7 +115,7 @@ Handled failures in JSON mode are written to stderr as:
 {
   "kind": "not-found",
   "message": "Runtime v22.1.0 is not installed. Hint: Install it with `nodeup toolchain install <runtime>` and retry `nodeup which ...`.",
-  "exit_code": 1
+  "exit_code": 5
 }
 ```
 

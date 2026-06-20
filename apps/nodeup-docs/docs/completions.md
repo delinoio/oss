@@ -50,11 +50,11 @@ Completion output is always raw script text on stdout:
 
 ```bash
 nodeup --output json completions bash >nodeup.bash
-nodeup --color always completions zsh >_nodeup
+nodeup --output json completions zsh >_nodeup
 ```
 
 `--output json` and `--color always` do not wrap or style completion script output.
 
 ## Logging
 
-Completion generation logs include shell, command scope, and whether generation succeeded or failed. If a script is being generated for installation, redirect stdout to a file and send logs elsewhere if `RUST_LOG` is enabled.
+Completion generation logs include shell, command scope, and whether generation succeeded or failed. Use `--output json` or `RUST_LOG=off` when redirecting completion scripts so stdout contains only the generated script.

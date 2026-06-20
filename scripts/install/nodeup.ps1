@@ -111,7 +111,14 @@ function Install-Direct {
     Expand-Archive -Path $assetPath -DestinationPath $extractDir -Force
 
     New-Item -Path $InstallDir -ItemType Directory -Force | Out-Null
-    Copy-Item -Path (Join-Path $extractDir "nodeup.exe") -Destination (Join-Path $InstallDir "nodeup.exe") -Force
+    $extractedBinary = Join-Path $extractDir "nodeup.exe"
+    if (-not (Test-Path -Path $extractedBinary)) {
+      $extractedBinary = Join-Path $extractDir "nodeup-windows-$assetArch.exe"
+    }
+    if (-not (Test-Path -Path $extractedBinary)) {
+      throw "[install.nodeup] extracted archive did not contain nodeup.exe"
+    }
+    Copy-Item -Path $extractedBinary -Destination (Join-Path $InstallDir "nodeup.exe") -Force
 
     Write-Host "[install.nodeup] installed nodeup.exe to $InstallDir"
   }
