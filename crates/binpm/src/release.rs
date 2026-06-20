@@ -580,7 +580,14 @@ fn verify_gitlab_asset_redirects(releases: &mut [Release]) -> Result<()> {
             }
             crate::storage::validate_download_url(url)?;
 
-            let final_url = resolve_gitlab_asset_redirect_url(&http, url)?;
+            let final_url = match resolve_gitlab_asset_redirect_url(&http, url) {
+                Ok(final_url) => final_url,
+                Err(BinpmError::ReleaseLookup(_)) => {
+                    asset.final_url_https = Some(false);
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             let final_url_https = is_https_url(&final_url);
             debug!(
                 release_tag = release.tag,
@@ -952,5 +959,28 @@ mod tests {
             .expect_err("credential URL is rejected before probing");
 
         assert!(error.to_string().contains("must not include credentials"));
+    }
+
+    #[test]
+    fn gitlab_redirect_verification_marks_failed_candidate_probe_ineligible() {
+        let mut release = Release {
+            tag: "v1.0.0".to_string(),
+            assets: vec![ReleaseAsset {
+                name: "tool-x86_64-unknown-linux-gnu".to_string(),
+                url: "https://127.0.0.1:9/tool".to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            }],
+            stable: true,
+            released_at: None,
+            stability_reason: None,
+        };
+
+        verify_gitlab_asset_redirects(std::slice::from_mut(&mut release))
+            .expect("failed candidate probe is scoped to the asset");
+
+        assert_eq!(release.assets[0].final_url_https, Some(false));
     }
 }

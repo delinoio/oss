@@ -2322,6 +2322,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     }
     for (cmd, record) in list_package_records(&paths)? {
         validate_command_name(&cmd)?;
+        validate_package_record_source_identity(&cmd, &record)?;
         if let Some(lock_record) = local_runtime_locks.remove(&cmd) {
             assert_runtime_record_matches_lock(
                 root.as_deref().expect("local root"),
@@ -2355,6 +2356,27 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     }
     println!("checked {checked}");
     Ok(0)
+}
+
+fn validate_package_record_source_identity(cmd: &str, record: &PackageRecord) -> Result<()> {
+    let spec = SourceSpec::from_str(
+        &record
+            .requested_version
+            .as_ref()
+            .map(|version| format!("{}@{version}", record.source))
+            .unwrap_or_else(|| record.source.clone()),
+    )?;
+    if record.source != spec.source_without_version()
+        || record.source_provider != spec.provider
+        || record.source_host != spec.host
+        || record.source_path != spec.path
+        || record.package_spec != expected_package_spec(&spec, record)
+    {
+        return Err(BinpmError::StalePackageRecord {
+            cmd: cmd.to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn validate_package_record_metadata(
@@ -2871,9 +2893,10 @@ mod tests {
         restore_local_remove_state, restore_runtime_tool_state, select_explain_asset,
         select_manifest_asset, shell_path, shell_quote, snapshot_cache_metadata,
         source_install_scope, update_manifest_tool_source, validate_locked_record_artifact,
-        validate_package_record_metadata, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verify_lockfile_records, verify_runtime_cache_bytes,
-        ArtifactKind, InstalledPackage, LocalRemoveState, RuntimeToolState,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries,
+        verify_lockfile_records, verify_runtime_cache_bytes, ArtifactKind, InstalledPackage,
+        LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4535,6 +4558,28 @@ mod tests {
         assert!(error
             .to_string()
             .contains(&format!("sha256:{}", record.sha256)));
+    }
+
+    #[test]
+    fn package_record_verify_rejects_mismatched_embedded_source_identity() {
+        let mut record = package_record();
+        record.source_path = "attacker/tool".to_string();
+
+        let error = validate_package_record_source_identity("tool", &record)
+            .expect_err("stale package record");
+
+        assert!(matches!(error, BinpmError::StalePackageRecord { .. }));
+    }
+
+    #[test]
+    fn package_record_verify_rejects_mismatched_package_spec() {
+        let mut record = package_record();
+        record.package_spec = "github:attacker/tool@1.0.0".to_string();
+
+        let error = validate_package_record_source_identity("tool", &record)
+            .expect_err("stale package record");
+
+        assert!(matches!(error, BinpmError::StalePackageRecord { .. }));
     }
 
     #[test]

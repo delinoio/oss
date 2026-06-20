@@ -101,6 +101,8 @@ pub enum BinpmError {
     FrozenLockfile { path: PathBuf },
     #[error("Frozen lockfile `{}` is stale for `{cmd}`.", path.display())]
     StaleLockfile { path: PathBuf, cmd: String },
+    #[error("Package record for `{cmd}` has inconsistent source identity.")]
+    StalePackageRecord { cmd: String },
     #[error("No local binpm.toml manifest found from `{}`.", start.display())]
     MissingManifest { start: PathBuf },
     #[error("Tool `{cmd}` is not declared in `{}`.", manifest.display())]
@@ -180,6 +182,7 @@ impl BinpmError {
             | Self::ReleasePaginationLoop { .. } => 1,
             Self::FrozenLockfile { .. }
             | Self::StaleLockfile { .. }
+            | Self::StalePackageRecord { .. }
             | Self::MissingManifest { .. }
             | Self::MissingTool { .. }
             | Self::InstalledPathCollision { .. }

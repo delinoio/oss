@@ -375,6 +375,7 @@ pub fn read_cache_records(paths: &CachePaths) -> Result<Vec<CacheRecord>> {
 
 fn cache_entry_dirs(paths: &CachePaths) -> Result<Vec<PathBuf>> {
     let root = paths.root.join("sha256");
+    ensure_dir(&root)?;
     let entries = match fs::read_dir(&root) {
         Ok(entries) => entries,
         Err(source) if source.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
@@ -1565,6 +1566,25 @@ created_at = "2026-01-01T00:00:00Z"
         std::os::unix::fs::symlink(outside.path(), &cache.root).expect("symlink cache root");
 
         let error = prune_cache(&cache, &BTreeSet::new()).expect_err("symlinked cache root");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert!(outside_entry.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn prune_cache_rejects_symlinked_sha256_root_before_removing_entries() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        let outside_entry = outside.path().join("keep");
+        std::fs::create_dir_all(&cache.root).expect("create cache root");
+        std::fs::create_dir_all(&outside_entry).expect("create outside entry");
+        std::fs::write(outside_entry.join("asset"), b"keep").expect("write outside asset");
+        std::os::unix::fs::symlink(outside.path(), cache.root.join("sha256"))
+            .expect("symlink sha256 root");
+
+        let error = prune_cache(&cache, &BTreeSet::new()).expect_err("symlinked sha256 root");
 
         assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
         assert!(outside_entry.exists());
