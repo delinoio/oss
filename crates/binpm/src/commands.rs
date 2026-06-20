@@ -19,15 +19,15 @@ use crate::{
     release::{client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset},
     storage::{
         archive_format, clean_cache, deterministic_installed_path, install_bare_executable,
-        list_package_records, managed_installed_path, package_record_from_resolved,
-        package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
-        read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
-        referenced_cache_keys, remove_cache_ref, remove_installed_binary, remove_package_record,
-        remove_path_if_exists, sanitize_persisted_url, validate_command_name,
-        validate_download_url, validate_installed_binary_path, validate_sha256_digest,
-        write_cache_ref, write_lockfile, write_manifest, write_package_record, CachePaths,
-        LockTool, Manifest, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths, LOCKFILE_FILE,
-        MANIFEST_FILE,
+        installed_filename, list_package_records, managed_installed_path,
+        package_record_from_resolved, package_record_path, populate_cache_from_bytes, prune_cache,
+        read_cache_records, read_lockfile, read_manifest, read_package_record,
+        record_verified_cache_hit, referenced_cache_keys, remove_cache_ref,
+        remove_installed_binary, remove_package_record, remove_path_if_exists,
+        sanitize_persisted_url, validate_command_name, validate_download_url,
+        validate_installed_binary_path, validate_sha256_digest, write_cache_ref, write_lockfile,
+        write_manifest, write_package_record, CachePaths, LockTool, Manifest, ManifestTool,
+        PackageRecord, ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
 
@@ -1056,11 +1056,13 @@ fn assert_lock_matches_manifest_tool(
     record: &PackageRecord,
 ) -> Result<()> {
     if let Some(override_target) = manifest_target_override(tool, target)? {
+        if let Some(checksum_source) = override_target.checksum_source {
+            return Err(BinpmError::UnverifiedChecksumSourceOverride {
+                checksum_source: checksum_source.as_str().to_string(),
+            });
+        }
         if record.asset_name != override_target.asset
             || record.selected_binary != override_target.bin
-            || override_target
-                .checksum_source
-                .is_some_and(|checksum_source| record.checksum_source != checksum_source)
         {
             return Err(BinpmError::StaleLockfile {
                 path: root.join(LOCKFILE_FILE),
@@ -1569,17 +1571,20 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     let prior_state = capture_local_remove_state(&root, cmd)?;
     let record_path = package_record_path(&paths, cmd);
     let cleanup_result = (|| {
-        if record_path.exists() {
+        let stale_installed_path = if record_path.exists() {
             let record = read_package_record(&record_path)?;
+            let installed_path = managed_installed_path(&paths, cmd, record.target_os);
             match remove_installed_binary(&paths, cmd, &record) {
                 Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
                 Err(error) => return Err(error),
             }
-        }
+            installed_path
+        } else {
+            current_platform_installed_path(&paths, cmd)
+        };
         remove_package_record(&paths, cmd)?;
         remove_cache_ref(&CachePaths::new(&binpm_home()?), &root, cmd)?;
-        remove_path_if_exists(&paths.bin.join(cmd))?;
-        remove_path_if_exists(&paths.bin.join(format!("{cmd}.exe")))?;
+        remove_path_if_exists(&stale_installed_path)?;
         Ok(())
     })();
     if let Err(error) = cleanup_result {
@@ -1615,21 +1620,33 @@ fn remove_global_tool(cmd: &str) -> Result<i32> {
 fn remove_global_tool_from_paths(paths: &ScopePaths, cmd: &str) -> Result<()> {
     let prior_state = capture_runtime_tool_state(paths, cmd)?;
     let record_path = package_record_path(paths, cmd);
-    if record_path.exists() {
+    let stale_installed_path = if record_path.exists() {
         let record = read_package_record(&record_path)?;
+        let installed_path = managed_installed_path(paths, cmd, record.target_os);
         match remove_installed_binary(paths, cmd, &record) {
             Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
             Err(error) => return Err(error),
         }
-    }
-    if let Err(error) = remove_package_record(paths, cmd)
-        .and_then(|_| remove_path_if_exists(&paths.bin.join(cmd)))
-        .and_then(|_| remove_path_if_exists(&paths.bin.join(format!("{cmd}.exe"))))
+        installed_path
+    } else {
+        current_platform_installed_path(paths, cmd)
+    };
+    if let Err(error) =
+        remove_package_record(paths, cmd).and_then(|_| remove_path_if_exists(&stale_installed_path))
     {
         restore_runtime_tool_state(paths, cmd, prior_state);
         return Err(error);
     }
     Ok(())
+}
+
+fn current_platform_installed_path(paths: &ScopePaths, cmd: &str) -> PathBuf {
+    #[cfg(windows)]
+    let target_os = crate::contract::TargetOs::Windows;
+    #[cfg(not(windows))]
+    let target_os = crate::contract::TargetOs::Linux;
+
+    paths.bin.join(installed_filename(cmd, target_os))
 }
 
 fn select_scope(scope: Scope) -> Result<Scope> {
@@ -2373,6 +2390,38 @@ mod tests {
     }
 
     #[test]
+    fn frozen_lock_rejects_manifest_checksum_source_override() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "tool-linux".to_string(),
+                    bin: "tool-linux".to_string(),
+                    checksum_source: Some(ChecksumSource::Manifest),
+                },
+            )]),
+        };
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::Manifest;
+
+        let error = assert_lock_matches_manifest_tool(
+            temp_dir.path(),
+            "tool",
+            Some(&tool),
+            &target,
+            &record,
+        )
+        .expect_err("declarative checksum override");
+
+        assert!(error.to_string().contains("cannot be used"));
+    }
+
+    #[test]
     fn manifest_source_rejects_embedded_version() {
         let error = parse_manifest_source("github:owner/tool@1.0.0")
             .expect_err("versioned manifest source");
@@ -2886,6 +2935,25 @@ mod tests {
         );
         assert!(!crate::storage::package_record_path(&paths, "tool").exists());
         assert!(!paths.bin.join("tool").exists());
+    }
+
+    #[test]
+    fn global_remove_preserves_exe_sibling_for_linux_tool() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
+        let record = package_record();
+        write_package_record(&paths, "tool", &record).expect("write package record");
+        std::fs::write(paths.bin.join("tool"), "linux tool").expect("write linux tool");
+        std::fs::write(paths.bin.join("tool.exe"), "sibling tool").expect("write exe sibling");
+
+        remove_global_tool_from_paths(&paths, "tool").expect("remove global tool");
+
+        assert!(!crate::storage::package_record_path(&paths, "tool").exists());
+        assert!(!paths.bin.join("tool").exists());
+        assert_eq!(
+            std::fs::read_to_string(paths.bin.join("tool.exe")).expect("read exe sibling"),
+            "sibling tool"
+        );
     }
 
     #[test]
