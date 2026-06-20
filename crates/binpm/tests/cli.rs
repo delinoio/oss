@@ -565,6 +565,26 @@ signature_verified = false
 }
 
 #[test]
+fn local_remove_missing_tool_does_not_create_lockfile() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "missing"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Tool `missing` is not declared"));
+
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
 fn local_remove_preserves_exe_sibling_tool() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");

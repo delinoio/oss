@@ -820,6 +820,12 @@ fn commit_deferred_cache_hit(cache_paths: &CachePaths, install: &InstalledPackag
     Ok(())
 }
 
+fn has_current_cache_record(cache_paths: &CachePaths, sha256: &str) -> Result<bool> {
+    Ok(read_cache_records(cache_paths)?.iter().any(|record| {
+        record.sha256 == sha256 && record.cache_key == crate::storage::cache_key(sha256)
+    }))
+}
+
 fn install_resolved(
     scope_paths: &ScopePaths,
     cache_paths: &CachePaths,
@@ -850,6 +856,9 @@ fn install_resolved(
             asset: resolved.decision.asset_name,
         });
     }
+    if local_root.is_none() {
+        ensure_no_global_install_path_collision(scope_paths, cmd, resolved.target.os)?;
+    }
     if let Some(expected) = &resolved.provider_digest_sha256 {
         let cache_asset = cache_paths.asset_path(expected);
         if cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, expected).is_ok() {
@@ -875,6 +884,7 @@ fn install_resolved(
     let cache_asset = cache_paths.asset_path(&sha256);
     let had_verified_cache_entry =
         cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, &sha256).is_ok();
+    let had_cache_record = has_current_cache_record(cache_paths, &sha256)?;
     if let Some(expected) = &resolved.provider_digest_sha256 {
         if &sha256 != expected {
             return Err(BinpmError::DigestMismatch {
@@ -885,7 +895,7 @@ fn install_resolved(
         }
     }
     let (sha256, cache_asset) = populate_cache_from_bytes(cache_paths, &resolved, &bytes)?;
-    let populated_cache_entry = !had_verified_cache_entry;
+    let populated_cache_entry = !(had_verified_cache_entry && had_cache_record);
     let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
     if let Err(error) = install_bare_executable(&cache_asset, &installed_path) {
         if populated_cache_entry {
@@ -1728,6 +1738,28 @@ fn ensure_no_selected_install_path_collisions(
     Ok(())
 }
 
+fn ensure_no_global_install_path_collision(
+    paths: &ScopePaths,
+    cmd: &str,
+    target_os: TargetOs,
+) -> Result<()> {
+    let path = managed_installed_path(paths, cmd, target_os);
+    for (other_cmd, record) in list_package_records(paths)? {
+        if other_cmd == cmd {
+            continue;
+        }
+        let other_path = managed_installed_path(paths, &other_cmd, record.target_os);
+        if other_path == path {
+            return Err(BinpmError::InstalledPathCollision {
+                cmd: other_cmd,
+                other_cmd: cmd.to_string(),
+                path,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn capture_local_manifest_orphan_states(
     root: &Path,
     manifest_tools: &BTreeMap<String, ManifestTool>,
@@ -1918,9 +1950,16 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     let lockfile_path = root.join(LOCKFILE_FILE);
     let paths = ScopePaths::local(root.clone());
     let prior_state = capture_local_remove_state(&root, cmd)?;
+    let manifest = read_manifest(&manifest_path)?;
+    if !manifest.tools.contains_key(cmd) {
+        return Err(BinpmError::MissingTool {
+            cmd: cmd.to_string(),
+            manifest: manifest_path,
+        });
+    }
     let record_path = package_record_path(&paths, cmd);
     let cleanup_result = (|| {
-        let mut remaining_manifest = read_manifest(&manifest_path)?;
+        let mut remaining_manifest = manifest.clone();
         remaining_manifest.tools.remove(cmd);
         let (stale_installed_path, stale_target_os) = if record_path.exists() {
             let record = read_package_record(&record_path)?;
@@ -1958,13 +1997,7 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
         return Err(error);
     }
 
-    let mut manifest = match read_manifest(&manifest_path) {
-        Ok(manifest) => manifest,
-        Err(error) => {
-            restore_local_remove_state(&root, cmd, prior_state);
-            return Err(error);
-        }
-    };
+    let mut manifest = manifest;
     manifest.tools.remove(cmd);
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         restore_local_remove_state(&root, cmd, prior_state);
@@ -2620,7 +2653,8 @@ mod tests {
         assert_local_runtime_records_complete, assert_lock_matches_manifest_tool,
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
-        commit_deferred_cache_hit, deterministic_installed_path, github_sha256_digest,
+        commit_deferred_cache_hit, deterministic_installed_path,
+        ensure_no_global_install_path_collision, github_sha256_digest, has_current_cache_record,
         local_runtime_lock_records, lock_targets_conflict_with_manifest,
         lock_targets_conflict_with_record, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_target_override, manifest_tool_from_source,
@@ -2638,11 +2672,13 @@ mod tests {
             ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceProvider, SourceSpec,
             TargetArch, TargetLibc, TargetOs,
         },
+        error::BinpmError,
         release::ReleaseAsset,
         storage::{
-            read_cache_records, write_lockfile, write_manifest, write_package_record, CachePaths,
-            LockTool, Lockfile, Manifest, ManifestTargetOverride, ManifestTool, PackageRecord,
-            ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
+            read_cache_records, write_cache_record, write_lockfile, write_manifest,
+            write_package_record, CachePaths, CacheRecord, LockTool, Lockfile, Manifest,
+            ManifestTargetOverride, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths,
+            LOCKFILE_FILE, MANIFEST_FILE,
         },
     };
 
@@ -2729,6 +2765,21 @@ mod tests {
             deterministic_installed_path("tool", TargetOs::Linux),
             ".binpm/bin/tool"
         );
+    }
+
+    #[test]
+    fn global_source_install_rejects_windows_exe_collision() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::global(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        let mut record = package_record();
+        record.target_os = TargetOs::Windows;
+        write_package_record(&paths, "foo", &record).expect("write package record");
+
+        let error = ensure_no_global_install_path_collision(&paths, "foo.exe", TargetOs::Windows)
+            .expect_err("collision");
+
+        assert!(matches!(error, BinpmError::InstalledPathCollision { .. }));
     }
 
     #[test]
@@ -4109,6 +4160,49 @@ mod tests {
         let records = read_cache_records(&cache).expect("records after");
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].sha256, sha256);
+    }
+
+    #[test]
+    fn existing_cache_bytes_without_metadata_are_not_current_records() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        cache.ensure().expect("cache paths");
+        let bytes = b"cached tool";
+        let sha256 = format!("{:x}", Sha256::digest(bytes));
+        fs::create_dir_all(cache.entry_dir(&sha256)).expect("cache entry dir");
+        fs::write(cache.asset_path(&sha256), bytes).expect("cache asset");
+
+        assert!(!has_current_cache_record(&cache, &sha256).expect("cache record check"));
+    }
+
+    #[test]
+    fn current_cache_record_requires_matching_cache_key() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        cache.ensure().expect("cache paths");
+        let sha256 = package_record().sha256;
+        write_cache_record(
+            &cache,
+            &CacheRecord {
+                version: 1,
+                cache_key: crate::storage::cache_key(&sha256),
+                source_provider: SourceProvider::GitHub,
+                source_host: "github.com".to_string(),
+                source_path: "owner/tool".to_string(),
+                release_tag: "1.0.0".to_string(),
+                asset_name: "tool-linux".to_string(),
+                asset_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+                    .to_string(),
+                byte_size: Some(11),
+                sha256: sha256.clone(),
+                checksum_source: ChecksumSource::Local,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+                last_used_at: None,
+            },
+        )
+        .expect("write cache record");
+
+        assert!(has_current_cache_record(&cache, &sha256).expect("cache record check"));
     }
 
     #[test]
