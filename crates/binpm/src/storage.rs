@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     io::Write,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -164,6 +164,7 @@ impl ScopePaths {
 pub struct CachePaths {
     pub root: PathBuf,
     pub tmp: PathBuf,
+    pub refs: PathBuf,
 }
 
 impl CachePaths {
@@ -171,12 +172,14 @@ impl CachePaths {
         Self {
             root: home.join("cache"),
             tmp: home.join("tmp"),
+            refs: home.join("cache").join("refs"),
         }
     }
 
     pub fn ensure(&self) -> Result<()> {
         ensure_dir(&self.root)?;
         ensure_dir(&self.tmp)?;
+        ensure_dir(&self.refs)?;
         Ok(())
     }
 
@@ -232,16 +235,37 @@ pub fn package_record_path(paths: &ScopePaths, cmd: &str) -> PathBuf {
     paths.packages.join(format!("{cmd}.toml"))
 }
 
+pub fn validate_command_name(cmd: &str) -> Result<()> {
+    if cmd.is_empty()
+        || cmd == "."
+        || cmd == ".."
+        || cmd.contains(['/', '\\'])
+        || Path::new(cmd).components().any(|component| {
+            !matches!(
+                component,
+                Component::Normal(name) if name == std::ffi::OsStr::new(cmd)
+            )
+        })
+    {
+        return Err(BinpmError::InvalidCommandName {
+            cmd: cmd.to_string(),
+        });
+    }
+    Ok(())
+}
+
 pub fn read_package_record(path: &Path) -> Result<PackageRecord> {
     read_toml(path)
 }
 
 pub fn write_package_record(paths: &ScopePaths, cmd: &str, record: &PackageRecord) -> Result<()> {
+    validate_command_name(cmd)?;
     paths.ensure()?;
     write_toml_atomic(&package_record_path(paths, cmd), record)
 }
 
 pub fn remove_package_record(paths: &ScopePaths, cmd: &str) -> Result<()> {
+    validate_command_name(cmd)?;
     remove_path_if_exists(&package_record_path(paths, cmd))
 }
 
@@ -469,6 +493,7 @@ pub fn clean_cache(paths: &CachePaths) -> Result<usize> {
 pub fn referenced_cache_keys(
     global: &ScopePaths,
     local: Option<&ScopePaths>,
+    cache: &CachePaths,
 ) -> Result<BTreeSet<String>> {
     let mut keys = BTreeSet::new();
     for (_, record) in list_package_records(global)? {
@@ -483,7 +508,60 @@ pub fn referenced_cache_keys(
             }
         }
     }
+    for key in read_cache_ref_keys(cache)? {
+        keys.insert(key);
+    }
     Ok(keys)
+}
+
+pub fn write_cache_ref(
+    cache: &CachePaths,
+    project_root: &Path,
+    cmd: &str,
+    record: &PackageRecord,
+) -> Result<()> {
+    let Some(key) = &record.cache_key else {
+        return Ok(());
+    };
+    validate_command_name(cmd)?;
+    cache.ensure()?;
+    let ref_path = cache_ref_path(cache, project_root, cmd);
+    atomic_write_bytes(&ref_path, key.as_bytes())
+}
+
+pub fn remove_cache_ref(cache: &CachePaths, project_root: &Path, cmd: &str) -> Result<()> {
+    validate_command_name(cmd)?;
+    remove_path_if_exists(&cache_ref_path(cache, project_root, cmd))
+}
+
+fn read_cache_ref_keys(cache: &CachePaths) -> Result<BTreeSet<String>> {
+    let mut keys = BTreeSet::new();
+    let Ok(entries) = fs::read_dir(&cache.refs) else {
+        return Ok(keys);
+    };
+    for entry in entries {
+        let entry = entry.map_err(|source| BinpmError::ReadFile {
+            path: cache.refs.clone(),
+            source,
+        })?;
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("ref") {
+            continue;
+        }
+        let key = fs::read_to_string(&path).map_err(|source| BinpmError::ReadFile {
+            path: path.clone(),
+            source,
+        })?;
+        if !key.trim().is_empty() {
+            keys.insert(key.trim().to_string());
+        }
+    }
+    Ok(keys)
+}
+
+fn cache_ref_path(cache: &CachePaths, project_root: &Path, cmd: &str) -> PathBuf {
+    let digest = Sha256::digest(format!("{}:{cmd}", project_root.display()).as_bytes());
+    cache.refs.join(format!("{digest:x}.ref"))
 }
 
 pub fn package_record_from_resolved(
@@ -655,8 +733,9 @@ mod tests {
 
     use super::{
         clean_cache, install_bare_executable, populate_cache_from_bytes, prune_cache,
-        read_cache_records, read_lockfile, sanitize_persisted_url, verify_sha256, write_lockfile,
-        write_manifest, CachePaths, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset,
+        read_cache_records, read_lockfile, referenced_cache_keys, sanitize_persisted_url,
+        validate_command_name, verify_sha256, write_cache_ref, write_lockfile, write_manifest,
+        CachePaths, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset, ScopePaths,
     };
     use crate::{
         assets::{ArtifactKind, CandidateDecision},
@@ -685,6 +764,15 @@ mod tests {
             sanitize_persisted_url("https://token@example.com/tool").expect_err("credential URL");
 
         assert!(error.to_string().contains("credentials"));
+    }
+
+    #[test]
+    fn rejects_command_names_with_path_components() {
+        for cmd in ["", ".", "..", "../tool", "nested/tool", r"nested\tool"] {
+            assert!(validate_command_name(cmd).is_err(), "{cmd} should fail");
+        }
+
+        validate_command_name("tool.exe").expect("basename command");
     }
 
     #[test]
@@ -760,6 +848,21 @@ mod tests {
         assert_eq!(removed, 1);
         assert!(cache.asset_path(&kept_sha).exists());
         assert!(!cache.asset_path(&removed_sha).exists());
+    }
+
+    #[test]
+    fn referenced_cache_keys_include_cross_project_refs() {
+        let home = tempfile::tempdir().expect("home");
+        let project = tempfile::tempdir().expect("project");
+        let cache = CachePaths::new(home.path());
+        let paths = ScopePaths::global(home.path().join("global"));
+        let mut record = package_record();
+        record.cache_key = Some("sha256:cross-project".to_string());
+
+        write_cache_ref(&cache, project.path(), "tool", &record).expect("write ref");
+        let referenced = referenced_cache_keys(&paths, None, &cache).expect("referenced keys");
+
+        assert!(referenced.contains("sha256:cross-project"));
     }
 
     #[test]

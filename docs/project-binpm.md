@@ -25,12 +25,14 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `~/.binpm` remains the canonical global home directory for globally installed binaries, package records, cache entries, and temporary extraction state.
 - `~/.binpm/cache` is the user-level global asset cache shared by all `binpm` installs for the same account.
 - Global cache reuse must never bypass provider asset digest, upstream checksum, signature, or locally recorded SHA-256 verification.
+- Project-local installs must maintain user-level cache references so pruning from one checkout does not remove cache entries still referenced by another checkout.
 - Cache management commands must preserve installed package records and `~/.binpm/bin` entries unless a separate uninstall contract explicitly changes that behavior.
 - `binpm cache key` must be a read-only diagnostic command that prints a current-target CI cache key derived from `binpm.lock`.
 - Project-local tooling must use `binpm.toml` at the repository root as the committed local tool manifest.
 - Project-local tooling must use `binpm.lock` at the repository root as the committed deterministic resolution record for release tags, target-specific assets, selected binaries, checksums, and installed paths.
 - Committed lockfiles must store sanitized canonical asset URLs only, never credential-bearing or expiring download URLs.
 - Local target-specific asset overrides must live under `[tools.<cmd>.targets.<target-key>]` and must preserve deterministic lockfile output.
+- Local command names must be executable basenames and must not contain path separators or relative path components.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`; other project-local binpm runtime state must stay under `$repoRoot/.binpm`.
 - The current install implementation finalizes bare executable release assets only. Archive assets are selected and classified by the scoring layer, but install finalization fails explicitly until archive extraction is implemented.
 - `binpm x CMD [args...]` must run commands from the local manifest or from an explicitly supplied `--package`; it must not guess a GitHub repository from `CMD`.

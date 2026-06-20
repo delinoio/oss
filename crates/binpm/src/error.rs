@@ -15,6 +15,8 @@ pub enum BinpmError {
     InvalidSourceSpec { raw: String, message: String },
     #[error("Invalid target key `{raw}`. Expected `<os>-<arch>-<libc>`.")]
     InvalidTargetKey { raw: String },
+    #[error("Invalid command name `{cmd}`: command names must be executable basenames.")]
+    InvalidCommandName { cmd: String },
     #[error("Unsupported target component `{raw}` for {component}.")]
     UnsupportedTargetComponent {
         component: &'static str,
@@ -78,6 +80,8 @@ pub enum BinpmError {
     },
     #[error("Frozen lockfile prevents modifying `{}`.", path.display())]
     FrozenLockfile { path: PathBuf },
+    #[error("Frozen lockfile `{}` is stale for `{cmd}`.", path.display())]
+    StaleLockfile { path: PathBuf, cmd: String },
     #[error("No local binpm.toml manifest found from `{}`.", start.display())]
     MissingManifest { start: PathBuf },
     #[error("Tool `{cmd}` is not declared in `{}`.", manifest.display())]
@@ -114,6 +118,7 @@ impl BinpmError {
             Self::NotImplemented { .. } => 2,
             Self::InvalidSourceSpec { .. }
             | Self::InvalidTargetKey { .. }
+            | Self::InvalidCommandName { .. }
             | Self::UnsupportedTargetComponent { .. }
             | Self::ReleaseNotFound { .. }
             | Self::ManifestExists { .. } => 2,
@@ -131,6 +136,7 @@ impl BinpmError {
             | Self::ReleaseHttpClient(_)
             | Self::ReleaseLookup(_) => 1,
             Self::FrozenLockfile { .. }
+            | Self::StaleLockfile { .. }
             | Self::MissingManifest { .. }
             | Self::MissingTool { .. }
             | Self::AssetNotFound { .. }

@@ -42,7 +42,7 @@
 - `--no-confirm` is a stable scripting flag. The default behavior remains no prompt for currently documented operations, but future dangerous operations that add confirmation prompts must allow `--no-confirm` to bypass them.
 - Cache management commands for v1:
   - `binpm cache list` must report cached assets with digest, byte size when known, source provider, source host, source path, release tag, asset name, last-used timestamp when known, and whether installed package manifests currently reference the entry.
-  - `binpm cache prune` must remove only cache entries that are not referenced by installed package manifests.
+  - `binpm cache prune` must remove only cache entries that are not referenced by installed package manifests or by the user-level local-project cache reference index under `~/.binpm/cache/refs`.
   - `binpm cache clean` must remove all cache entries while preserving installed package records and executable links or copies under `~/.binpm/bin`.
   - `binpm cache key` must print a stable CI cache key derived from the current target and `binpm.lock`; it must not download, install, modify package records, or populate cache entries.
 - `binpm list [--local|--global]` must report declared and installed tools for the selected scope, including source, requested version, resolved release tag when known, selected binary, installed path, and verification state when known.
@@ -58,6 +58,7 @@
 - `binpm env --shell <shell>` must print shell-specific environment commands for adding binpm-managed binary directories to `PATH`; it must not modify shell profiles by default.
 - On Windows, `binpm env --shell bash` and `binpm env --shell zsh` must render drive-letter and UNC paths in POSIX shell form so colon-separated `PATH` exports remain valid.
 - `binpm add <cmd> <source>` must declare `<cmd>` in `binpm.toml`, install the selected executable into `$repoRoot/.binpm/bin`, and update `binpm.lock`.
+- Tool command names in `binpm.toml`, package records, and install commands must be executable basenames; path separators, `.` and `..` are invalid command names.
 - `binpm install` without a package spec must sync the local `binpm.toml` manifest into `$repoRoot/.binpm/bin` and update `binpm.lock`; `binpm install <source>` keeps the global install behavior.
 - `binpm x CMD [args...]` must resolve `CMD` from `binpm.toml`, install it on demand when the lockfile or local executable is missing or stale, prepend `$repoRoot/.binpm/bin` to `PATH`, preserve the caller's current working directory, and forward every argument after `CMD` to the executed command.
 - `binpm x --package <source> CMD [args...]` must install or reuse the explicit package in a temporary or cache-backed execution context, prepend that context and `$repoRoot/.binpm/bin` to `PATH` when a local project exists, and run `CMD [args...]`.
