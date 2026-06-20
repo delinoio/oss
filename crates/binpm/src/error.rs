@@ -78,6 +78,12 @@ pub enum BinpmError {
         #[source]
         source: toml::de::Error,
     },
+    #[error("Unsupported {kind} version {version} in `{}`. Supported version is 1.", path.display())]
+    UnsupportedStorageVersion {
+        kind: &'static str,
+        path: PathBuf,
+        version: u8,
+    },
     #[error("Frozen lockfile prevents modifying `{}`.", path.display())]
     FrozenLockfile { path: PathBuf },
     #[error("Frozen lockfile `{}` is stale for `{cmd}`.", path.display())]
@@ -127,7 +133,8 @@ impl BinpmError {
             | Self::InvalidCommandName { .. }
             | Self::UnsupportedTargetComponent { .. }
             | Self::ReleaseNotFound { .. }
-            | Self::ManifestExists { .. } => 2,
+            | Self::ManifestExists { .. }
+            | Self::UnsupportedStorageVersion { .. } => 2,
             Self::CurrentDirectory(_)
             | Self::WriteFile { .. }
             | Self::ReadFile { .. }

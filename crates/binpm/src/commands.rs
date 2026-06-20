@@ -440,6 +440,7 @@ fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32
     let home = binpm_home()?;
     let scope_paths = ScopePaths::global(home.clone());
     let cache_paths = CachePaths::new(&home);
+    let prior_state = capture_runtime_tool_state(&scope_paths, &cmd)?;
     let record = install_resolved(
         &scope_paths,
         &cache_paths,
@@ -450,6 +451,7 @@ fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32
     )?;
     if let Err(error) = write_package_record(&scope_paths, &cmd, &record) {
         rollback_failed_install(&scope_paths, &cmd, &record, &cache_paths, None)?;
+        restore_runtime_tool_state(&scope_paths, &cmd, prior_state);
         return Err(error);
     }
     println!("installed {cmd} {}", record.installed_path);
@@ -578,6 +580,13 @@ fn install_resolved(
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
         });
+    }
+    if resolved.checksum_source == ChecksumSource::Local {
+        eprintln!(
+            "warning: no upstream checksum or verified signature was available for {}; using a \
+             locally computed SHA-256",
+            spec
+        );
     }
     if resolved.archive_format != ArchiveFormat::BareExecutable {
         return Err(BinpmError::ArchiveExtractionNotImplemented {
@@ -862,12 +871,25 @@ fn rollback_failed_install(
 #[derive(Debug, Clone)]
 struct LocalToolState {
     lockfile: crate::storage::Lockfile,
-    package_record: Option<PackageRecord>,
+    runtime: RuntimeToolState,
 }
 
 fn capture_local_tool_state(root: &Path, cmd: &str) -> Result<LocalToolState> {
     let scope_paths = ScopePaths::local(root.to_path_buf());
-    let package_record = match read_package_record(&package_record_path(&scope_paths, cmd)) {
+    Ok(LocalToolState {
+        lockfile: read_lockfile(&root.join(LOCKFILE_FILE))?,
+        runtime: capture_runtime_tool_state(&scope_paths, cmd)?,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct RuntimeToolState {
+    package_record: Option<PackageRecord>,
+    installed_bytes: Option<Vec<u8>>,
+}
+
+fn capture_runtime_tool_state(paths: &ScopePaths, cmd: &str) -> Result<RuntimeToolState> {
+    let package_record = match read_package_record(&package_record_path(paths, cmd)) {
         Ok(record) => Some(record),
         Err(BinpmError::ReadFile { source, .. })
             if source.kind() == std::io::ErrorKind::NotFound =>
@@ -876,9 +898,12 @@ fn capture_local_tool_state(root: &Path, cmd: &str) -> Result<LocalToolState> {
         }
         Err(error) => return Err(error),
     };
-    Ok(LocalToolState {
-        lockfile: read_lockfile(&root.join(LOCKFILE_FILE))?,
+    let installed_bytes = package_record
+        .as_ref()
+        .and_then(|record| fs::read(&record.installed_path).ok());
+    Ok(RuntimeToolState {
         package_record,
+        installed_bytes,
     })
 }
 
@@ -891,27 +916,58 @@ fn rollback_local_install_state(
     let scope_paths = ScopePaths::local(root.to_path_buf());
     let cache_paths = binpm_home().ok().map(|home| CachePaths::new(&home));
     let _ = remove_installed_binary(&scope_paths, cmd, record);
-    match &prior_state.package_record {
+    restore_runtime_tool_state(&scope_paths, cmd, prior_state.runtime.clone());
+    match &prior_state.runtime.package_record {
         Some(previous) => {
-            let _ = write_package_record(&scope_paths, cmd, previous);
             if let Some(cache_paths) = &cache_paths {
                 let _ = write_cache_ref(cache_paths, root, cmd, previous);
             }
-            let previous_path = PathBuf::from(&previous.installed_path);
-            if let (Some(cache_path), false) =
-                (previous.cache_path.as_ref(), previous_path.exists())
-            {
-                let _ = install_bare_executable(Path::new(cache_path), &previous_path);
-            }
         }
         None => {
-            let _ = remove_package_record(&scope_paths, cmd);
             if let Some(cache_paths) = &cache_paths {
                 let _ = remove_cache_ref(cache_paths, root, cmd);
             }
         }
     }
     let _ = write_lockfile(&root.join(LOCKFILE_FILE), &prior_state.lockfile);
+}
+
+fn restore_runtime_tool_state(paths: &ScopePaths, cmd: &str, prior_state: RuntimeToolState) {
+    match &prior_state.package_record {
+        Some(previous) => {
+            let _ = write_package_record(paths, cmd, previous);
+            let previous_path = PathBuf::from(&previous.installed_path);
+            if let Some(bytes) = prior_state.installed_bytes {
+                let _ = restore_executable_bytes(&previous_path, &bytes);
+            } else if let Some(cache_path) = &previous.cache_path {
+                let _ = install_bare_executable(Path::new(cache_path), &previous_path);
+            }
+        }
+        None => {
+            let _ = remove_package_record(paths, cmd);
+        }
+    }
+}
+
+fn restore_executable_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
+    crate::storage::atomic_write_bytes(path, bytes)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut permissions = fs::metadata(path)
+            .map_err(|source| BinpmError::ReadFile {
+                path: path.to_path_buf(),
+                source,
+            })?
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).map_err(|source| BinpmError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    }
+    Ok(())
 }
 
 fn download_asset(url: &str) -> Result<Vec<u8>> {

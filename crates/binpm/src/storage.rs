@@ -19,6 +19,7 @@ use crate::{
 
 pub const MANIFEST_FILE: &str = "binpm.toml";
 pub const LOCKFILE_FILE: &str = "binpm.lock";
+const STORAGE_VERSION: u8 = 1;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Manifest {
@@ -210,7 +211,9 @@ pub struct ResolvedAsset {
 }
 
 pub fn read_manifest(path: &Path) -> Result<Manifest> {
-    read_toml(path)
+    let manifest: Manifest = read_toml(path)?;
+    ensure_supported_version("manifest", path, manifest.version)?;
+    Ok(manifest)
 }
 
 pub fn write_manifest(path: &Path, manifest: &Manifest) -> Result<()> {
@@ -220,11 +223,13 @@ pub fn write_manifest(path: &Path, manifest: &Manifest) -> Result<()> {
 pub fn read_lockfile(path: &Path) -> Result<Lockfile> {
     if !path.exists() {
         return Ok(Lockfile {
-            version: 1,
+            version: STORAGE_VERSION,
             tools: BTreeMap::new(),
         });
     }
-    read_toml(path)
+    let lockfile: Lockfile = read_toml(path)?;
+    ensure_supported_version("lockfile", path, lockfile.version)?;
+    Ok(lockfile)
 }
 
 pub fn write_lockfile(path: &Path, lockfile: &Lockfile) -> Result<()> {
@@ -339,10 +344,11 @@ pub fn sanitize_persisted_url(raw: &str) -> Result<String> {
         .split('?')
         .next()
         .unwrap_or(without_fragment);
+    let diagnostic_url = redact_url_credentials(without_query);
 
     if !without_query.starts_with("https://") {
         return Err(BinpmError::UnsafeUrl {
-            url: raw.to_string(),
+            url: diagnostic_url,
             message: "persisted release asset URLs must use https".to_string(),
         });
     }
@@ -351,7 +357,7 @@ pub fn sanitize_persisted_url(raw: &str) -> Result<String> {
     let authority = rest.split('/').next().unwrap_or(rest);
     if authority.contains('@') {
         return Err(BinpmError::UnsafeUrl {
-            url: raw.to_string(),
+            url: diagnostic_url,
             message: "persisted release asset URLs must not include credentials".to_string(),
         });
     }
@@ -617,8 +623,15 @@ pub fn remove_cache_ref(cache: &CachePaths, project_root: &Path, cmd: &str) -> R
 
 fn read_cache_ref_keys(cache: &CachePaths) -> Result<BTreeSet<String>> {
     let mut keys = BTreeSet::new();
-    let Ok(entries) = fs::read_dir(&cache.refs) else {
-        return Ok(keys);
+    let entries = match fs::read_dir(&cache.refs) {
+        Ok(entries) => entries,
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(keys),
+        Err(source) => {
+            return Err(BinpmError::ReadFile {
+                path: cache.refs.clone(),
+                source,
+            })
+        }
     };
     for entry in entries {
         let entry = entry.map_err(|source| BinpmError::ReadFile {
@@ -750,6 +763,33 @@ where
     })
 }
 
+fn ensure_supported_version(kind: &'static str, path: &Path, version: u8) -> Result<()> {
+    if version == STORAGE_VERSION {
+        return Ok(());
+    }
+    Err(BinpmError::UnsupportedStorageVersion {
+        kind,
+        path: path.to_path_buf(),
+        version,
+    })
+}
+
+fn redact_url_credentials(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    let Some((authority, path)) = rest.split_once('/') else {
+        return match rest.rsplit_once('@') {
+            Some((_, host)) => format!("{scheme}://{host}"),
+            None => url.to_string(),
+        };
+    };
+    match authority.rsplit_once('@') {
+        Some((_, host)) => format!("{scheme}://{host}/{path}"),
+        None => url.to_string(),
+    }
+}
+
 fn write_toml_atomic<T>(path: &Path, value: &T) -> Result<()>
 where
     T: Serialize,
@@ -814,7 +854,7 @@ mod tests {
 
     use super::{
         clean_cache, install_bare_executable, list_package_records, managed_installed_path,
-        populate_cache_from_bytes, prune_cache, read_cache_records, read_lockfile,
+        populate_cache_from_bytes, prune_cache, read_cache_records, read_lockfile, read_manifest,
         referenced_cache_keys, remove_installed_binary, sanitize_persisted_url,
         validate_command_name, verify_sha256, write_cache_ref, write_lockfile, write_manifest,
         CachePaths, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset, ScopePaths,
@@ -846,6 +886,36 @@ mod tests {
             sanitize_persisted_url("https://token@example.com/tool").expect_err("credential URL");
 
         assert!(error.to_string().contains("credentials"));
+        assert!(!error.to_string().contains("token"));
+    }
+
+    #[test]
+    fn unsafe_url_diagnostics_strip_query_and_fragment() {
+        let error = sanitize_persisted_url("http://example.com/tool?token=secret#frag")
+            .expect_err("unsafe URL");
+
+        assert!(error.to_string().contains("http://example.com/tool"));
+        assert!(!error.to_string().contains("secret"));
+        assert!(!error.to_string().contains("frag"));
+    }
+
+    #[test]
+    fn rejects_unsupported_manifest_and_lockfile_versions() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let manifest_path = temp_dir.path().join("binpm.toml");
+        let lockfile_path = temp_dir.path().join("binpm.lock");
+        std::fs::write(&manifest_path, "version = 2\n").expect("write manifest");
+        std::fs::write(&lockfile_path, "version = 2\n").expect("write lockfile");
+
+        let manifest_error = read_manifest(&manifest_path).expect_err("manifest version");
+        let lockfile_error = read_lockfile(&lockfile_path).expect_err("lockfile version");
+
+        assert!(manifest_error
+            .to_string()
+            .contains("Unsupported manifest version 2"));
+        assert!(lockfile_error
+            .to_string()
+            .contains("Unsupported lockfile version 2"));
     }
 
     #[test]
@@ -985,6 +1055,19 @@ mod tests {
         let referenced = referenced_cache_keys(&paths, None, &cache).expect("referenced keys");
 
         assert!(referenced.contains("sha256:cross-project"));
+    }
+
+    #[test]
+    fn unreadable_cache_ref_directory_errors() {
+        let home = tempfile::tempdir().expect("home");
+        let cache = CachePaths::new(home.path());
+        std::fs::create_dir_all(&cache.root).expect("create cache root");
+        std::fs::write(&cache.refs, b"not a directory").expect("write refs file");
+        let paths = ScopePaths::global(home.path().join("global"));
+
+        let error = referenced_cache_keys(&paths, None, &cache).expect_err("cache refs error");
+
+        assert!(error.to_string().contains("Failed to read"));
     }
 
     #[test]
