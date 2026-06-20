@@ -38,6 +38,20 @@ Windows PowerShell:
 ./scripts/install/nodeup.ps1 -Version latest -Method direct
 ```
 
+Direct installers place the binary in `~/.local/bin` by default and do not modify your shell `PATH`. Add that directory before verifying the install, or pass `--install-dir` / `-InstallDir` with a directory already on `PATH`.
+
+macOS and Linux:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:Path = "$HOME\.local\bin;$env:Path"
+```
+
 ## cargo-binstall
 
 ```bash
@@ -56,6 +70,8 @@ Nodeup's `cargo-binstall` metadata resolves first-party GitHub Release assets on
 ```
 
 ## Verify the Install
+
+Run these commands in a shell where `nodeup` resolves on `PATH`:
 
 ```bash
 nodeup --version
