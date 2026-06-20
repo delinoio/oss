@@ -9,22 +9,23 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, info};
 
 use crate::{
-    assets::{select_asset, ArtifactKind},
+    assets::{gitlab_https_eligible, select_asset, ArtifactKind},
     cli::{
         AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
         InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs, VerifyArgs,
     },
-    contract::{ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec, TargetOs},
+    contract::{ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec},
     error::{BinpmError, Result},
     release::{client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset},
     storage::{
-        archive_format, clean_cache, install_bare_executable, list_package_records,
-        package_record_from_resolved, package_record_path, populate_cache_from_bytes, prune_cache,
-        read_cache_records, read_lockfile, read_manifest, read_package_record,
-        referenced_cache_keys, remove_cache_ref, remove_installed_binary, remove_package_record,
-        remove_path_if_exists, sanitize_persisted_url, validate_command_name, write_cache_ref,
-        write_lockfile, write_manifest, write_package_record, CachePaths, LockTool, Manifest,
-        ManifestTool, PackageRecord, ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
+        archive_format, clean_cache, deterministic_installed_path, install_bare_executable,
+        list_package_records, managed_installed_path, package_record_from_resolved,
+        package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
+        read_lockfile, read_manifest, read_package_record, referenced_cache_keys, remove_cache_ref,
+        remove_installed_binary, remove_package_record, remove_path_if_exists,
+        sanitize_persisted_url, validate_command_name, write_cache_ref, write_lockfile,
+        write_manifest, write_package_record, CachePaths, LockTool, Manifest, ManifestTool,
+        PackageRecord, ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
 
@@ -99,14 +100,6 @@ fn add(args: AddArgs) -> Result<i32> {
     let root = require_manifest_root_or_creation_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
     validate_command_name(&args.cmd)?;
-    let record = install_local_tool(
-        &root,
-        &args.cmd,
-        &spec,
-        None,
-        args.lockfile.frozen_lockfile(),
-        args.require_verified,
-    )?;
     let mut manifest = if manifest_path.exists() {
         read_manifest(&manifest_path)?
     } else {
@@ -115,6 +108,14 @@ fn add(args: AddArgs) -> Result<i32> {
             tools: BTreeMap::new(),
         }
     };
+    let record = install_local_tool(
+        &root,
+        &args.cmd,
+        &spec,
+        None,
+        args.lockfile.frozen_lockfile(),
+        args.require_verified,
+    )?;
     manifest.tools.insert(
         args.cmd.clone(),
         ManifestTool {
@@ -447,7 +448,7 @@ fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32
         require_verified,
     )?;
     if let Err(error) = write_package_record(&scope_paths, &cmd, &record) {
-        rollback_failed_install(&record, &cache_paths, None)?;
+        rollback_failed_install(&scope_paths, &cmd, &record, &cache_paths, None)?;
         return Err(error);
     }
     println!("installed {cmd} {}", record.installed_path);
@@ -511,7 +512,7 @@ fn install_local_tool(
     validate_command_name(cmd)?;
     let lockfile_path = root.join(LOCKFILE_FILE);
     if frozen_lockfile {
-        return install_local_from_lock(root, cmd, spec, require_verified);
+        return install_local_from_lock(root, cmd, spec, tool, require_verified);
     }
 
     let home = binpm_home()?;
@@ -548,7 +549,7 @@ fn install_local_tool(
         .and_then(|_| write_package_record(&scope_paths, cmd, &record))
         .and_then(|_| write_cache_ref(&cache_paths, root, cmd, &record))
     {
-        rollback_failed_install(&record, &cache_paths, Some(root))?;
+        rollback_failed_install(&scope_paths, cmd, &record, &cache_paths, Some(root))?;
         return Err(error);
     }
     println!("installed {cmd} {}", record.installed_path);
@@ -583,9 +584,7 @@ fn install_resolved(
     }
     let bytes = download_asset(&resolved.decision.canonical_url)?;
     let (sha256, cache_asset) = populate_cache_from_bytes(cache_paths, &resolved, &bytes)?;
-    let installed_path = scope_paths
-        .bin
-        .join(installed_filename(cmd, resolved.target.os));
+    let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
     install_bare_executable(&cache_asset, &installed_path)?;
     package_record_from_resolved(cmd, &resolved, sha256, &cache_asset, &installed_path, true)
 }
@@ -594,6 +593,7 @@ fn install_local_from_lock(
     root: &Path,
     cmd: &str,
     spec: &SourceSpec,
+    tool: Option<&ManifestTool>,
     require_verified: bool,
 ) -> Result<PackageRecord> {
     validate_command_name(cmd)?;
@@ -623,6 +623,7 @@ fn install_local_from_lock(
             cmd: cmd.to_string(),
         });
     }
+    assert_lock_matches_manifest_tool(root, cmd, tool, &target, &record)?;
     if require_verified && !record.has_verified_source() {
         return Err(BinpmError::VerificationRequired {
             package: record.package_spec,
@@ -682,7 +683,7 @@ fn install_local_from_lock(
     }
 
     let scope_paths = ScopePaths::local(root.to_path_buf());
-    let installed_path = scope_paths.bin.join(installed_filename(cmd, target.os));
+    let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
     install_bare_executable(&cache_paths.asset_path(&record.sha256), &installed_path)?;
     let mut runtime_record = record;
     runtime_record.cache_key = Some(crate::storage::cache_key(&runtime_record.sha256));
@@ -698,6 +699,41 @@ fn install_local_from_lock(
     write_cache_ref(&cache_paths, root, cmd, &runtime_record)?;
     println!("installed {cmd} {}", runtime_record.installed_path);
     Ok(runtime_record)
+}
+
+fn assert_lock_matches_manifest_tool(
+    root: &Path,
+    cmd: &str,
+    tool: Option<&ManifestTool>,
+    target: &HostTarget,
+    record: &PackageRecord,
+) -> Result<()> {
+    let Some(tool) = tool else {
+        return Ok(());
+    };
+    if let Some(override_target) = tool.targets.get(&target.key()) {
+        if record.asset_name != override_target.asset
+            || record.selected_binary != override_target.bin
+            || override_target
+                .checksum_source
+                .is_some_and(|checksum_source| record.checksum_source != checksum_source)
+        {
+            return Err(BinpmError::StaleLockfile {
+                path: root.join(LOCKFILE_FILE),
+                cmd: cmd.to_string(),
+            });
+        }
+        return Ok(());
+    }
+    if let Some(bin) = &tool.bin {
+        if record.selected_binary != *bin {
+            return Err(BinpmError::StaleLockfile {
+                path: root.join(LOCKFILE_FILE),
+                cmd: cmd.to_string(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<ResolvedAsset> {
@@ -748,6 +784,17 @@ fn select_manifest_asset(
                 target: target_key.clone(),
             })?;
         let kind = crate::assets::classify_artifact(&asset.name, asset.source_archive);
+        if spec.provider == crate::contract::SourceProvider::GitLab && !gitlab_https_eligible(asset)
+        {
+            return Err(BinpmError::UnsafeUrl {
+                url: asset
+                    .provider_url
+                    .as_deref()
+                    .unwrap_or(&asset.url)
+                    .to_string(),
+                message: "gitlab asset link is not HTTPS eligible".to_string(),
+            });
+        }
         return Ok(crate::assets::CandidateDecision {
             asset_name: asset.name.clone(),
             canonical_url: asset
@@ -777,24 +824,14 @@ fn select_manifest_asset(
         })
 }
 
-fn installed_filename(cmd: &str, target_os: TargetOs) -> String {
-    if target_os == TargetOs::Windows && !cmd.to_ascii_lowercase().ends_with(".exe") {
-        format!("{cmd}.exe")
-    } else {
-        cmd.to_string()
-    }
-}
-
-fn deterministic_installed_path(cmd: &str, target_os: TargetOs) -> String {
-    format!(".binpm/bin/{}", installed_filename(cmd, target_os))
-}
-
 fn rollback_failed_install(
+    scope_paths: &ScopePaths,
+    cmd: &str,
     record: &PackageRecord,
     cache_paths: &CachePaths,
     local_root: Option<&Path>,
 ) -> Result<()> {
-    remove_installed_binary(record)?;
+    remove_installed_binary(scope_paths, cmd, record)?;
     let Some(cache_key) = &record.cache_key else {
         return Ok(());
     };
@@ -818,7 +855,7 @@ fn rollback_local_install_state(root: &Path, cmd: &str, record: &PackageRecord) 
         Ok(home) => CachePaths::new(&home),
         Err(_) => return,
     };
-    let _ = remove_installed_binary(record);
+    let _ = remove_installed_binary(&scope_paths, cmd, record);
     let _ = remove_package_record(&scope_paths, cmd);
     let _ = remove_cache_ref(&cache_paths, root, cmd);
     let lockfile_path = root.join(LOCKFILE_FILE);
@@ -866,7 +903,7 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     let record_path = package_record_path(&paths, cmd);
     if record_path.exists() {
         let record = read_package_record(&record_path)?;
-        remove_installed_binary(&record)?;
+        remove_installed_binary(&paths, cmd, &record)?;
     }
     remove_package_record(&paths, cmd)?;
     remove_cache_ref(&CachePaths::new(&binpm_home()?), &root, cmd)?;
@@ -882,7 +919,7 @@ fn remove_global_tool(cmd: &str) -> Result<i32> {
     let record_path = package_record_path(&paths, cmd);
     if record_path.exists() {
         let record = read_package_record(&record_path)?;
-        remove_installed_binary(&record)?;
+        remove_installed_binary(&paths, cmd, &record)?;
     }
     remove_package_record(&paths, cmd)?;
     remove_path_if_exists(&paths.bin.join(cmd))?;
@@ -969,7 +1006,10 @@ fn verify(args: VerifyArgs) -> Result<i32> {
             });
         }
         if let Some(cache_path) = &record.cache_path {
-            crate::storage::verify_sha256(Path::new(cache_path), &record.sha256)?;
+            let cache_path = Path::new(cache_path);
+            if cache_path.exists() {
+                crate::storage::verify_sha256(cache_path, &record.sha256)?;
+            }
         }
         crate::storage::verify_sha256(Path::new(&record.installed_path), &record.sha256)?;
         println!("{cmd} verified {}", record.checksum_source.as_str());
@@ -1233,13 +1273,25 @@ fn path_state(path: &Path) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::{
+        collections::BTreeMap,
+        path::{Path, PathBuf},
+    };
 
     use super::{
-        binpm_home_from_values, deterministic_installed_path, lockfile_digest,
-        manifest_creation_root_from, project_root_from, shell_path, shell_quote,
+        assert_lock_matches_manifest_tool, binpm_home_from_values, deterministic_installed_path,
+        lockfile_digest, manifest_creation_root_from, project_root_from, select_manifest_asset,
+        shell_path, shell_quote,
     };
-    use crate::{cli::Shell, contract::TargetOs};
+    use crate::{
+        cli::Shell,
+        contract::{
+            ArchiveFormat, ChecksumSource, HostTarget, SourceProvider, SourceSpec, TargetArch,
+            TargetLibc, TargetOs,
+        },
+        release::ReleaseAsset,
+        storage::{ManifestTargetOverride, ManifestTool, PackageRecord},
+    };
 
     #[test]
     fn global_home_falls_back_to_userprofile_after_invalid_home() {
@@ -1287,6 +1339,100 @@ mod tests {
             deterministic_installed_path("tool", TargetOs::Linux),
             ".binpm/bin/tool"
         );
+    }
+
+    #[test]
+    fn frozen_lock_detects_changed_target_override_asset() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "tool-new".to_string(),
+                    bin: "tool".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+        let mut record = package_record();
+        record.asset_name = "tool-old".to_string();
+        record.selected_binary = "tool".to_string();
+
+        let error = assert_lock_matches_manifest_tool(
+            temp_dir.path(),
+            "tool",
+            Some(&tool),
+            &target,
+            &record,
+        )
+        .expect_err("stale lockfile");
+
+        assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn frozen_lock_detects_changed_manifest_bin_override() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("new-bin".to_string()),
+            targets: BTreeMap::new(),
+        };
+        let mut record = package_record();
+        record.selected_binary = "old-bin".to_string();
+
+        let error = assert_lock_matches_manifest_tool(
+            temp_dir.path(),
+            "tool",
+            Some(&tool),
+            &target,
+            &record,
+        )
+        .expect_err("stale lockfile");
+
+        assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn manifest_gitlab_overrides_reject_non_https_redirects() {
+        let target = linux_target();
+        let spec = SourceSpec {
+            provider: SourceProvider::GitLab,
+            host: "gitlab.com".to_string(),
+            path: "owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+        };
+        let tool = ManifestTool {
+            source: "gitlab:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "tool-linux".to_string(),
+                    bin: "tool".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+        let assets = [ReleaseAsset {
+            name: "tool-linux".to_string(),
+            url: "https://gitlab.com/owner/tool/-/releases/v1/downloads/tool-linux".to_string(),
+            provider_url: None,
+            source_archive: false,
+            final_url_https: Some(false),
+        }];
+
+        let error =
+            select_manifest_asset(&spec, Some(&tool), &target, &assets).expect_err("unsafe URL");
+
+        assert!(error.to_string().contains("not HTTPS eligible"));
     }
 
     #[test]
@@ -1402,5 +1548,41 @@ mod tests {
             shell_path(Shell::Powershell, r"C:\Users\me\.binpm\bin"),
             r"C:\Users\me\.binpm\bin"
         );
+    }
+
+    fn linux_target() -> HostTarget {
+        HostTarget {
+            os: TargetOs::Linux,
+            arch: TargetArch::X86_64,
+            libc: TargetLibc::Gnu,
+        }
+    }
+
+    fn package_record() -> PackageRecord {
+        PackageRecord {
+            package_spec: "github:owner/tool@1.0.0".to_string(),
+            source: "github:owner/tool".to_string(),
+            source_provider: SourceProvider::GitHub,
+            source_host: "github.com".to_string(),
+            source_path: "owner/tool".to_string(),
+            requested_version: Some("1.0.0".to_string()),
+            release_tag: "1.0.0".to_string(),
+            asset_name: "tool-linux".to_string(),
+            asset_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+                .to_string(),
+            target_os: TargetOs::Linux,
+            target_arch: TargetArch::X86_64,
+            target_libc: TargetLibc::Gnu,
+            archive_format: ArchiveFormat::BareExecutable,
+            selected_binary: "tool-linux".to_string(),
+            installed_path: ".binpm/bin/tool".to_string(),
+            cache_key: None,
+            cache_path: None,
+            sha256: "abc123".to_string(),
+            checksum_source: ChecksumSource::Local,
+            installed_at: None,
+            signature_available: false,
+            signature_verified: false,
+        }
     }
 }

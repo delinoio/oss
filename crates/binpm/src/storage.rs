@@ -13,7 +13,7 @@ use tracing::{debug, info};
 
 use crate::{
     assets::{ArtifactKind, CandidateDecision},
-    contract::{ArchiveFormat, ChecksumSource, HostTarget, SourceProvider, SourceSpec},
+    contract::{ArchiveFormat, ChecksumSource, HostTarget, SourceProvider, SourceSpec, TargetOs},
     error::{BinpmError, Result},
 };
 
@@ -391,11 +391,43 @@ pub fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
             source,
         })?;
     }
-    fs::rename(&tmp, path).map_err(|source| BinpmError::RenamePath {
+    replace_path(&tmp, path).map_err(|source| BinpmError::RenamePath {
         from: tmp,
         to: path.to_path_buf(),
         source,
     })
+}
+
+#[cfg(windows)]
+fn replace_path(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+
+    unsafe extern "system" {
+        fn MoveFileExW(existing: *const u16, new: *const u16, flags: u32) -> i32;
+    }
+
+    let from_wide: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to_wide: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
+    let replaced = unsafe {
+        MoveFileExW(
+            from_wide.as_ptr(),
+            to_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if replaced == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+fn replace_path(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::rename(from, to)
 }
 
 pub fn populate_cache_from_bytes(
@@ -408,14 +440,25 @@ pub fn populate_cache_from_bytes(
     let asset_path = paths.asset_path(&sha256);
 
     if asset_path.exists() {
-        verify_sha256(&asset_path, &sha256)?;
-        debug!(
-            cache_key = cache_key(&sha256),
-            cache_path = %asset_path.display(),
-            cache_action = "reuse",
-            cache_reused = true,
-            "Reused verified cache entry"
-        );
+        if verify_sha256(&asset_path, &sha256).is_ok() {
+            debug!(
+                cache_key = cache_key(&sha256),
+                cache_path = %asset_path.display(),
+                cache_action = "reuse",
+                cache_reused = true,
+                "Reused verified cache entry"
+            );
+        } else {
+            atomic_write_bytes(&asset_path, bytes)?;
+            debug!(
+                cache_key = cache_key(&sha256),
+                cache_path = %asset_path.display(),
+                cache_action = "repair",
+                cache_reused = false,
+                cache_bytes = bytes.len(),
+                "Replaced corrupted cache entry"
+            );
+        }
     } else {
         let dir = paths.entry_dir(&sha256);
         ensure_dir(&dir)?;
@@ -459,8 +502,37 @@ pub fn install_bare_executable(cache_asset: &Path, installed_path: &Path) -> Res
     Ok(())
 }
 
-pub fn remove_installed_binary(record: &PackageRecord) -> Result<()> {
-    remove_path_if_exists(Path::new(&record.installed_path))
+pub fn managed_installed_path(paths: &ScopePaths, cmd: &str, target_os: TargetOs) -> PathBuf {
+    paths.bin.join(installed_filename(cmd, target_os))
+}
+
+pub fn deterministic_installed_path(cmd: &str, target_os: TargetOs) -> String {
+    format!(".binpm/bin/{}", installed_filename(cmd, target_os))
+}
+
+pub fn installed_filename(cmd: &str, target_os: TargetOs) -> String {
+    if target_os == TargetOs::Windows && !cmd.to_ascii_lowercase().ends_with(".exe") {
+        format!("{cmd}.exe")
+    } else {
+        cmd.to_string()
+    }
+}
+
+pub fn remove_installed_binary(
+    paths: &ScopePaths,
+    cmd: &str,
+    record: &PackageRecord,
+) -> Result<()> {
+    validate_command_name(cmd)?;
+    let expected = managed_installed_path(paths, cmd, record.target_os);
+    let recorded = PathBuf::from(&record.installed_path);
+    if recorded != expected {
+        return Err(BinpmError::UnsafeInstalledPath {
+            path: recorded,
+            expected,
+        });
+    }
+    remove_path_if_exists(&expected)
 }
 
 pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Result<usize> {
@@ -732,10 +804,11 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::{
-        clean_cache, install_bare_executable, populate_cache_from_bytes, prune_cache,
-        read_cache_records, read_lockfile, referenced_cache_keys, sanitize_persisted_url,
-        validate_command_name, verify_sha256, write_cache_ref, write_lockfile, write_manifest,
-        CachePaths, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset, ScopePaths,
+        clean_cache, install_bare_executable, managed_installed_path, populate_cache_from_bytes,
+        prune_cache, read_cache_records, read_lockfile, referenced_cache_keys,
+        remove_installed_binary, sanitize_persisted_url, validate_command_name, verify_sha256,
+        write_cache_ref, write_lockfile, write_manifest, CachePaths, LockTool, Lockfile, Manifest,
+        PackageRecord, ResolvedAsset, ScopePaths,
     };
     use crate::{
         assets::{ArtifactKind, CandidateDecision},
@@ -815,6 +888,25 @@ mod tests {
         assert_eq!(second_sha, expected);
         assert_eq!(first_path, second_path);
         assert_eq!(read_cache_records(&cache).expect("records").len(), 1);
+    }
+
+    #[test]
+    fn replaces_corrupted_cache_entry_with_verified_bytes() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let resolved = resolved_asset();
+        let bytes = b"good bytes";
+        let (sha, path) =
+            populate_cache_from_bytes(&cache, &resolved, bytes).expect("populate cache");
+        std::fs::write(&path, b"bad bytes").expect("corrupt cache");
+
+        let (repaired_sha, repaired_path) =
+            populate_cache_from_bytes(&cache, &resolved, bytes).expect("repair cache");
+
+        assert_eq!(repaired_sha, sha);
+        assert_eq!(repaired_path, path);
+        assert_eq!(std::fs::read(&path).expect("read repaired"), bytes);
+        verify_sha256(&path, &sha).expect("repaired digest");
     }
 
     #[test]
@@ -923,6 +1015,37 @@ mod tests {
             std::fs::read_to_string(installed).expect("read installed"),
             "#!/bin/sh\n"
         );
+    }
+
+    #[test]
+    fn remove_installed_binary_rejects_paths_outside_managed_bin() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        let outside = temp_dir.path().join("outside");
+        std::fs::write(&outside, b"do not remove").expect("write outside");
+        let mut record = package_record();
+        record.installed_path = outside.display().to_string();
+
+        let error =
+            remove_installed_binary(&paths, "tool", &record).expect_err("unsafe installed path");
+
+        assert!(error.to_string().contains("Unsafe installed path"));
+        assert!(outside.exists());
+    }
+
+    #[test]
+    fn remove_installed_binary_removes_only_expected_managed_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        let installed = managed_installed_path(&paths, "tool", TargetOs::Linux);
+        std::fs::create_dir_all(installed.parent().expect("parent")).expect("create bin");
+        std::fs::write(&installed, b"remove").expect("write installed");
+        let mut record = package_record();
+        record.installed_path = installed.display().to_string();
+
+        remove_installed_binary(&paths, "tool", &record).expect("remove installed");
+
+        assert!(!installed.exists());
     }
 
     fn resolved_asset() -> ResolvedAsset {

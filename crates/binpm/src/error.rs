@@ -103,6 +103,12 @@ pub enum BinpmError {
     },
     #[error("Unsafe persisted URL `{url}`: {message}")]
     UnsafeUrl { url: String, message: String },
+    #[error(
+        "Unsafe installed path `{}`: expected managed path `{}`.",
+        path.display(),
+        expected.display()
+    )]
+    UnsafeInstalledPath { path: PathBuf, expected: PathBuf },
     #[error("Failed to determine binpm global home. Set BINPM_HOME, HOME, or USERPROFILE.")]
     MissingGlobalHome,
     #[error(
@@ -142,7 +148,8 @@ impl BinpmError {
             | Self::AssetNotFound { .. }
             | Self::ArchiveExtractionNotImplemented { .. }
             | Self::VerificationRequired { .. }
-            | Self::UnsafeUrl { .. } => 2,
+            | Self::UnsafeUrl { .. }
+            | Self::UnsafeInstalledPath { .. } => 2,
         }
     }
 }

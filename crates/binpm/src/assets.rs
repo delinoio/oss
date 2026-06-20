@@ -276,7 +276,7 @@ fn score_asset(
     decision
 }
 
-fn gitlab_https_eligible(asset: &ReleaseAsset) -> bool {
+pub(crate) fn gitlab_https_eligible(asset: &ReleaseAsset) -> bool {
     is_https_url(&asset.url)
         && asset
             .provider_url
