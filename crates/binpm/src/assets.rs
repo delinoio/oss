@@ -355,6 +355,7 @@ struct TargetSignal {
 
 fn detect_target(name: &str) -> TargetSignal {
     let lower_name = name.to_ascii_lowercase().replace("x86_64", "x64");
+    let is_windows_executable = lower_name.ends_with(".exe");
     let lower = strip_known_suffixes(&lower_name);
     let tokens = lower
         .split(|character: char| !character.is_ascii_alphanumeric())
@@ -362,6 +363,9 @@ fn detect_target(name: &str) -> TargetSignal {
         .collect::<Vec<_>>();
 
     let mut signal = TargetSignal::default();
+    if is_windows_executable {
+        signal.os = Some(TargetOs::Windows);
+    }
 
     for token in &tokens {
         if signal.os.is_none() {
@@ -481,10 +485,53 @@ fn is_sidecar_name(lower: &str) -> bool {
 }
 
 fn is_package_metadata_name(lower: &str) -> bool {
-    lower.ends_with(".rb")
-        || lower.ends_with(".json")
-        || lower.ends_with(".tgz")
-            && (lower.contains("npm") || lower.contains("node") || lower.contains("package"))
+    lower.ends_with(".rb") || lower.ends_with(".json") || is_npm_package_tarball_name(lower)
+}
+
+fn is_npm_package_tarball_name(lower: &str) -> bool {
+    let basename = basename(lower);
+    let Some(stem) = basename.strip_suffix(".tgz") else {
+        return false;
+    };
+
+    stem == "package"
+        || stem.match_indices('-').any(|(index, _)| {
+            let (name, version) = stem.split_at(index);
+            is_npm_package_name(name) && is_semver_like(&version[1..])
+        })
+}
+
+fn is_npm_package_name(name: &str) -> bool {
+    name == "package" || name.contains("npm") || name.contains("node")
+}
+
+fn is_semver_like(version: &str) -> bool {
+    let version = version.strip_prefix('v').unwrap_or(version);
+    let (version, prerelease) = version
+        .split_once('-')
+        .map(|(version, prerelease)| (version, Some(prerelease)))
+        .unwrap_or((version, None));
+    let mut parts = version.split('.');
+
+    let (Some(major), Some(minor), Some(patch)) = (parts.next(), parts.next(), parts.next()) else {
+        return false;
+    };
+
+    parts.next().is_none()
+        && is_version_number(major)
+        && is_version_number(minor)
+        && is_version_number(patch)
+        && prerelease
+            .map(|prerelease| {
+                prerelease
+                    .split('.')
+                    .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric()))
+            })
+            .unwrap_or(true)
+}
+
+fn is_version_number(part: &str) -> bool {
+    !part.is_empty() && part.chars().all(|character| character.is_ascii_digit())
 }
 
 fn is_desktop_package_name(lower: &str) -> bool {
@@ -579,6 +626,26 @@ mod tests {
     }
 
     #[test]
+    fn preserves_native_tgz_archives_with_node_like_names() {
+        assert_eq!(
+            classify_artifact("nodeup-linux-amd64.tgz", false),
+            ArtifactKind::Archive(ArchiveFormat::Tgz)
+        );
+        assert_eq!(
+            classify_artifact("package-linux-amd64.tgz", false),
+            ArtifactKind::Archive(ArchiveFormat::Tgz)
+        );
+        assert_eq!(
+            classify_artifact("nodeup-1.2.3.tgz", false),
+            ArtifactKind::PackageMetadata
+        );
+        assert_eq!(
+            classify_artifact("nodeup-1.2.3-beta.1.tgz", false),
+            ArtifactKind::PackageMetadata
+        );
+    }
+
+    #[test]
     fn rejects_source_archives_and_generated_gitlab_sources() {
         assert_eq!(
             classify_artifact("source.tar.gz", false),
@@ -633,6 +700,16 @@ mod tests {
         .expect("selected");
 
         assert_eq!(selected.selected.asset_name, "tool-linux-amd64.tar.gz");
+    }
+
+    #[test]
+    fn bare_exe_assets_are_windows_candidates() {
+        let windows = target(TargetOs::Windows, TargetArch::X86_64, TargetLibc::Msvc);
+        let selected =
+            select_asset(SourceProvider::GitHub, &windows, &[asset("tool.exe")]).expect("selected");
+
+        assert_eq!(selected.selected.asset_name, "tool.exe");
+        assert_eq!(selected.selected.detected_os, Some(TargetOs::Windows));
     }
 
     #[test]
