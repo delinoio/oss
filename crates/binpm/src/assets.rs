@@ -495,6 +495,10 @@ fn is_npm_package_tarball_name(lower: &str) -> bool {
         return false;
     };
 
+    if detect_target(stem).recognized_pattern {
+        return false;
+    }
+
     stem == "package"
         || stem.match_indices('-').any(|(index, _)| {
             let (name, version) = stem.split_at(index);
@@ -634,19 +638,27 @@ mod tests {
             ArtifactKind::Archive(ArchiveFormat::Tgz)
         );
         assert_eq!(
+            classify_artifact("tool-x86_64-unknown-linux-gnu-1.2.3.tgz", false),
+            ArtifactKind::Archive(ArchiveFormat::Tgz)
+        );
+        assert_eq!(
+            classify_artifact("tool-1.2.3-x86_64-unknown-linux-gnu.tgz", false),
+            ArtifactKind::Archive(ArchiveFormat::Tgz)
+        );
+        assert_eq!(
+            classify_artifact("rollup-linux-x64-gnu-4.9.5-rc-1.tgz", false),
+            ArtifactKind::Archive(ArchiveFormat::Tgz)
+        );
+        assert_eq!(
+            classify_artifact("rollup-linux-x64-gnu-4.9.5.tgz", false),
+            ArtifactKind::Archive(ArchiveFormat::Tgz)
+        );
+        assert_eq!(
             classify_artifact("nodeup-1.2.3.tgz", false),
             ArtifactKind::PackageMetadata
         );
         assert_eq!(
             classify_artifact("nodeup-1.2.3-beta.1.tgz", false),
-            ArtifactKind::PackageMetadata
-        );
-        assert_eq!(
-            classify_artifact("rollup-linux-x64-gnu-4.9.5-rc-1.tgz", false),
-            ArtifactKind::PackageMetadata
-        );
-        assert_eq!(
-            classify_artifact("rollup-linux-x64-gnu-4.9.5.tgz", false),
             ArtifactKind::PackageMetadata
         );
     }

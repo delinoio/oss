@@ -4,6 +4,7 @@ use serde::{de::DeserializeOwned, Deserialize};
 use tracing::{debug, info};
 
 use crate::{
+    assets::{classify_artifact, ArtifactKind},
     contract::{SourceProvider, SourceSpec},
     error::{BinpmError, Result},
 };
@@ -436,6 +437,13 @@ fn verify_gitlab_asset_redirects(http: &Client, releases: &mut [Release]) -> Res
                 continue;
             }
 
+            if !matches!(
+                classify_artifact(&asset.name, asset.source_archive),
+                ArtifactKind::Archive(_) | ArtifactKind::BareExecutable
+            ) {
+                continue;
+            }
+
             let url = asset.provider_url.as_deref().unwrap_or(&asset.url);
             if !is_https_url(url) {
                 continue;
@@ -741,5 +749,49 @@ mod tests {
         .expect("source archives are skipped without network access");
 
         assert_eq!(release.assets[0].final_url_https, None);
+    }
+
+    #[test]
+    fn gitlab_redirect_verification_skips_non_candidate_links() {
+        let mut release = Release {
+            tag: "v1.0.0".to_string(),
+            assets: vec![
+                ReleaseAsset {
+                    name: "tool-x86_64-unknown-linux-gnu.tar.gz.sha256".to_string(),
+                    url: "https://127.0.0.1:9/tool.tar.gz.sha256".to_string(),
+                    provider_url: None,
+                    source_archive: false,
+                    final_url_https: None,
+                },
+                ReleaseAsset {
+                    name: "tool.dmg".to_string(),
+                    url: "https://127.0.0.1:9/tool.dmg".to_string(),
+                    provider_url: None,
+                    source_archive: false,
+                    final_url_https: None,
+                },
+                ReleaseAsset {
+                    name: "latest.json".to_string(),
+                    url: "https://127.0.0.1:9/latest.json".to_string(),
+                    provider_url: None,
+                    source_archive: false,
+                    final_url_https: None,
+                },
+            ],
+            stable: true,
+            released_at: None,
+            stability_reason: None,
+        };
+
+        verify_gitlab_asset_redirects(
+            &reqwest::blocking::Client::new(),
+            std::slice::from_mut(&mut release),
+        )
+        .expect("non-candidate links are skipped without network access");
+
+        assert!(release
+            .assets
+            .iter()
+            .all(|asset| asset.final_url_https.is_none()));
     }
 }
