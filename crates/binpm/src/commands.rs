@@ -641,10 +641,9 @@ fn install_local_from_lock(
     let cache_paths = CachePaths::new(&home);
     cache_paths.ensure()?;
     let cache_asset = cache_paths.asset_path(&record.sha256);
-    if cache_asset.exists() {
-        if crate::storage::verify_sha256(&cache_asset, &record.sha256).is_err() {
-            remove_path_if_exists(&cache_asset)?;
-        }
+    if cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, &record.sha256).is_err()
+    {
+        remove_path_if_exists(&cache_asset)?;
     }
     if !cache_asset.exists() {
         let bytes = download_asset(&record.asset_url)?;
