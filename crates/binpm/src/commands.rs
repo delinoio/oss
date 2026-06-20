@@ -21,7 +21,7 @@ use crate::{
         archive_format, clean_cache, deterministic_installed_path, install_bare_executable,
         installed_filename, list_package_records, managed_installed_path,
         package_record_from_resolved, package_record_path, populate_cache_from_bytes, prune_cache,
-        read_cache_records, read_lockfile, read_manifest, read_package_record,
+        read_cache_record, read_cache_records, read_lockfile, read_manifest, read_package_record,
         record_verified_cache_hit, referenced_cache_keys, remove_cache_ref,
         remove_installed_binary, remove_package_record, remove_path_if_exists,
         sanitize_persisted_url, validate_command_name, validate_download_url,
@@ -540,11 +540,8 @@ fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32
     {
         let rollback_result = rollback_failed_install(&scope_paths, &cmd, &record);
         restore_runtime_tool_state(&scope_paths, &cmd, prior_state);
-        let cache_cleanup_result = if install.populated_cache_entry {
-            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, None)
-        } else {
-            Ok(())
-        };
+        let cache_cleanup_result =
+            cleanup_failed_install_cache(&cache_paths, &record.sha256, None, &install);
         rollback_result?;
         cache_cleanup_result?;
         return Err(error);
@@ -581,19 +578,23 @@ fn install_local_source(
     let record = install.record.clone();
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         rollback_local_install_state(&root, &cmd, &record, prior_state);
-        if install.populated_cache_entry {
-            let cache_paths = CachePaths::new(&binpm_home()?);
-            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(&root))?;
-        }
+        cleanup_failed_install_cache(
+            &CachePaths::new(&binpm_home()?),
+            &record.sha256,
+            Some(&root),
+            &install,
+        )?;
         return Err(error);
     }
     if let Err(error) = commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install) {
         rollback_local_install_state(&root, &cmd, &record, prior_state);
         let _ = write_manifest(&manifest_path, &prior_manifest);
-        if install.populated_cache_entry {
-            let cache_paths = CachePaths::new(&binpm_home()?);
-            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(&root))?;
-        }
+        cleanup_failed_install_cache(
+            &CachePaths::new(&binpm_home()?),
+            &record.sha256,
+            Some(&root),
+            &install,
+        )?;
         return Err(error);
     }
     Ok(0)
@@ -624,7 +625,17 @@ fn install_local_manifest(
         validate_command_name(cmd)?;
         let mut spec = parse_manifest_source(&tool.source)?;
         spec.version = tool.version.clone();
-        let prior_state = capture_local_tool_state(&root, cmd)?;
+        let prior_state = match capture_local_tool_state(&root, cmd) {
+            Ok(prior_state) => prior_state,
+            Err(error) => {
+                rollback_completed_local_installs(
+                    &root,
+                    completed,
+                    &CachePaths::new(&binpm_home()?),
+                )?;
+                return Err(error);
+            }
+        };
         match install_local_tool(
             &root,
             cmd,
@@ -633,68 +644,44 @@ fn install_local_manifest(
             frozen_lockfile,
             require_verified,
         ) {
-            Ok(install) => completed.push((
-                cmd.clone(),
-                install.record,
-                install.populated_cache_entry,
-                install.deferred_cache_hit,
+            Ok(install) => completed.push(CompletedLocalInstall {
+                cmd: cmd.clone(),
+                install,
                 prior_state,
-            )),
+            }),
             Err(error) => {
                 let cache_paths = CachePaths::new(&binpm_home()?);
-                for (completed_cmd, completed_record, populated_cache_entry, _, completed_state) in
-                    completed.into_iter().rev()
-                {
-                    rollback_local_install_state(
-                        &root,
-                        &completed_cmd,
-                        &completed_record,
-                        completed_state,
-                    );
-                    if populated_cache_entry {
-                        remove_unreferenced_cache_entry(
-                            &cache_paths,
-                            &completed_record.sha256,
-                            Some(&root),
-                        )?;
-                    }
-                }
+                rollback_completed_local_installs(&root, completed, &cache_paths)?;
                 return Err(error);
             }
         }
     }
     let orphan_states = if selected.is_empty() {
-        capture_local_manifest_orphan_states(&root, &manifest.tools)?
+        match capture_local_manifest_orphan_states(&root, &manifest.tools) {
+            Ok(orphan_states) => orphan_states,
+            Err(error) => {
+                rollback_completed_local_installs(
+                    &root,
+                    completed,
+                    &CachePaths::new(&binpm_home()?),
+                )?;
+                return Err(error);
+            }
+        }
     } else {
         Vec::new()
     };
     if selected.is_empty() {
         if let Err(error) = remove_local_manifest_orphans(&root, &manifest.tools, frozen_lockfile) {
             let cache_paths = CachePaths::new(&binpm_home()?);
-            for (completed_cmd, completed_record, populated_cache_entry, _, completed_state) in
-                completed.into_iter().rev()
-            {
-                rollback_local_install_state(
-                    &root,
-                    &completed_cmd,
-                    &completed_record,
-                    completed_state,
-                );
-                if populated_cache_entry {
-                    remove_unreferenced_cache_entry(
-                        &cache_paths,
-                        &completed_record.sha256,
-                        Some(&root),
-                    )?;
-                }
-            }
+            rollback_completed_local_installs(&root, completed, &cache_paths)?;
             return Err(error);
         }
     }
     let cache_paths = CachePaths::new(&binpm_home()?);
     let mut committed_deferred_cache_hits: Vec<String> = Vec::new();
-    for (_, _, _, deferred_cache_hit, _) in &completed {
-        if let Some(resolved) = deferred_cache_hit {
+    for completed_install in &completed {
+        if let Some(resolved) = &completed_install.install.deferred_cache_hit {
             if let Err(error) = record_verified_cache_hit(&cache_paths, resolved) {
                 let scope_paths = ScopePaths::local(root.clone());
                 for (orphan_cmd, orphan_state) in orphan_states {
@@ -706,23 +693,7 @@ fn install_local_manifest(
                         orphan_state,
                     );
                 }
-                for (completed_cmd, completed_record, populated_cache_entry, _, completed_state) in
-                    completed.iter().rev()
-                {
-                    rollback_local_install_state(
-                        &root,
-                        completed_cmd,
-                        completed_record,
-                        completed_state.clone(),
-                    );
-                    if *populated_cache_entry {
-                        remove_unreferenced_cache_entry(
-                            &cache_paths,
-                            &completed_record.sha256,
-                            Some(&root),
-                        )?;
-                    }
-                }
+                rollback_completed_local_installs_ref(&root, &completed, &cache_paths)?;
                 for sha256 in committed_deferred_cache_hits {
                     remove_unreferenced_cache_entry(&cache_paths, &sha256, Some(&root))?;
                 }
@@ -801,9 +772,7 @@ fn install_local_tool(
         .and_then(|_| write_cache_ref(&cache_paths, root, cmd, &record))
     {
         rollback_local_install_state(root, cmd, &record, prior_state);
-        if install.populated_cache_entry {
-            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(root))?;
-        }
+        cleanup_failed_install_cache(&cache_paths, &record.sha256, Some(root), &install)?;
         return Err(error);
     }
     println!("installed {cmd} {}", record.installed_path);
@@ -811,6 +780,7 @@ fn install_local_tool(
         record,
         populated_cache_entry: install.populated_cache_entry,
         deferred_cache_hit: install.deferred_cache_hit,
+        cache_metadata_snapshot: install.cache_metadata_snapshot,
     })
 }
 
@@ -818,6 +788,19 @@ struct InstalledPackage {
     record: PackageRecord,
     populated_cache_entry: bool,
     deferred_cache_hit: Option<ResolvedAsset>,
+    cache_metadata_snapshot: Option<CacheMetadataSnapshot>,
+}
+
+struct CompletedLocalInstall {
+    cmd: String,
+    install: InstalledPackage,
+    prior_state: LocalToolState,
+}
+
+#[derive(Debug, Clone)]
+struct CacheMetadataSnapshot {
+    sha256: String,
+    bytes: Option<Vec<u8>>,
 }
 
 fn commit_deferred_cache_hit(cache_paths: &CachePaths, install: &InstalledPackage) -> Result<()> {
@@ -827,10 +810,105 @@ fn commit_deferred_cache_hit(cache_paths: &CachePaths, install: &InstalledPackag
     Ok(())
 }
 
+fn snapshot_cache_metadata(
+    cache_paths: &CachePaths,
+    sha256: &str,
+) -> Result<CacheMetadataSnapshot> {
+    let path = cache_paths.metadata_path(sha256);
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => Some(bytes),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => None,
+        Err(source) => return Err(BinpmError::ReadFile { path, source }),
+    };
+    Ok(CacheMetadataSnapshot {
+        sha256: sha256.to_string(),
+        bytes,
+    })
+}
+
+fn restore_cache_metadata(
+    cache_paths: &CachePaths,
+    snapshot: &CacheMetadataSnapshot,
+) -> Result<()> {
+    let path = cache_paths.metadata_path(&snapshot.sha256);
+    match &snapshot.bytes {
+        Some(bytes) => crate::storage::atomic_write_bytes(&path, bytes),
+        None => remove_path_if_exists(&path),
+    }
+}
+
+fn cleanup_failed_install_cache(
+    cache_paths: &CachePaths,
+    sha256: &str,
+    local_root: Option<&Path>,
+    install: &InstalledPackage,
+) -> Result<()> {
+    if install.populated_cache_entry {
+        remove_unreferenced_cache_entry(cache_paths, sha256, local_root)?;
+    } else if let Some(snapshot) = &install.cache_metadata_snapshot {
+        restore_cache_metadata(cache_paths, snapshot)?;
+    }
+    Ok(())
+}
+
+fn rollback_completed_local_installs(
+    root: &Path,
+    completed: Vec<CompletedLocalInstall>,
+    cache_paths: &CachePaths,
+) -> Result<()> {
+    for completed_install in completed.into_iter().rev() {
+        rollback_one_completed_local_install(root, completed_install, cache_paths)?;
+    }
+    Ok(())
+}
+
+fn rollback_completed_local_installs_ref(
+    root: &Path,
+    completed: &[CompletedLocalInstall],
+    cache_paths: &CachePaths,
+) -> Result<()> {
+    for completed_install in completed.iter().rev() {
+        rollback_local_install_state(
+            root,
+            &completed_install.cmd,
+            &completed_install.install.record,
+            completed_install.prior_state.clone(),
+        );
+        cleanup_failed_install_cache(
+            cache_paths,
+            &completed_install.install.record.sha256,
+            Some(root),
+            &completed_install.install,
+        )?;
+    }
+    Ok(())
+}
+
+fn rollback_one_completed_local_install(
+    root: &Path,
+    completed_install: CompletedLocalInstall,
+    cache_paths: &CachePaths,
+) -> Result<()> {
+    rollback_local_install_state(
+        root,
+        &completed_install.cmd,
+        &completed_install.install.record,
+        completed_install.prior_state,
+    );
+    cleanup_failed_install_cache(
+        cache_paths,
+        &completed_install.install.record.sha256,
+        Some(root),
+        &completed_install.install,
+    )
+}
+
 fn has_current_cache_record(cache_paths: &CachePaths, sha256: &str) -> Result<bool> {
-    Ok(read_cache_records(cache_paths)?.iter().any(|record| {
-        record.sha256 == sha256 && record.cache_key == crate::storage::cache_key(sha256)
-    }))
+    Ok(
+        read_cache_record(cache_paths, sha256)?.is_some_and(|record| {
+            record.sha256 == sha256 && record.cache_key == crate::storage::cache_key(sha256)
+        }),
+    )
 }
 
 fn install_resolved(
@@ -883,6 +961,7 @@ fn install_resolved(
                 record,
                 populated_cache_entry: false,
                 deferred_cache_hit: Some(resolved),
+                cache_metadata_snapshot: None,
             });
         }
     }
@@ -892,6 +971,11 @@ fn install_resolved(
     let had_verified_cache_entry =
         cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, &sha256).is_ok();
     let had_cache_record = has_current_cache_record(cache_paths, &sha256)?;
+    let cache_metadata_snapshot = if had_verified_cache_entry {
+        Some(snapshot_cache_metadata(cache_paths, &sha256)?)
+    } else {
+        None
+    };
     if let Some(expected) = &resolved.provider_digest_sha256 {
         if &sha256 != expected {
             return Err(BinpmError::DigestMismatch {
@@ -907,6 +991,8 @@ fn install_resolved(
     if let Err(error) = install_bare_executable(&cache_asset, &installed_path) {
         if populated_cache_entry {
             remove_unreferenced_cache_entry(cache_paths, &sha256, local_root)?;
+        } else if let Some(snapshot) = &cache_metadata_snapshot {
+            restore_cache_metadata(cache_paths, snapshot)?;
         }
         return Err(error);
     }
@@ -921,6 +1007,7 @@ fn install_resolved(
         )?,
         populated_cache_entry,
         deferred_cache_hit: None,
+        cache_metadata_snapshot,
     })
 }
 
@@ -1034,9 +1121,13 @@ fn install_local_from_lock(
     if let Err(error) =
         install_bare_executable(&cache_paths.asset_path(&record.sha256), &installed_path)
     {
-        if populated_cache_entry {
-            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(root))?;
-        }
+        let install = InstalledPackage {
+            record: record.clone(),
+            populated_cache_entry,
+            deferred_cache_hit: None,
+            cache_metadata_snapshot: None,
+        };
+        cleanup_failed_install_cache(&cache_paths, &record.sha256, Some(root), &install)?;
         return Err(error);
     }
     let mut runtime_record = record;
@@ -1053,9 +1144,13 @@ fn install_local_from_lock(
         .and_then(|_| write_cache_ref(&cache_paths, root, cmd, &runtime_record))
     {
         rollback_local_install_state(root, cmd, &runtime_record, prior_state);
-        if populated_cache_entry {
-            remove_unreferenced_cache_entry(&cache_paths, &runtime_record.sha256, Some(root))?;
-        }
+        let install = InstalledPackage {
+            record: runtime_record.clone(),
+            populated_cache_entry,
+            deferred_cache_hit: None,
+            cache_metadata_snapshot: None,
+        };
+        cleanup_failed_install_cache(&cache_paths, &runtime_record.sha256, Some(root), &install)?;
         return Err(error);
     }
     println!("installed {cmd} {}", runtime_record.installed_path);
@@ -1063,6 +1158,7 @@ fn install_local_from_lock(
         record: runtime_record,
         populated_cache_entry,
         deferred_cache_hit: None,
+        cache_metadata_snapshot: None,
     })
 }
 
@@ -2051,21 +2147,43 @@ fn remove_global_tool_from_paths(paths: &ScopePaths, cmd: &str) -> Result<()> {
     let stale_installed_path = if record_path.exists() {
         let record = read_package_record(&record_path)?;
         let installed_path = managed_installed_path(paths, cmd, record.target_os);
-        match remove_installed_binary(paths, cmd, &record) {
-            Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
-            Err(error) => return Err(error),
+        if !is_global_managed_installed_path(paths, cmd, &installed_path)? {
+            match remove_installed_binary(paths, cmd, &record) {
+                Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
+                Err(error) => return Err(error),
+            }
         }
         installed_path
     } else {
         current_platform_installed_path(paths, cmd)
     };
-    if let Err(error) =
-        remove_package_record(paths, cmd).and_then(|_| remove_path_if_exists(&stale_installed_path))
-    {
+    if let Err(error) = remove_package_record(paths, cmd).and_then(|_| {
+        if is_global_managed_installed_path(paths, cmd, &stale_installed_path)? {
+            Ok(())
+        } else {
+            remove_path_if_exists(&stale_installed_path)
+        }
+    }) {
         restore_runtime_tool_state(paths, cmd, prior_state);
         return Err(error);
     }
     Ok(())
+}
+
+fn is_global_managed_installed_path(
+    paths: &ScopePaths,
+    removed_cmd: &str,
+    path: &Path,
+) -> Result<bool> {
+    for (cmd, record) in list_package_records(paths)? {
+        if cmd == removed_cmd {
+            continue;
+        }
+        if managed_installed_path(paths, &cmd, record.target_os) == path {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn current_platform_installed_path(paths: &ScopePaths, cmd: &str) -> PathBuf {
@@ -2222,7 +2340,8 @@ fn verify_runtime_cache_bytes(cache_paths: &CachePaths, record: &PackageRecord) 
 
 fn validate_provider_digest_evidence(record: &PackageRecord) -> Result<()> {
     if record.checksum_source == ChecksumSource::GitHubDigest
-        && record.provider_digest_sha256.as_deref() != Some(record.sha256.as_str())
+        && (record.source_provider != crate::contract::SourceProvider::GitHub
+            || record.provider_digest_sha256.as_deref() != Some(record.sha256.as_str()))
     {
         return Err(BinpmError::ProviderDigestMismatch {
             package: record.package_spec.clone(),
@@ -2679,9 +2798,9 @@ mod tests {
         remove_global_tool_from_paths, remove_local_manifest_orphans, restore_local_remove_state,
         restore_runtime_tool_state, select_explain_asset, select_manifest_asset, shell_path,
         shell_quote, source_install_scope, update_manifest_tool_source,
-        validate_locked_record_artifact, validate_package_record_metadata, verify_lockfile_records,
-        verify_runtime_cache_bytes, ArtifactKind, InstalledPackage, LocalRemoveState,
-        RuntimeToolState,
+        validate_locked_record_artifact, validate_package_record_metadata,
+        validate_provider_digest_evidence, verify_lockfile_records, verify_runtime_cache_bytes,
+        ArtifactKind, InstalledPackage, LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -3725,6 +3844,30 @@ mod tests {
     }
 
     #[test]
+    fn global_remove_preserves_windows_exe_path_owned_by_remaining_record() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
+        let mut removed = package_record();
+        removed.target_os = TargetOs::Windows;
+        removed.installed_path = paths.bin.join("tool.exe").display().to_string();
+        let mut remaining = package_record();
+        remaining.target_os = TargetOs::Windows;
+        remaining.installed_path = paths.bin.join("tool.exe").display().to_string();
+        write_package_record(&paths, "tool", &removed).expect("write removed record");
+        write_package_record(&paths, "tool.exe", &remaining).expect("write remaining record");
+        std::fs::write(paths.bin.join("tool.exe"), "remaining tool").expect("write exe");
+
+        remove_global_tool_from_paths(&paths, "tool").expect("remove global tool");
+
+        assert!(!crate::storage::package_record_path(&paths, "tool").exists());
+        assert!(crate::storage::package_record_path(&paths, "tool.exe").exists());
+        assert_eq!(
+            std::fs::read_to_string(paths.bin.join("tool.exe")).expect("read exe"),
+            "remaining tool"
+        );
+    }
+
+    #[test]
     fn manifest_gitlab_overrides_reject_non_https_redirects() {
         let target = linux_target();
         let spec = SourceSpec {
@@ -4263,6 +4406,7 @@ mod tests {
             record,
             populated_cache_entry: false,
             deferred_cache_hit: Some(resolved_asset(&sha256)),
+            cache_metadata_snapshot: None,
         };
 
         assert!(read_cache_records(&cache)
@@ -4316,6 +4460,55 @@ mod tests {
         .expect("write cache record");
 
         assert!(has_current_cache_record(&cache, &sha256).expect("cache record check"));
+    }
+
+    #[test]
+    fn current_cache_record_ignores_unrelated_corrupt_metadata() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        cache.ensure().expect("cache paths");
+        let sha256 = package_record().sha256;
+        write_cache_record(
+            &cache,
+            &CacheRecord {
+                version: 1,
+                cache_key: crate::storage::cache_key(&sha256),
+                source_provider: SourceProvider::GitHub,
+                source_host: "github.com".to_string(),
+                source_path: "owner/tool".to_string(),
+                release_tag: "1.0.0".to_string(),
+                asset_name: "tool-linux".to_string(),
+                asset_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+                    .to_string(),
+                byte_size: Some(11),
+                sha256: sha256.clone(),
+                checksum_source: ChecksumSource::Local,
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+                last_used_at: None,
+            },
+        )
+        .expect("write target cache record");
+        let corrupt_sha =
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff".to_string();
+        std::fs::create_dir_all(cache.entry_dir(&corrupt_sha)).expect("corrupt entry");
+        std::fs::write(cache.metadata_path(&corrupt_sha), "not = [valid")
+            .expect("corrupt metadata");
+
+        assert!(has_current_cache_record(&cache, &sha256).expect("cache record check"));
+    }
+
+    #[test]
+    fn provider_digest_evidence_rejects_non_github_sources() {
+        let mut record = package_record();
+        mark_github_verified(&mut record);
+        record.source_provider = SourceProvider::GitLab;
+        record.source = "gitlab:owner/tool".to_string();
+        record.package_spec = "gitlab:owner/tool@1.0.0".to_string();
+
+        let error =
+            validate_provider_digest_evidence(&record).expect_err("non-github github digest");
+
+        assert!(matches!(error, BinpmError::ProviderDigestMismatch { .. }));
     }
 
     #[test]

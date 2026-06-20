@@ -225,13 +225,32 @@ pub fn write_manifest(path: &Path, manifest: &Manifest) -> Result<()> {
 }
 
 pub fn read_lockfile(path: &Path) -> Result<Lockfile> {
-    if !path.exists() {
-        return Ok(Lockfile {
-            version: STORAGE_VERSION,
-            tools: BTreeMap::new(),
-        });
-    }
-    let lockfile: Lockfile = read_toml(path)?;
+    let lockfile: Lockfile = match read_toml(path) {
+        Ok(lockfile) => lockfile,
+        Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
+            match fs::symlink_metadata(path) {
+                Ok(_) => {
+                    return Err(BinpmError::ReadFile {
+                        path: path.to_path_buf(),
+                        source,
+                    });
+                }
+                Err(metadata_source) if metadata_source.kind() == ErrorKind::NotFound => {
+                    return Ok(Lockfile {
+                        version: STORAGE_VERSION,
+                        tools: BTreeMap::new(),
+                    });
+                }
+                Err(metadata_source) => {
+                    return Err(BinpmError::ReadFile {
+                        path: path.to_path_buf(),
+                        source: metadata_source,
+                    });
+                }
+            }
+        }
+        Err(error) => return Err(error),
+    };
     ensure_supported_version("lockfile", path, lockfile.version)?;
     Ok(lockfile)
 }
@@ -313,6 +332,17 @@ pub fn write_cache_record(paths: &CachePaths, record: &CacheRecord) -> Result<()
     let dir = paths.entry_dir(&record.sha256);
     ensure_dir(&dir)?;
     write_toml_atomic(&paths.metadata_path(&record.sha256), record)
+}
+
+pub fn read_cache_record(paths: &CachePaths, sha256: &str) -> Result<Option<CacheRecord>> {
+    let path = paths.metadata_path(sha256);
+    match read_toml(&path) {
+        Ok(record) => Ok(Some(record)),
+        Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
+            Ok(None)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub fn read_cache_records(paths: &CachePaths) -> Result<Vec<CacheRecord>> {
@@ -1134,6 +1164,20 @@ mod tests {
         assert!(lockfile_error
             .to_string()
             .contains("Unsupported lockfile version 2"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_lockfile_reports_broken_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let lockfile_path = temp_dir.path().join("binpm.lock");
+        symlink(temp_dir.path().join("missing.lock"), &lockfile_path).expect("broken symlink");
+
+        let error = read_lockfile(&lockfile_path).expect_err("broken lockfile symlink");
+
+        assert!(error.to_string().contains("Failed to read"));
     }
 
     #[test]
