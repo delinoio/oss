@@ -78,6 +78,9 @@ function Verify-Bundle {
     --certificate-identity-regexp $WorkflowIdentityPattern `
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
     $FilePath | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "[install.nodeup] Sigstore bundle verification failed"
+  }
 }
 
 function Install-Direct {

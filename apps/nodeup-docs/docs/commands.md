@@ -17,9 +17,11 @@ nodeup toolchain list [--quiet|--verbose]
 Lists installed and linked runtimes.
 
 - Standard human output prints installed and linked counts.
-- `--quiet` prints compact runtime identifiers only and prints nothing when no runtimes exist.
+- `--quiet` prints compact runtime identifiers only. With logging disabled, it prints nothing when no runtimes exist.
 - `--verbose` prints installed runtime paths and linked runtime paths.
 - JSON output has `installed` and `linked` fields.
+
+Use `RUST_LOG=off nodeup toolchain list --quiet` or `nodeup --output json toolchain list` when scripts need log-free stdout.
 
 ## toolchain install
 

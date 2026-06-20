@@ -60,10 +60,10 @@ Nodeup's `cargo-binstall` metadata resolves first-party GitHub Release assets on
 ```bash
 nodeup --version
 nodeup show home
-nodeup completions bash >/tmp/nodeup.bash
+RUST_LOG=off nodeup completions bash >/tmp/nodeup.bash
 ```
 
-`nodeup show home` verifies that the binary can initialize Nodeup's local directory layout. `nodeup completions` verifies CLI parsing without requiring a Node.js runtime.
+`nodeup show home` verifies that the binary can initialize Nodeup's local directory layout. `nodeup completions` verifies CLI parsing without requiring a Node.js runtime. `RUST_LOG=off` keeps redirected completion scripts free of human-mode log lines.
 
 ## Supported Runtime Hosts
 
