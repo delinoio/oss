@@ -112,6 +112,8 @@ pub enum BinpmError {
         expected: String,
         actual: String,
     },
+    #[error("Invalid SHA-256 digest `{value}`: expected 64 hexadecimal characters.")]
+    InvalidSha256 { value: String },
     #[error("Unsafe persisted URL `{url}`: {message}")]
     UnsafeUrl { url: String, message: String },
     #[error(
@@ -139,7 +141,8 @@ impl BinpmError {
             | Self::UnsupportedTargetComponent { .. }
             | Self::ReleaseNotFound { .. }
             | Self::ManifestExists { .. }
-            | Self::UnsupportedStorageVersion { .. } => 2,
+            | Self::UnsupportedStorageVersion { .. }
+            | Self::InvalidSha256 { .. } => 2,
             Self::CurrentDirectory(_)
             | Self::WriteFile { .. }
             | Self::ReadFile { .. }

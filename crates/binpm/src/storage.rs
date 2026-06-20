@@ -366,7 +366,7 @@ pub fn cache_key(sha256: &str) -> String {
     format!("sha256:{sha256}")
 }
 
-pub fn sanitize_persisted_url(raw: &str) -> Result<String> {
+pub fn validate_download_url(raw: &str) -> Result<()> {
     let without_fragment = raw.split('#').next().unwrap_or(raw);
     let without_query = without_fragment
         .split('?')
@@ -390,7 +390,29 @@ pub fn sanitize_persisted_url(raw: &str) -> Result<String> {
         });
     }
 
-    Ok(without_query.to_string())
+    Ok(())
+}
+
+pub fn sanitize_persisted_url(raw: &str) -> Result<String> {
+    validate_download_url(raw)?;
+    if raw.contains('?') || raw.contains('#') {
+        return Err(BinpmError::UnsafeUrl {
+            url: redact_url_credentials(raw.split(['?', '#']).next().unwrap_or(raw)),
+            message: "persisted release asset URLs must not include query strings or fragments"
+                .to_string(),
+        });
+    }
+
+    Ok(raw.to_string())
+}
+
+pub fn validate_sha256_digest(value: &str) -> Result<()> {
+    if value.len() == 64 && value.chars().all(|character| character.is_ascii_hexdigit()) {
+        return Ok(());
+    }
+    Err(BinpmError::InvalidSha256 {
+        value: value.to_string(),
+    })
 }
 
 pub fn sha256_file(path: &Path) -> Result<String> {
@@ -402,6 +424,7 @@ pub fn sha256_file(path: &Path) -> Result<String> {
 }
 
 pub fn verify_sha256(path: &Path, expected: &str) -> Result<()> {
+    validate_sha256_digest(expected)?;
     let actual = sha256_file(path)?;
     if actual == expected {
         return Ok(());
@@ -533,6 +556,42 @@ pub fn populate_cache_from_bytes(
     };
     write_cache_record(paths, &record)?;
     Ok((sha256, asset_path))
+}
+
+pub fn record_verified_cache_hit(paths: &CachePaths, resolved: &ResolvedAsset) -> Result<PathBuf> {
+    let sha256 =
+        resolved
+            .provider_digest_sha256
+            .as_deref()
+            .ok_or_else(|| BinpmError::InvalidSha256 {
+                value: String::new(),
+            })?;
+    validate_sha256_digest(sha256)?;
+    let asset_path = paths.asset_path(sha256);
+    verify_sha256(&asset_path, sha256)?;
+    let byte_size = fs::metadata(&asset_path)
+        .map_err(|source| BinpmError::ReadFile {
+            path: asset_path.clone(),
+            source,
+        })?
+        .len();
+    let record = CacheRecord {
+        version: 1,
+        cache_key: cache_key(sha256),
+        source_provider: resolved.source.provider,
+        source_host: resolved.source.host.clone(),
+        source_path: resolved.source.path.clone(),
+        release_tag: resolved.release_tag.clone(),
+        asset_name: resolved.decision.asset_name.clone(),
+        asset_url: sanitize_persisted_url(&resolved.decision.canonical_url)?,
+        byte_size: Some(byte_size),
+        sha256: sha256.to_string(),
+        checksum_source: resolved.checksum_source,
+        created_at: now_timestamp(),
+        last_used_at: Some(now_timestamp()),
+    };
+    write_cache_record(paths, &record)?;
+    Ok(asset_path)
 }
 
 pub fn install_bare_executable(cache_asset: &Path, installed_path: &Path) -> Result<()> {
@@ -891,8 +950,9 @@ mod tests {
     use super::{
         clean_cache, install_bare_executable, list_package_records, managed_installed_path,
         populate_cache_from_bytes, prune_cache, read_cache_records, read_lockfile, read_manifest,
-        referenced_cache_keys, remove_installed_binary, sanitize_persisted_url,
-        validate_command_name, verify_sha256, write_cache_ref, write_lockfile, write_manifest,
+        record_verified_cache_hit, referenced_cache_keys, remove_installed_binary,
+        sanitize_persisted_url, validate_command_name, validate_download_url,
+        validate_sha256_digest, verify_sha256, write_cache_ref, write_lockfile, write_manifest,
         CachePaths, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset, ScopePaths,
     };
     use crate::{
@@ -904,16 +964,22 @@ mod tests {
     };
 
     #[test]
-    fn sanitizes_persisted_urls() {
-        let sanitized = sanitize_persisted_url(
+    fn persisted_urls_reject_query_and_fragment() {
+        let error = sanitize_persisted_url(
             "https://github.com/owner/repo/releases/download/v1/tool?token=secret#frag",
         )
-        .expect("sanitized url");
+        .expect_err("query-bearing persisted url");
 
-        assert_eq!(
-            sanitized,
-            "https://github.com/owner/repo/releases/download/v1/tool"
-        );
+        assert!(error.to_string().contains("must not include query"));
+        assert!(!error.to_string().contains("secret"));
+    }
+
+    #[test]
+    fn runtime_download_urls_allow_query_and_fragment() {
+        validate_download_url(
+            "https://github.com/owner/repo/releases/download/v1/tool?token=secret#frag",
+        )
+        .expect("runtime download url");
     }
 
     #[test]
@@ -933,6 +999,17 @@ mod tests {
         assert!(error.to_string().contains("http://example.com/tool"));
         assert!(!error.to_string().contains("secret"));
         assert!(!error.to_string().contains("frag"));
+    }
+
+    #[test]
+    fn sha256_digests_must_be_fixed_length_hex() {
+        validate_sha256_digest("abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123")
+            .expect("valid digest");
+
+        let traversal = validate_sha256_digest("../outside").expect_err("path-like digest");
+        assert!(traversal.to_string().contains("Invalid SHA-256"));
+        let short = validate_sha256_digest("abc123").expect_err("short digest");
+        assert!(short.to_string().contains("Invalid SHA-256"));
     }
 
     #[test]
@@ -1043,6 +1120,28 @@ mod tests {
         assert_eq!(repaired_path, path);
         assert_eq!(std::fs::read(&path).expect("read repaired"), bytes);
         verify_sha256(&path, &sha).expect("repaired digest");
+    }
+
+    #[test]
+    fn provider_digest_cache_hit_reuses_verified_asset_without_downloading_bytes() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let mut resolved = resolved_asset();
+        let bytes = b"digest bytes";
+        let expected = format!("{:x}", Sha256::digest(bytes));
+        resolved.provider_digest_sha256 = Some(expected.clone());
+        resolved.checksum_source = ChecksumSource::GitHubDigest;
+        let asset_path = cache.asset_path(&expected);
+        std::fs::create_dir_all(asset_path.parent().expect("asset parent"))
+            .expect("create cache entry");
+        std::fs::write(&asset_path, bytes).expect("write cached asset");
+
+        let reused = record_verified_cache_hit(&cache, &resolved).expect("cache hit");
+
+        assert_eq!(reused, asset_path);
+        let records = read_cache_records(&cache).expect("cache records");
+        assert_eq!(records[0].sha256, expected);
+        assert_eq!(records[0].checksum_source, ChecksumSource::GitHubDigest);
     }
 
     #[test]

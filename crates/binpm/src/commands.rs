@@ -21,9 +21,10 @@ use crate::{
         archive_format, clean_cache, deterministic_installed_path, install_bare_executable,
         list_package_records, managed_installed_path, package_record_from_resolved,
         package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
-        read_lockfile, read_manifest, read_package_record, referenced_cache_keys, remove_cache_ref,
-        remove_installed_binary, remove_package_record, remove_path_if_exists,
-        sanitize_persisted_url, validate_command_name, validate_installed_binary_path,
+        read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
+        referenced_cache_keys, remove_cache_ref, remove_installed_binary, remove_package_record,
+        remove_path_if_exists, sanitize_persisted_url, validate_command_name,
+        validate_download_url, validate_installed_binary_path, validate_sha256_digest,
         write_cache_ref, write_lockfile, write_manifest, write_package_record, CachePaths,
         LockTool, Manifest, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths, LOCKFILE_FILE,
         MANIFEST_FILE,
@@ -598,6 +599,22 @@ fn install_resolved(
             asset: resolved.decision.asset_name,
         });
     }
+    if let Some(expected) = &resolved.provider_digest_sha256 {
+        let cache_asset = cache_paths.asset_path(expected);
+        if cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, expected).is_ok() {
+            record_verified_cache_hit(cache_paths, &resolved)?;
+            let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
+            install_bare_executable(&cache_asset, &installed_path)?;
+            return package_record_from_resolved(
+                cmd,
+                &resolved,
+                expected.clone(),
+                &cache_asset,
+                &installed_path,
+                true,
+            );
+        }
+    }
     let bytes = download_asset(&resolved.decision.download_url)?;
     if let Some(expected) = &resolved.provider_digest_sha256 {
         let actual = format!("{:x}", Sha256::digest(&bytes));
@@ -665,6 +682,7 @@ fn install_local_from_lock(
     let home = binpm_home()?;
     let cache_paths = CachePaths::new(&home);
     cache_paths.ensure()?;
+    validate_sha256_digest(&record.sha256)?;
     let cache_asset = cache_paths.asset_path(&record.sha256);
     if cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, &record.sha256).is_err()
     {
@@ -752,6 +770,8 @@ fn assert_lock_record_matches_source_and_target(
             cmd: cmd.to_string(),
         });
     }
+    validate_sha256_digest(&record.sha256)?;
+    sanitize_persisted_url(&record.asset_url)?;
     Ok(())
 }
 
@@ -939,7 +959,12 @@ fn select_manifest_asset(
     }
 
     select_asset(spec.provider, target, assets)
-        .map(|selection| selection.selected)
+        .and_then(|selection| {
+            selection
+                .decisions
+                .into_iter()
+                .find(|decision| decision.eligible && decision.kind == ArtifactKind::BareExecutable)
+        })
         .ok_or_else(|| BinpmError::AssetNotFound {
             package: spec.to_string(),
             target: target_key,
@@ -1115,7 +1140,7 @@ fn restore_executable_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 fn download_asset(url: &str) -> Result<Vec<u8>> {
-    sanitize_persisted_url(url)?;
+    validate_download_url(url)?;
     info!(
         asset_url = url.split(['?', '#']).next().unwrap_or(url),
         "Downloading release asset"
@@ -1129,7 +1154,7 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
         .map_err(BinpmError::ReleaseLookup)?
         .error_for_status()
         .map_err(BinpmError::ReleaseLookup)?;
-    sanitize_persisted_url(response.url().as_str())?;
+    validate_download_url(response.url().as_str())?;
     response
         .bytes()
         .map(|bytes| bytes.to_vec())
@@ -1620,7 +1645,7 @@ mod tests {
         lockfile_digest, manifest_checksum_source, manifest_creation_root_from,
         manifest_tool_from_source, parse_manifest_source, project_root_from,
         restore_runtime_tool_state, select_manifest_asset, shell_path, shell_quote,
-        verify_lockfile_records, RuntimeToolState,
+        verify_lockfile_records, ArtifactKind, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -1988,6 +2013,84 @@ mod tests {
     }
 
     #[test]
+    fn automatic_asset_selection_prefers_bare_executable_over_archive() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let assets = [
+            ReleaseAsset {
+                name: "tool-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz"
+                    .to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+            ReleaseAsset {
+                name: "tool-linux-x64".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
+                    .to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+        ];
+
+        let selected =
+            select_manifest_asset(&spec, None, &target, &assets).expect("bare executable");
+
+        assert_eq!(selected.asset_name, "tool-linux-x64");
+        assert_eq!(selected.kind, ArtifactKind::BareExecutable);
+    }
+
+    #[test]
+    fn frozen_lock_rejects_path_like_sha_before_cache_paths() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let mut record = package_record();
+        record.sha256 = "../outside".to_string();
+
+        let error = assert_lock_record_matches_source_and_target(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &target,
+            &record,
+        )
+        .expect_err("invalid digest");
+
+        assert!(error.to_string().contains("Invalid SHA-256"));
+    }
+
+    #[test]
+    fn lockfile_verify_rejects_query_bearing_asset_urls() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::GitHubDigest;
+        record.asset_url =
+            "https://github.com/owner/tool/releases/download/1.0.0/tool?token=secret".to_string();
+        let lockfile = Lockfile {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                LockTool {
+                    source: "github:owner/tool".to_string(),
+                    targets: BTreeMap::from([("linux-x86_64-gnu".to_string(), record)]),
+                },
+            )]),
+        };
+
+        let error =
+            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
+                .expect_err("unsafe asset url");
+
+        assert!(error.to_string().contains("must not include query"));
+        assert!(!error.to_string().contains("secret"));
+    }
+
+    #[test]
     fn project_root_uses_nearest_git_ancestor() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
@@ -2130,7 +2233,7 @@ mod tests {
             installed_path: ".binpm/bin/tool".to_string(),
             cache_key: None,
             cache_path: None,
-            sha256: "abc123".to_string(),
+            sha256: "abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123".to_string(),
             checksum_source: ChecksumSource::Local,
             installed_at: None,
             signature_available: false,
