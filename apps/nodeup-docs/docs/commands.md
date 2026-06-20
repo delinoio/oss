@@ -44,7 +44,7 @@ The command rejects linked runtime names. JSON output is an array of entries wit
 nodeup toolchain uninstall <version>...
 ```
 
-Removes exact installed versions only. Channels and linked runtime names are rejected. A runtime cannot be removed while referenced by the global default or a directory override.
+Removes exact installed versions only. Channels and linked runtime names are rejected. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
 
 JSON output is the removed version list.
 

@@ -76,19 +76,38 @@ When the same binary is linked or copied as `node`, `npm`, `npx`, `yarn`, or `pn
 macOS and Linux:
 
 ```bash
-install_bin_dir="$(dirname "$(command -v nodeup)")"
+shim_dir="$HOME/.local/share/nodeup/shims"
+mkdir -p "$shim_dir"
+
 for alias in node npm npx yarn pnpm; do
-  ln -sfn nodeup "$install_bin_dir/$alias"
+  target="$shim_dir/$alias"
+  if [ -e "$target" ] && [ ! -L "$target" ]; then
+    printf 'Refusing to replace %s\n' "$target" >&2
+    exit 1
+  fi
+  ln -sfn "$(command -v nodeup)" "$target"
 done
+
+export PATH="$shim_dir:$PATH"
 ```
 
 Windows PowerShell:
 
 ```powershell
-$InstallBin = Split-Path (Get-Command nodeup).Source
+$ShimDir = Join-Path $HOME ".local\share\nodeup\shims"
+New-Item -ItemType Directory -Force -Path $ShimDir | Out-Null
+$Nodeup = (Get-Command nodeup).Source
+
 foreach ($Alias in "node", "npm", "npx", "yarn", "pnpm") {
-  Copy-Item (Join-Path $InstallBin "nodeup.exe") (Join-Path $InstallBin "$Alias.exe") -Force
+  $Target = Join-Path $ShimDir "$Alias.exe"
+  if (Test-Path $Target) {
+    Write-Error "Refusing to replace $Target"
+    exit 1
+  }
+  Copy-Item $Nodeup $Target
 }
+
+$env:PATH = "$ShimDir;$env:PATH"
 ```
 
 ```bash
