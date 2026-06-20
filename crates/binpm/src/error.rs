@@ -26,6 +26,8 @@ pub enum BinpmError {
     ReleaseHttpClient(#[source] reqwest::Error),
     #[error("Failed to look up release metadata: {0}")]
     ReleaseLookup(#[source] reqwest::Error),
+    #[error("Release pagination loop detected at `{url}`.")]
+    ReleasePaginationLoop { url: String },
     #[error("Failed to resolve release for `{package}`: {message}")]
     ReleaseNotFound { package: String, message: String },
     #[error("Failed to determine the current working directory: {0}")]
@@ -163,7 +165,8 @@ impl BinpmError {
             | Self::MissingGlobalHome
             | Self::InvalidGlobalHome { .. }
             | Self::ReleaseHttpClient(_)
-            | Self::ReleaseLookup(_) => 1,
+            | Self::ReleaseLookup(_)
+            | Self::ReleasePaginationLoop { .. } => 1,
             Self::FrozenLockfile { .. }
             | Self::StaleLockfile { .. }
             | Self::MissingManifest { .. }

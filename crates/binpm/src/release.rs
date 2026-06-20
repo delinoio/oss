@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use chrono::{DateTime, Utc};
 use reqwest::{blocking::Client, header};
 use serde::{de::DeserializeOwned, Deserialize};
@@ -299,9 +301,15 @@ where
     T: DeserializeOwned,
 {
     let mut next_url = Some(releases_page_url(first_url));
+    let mut visited_urls = BTreeSet::new();
     let mut items = Vec::new();
 
     while let Some(url) = next_url {
+        if !visited_urls.insert(url.clone()) {
+            return Err(BinpmError::ReleasePaginationLoop {
+                url: sanitize_url(&url),
+            });
+        }
         debug!(
             api_url = sanitize_url(&url),
             "Fetching release metadata page"

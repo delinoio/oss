@@ -1126,14 +1126,24 @@ fn select_manifest_asset(
     }
 
     let tool_bin = tool.and_then(|tool| tool.bin.as_deref());
-    select_asset(spec.provider, target, assets)
-        .and_then(|selection| {
-            selection.decisions.into_iter().find(|decision| {
-                decision.eligible
-                    && decision.kind == ArtifactKind::BareExecutable
-                    && tool_bin.is_none_or(|bin| decision.asset_name == bin)
-            })
+    let selection =
+        select_asset(spec.provider, target, assets).ok_or_else(|| BinpmError::AssetNotFound {
+            package: spec.to_string(),
+            target: target_key.clone(),
+        })?;
+    let eligible = selection
+        .decisions
+        .into_iter()
+        .filter(|decision| decision.eligible)
+        .collect::<Vec<_>>();
+    eligible
+        .iter()
+        .find(|decision| {
+            decision.kind == ArtifactKind::BareExecutable
+                && tool_bin.is_none_or(|bin| decision.asset_name == bin)
         })
+        .cloned()
+        .or_else(|| eligible.into_iter().next())
         .ok_or_else(|| BinpmError::AssetNotFound {
             package: spec.to_string(),
             target: target_key,
@@ -1188,6 +1198,7 @@ struct LocalToolState {
 struct LocalRemoveState {
     manifest: Manifest,
     lockfile: crate::storage::Lockfile,
+    lockfile_existed: bool,
     runtime: RuntimeToolState,
 }
 
@@ -1203,9 +1214,11 @@ fn capture_local_tool_state(root: &Path, cmd: &str) -> Result<LocalToolState> {
 
 fn capture_local_remove_state(root: &Path, cmd: &str) -> Result<LocalRemoveState> {
     let scope_paths = ScopePaths::local(root.to_path_buf());
+    let lockfile_path = root.join(LOCKFILE_FILE);
     Ok(LocalRemoveState {
         manifest: read_manifest(&root.join(MANIFEST_FILE))?,
-        lockfile: read_lockfile(&root.join(LOCKFILE_FILE))?,
+        lockfile_existed: lockfile_path.exists(),
+        lockfile: read_lockfile(&lockfile_path)?,
         runtime: capture_runtime_tool_state(&scope_paths, cmd)?,
     })
 }
@@ -1301,7 +1314,12 @@ fn restore_local_remove_state(root: &Path, cmd: &str, prior_state: LocalRemoveSt
         }
     }
     let _ = write_manifest(&root.join(MANIFEST_FILE), &prior_state.manifest);
-    let _ = write_lockfile(&root.join(LOCKFILE_FILE), &prior_state.lockfile);
+    let lockfile_path = root.join(LOCKFILE_FILE);
+    if prior_state.lockfile_existed {
+        let _ = write_lockfile(&lockfile_path, &prior_state.lockfile);
+    } else {
+        let _ = remove_path_if_exists(&lockfile_path);
+    }
 }
 
 fn restore_runtime_tool_state(paths: &ScopePaths, cmd: &str, prior_state: RuntimeToolState) {
@@ -1546,12 +1564,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
         }
         validate_provider_digest_evidence(&record)?;
         validate_package_record_metadata(&cache_paths, &record)?;
-        if let Some(cache_path) = &record.cache_path {
-            let cache_path = Path::new(cache_path);
-            if cache_path.exists() {
-                crate::storage::verify_sha256(cache_path, &record.sha256)?;
-            }
-        }
+        verify_runtime_cache_bytes(&cache_paths, &record)?;
         let installed_path = validate_installed_binary_path(&paths, &cmd, &record)?;
         crate::storage::verify_sha256(&installed_path, &record.sha256)?;
         println!("{cmd} verified {}", record.checksum_source.as_str());
@@ -1593,6 +1606,10 @@ fn validate_package_record_metadata(
         }
     }
     Ok(())
+}
+
+fn verify_runtime_cache_bytes(cache_paths: &CachePaths, record: &PackageRecord) -> Result<()> {
+    crate::storage::verify_sha256(&cache_paths.asset_path(&record.sha256), &record.sha256)
 }
 
 fn validate_provider_digest_evidence(record: &PackageRecord) -> Result<()> {
@@ -2025,15 +2042,16 @@ mod tests {
 
     use super::{
         assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
-        assert_runtime_record_matches_lock, binpm_home_from_values, capture_runtime_tool_state,
-        deterministic_installed_path, github_sha256_digest, local_runtime_lock_records,
-        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_target_override,
-        manifest_tool_from_source, parse_manifest_source, project_root_from,
-        remove_global_tool_from_paths, restore_runtime_tool_state, select_explain_asset,
+        assert_runtime_record_matches_lock, binpm_home_from_values, capture_local_remove_state,
+        capture_runtime_tool_state, deterministic_installed_path, github_sha256_digest,
+        local_runtime_lock_records, lock_targets_conflict_with_manifest,
+        lock_targets_conflict_with_record, lockfile_digest, manifest_checksum_source,
+        manifest_creation_root_from, manifest_target_override, manifest_tool_from_source,
+        parse_manifest_source, project_root_from, remove_global_tool_from_paths,
+        restore_local_remove_state, restore_runtime_tool_state, select_explain_asset,
         select_manifest_asset, shell_path, shell_quote, source_install_scope,
         update_manifest_tool_source, validate_package_record_metadata, verify_lockfile_records,
-        ArtifactKind, RuntimeToolState,
+        verify_runtime_cache_bytes, ArtifactKind, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -2043,8 +2061,9 @@ mod tests {
         },
         release::ReleaseAsset,
         storage::{
-            write_package_record, CachePaths, LockTool, Lockfile, Manifest, ManifestTargetOverride,
-            ManifestTool, PackageRecord, ScopePaths,
+            write_lockfile, write_manifest, write_package_record, CachePaths, LockTool, Lockfile,
+            Manifest, ManifestTargetOverride, ManifestTool, PackageRecord, ScopePaths,
+            LOCKFILE_FILE, MANIFEST_FILE,
         },
     };
 
@@ -2819,6 +2838,26 @@ mod tests {
     }
 
     #[test]
+    fn manifest_asset_selection_falls_back_to_archive_when_no_bare_executable_matches() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let assets = [ReleaseAsset {
+            name: "tool-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz".to_string(),
+            provider_url: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+        }];
+
+        let selected = select_manifest_asset(&spec, None, &target, &assets)
+            .expect("archive fallback selection");
+
+        assert_eq!(selected.asset_name, "tool-x86_64-unknown-linux-gnu.tar.gz");
+        assert!(matches!(selected.kind, ArtifactKind::Archive(_)));
+    }
+
+    #[test]
     fn explain_selection_prefers_installable_bare_executable_over_archive() {
         let target = linux_target();
         let assets = [
@@ -3025,6 +3064,51 @@ mod tests {
         assert!(error
             .to_string()
             .contains(&format!("sha256:{}", record.sha256)));
+    }
+
+    #[test]
+    fn runtime_cache_verify_uses_expected_cache_path_when_record_path_is_missing() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let mut record = package_record();
+        record.cache_key = Some(crate::storage::cache_key(&record.sha256));
+        record.cache_path = None;
+        validate_package_record_metadata(&cache, &record).expect("metadata without cache path");
+
+        let error = verify_runtime_cache_bytes(&cache, &record).expect_err("missing cache asset");
+
+        assert!(error
+            .to_string()
+            .contains(&cache.asset_path(&record.sha256).display().to_string()));
+    }
+
+    #[test]
+    fn local_remove_rollback_preserves_absent_lockfile() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+        )
+        .expect("manifest");
+        let lockfile_path = root.join(LOCKFILE_FILE);
+        assert!(!lockfile_path.exists());
+        let state = capture_local_remove_state(root, "tool").expect("remove state");
+        write_lockfile(
+            &lockfile_path,
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+        )
+        .expect("temporary lockfile");
+
+        restore_local_remove_state(root, "tool", state);
+
+        assert!(!lockfile_path.exists());
     }
 
     #[test]
