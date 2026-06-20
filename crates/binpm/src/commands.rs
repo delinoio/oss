@@ -51,11 +51,12 @@ pub fn run(cli: Cli) -> Result<i32> {
 }
 
 fn install(args: InstallArgs) -> Result<i32> {
-    let scope = args.scope.scope();
+    let requested_scope = args.scope.scope();
     let frozen_lockfile = args.lockfile.frozen_lockfile();
 
     if let Some(source) = &args.source {
         let spec = SourceSpec::from_str(source)?;
+        let scope = select_scope(requested_scope)?;
         info!(
             command = "install",
             scope = scope.as_str(),
@@ -66,7 +67,7 @@ fn install(args: InstallArgs) -> Result<i32> {
             source_host = spec.host,
             source_path = spec.path,
             source_version = spec.version.as_deref().unwrap_or(""),
-            "Prepared global install request"
+            "Prepared source install request"
         );
         if scope == Scope::Local {
             return install_local_source(spec, frozen_lockfile, args.require_verified);
@@ -75,7 +76,7 @@ fn install(args: InstallArgs) -> Result<i32> {
     } else {
         info!(
             command = "install",
-            scope = scope.as_str(),
+            scope = requested_scope.as_str(),
             frozen_lockfile,
             require_verified = args.require_verified,
             no_confirm = args.no_confirm,
@@ -170,10 +171,19 @@ fn cache(command: CacheCommand) -> Result<i32> {
                 read_only = true,
                 "Prepared cache list request"
             );
-            let paths = CachePaths::new(&binpm_home()?);
+            let home = binpm_home()?;
+            let paths = CachePaths::new(&home);
+            let global_paths = ScopePaths::global(home);
+            let local_paths = project_root().ok().map(ScopePaths::local);
+            let referenced = referenced_cache_keys(&global_paths, local_paths.as_ref(), &paths)?;
             for record in read_cache_records(&paths)? {
+                let reference_state = if referenced.contains(&record.cache_key) {
+                    "referenced"
+                } else {
+                    "unreferenced"
+                };
                 println!(
-                    "{} {} {} {}/{} {} {} {}",
+                    "{} {} {} {}/{} {} {} {} {} {}",
                     record.cache_key,
                     record.byte_size.unwrap_or_default(),
                     record.source_provider.as_str(),
@@ -181,7 +191,9 @@ fn cache(command: CacheCommand) -> Result<i32> {
                     record.source_path,
                     record.release_tag,
                     record.asset_name,
-                    record.checksum_source.as_str()
+                    record.checksum_source.as_str(),
+                    record.last_used_at.as_deref().unwrap_or("<unknown>"),
+                    reference_state
                 );
             }
             Ok(0)
@@ -246,24 +258,37 @@ fn list(args: ScopedArgs) -> Result<i32> {
             let paths = ScopePaths::local(root);
             for (cmd, tool) in manifest.tools {
                 let state = package_record_path(&paths, &cmd);
-                let installed = if state.exists() {
-                    "installed"
+                if state.exists() {
+                    let record = read_package_record(&state)?;
+                    println!(
+                        "{cmd} installed {} {} {} {} {} {}",
+                        record.source,
+                        record.requested_version.as_deref().unwrap_or("<latest>"),
+                        record.release_tag,
+                        record.selected_binary,
+                        record.installed_path,
+                        verification_state(&record)
+                    );
                 } else {
-                    "declared"
-                };
-                println!(
-                    "{cmd} {installed} {} {}",
-                    tool.source,
-                    tool.version.as_deref().unwrap_or("<latest>")
-                );
+                    println!(
+                        "{cmd} declared {} {} <unknown> <unknown> <unknown> <unknown>",
+                        tool.source,
+                        tool.version.as_deref().unwrap_or("<latest>")
+                    );
+                }
             }
         }
         Scope::Global => {
             let paths = ScopePaths::global(binpm_home()?);
             for (cmd, record) in list_package_records(&paths)? {
                 println!(
-                    "{cmd} installed {} {} {}",
-                    record.source, record.release_tag, record.installed_path
+                    "{cmd} installed {} {} {} {} {} {}",
+                    record.source,
+                    record.requested_version.as_deref().unwrap_or("<latest>"),
+                    record.release_tag,
+                    record.selected_binary,
+                    record.installed_path,
+                    verification_state(&record)
                 );
             }
         }
@@ -444,6 +469,7 @@ fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32
         &spec,
         None,
         require_verified,
+        None,
     )?;
     if let Err(error) = write_package_record(&scope_paths, &cmd, &record) {
         rollback_failed_install(&scope_paths, &cmd, &record, &cache_paths, None)?;
@@ -461,10 +487,10 @@ fn install_local_source(
 ) -> Result<i32> {
     let root = require_manifest_root()?;
     let cmd = repo_name(&spec).to_string();
-    let prior_state = capture_local_tool_state(&root, &cmd)?;
-    let record = install_local_tool(&root, &cmd, &spec, None, frozen_lockfile, require_verified)?;
     let manifest_path = root.join(MANIFEST_FILE);
     let mut manifest = read_manifest(&manifest_path)?;
+    let prior_state = capture_local_tool_state(&root, &cmd)?;
+    let record = install_local_tool(&root, &cmd, &spec, None, frozen_lockfile, require_verified)?;
     manifest
         .tools
         .insert(cmd.clone(), manifest_tool_from_source(&spec));
@@ -491,6 +517,7 @@ fn install_local_manifest(
             });
         }
     }
+    let mut completed = Vec::new();
     for (cmd, tool) in manifest.tools {
         if !selected.is_empty() && !selected.contains(&cmd) {
             continue;
@@ -498,14 +525,30 @@ fn install_local_manifest(
         validate_command_name(&cmd)?;
         let mut spec = parse_manifest_source(&tool.source)?;
         spec.version = tool.version.clone();
-        install_local_tool(
+        let prior_state = capture_local_tool_state(&root, &cmd)?;
+        match install_local_tool(
             &root,
             &cmd,
             &spec,
             Some(&tool),
             frozen_lockfile,
             require_verified,
-        )?;
+        ) {
+            Ok(record) => completed.push((cmd, record, prior_state)),
+            Err(error) => {
+                for (completed_cmd, completed_record, completed_state) in
+                    completed.into_iter().rev()
+                {
+                    rollback_local_install_state(
+                        &root,
+                        &completed_cmd,
+                        &completed_record,
+                        completed_state,
+                    );
+                }
+                return Err(error);
+            }
+        }
     }
     Ok(0)
 }
@@ -528,6 +571,7 @@ fn install_local_tool(
     let scope_paths = ScopePaths::local(root.to_path_buf());
     let cache_paths = CachePaths::new(&home);
     let prior_state = capture_local_tool_state(root, cmd)?;
+    let mut lockfile = read_lockfile(&lockfile_path)?;
     let record = install_resolved(
         &scope_paths,
         &cache_paths,
@@ -535,9 +579,9 @@ fn install_local_tool(
         spec,
         tool,
         require_verified,
+        Some(root),
     )?;
 
-    let mut lockfile = read_lockfile(&lockfile_path)?;
     let target_key = HostTarget {
         os: record.target_os,
         arch: record.target_arch,
@@ -573,6 +617,7 @@ fn install_resolved(
     spec: &SourceSpec,
     tool: Option<&ManifestTool>,
     require_verified: bool,
+    local_root: Option<&Path>,
 ) -> Result<PackageRecord> {
     validate_command_name(cmd)?;
     scope_paths.ensure()?;
@@ -624,7 +669,10 @@ fn install_resolved(
     }
     let (sha256, cache_asset) = populate_cache_from_bytes(cache_paths, &resolved, &bytes)?;
     let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
-    install_bare_executable(&cache_asset, &installed_path)?;
+    if let Err(error) = install_bare_executable(&cache_asset, &installed_path) {
+        remove_unreferenced_cache_entry(cache_paths, &sha256, local_root)?;
+        return Err(error);
+    }
     package_record_from_resolved(cmd, &resolved, sha256, &cache_asset, &installed_path, true)
 }
 
@@ -990,6 +1038,34 @@ fn rollback_failed_install(
     Ok(())
 }
 
+fn remove_unreferenced_cache_entry(
+    cache_paths: &CachePaths,
+    sha256: &str,
+    local_root: Option<&Path>,
+) -> Result<()> {
+    let cache_key = crate::storage::cache_key(sha256);
+    let home = cache_paths
+        .root
+        .parent()
+        .map(Path::to_path_buf)
+        .ok_or(BinpmError::MissingGlobalHome)?;
+    let global_paths = ScopePaths::global(home);
+    let local_paths = local_root.map(|root| ScopePaths::local(root.to_path_buf()));
+    let referenced = referenced_cache_keys(&global_paths, local_paths.as_ref(), cache_paths)?;
+    if !referenced.contains(&cache_key) {
+        remove_path_if_exists(&cache_paths.entry_dir(sha256))?;
+    }
+    Ok(())
+}
+
+fn verification_state(record: &PackageRecord) -> &'static str {
+    if record.has_verified_source() {
+        "verified"
+    } else {
+        "unverified"
+    }
+}
+
 #[derive(Debug, Clone)]
 struct LocalToolState {
     lockfile: crate::storage::Lockfile,
@@ -1218,14 +1294,19 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
 fn remove_global_tool(cmd: &str) -> Result<i32> {
     validate_command_name(cmd)?;
     let paths = ScopePaths::global(binpm_home()?);
+    let prior_state = capture_runtime_tool_state(&paths, cmd)?;
     let record_path = package_record_path(&paths, cmd);
     if record_path.exists() {
         let record = read_package_record(&record_path)?;
         remove_installed_binary(&paths, cmd, &record)?;
     }
-    remove_package_record(&paths, cmd)?;
-    remove_path_if_exists(&paths.bin.join(cmd))?;
-    remove_path_if_exists(&paths.bin.join(format!("{cmd}.exe")))?;
+    if let Err(error) = remove_package_record(&paths, cmd)
+        .and_then(|_| remove_path_if_exists(&paths.bin.join(cmd)))
+        .and_then(|_| remove_path_if_exists(&paths.bin.join(format!("{cmd}.exe"))))
+    {
+        restore_runtime_tool_state(&paths, cmd, prior_state);
+        return Err(error);
+    }
     println!("removed {cmd}");
     Ok(0)
 }
