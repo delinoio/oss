@@ -20,6 +20,12 @@ pub enum BinpmError {
         component: &'static str,
         raw: String,
     },
+    #[error("Failed to build release HTTP client: {0}")]
+    ReleaseHttpClient(#[source] reqwest::Error),
+    #[error("Failed to look up release metadata: {0}")]
+    ReleaseLookup(#[source] reqwest::Error),
+    #[error("Failed to resolve release for `{package}`: {message}")]
+    ReleaseNotFound { package: String, message: String },
     #[error("Failed to determine the current working directory: {0}")]
     CurrentDirectory(#[source] io::Error),
     #[error("Failed to write `{}`: {source}", path.display())]
@@ -55,12 +61,15 @@ impl BinpmError {
             Self::InvalidSourceSpec { .. }
             | Self::InvalidTargetKey { .. }
             | Self::UnsupportedTargetComponent { .. }
+            | Self::ReleaseNotFound { .. }
             | Self::ManifestExists { .. } => 2,
             Self::CurrentDirectory(_)
             | Self::WriteFile { .. }
             | Self::ReadFile { .. }
             | Self::MissingGlobalHome
-            | Self::InvalidGlobalHome { .. } => 1,
+            | Self::InvalidGlobalHome { .. }
+            | Self::ReleaseHttpClient(_)
+            | Self::ReleaseLookup(_) => 1,
         }
     }
 }

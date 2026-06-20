@@ -8,12 +8,14 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, info};
 
 use crate::{
+    assets::select_asset,
     cli::{
         AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
         InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs, VerifyArgs,
     },
     contract::{HostTarget, Scope, SourceSpec},
     error::{BinpmError, Result},
+    release::{client_for_source, GitHubReleaseClient, GitLabReleaseClient},
 };
 
 const MANIFEST_FILE: &str = "binpm.toml";
@@ -241,6 +243,7 @@ fn doctor() -> Result<i32> {
 
 fn explain(args: ExplainArgs) -> Result<i32> {
     if let Ok(spec) = SourceSpec::from_str(&args.cmd_or_source) {
+        let target = HostTarget::current()?;
         info!(
             command = "explain",
             read_only = true,
@@ -249,8 +252,10 @@ fn explain(args: ExplainArgs) -> Result<i32> {
             source_host = spec.host,
             source_path = spec.path,
             source_version = spec.version.as_deref().unwrap_or(""),
+            target = target.key(),
             "Prepared source explanation"
         );
+        return explain_source(spec, target);
     } else {
         info!(
             command = "explain",
@@ -261,6 +266,57 @@ fn explain(args: ExplainArgs) -> Result<i32> {
         );
     }
     not_implemented("explain")
+}
+
+fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
+    println!("binpm explain");
+    println!("source: {spec}");
+    println!("normalized_source: {}", spec.source_without_version());
+    println!("provider: {}", spec.provider.as_str());
+    println!("host: {}", spec.host);
+    println!("path: {}", spec.path);
+    println!(
+        "requested_version: {}",
+        spec.version.as_deref().unwrap_or("<latest-stable>")
+    );
+    println!("target: {}", target.key());
+    println!("release_api: {}", release_api_url(&spec));
+
+    let client = client_for_source(&spec)?;
+    let selection = client.resolve_release(&spec)?;
+    println!("release: {}", selection.release.tag);
+    println!("release_decision: {}", selection.decision);
+
+    match select_asset(spec.provider, &target, &selection.release.assets) {
+        Some(selection) => {
+            println!("selected_asset: {}", selection.selected.asset_name);
+            println!("selected_asset_url: {}", selection.selected.canonical_url);
+            println!(
+                "selected_asset_score: {}",
+                selection.selected.score.unwrap_or_default()
+            );
+            for decision in selection.decisions {
+                println!("{}", decision.explain_line());
+            }
+        }
+        None => {
+            println!("selected_asset: <none>");
+            for decision in
+                crate::assets::score_assets(spec.provider, &target, &selection.release.assets)
+            {
+                println!("{}", decision.explain_line());
+            }
+        }
+    }
+
+    Ok(0)
+}
+
+fn release_api_url(spec: &SourceSpec) -> String {
+    match spec.provider {
+        crate::contract::SourceProvider::GitHub => GitHubReleaseClient::releases_api_url(spec),
+        crate::contract::SourceProvider::GitLab => GitLabReleaseClient::releases_api_url(spec),
+    }
 }
 
 fn verify(args: VerifyArgs) -> Result<i32> {

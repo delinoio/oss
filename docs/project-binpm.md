@@ -14,11 +14,12 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 
 ## Cross-Domain Invariants
 - `binpm` is implemented as a Rust CLI under `crates/binpm`.
-- The initial runtime skeleton includes clap-based command parsing, enum-backed contract foundations, structured `tracing` setup, centralized CLI error handling, README/test scaffolding, and minimal safe implementations for `binpm init`, `binpm env`, `binpm doctor`, and `binpm cache key`.
-- Release lookup, asset scoring, downloads, cache mutation, extraction, install, update, remove, verify, explain, list, info, outdated, and `x` execution flows must remain explicit not-yet-implemented errors until their documented storage and verification behavior is implemented.
+- The initial runtime skeleton includes clap-based command parsing, enum-backed contract foundations, structured `tracing` setup, centralized CLI error handling, README/test scaffolding, release source parsing, provider release lookup clients, deterministic release asset candidate scoring, and minimal safe implementations for `binpm init`, `binpm env`, `binpm doctor`, source-form `binpm explain`, and `binpm cache key`.
+- Downloads, cache mutation, extraction, install, update, remove, verify, list, info, outdated, local-command explain, and `x` execution flows must remain explicit not-yet-implemented errors until their documented storage and verification behavior is implemented.
 - Stable source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
 - Versionless installs must resolve to the latest stable release exposed by the source provider; GitHub sources must exclude draft and prerelease releases, and GitLab sources must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
 - Binary selection must be deterministic and target-aware across operating system, CPU architecture, and libc or ABI environment.
+- Source-form `binpm explain <source>` may perform read-only provider release lookup and must print source parsing, provider API URL, release selection, target normalization, asset candidate scoring, selected asset, and rejection reasons without mutating manifests, lockfiles, package records, cache entries, or executables.
 - Current-host target detection must fail clearly for unsupported operating systems or CPU architectures instead of mapping them to a supported fallback target.
 - The asset selection heuristic must remain fully documented in `docs/crates-binpm-foundation.md` before implementation changes alter scoring behavior.
 - `~/.binpm` remains the canonical global home directory for globally installed binaries, package records, cache entries, and temporary extraction state.
