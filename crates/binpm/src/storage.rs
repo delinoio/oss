@@ -640,6 +640,7 @@ pub fn populate_cache_from_bytes(
                 "Reused verified cache entry"
             );
         } else {
+            remove_path_if_exists(&asset_path)?;
             atomic_write_bytes(&asset_path, bytes)?;
             debug!(
                 cache_key = cache_key(&sha256),
@@ -793,11 +794,11 @@ pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Re
 }
 
 pub fn clean_cache(paths: &CachePaths) -> Result<usize> {
+    ensure_dir(&paths.root)?;
     let count = cache_entry_dirs(paths)
         .map(|dirs| dirs.len())
         .unwrap_or_default();
     remove_path_if_exists(&paths.root.join("sha256"))?;
-    ensure_dir(&paths.root)?;
     ensure_dir(&paths.refs)?;
     Ok(count)
 }
@@ -1344,6 +1345,25 @@ mod tests {
     }
 
     #[test]
+    fn replaces_corrupted_cache_asset_directory_with_verified_bytes() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let resolved = resolved_asset();
+        let bytes = b"good bytes";
+        let sha = format!("{:x}", Sha256::digest(bytes));
+        let asset_path = cache.asset_path(&sha);
+        std::fs::create_dir_all(&asset_path).expect("create corrupt asset directory");
+        std::fs::write(asset_path.join("child"), b"bad bytes").expect("write child");
+
+        let (repaired_sha, repaired_path) =
+            populate_cache_from_bytes(&cache, &resolved, bytes).expect("repair cache");
+
+        assert_eq!(repaired_sha, sha);
+        assert_eq!(repaired_path, asset_path);
+        assert_eq!(std::fs::read(&asset_path).expect("read repaired"), bytes);
+    }
+
+    #[test]
     fn provider_digest_cache_hit_reuses_verified_asset_without_downloading_bytes() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let cache = CachePaths::new(temp_dir.path());
@@ -1614,6 +1634,23 @@ created_at = "2026-01-01T00:00:00Z"
         assert_eq!(removed, 0);
         assert!(!cache.root.join("sha256").exists());
         assert!(cache.refs.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clean_cache_rejects_symlinked_cache_root_before_removing_entries() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        let outside_entry = outside.path().join("sha256").join("keep");
+        std::fs::create_dir_all(&outside_entry).expect("create outside entry");
+        std::fs::write(outside_entry.join("asset"), b"keep").expect("write outside asset");
+        std::os::unix::fs::symlink(outside.path(), &cache.root).expect("symlink cache root");
+
+        let error = clean_cache(&cache).expect_err("symlinked cache root");
+
+        assert!(error.to_string().contains("Unsafe managed directory"));
+        assert!(outside_entry.exists());
     }
 
     #[test]

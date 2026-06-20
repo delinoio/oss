@@ -621,6 +621,7 @@ fn install_local_manifest(
             });
         }
     }
+    validate_selected_manifest_entries(&manifest, selected)?;
     ensure_no_selected_install_path_collisions(&manifest, selected)?;
     let mut completed = Vec::new();
     for (cmd, tool) in &manifest.tools {
@@ -710,6 +711,17 @@ fn install_local_manifest(
         }
     }
     Ok(0)
+}
+
+fn validate_selected_manifest_entries(manifest: &Manifest, selected: &[String]) -> Result<()> {
+    for (cmd, tool) in &manifest.tools {
+        if !selected.is_empty() && !selected.contains(cmd) {
+            continue;
+        }
+        validate_command_name(cmd)?;
+        parse_manifest_source(&tool.source)?;
+    }
+    Ok(())
 }
 
 fn install_local_tool(
@@ -925,11 +937,15 @@ fn rollback_one_completed_local_install(
 }
 
 fn has_current_cache_record(cache_paths: &CachePaths, sha256: &str) -> Result<bool> {
-    Ok(
-        read_cache_record(cache_paths, sha256)?.is_some_and(|record| {
+    match read_cache_record(cache_paths, sha256) {
+        Ok(record) => Ok(record.is_some_and(|record| {
             record.sha256 == sha256 && record.cache_key == crate::storage::cache_key(sha256)
-        }),
-    )
+        })),
+        Err(BinpmError::ParseToml { path, .. }) if path == cache_paths.metadata_path(sha256) => {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn install_resolved(
@@ -1868,13 +1884,14 @@ fn ensure_no_selected_install_path_collisions(
     let target = HostTarget::current()?;
     let mut owners = BTreeMap::new();
     for cmd in manifest.tools.keys() {
-        let path = deterministic_installed_path(cmd, target.os);
-        if let Some(existing) = owners.insert(path.clone(), cmd.clone()) {
+        let path = PathBuf::from(deterministic_installed_path(cmd, target.os));
+        let key = install_path_collision_key(&path, target.os);
+        if let Some((existing, existing_path)) = owners.insert(key, (cmd.clone(), path.clone())) {
             if selected.is_empty() || selected.contains(cmd) || selected.contains(&existing) {
                 return Err(BinpmError::InstalledPathCollision {
                     cmd: existing,
                     other_cmd: cmd.clone(),
-                    path: PathBuf::from(path),
+                    path: existing_path,
                 });
             }
         }
@@ -1888,12 +1905,13 @@ fn ensure_no_package_record_install_path_collision(
     target_os: TargetOs,
 ) -> Result<()> {
     let path = managed_installed_path(paths, cmd, target_os);
+    let key = install_path_collision_key(&path, target_os);
     for (other_cmd, record) in list_package_records(paths)? {
         if other_cmd == cmd {
             continue;
         }
         let other_path = managed_installed_path(paths, &other_cmd, record.target_os);
-        if other_path == path {
+        if install_path_collision_key(&other_path, target_os) == key {
             return Err(BinpmError::InstalledPathCollision {
                 cmd: other_cmd,
                 other_cmd: cmd.to_string(),
@@ -1902,6 +1920,15 @@ fn ensure_no_package_record_install_path_collision(
         }
     }
     Ok(())
+}
+
+fn install_path_collision_key(path: &Path, target_os: TargetOs) -> String {
+    let key = path.to_string_lossy().into_owned();
+    if matches!(target_os, TargetOs::Darwin | TargetOs::Windows) {
+        key.to_ascii_lowercase()
+    } else {
+        key
+    }
 }
 
 fn capture_local_manifest_orphan_states(
@@ -2829,16 +2856,17 @@ mod tests {
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
         ensure_no_package_record_install_path_collision, github_sha256_digest,
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
-        local_runtime_lock_records, lock_targets_conflict_with_manifest,
-        lock_targets_conflict_with_record, lockfile_digest, manifest_checksum_source,
-        manifest_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        parse_manifest_source, project_root_from, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, restore_local_remove_state, restore_runtime_tool_state,
-        select_explain_asset, select_manifest_asset, shell_path, shell_quote,
-        snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
+        install_path_collision_key, local_runtime_lock_records,
+        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
+        manifest_checksum_source, manifest_creation_root_from, manifest_target_override,
+        manifest_tool_from_source, parse_manifest_source, project_root_from,
+        remove_global_tool_from_paths, remove_local_manifest_orphans, restore_local_remove_state,
+        restore_runtime_tool_state, select_explain_asset, select_manifest_asset, shell_path,
+        shell_quote, snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
         validate_locked_record_artifact, validate_package_record_metadata,
-        validate_provider_digest_evidence, verify_lockfile_records, verify_runtime_cache_bytes,
-        ArtifactKind, InstalledPackage, LocalRemoveState, RuntimeToolState,
+        validate_provider_digest_evidence, validate_selected_manifest_entries,
+        verify_lockfile_records, verify_runtime_cache_bytes, ArtifactKind, InstalledPackage,
+        LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -2976,6 +3004,58 @@ mod tests {
                 .expect_err("collision");
 
         assert!(matches!(error, BinpmError::InstalledPathCollision { .. }));
+    }
+
+    #[test]
+    fn global_source_install_rejects_darwin_case_insensitive_collision() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::global(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        let mut record = package_record();
+        record.target_os = TargetOs::Darwin;
+        write_package_record(&paths, "foo", &record).expect("write package record");
+
+        let error =
+            ensure_no_package_record_install_path_collision(&paths, "FOO", TargetOs::Darwin)
+                .expect_err("collision");
+
+        assert!(matches!(error, BinpmError::InstalledPathCollision { .. }));
+    }
+
+    #[test]
+    fn darwin_install_path_collision_keys_are_case_insensitive() {
+        assert_eq!(
+            install_path_collision_key(Path::new(".binpm/bin/FOO"), TargetOs::Darwin),
+            install_path_collision_key(Path::new(".binpm/bin/foo"), TargetOs::Darwin)
+        );
+        assert_ne!(
+            install_path_collision_key(Path::new(".binpm/bin/FOO"), TargetOs::Linux),
+            install_path_collision_key(Path::new(".binpm/bin/foo"), TargetOs::Linux)
+        );
+    }
+
+    #[test]
+    fn selected_manifest_entries_validate_sources_before_installing_any_tool() {
+        let first_spec = SourceSpec::from_str("github:owner/first").expect("first source");
+        let manifest = Manifest {
+            version: 1,
+            tools: BTreeMap::from([
+                ("first".to_string(), manifest_tool_from_source(&first_spec)),
+                (
+                    "second".to_string(),
+                    ManifestTool {
+                        source: "github:owner/second@1.0.0".to_string(),
+                        version: None,
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                ),
+            ]),
+        };
+
+        let error = validate_selected_manifest_entries(&manifest, &[]).expect_err("invalid source");
+
+        assert!(matches!(error, BinpmError::InvalidSourceSpec { .. }));
     }
 
     #[test]
@@ -4532,6 +4612,18 @@ mod tests {
         let sha256 = format!("{:x}", Sha256::digest(bytes));
         fs::create_dir_all(cache.entry_dir(&sha256)).expect("cache entry dir");
         fs::write(cache.asset_path(&sha256), bytes).expect("cache asset");
+
+        assert!(!has_current_cache_record(&cache, &sha256).expect("cache record check"));
+    }
+
+    #[test]
+    fn malformed_target_cache_metadata_is_not_a_current_record() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        cache.ensure().expect("cache paths");
+        let sha256 = package_record().sha256;
+        fs::create_dir_all(cache.entry_dir(&sha256)).expect("cache entry dir");
+        fs::write(cache.metadata_path(&sha256), "not = [valid").expect("corrupt metadata");
 
         assert!(!has_current_cache_record(&cache, &sha256).expect("cache record check"));
     }
