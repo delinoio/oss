@@ -183,9 +183,14 @@ impl CachePaths {
 
     pub fn ensure(&self) -> Result<()> {
         ensure_dir(&self.root)?;
+        self.ensure_sha256_root()?;
         ensure_dir(&self.tmp)?;
         ensure_dir(&self.refs)?;
         Ok(())
+    }
+
+    fn ensure_sha256_root(&self) -> Result<()> {
+        ensure_dir(&self.root.join("sha256"))
     }
 
     pub fn entry_dir(&self, sha256: &str) -> PathBuf {
@@ -348,6 +353,7 @@ pub fn list_package_records(paths: &ScopePaths) -> Result<Vec<(String, PackageRe
 }
 
 pub fn write_cache_record(paths: &CachePaths, record: &CacheRecord) -> Result<()> {
+    paths.ensure_sha256_root()?;
     let dir = paths.entry_dir(&record.sha256);
     ensure_dir(&dir)?;
     write_toml_atomic(&paths.metadata_path(&record.sha256), record)
@@ -1453,6 +1459,32 @@ mod tests {
 
         assert!(error.to_string().contains("must not include query"));
         assert!(!cache.entry_dir(&sha).exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_population_rejects_symlinked_sha256_root_before_writing_asset() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        let outside_entry = outside.path().join("keep");
+        std::fs::create_dir_all(&cache.root).expect("create cache root");
+        std::fs::create_dir_all(&outside_entry).expect("create outside entry");
+        std::os::unix::fs::symlink(outside.path(), cache.root.join("sha256"))
+            .expect("symlink sha256 root");
+
+        let error = populate_cache_from_bytes(&cache, &resolved_asset(), b"bytes")
+            .expect_err("symlinked sha256 root");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert!(outside_entry.exists());
+        assert_eq!(
+            std::fs::read_dir(outside.path())
+                .expect("read outside")
+                .filter_map(|entry| entry.ok())
+                .count(),
+            1
+        );
     }
 
     #[test]

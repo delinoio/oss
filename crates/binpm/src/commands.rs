@@ -481,19 +481,15 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
 
     match select_asset(spec.provider, &target, &selection.release.assets) {
         Some(selection) => {
-            if let Some(selected) = select_explain_asset(&selection.decisions) {
-                println!("selected_asset: {}", selected.asset_name);
-                println!(
-                    "selected_asset_url: {}",
-                    selected_asset_display_url(selected)?
-                );
-                println!(
-                    "selected_asset_score: {}",
-                    selected.score.unwrap_or_default()
-                );
-            } else {
-                println!("selected_asset: <none>");
-            }
+            println!("selected_asset: {}", selection.selected.asset_name);
+            println!(
+                "selected_asset_url: {}",
+                selected_asset_display_url(&selection.selected)?
+            );
+            println!(
+                "selected_asset_score: {}",
+                selection.selected.score.unwrap_or_default()
+            );
             for decision in selection.decisions {
                 println!("{}", decision.explain_line());
             }
@@ -509,15 +505,6 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
     }
 
     Ok(0)
-}
-
-fn select_explain_asset(
-    decisions: &[crate::assets::CandidateDecision],
-) -> Option<&crate::assets::CandidateDecision> {
-    decisions
-        .iter()
-        .find(|decision| decision.eligible && decision.kind == ArtifactKind::BareExecutable)
-        .or_else(|| decisions.iter().find(|decision| decision.eligible))
 }
 
 fn selected_asset_display_url(decision: &crate::assets::CandidateDecision) -> Result<String> {
@@ -1361,7 +1348,9 @@ fn validate_locked_record_current_release(
     spec.version = Some(record.release_tag.clone());
     let release = client_for_source(&spec)?.resolve_release(&spec)?.release;
     let selected = select_manifest_asset(&spec, tool, target, &release.assets)?;
-    if selected.asset_name != record.asset_name {
+    if selected.asset_name != record.asset_name
+        || selected_asset_display_url(&selected)? != record.asset_url
+    {
         return Err(BinpmError::StaleLockfile {
             path: lockfile_path.to_path_buf(),
             cmd: cmd.to_string(),
@@ -2969,13 +2958,13 @@ mod tests {
         manifest_checksum_source, manifest_creation_root_from, manifest_root_or_creation_root_from,
         manifest_target_override, manifest_tool_from_source, parse_manifest_source,
         project_root_from, remove_global_tool_from_paths, remove_local_manifest_orphans,
-        restore_local_remove_state, restore_runtime_tool_state, select_explain_asset,
-        select_manifest_asset, selected_asset_display_url, shell_path, shell_quote,
-        snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
-        validate_locked_record_artifact, validate_package_record_metadata,
-        validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verify_lockfile_records, ArtifactKind,
-        InstalledPackage, LocalRemoveState, RuntimeToolState,
+        restore_local_remove_state, restore_runtime_tool_state, select_manifest_asset,
+        selected_asset_display_url, shell_path, shell_quote, snapshot_cache_metadata,
+        source_install_scope, update_manifest_tool_source, validate_locked_record_artifact,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries,
+        verify_lockfile_records, ArtifactKind, InstalledPackage, LocalRemoveState,
+        RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4348,7 +4337,7 @@ mod tests {
     }
 
     #[test]
-    fn explain_selection_reports_install_selected_bare_executable() {
+    fn explain_selection_reports_scored_selection() {
         let target = linux_target();
         let assets = [
             ReleaseAsset {
@@ -4373,10 +4362,11 @@ mod tests {
         let selection =
             crate::assets::select_asset(SourceProvider::GitHub, &target, &assets).expect("asset");
 
-        let selected = select_explain_asset(&selection.decisions).expect("explain selection");
-
-        assert_eq!(selected.asset_name, "tool-linux-x64");
-        assert_eq!(selected.kind, ArtifactKind::BareExecutable);
+        assert_eq!(
+            selection.selected.asset_name,
+            "tool-x86_64-unknown-linux-gnu.tar.gz"
+        );
+        assert!(matches!(selection.selected.kind, ArtifactKind::Archive(_)));
     }
 
     #[test]
