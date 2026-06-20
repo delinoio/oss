@@ -501,7 +501,10 @@ fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32
     if let Err(error) = write_package_record(&scope_paths, &cmd, &record) {
         let rollback_result = rollback_failed_install(&scope_paths, &cmd, &record);
         restore_runtime_tool_state(&scope_paths, &cmd, prior_state);
+        let cache_cleanup_result =
+            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, None);
         rollback_result?;
+        cache_cleanup_result?;
         return Err(error);
     }
     println!("installed {cmd} {}", record.installed_path);
@@ -625,20 +628,30 @@ fn install_local_tool(
         libc: record.target_libc,
     }
     .key();
-    let tool = lockfile
+    let manifest_tool = tool;
+    let lock_tool = lockfile
         .tools
         .entry(cmd.to_string())
         .or_insert_with(|| LockTool {
             source: record.source.clone(),
             targets: BTreeMap::new(),
         });
-    tool.source = record.source.clone();
+    lock_tool.source = record.source.clone();
     let mut lock_record = record.lock_record();
     lock_record.installed_path = deterministic_installed_path(cmd, record.target_os);
-    if lock_targets_conflict_with_record(tool, &lock_record) {
-        tool.targets.clear();
+    if lock_targets_conflict_with_record(lock_tool, &lock_record)
+        || lock_targets_conflict_with_manifest(
+            &lockfile_path,
+            root,
+            cmd,
+            spec,
+            manifest_tool,
+            lock_tool,
+        )
+    {
+        lock_tool.targets.clear();
     }
-    tool.targets.insert(target_key, lock_record);
+    lock_tool.targets.insert(target_key, lock_record);
     if let Err(error) = write_lockfile(&lockfile_path, &lockfile)
         .and_then(|_| write_package_record(&scope_paths, cmd, &record))
         .and_then(|_| write_cache_ref(&cache_paths, root, cmd, &record))
@@ -1015,6 +1028,32 @@ fn lock_targets_conflict_with_record(tool: &LockTool, record: &PackageRecord) ->
         })
 }
 
+fn lock_targets_conflict_with_manifest(
+    lockfile_path: &Path,
+    root: &Path,
+    cmd: &str,
+    spec: &SourceSpec,
+    manifest_tool: Option<&ManifestTool>,
+    lock_tool: &LockTool,
+) -> bool {
+    lock_tool.targets.iter().any(|(target_key, record)| {
+        let Ok(target) = HostTarget::from_str(target_key) else {
+            return true;
+        };
+        target_key != &target.key()
+            || record.requested_version != spec.version
+            || assert_lock_record_matches_source_and_target(
+                lockfile_path,
+                cmd,
+                spec,
+                &target,
+                record,
+            )
+            .is_err()
+            || assert_lock_matches_manifest_tool(root, cmd, manifest_tool, &target, record).is_err()
+    })
+}
+
 fn manifest_checksum_source(
     tool: Option<&ManifestTool>,
     target: &HostTarget,
@@ -1047,12 +1086,16 @@ fn select_manifest_asset(
         let kind = crate::assets::classify_artifact(&asset.name, asset.source_archive);
         if spec.provider == crate::contract::SourceProvider::GitLab && !gitlab_https_eligible(asset)
         {
+            let diagnostic_url = asset
+                .provider_url
+                .as_deref()
+                .unwrap_or(&asset.url)
+                .split(['?', '#'])
+                .next()
+                .unwrap_or(&asset.url)
+                .to_string();
             return Err(BinpmError::UnsafeUrl {
-                url: asset
-                    .provider_url
-                    .as_deref()
-                    .unwrap_or(&asset.url)
-                    .to_string(),
+                url: diagnostic_url,
                 message: "gitlab asset link is not HTTPS eligible".to_string(),
             });
         }
@@ -1644,6 +1687,12 @@ fn verify_lockfile_records(
             }
             for (target_key, record) in &locked_tool.targets {
                 let target = HostTarget::from_str(target_key)?;
+                if target_key != &target.key() {
+                    return Err(BinpmError::StaleLockfile {
+                        path: lockfile_path.to_path_buf(),
+                        cmd: cmd.clone(),
+                    });
+                }
                 if record.requested_version != spec.version {
                     return Err(BinpmError::StaleLockfile {
                         path: lockfile_path.to_path_buf(),
@@ -1673,6 +1722,12 @@ fn verify_lockfile_records(
         }
         for (target_key, record) in tool.targets {
             let target = HostTarget::from_str(&target_key)?;
+            if target_key != target.key() {
+                return Err(BinpmError::StaleLockfile {
+                    path: lockfile_path.to_path_buf(),
+                    cmd: cmd.clone(),
+                });
+            }
             let spec = SourceSpec::from_str(
                 &record
                     .requested_version
@@ -1972,12 +2027,13 @@ mod tests {
         assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
         assert_runtime_record_matches_lock, binpm_home_from_values, capture_runtime_tool_state,
         deterministic_installed_path, github_sha256_digest, local_runtime_lock_records,
-        lock_targets_conflict_with_record, lockfile_digest, manifest_checksum_source,
-        manifest_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        parse_manifest_source, project_root_from, remove_global_tool_from_paths,
-        restore_runtime_tool_state, select_explain_asset, select_manifest_asset, shell_path,
-        shell_quote, source_install_scope, update_manifest_tool_source,
-        validate_package_record_metadata, verify_lockfile_records, ArtifactKind, RuntimeToolState,
+        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
+        manifest_checksum_source, manifest_creation_root_from, manifest_target_override,
+        manifest_tool_from_source, parse_manifest_source, project_root_from,
+        remove_global_tool_from_paths, restore_runtime_tool_state, select_explain_asset,
+        select_manifest_asset, shell_path, shell_quote, source_install_scope,
+        update_manifest_tool_source, validate_package_record_metadata, verify_lockfile_records,
+        ArtifactKind, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -2204,6 +2260,49 @@ mod tests {
             targets: BTreeMap::from([(target.key(), current.clone())]),
         };
         assert!(!lock_targets_conflict_with_record(&matching_tool, &current));
+    }
+
+    #[test]
+    fn lock_targets_are_cleared_when_manifest_override_changes() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source");
+        let mut current = package_record();
+        current.selected_binary = "tool-new".to_string();
+        let mut stale = package_record();
+        stale.selected_binary = "tool-old".to_string();
+        let lock_tool = LockTool {
+            source: "github:owner/tool".to_string(),
+            targets: BTreeMap::from([(target.key(), stale)]),
+        };
+        let manifest_tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("tool-new".to_string()),
+            targets: BTreeMap::new(),
+        };
+
+        assert!(lock_targets_conflict_with_manifest(
+            &temp_dir.path().join("binpm.lock"),
+            temp_dir.path(),
+            "tool",
+            &spec,
+            Some(&manifest_tool),
+            &lock_tool,
+        ));
+
+        let matching_tool = LockTool {
+            source: "github:owner/tool".to_string(),
+            targets: BTreeMap::from([(target.key(), current)]),
+        };
+        assert!(!lock_targets_conflict_with_manifest(
+            &temp_dir.path().join("binpm.lock"),
+            temp_dir.path(),
+            "tool",
+            &spec,
+            Some(&manifest_tool),
+            &matching_tool,
+        ));
     }
 
     #[test]
@@ -2632,8 +2731,12 @@ mod tests {
         };
         let assets = [ReleaseAsset {
             name: "tool-linux".to_string(),
-            url: "https://gitlab.com/owner/tool/-/releases/v1/downloads/tool-linux".to_string(),
-            provider_url: None,
+            url: "https://gitlab.com/owner/tool/-/releases/v1/downloads/tool-linux?token=secret"
+                .to_string(),
+            provider_url: Some(
+                "https://gitlab.com/owner/tool/-/releases/v1/downloads/tool-linux?token=secret"
+                    .to_string(),
+            ),
             digest: None,
             source_archive: false,
             final_url_https: Some(false),
@@ -2643,6 +2746,7 @@ mod tests {
             select_manifest_asset(&spec, Some(&tool), &target, &assets).expect_err("unsafe URL");
 
         assert!(error.to_string().contains("not HTTPS eligible"));
+        assert!(!error.to_string().contains("secret"));
     }
 
     #[test]
@@ -2816,6 +2920,29 @@ mod tests {
         let error =
             verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
                 .expect_err("absolute installed path is stale");
+
+        assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn lockfile_verify_rejects_non_canonical_target_keys() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::GitHubDigest;
+        let lockfile = Lockfile {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                LockTool {
+                    source: "github:owner/tool".to_string(),
+                    targets: BTreeMap::from([("linux-amd64-glibc".to_string(), record)]),
+                },
+            )]),
+        };
+
+        let error =
+            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
+                .expect_err("target alias is stale");
 
         assert!(error.to_string().contains("stale"));
     }
