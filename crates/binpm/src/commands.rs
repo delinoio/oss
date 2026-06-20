@@ -1592,14 +1592,26 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
         return Err(error);
     }
 
-    let mut manifest = read_manifest(&manifest_path)?;
+    let mut manifest = match read_manifest(&manifest_path) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            restore_local_remove_state(&root, cmd, prior_state);
+            return Err(error);
+        }
+    };
     manifest.tools.remove(cmd);
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         restore_local_remove_state(&root, cmd, prior_state);
         return Err(error);
     }
 
-    let mut lockfile = read_lockfile(&lockfile_path)?;
+    let mut lockfile = match read_lockfile(&lockfile_path) {
+        Ok(lockfile) => lockfile,
+        Err(error) => {
+            restore_local_remove_state(&root, cmd, prior_state);
+            return Err(error);
+        }
+    };
     lockfile.tools.remove(cmd);
     if let Err(error) = write_lockfile(&lockfile_path, &lockfile) {
         restore_local_remove_state(&root, cmd, prior_state);
@@ -1721,11 +1733,11 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     }
     for (cmd, record) in list_package_records(&paths)? {
         validate_command_name(&cmd)?;
-        if let Some(lock_record) = local_runtime_locks.get(&cmd) {
+        if let Some(lock_record) = local_runtime_locks.remove(&cmd) {
             assert_runtime_record_matches_lock(
                 root.as_deref().expect("local root"),
                 &cmd,
-                lock_record,
+                &lock_record,
                 &record,
             )?;
         } else if let Some(root) = &root {
@@ -1748,6 +1760,9 @@ fn verify(args: VerifyArgs) -> Result<i32> {
         if !locked.contains(&cmd) {
             checked += 1;
         }
+    }
+    if let Some(root) = &root {
+        assert_local_runtime_records_complete(root, &local_runtime_locks)?;
     }
     println!("checked {checked}");
     Ok(0)
@@ -1822,6 +1837,19 @@ fn local_runtime_lock_records(
         records.insert(cmd.clone(), record.clone());
     }
     Ok(records)
+}
+
+fn assert_local_runtime_records_complete(
+    root: &Path,
+    remaining_locks: &BTreeMap<String, PackageRecord>,
+) -> Result<()> {
+    if let Some(cmd) = remaining_locks.keys().next() {
+        return Err(BinpmError::StaleLockfile {
+            path: root.join(LOCKFILE_FILE),
+            cmd: cmd.clone(),
+        });
+    }
+    Ok(())
 }
 
 fn assert_runtime_record_matches_lock(
@@ -2219,15 +2247,15 @@ mod tests {
     };
 
     use super::{
-        assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
-        assert_runtime_record_matches_lock, binpm_home_from_values, capture_local_remove_state,
-        capture_runtime_tool_state, deterministic_installed_path, github_sha256_digest,
-        local_runtime_lock_records, lock_targets_conflict_with_manifest,
-        lock_targets_conflict_with_record, lockfile_digest, manifest_checksum_source,
-        manifest_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        parse_manifest_source, project_root_from, remove_global_tool_from_paths,
-        restore_local_remove_state, restore_runtime_tool_state, select_explain_asset,
-        select_manifest_asset, shell_path, shell_quote, source_install_scope,
+        assert_local_runtime_records_complete, assert_lock_matches_manifest_tool,
+        assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
+        binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
+        deterministic_installed_path, github_sha256_digest, local_runtime_lock_records,
+        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
+        manifest_checksum_source, manifest_creation_root_from, manifest_target_override,
+        manifest_tool_from_source, parse_manifest_source, project_root_from,
+        remove_global_tool_from_paths, restore_local_remove_state, restore_runtime_tool_state,
+        select_explain_asset, select_manifest_asset, shell_path, shell_quote, source_install_scope,
         update_manifest_tool_source, validate_locked_record_artifact,
         validate_package_record_metadata, verify_lockfile_records, verify_runtime_cache_bytes,
         ArtifactKind, RuntimeToolState,
@@ -2630,6 +2658,17 @@ mod tests {
                 .expect("no manifest tools to verify")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn local_verify_rejects_missing_runtime_records_for_current_locks() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let remaining_locks = BTreeMap::from([("tool".to_string(), package_record())]);
+
+        let error = assert_local_runtime_records_complete(temp_dir.path(), &remaining_locks)
+            .expect_err("missing runtime record is stale");
+
+        assert!(error.to_string().contains("stale"));
     }
 
     #[test]

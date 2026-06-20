@@ -13,6 +13,7 @@ use crate::{
 
 const USER_AGENT: &str = concat!("binpm/", env!("CARGO_PKG_VERSION"));
 const RELEASES_PER_PAGE: u16 = 100;
+const MAX_GITLAB_ASSET_REDIRECTS: usize = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Release {
@@ -284,7 +285,16 @@ fn percent_encode_path(path: &str) -> String {
 }
 
 fn sanitize_url(url: &str) -> String {
-    url.split(['?', '#']).next().unwrap_or(url).to_string()
+    let without_query = url.split(['?', '#']).next().unwrap_or(url);
+    let Ok(mut parsed) = reqwest::Url::parse(without_query) else {
+        return without_query.to_string();
+    };
+
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        let _ = parsed.set_username("");
+        let _ = parsed.set_password(None);
+    }
+    parsed.to_string()
 }
 
 fn releases_page_url(url: &str) -> String {
@@ -539,17 +549,7 @@ fn verify_gitlab_asset_redirects(releases: &mut [Release]) -> Result<()> {
             }
             crate::storage::validate_download_url(url)?;
 
-            let response = http
-                .head(url)
-                .send()
-                .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
-            let final_url = response
-                .headers()
-                .get(header::LOCATION)
-                .and_then(|location| location.to_str().ok())
-                .and_then(|location| response.url().join(location).ok())
-                .map(|location| location.to_string())
-                .unwrap_or_else(|| response.url().as_str().to_string());
+            let final_url = resolve_gitlab_asset_redirect_url(&http, url)?;
             let final_url_https = is_https_url(&final_url);
             debug!(
                 release_tag = release.tag,
@@ -566,6 +566,43 @@ fn verify_gitlab_asset_redirects(releases: &mut [Release]) -> Result<()> {
     Ok(())
 }
 
+fn resolve_gitlab_asset_redirect_url(http: &Client, url: &str) -> Result<String> {
+    let mut current_url = url.to_string();
+    let mut visited_urls = BTreeSet::new();
+
+    for _ in 0..=MAX_GITLAB_ASSET_REDIRECTS {
+        if !visited_urls.insert(current_url.clone()) {
+            return Err(BinpmError::ReleasePaginationLoop {
+                url: sanitize_url(&current_url),
+            });
+        }
+        if !is_https_url(&current_url) {
+            return Ok(current_url);
+        }
+        crate::storage::validate_download_url(&current_url)?;
+
+        let response = http
+            .head(&current_url)
+            .send()
+            .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
+        let Some(next_url) = response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|location| location.to_str().ok())
+            .and_then(|location| response.url().join(location).ok())
+            .map(|location| location.to_string())
+        else {
+            return Ok(response.url().as_str().to_string());
+        };
+        current_url = next_url;
+    }
+
+    Err(BinpmError::UnsafeUrl {
+        url: sanitize_url(&current_url),
+        message: "release asset redirect chain exceeded limit".to_string(),
+    })
+}
+
 fn is_https_url(url: &str) -> bool {
     url.to_ascii_lowercase().starts_with("https://")
 }
@@ -577,8 +614,8 @@ mod tests {
 
     use super::{
         has_prerelease_tag, matching_tag_candidates, next_page_url, releases_page_url,
-        select_release, sort_gitlab_releases, verify_gitlab_asset_redirects, GitHubReleaseClient,
-        GitLabRelease, GitLabReleaseClient, Release,
+        sanitize_url, select_release, sort_gitlab_releases, verify_gitlab_asset_redirects,
+        GitHubReleaseClient, GitLabRelease, GitLabReleaseClient, Release,
     };
     use crate::{contract::SourceSpec, release::ReleaseAsset};
 
@@ -637,6 +674,14 @@ mod tests {
             Some("https://api.example.com/releases?page=3")
         );
         assert_eq!(next_page_url(None), None);
+    }
+
+    #[test]
+    fn sanitized_urls_redact_userinfo() {
+        assert_eq!(
+            sanitize_url("https://token@example.com/asset?download=1#fragment"),
+            "https://example.com/asset"
+        );
     }
 
     #[test]
