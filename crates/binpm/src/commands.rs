@@ -921,6 +921,7 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
             package: spec.to_string(),
             target: target.key(),
         })?;
+    let manifest_checksum_source = manifest_checksum_source(tool, &target)?;
     let selected_binary = match manifest_target_override(tool, &target)?
         .map(|override_target| override_target.bin.as_str())
         .or_else(|| tool.and_then(|tool| tool.bin.as_deref()))
@@ -938,7 +939,7 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
     {
         ChecksumSource::GitHubDigest
     } else {
-        manifest_checksum_source(tool, &target)?
+        manifest_checksum_source
     };
     Ok(ResolvedAsset {
         source: spec.clone(),
@@ -1071,12 +1072,14 @@ fn select_manifest_asset(
         });
     }
 
+    let tool_bin = tool.and_then(|tool| tool.bin.as_deref());
     select_asset(spec.provider, target, assets)
         .and_then(|selection| {
-            selection
-                .decisions
-                .into_iter()
-                .find(|decision| decision.eligible && decision.kind == ArtifactKind::BareExecutable)
+            selection.decisions.into_iter().find(|decision| {
+                decision.eligible
+                    && decision.kind == ArtifactKind::BareExecutable
+                    && tool_bin.is_none_or(|bin| decision.asset_name == bin)
+            })
         })
         .ok_or_else(|| BinpmError::AssetNotFound {
             package: spec.to_string(),
@@ -1217,6 +1220,9 @@ fn rollback_local_install_state(
                 let _ = remove_cache_ref(cache_paths, root, cmd);
             }
         }
+    }
+    if let Some(cache_paths) = &cache_paths {
+        let _ = remove_unreferenced_cache_entry(cache_paths, &record.sha256, Some(root));
     }
     let lockfile_path = root.join(LOCKFILE_FILE);
     if prior_state.lockfile_existed {
@@ -1511,6 +1517,15 @@ fn validate_package_record_metadata(
 ) -> Result<()> {
     sanitize_persisted_url(&record.asset_url)?;
     validate_sha256_digest(&record.sha256)?;
+    if let Some(cache_key) = &record.cache_key {
+        let expected_cache_key = crate::storage::cache_key(&record.sha256);
+        if cache_key != &expected_cache_key {
+            return Err(BinpmError::UnsafeCachePath {
+                path: PathBuf::from(cache_key),
+                expected: PathBuf::from(expected_cache_key),
+            });
+        }
+    }
     if let Some(cache_path) = &record.cache_path {
         let cache_path = Path::new(cache_path);
         let expected_cache_path = cache_paths.asset_path(&record.sha256);
@@ -2554,6 +2569,43 @@ mod tests {
     }
 
     #[test]
+    fn manifest_bin_override_constrains_bare_executable_selection() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("tool-linux-secondary".to_string()),
+            targets: BTreeMap::new(),
+        };
+        let assets = [
+            ReleaseAsset {
+                name: "tool-linux-primary".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-primary"
+                    .to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+            ReleaseAsset {
+                name: "tool-linux-secondary".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-secondary"
+                    .to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+        ];
+
+        let selected =
+            select_manifest_asset(&spec, Some(&tool), &target, &assets).expect("selected asset");
+
+        assert_eq!(selected.asset_name, "tool-linux-secondary");
+    }
+
+    #[test]
     fn explain_selection_prefers_installable_bare_executable_over_archive() {
         let target = linux_target();
         let assets = [
@@ -2720,6 +2772,21 @@ mod tests {
         assert!(error
             .to_string()
             .contains(&cache.asset_path(&record.sha256).display().to_string()));
+    }
+
+    #[test]
+    fn package_record_verify_rejects_stale_cache_key() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let mut record = package_record();
+        record.cache_key = Some("sha256:stale".to_string());
+
+        let error = validate_package_record_metadata(&cache, &record).expect_err("stale cache key");
+
+        assert!(error.to_string().contains("Unsafe cache path"));
+        assert!(error
+            .to_string()
+            .contains(&format!("sha256:{}", record.sha256)));
     }
 
     #[test]

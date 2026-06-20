@@ -681,8 +681,9 @@ pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Re
 
 pub fn clean_cache(paths: &CachePaths) -> Result<usize> {
     let count = cache_entry_dirs(paths)?.len();
-    remove_path_if_exists(&paths.root)?;
+    remove_path_if_exists(&paths.root.join("sha256"))?;
     ensure_dir(&paths.root)?;
+    ensure_dir(&paths.refs)?;
     Ok(count)
 }
 
@@ -1329,6 +1330,9 @@ created_at = "2026-01-01T00:00:00Z"
         let cache = CachePaths::new(temp_dir.path());
         let resolved = resolved_asset();
         populate_cache_from_bytes(&cache, &resolved, b"bytes").expect("populate cache");
+        let mut record = package_record();
+        record.cache_key = Some("sha256:cross-project".to_string());
+        write_cache_ref(&cache, temp_dir.path(), "tool", &record).expect("write cache ref");
         let bin = temp_dir.path().join("bin");
         std::fs::create_dir_all(&bin).expect("create bin");
         std::fs::write(bin.join("tool"), b"installed").expect("write bin");
@@ -1337,6 +1341,15 @@ created_at = "2026-01-01T00:00:00Z"
 
         assert_eq!(removed, 1);
         assert!(bin.join("tool").exists());
+        assert_eq!(
+            referenced_cache_keys(
+                &ScopePaths::global(temp_dir.path().join("global")),
+                None,
+                &cache
+            )
+            .expect("cache refs"),
+            BTreeSet::from(["sha256:cross-project".to_string()])
+        );
     }
 
     #[test]
