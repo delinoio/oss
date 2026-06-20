@@ -489,11 +489,20 @@ fn install_local_source(
     let cmd = repo_name(&spec).to_string();
     let manifest_path = root.join(MANIFEST_FILE);
     let mut manifest = read_manifest(&manifest_path)?;
+    let manifest_tool = manifest.tools.get(&cmd).cloned();
     let prior_state = capture_local_tool_state(&root, &cmd)?;
-    let record = install_local_tool(&root, &cmd, &spec, None, frozen_lockfile, require_verified)?;
-    manifest
-        .tools
-        .insert(cmd.clone(), manifest_tool_from_source(&spec));
+    let record = install_local_tool(
+        &root,
+        &cmd,
+        &spec,
+        manifest_tool.as_ref(),
+        frozen_lockfile,
+        require_verified,
+    )?;
+    manifest.tools.insert(
+        cmd.clone(),
+        update_manifest_tool_source(manifest_tool, &spec),
+    );
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         rollback_local_install_state(&root, &cmd, &record, prior_state);
         return Err(error);
@@ -598,6 +607,9 @@ fn install_local_tool(
     tool.source = record.source.clone();
     let mut lock_record = record.lock_record();
     lock_record.installed_path = deterministic_installed_path(cmd, record.target_os);
+    if lock_targets_conflict_with_record(tool, &lock_record) {
+        tool.targets.clear();
+    }
     tool.targets.insert(target_key, lock_record);
     if let Err(error) = write_lockfile(&lockfile_path, &lockfile)
         .and_then(|_| write_package_record(&scope_paths, cmd, &record))
@@ -931,6 +943,22 @@ fn manifest_tool_from_source(spec: &SourceSpec) -> ManifestTool {
         bin: None,
         targets: BTreeMap::new(),
     }
+}
+
+fn update_manifest_tool_source(tool: Option<ManifestTool>, spec: &SourceSpec) -> ManifestTool {
+    let mut tool = tool.unwrap_or_else(|| manifest_tool_from_source(spec));
+    tool.source = spec.source_without_version();
+    tool.version = spec.version.clone();
+    tool
+}
+
+fn lock_targets_conflict_with_record(tool: &LockTool, record: &PackageRecord) -> bool {
+    tool.source != record.source
+        || tool.targets.values().any(|target_record| {
+            target_record.source != record.source
+                || target_record.requested_version != record.requested_version
+                || target_record.release_tag != record.release_tag
+        })
 }
 
 fn manifest_checksum_source(
@@ -1806,11 +1834,12 @@ mod tests {
     use super::{
         assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
         assert_runtime_record_matches_lock, binpm_home_from_values, deterministic_installed_path,
-        github_sha256_digest, local_runtime_lock_records, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_target_override,
-        manifest_tool_from_source, parse_manifest_source, project_root_from,
-        restore_runtime_tool_state, select_manifest_asset, shell_path, shell_quote,
-        verify_lockfile_records, ArtifactKind, RuntimeToolState,
+        github_sha256_digest, local_runtime_lock_records, lock_targets_conflict_with_record,
+        lockfile_digest, manifest_checksum_source, manifest_creation_root_from,
+        manifest_target_override, manifest_tool_from_source, parse_manifest_source,
+        project_root_from, restore_runtime_tool_state, select_manifest_asset, shell_path,
+        shell_quote, update_manifest_tool_source, verify_lockfile_records, ArtifactKind,
+        RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -1947,6 +1976,58 @@ mod tests {
         assert_eq!(tool.version.as_deref(), Some("1.0.0"));
         assert!(tool.bin.is_none());
         assert!(tool.targets.is_empty());
+    }
+
+    #[test]
+    fn source_install_manifest_update_preserves_existing_overrides() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@2.0.0").expect("source spec");
+        let existing = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("custom-bin".to_string()),
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "custom-asset".to_string(),
+                    bin: "custom-bin".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+
+        let updated = update_manifest_tool_source(Some(existing), &spec);
+
+        assert_eq!(updated.source, "github:owner/tool");
+        assert_eq!(updated.version.as_deref(), Some("2.0.0"));
+        assert_eq!(updated.bin.as_deref(), Some("custom-bin"));
+        assert_eq!(updated.targets[&target.key()].asset, "custom-asset");
+    }
+
+    #[test]
+    fn lock_targets_are_cleared_when_resolution_changes() {
+        let target = linux_target();
+        let current = package_record();
+        let mut stale = package_record();
+        stale.target_os = TargetOs::Darwin;
+        stale.target_libc = TargetLibc::Any;
+        stale.release_tag = "0.9.0".to_string();
+        stale.requested_version = Some("0.9.0".to_string());
+        let tool = LockTool {
+            source: "github:owner/tool".to_string(),
+            targets: BTreeMap::from([
+                (target.key(), current.clone()),
+                ("darwin-x86_64-any".to_string(), stale),
+            ]),
+        };
+
+        assert!(lock_targets_conflict_with_record(&tool, &current));
+
+        let matching_tool = LockTool {
+            source: "github:owner/tool".to_string(),
+            targets: BTreeMap::from([(target.key(), current.clone())]),
+        };
+        assert!(!lock_targets_conflict_with_record(&matching_tool, &current));
     }
 
     #[test]

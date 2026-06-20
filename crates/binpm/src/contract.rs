@@ -418,7 +418,7 @@ impl ChecksumSource {
     }
 
     pub fn is_upstream_verified(self) -> bool {
-        !matches!(self, Self::Local | Self::Signature)
+        matches!(self, Self::GitHubDigest)
     }
 }
 

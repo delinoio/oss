@@ -1157,6 +1157,12 @@ mod tests {
 
         assert!(!record.has_verified_source());
 
+        record.checksum_source = ChecksumSource::Sidecar;
+        assert!(!record.has_verified_source());
+
+        record.checksum_source = ChecksumSource::Manifest;
+        assert!(!record.has_verified_source());
+
         record.checksum_source = ChecksumSource::GitHubDigest;
 
         assert!(record.has_verified_source());
