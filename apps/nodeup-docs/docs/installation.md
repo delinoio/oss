@@ -29,7 +29,7 @@ Direct installers verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.s
 macOS and Linux:
 
 ```bash
-./scripts/install/nodeup.sh --version latest --method package-manager
+./scripts/install/nodeup.sh --version latest --method direct
 ```
 
 Windows PowerShell:
