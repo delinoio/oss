@@ -167,6 +167,7 @@ impl ScopePaths {
 
 #[derive(Debug, Clone)]
 pub struct CachePaths {
+    pub home: PathBuf,
     pub root: PathBuf,
     pub tmp: PathBuf,
     pub refs: PathBuf,
@@ -175,6 +176,7 @@ pub struct CachePaths {
 impl CachePaths {
     pub fn new(home: &Path) -> Self {
         Self {
+            home: home.to_path_buf(),
             root: home.join("cache"),
             tmp: home.join("tmp"),
             refs: home.join("cache").join("refs"),
@@ -182,6 +184,7 @@ impl CachePaths {
     }
 
     pub fn ensure(&self) -> Result<()> {
+        ensure_dir(&self.home)?;
         ensure_dir(&self.root)?;
         self.ensure_sha256_root()?;
         ensure_dir(&self.tmp)?;
@@ -190,6 +193,7 @@ impl CachePaths {
     }
 
     fn ensure_sha256_root(&self) -> Result<()> {
+        ensure_dir(&self.home)?;
         ensure_dir(&self.root.join("sha256"))
     }
 
@@ -325,6 +329,8 @@ pub fn remove_package_record(paths: &ScopePaths, cmd: &str) -> Result<()> {
 
 pub fn list_package_records(paths: &ScopePaths) -> Result<Vec<(String, PackageRecord)>> {
     let mut records = Vec::new();
+    reject_symlinked_managed_directory(&paths.root)?;
+    reject_symlinked_managed_directory(&paths.packages)?;
     let entries = match fs::read_dir(&paths.packages) {
         Ok(entries) => entries,
         Err(source) if source.kind() == ErrorKind::NotFound => return Ok(records),
@@ -832,6 +838,7 @@ pub fn validate_installed_binary_path(
 }
 
 pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Result<usize> {
+    ensure_dir(&paths.home)?;
     ensure_dir(&paths.root)?;
     let mut removed = 0;
     for dir in cache_entry_dirs(paths)? {
@@ -861,6 +868,7 @@ pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Re
 }
 
 pub fn clean_cache(paths: &CachePaths) -> Result<usize> {
+    ensure_dir(&paths.home)?;
     ensure_dir(&paths.root)?;
     let count = cache_entry_dirs(paths)
         .map(|dirs| dirs.len())
@@ -918,6 +926,9 @@ pub fn remove_cache_ref(cache: &CachePaths, project_root: &Path, cmd: &str) -> R
 
 fn read_cache_ref_keys(cache: &CachePaths) -> Result<BTreeSet<String>> {
     let mut keys = BTreeSet::new();
+    reject_symlinked_managed_directory(&cache.home)?;
+    reject_symlinked_managed_directory(&cache.root)?;
+    reject_symlinked_managed_directory(&cache.refs)?;
     let entries = match fs::read_dir(&cache.refs) {
         Ok(entries) => entries,
         Err(source) if source.kind() == ErrorKind::NotFound => return Ok(keys),
@@ -1364,6 +1375,62 @@ mod tests {
         let error = ScopePaths::local(project)
             .ensure()
             .expect_err("symlinked scope");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cache_paths_reject_symlinked_home() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = temp_dir.path().join("outside");
+        std::fs::create_dir_all(&outside).expect("outside dir");
+        let home = temp_dir.path().join("home");
+        symlink(&outside, &home).expect("symlink cache home");
+
+        let error = CachePaths::new(&home)
+            .ensure()
+            .expect_err("symlinked cache home");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_package_records_rejects_symlinked_packages_dir() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let project = temp_dir.path().join("project");
+        let outside = temp_dir.path().join("outside");
+        std::fs::create_dir_all(project.join(".binpm")).expect("scope root");
+        std::fs::create_dir_all(&outside).expect("outside dir");
+        symlink(&outside, project.join(".binpm/packages")).expect("symlink packages");
+
+        let error =
+            list_package_records(&ScopePaths::local(project)).expect_err("symlinked packages dir");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn referenced_cache_keys_rejects_symlinked_refs_dir() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let home = temp_dir.path().join("home");
+        let outside = temp_dir.path().join("outside");
+        std::fs::create_dir_all(home.join("cache")).expect("cache root");
+        std::fs::create_dir_all(home.join("packages")).expect("global packages");
+        std::fs::create_dir_all(&outside).expect("outside dir");
+        symlink(&outside, home.join("cache/refs")).expect("symlink refs");
+
+        let global = ScopePaths::global(home.clone());
+        let cache = CachePaths::new(&home);
+        let error = referenced_cache_keys(&global, None, &cache).expect_err("symlinked refs dir");
 
         assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
     }

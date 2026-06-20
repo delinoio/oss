@@ -520,6 +520,7 @@ fn release_api_url(spec: &SourceSpec) -> String {
 
 fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32> {
     let cmd = repo_name(&spec).to_string();
+    validate_command_name(&cmd)?;
     let home = binpm_home()?;
     let scope_paths = ScopePaths::global(home.clone());
     let cache_paths = CachePaths::new(&home);
@@ -556,6 +557,7 @@ fn install_local_source(
 ) -> Result<i32> {
     let root = require_manifest_root()?;
     let cmd = repo_name(&spec).to_string();
+    validate_command_name(&cmd)?;
     let manifest_path = root.join(MANIFEST_FILE);
     let mut manifest = read_manifest(&manifest_path)?;
     let prior_manifest = manifest.clone();
@@ -1133,6 +1135,7 @@ fn install_local_from_lock(
     scope_paths.ensure()?;
     cache_paths.ensure()?;
     validate_sha256_digest(&record.sha256)?;
+    reject_symlinked_cache_entry(&cache_paths, &record.sha256)?;
     ensure_no_package_record_install_path_collision(&scope_paths, cmd, target.os)?;
     let cache_asset = cache_paths.asset_path(&record.sha256);
     let mut populated_cache_entry = false;
@@ -1759,7 +1762,13 @@ fn capture_local_remove_state(root: &Path, cmd: &str) -> Result<LocalRemoveState
 struct RuntimeToolState {
     package_record: Option<PackageRecord>,
     installed_path: Option<PathBuf>,
-    installed_bytes: Option<Vec<u8>>,
+    installed_snapshot: Option<InstalledPathSnapshot>,
+}
+
+#[derive(Debug, Clone)]
+enum InstalledPathSnapshot {
+    RegularFile(Vec<u8>),
+    Symlink(PathBuf),
 }
 
 fn capture_runtime_tool_state(paths: &ScopePaths, cmd: &str) -> Result<RuntimeToolState> {
@@ -1780,10 +1789,21 @@ fn capture_runtime_tool_state(paths: &ScopePaths, cmd: &str) -> Result<RuntimeTo
         },
         None => Some(current_platform_installed_path(paths, cmd)),
     };
-    let installed_bytes = installed_path
+    let installed_snapshot = installed_path
         .as_ref()
-        .map(|path| match fs::read(path) {
-            Ok(bytes) => Ok(Some(bytes)),
+        .map(|path| match fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => fs::read_link(path)
+                .map(|target| Some(InstalledPathSnapshot::Symlink(target)))
+                .map_err(|source| BinpmError::ReadFile {
+                    path: path.clone(),
+                    source,
+                }),
+            Ok(_) => fs::read(path)
+                .map(|bytes| Some(InstalledPathSnapshot::RegularFile(bytes)))
+                .map_err(|source| BinpmError::ReadFile {
+                    path: path.clone(),
+                    source,
+                }),
             Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(source) => Err(BinpmError::ReadFile {
                 path: path.clone(),
@@ -1795,7 +1815,7 @@ fn capture_runtime_tool_state(paths: &ScopePaths, cmd: &str) -> Result<RuntimeTo
     Ok(RuntimeToolState {
         package_record,
         installed_path,
-        installed_bytes,
+        installed_snapshot,
     })
 }
 
@@ -2115,18 +2135,25 @@ fn restore_runtime_tool_state(paths: &ScopePaths, cmd: &str, prior_state: Runtim
                 return;
             }
             let _ = write_package_record(paths, cmd, previous);
-            if let Some(bytes) = prior_state.installed_bytes {
-                let _ = restore_executable_bytes(&previous_path, &bytes);
+            if let Some(snapshot) = prior_state.installed_snapshot {
+                let _ = restore_executable_snapshot(&previous_path, snapshot);
             }
         }
         None => {
             let _ = remove_package_record(paths, cmd);
-            if let (Some(path), Some(bytes)) =
-                (prior_state.installed_path, prior_state.installed_bytes)
+            if let (Some(path), Some(snapshot)) =
+                (prior_state.installed_path, prior_state.installed_snapshot)
             {
-                let _ = restore_executable_bytes(&path, &bytes);
+                let _ = restore_executable_snapshot(&path, snapshot);
             }
         }
+    }
+}
+
+fn restore_executable_snapshot(path: &Path, snapshot: InstalledPathSnapshot) -> Result<()> {
+    match snapshot {
+        InstalledPathSnapshot::RegularFile(bytes) => restore_executable_bytes(path, &bytes),
+        InstalledPathSnapshot::Symlink(target) => restore_executable_symlink(path, &target),
     }
 }
 
@@ -2149,6 +2176,28 @@ fn restore_executable_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
         })?;
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn restore_executable_symlink(path: &Path, target: &Path) -> Result<()> {
+    use std::os::unix::fs::symlink;
+
+    remove_path_if_exists(path)?;
+    symlink(target, path).map_err(|source| BinpmError::WriteFile {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+#[cfg(windows)]
+fn restore_executable_symlink(path: &Path, target: &Path) -> Result<()> {
+    use std::os::windows::fs::symlink_file;
+
+    remove_path_if_exists(path)?;
+    symlink_file(target, path).map_err(|source| BinpmError::WriteFile {
+        path: path.to_path_buf(),
+        source,
+    })
 }
 
 fn download_asset(url: &str) -> Result<Vec<u8>> {
@@ -3015,8 +3064,8 @@ mod tests {
         validate_locked_record_artifact, validate_locked_record_current_provider_digest,
         validate_package_record_metadata, validate_package_record_source_identity,
         validate_provider_digest_evidence, validate_selected_manifest_entries,
-        verify_lockfile_records, ArtifactKind, InstalledPackage, LocalRemoveState,
-        RuntimeToolState,
+        verify_lockfile_records, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -3614,7 +3663,7 @@ mod tests {
         let state = capture_runtime_tool_state(&paths, "tool").expect("capture runtime state");
 
         assert!(state.package_record.is_some());
-        assert!(state.installed_bytes.is_none());
+        assert!(state.installed_snapshot.is_none());
     }
 
     #[test]
@@ -3635,6 +3684,29 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn rollback_capture_preserves_unrecorded_managed_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        let target = temp_dir.path().join("target-tool");
+        fs::write(&target, b"target tool").expect("write target executable");
+        let installed_path = paths.bin.join("tool");
+        symlink(&target, &installed_path).expect("symlink stale executable");
+
+        let state = capture_runtime_tool_state(&paths, "tool").expect("capture runtime state");
+        fs::remove_file(&installed_path).expect("remove stale symlink");
+        restore_runtime_tool_state(&paths, "tool", state);
+
+        assert_eq!(
+            fs::read_link(&installed_path).expect("restored stale symlink"),
+            target
+        );
+    }
+
     #[test]
     fn rollback_does_not_recreate_missing_recorded_installed_path_from_cache() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -3649,7 +3721,7 @@ mod tests {
         let state = RuntimeToolState {
             package_record: Some(record),
             installed_path: Some(installed_path.clone()),
-            installed_bytes: None,
+            installed_snapshot: None,
         };
 
         restore_runtime_tool_state(&paths, "tool", state);
@@ -3692,7 +3764,7 @@ mod tests {
             runtime: RuntimeToolState {
                 package_record: Some(record),
                 installed_path: None,
-                installed_bytes: None,
+                installed_snapshot: None,
             },
         };
 
@@ -3721,7 +3793,7 @@ mod tests {
             runtime: RuntimeToolState {
                 package_record: None,
                 installed_path: None,
-                installed_bytes: None,
+                installed_snapshot: None,
             },
         };
 
@@ -3743,7 +3815,9 @@ mod tests {
             runtime: RuntimeToolState {
                 package_record: None,
                 installed_path: Some(PathBuf::from(".binpm/bin/tool")),
-                installed_bytes: Some(b"manual tool".to_vec()),
+                installed_snapshot: Some(InstalledPathSnapshot::RegularFile(
+                    b"manual tool".to_vec(),
+                )),
             },
         };
 
@@ -4306,7 +4380,7 @@ mod tests {
             RuntimeToolState {
                 package_record: Some(record),
                 installed_path: Some(outside.clone()),
-                installed_bytes: Some(b"changed".to_vec()),
+                installed_snapshot: Some(InstalledPathSnapshot::RegularFile(b"changed".to_vec())),
             },
         );
 
