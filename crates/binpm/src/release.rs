@@ -183,7 +183,7 @@ impl ReleaseClient for GitLabReleaseClient {
     fn resolve_release(&self, source: &SourceSpec) -> Result<ReleaseSelection> {
         let releases = self.list_releases(source)?;
         let mut selection = select_release(source, releases)?;
-        verify_gitlab_asset_redirects(&self.http, std::slice::from_mut(&mut selection.release))?;
+        verify_gitlab_asset_redirects(std::slice::from_mut(&mut selection.release))?;
         Ok(selection)
     }
 }
@@ -506,7 +506,12 @@ fn is_numeric_identifier(candidate: &str) -> bool {
             .all(|character| character.is_ascii_digit())
 }
 
-fn verify_gitlab_asset_redirects(http: &Client, releases: &mut [Release]) -> Result<()> {
+fn verify_gitlab_asset_redirects(releases: &mut [Release]) -> Result<()> {
+    let http = Client::builder()
+        .user_agent(USER_AGENT)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(BinpmError::ReleaseHttpClient)?;
     for release in releases {
         for asset in &mut release.assets {
             if asset.source_archive || !is_https_url(&asset.url) {
@@ -529,7 +534,13 @@ fn verify_gitlab_asset_redirects(http: &Client, releases: &mut [Release]) -> Res
                 .head(url)
                 .send()
                 .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
-            let final_url = response.url().as_str().to_string();
+            let final_url = response
+                .headers()
+                .get(header::LOCATION)
+                .and_then(|location| location.to_str().ok())
+                .and_then(|location| response.url().join(location).ok())
+                .map(|location| location.to_string())
+                .unwrap_or_else(|| response.url().as_str().to_string());
             let final_url_https = is_https_url(&final_url);
             debug!(
                 release_tag = release.tag,
@@ -751,11 +762,8 @@ mod tests {
             stability_reason: None,
         };
 
-        verify_gitlab_asset_redirects(
-            &reqwest::blocking::Client::new(),
-            std::slice::from_mut(&mut release),
-        )
-        .expect("source archives are skipped without network access");
+        verify_gitlab_asset_redirects(std::slice::from_mut(&mut release))
+            .expect("source archives are skipped without network access");
 
         assert_eq!(release.assets[0].final_url_https, None);
     }
@@ -795,11 +803,8 @@ mod tests {
             stability_reason: None,
         };
 
-        verify_gitlab_asset_redirects(
-            &reqwest::blocking::Client::new(),
-            std::slice::from_mut(&mut release),
-        )
-        .expect("non-candidate links are skipped without network access");
+        verify_gitlab_asset_redirects(std::slice::from_mut(&mut release))
+            .expect("non-candidate links are skipped without network access");
 
         assert!(release
             .assets

@@ -499,8 +499,9 @@ fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32
         None,
     )?;
     if let Err(error) = write_package_record(&scope_paths, &cmd, &record) {
-        rollback_failed_install(&scope_paths, &cmd, &record, &cache_paths, None)?;
+        let rollback_result = rollback_failed_install(&scope_paths, &cmd, &record);
         restore_runtime_tool_state(&scope_paths, &cmd, prior_state);
+        rollback_result?;
         return Err(error);
     }
     println!("installed {cmd} {}", record.installed_path);
@@ -1100,24 +1101,8 @@ fn rollback_failed_install(
     scope_paths: &ScopePaths,
     cmd: &str,
     record: &PackageRecord,
-    cache_paths: &CachePaths,
-    local_root: Option<&Path>,
 ) -> Result<()> {
     remove_installed_binary(scope_paths, cmd, record)?;
-    let Some(cache_key) = &record.cache_key else {
-        return Ok(());
-    };
-    let home = cache_paths
-        .root
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or(BinpmError::MissingGlobalHome)?;
-    let global_paths = ScopePaths::global(home);
-    let local_paths = local_root.map(|root| ScopePaths::local(root.to_path_buf()));
-    let referenced = referenced_cache_keys(&global_paths, local_paths.as_ref(), cache_paths)?;
-    if !referenced.contains(cache_key) {
-        remove_path_if_exists(&cache_paths.entry_dir(&record.sha256))?;
-    }
     Ok(())
 }
 
@@ -1230,9 +1215,6 @@ fn rollback_local_install_state(
             }
         }
     }
-    if let Some(cache_paths) = &cache_paths {
-        let _ = remove_unreferenced_cache_entry(cache_paths, &record.sha256, Some(root));
-    }
     let lockfile_path = root.join(LOCKFILE_FILE);
     if prior_state.lockfile_existed {
         let _ = write_lockfile(&lockfile_path, &prior_state.lockfile);
@@ -1337,6 +1319,8 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if let Err(error) = validate_download_url(attempt.url().as_str()) {
                 attempt.error(error)
+            } else if attempt.previous().len() >= 10 {
+                attempt.error("too many redirects while downloading release asset")
             } else {
                 attempt.follow()
             }
@@ -1506,6 +1490,11 @@ fn verify(args: VerifyArgs) -> Result<i32> {
                 lock_record,
                 &record,
             )?;
+        } else if let Some(root) = &root {
+            return Err(BinpmError::StaleLockfile {
+                path: root.join(LOCKFILE_FILE),
+                cmd,
+            });
         }
         if args.require_verified && !record.has_verified_source() {
             return Err(BinpmError::VerificationRequired {

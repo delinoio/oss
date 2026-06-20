@@ -704,12 +704,16 @@ pub fn validate_installed_binary_path(
 
 pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Result<usize> {
     let mut removed = 0;
-    for (dir, record) in read_cache_record_entries(paths)? {
+    for dir in cache_entry_dirs(paths)? {
         let cache_key = dir
             .file_name()
             .and_then(|name| name.to_str())
             .map(cache_key)
-            .unwrap_or_else(|| record.cache_key.clone());
+            .unwrap_or_else(|| {
+                read_toml::<CacheRecord>(&dir.join("record.toml"))
+                    .map(|record| record.cache_key)
+                    .unwrap_or_else(|_| format!("sha256:{}", dir.display()))
+            });
         if referenced_keys.contains(&cache_key) {
             continue;
         }
@@ -1348,6 +1352,35 @@ created_at = "2026-01-01T00:00:00Z"
         assert_eq!(removed, 1);
         assert!(!entry.exists());
         assert!(outside.join("keep").exists());
+    }
+
+    #[test]
+    fn prune_removes_entry_with_missing_metadata() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let entry = cache.root.join("sha256").join("orphan");
+        std::fs::create_dir_all(&entry).expect("create entry");
+        std::fs::write(entry.join("asset"), b"orphan").expect("write asset");
+
+        let removed = prune_cache(&cache, &BTreeSet::new()).expect("prune");
+
+        assert_eq!(removed, 1);
+        assert!(!entry.exists());
+    }
+
+    #[test]
+    fn prune_removes_entry_with_malformed_metadata() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let entry = cache.root.join("sha256").join("malformed");
+        std::fs::create_dir_all(&entry).expect("create entry");
+        std::fs::write(entry.join("asset"), b"malformed").expect("write asset");
+        std::fs::write(entry.join("record.toml"), "not = [valid").expect("write record");
+
+        let removed = prune_cache(&cache, &BTreeSet::new()).expect("prune");
+
+        assert_eq!(removed, 1);
+        assert!(!entry.exists());
     }
 
     #[test]
