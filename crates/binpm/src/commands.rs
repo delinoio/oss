@@ -1537,14 +1537,18 @@ fn validate_package_record_metadata(
 ) -> Result<()> {
     sanitize_persisted_url(&record.asset_url)?;
     validate_sha256_digest(&record.sha256)?;
-    if let Some(cache_key) = &record.cache_key {
-        let expected_cache_key = crate::storage::cache_key(&record.sha256);
-        if cache_key != &expected_cache_key {
-            return Err(BinpmError::UnsafeCachePath {
-                path: PathBuf::from(cache_key),
-                expected: PathBuf::from(expected_cache_key),
-            });
-        }
+    let expected_cache_key = crate::storage::cache_key(&record.sha256);
+    let Some(cache_key) = &record.cache_key else {
+        return Err(BinpmError::UnsafeCachePath {
+            path: PathBuf::from("<missing cache key>"),
+            expected: PathBuf::from(expected_cache_key),
+        });
+    };
+    if cache_key != &expected_cache_key {
+        return Err(BinpmError::UnsafeCachePath {
+            path: PathBuf::from(cache_key),
+            expected: PathBuf::from(expected_cache_key),
+        });
     }
     if let Some(cache_path) = &record.cache_path {
         let cache_path = Path::new(cache_path);
@@ -1670,6 +1674,14 @@ fn verify_lockfile_records(
     }
     for (cmd, tool) in lockfile.tools {
         validate_command_name(&cmd)?;
+        if let Some((manifest, _)) = manifest {
+            if !manifest.tools.contains_key(&cmd) {
+                return Err(BinpmError::StaleLockfile {
+                    path: lockfile_path.to_path_buf(),
+                    cmd: cmd.clone(),
+                });
+            }
+        }
         for (target_key, record) in tool.targets {
             let target = HostTarget::from_str(&target_key)?;
             let spec = SourceSpec::from_str(
@@ -2372,6 +2384,35 @@ mod tests {
     }
 
     #[test]
+    fn local_lockfile_verify_rejects_tools_absent_from_manifest() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let manifest = Manifest {
+            version: 1,
+            tools: BTreeMap::new(),
+        };
+        let lockfile = Lockfile {
+            version: 1,
+            tools: BTreeMap::from([(
+                "tool".to_string(),
+                LockTool {
+                    source: "github:owner/tool".to_string(),
+                    targets: BTreeMap::from([("linux-x86_64-gnu".to_string(), package_record())]),
+                },
+            )]),
+        };
+
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            Some((&manifest, temp_dir.path())),
+            true,
+        )
+        .expect_err("lock-only tool is stale");
+
+        assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
     fn github_digest_parser_accepts_only_sha256_digests() {
         assert_eq!(
             github_sha256_digest(Some(
@@ -2821,6 +2862,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let cache = CachePaths::new(temp_dir.path());
         let mut record = package_record();
+        record.cache_key = Some(crate::storage::cache_key(&record.sha256));
         record.asset_url =
             "https://github.com/owner/tool/releases/download/1.0.0/tool?token=secret".to_string();
 
@@ -2836,6 +2878,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let cache = CachePaths::new(temp_dir.path());
         let mut record = package_record();
+        record.cache_key = Some(crate::storage::cache_key(&record.sha256));
         record.cache_path = Some(
             temp_dir
                 .path()
@@ -2861,6 +2904,20 @@ mod tests {
         record.cache_key = Some("sha256:stale".to_string());
 
         let error = validate_package_record_metadata(&cache, &record).expect_err("stale cache key");
+
+        assert!(error.to_string().contains("Unsafe cache path"));
+        assert!(error
+            .to_string()
+            .contains(&format!("sha256:{}", record.sha256)));
+    }
+
+    #[test]
+    fn package_record_verify_requires_cache_key() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let record = package_record();
+
+        let error = validate_package_record_metadata(&cache, &record).expect_err("missing key");
 
         assert!(error.to_string().contains("Unsafe cache path"));
         assert!(error

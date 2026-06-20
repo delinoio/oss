@@ -480,6 +480,42 @@ pub fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     })
 }
 
+fn atomic_write_executable(path: &Path, bytes: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        ensure_dir(parent)?;
+    }
+
+    let tmp = tmp_sibling(path);
+    let write_result = (|| {
+        {
+            let mut file = fs::File::create(&tmp).map_err(|source| BinpmError::WriteFile {
+                path: tmp.clone(),
+                source,
+            })?;
+            file.write_all(bytes)
+                .map_err(|source| BinpmError::WriteFile {
+                    path: tmp.clone(),
+                    source,
+                })?;
+            file.sync_all().map_err(|source| BinpmError::WriteFile {
+                path: tmp.clone(),
+                source,
+            })?;
+        }
+        make_executable(&tmp)?;
+        replace_path(&tmp, path).map_err(|source| BinpmError::RenamePath {
+            from: tmp.clone(),
+            to: path.to_path_buf(),
+            source,
+        })
+    })();
+
+    if write_result.is_err() {
+        let _ = remove_path_if_exists(&tmp);
+    }
+    write_result
+}
+
 #[cfg(windows)]
 fn replace_path(from: &Path, to: &Path) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
@@ -621,9 +657,7 @@ pub fn install_bare_executable(cache_asset: &Path, installed_path: &Path) -> Res
         path: cache_asset.to_path_buf(),
         source,
     })?;
-    atomic_write_bytes(installed_path, &bytes)?;
-    make_executable(installed_path)?;
-    Ok(())
+    atomic_write_executable(installed_path, &bytes)
 }
 
 pub fn managed_installed_path(paths: &ScopePaths, cmd: &str, target_os: TargetOs) -> PathBuf {

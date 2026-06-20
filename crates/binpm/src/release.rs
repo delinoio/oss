@@ -4,6 +4,7 @@ use serde::{de::DeserializeOwned, Deserialize};
 use tracing::{debug, info};
 
 use crate::{
+    assets::{classify_artifact, ArtifactKind},
     contract::{SourceProvider, SourceSpec},
     error::{BinpmError, Result},
 };
@@ -181,7 +182,9 @@ impl ReleaseClient for GitLabReleaseClient {
 
     fn resolve_release(&self, source: &SourceSpec) -> Result<ReleaseSelection> {
         let releases = self.list_releases(source)?;
-        select_release(source, releases)
+        let mut selection = select_release(source, releases)?;
+        verify_gitlab_asset_redirects(&self.http, std::slice::from_mut(&mut selection.release))?;
+        Ok(selection)
     }
 }
 
@@ -503,6 +506,50 @@ fn is_numeric_identifier(candidate: &str) -> bool {
             .all(|character| character.is_ascii_digit())
 }
 
+fn verify_gitlab_asset_redirects(http: &Client, releases: &mut [Release]) -> Result<()> {
+    for release in releases {
+        for asset in &mut release.assets {
+            if asset.source_archive || !is_https_url(&asset.url) {
+                continue;
+            }
+
+            if !matches!(
+                classify_artifact(&asset.name, asset.source_archive),
+                ArtifactKind::Archive(_) | ArtifactKind::BareExecutable
+            ) {
+                continue;
+            }
+
+            let url = asset.provider_url.as_deref().unwrap_or(&asset.url);
+            if !is_https_url(url) {
+                continue;
+            }
+
+            let response = http
+                .head(url)
+                .send()
+                .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
+            let final_url = response.url().as_str().to_string();
+            let final_url_https = is_https_url(&final_url);
+            debug!(
+                release_tag = release.tag,
+                asset_name = asset.name,
+                asset_url = sanitize_url(url),
+                final_url = sanitize_url(&final_url),
+                final_url_https,
+                "Resolved GitLab asset redirect target"
+            );
+            asset.final_url_https = Some(final_url_https);
+        }
+    }
+
+    Ok(())
+}
+
+fn is_https_url(url: &str) -> bool {
+    url.to_ascii_lowercase().starts_with("https://")
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};
@@ -510,10 +557,10 @@ mod tests {
 
     use super::{
         has_prerelease_tag, matching_tag_candidates, next_page_url, releases_page_url,
-        select_release, sort_gitlab_releases, GitHubReleaseClient, GitLabRelease,
-        GitLabReleaseClient, Release,
+        select_release, sort_gitlab_releases, verify_gitlab_asset_redirects, GitHubReleaseClient,
+        GitLabRelease, GitLabReleaseClient, Release,
     };
-    use crate::contract::SourceSpec;
+    use crate::{contract::SourceSpec, release::ReleaseAsset};
 
     #[test]
     fn github_client_uses_dot_com_api_for_implicit_host() {
@@ -685,5 +732,78 @@ mod tests {
 
         assert_eq!(releases[0].tag, "v1.0.0");
         assert_eq!(releases[1].tag, "v9.0.0");
+    }
+
+    #[test]
+    fn gitlab_redirect_verification_can_be_limited_to_selected_release() {
+        let mut release = Release {
+            tag: "v1.0.0".to_string(),
+            assets: vec![ReleaseAsset {
+                name: "source".to_string(),
+                url: "https://example.com/source.tar.gz".to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: true,
+                final_url_https: None,
+            }],
+            stable: true,
+            released_at: None,
+            stability_reason: None,
+        };
+
+        verify_gitlab_asset_redirects(
+            &reqwest::blocking::Client::new(),
+            std::slice::from_mut(&mut release),
+        )
+        .expect("source archives are skipped without network access");
+
+        assert_eq!(release.assets[0].final_url_https, None);
+    }
+
+    #[test]
+    fn gitlab_redirect_verification_skips_non_candidate_links() {
+        let mut release = Release {
+            tag: "v1.0.0".to_string(),
+            assets: vec![
+                ReleaseAsset {
+                    name: "tool-x86_64-unknown-linux-gnu.tar.gz.sha256".to_string(),
+                    url: "https://127.0.0.1:9/tool.tar.gz.sha256".to_string(),
+                    provider_url: None,
+                    digest: None,
+                    source_archive: false,
+                    final_url_https: None,
+                },
+                ReleaseAsset {
+                    name: "tool.dmg".to_string(),
+                    url: "https://127.0.0.1:9/tool.dmg".to_string(),
+                    provider_url: None,
+                    digest: None,
+                    source_archive: false,
+                    final_url_https: None,
+                },
+                ReleaseAsset {
+                    name: "latest.json".to_string(),
+                    url: "https://127.0.0.1:9/latest.json".to_string(),
+                    provider_url: None,
+                    digest: None,
+                    source_archive: false,
+                    final_url_https: None,
+                },
+            ],
+            stable: true,
+            released_at: None,
+            stability_reason: None,
+        };
+
+        verify_gitlab_asset_redirects(
+            &reqwest::blocking::Client::new(),
+            std::slice::from_mut(&mut release),
+        )
+        .expect("non-candidate links are skipped without network access");
+
+        assert!(release
+            .assets
+            .iter()
+            .all(|asset| asset.final_url_https.is_none()));
     }
 }
