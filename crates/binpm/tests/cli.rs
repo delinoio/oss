@@ -589,6 +589,53 @@ signature_verified = false
 }
 
 #[test]
+fn local_remove_without_package_record_preserves_unowned_binary() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(project.join(".binpm").join("bin")).expect("create bin");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    fs::write(project.join(".binpm").join("bin").join("tool"), "manual")
+        .expect("write manual executable");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "tool"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed tool"));
+
+    assert_eq!(
+        fs::read_to_string(project.join(".binpm").join("bin").join("tool"))
+            .expect("read manual executable"),
+        "manual"
+    );
+    let manifest = fs::read_to_string(project.join("binpm.toml")).expect("read manifest");
+    let lockfile = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
+    assert!(!manifest.contains("tools.tool"));
+    assert!(!lockfile.contains("tools.tool"));
+}
+
+#[test]
 fn local_remove_missing_tool_does_not_create_lockfile() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");

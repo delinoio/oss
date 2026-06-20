@@ -1367,22 +1367,25 @@ fn validate_locked_record_current_provider_digest(
     record: &PackageRecord,
     assets: &[ReleaseAsset],
 ) -> Result<()> {
-    if record.checksum_source != ChecksumSource::GitHubDigest {
-        return Ok(());
-    }
-    let current_digest = assets
-        .iter()
-        .find(|asset| asset.name == record.asset_name)
-        .and_then(|asset| github_sha256_digest(asset.digest.as_deref()));
-    if current_digest.as_deref() == Some(record.sha256.as_str())
-        && record.provider_digest_sha256.as_deref() == Some(record.sha256.as_str())
-    {
+    if record_matches_current_provider_digest(record, assets) {
         return Ok(());
     }
     Err(BinpmError::StaleLockfile {
         path: lockfile_path.to_path_buf(),
         cmd: cmd.to_string(),
     })
+}
+
+fn record_matches_current_provider_digest(record: &PackageRecord, assets: &[ReleaseAsset]) -> bool {
+    if record.checksum_source != ChecksumSource::GitHubDigest {
+        return true;
+    }
+    let current_digest = assets
+        .iter()
+        .find(|asset| asset.name == record.asset_name)
+        .and_then(|asset| github_sha256_digest(asset.digest.as_deref()));
+    current_digest.as_deref() == Some(record.sha256.as_str())
+        && record.provider_digest_sha256.as_deref() == Some(record.sha256.as_str())
 }
 
 fn locked_record_download_url(record: &PackageRecord) -> Result<String> {
@@ -2196,7 +2199,7 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     let cleanup_result = (|| {
         let mut remaining_manifest = manifest.clone();
         remaining_manifest.tools.remove(cmd);
-        let (stale_installed_path, stale_target_os) = if record_path.exists() {
+        let stale_installed = if record_path.exists() {
             let record = read_package_record(&record_path)?;
             let installed_path = managed_installed_path(&paths, cmd, record.target_os);
             if !is_manifest_managed_installed_path(
@@ -2210,20 +2213,21 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
                     Err(error) => return Err(error),
                 }
             }
-            (installed_path, record.target_os)
+            Some((installed_path, record.target_os))
         } else {
-            let target_os = HostTarget::current()?.os;
-            (current_platform_installed_path(&paths, cmd), target_os)
+            None
         };
         remove_package_record(&paths, cmd)?;
         remove_cache_ref(&CachePaths::new(&binpm_home()?), &root, cmd)?;
-        if !is_manifest_managed_installed_path(
-            &paths,
-            &remaining_manifest.tools,
-            &stale_installed_path,
-            stale_target_os,
-        ) {
-            remove_path_if_exists(&stale_installed_path)?;
+        if let Some((stale_installed_path, stale_target_os)) = stale_installed {
+            if !is_manifest_managed_installed_path(
+                &paths,
+                &remaining_manifest.tools,
+                &stale_installed_path,
+                stale_target_os,
+            ) {
+                remove_path_if_exists(&stale_installed_path)?;
+            }
         }
         Ok(())
     })();
@@ -2407,6 +2411,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
             });
         }
         validate_provider_digest_evidence(&record)?;
+        validate_package_record_current_provider_digest(&record)?;
         validate_package_record_metadata(&cache_paths, &record)?;
         verify_runtime_cache_bytes(&cache_paths, &record)?;
         let installed_path = validate_installed_binary_path(&paths, &cmd, &record)?;
@@ -2494,6 +2499,21 @@ fn validate_provider_digest_evidence(record: &PackageRecord) -> Result<()> {
         });
     }
     Ok(())
+}
+
+fn validate_package_record_current_provider_digest(record: &PackageRecord) -> Result<()> {
+    if record.checksum_source != ChecksumSource::GitHubDigest {
+        return Ok(());
+    }
+    let mut spec = SourceSpec::from_str(&record.source)?;
+    spec.version = Some(record.release_tag.clone());
+    let release = client_for_source(&spec)?.resolve_release(&spec)?.release;
+    if record_matches_current_provider_digest(record, &release.assets) {
+        return Ok(());
+    }
+    Err(BinpmError::ProviderDigestMismatch {
+        package: record.package_spec.clone(),
+    })
 }
 
 fn local_runtime_lock_records(
@@ -2983,14 +3003,15 @@ mod tests {
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
         manifest_checksum_source, manifest_creation_root_from, manifest_root_or_creation_root_from,
         manifest_target_override, manifest_tool_from_source, parse_manifest_source,
-        project_root_from, remove_global_tool_from_paths, remove_local_manifest_orphans,
-        restore_local_remove_state, restore_runtime_tool_state, select_manifest_asset,
-        selected_asset_display_url, shell_path, shell_quote, snapshot_cache_metadata,
-        source_install_scope, update_manifest_tool_source, validate_locked_record_artifact,
-        validate_locked_record_current_provider_digest, validate_package_record_metadata,
-        validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verify_lockfile_records, ArtifactKind,
-        InstalledPackage, LocalRemoveState, RuntimeToolState,
+        project_root_from, record_matches_current_provider_digest, remove_global_tool_from_paths,
+        remove_local_manifest_orphans, restore_local_remove_state, restore_runtime_tool_state,
+        select_manifest_asset, selected_asset_display_url, shell_path, shell_quote,
+        snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
+        validate_locked_record_artifact, validate_locked_record_current_provider_digest,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries,
+        verify_lockfile_records, ArtifactKind, InstalledPackage, LocalRemoveState,
+        RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4531,6 +4552,38 @@ mod tests {
         .expect_err("changed digest rejected");
 
         assert!(matches!(error, BinpmError::StaleLockfile { .. }));
+    }
+
+    #[test]
+    fn package_record_provider_digest_requires_matching_current_asset_digest() {
+        let mut record = package_record();
+        mark_github_verified(&mut record);
+        let assets = [ReleaseAsset {
+            name: record.asset_name.clone(),
+            url: record.asset_url.clone(),
+            provider_url: None,
+            digest: Some(format!("sha256:{}", record.sha256)),
+            source_archive: false,
+            final_url_https: None,
+        }];
+
+        assert!(record_matches_current_provider_digest(&record, &assets));
+    }
+
+    #[test]
+    fn package_record_provider_digest_rejects_missing_current_asset_digest() {
+        let mut record = package_record();
+        mark_github_verified(&mut record);
+        let assets = [ReleaseAsset {
+            name: record.asset_name.clone(),
+            url: record.asset_url.clone(),
+            provider_url: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+        }];
+
+        assert!(!record_matches_current_provider_digest(&record, &assets));
     }
 
     #[test]
