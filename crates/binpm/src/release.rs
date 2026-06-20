@@ -584,6 +584,8 @@ fn resolve_gitlab_asset_redirect_url(http: &Client, url: &str) -> Result<String>
         let response = http
             .head(&current_url)
             .send()
+            .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?
+            .error_for_status()
             .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
         let Some(next_url) = response
             .headers()

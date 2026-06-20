@@ -692,6 +692,7 @@ fn install_local_manifest(
         }
     }
     let cache_paths = CachePaths::new(&binpm_home()?);
+    let mut committed_deferred_cache_hits: Vec<String> = Vec::new();
     for (_, _, _, deferred_cache_hit, _) in &completed {
         if let Some(resolved) = deferred_cache_hit {
             if let Err(error) = record_verified_cache_hit(&cache_paths, resolved) {
@@ -722,7 +723,13 @@ fn install_local_manifest(
                         )?;
                     }
                 }
+                for sha256 in committed_deferred_cache_hits {
+                    remove_unreferenced_cache_entry(&cache_paths, &sha256, Some(&root))?;
+                }
                 return Err(error);
+            }
+            if let Some(sha256) = &resolved.provider_digest_sha256 {
+                committed_deferred_cache_hits.push(sha256.clone());
             }
         }
     }
@@ -1070,6 +1077,7 @@ fn assert_lock_record_matches_source_and_target(
         || record.source_provider != spec.provider
         || record.source_host != spec.host
         || record.source_path != spec.path
+        || record.package_spec != expected_package_spec(spec, record)
         || record.target_os != target.os
         || record.target_arch != target.arch
         || record.target_libc != target.libc
@@ -1095,6 +1103,15 @@ fn assert_lock_record_matches_source_and_target(
         });
     }
     Ok(())
+}
+
+fn expected_package_spec(spec: &SourceSpec, record: &PackageRecord) -> String {
+    let source = spec.source_without_version();
+    if let Some(version) = &record.requested_version {
+        format!("{source}@{version}")
+    } else {
+        format!("{}@{}", source, record.release_tag)
+    }
 }
 
 fn validate_locked_record_artifact(
@@ -1872,12 +1889,6 @@ fn restore_runtime_tool_state(paths: &ScopePaths, cmd: &str, prior_state: Runtim
             let _ = write_package_record(paths, cmd, previous);
             if let Some(bytes) = prior_state.installed_bytes {
                 let _ = restore_executable_bytes(&previous_path, &bytes);
-            } else if let Some(cache_path) = &previous.cache_path {
-                let expected_cache_path =
-                    binpm_home().map(|home| CachePaths::new(&home).asset_path(&previous.sha256));
-                if expected_cache_path.as_ref().ok() == Some(&PathBuf::from(cache_path)) {
-                    let _ = install_bare_executable(Path::new(cache_path), &previous_path);
-                }
             }
         }
         None => {
@@ -1952,10 +1963,12 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     let prior_state = capture_local_remove_state(&root, cmd)?;
     let manifest = read_manifest(&manifest_path)?;
     if !manifest.tools.contains_key(cmd) {
-        return Err(BinpmError::MissingTool {
-            cmd: cmd.to_string(),
-            manifest: manifest_path,
-        });
+        if !has_local_runtime_or_lock_state(cmd, &prior_state) {
+            return Err(BinpmError::MissingTool {
+                cmd: cmd.to_string(),
+                manifest: manifest_path,
+            });
+        }
     }
     let record_path = package_record_path(&paths, cmd);
     let cleanup_result = (|| {
@@ -2018,6 +2031,12 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     }
     println!("removed {cmd}");
     Ok(0)
+}
+
+fn has_local_runtime_or_lock_state(cmd: &str, state: &LocalRemoveState) -> bool {
+    state.lockfile.tools.contains_key(cmd)
+        || state.runtime.package_record.is_some()
+        || state.runtime.installed_bytes.is_some()
 }
 
 fn remove_global_tool(cmd: &str) -> Result<i32> {
@@ -2655,15 +2674,16 @@ mod tests {
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
         commit_deferred_cache_hit, deterministic_installed_path,
         ensure_no_global_install_path_collision, github_sha256_digest, has_current_cache_record,
-        local_runtime_lock_records, lock_targets_conflict_with_manifest,
-        lock_targets_conflict_with_record, lockfile_digest, manifest_checksum_source,
-        manifest_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        parse_manifest_source, project_root_from, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, restore_local_remove_state, restore_runtime_tool_state,
-        select_explain_asset, select_manifest_asset, shell_path, shell_quote, source_install_scope,
-        update_manifest_tool_source, validate_locked_record_artifact,
-        validate_package_record_metadata, verify_lockfile_records, verify_runtime_cache_bytes,
-        ArtifactKind, InstalledPackage, RuntimeToolState,
+        has_local_runtime_or_lock_state, local_runtime_lock_records,
+        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
+        manifest_checksum_source, manifest_creation_root_from, manifest_target_override,
+        manifest_tool_from_source, parse_manifest_source, project_root_from,
+        remove_global_tool_from_paths, remove_local_manifest_orphans, restore_local_remove_state,
+        restore_runtime_tool_state, select_explain_asset, select_manifest_asset, shell_path,
+        shell_quote, source_install_scope, update_manifest_tool_source,
+        validate_locked_record_artifact, validate_package_record_metadata, verify_lockfile_records,
+        verify_runtime_cache_bytes, ArtifactKind, InstalledPackage, LocalRemoveState,
+        RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -2994,7 +3014,6 @@ mod tests {
         let mut darwin_record = package_record();
         darwin_record.target_os = TargetOs::Darwin;
         darwin_record.target_libc = TargetLibc::Any;
-        darwin_record.package_spec = "github:owner/tool@1.0.0#darwin".to_string();
         darwin_record.checksum_source = ChecksumSource::Local;
         let lockfile = Lockfile {
             version: 1,
@@ -3014,7 +3033,7 @@ mod tests {
             verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
                 .expect_err("unverified target is rejected");
 
-        assert!(error.to_string().contains("github:owner/tool@1.0.0#darwin"));
+        assert!(error.to_string().contains("github:owner/tool@1.0.0"));
     }
 
     #[test]
@@ -3128,6 +3147,29 @@ mod tests {
     }
 
     #[test]
+    fn rollback_does_not_recreate_missing_recorded_installed_path_from_cache() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        let installed_path = paths.bin.join("tool");
+        let cache_path = temp_dir.path().join("cache-tool");
+        fs::write(&cache_path, b"cached tool").expect("write cache");
+        let mut record = package_record();
+        record.installed_path = installed_path.display().to_string();
+        record.cache_path = Some(cache_path.display().to_string());
+        let state = RuntimeToolState {
+            package_record: Some(record),
+            installed_path: Some(installed_path.clone()),
+            installed_bytes: None,
+        };
+
+        restore_runtime_tool_state(&paths, "tool", state);
+
+        assert!(!installed_path.exists());
+        assert!(paths.packages.join("tool.toml").exists());
+    }
+
+    #[test]
     fn rollback_capture_rejects_unreadable_managed_installed_path() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let paths = ScopePaths::local(temp_dir.path().to_path_buf());
@@ -3142,6 +3184,59 @@ mod tests {
             capture_runtime_tool_state(&paths, "tool").expect_err("managed read error is fatal");
 
         assert!(error.to_string().contains("Failed to read"));
+    }
+
+    #[test]
+    fn local_remove_missing_manifest_tool_detects_stale_runtime_state() {
+        let mut record = package_record();
+        record.installed_path = ".binpm/bin/tool".to_string();
+        let state = LocalRemoveState {
+            manifest: Manifest {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+            lockfile_existed: false,
+            lockfile: Lockfile {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+            runtime: RuntimeToolState {
+                package_record: Some(record),
+                installed_path: None,
+                installed_bytes: None,
+            },
+        };
+
+        assert!(has_local_runtime_or_lock_state("tool", &state));
+    }
+
+    #[test]
+    fn local_remove_missing_manifest_tool_detects_stale_lock_state() {
+        let record = package_record();
+        let state = LocalRemoveState {
+            manifest: Manifest {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+            lockfile_existed: true,
+            lockfile: Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([("linux-x86_64-gnu".to_string(), record)]),
+                    },
+                )]),
+            },
+            runtime: RuntimeToolState {
+                package_record: None,
+                installed_path: None,
+                installed_bytes: None,
+            },
+        };
+
+        assert!(has_local_runtime_or_lock_state("tool", &state));
     }
 
     #[test]
@@ -3512,6 +3607,26 @@ mod tests {
         let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
         let mut record = package_record();
         record.source_path = "attacker/tool".to_string();
+
+        let error = assert_lock_record_matches_source_and_target(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &target,
+            &record,
+        )
+        .expect_err("stale lockfile");
+
+        assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn frozen_lock_rejects_mismatched_package_spec() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let mut record = package_record();
+        record.package_spec = "github:attacker/tool@1.0.0".to_string();
 
         let error = assert_lock_record_matches_source_and_target(
             &temp_dir.path().join("binpm.lock"),
