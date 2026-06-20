@@ -487,7 +487,7 @@ fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32
     let scope_paths = ScopePaths::global(home.clone());
     let cache_paths = CachePaths::new(&home);
     let prior_state = capture_runtime_tool_state(&scope_paths, &cmd)?;
-    let record = install_resolved(
+    let install = install_resolved(
         &scope_paths,
         &cache_paths,
         &cmd,
@@ -496,11 +496,15 @@ fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32
         require_verified,
         None,
     )?;
+    let record = install.record;
     if let Err(error) = write_package_record(&scope_paths, &cmd, &record) {
         let rollback_result = rollback_failed_install(&scope_paths, &cmd, &record);
         restore_runtime_tool_state(&scope_paths, &cmd, prior_state);
-        let cache_cleanup_result =
-            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, None);
+        let cache_cleanup_result = if install.populated_cache_entry {
+            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, None)
+        } else {
+            Ok(())
+        };
         rollback_result?;
         cache_cleanup_result?;
         return Err(error);
@@ -610,7 +614,7 @@ fn install_local_tool(
     let cache_paths = CachePaths::new(&home);
     let prior_state = capture_local_tool_state(root, cmd)?;
     let mut lockfile = read_lockfile(&lockfile_path)?;
-    let record = install_resolved(
+    let install = install_resolved(
         &scope_paths,
         &cache_paths,
         cmd,
@@ -619,6 +623,7 @@ fn install_local_tool(
         require_verified,
         Some(root),
     )?;
+    let record = install.record;
 
     let target_key = HostTarget {
         os: record.target_os,
@@ -655,10 +660,18 @@ fn install_local_tool(
         .and_then(|_| write_cache_ref(&cache_paths, root, cmd, &record))
     {
         rollback_local_install_state(root, cmd, &record, prior_state);
+        if install.populated_cache_entry {
+            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(root))?;
+        }
         return Err(error);
     }
     println!("installed {cmd} {}", record.installed_path);
     Ok(record)
+}
+
+struct InstalledPackage {
+    record: PackageRecord,
+    populated_cache_entry: bool,
 }
 
 fn install_resolved(
@@ -669,7 +682,7 @@ fn install_resolved(
     tool: Option<&ManifestTool>,
     require_verified: bool,
     local_root: Option<&Path>,
-) -> Result<PackageRecord> {
+) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
     scope_paths.ensure()?;
     cache_paths.ensure()?;
@@ -697,34 +710,53 @@ fn install_resolved(
             record_verified_cache_hit(cache_paths, &resolved)?;
             let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
             install_bare_executable(&cache_asset, &installed_path)?;
-            return package_record_from_resolved(
-                cmd,
-                &resolved,
-                expected.clone(),
-                &cache_asset,
-                &installed_path,
-                true,
-            );
+            return Ok(InstalledPackage {
+                record: package_record_from_resolved(
+                    cmd,
+                    &resolved,
+                    expected.clone(),
+                    &cache_asset,
+                    &installed_path,
+                    true,
+                )?,
+                populated_cache_entry: false,
+            });
         }
     }
     let bytes = download_asset(&resolved.decision.download_url)?;
+    let sha256 = format!("{:x}", Sha256::digest(&bytes));
+    let cache_asset = cache_paths.asset_path(&sha256);
+    let had_verified_cache_entry =
+        cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, &sha256).is_ok();
     if let Some(expected) = &resolved.provider_digest_sha256 {
-        let actual = format!("{:x}", Sha256::digest(&bytes));
-        if &actual != expected {
+        if &sha256 != expected {
             return Err(BinpmError::DigestMismatch {
                 path: cache_paths.asset_path(expected),
                 expected: expected.clone(),
-                actual,
+                actual: sha256,
             });
         }
     }
     let (sha256, cache_asset) = populate_cache_from_bytes(cache_paths, &resolved, &bytes)?;
+    let populated_cache_entry = !had_verified_cache_entry;
     let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
     if let Err(error) = install_bare_executable(&cache_asset, &installed_path) {
-        remove_unreferenced_cache_entry(cache_paths, &sha256, local_root)?;
+        if populated_cache_entry {
+            remove_unreferenced_cache_entry(cache_paths, &sha256, local_root)?;
+        }
         return Err(error);
     }
-    package_record_from_resolved(cmd, &resolved, sha256, &cache_asset, &installed_path, true)
+    Ok(InstalledPackage {
+        record: package_record_from_resolved(
+            cmd,
+            &resolved,
+            sha256,
+            &cache_asset,
+            &installed_path,
+            true,
+        )?,
+        populated_cache_entry,
+    })
 }
 
 fn install_local_from_lock(
@@ -1205,12 +1237,21 @@ fn select_manifest_asset(
         .into_iter()
         .filter(|decision| decision.eligible)
         .collect::<Vec<_>>();
+    if let Some(bin) = tool_bin {
+        return eligible
+            .into_iter()
+            .find(|decision| {
+                decision.kind == ArtifactKind::BareExecutable && decision.asset_name == bin
+            })
+            .ok_or_else(|| BinpmError::AssetNotFound {
+                package: spec.to_string(),
+                target: target_key,
+            });
+    }
+
     eligible
         .iter()
-        .find(|decision| {
-            decision.kind == ArtifactKind::BareExecutable
-                && tool_bin.is_none_or(|bin| decision.asset_name == bin)
-        })
+        .find(|decision| decision.kind == ArtifactKind::BareExecutable)
         .cloned()
         .or_else(|| eligible.into_iter().next())
         .ok_or_else(|| BinpmError::AssetNotFound {
@@ -1839,6 +1880,7 @@ fn verify_lockfile_records(
                 &target,
                 &record,
             )?;
+            validate_locked_record_artifact(lockfile_path, &cmd, &record, &target)?;
             if require_verified && !record.has_verified_source() {
                 return Err(BinpmError::VerificationRequired {
                     package: record.package_spec,
@@ -2910,6 +2952,31 @@ mod tests {
             select_manifest_asset(&spec, Some(&tool), &target, &assets).expect("selected asset");
 
         assert_eq!(selected.asset_name, "tool-linux-secondary");
+    }
+
+    #[test]
+    fn manifest_bin_override_rejects_non_matching_bare_executable() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("rg".to_string()),
+            targets: BTreeMap::new(),
+        };
+        let assets = [ReleaseAsset {
+            name: "tool-linux-x64".to_string(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64".to_string(),
+            provider_url: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+        }];
+
+        let error =
+            select_manifest_asset(&spec, Some(&tool), &target, &assets).expect_err("missing bin");
+
+        assert!(error.to_string().contains("No installable asset"));
     }
 
     #[test]

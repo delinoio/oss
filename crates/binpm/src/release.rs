@@ -537,6 +537,7 @@ fn verify_gitlab_asset_redirects(releases: &mut [Release]) -> Result<()> {
             if !is_https_url(url) {
                 continue;
             }
+            crate::storage::validate_download_url(url)?;
 
             let response = http
                 .head(url)
@@ -818,5 +819,28 @@ mod tests {
             .assets
             .iter()
             .all(|asset| asset.final_url_https.is_none()));
+    }
+
+    #[test]
+    fn gitlab_redirect_verification_rejects_credential_bearing_candidate_urls() {
+        let mut release = Release {
+            tag: "v1.0.0".to_string(),
+            assets: vec![ReleaseAsset {
+                name: "tool-x86_64-unknown-linux-gnu".to_string(),
+                url: "https://token@127.0.0.1:9/tool".to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            }],
+            stable: true,
+            released_at: None,
+            stability_reason: None,
+        };
+
+        let error = verify_gitlab_asset_redirects(std::slice::from_mut(&mut release))
+            .expect_err("credential URL is rejected before probing");
+
+        assert!(error.to_string().contains("must not include credentials"));
     }
 }
