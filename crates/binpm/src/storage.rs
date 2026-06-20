@@ -423,7 +423,11 @@ pub fn sanitize_persisted_url(raw: &str) -> Result<String> {
 }
 
 pub fn validate_sha256_digest(value: &str) -> Result<()> {
-    if value.len() == 64 && value.chars().all(|character| character.is_ascii_hexdigit()) {
+    if value.len() == 64
+        && value
+            .chars()
+            .all(|character| character.is_ascii_hexdigit() && !character.is_ascii_uppercase())
+    {
         return Ok(());
     }
     Err(BinpmError::InvalidSha256 {
@@ -458,7 +462,7 @@ pub fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     }
 
     let tmp = tmp_sibling(path);
-    {
+    let write_result = (|| {
         let mut file = fs::File::create(&tmp).map_err(|source| BinpmError::WriteFile {
             path: tmp.clone(),
             source,
@@ -472,12 +476,16 @@ pub fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
             path: tmp.clone(),
             source,
         })?;
+        replace_path(&tmp, path).map_err(|source| BinpmError::RenamePath {
+            from: tmp.clone(),
+            to: path.to_path_buf(),
+            source,
+        })
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&tmp);
     }
-    replace_path(&tmp, path).map_err(|source| BinpmError::RenamePath {
-        from: tmp,
-        to: path.to_path_buf(),
-        source,
-    })
+    write_result
 }
 
 fn atomic_write_executable(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -1015,12 +1023,13 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::{
-        clean_cache, install_bare_executable, list_package_records, managed_installed_path,
-        populate_cache_from_bytes, prune_cache, read_cache_records, read_lockfile, read_manifest,
-        record_verified_cache_hit, referenced_cache_keys, remove_installed_binary,
-        sanitize_persisted_url, validate_command_name, validate_download_url,
-        validate_sha256_digest, verify_sha256, write_cache_ref, write_lockfile, write_manifest,
-        CachePaths, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset, ScopePaths,
+        atomic_write_bytes, clean_cache, install_bare_executable, list_package_records,
+        managed_installed_path, populate_cache_from_bytes, prune_cache, read_cache_records,
+        read_lockfile, read_manifest, record_verified_cache_hit, referenced_cache_keys,
+        remove_installed_binary, sanitize_persisted_url, validate_command_name,
+        validate_download_url, validate_sha256_digest, verify_sha256, write_cache_ref,
+        write_lockfile, write_manifest, CachePaths, LockTool, Lockfile, Manifest, PackageRecord,
+        ResolvedAsset, ScopePaths,
     };
     use crate::{
         assets::{ArtifactKind, CandidateDecision},
@@ -1084,6 +1093,26 @@ mod tests {
         assert!(traversal.to_string().contains("Invalid SHA-256"));
         let short = validate_sha256_digest("abc123").expect_err("short digest");
         assert!(short.to_string().contains("Invalid SHA-256"));
+        let uppercase = validate_sha256_digest(
+            "ABCDEFABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123",
+        )
+        .expect_err("uppercase digest");
+        assert!(uppercase.to_string().contains("Invalid SHA-256"));
+    }
+
+    #[test]
+    fn atomic_write_bytes_cleans_temp_sibling_on_failure() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let path = temp_dir.path().join("record.toml");
+        std::fs::create_dir(&path).expect("create destination directory");
+
+        atomic_write_bytes(&path, b"version = 1\n").expect_err("rename over directory fails");
+
+        let entries = std::fs::read_dir(temp_dir.path())
+            .expect("read tempdir")
+            .map(|entry| entry.expect("entry").file_name())
+            .collect::<Vec<_>>();
+        assert_eq!(entries, vec![std::ffi::OsString::from("record.toml")]);
     }
 
     #[test]

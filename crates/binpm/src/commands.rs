@@ -471,9 +471,7 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
 fn select_explain_asset(
     decisions: &[crate::assets::CandidateDecision],
 ) -> Option<&crate::assets::CandidateDecision> {
-    decisions
-        .iter()
-        .find(|decision| decision.eligible && decision.kind == ArtifactKind::BareExecutable)
+    decisions.iter().find(|decision| decision.eligible)
 }
 
 fn release_api_url(spec: &SourceSpec) -> String {
@@ -771,6 +769,7 @@ fn install_local_from_lock(
         });
     }
     validate_provider_digest_evidence(&record)?;
+    validate_locked_record_artifact(&lockfile_path, cmd, &record, &target)?;
     if record.archive_format != ArchiveFormat::BareExecutable {
         return Err(BinpmError::ArchiveExtractionNotImplemented {
             asset: record.asset_name,
@@ -788,7 +787,8 @@ fn install_local_from_lock(
         remove_path_if_exists(&cache_asset)?;
     }
     if !cache_asset.exists() {
-        let bytes = download_asset(&record.asset_url)?;
+        let download_url = locked_record_download_url(&record)?;
+        let bytes = download_asset(&download_url)?;
         let actual = format!("{:x}", Sha256::digest(&bytes));
         if actual != record.sha256 {
             return Err(BinpmError::DigestMismatch {
@@ -810,7 +810,7 @@ fn install_local_from_lock(
             decision: crate::assets::CandidateDecision {
                 asset_name: record.asset_name.clone(),
                 canonical_url: record.asset_url.clone(),
-                download_url: record.asset_url.clone(),
+                download_url,
                 kind: ArtifactKind::BareExecutable,
                 detected_os: Some(record.target_os),
                 detected_arch: Some(record.target_arch),
@@ -900,6 +900,75 @@ fn assert_lock_record_matches_source_and_target(
         });
     }
     Ok(())
+}
+
+fn validate_locked_record_artifact(
+    lockfile_path: &Path,
+    cmd: &str,
+    record: &PackageRecord,
+    target: &HostTarget,
+) -> Result<()> {
+    let kind = crate::assets::classify_artifact(&record.asset_name, false);
+    let Some(format) = archive_format(kind) else {
+        return Err(BinpmError::AssetNotFound {
+            package: record.package_spec.clone(),
+            target: target.key(),
+        });
+    };
+    if format != ArchiveFormat::BareExecutable {
+        return Err(BinpmError::ArchiveExtractionNotImplemented {
+            asset: record.asset_name.clone(),
+        });
+    }
+    if format != record.archive_format {
+        return Err(BinpmError::StaleLockfile {
+            path: lockfile_path.to_path_buf(),
+            cmd: cmd.to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn locked_record_download_url(record: &PackageRecord) -> Result<String> {
+    let mut spec = SourceSpec::from_str(&record.source)?;
+    spec.version = Some(record.release_tag.clone());
+    let client = client_for_source(&spec)?;
+    let selection = client.resolve_release(&spec)?;
+    let asset = selection
+        .release
+        .assets
+        .iter()
+        .find(|asset| asset.name == record.asset_name)
+        .ok_or_else(|| BinpmError::AssetNotFound {
+            package: record.package_spec.clone(),
+            target: HostTarget {
+                os: record.target_os,
+                arch: record.target_arch,
+                libc: record.target_libc,
+            }
+            .key(),
+        })?;
+    if record.source_provider == crate::contract::SourceProvider::GitLab
+        && !gitlab_https_eligible(asset)
+    {
+        let diagnostic_url = asset
+            .provider_url
+            .as_deref()
+            .unwrap_or(&asset.url)
+            .split(['?', '#'])
+            .next()
+            .unwrap_or(&asset.url)
+            .to_string();
+        return Err(BinpmError::UnsafeUrl {
+            url: diagnostic_url,
+            message: "gitlab asset link is not HTTPS eligible".to_string(),
+        });
+    }
+    Ok(asset
+        .provider_url
+        .as_deref()
+        .unwrap_or(&asset.url)
+        .to_string())
 }
 
 fn assert_lock_matches_manifest_tool(
@@ -1290,6 +1359,11 @@ fn manifest_target_override<'tool>(
     let mut selected = None;
     for (raw_key, override_target) in &tool.targets {
         let canonical_key = HostTarget::from_str(raw_key)?.key();
+        if raw_key != &canonical_key {
+            return Err(BinpmError::InvalidTargetKey {
+                raw: raw_key.clone(),
+            });
+        }
         if canonical_key == target_key {
             selected = Some(override_target);
         }
@@ -2050,8 +2124,9 @@ mod tests {
         parse_manifest_source, project_root_from, remove_global_tool_from_paths,
         restore_local_remove_state, restore_runtime_tool_state, select_explain_asset,
         select_manifest_asset, shell_path, shell_quote, source_install_scope,
-        update_manifest_tool_source, validate_package_record_metadata, verify_lockfile_records,
-        verify_runtime_cache_bytes, ArtifactKind, RuntimeToolState,
+        update_manifest_tool_source, validate_locked_record_artifact,
+        validate_package_record_metadata, verify_lockfile_records, verify_runtime_cache_bytes,
+        ArtifactKind, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -2561,7 +2636,7 @@ mod tests {
     }
 
     #[test]
-    fn manifest_target_override_keys_are_normalized_and_validated() {
+    fn manifest_target_override_keys_must_be_canonical() {
         let target = linux_target();
         let tool = ManifestTool {
             source: "github:owner/tool".to_string(),
@@ -2577,10 +2652,10 @@ mod tests {
             )]),
         };
 
-        let override_target =
-            manifest_target_override(Some(&tool), &target).expect("normalized override");
+        let error =
+            manifest_target_override(Some(&tool), &target).expect_err("target aliases rejected");
 
-        assert_eq!(override_target.expect("override").asset, "tool-linux");
+        assert!(error.to_string().contains("Invalid target key"));
 
         let invalid_tool = ManifestTool {
             targets: BTreeMap::from([(
@@ -2858,7 +2933,7 @@ mod tests {
     }
 
     #[test]
-    fn explain_selection_prefers_installable_bare_executable_over_archive() {
+    fn explain_selection_reports_actual_selected_archive() {
         let target = linux_target();
         let assets = [
             ReleaseAsset {
@@ -2885,8 +2960,8 @@ mod tests {
 
         let selected = select_explain_asset(&selection.decisions).expect("explain selection");
 
-        assert_eq!(selected.asset_name, "tool-linux-x64");
-        assert_eq!(selected.kind, ArtifactKind::BareExecutable);
+        assert_eq!(selected.asset_name, "tool-x86_64-unknown-linux-gnu.tar.gz");
+        assert!(matches!(selected.kind, ArtifactKind::Archive(_)));
     }
 
     #[test]
@@ -2907,6 +2982,26 @@ mod tests {
         .expect_err("invalid digest");
 
         assert!(error.to_string().contains("Invalid SHA-256"));
+    }
+
+    #[test]
+    fn frozen_lock_reclassifies_locked_asset_names() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let mut record = package_record();
+        record.asset_name = "tool-x86_64-unknown-linux-gnu.tar.gz".to_string();
+
+        let error = validate_locked_record_artifact(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &record,
+            &target,
+        )
+        .expect_err("locked archive rejected");
+
+        assert!(error
+            .to_string()
+            .contains("Archive extraction is not implemented"));
     }
 
     #[test]
