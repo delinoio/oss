@@ -739,7 +739,9 @@ pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Re
 }
 
 pub fn clean_cache(paths: &CachePaths) -> Result<usize> {
-    let count = cache_entry_dirs(paths)?.len();
+    let count = cache_entry_dirs(paths)
+        .map(|dirs| dirs.len())
+        .unwrap_or_default();
     remove_path_if_exists(&paths.root.join("sha256"))?;
     ensure_dir(&paths.root)?;
     ensure_dir(&paths.refs)?;
@@ -1481,6 +1483,21 @@ created_at = "2026-01-01T00:00:00Z"
         assert_eq!(removed, 1);
         assert!(!entry.exists());
         assert!(cache.root.exists());
+    }
+
+    #[test]
+    fn clean_cache_removes_malformed_sha256_root() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        std::fs::create_dir_all(&cache.root).expect("create cache root");
+        std::fs::write(cache.root.join("sha256"), b"not a directory")
+            .expect("write malformed sha root");
+
+        let removed = clean_cache(&cache).expect("clean cache");
+
+        assert_eq!(removed, 0);
+        assert!(!cache.root.join("sha256").exists());
+        assert!(cache.refs.exists());
     }
 
     #[test]

@@ -118,7 +118,7 @@ fn add(args: AddArgs) -> Result<i32> {
     };
     let manifest_tool = manifest.tools.get(&args.cmd).cloned();
     let prior_state = capture_local_tool_state(&root, &args.cmd)?;
-    let record = install_local_tool(
+    let install = install_local_tool(
         &root,
         &args.cmd,
         &spec,
@@ -126,12 +126,17 @@ fn add(args: AddArgs) -> Result<i32> {
         args.lockfile.frozen_lockfile(),
         args.require_verified,
     )?;
+    let record = install.record;
     manifest.tools.insert(
         args.cmd.clone(),
         update_manifest_tool_source(manifest_tool, &spec),
     );
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         rollback_local_install_state(&root, &args.cmd, &record, prior_state);
+        if install.populated_cache_entry {
+            let cache_paths = CachePaths::new(&binpm_home()?);
+            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(&root))?;
+        }
         return Err(error);
     }
     println!("added {}", args.cmd);
@@ -270,8 +275,10 @@ fn list(args: ScopedArgs) -> Result<i32> {
             let root = require_manifest_root()?;
             let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
             let paths = ScopePaths::local(root);
+            let mut printed = BTreeSet::new();
             for (cmd, tool) in manifest.tools {
                 validate_command_name(&cmd)?;
+                printed.insert(cmd.clone());
                 let state = package_record_path(&paths, &cmd);
                 if state.exists() {
                     let record = read_package_record(&state)?;
@@ -291,6 +298,20 @@ fn list(args: ScopedArgs) -> Result<i32> {
                         tool.version.as_deref().unwrap_or("<latest>")
                     );
                 }
+            }
+            for (cmd, record) in list_package_records(&paths)? {
+                if printed.contains(&cmd) {
+                    continue;
+                }
+                println!(
+                    "{cmd} installed {} {} {} {} {} {}",
+                    record.source,
+                    record.requested_version.as_deref().unwrap_or("<latest>"),
+                    record.release_tag,
+                    record.selected_binary,
+                    record.installed_path,
+                    verification_state(&record)
+                );
             }
         }
         Scope::Global => {
@@ -524,7 +545,7 @@ fn install_local_source(
     let mut manifest = read_manifest(&manifest_path)?;
     let manifest_tool = manifest.tools.get(&cmd).cloned();
     let prior_state = capture_local_tool_state(&root, &cmd)?;
-    let record = install_local_tool(
+    let install = install_local_tool(
         &root,
         &cmd,
         &spec,
@@ -532,12 +553,17 @@ fn install_local_source(
         frozen_lockfile,
         require_verified,
     )?;
+    let record = install.record;
     manifest.tools.insert(
         cmd.clone(),
         update_manifest_tool_source(manifest_tool, &spec),
     );
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         rollback_local_install_state(&root, &cmd, &record, prior_state);
+        if install.populated_cache_entry {
+            let cache_paths = CachePaths::new(&binpm_home()?);
+            remove_unreferenced_cache_entry(&cache_paths, &record.sha256, Some(&root))?;
+        }
         return Err(error);
     }
     Ok(0)
@@ -576,9 +602,15 @@ fn install_local_manifest(
             frozen_lockfile,
             require_verified,
         ) {
-            Ok(record) => completed.push((cmd, record, prior_state)),
+            Ok(install) => completed.push((
+                cmd,
+                install.record,
+                install.populated_cache_entry,
+                prior_state,
+            )),
             Err(error) => {
-                for (completed_cmd, completed_record, completed_state) in
+                let cache_paths = CachePaths::new(&binpm_home()?);
+                for (completed_cmd, completed_record, populated_cache_entry, completed_state) in
                     completed.into_iter().rev()
                 {
                     rollback_local_install_state(
@@ -587,6 +619,13 @@ fn install_local_manifest(
                         &completed_record,
                         completed_state,
                     );
+                    if populated_cache_entry {
+                        remove_unreferenced_cache_entry(
+                            &cache_paths,
+                            &completed_record.sha256,
+                            Some(&root),
+                        )?;
+                    }
                 }
                 return Err(error);
             }
@@ -602,7 +641,7 @@ fn install_local_tool(
     tool: Option<&ManifestTool>,
     frozen_lockfile: bool,
     require_verified: bool,
-) -> Result<PackageRecord> {
+) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
     let lockfile_path = root.join(LOCKFILE_FILE);
     if frozen_lockfile {
@@ -666,7 +705,10 @@ fn install_local_tool(
         return Err(error);
     }
     println!("installed {cmd} {}", record.installed_path);
-    Ok(record)
+    Ok(InstalledPackage {
+        record,
+        populated_cache_entry: install.populated_cache_entry,
+    })
 }
 
 struct InstalledPackage {
@@ -765,7 +807,7 @@ fn install_local_from_lock(
     spec: &SourceSpec,
     tool: Option<&ManifestTool>,
     require_verified: bool,
-) -> Result<PackageRecord> {
+) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
     let lockfile_path = root.join(LOCKFILE_FILE);
     let lockfile = read_lockfile(&lockfile_path)?;
@@ -894,7 +936,10 @@ fn install_local_from_lock(
         return Err(error);
     }
     println!("installed {cmd} {}", runtime_record.installed_path);
-    Ok(runtime_record)
+    Ok(InstalledPackage {
+        record: runtime_record,
+        populated_cache_entry,
+    })
 }
 
 fn assert_lock_record_matches_source_and_target(
