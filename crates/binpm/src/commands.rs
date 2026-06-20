@@ -212,7 +212,7 @@ fn cache(command: CacheCommand) -> Result<i32> {
             let home = binpm_home()?;
             let paths = CachePaths::new(&home);
             let global_paths = ScopePaths::global(home);
-            let local_paths = project_root().ok().map(ScopePaths::local);
+            let local_paths = manifest_project_root()?.map(ScopePaths::local);
             let referenced = referenced_cache_keys(&global_paths, local_paths.as_ref(), &paths)?;
             for record in read_cache_records(&paths)? {
                 let reference_state = if referenced.contains(&record.cache_key) {
@@ -245,7 +245,7 @@ fn cache(command: CacheCommand) -> Result<i32> {
             let home = binpm_home()?;
             let cache_paths = CachePaths::new(&home);
             let global_paths = ScopePaths::global(home);
-            let local_paths = project_root().ok().map(ScopePaths::local);
+            let local_paths = manifest_project_root()?.map(ScopePaths::local);
             let referenced =
                 referenced_cache_keys(&global_paths, local_paths.as_ref(), &cache_paths)?;
             let removed = prune_cache(&cache_paths, &referenced)?;
@@ -1444,9 +1444,15 @@ fn assert_lock_matches_manifest_tool(
 ) -> Result<()> {
     if let Some(override_target) = manifest_target_override(tool, target)? {
         if let Some(checksum_source) = override_target.checksum_source {
-            return Err(BinpmError::UnverifiedChecksumSourceOverride {
-                checksum_source: checksum_source.as_str().to_string(),
-            });
+            if !(checksum_source == ChecksumSource::GitHubDigest
+                && record.source_provider == crate::contract::SourceProvider::GitHub
+                && record.checksum_source == ChecksumSource::GitHubDigest
+                && record.provider_digest_sha256.as_deref() == Some(record.sha256.as_str()))
+            {
+                return Err(BinpmError::UnverifiedChecksumSourceOverride {
+                    checksum_source: checksum_source.as_str().to_string(),
+                });
+            }
         }
         if record.asset_name != override_target.asset
             || record.selected_binary != override_target.bin
@@ -1479,7 +1485,6 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
             package: spec.to_string(),
             target: target.key(),
         })?;
-    let manifest_checksum_source = manifest_checksum_source(tool, &target)?;
     let selected_binary = match manifest_target_override(tool, &target)?
         .map(|override_target| override_target.bin.as_str())
         .or_else(|| tool.and_then(|tool| tool.bin.as_deref()))
@@ -1492,6 +1497,8 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         .iter()
         .find(|asset| asset.name == decision.asset_name)
         .and_then(|asset| github_sha256_digest(asset.digest.as_deref()));
+    let manifest_checksum_source =
+        manifest_checksum_source(tool, &target, provider_digest_sha256.as_deref())?;
     let checksum_source = if spec.provider == crate::contract::SourceProvider::GitHub
         && provider_digest_sha256.is_some()
     {
@@ -1592,10 +1599,14 @@ fn lock_targets_conflict_with_manifest(
 fn manifest_checksum_source(
     tool: Option<&ManifestTool>,
     target: &HostTarget,
+    provider_digest_sha256: Option<&str>,
 ) -> Result<ChecksumSource> {
     if let Some(checksum_source) = manifest_target_override(tool, target)?
         .and_then(|override_target| override_target.checksum_source)
     {
+        if checksum_source == ChecksumSource::GitHubDigest && provider_digest_sha256.is_some() {
+            return Ok(ChecksumSource::GitHubDigest);
+        }
         return Err(BinpmError::UnverifiedChecksumSourceOverride {
             checksum_source: checksum_source.as_str().to_string(),
         });
@@ -2244,9 +2255,7 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
 }
 
 fn has_local_runtime_or_lock_state(cmd: &str, state: &LocalRemoveState) -> bool {
-    state.lockfile.tools.contains_key(cmd)
-        || state.runtime.package_record.is_some()
-        || state.runtime.installed_bytes.is_some()
+    state.lockfile.tools.contains_key(cmd) || state.runtime.package_record.is_some()
 }
 
 fn remove_global_tool(cmd: &str) -> Result<i32> {
@@ -2864,6 +2873,15 @@ fn project_root() -> Result<PathBuf> {
     Ok(project_root_from(&cwd))
 }
 
+fn manifest_project_root() -> Result<Option<PathBuf>> {
+    let cwd = current_dir()?;
+    Ok(manifest_project_root_from(&cwd))
+}
+
+fn manifest_project_root_from(start: &Path) -> Option<PathBuf> {
+    find_manifest_root(start).map(Path::to_path_buf)
+}
+
 fn project_root_from(start: &Path) -> PathBuf {
     find_manifest_root(start)
         .or_else(|| find_git_root(start))
@@ -2985,12 +3003,12 @@ mod tests {
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
         install_path_collision_key, local_runtime_lock_records,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_root_or_creation_root_from,
-        manifest_target_override, manifest_tool_from_source, parse_manifest_source,
-        project_root_from, record_matches_current_provider_digest, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, restore_local_remove_state, restore_runtime_tool_state,
-        select_manifest_asset, selected_asset_display_url, shell_path, shell_quote,
-        snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
+        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
+        manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
+        parse_manifest_source, project_root_from, record_matches_current_provider_digest,
+        remove_global_tool_from_paths, remove_local_manifest_orphans, restore_local_remove_state,
+        restore_runtime_tool_state, select_manifest_asset, selected_asset_display_url, shell_path,
+        shell_quote, snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
         validate_locked_record_artifact, validate_locked_record_current_provider_digest,
         validate_package_record_metadata, validate_package_record_source_identity,
         validate_provider_digest_evidence, validate_selected_manifest_entries,
@@ -3070,6 +3088,30 @@ mod tests {
             .expect_err("invalid home");
 
         assert!(error.to_string().contains("Invalid HOME"));
+    }
+
+    #[test]
+    fn manifest_project_root_ignores_git_roots_without_manifest() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(temp_dir.path().join(".git")).expect("git dir");
+        let nested = temp_dir.path().join("nested");
+        fs::create_dir(&nested).expect("nested dir");
+
+        assert_eq!(manifest_project_root_from(&nested), None);
+
+        write_manifest(
+            &temp_dir.path().join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+        )
+        .expect("write manifest");
+
+        assert_eq!(
+            manifest_project_root_from(&nested).as_deref(),
+            Some(temp_dir.path())
+        );
     }
 
     #[test]
@@ -3684,6 +3726,28 @@ mod tests {
     }
 
     #[test]
+    fn local_remove_missing_manifest_tool_ignores_manual_bin_file() {
+        let state = LocalRemoveState {
+            manifest: Manifest {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+            lockfile_existed: false,
+            lockfile: Lockfile {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+            runtime: RuntimeToolState {
+                package_record: None,
+                installed_path: Some(PathBuf::from(".binpm/bin/tool")),
+                installed_bytes: Some(b"manual tool".to_vec()),
+            },
+        };
+
+        assert!(!has_local_runtime_or_lock_state("tool", &state));
+    }
+
+    #[test]
     fn manifest_sync_removes_local_package_and_lock_orphans() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let paths = ScopePaths::local(temp_dir.path().to_path_buf());
@@ -3991,14 +4055,64 @@ mod tests {
             )]),
         };
 
-        let error = manifest_checksum_source(Some(&tool), &target)
+        let error = manifest_checksum_source(Some(&tool), &target, None)
             .expect_err("unverified checksum source override");
 
         assert!(error.to_string().contains("cannot be used"));
         assert_eq!(
-            manifest_checksum_source(None, &target).expect("default checksum source"),
+            manifest_checksum_source(None, &target, None).expect("default checksum source"),
             ChecksumSource::Local
         );
+    }
+
+    #[test]
+    fn manifest_target_override_accepts_github_digest_with_provider_evidence() {
+        let target = linux_target();
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "tool-linux".to_string(),
+                    bin: "tool".to_string(),
+                    checksum_source: Some(ChecksumSource::GitHubDigest),
+                },
+            )]),
+        };
+
+        assert_eq!(
+            manifest_checksum_source(Some(&tool), &target, Some(&package_record().sha256))
+                .expect("github digest override"),
+            ChecksumSource::GitHubDigest
+        );
+        assert!(manifest_checksum_source(Some(&tool), &target, None).is_err());
+    }
+
+    #[test]
+    fn frozen_lock_accepts_github_digest_override_with_matching_provider_evidence() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "tool-linux".to_string(),
+                    bin: "tool-linux".to_string(),
+                    checksum_source: Some(ChecksumSource::GitHubDigest),
+                },
+            )]),
+        };
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::GitHubDigest;
+        record.provider_digest_sha256 = Some(record.sha256.clone());
+
+        assert_lock_matches_manifest_tool(temp_dir.path(), "tool", Some(&tool), &target, &record)
+            .expect("github digest override with provider evidence");
     }
 
     #[test]
