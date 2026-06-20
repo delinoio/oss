@@ -492,7 +492,10 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
 fn select_explain_asset(
     decisions: &[crate::assets::CandidateDecision],
 ) -> Option<&crate::assets::CandidateDecision> {
-    decisions.iter().find(|decision| decision.eligible)
+    decisions
+        .iter()
+        .find(|decision| decision.eligible && decision.kind == ArtifactKind::BareExecutable)
+        .or_else(|| decisions.iter().find(|decision| decision.eligible))
 }
 
 fn release_api_url(spec: &SourceSpec) -> String {
@@ -586,7 +589,7 @@ fn install_local_manifest(
         }
     }
     let mut completed = Vec::new();
-    for (cmd, tool) in manifest.tools {
+    for (cmd, tool) in &manifest.tools {
         if !selected.is_empty() && !selected.contains(&cmd) {
             continue;
         }
@@ -596,14 +599,14 @@ fn install_local_manifest(
         let prior_state = capture_local_tool_state(&root, &cmd)?;
         match install_local_tool(
             &root,
-            &cmd,
+            cmd,
             &spec,
-            Some(&tool),
+            Some(tool),
             frozen_lockfile,
             require_verified,
         ) {
             Ok(install) => completed.push((
-                cmd,
+                cmd.clone(),
                 install.record,
                 install.populated_cache_entry,
                 prior_state,
@@ -629,6 +632,29 @@ fn install_local_manifest(
                 }
                 return Err(error);
             }
+        }
+    }
+    if selected.is_empty() {
+        if let Err(error) = remove_local_manifest_orphans(&root, &manifest.tools) {
+            let cache_paths = CachePaths::new(&binpm_home()?);
+            for (completed_cmd, completed_record, populated_cache_entry, completed_state) in
+                completed.into_iter().rev()
+            {
+                rollback_local_install_state(
+                    &root,
+                    &completed_cmd,
+                    &completed_record,
+                    completed_state,
+                );
+                if populated_cache_entry {
+                    remove_unreferenced_cache_entry(
+                        &cache_paths,
+                        &completed_record.sha256,
+                        Some(&root),
+                    )?;
+                }
+            }
+            return Err(error);
         }
     }
     Ok(0)
@@ -843,7 +869,7 @@ fn install_local_from_lock(
         });
     }
     validate_provider_digest_evidence(&record)?;
-    validate_locked_record_artifact(&lockfile_path, cmd, &record, &target)?;
+    validate_locked_record_artifact(&lockfile_path, cmd, &record, &target, tool)?;
     if record.archive_format != ArchiveFormat::BareExecutable {
         return Err(BinpmError::ArchiveExtractionNotImplemented {
             asset: record.asset_name,
@@ -984,6 +1010,7 @@ fn validate_locked_record_artifact(
     cmd: &str,
     record: &PackageRecord,
     target: &HostTarget,
+    tool: Option<&ManifestTool>,
 ) -> Result<()> {
     let kind = crate::assets::classify_artifact(&record.asset_name, false);
     let Some(format) = archive_format(kind) else {
@@ -1002,6 +1029,33 @@ fn validate_locked_record_artifact(
             path: lockfile_path.to_path_buf(),
             cmd: cmd.to_string(),
         });
+    }
+    let has_explicit_asset_override = manifest_target_override(tool, target)?
+        .map(|override_target| override_target.asset == record.asset_name)
+        .unwrap_or(false);
+    if !has_explicit_asset_override {
+        let scored = crate::assets::score_assets(
+            record.source_provider,
+            target,
+            &[ReleaseAsset {
+                name: record.asset_name.clone(),
+                url: record.asset_url.clone(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            }],
+        );
+        if !scored
+            .first()
+            .map(|decision| decision.eligible)
+            .unwrap_or(false)
+        {
+            return Err(BinpmError::AssetNotFound {
+                package: record.package_spec.clone(),
+                target: target.key(),
+            });
+        }
     }
     Ok(())
 }
@@ -1398,12 +1452,89 @@ fn capture_runtime_tool_state(paths: &ScopePaths, cmd: &str) -> Result<RuntimeTo
     };
     let installed_bytes = package_record
         .as_ref()
-        .and_then(|record| validate_installed_binary_path(paths, cmd, record).ok())
-        .and_then(|path| fs::read(path).ok());
+        .map(
+            |record| match validate_installed_binary_path(paths, cmd, record) {
+                Ok(path) => match fs::read(&path) {
+                    Ok(bytes) => Ok(Some(bytes)),
+                    Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(source) => Err(BinpmError::ReadFile { path, source }),
+                },
+                Err(BinpmError::UnsafeInstalledPath { .. }) => Ok(None),
+                Err(error) => Err(error),
+            },
+        )
+        .transpose()?
+        .flatten();
     Ok(RuntimeToolState {
         package_record,
         installed_bytes,
     })
+}
+
+fn remove_local_manifest_orphans(
+    root: &Path,
+    manifest_tools: &BTreeMap<String, ManifestTool>,
+) -> Result<()> {
+    let scope_paths = ScopePaths::local(root.to_path_buf());
+    let mut orphan_cmds = BTreeSet::new();
+    for (cmd, _) in list_package_records(&scope_paths)? {
+        if !manifest_tools.contains_key(&cmd) {
+            orphan_cmds.insert(cmd);
+        }
+    }
+
+    let lockfile_path = root.join(LOCKFILE_FILE);
+    let mut lockfile = read_lockfile(&lockfile_path)?;
+    for cmd in lockfile.tools.keys() {
+        if !manifest_tools.contains_key(cmd) {
+            orphan_cmds.insert(cmd.clone());
+        }
+    }
+
+    if orphan_cmds.is_empty() {
+        return Ok(());
+    }
+
+    let cache_paths = CachePaths::new(&binpm_home()?);
+    for cmd in &orphan_cmds {
+        remove_local_orphan_runtime(root, &scope_paths, &cache_paths, cmd)?;
+        lockfile.tools.remove(cmd);
+    }
+    write_lockfile(&lockfile_path, &lockfile)
+}
+
+fn remove_local_orphan_runtime(
+    root: &Path,
+    paths: &ScopePaths,
+    cache_paths: &CachePaths,
+    cmd: &str,
+) -> Result<()> {
+    validate_command_name(cmd)?;
+    let prior_state = capture_runtime_tool_state(paths, cmd)?;
+    let record_path = package_record_path(paths, cmd);
+    let cleanup_result = (|| {
+        let stale_installed_path = if record_path.exists() {
+            let record = read_package_record(&record_path)?;
+            let installed_path = managed_installed_path(paths, cmd, record.target_os);
+            match remove_installed_binary(paths, cmd, &record) {
+                Ok(()) | Err(BinpmError::UnsafeInstalledPath { .. }) => {}
+                Err(error) => return Err(error),
+            }
+            installed_path
+        } else {
+            current_platform_installed_path(paths, cmd)
+        };
+        remove_package_record(paths, cmd)?;
+        remove_cache_ref(cache_paths, root, cmd)?;
+        remove_path_if_exists(&stale_installed_path)?;
+        Ok(())
+    })();
+    if let Err(error) = cleanup_result {
+        restore_runtime_tool_state(paths, cmd, prior_state);
+        return Err(error);
+    }
+    println!("removed {cmd}");
+    Ok(())
 }
 
 fn rollback_local_install_state(
@@ -1970,7 +2101,7 @@ fn verify_lockfile_records(
                 &target,
                 &record,
             )?;
-            validate_locked_record_artifact(lockfile_path, &cmd, &record, &target)?;
+            validate_locked_record_artifact(lockfile_path, &cmd, &record, &target, None)?;
             if require_verified && !record.has_verified_source() {
                 return Err(BinpmError::VerificationRequired {
                     package: record.package_spec,
@@ -2242,6 +2373,7 @@ fn path_state(path: &Path) -> &'static str {
 mod tests {
     use std::{
         collections::BTreeMap,
+        fs,
         path::{Path, PathBuf},
         str::FromStr,
     };
@@ -2254,11 +2386,11 @@ mod tests {
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
         manifest_checksum_source, manifest_creation_root_from, manifest_target_override,
         manifest_tool_from_source, parse_manifest_source, project_root_from,
-        remove_global_tool_from_paths, restore_local_remove_state, restore_runtime_tool_state,
-        select_explain_asset, select_manifest_asset, shell_path, shell_quote, source_install_scope,
-        update_manifest_tool_source, validate_locked_record_artifact,
-        validate_package_record_metadata, verify_lockfile_records, verify_runtime_cache_bytes,
-        ArtifactKind, RuntimeToolState,
+        remove_global_tool_from_paths, remove_local_manifest_orphans, restore_local_remove_state,
+        restore_runtime_tool_state, select_explain_asset, select_manifest_asset, shell_path,
+        shell_quote, source_install_scope, update_manifest_tool_source,
+        validate_locked_record_artifact, validate_package_record_metadata, verify_lockfile_records,
+        verify_runtime_cache_bytes, ArtifactKind, RuntimeToolState,
     };
     use crate::{
         cli::Shell,
@@ -2684,6 +2816,57 @@ mod tests {
 
         assert!(state.package_record.is_some());
         assert!(state.installed_bytes.is_none());
+    }
+
+    #[test]
+    fn rollback_capture_rejects_unreadable_managed_installed_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        let mut record = package_record();
+        let installed_path = paths.bin.join("tool");
+        record.installed_path = installed_path.display().to_string();
+        write_package_record(&paths, "tool", &record).expect("write package record");
+        fs::create_dir(&installed_path).expect("create unreadable-as-file path");
+
+        let error =
+            capture_runtime_tool_state(&paths, "tool").expect_err("managed read error is fatal");
+
+        assert!(error.to_string().contains("Failed to read"));
+    }
+
+    #[test]
+    fn manifest_sync_removes_local_package_and_lock_orphans() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        let mut record = package_record();
+        let installed_path = paths.bin.join("tool");
+        record.installed_path = installed_path.display().to_string();
+        write_package_record(&paths, "tool", &record).expect("write package record");
+        fs::write(&installed_path, b"old tool").expect("write installed binary");
+        write_lockfile(
+            &temp_dir.path().join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([("linux-x86_64-gnu".to_string(), record)]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+
+        remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new()).expect("remove orphans");
+
+        assert!(!paths.packages.join("tool.toml").exists());
+        assert!(!installed_path.exists());
+        let lockfile = crate::storage::read_lockfile(&temp_dir.path().join(LOCKFILE_FILE))
+            .expect("read lockfile");
+        assert!(lockfile.tools.is_empty());
     }
 
     #[test]
@@ -3152,7 +3335,7 @@ mod tests {
     }
 
     #[test]
-    fn explain_selection_reports_actual_selected_archive() {
+    fn explain_selection_reports_install_selected_bare_executable() {
         let target = linux_target();
         let assets = [
             ReleaseAsset {
@@ -3179,8 +3362,8 @@ mod tests {
 
         let selected = select_explain_asset(&selection.decisions).expect("explain selection");
 
-        assert_eq!(selected.asset_name, "tool-x86_64-unknown-linux-gnu.tar.gz");
-        assert!(matches!(selected.kind, ArtifactKind::Archive(_)));
+        assert_eq!(selected.asset_name, "tool-linux-x64");
+        assert_eq!(selected.kind, ArtifactKind::BareExecutable);
     }
 
     #[test]
@@ -3215,12 +3398,62 @@ mod tests {
             "tool",
             &record,
             &target,
+            None,
         )
         .expect_err("locked archive rejected");
 
         assert!(error
             .to_string()
             .contains("Archive extraction is not implemented"));
+    }
+
+    #[test]
+    fn frozen_lock_rejects_asset_names_for_another_target_without_override() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let mut record = package_record();
+        record.asset_name = "tool-windows-x64.exe".to_string();
+
+        let error = validate_locked_record_artifact(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &record,
+            &target,
+            None,
+        )
+        .expect_err("target-mismatched asset rejected");
+
+        assert!(error.to_string().contains("No installable asset"));
+    }
+
+    #[test]
+    fn frozen_lock_allows_explicit_target_override_asset_names() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let mut record = package_record();
+        record.asset_name = "custom-binary".to_string();
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "custom-binary".to_string(),
+                    bin: "custom-binary".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+
+        validate_locked_record_artifact(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &record,
+            &target,
+            Some(&tool),
+        )
+        .expect("explicit override asset is accepted");
     }
 
     #[test]
