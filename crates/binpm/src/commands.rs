@@ -590,13 +590,13 @@ fn install_local_manifest(
     }
     let mut completed = Vec::new();
     for (cmd, tool) in &manifest.tools {
-        if !selected.is_empty() && !selected.contains(&cmd) {
+        if !selected.is_empty() && !selected.contains(cmd) {
             continue;
         }
-        validate_command_name(&cmd)?;
+        validate_command_name(cmd)?;
         let mut spec = parse_manifest_source(&tool.source)?;
         spec.version = tool.version.clone();
-        let prior_state = capture_local_tool_state(&root, &cmd)?;
+        let prior_state = capture_local_tool_state(&root, cmd)?;
         match install_local_tool(
             &root,
             cmd,
