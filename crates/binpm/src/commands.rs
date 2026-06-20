@@ -69,7 +69,7 @@ fn install(args: InstallArgs) -> Result<i32> {
         if selected_scope == Scope::Local {
             return install_local_source(spec, frozen_lockfile, args.require_verified);
         }
-        return install_global_source(spec, args.require_verified);
+        install_global_source(spec, args.require_verified)
     } else {
         info!(
             command = "install",
@@ -79,7 +79,7 @@ fn install(args: InstallArgs) -> Result<i32> {
             no_confirm = args.no_confirm,
             "Prepared local manifest sync request"
         );
-        return install_local_manifest(frozen_lockfile, args.require_verified);
+        install_local_manifest(frozen_lockfile, args.require_verified)
     }
 }
 
