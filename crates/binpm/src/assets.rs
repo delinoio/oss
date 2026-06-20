@@ -520,9 +520,9 @@ fn is_semver_like(version: &str) -> bool {
         && is_version_number(patch)
         && prerelease
             .map(|prerelease| {
-                prerelease
-                    .split('.')
-                    .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric()))
+                prerelease.split('.').all(|part| {
+                    !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+                })
             })
             .unwrap_or(true)
 }
@@ -639,6 +639,10 @@ mod tests {
         );
         assert_eq!(
             classify_artifact("nodeup-1.2.3-beta.1.tgz", false),
+            ArtifactKind::PackageMetadata
+        );
+        assert_eq!(
+            classify_artifact("rollup-linux-x64-gnu-4.9.5-rc-1.tgz", false),
             ArtifactKind::PackageMetadata
         );
         assert_eq!(

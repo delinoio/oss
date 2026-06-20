@@ -173,9 +173,15 @@ impl ReleaseClient for GitLabReleaseClient {
             .map(|release| release.into_release(self.now))
             .collect::<Vec<_>>();
 
-        verify_gitlab_asset_redirects(&self.http, &mut releases)?;
         sort_gitlab_releases(&mut releases);
         Ok(releases)
+    }
+
+    fn resolve_release(&self, source: &SourceSpec) -> Result<ReleaseSelection> {
+        let releases = self.list_releases(source)?;
+        let mut selection = select_release(source, releases)?;
+        verify_gitlab_asset_redirects(&self.http, std::slice::from_mut(&mut selection.release))?;
+        Ok(selection)
     }
 }
 
@@ -535,10 +541,10 @@ mod tests {
 
     use super::{
         has_prerelease_tag, matching_tag_candidates, next_page_url, releases_page_url,
-        select_release, sort_gitlab_releases, GitHubReleaseClient, GitLabRelease,
-        GitLabReleaseClient, Release,
+        select_release, sort_gitlab_releases, verify_gitlab_asset_redirects, GitHubReleaseClient,
+        GitLabRelease, GitLabReleaseClient, Release,
     };
-    use crate::contract::SourceSpec;
+    use crate::{contract::SourceSpec, release::ReleaseAsset};
 
     #[test]
     fn github_client_uses_dot_com_api_for_implicit_host() {
@@ -710,5 +716,30 @@ mod tests {
 
         assert_eq!(releases[0].tag, "v1.0.0");
         assert_eq!(releases[1].tag, "v9.0.0");
+    }
+
+    #[test]
+    fn gitlab_redirect_verification_can_be_limited_to_selected_release() {
+        let mut release = Release {
+            tag: "v1.0.0".to_string(),
+            assets: vec![ReleaseAsset {
+                name: "source".to_string(),
+                url: "https://example.com/source.tar.gz".to_string(),
+                provider_url: None,
+                source_archive: true,
+                final_url_https: None,
+            }],
+            stable: true,
+            released_at: None,
+            stability_reason: None,
+        };
+
+        verify_gitlab_asset_redirects(
+            &reqwest::blocking::Client::new(),
+            std::slice::from_mut(&mut release),
+        )
+        .expect("source archives are skipped without network access");
+
+        assert_eq!(release.assets[0].final_url_https, None);
     }
 }
