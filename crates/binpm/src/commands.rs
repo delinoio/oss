@@ -861,10 +861,19 @@ fn rollback_completed_local_installs(
     completed: Vec<CompletedLocalInstall>,
     cache_paths: &CachePaths,
 ) -> Result<()> {
+    let mut first_error = None;
     for completed_install in completed.into_iter().rev() {
-        rollback_one_completed_local_install(root, completed_install, cache_paths)?;
+        if let Err(error) =
+            rollback_one_completed_local_install(root, completed_install, cache_paths)
+        {
+            first_error.get_or_insert(error);
+        }
     }
-    Ok(())
+    if let Some(error) = first_error {
+        Err(error)
+    } else {
+        Ok(())
+    }
 }
 
 fn rollback_completed_local_installs_ref(
@@ -872,6 +881,7 @@ fn rollback_completed_local_installs_ref(
     completed: &[CompletedLocalInstall],
     cache_paths: &CachePaths,
 ) -> Result<()> {
+    let mut first_error = None;
     for completed_install in completed.iter().rev() {
         rollback_local_install_state(
             root,
@@ -879,14 +889,20 @@ fn rollback_completed_local_installs_ref(
             &completed_install.install.record,
             completed_install.prior_state.clone(),
         );
-        cleanup_failed_install_cache(
+        if let Err(error) = cleanup_failed_install_cache(
             cache_paths,
             &completed_install.install.record.sha256,
             Some(root),
             &completed_install.install,
-        )?;
+        ) {
+            first_error.get_or_insert(error);
+        }
     }
-    Ok(())
+    if let Some(error) = first_error {
+        Err(error)
+    } else {
+        Ok(())
+    }
 }
 
 fn rollback_one_completed_local_install(
@@ -946,9 +962,7 @@ fn install_resolved(
             asset: resolved.decision.asset_name,
         });
     }
-    if local_root.is_none() {
-        ensure_no_global_install_path_collision(scope_paths, cmd, resolved.target.os)?;
-    }
+    ensure_no_package_record_install_path_collision(scope_paths, cmd, resolved.target.os)?;
     if let Some(expected) = &resolved.provider_digest_sha256 {
         let cache_asset = cache_paths.asset_path(expected);
         if cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, expected).is_ok() {
@@ -1077,6 +1091,7 @@ fn install_local_from_lock(
     let prior_state = capture_local_tool_state(root, cmd)?;
     cache_paths.ensure()?;
     validate_sha256_digest(&record.sha256)?;
+    ensure_no_package_record_install_path_collision(&scope_paths, cmd, target.os)?;
     let cache_asset = cache_paths.asset_path(&record.sha256);
     let mut populated_cache_entry = false;
     if cache_asset.exists() && crate::storage::verify_sha256(&cache_asset, &record.sha256).is_err()
@@ -1295,6 +1310,11 @@ fn locked_record_download_url(record: &PackageRecord) -> Result<String> {
             }
             .key(),
         })?;
+    if record.source_provider == crate::contract::SourceProvider::GitLab && asset.source_archive {
+        return Err(BinpmError::ArchiveExtractionNotImplemented {
+            asset: record.asset_name.clone(),
+        });
+    }
     if record.source_provider == crate::contract::SourceProvider::GitLab
         && !gitlab_https_eligible(asset)
     {
@@ -1862,7 +1882,7 @@ fn ensure_no_selected_install_path_collisions(
     Ok(())
 }
 
-fn ensure_no_global_install_path_collision(
+fn ensure_no_package_record_install_path_collision(
     paths: &ScopePaths,
     cmd: &str,
     target_os: TargetOs,
@@ -2541,10 +2561,13 @@ fn init(args: InitArgs) -> Result<i32> {
         });
     }
 
-    fs::write(&manifest_path, "version = 1\n").map_err(|source| BinpmError::WriteFile {
-        path: manifest_path.clone(),
-        source,
-    })?;
+    write_manifest(
+        &manifest_path,
+        &Manifest {
+            version: 1,
+            tools: BTreeMap::new(),
+        },
+    )?;
 
     info!(
         command = "init",
@@ -2804,14 +2827,15 @@ mod tests {
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
-        ensure_no_global_install_path_collision, github_sha256_digest, has_current_cache_record,
-        has_local_runtime_or_lock_state, install_local_from_lock, local_runtime_lock_records,
-        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_target_override,
-        manifest_tool_from_source, parse_manifest_source, project_root_from,
-        remove_global_tool_from_paths, remove_local_manifest_orphans, restore_local_remove_state,
-        restore_runtime_tool_state, select_explain_asset, select_manifest_asset, shell_path,
-        shell_quote, snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
+        ensure_no_package_record_install_path_collision, github_sha256_digest,
+        has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
+        local_runtime_lock_records, lock_targets_conflict_with_manifest,
+        lock_targets_conflict_with_record, lockfile_digest, manifest_checksum_source,
+        manifest_creation_root_from, manifest_target_override, manifest_tool_from_source,
+        parse_manifest_source, project_root_from, remove_global_tool_from_paths,
+        remove_local_manifest_orphans, restore_local_remove_state, restore_runtime_tool_state,
+        select_explain_asset, select_manifest_asset, shell_path, shell_quote,
+        snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
         validate_locked_record_artifact, validate_package_record_metadata,
         validate_provider_digest_evidence, verify_lockfile_records, verify_runtime_cache_bytes,
         ArtifactKind, InstalledPackage, LocalRemoveState, RuntimeToolState,
@@ -2931,8 +2955,25 @@ mod tests {
         record.target_os = TargetOs::Windows;
         write_package_record(&paths, "foo", &record).expect("write package record");
 
-        let error = ensure_no_global_install_path_collision(&paths, "foo.exe", TargetOs::Windows)
-            .expect_err("collision");
+        let error =
+            ensure_no_package_record_install_path_collision(&paths, "foo.exe", TargetOs::Windows)
+                .expect_err("collision");
+
+        assert!(matches!(error, BinpmError::InstalledPathCollision { .. }));
+    }
+
+    #[test]
+    fn local_source_install_rejects_windows_exe_collision() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        let mut record = package_record();
+        record.target_os = TargetOs::Windows;
+        write_package_record(&paths, "foo", &record).expect("write package record");
+
+        let error =
+            ensure_no_package_record_install_path_collision(&paths, "foo.exe", TargetOs::Windows)
+                .expect_err("collision");
 
         assert!(matches!(error, BinpmError::InstalledPathCollision { .. }));
     }

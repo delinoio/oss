@@ -157,6 +157,7 @@ impl ScopePaths {
     }
 
     pub fn ensure(&self) -> Result<()> {
+        ensure_dir(&self.root)?;
         ensure_dir(&self.bin)?;
         ensure_dir(&self.packages)?;
         ensure_dir(&self.tmp)?;
@@ -268,6 +269,10 @@ pub fn validate_command_name(cmd: &str) -> Result<()> {
         || cmd == "."
         || cmd == ".."
         || cmd.contains(['/', '\\'])
+        || cmd.contains(['<', '>', ':', '"', '|', '?', '*'])
+        || cmd.chars().any(char::is_control)
+        || cmd.ends_with([' ', '.'])
+        || is_windows_reserved_device_name(cmd)
         || Path::new(cmd).components().any(|component| {
             !matches!(
                 component,
@@ -280,6 +285,20 @@ pub fn validate_command_name(cmd: &str) -> Result<()> {
         });
     }
     Ok(())
+}
+
+fn is_windows_reserved_device_name(cmd: &str) -> bool {
+    let stem = cmd.split('.').next().unwrap_or(cmd);
+    let upper = stem.to_ascii_uppercase();
+    matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || upper
+            .strip_prefix("COM")
+            .and_then(|suffix| suffix.parse::<u8>().ok())
+            .is_some_and(|number| (1..=9).contains(&number))
+        || upper
+            .strip_prefix("LPT")
+            .and_then(|suffix| suffix.parse::<u8>().ok())
+            .is_some_and(|number| (1..=9).contains(&number))
 }
 
 pub fn read_package_record(path: &Path) -> Result<PackageRecord> {
@@ -930,6 +949,21 @@ pub fn archive_format(kind: ArtifactKind) -> Option<ArchiveFormat> {
 }
 
 pub fn ensure_dir(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(BinpmError::UnsafeManagedDirectory {
+                path: path.to_path_buf(),
+            });
+        }
+        Ok(_) => {}
+        Err(source) if source.kind() == ErrorKind::NotFound => {}
+        Err(source) => {
+            return Err(BinpmError::ReadFile {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    }
     fs::create_dir_all(path).map_err(|source| BinpmError::CreateDirectory {
         path: path.to_path_buf(),
         source,
@@ -1074,6 +1108,7 @@ mod tests {
             ArchiveFormat, ChecksumSource, HostTarget, SourceProvider, SourceSpec, TargetArch,
             TargetLibc, TargetOs,
         },
+        error::BinpmError,
     };
 
     #[test]
@@ -1187,11 +1222,43 @@ mod tests {
 
     #[test]
     fn rejects_command_names_with_path_components() {
-        for cmd in ["", ".", "..", "../tool", "nested/tool", r"nested\tool"] {
+        for cmd in [
+            "",
+            ".",
+            "..",
+            "../tool",
+            "nested/tool",
+            r"nested\tool",
+            "foo:bar",
+            "tool*",
+            "CON",
+            "nul.exe",
+            "tool.",
+            "tool ",
+        ] {
             assert!(validate_command_name(cmd).is_err(), "{cmd} should fail");
         }
 
         validate_command_name("tool.exe").expect("basename command");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn scope_paths_reject_symlinked_managed_directories() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = temp_dir.path().join("outside");
+        std::fs::create_dir_all(&outside).expect("outside dir");
+        let project = temp_dir.path().join("project");
+        std::fs::create_dir_all(&project).expect("project dir");
+        symlink(&outside, project.join(".binpm")).expect("symlink .binpm");
+
+        let error = ScopePaths::local(project)
+            .ensure()
+            .expect_err("symlinked scope");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
     }
 
     #[test]
