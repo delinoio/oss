@@ -74,6 +74,11 @@ fn install(args: InstallArgs) -> Result<i32> {
         }
         install_global_source(spec, args.require_verified)
     } else {
+        if requested_scope == Scope::Global {
+            return Err(BinpmError::NotImplemented {
+                command: "install --global without a source",
+            });
+        }
         info!(
             command = "install",
             scope = requested_scope.as_str(),
@@ -257,6 +262,7 @@ fn list(args: ScopedArgs) -> Result<i32> {
             let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
             let paths = ScopePaths::local(root);
             for (cmd, tool) in manifest.tools {
+                validate_command_name(&cmd)?;
                 let state = package_record_path(&paths, &cmd);
                 if state.exists() {
                     let record = read_package_record(&state)?;
@@ -1269,7 +1275,11 @@ fn restore_runtime_tool_state(paths: &ScopePaths, cmd: &str, prior_state: Runtim
             if let Some(bytes) = prior_state.installed_bytes {
                 let _ = restore_executable_bytes(&previous_path, &bytes);
             } else if let Some(cache_path) = &previous.cache_path {
-                let _ = install_bare_executable(Path::new(cache_path), &previous_path);
+                let expected_cache_path =
+                    binpm_home().map(|home| CachePaths::new(&home).asset_path(&previous.sha256));
+                if expected_cache_path.as_ref().ok() == Some(&PathBuf::from(cache_path)) {
+                    let _ = install_bare_executable(Path::new(cache_path), &previous_path);
+                }
             }
         }
         None => {
@@ -1307,6 +1317,13 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
     );
     let response = reqwest::blocking::Client::builder()
         .user_agent(concat!("binpm/", env!("CARGO_PKG_VERSION")))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if let Err(error) = validate_download_url(attempt.url().as_str()) {
+                attempt.error(error)
+            } else {
+                attempt.follow()
+            }
+        }))
         .build()
         .map_err(BinpmError::ReleaseHttpClient)?
         .get(url)
@@ -1329,14 +1346,21 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
     let paths = ScopePaths::local(root.clone());
     let prior_state = capture_local_remove_state(&root, cmd)?;
     let record_path = package_record_path(&paths, cmd);
-    if record_path.exists() {
-        let record = read_package_record(&record_path)?;
-        remove_installed_binary(&paths, cmd, &record)?;
+    let cleanup_result = (|| {
+        if record_path.exists() {
+            let record = read_package_record(&record_path)?;
+            remove_installed_binary(&paths, cmd, &record)?;
+        }
+        remove_package_record(&paths, cmd)?;
+        remove_cache_ref(&CachePaths::new(&binpm_home()?), &root, cmd)?;
+        remove_path_if_exists(&paths.bin.join(cmd))?;
+        remove_path_if_exists(&paths.bin.join(format!("{cmd}.exe")))?;
+        Ok(())
+    })();
+    if let Err(error) = cleanup_result {
+        restore_local_remove_state(&root, cmd, prior_state);
+        return Err(error);
     }
-    remove_package_record(&paths, cmd)?;
-    remove_cache_ref(&CachePaths::new(&binpm_home()?), &root, cmd)?;
-    remove_path_if_exists(&paths.bin.join(cmd))?;
-    remove_path_if_exists(&paths.bin.join(format!("{cmd}.exe")))?;
 
     let mut manifest = read_manifest(&manifest_path)?;
     manifest.tools.remove(cmd);

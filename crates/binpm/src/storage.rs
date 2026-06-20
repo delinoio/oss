@@ -120,7 +120,10 @@ impl PackageRecord {
     }
 
     pub fn has_verified_source(&self) -> bool {
-        self.checksum_source.is_upstream_verified()
+        matches!(
+            (self.source_provider, self.checksum_source),
+            (SourceProvider::GitHub, ChecksumSource::GitHubDigest)
+        )
     }
 }
 
@@ -654,13 +657,18 @@ pub fn validate_installed_binary_path(
 pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Result<usize> {
     let mut removed = 0;
     for (dir, record) in read_cache_record_entries(paths)? {
-        if referenced_keys.contains(&record.cache_key) {
+        let cache_key = dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(cache_key)
+            .unwrap_or_else(|| record.cache_key.clone());
+        if referenced_keys.contains(&cache_key) {
             continue;
         }
         remove_path_if_exists(&dir)?;
         removed += 1;
         info!(
-            cache_key = record.cache_key,
+            cache_key,
             cache_path = %dir.display(),
             cache_action = "prune",
             cache_evicted = true,
@@ -1166,6 +1174,9 @@ mod tests {
         record.checksum_source = ChecksumSource::GitHubDigest;
 
         assert!(record.has_verified_source());
+
+        record.source_provider = SourceProvider::GitLab;
+        assert!(!record.has_verified_source());
     }
 
     #[test]
@@ -1216,6 +1227,29 @@ mod tests {
         assert_eq!(removed, 1);
         assert!(cache.asset_path(&kept_sha).exists());
         assert!(!cache.asset_path(&removed_sha).exists());
+    }
+
+    #[test]
+    fn prune_uses_cache_directory_digest_when_record_key_is_stale() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let resolved = resolved_asset();
+        let (kept_sha, _) =
+            populate_cache_from_bytes(&cache, &resolved, b"keep").expect("populate kept");
+        let record_path = cache.entry_dir(&kept_sha).join("record.toml");
+        let mut raw = std::fs::read_to_string(&record_path).expect("read record");
+        raw = raw.replace(
+            &format!("cache_key = \"sha256:{kept_sha}\""),
+            "cache_key = \"sha256:stale\"",
+        );
+        std::fs::write(&record_path, raw).expect("write stale record");
+        let mut referenced = BTreeSet::new();
+        referenced.insert(format!("sha256:{kept_sha}"));
+
+        let removed = prune_cache(&cache, &referenced).expect("prune cache");
+
+        assert_eq!(removed, 0);
+        assert!(cache.asset_path(&kept_sha).exists());
     }
 
     #[test]
