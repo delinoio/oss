@@ -132,6 +132,30 @@ fn init_from_nested_directory_detects_existing_manifest_without_git() {
     assert!(!nested_dir.join("binpm.toml").exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn init_treats_broken_manifest_symlink_as_existing_manifest() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    std::os::unix::fs::symlink(
+        temp_dir.path().join("missing-manifest-target"),
+        temp_dir.path().join("binpm.toml"),
+    )
+    .expect("create broken manifest symlink");
+    let nested_dir = temp_dir.path().join("packages").join("cli");
+    fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let mut command = binpm();
+
+    command
+        .current_dir(&nested_dir)
+        .arg("init")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Refusing to overwrite existing manifest",
+        ));
+}
+
 #[test]
 fn env_prints_shell_path_exports() {
     let temp_dir = tempfile::tempdir().expect("tempdir");

@@ -707,8 +707,13 @@ pub fn deterministic_installed_path(cmd: &str, target_os: TargetOs) -> String {
 }
 
 pub fn installed_filename(cmd: &str, target_os: TargetOs) -> String {
-    if target_os == TargetOs::Windows && !cmd.to_ascii_lowercase().ends_with(".exe") {
-        format!("{cmd}.exe")
+    if target_os == TargetOs::Windows {
+        let normalized = cmd.to_ascii_lowercase();
+        if normalized.ends_with(".exe") {
+            normalized
+        } else {
+            format!("{normalized}.exe")
+        }
     } else {
         cmd.to_string()
     }

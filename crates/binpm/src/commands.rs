@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -108,7 +109,7 @@ fn add(args: AddArgs) -> Result<i32> {
     let root = require_manifest_root_or_creation_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
     validate_command_name(&args.cmd)?;
-    let manifest_existed = manifest_path.exists();
+    let manifest_existed = path_exists_or_unreadable(&manifest_path);
     let mut manifest = if manifest_existed {
         read_manifest(&manifest_path)?
     } else {
@@ -1030,6 +1031,12 @@ fn install_local_from_lock(
         path: lockfile_path.clone(),
     })?;
     if locked_tool.source != spec.source_without_version() {
+        return Err(BinpmError::StaleLockfile {
+            path: lockfile_path.clone(),
+            cmd: cmd.to_string(),
+        });
+    }
+    if lock_targets_conflict_with_manifest(&lockfile_path, root, cmd, spec, tool, locked_tool) {
         return Err(BinpmError::StaleLockfile {
             path: lockfile_path.clone(),
             cmd: cmd.to_string(),
@@ -2220,11 +2227,7 @@ fn require_manifest_root() -> Result<PathBuf> {
 }
 
 fn require_manifest_root_or_creation_root() -> Result<PathBuf> {
-    let cwd = current_dir()?;
-    Ok(find_manifest_root(&cwd)
-        .or_else(|| find_git_root(&cwd))
-        .unwrap_or(&cwd)
-        .to_path_buf())
+    manifest_creation_root()
 }
 
 fn repo_name(spec: &SourceSpec) -> &str {
@@ -2532,7 +2535,7 @@ fn init(args: InitArgs) -> Result<i32> {
     let project_root = manifest_creation_root()?;
     let manifest_path = project_root.join(MANIFEST_FILE);
 
-    if manifest_path.exists() && !args.force {
+    if path_exists_or_unreadable(&manifest_path) && !args.force {
         return Err(BinpmError::ManifestExists {
             path: manifest_path,
         });
@@ -2712,11 +2715,18 @@ fn manifest_creation_root_from(start: &Path) -> PathBuf {
 fn find_manifest_root(start: &Path) -> Option<&Path> {
     start
         .ancestors()
-        .find(|path| path.join(MANIFEST_FILE).exists())
+        .find(|path| path_exists_or_unreadable(&path.join(MANIFEST_FILE)))
 }
 
 fn find_git_root(start: &Path) -> Option<&Path> {
     start.ancestors().find(|path| path.join(".git").exists())
+}
+
+fn path_exists_or_unreadable(path: &Path) -> bool {
+    match fs::symlink_metadata(path) {
+        Ok(_) => true,
+        Err(source) => source.kind() != ErrorKind::NotFound,
+    }
 }
 
 fn binpm_home() -> Result<PathBuf> {
@@ -2795,7 +2805,7 @@ mod tests {
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
         ensure_no_global_install_path_collision, github_sha256_digest, has_current_cache_record,
-        has_local_runtime_or_lock_state, local_runtime_lock_records,
+        has_local_runtime_or_lock_state, install_local_from_lock, local_runtime_lock_records,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
         manifest_checksum_source, manifest_creation_root_from, manifest_target_override,
         manifest_tool_from_source, parse_manifest_source, project_root_from,
@@ -2903,6 +2913,10 @@ mod tests {
             ".binpm/bin/tool.exe"
         );
         assert_eq!(
+            deterministic_installed_path("TOOL.EXE", TargetOs::Windows),
+            ".binpm/bin/tool.exe"
+        );
+        assert_eq!(
             deterministic_installed_path("tool", TargetOs::Linux),
             ".binpm/bin/tool"
         );
@@ -2921,6 +2935,51 @@ mod tests {
             .expect_err("collision");
 
         assert!(matches!(error, BinpmError::InstalledPathCollision { .. }));
+    }
+
+    #[test]
+    fn frozen_local_install_rejects_stale_non_current_lock_targets() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source");
+        let current_target = HostTarget::current().expect("current target");
+        let mut current_record = package_record();
+        current_record.target_os = current_target.os;
+        current_record.target_arch = current_target.arch;
+        current_record.target_libc = current_target.libc;
+        current_record.installed_path = deterministic_installed_path("tool", current_target.os);
+
+        let mut stale_windows_record = package_record();
+        stale_windows_record.requested_version = Some("0.9.0".to_string());
+        stale_windows_record.target_os = TargetOs::Windows;
+        stale_windows_record.target_arch = TargetArch::X86_64;
+        stale_windows_record.target_libc = TargetLibc::Msvc;
+        stale_windows_record.installed_path =
+            deterministic_installed_path("tool", TargetOs::Windows);
+
+        write_lockfile(
+            &temp_dir.path().join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([
+                            (current_target.key(), current_record),
+                            ("windows-x86_64-msvc".to_string(), stale_windows_record),
+                        ]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+
+        let error = match install_local_from_lock(temp_dir.path(), "tool", &spec, None, false) {
+            Ok(_) => panic!("expected stale lockfile"),
+            Err(error) => error,
+        };
+
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
     }
 
     #[test]
@@ -4574,6 +4633,21 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n")
             .expect("write manifest");
+        let nested = temp_dir.path().join("nested").join("deeper");
+        std::fs::create_dir_all(&nested).expect("create nested dir");
+
+        assert_eq!(project_root_from(&nested), temp_dir.path());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn project_root_treats_broken_manifest_symlink_as_manifest() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        std::os::unix::fs::symlink(
+            temp_dir.path().join("missing-manifest-target"),
+            temp_dir.path().join("binpm.toml"),
+        )
+        .expect("create broken manifest symlink");
         let nested = temp_dir.path().join("nested").join("deeper");
         std::fs::create_dir_all(&nested).expect("create nested dir");
 
