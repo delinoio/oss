@@ -1,17 +1,20 @@
 # Reference
 
-## Stable Behavior
+This page summarizes stable Nodeup contracts. For command syntax, see [Command Reference](/commands).
 
-Nodeup documentation must preserve these user-facing contracts:
+## Stable User-Facing Behavior
 
-- Stable channel naming and runtime dispatch semantics.
-- Deterministic shim behavior across supported operating systems.
-- Deterministic shell completion generation for supported shells and top-level command scopes.
-- Stable human output styling controls through `--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence.
+- Channel selectors are `lts`, `current`, and `latest`.
+- Runtime selector precedence is explicit selector, directory override, then global default.
+- Shim dispatch is deterministic by executable name for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
+- `package.json` `packageManager` support is strict for `yarn` and `pnpm`.
+- Shell completions are deterministic for supported shells and top-level command scopes.
+- Human output color precedence is `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
+- JSON output never contains ANSI styling.
 
-## Release Artifacts
+## Supported Hosts
 
-Release automation must publish standalone prebuilt binaries and archive assets for:
+Nodeup supports runtime installation and shim dispatch on:
 
 - `linux/amd64`
 - `linux/arm64`
@@ -20,4 +23,16 @@ Release automation must publish standalone prebuilt binaries and archive assets 
 - `windows/amd64`
 - `windows/arm64`
 
-Each artifact must have a Sigstore bundle sidecar and must be covered by `SHA256SUMS`.
+x86 hosts are unsupported.
+
+## Route Map
+
+- [Installation](/installation): installation methods, verification, supported hosts, storage roots, mirrors.
+- [Getting Started](/getting-started): first runtime install, defaults, overrides, run, shims, JSON verification.
+- [Command Reference](/commands): command-by-command behavior and output shapes.
+- [Runtime Resolution](/runtime-resolution): selectors, precedence, overrides, defaults, release index cache.
+- [Shims and Package Managers](/shims-and-package-managers): managed aliases and `packageManager` behavior.
+- [Output](/output): human/JSON contracts, errors, color precedence, logs.
+- [Completions](/completions): shells, command scopes, raw script output.
+- [Releases](/releases): release artifacts, signing, direct-installer verification.
+- [Troubleshooting](/troubleshooting): common errors and validation commands.

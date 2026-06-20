@@ -1,0 +1,207 @@
+# Command Reference
+
+Global options:
+
+```bash
+nodeup --output human|json --color auto|always|never <command>
+```
+
+`--output` defaults to `human`. `--color` controls human stdout and stderr styling only.
+
+## toolchain list
+
+```bash
+nodeup toolchain list [--quiet|--verbose]
+```
+
+Lists installed and linked runtimes.
+
+- Standard human output prints installed and linked counts.
+- `--quiet` prints compact runtime identifiers only and prints nothing when no runtimes exist.
+- `--verbose` prints installed runtime paths and linked runtime paths.
+- JSON output has `installed` and `linked` fields.
+
+## toolchain install
+
+```bash
+nodeup toolchain install <runtime>...
+```
+
+Installs or verifies one or more semantic-version or channel selectors. Supported examples:
+
+```bash
+nodeup toolchain install 22.1.0
+nodeup toolchain install v22.1.0 lts current latest
+```
+
+The command rejects linked runtime names. JSON output is an array of entries with `selector`, `runtime`, and `status`, where `status` is `installed` or `already-installed`.
+
+## toolchain uninstall
+
+```bash
+nodeup toolchain uninstall <version>...
+```
+
+Removes exact installed versions only. Channels and linked runtime names are rejected. A runtime cannot be removed while referenced by the global default or a directory override.
+
+JSON output is the removed version list.
+
+## toolchain link
+
+```bash
+nodeup toolchain link <name> <path>
+```
+
+Registers an existing runtime directory. The directory must contain `bin/node` or `bin/node.exe`.
+
+Linked names must match `[A-Za-z0-9][A-Za-z0-9_-]*`. Reserved channel names `lts`, `current`, and `latest` cannot be used as linked runtime names.
+
+JSON output includes `name`, `path`, and `status: "linked"`.
+
+## default
+
+```bash
+nodeup default [runtime]
+```
+
+Without an argument, prints the current default selector and resolution status. With an argument, resolves the selector, installs version targets when needed, saves it as the global default, and tracks it for updates.
+
+JSON output includes:
+
+- `default_selector`
+- `resolved_runtime`
+- `resolution_error`
+
+`resolution_error` is populated when an existing default cannot currently be resolved.
+
+## show active-runtime
+
+```bash
+nodeup show active-runtime
+```
+
+Prints the active runtime after override/default resolution. It verifies that version runtimes are installed and that the resolved runtime has a `node` executable.
+
+JSON output includes `runtime`, `source`, and `selector`.
+
+## show home
+
+```bash
+nodeup show home
+```
+
+Prints the effective `data_root`, `cache_root`, and `config_root`.
+
+## update
+
+```bash
+nodeup update [runtime]...
+```
+
+With explicit selectors, processes those selectors. Without arguments, updates tracked selectors first; if no selectors are tracked, it falls back to installed runtimes.
+
+Behavior by selector:
+
+- Linked runtime names are skipped with `skipped-linked-runtime`.
+- Channels resolve to the current channel version and install it if needed.
+- Exact versions install a newer available version when the release index contains one.
+
+JSON output is an array with `selector`, `previous_runtime`, `updated_runtime`, and `status`.
+
+## check
+
+```bash
+nodeup check
+```
+
+Checks installed runtimes for newer available releases without installing anything.
+
+JSON output is an array with `runtime`, `latest_available`, and `has_update`.
+
+## override list
+
+```bash
+nodeup override list
+```
+
+Lists configured directory overrides. JSON output is an array of `path` and `selector` entries.
+
+## override set
+
+```bash
+nodeup override set <runtime> [--path <path>]
+```
+
+Sets a directory-scoped selector. `--path` defaults to the current directory. The selector is canonicalized before storage and tracked for `nodeup update`.
+
+JSON output includes `path`, `selector`, and `status: "set"`.
+
+## override unset
+
+```bash
+nodeup override unset [--path <path>] [--nonexistent]
+```
+
+Removes an override for the provided path or current directory. `--nonexistent` removes stale entries whose directories no longer exist.
+
+JSON output is the removed override list.
+
+## which
+
+```bash
+nodeup which [--runtime <runtime>] <command>
+```
+
+Prints the executable path Nodeup would run. `--runtime` is an explicit selector and overrides directory/default resolution.
+
+For `yarn` and `pnpm`, `which` uses package-manager planning. In npm-exec mode, the resolved executable path is the selected runtime's `npm` executable.
+
+JSON output includes `runtime`, `command`, and `executable_path`.
+
+## run
+
+```bash
+nodeup run [--install] <runtime> <command> [args...]
+```
+
+Runs a delegated command with an explicit runtime selector. Missing version runtimes fail unless `--install` is provided.
+
+In human mode, delegated stdio is inherited. In JSON mode, delegated stdout is routed to stderr so stdout can contain the final JSON response with `runtime`, `command`, and `exit_code`.
+
+## self update
+
+```bash
+nodeup self update
+```
+
+Replaces the current Nodeup binary from `NODEUP_SELF_UPDATE_SOURCE`. `NODEUP_SELF_BIN_PATH` can override the target path; otherwise Nodeup uses the current executable path.
+
+JSON output includes `action`, `status`, `target_binary`, and `source_binary`.
+
+## self uninstall
+
+```bash
+nodeup self uninstall
+```
+
+Removes Nodeup-owned data, cache, and config roots when they contain artifacts. It refuses unsafe paths that are not clearly Nodeup-owned.
+
+JSON output includes `action`, `status`, and `removed_paths`.
+
+## self upgrade-data
+
+```bash
+nodeup self upgrade-data
+```
+
+Creates or migrates local settings and overrides files to the current schema.
+
+JSON output includes the action, top-level status, and per-file migration results.
+
+## completions
+
+```bash
+nodeup completions <shell> [command]
+```
+
+Generates raw completion scripts. See [Completions](/completions).
