@@ -7,6 +7,7 @@ use std::{
 
 use assert_cmd::Command;
 use httpmock::{Method::GET, MockServer};
+use predicates::prelude::PredicateBooleanExt;
 use serde_json::Value;
 use serial_test::serial;
 use sha2::{Digest, Sha256};
@@ -171,6 +172,17 @@ fn normalize(version: &str) -> String {
     } else {
         format!("v{version}")
     }
+}
+
+fn tracked_selectors_from_settings(settings_file: &Path) -> Vec<String> {
+    let content = fs::read_to_string(settings_file).unwrap();
+    let value = content.parse::<toml::Value>().unwrap();
+    value["tracked_selectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|selector| selector.as_str().unwrap().to_string())
+        .collect()
 }
 
 fn make_archive(version: &str, target: &str, scripts: &[(&str, &str)]) -> Vec<u8> {
@@ -2073,12 +2085,21 @@ fn check_and_update_detect_newer_version() {
         .args(["--output", "json", "update", "22.1.0"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("\"status\": \"updated\""));
+        .stdout(predicates::str::contains(
+            "\"status\": \"skipped-exact-version\"",
+        ));
+
+    env.command()
+        .args(["toolchain", "list", "--quiet"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("v22.1.0"))
+        .stdout(predicates::str::contains("v22.2.0").not());
 }
 
 #[test]
 #[serial]
-fn update_reports_already_up_to_date_when_latest_is_already_installed() {
+fn update_reports_skipped_exact_version_when_latest_is_already_installed() {
     let env = TestEnv::new();
     env.register_index(&[("22.2.0", Some("Jod")), ("22.1.0", Some("Jod"))]);
     env.register_release(
@@ -2104,7 +2125,7 @@ fn update_reports_already_up_to_date_when_latest_is_already_installed() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "\"status\": \"already-up-to-date\"",
+            "\"status\": \"skipped-exact-version\"",
         ));
 }
 
@@ -2925,6 +2946,233 @@ fn update_channel_selector_reports_updated_status() {
     assert_eq!(entries[0]["selector"], "lts");
     assert_eq!(entries[0]["status"], "updated");
     assert_eq!(entries[0]["updated_runtime"], "v22.2.0");
+}
+
+#[test]
+#[serial]
+fn tracked_exact_selectors_are_canonicalized_across_install_and_override() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", Some("Krypton")), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("dedupe-install-override");
+    fs::create_dir_all(&project_dir).unwrap();
+    env.command()
+        .args([
+            "override",
+            "set",
+            "22.1.0",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        tracked_selectors_from_settings(&env.config_root.join("settings.toml")),
+        vec!["v22.1.0"]
+    );
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update deduplicated exact selectors");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["status"], "skipped-exact-version");
+    assert_eq!(entries[0]["previous_runtime"], "v22.1.0");
+    assert_eq!(entries[0]["updated_runtime"], "v22.1.0");
+}
+
+#[test]
+#[serial]
+fn tracked_exact_selectors_are_canonicalized_across_install_and_default() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", Some("Krypton")), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "v22.1.0"])
+        .assert()
+        .success();
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    assert_eq!(
+        tracked_selectors_from_settings(&env.config_root.join("settings.toml")),
+        vec!["v22.1.0"]
+    );
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update deduplicated default exact selector");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["status"], "skipped-exact-version");
+
+    env.command()
+        .args(["--output", "json", "show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"runtime\": \"v22.1.0\""));
+}
+
+#[test]
+#[serial]
+fn update_deduplicates_existing_semantic_exact_selectors() {
+    let env = TestEnv::new();
+    let settings_file = env.config_root.join("settings.toml");
+    fs::write(
+        &settings_file,
+        r#"schema_version = 1
+tracked_selectors = ["22.1.0", "v22.1.0"]
+
+[linked_runtimes]
+"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update existing duplicate exact selectors");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["status"], "skipped-exact-version");
+    assert_eq!(entries[0]["previous_runtime"], "v22.1.0");
+    assert_eq!(entries[0]["updated_runtime"], "v22.1.0");
+}
+
+#[test]
+#[serial]
+fn update_exact_default_reports_noop_and_keeps_resolution_pinned() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", Some("Krypton")), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update exact default");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["status"], "skipped-exact-version");
+    assert_eq!(entries[0]["previous_runtime"], "v22.1.0");
+    assert_eq!(entries[0]["updated_runtime"], "v22.1.0");
+
+    env.command()
+        .args(["--output", "json", "show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"runtime\": \"v22.1.0\""));
+
+    env.command()
+        .args(["toolchain", "list", "--quiet"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("v22.1.0"))
+        .stdout(predicates::str::contains("v24.0.0").not());
+}
+
+#[test]
+#[serial]
+fn update_exact_override_reports_noop_and_keeps_resolution_pinned() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", Some("Krypton")), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+    let project_dir = env.root.join("exact-override-noop");
+    fs::create_dir_all(&project_dir).unwrap();
+    env.command()
+        .current_dir(&project_dir)
+        .args(["override", "set", "22.1.0"])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update exact override");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["status"], "skipped-exact-version");
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["--output", "json", "show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"runtime\": \"v22.1.0\""));
+
+    env.command()
+        .args(["toolchain", "list", "--quiet"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("v22.1.0"))
+        .stdout(predicates::str::contains("v24.0.0").not());
 }
 
 #[test]

@@ -11,6 +11,7 @@ use tempfile::NamedTempFile;
 use crate::{
     errors::{NodeupError, Result},
     paths::NodeupPaths,
+    selectors::RuntimeSelector,
 };
 
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
@@ -61,7 +62,10 @@ impl Store {
             ));
         }
 
-        Ok(file)
+        Ok(SettingsFile {
+            tracked_selectors: canonical_tracked_selectors(file.tracked_selectors),
+            ..file
+        })
     }
 
     pub fn save_settings(&self, settings: &SettingsFile) -> Result<()> {
@@ -71,9 +75,8 @@ impl Store {
 
     pub fn track_selector(&self, selector: &str) -> Result<()> {
         let mut settings = self.load_settings()?;
-        let mut deduplicated: BTreeSet<String> = settings.tracked_selectors.into_iter().collect();
-        deduplicated.insert(selector.to_string());
-        settings.tracked_selectors = deduplicated.into_iter().collect();
+        settings.tracked_selectors.push(selector.to_string());
+        settings.tracked_selectors = canonical_tracked_selectors(settings.tracked_selectors);
         self.save_settings(&settings)
     }
 
@@ -123,6 +126,24 @@ impl Store {
 
     pub fn paths(&self) -> &NodeupPaths {
         &self.paths
+    }
+}
+
+fn canonical_tracked_selectors(selectors: Vec<String>) -> Vec<String> {
+    let mut deduplicated = BTreeSet::new();
+    for selector in selectors {
+        deduplicated.insert(canonical_tracked_selector(&selector));
+    }
+
+    deduplicated.into_iter().collect()
+}
+
+fn canonical_tracked_selector(selector: &str) -> String {
+    match RuntimeSelector::parse(selector) {
+        Ok(RuntimeSelector::Version(version)) => format!("v{version}"),
+        Ok(RuntimeSelector::Channel(channel)) => channel.to_string(),
+        Ok(RuntimeSelector::LinkedName(name)) => name,
+        Err(_) => selector.to_string(),
     }
 }
 
