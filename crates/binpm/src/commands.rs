@@ -2300,7 +2300,7 @@ fn read_zip_selected_binary(
         let has_executable_mode = unix_mode.map(|mode| mode & 0o111 != 0).unwrap_or(false);
         let executable = has_executable_mode || archive_exe_is_executable(&path, target);
         let has_real_unix_mode =
-            zip_file_has_real_unix_mode(&zip_entry_systems, file.name_raw(), unix_mode);
+            zip_file_has_real_unix_mode(zip_entry_systems.get(index).copied(), unix_mode);
         let missing_executable_metadata = !has_real_unix_mode
             && !executable
             && target.os != TargetOs::Windows
@@ -2331,7 +2331,7 @@ fn read_zip_selected_binary(
     )
 }
 
-fn zip_central_directory_systems(bytes: &[u8]) -> BTreeMap<Vec<u8>, u8> {
+fn zip_central_directory_systems(bytes: &[u8]) -> Vec<u8> {
     const CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
     const CENTRAL_DIRECTORY_HEADER_LEN: usize = 46;
     const VERSION_MADE_BY_SYSTEM_OFFSET: usize = 5;
@@ -2342,6 +2342,7 @@ fn zip_central_directory_systems(bytes: &[u8]) -> BTreeMap<Vec<u8>, u8> {
     const END_OF_CENTRAL_DIRECTORY_LEN: usize = 22;
     const CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 12;
     const CENTRAL_DIRECTORY_OFFSET_OFFSET: usize = 16;
+    const END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET: usize = 20;
 
     let directory_bounds = bytes
         .len()
@@ -2350,9 +2351,16 @@ fn zip_central_directory_systems(bytes: &[u8]) -> BTreeMap<Vec<u8>, u8> {
             let first_start = bytes
                 .len()
                 .saturating_sub(END_OF_CENTRAL_DIRECTORY_LEN + u16::MAX as usize);
-            (first_start..=last_start)
-                .rev()
-                .find(|index| bytes[*index..].starts_with(&END_OF_CENTRAL_DIRECTORY_SIGNATURE))
+            (first_start..=last_start).rev().find_map(|index| {
+                if !bytes[index..].starts_with(&END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
+                    return None;
+                }
+                let comment_len = u16::from_le_bytes([
+                    bytes[index + END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET],
+                    bytes[index + END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET + 1],
+                ]) as usize;
+                (index + END_OF_CENTRAL_DIRECTORY_LEN + comment_len == bytes.len()).then_some(index)
+            })
         })
         .and_then(|index| {
             let directory_size = u32::from_le_bytes([
@@ -2372,12 +2380,12 @@ fn zip_central_directory_systems(bytes: &[u8]) -> BTreeMap<Vec<u8>, u8> {
                 .checked_sub(directory_start)?;
             let directory_start = archive_offset.checked_add(directory_start)?;
             let directory_end = directory_start.checked_add(directory_size)?;
-            (directory_start <= index && directory_end <= bytes.len())
+            (directory_start <= index && directory_end == index)
                 .then_some((directory_start, directory_end))
         })
         .unwrap_or((0, bytes.len()));
 
-    let mut systems = BTreeMap::new();
+    let mut systems = Vec::new();
     let mut index = directory_bounds.0;
     while index + CENTRAL_DIRECTORY_HEADER_LEN <= directory_bounds.1 {
         if !bytes[index..].starts_with(&CENTRAL_DIRECTORY_SIGNATURE) {
@@ -2414,20 +2422,13 @@ fn zip_central_directory_systems(bytes: &[u8]) -> BTreeMap<Vec<u8>, u8> {
             continue;
         }
 
-        systems.insert(
-            bytes[name_start..name_end].to_vec(),
-            bytes[index + VERSION_MADE_BY_SYSTEM_OFFSET],
-        );
+        systems.push(bytes[index + VERSION_MADE_BY_SYSTEM_OFFSET]);
         index = next_index;
     }
     systems
 }
 
-fn zip_file_has_real_unix_mode(
-    entry_systems: &BTreeMap<Vec<u8>, u8>,
-    file_name: &[u8],
-    unix_mode: Option<u32>,
-) -> bool {
+fn zip_file_has_real_unix_mode(entry_system: Option<u8>, unix_mode: Option<u32>) -> bool {
     const ZIP_SYSTEM_UNIX: u8 = 3;
     const UNIX_FILE_TYPE_MASK: u32 = 0o170000;
     const UNIX_PERMISSION_MASK: u32 = 0o7777;
@@ -2437,9 +2438,8 @@ fn zip_file_has_real_unix_mode(
     };
     let has_usable_unix_mode = mode & (UNIX_FILE_TYPE_MASK | UNIX_PERMISSION_MASK) != 0;
     has_usable_unix_mode
-        && entry_systems
-            .get(file_name)
-            .map(|system| *system == ZIP_SYSTEM_UNIX)
+        && entry_system
+            .map(|system| system == ZIP_SYSTEM_UNIX)
             .unwrap_or(true)
 }
 
@@ -4639,6 +4639,33 @@ mod tests {
             None,
         )
         .expect("selected repo binary from prepended zip");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+    }
+
+    #[test]
+    fn zip_extraction_ignores_false_eocd_signature_in_comment() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("pkg/README.md", b"docs".as_slice()),
+                ("pkg/tool", b"#!/bin/sh\necho recovered\n".as_slice()),
+            ],
+        );
+        append_zip_comment(&archive_path, b"comment PK\x05\x06 fake footer");
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary despite false EOCD signature in comment");
 
         assert_eq!(selected.path, "pkg/tool");
         assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
@@ -7955,6 +7982,25 @@ mod tests {
         let mut prefixed = prefix.to_vec();
         prefixed.extend(bytes);
         fs::write(path, prefixed).expect("write prepended zip");
+    }
+
+    fn append_zip_comment(path: &Path, comment: &[u8]) {
+        const END_OF_CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+        const END_OF_CENTRAL_DIRECTORY_LEN: usize = 22;
+        const END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET: usize = 20;
+
+        let mut bytes = fs::read(path).expect("read zip for comment patch");
+        assert!(comment.len() <= u16::MAX as usize);
+        let eocd_index = bytes
+            .len()
+            .checked_sub(END_OF_CENTRAL_DIRECTORY_LEN)
+            .expect("zip has EOCD");
+        assert!(bytes[eocd_index..].starts_with(&END_OF_CENTRAL_DIRECTORY_SIGNATURE));
+        bytes[eocd_index + END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET
+            ..eocd_index + END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET + 2]
+            .copy_from_slice(&(comment.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(comment);
+        fs::write(path, bytes).expect("write zip comment patch");
     }
 
     fn patch_zip_member_raw_name(path: &Path, old_name: &[u8], new_name: &[u8]) {
