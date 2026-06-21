@@ -54,10 +54,16 @@ impl ToolchainListDetail {
 #[command(
     name = "nodeup",
     version,
-    about = "Rustup-like Node.js version manager"
+    about = "Rustup-like Node.js version manager",
+    after_help = "Script-safe output:\n  Use `--output json` for structured automation.\n  Use \
+                  `nodeup toolchain list --quiet` with RUST_LOG=off in the environment for raw \
+                  runtime identifiers.\n  Use `nodeup completions <shell> >file` with \
+                  RUST_LOG=off in the environment for raw completion scripts.\n  Logs are written \
+                  to stderr and JSON mode keeps logging off for parseable automation output."
 )]
 pub struct Cli {
-    /// Output format for command results.
+    /// Output format for command results. Use `json` for structured automation;
+    /// JSON mode keeps Nodeup logging off for parseable automation output.
     #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Human)]
     pub output: OutputFormat,
 
@@ -129,12 +135,14 @@ pub enum Command {
         #[command(subcommand)]
         command: SelfCommand,
     },
-    /// Generate shell completion scripts.
+    /// Generate shell completion scripts. Set RUST_LOG=off in the environment
+    /// before redirecting for script-safe raw output.
     Completions {
         /// Target shell (for example: `bash`, `zsh`, or `fish`).
         shell: String,
         /// Optional command scope for completion generation.
-        command: Option<String>,
+        #[arg(value_name = "COMMAND", allow_hyphen_values = true)]
+        command: Vec<String>,
     },
 }
 
@@ -142,7 +150,8 @@ pub enum Command {
 pub enum ToolchainCommand {
     /// List installed runtimes.
     List {
-        /// Print compact runtime identifiers only.
+        /// Print compact runtime identifiers only. Set RUST_LOG=off in the
+        /// environment for script-safe raw lists.
         #[arg(long, conflicts_with = "verbose")]
         quiet: bool,
         /// Include runtime metadata such as resolved target paths.

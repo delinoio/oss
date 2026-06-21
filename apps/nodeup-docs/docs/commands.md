@@ -8,6 +8,8 @@ nodeup --output human|json --color auto|always|never <command>
 
 `--output` defaults to `human`. `--color` controls human stdout and stderr styling only.
 
+For script-safe stdout, use `--output json` for structured data, set `RUST_LOG=off` before `nodeup toolchain list --quiet` for newline-delimited runtime identifiers, and set `RUST_LOG=off` before `nodeup completions <shell> >file` for completion script redirection. Logs are written to stderr when enabled.
+
 ## toolchain list
 
 ```bash
@@ -21,7 +23,7 @@ Lists installed and linked runtimes.
 - `--verbose` prints installed runtime paths and linked runtime paths.
 - JSON output has `installed` and `linked` fields.
 
-Use `RUST_LOG=off nodeup toolchain list --quiet` or `nodeup --output json toolchain list` when scripts need log-free stdout.
+Set `RUST_LOG=off` before `nodeup toolchain list --quiet`, or use `nodeup --output json toolchain list`, when scripts need parseable stdout.
 
 ## toolchain install
 
@@ -46,7 +48,21 @@ nodeup toolchain uninstall <version>...
 
 Removes exact installed versions only. At least one version selector is required. Channels and linked runtime names are rejected. Use `nodeup toolchain unlink <name>` for linked runtime records. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
 
-JSON output is the removed version list.
+When removal is blocked, human output reports each blocking reference type and path:
+
+- `global-default` points to the settings file that stores the global default.
+- `directory-override` points to the override directory path.
+
+Clear or change the reference, then retry:
+
+```bash
+nodeup default <runtime>
+nodeup override unset --path <path>
+nodeup override set <runtime> --path <path>
+nodeup toolchain uninstall <version>
+```
+
+Successful JSON output is the removed version list. Blocked JSON errors include `diagnostics.blocked_versions` and `diagnostics.blockers`; each blocker includes `reference_type`, `runtime`, `selector`, `path`, `clear_command`, and `change_command`.
 
 ## toolchain link
 
@@ -132,7 +148,9 @@ Behavior by selector:
 
 Tracked exact versions are canonicalized and deduplicated by semantic version. For example, tracking both `22.1.0` and `v22.1.0` results in one tracked selector, `v22.1.0`.
 
-JSON output is an array with `selector`, `previous_runtime`, `updated_runtime`, and `status`.
+`current` and `latest` resolve to the same newest release-index entry; `latest` is reported as an alias of canonical selector `current`.
+
+JSON output is an array with `selector`, `selector_kind`, `canonical_selector`, optional `selector_alias_of`, `previous_runtime`, `updated_runtime`, and `status`.
 
 ## check
 
@@ -180,9 +198,22 @@ nodeup which [--runtime <runtime>] <command>
 
 Prints the executable path Nodeup would run. `--runtime` is an explicit selector and overrides directory/default resolution.
 
-For `yarn` and `pnpm`, `which` uses package-manager planning. In npm-exec mode, the resolved executable path is the selected runtime's `npm` executable.
+For `yarn` and `pnpm`, `which` uses package-manager planning. In direct mode it prints the selected runtime's package-manager executable. In npm-exec mode it prints the selected runtime's `npm` executable and labels that `npm exec` will invoke the requested package manager with the selected package spec.
 
-JSON output includes `runtime`, `command`, and `executable_path`.
+JSON output includes `runtime`, `command`, `requested_command`, `executable_path`, `mode`, `reason`, optional `package_spec`, optional `package_spec_pinned`, optional `package_json_path`, and a nested `planning` object with the same stable planning diagnostics.
+
+Direct-mode human output stays path-only:
+
+```text
+/home/me/.nodeup/data/toolchains/v22.1.0/bin/yarn
+```
+
+npm-exec-mode human output includes the `npm` path plus the package-manager plan:
+
+```text
+/home/me/.nodeup/data/toolchains/v22.1.0/bin/npm
+nodeup: yarn will run via npm exec using package @yarnpkg/cli-dist@4.13.0 (pinned; package_json=/repo/package.json; npm=/home/me/.nodeup/data/toolchains/v22.1.0/bin/npm; reason=package-manager-pinned)
+```
 
 ## run
 
@@ -192,7 +223,7 @@ nodeup run [--install] <runtime> <command> [args...]
 
 Runs a delegated command with an explicit runtime selector. Missing version runtimes fail unless `--install` is provided.
 
-In human mode, delegated stdio is inherited. In JSON mode, delegated stdout is routed to stderr so stdout can contain the final JSON response with `runtime`, `command`, and `exit_code`.
+In human mode, delegated stdio is inherited. If `yarn` or `pnpm` runs through npm-exec, Nodeup prints a planning notice to stderr before delegation so stdout remains owned by the delegated command. In JSON mode, delegated stdout is routed to stderr so stdout can contain the final JSON response with `runtime`, `command`, `exit_code`, and `planning`.
 
 ## shim setup
 

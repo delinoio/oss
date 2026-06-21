@@ -280,6 +280,16 @@ fn help_lists_top_level_subcommand_descriptions() {
         .arg("--help")
         .assert()
         .success()
+        .stdout(predicates::str::contains("Script-safe output:"))
+        .stdout(predicates::str::contains(
+            "Use `--output json` for structured automation.",
+        ))
+        .stdout(predicates::str::contains(
+            "`nodeup toolchain list --quiet` with RUST_LOG=off in the environment",
+        ))
+        .stdout(predicates::str::contains(
+            "`nodeup completions <shell> >file` with RUST_LOG=off in the environment",
+        ))
         .stdout(predicates::str::contains("Manage installed runtimes"))
         .stdout(predicates::str::contains(
             "Set or show the global default runtime",
@@ -315,6 +325,22 @@ fn help_lists_nested_subcommand_descriptions() {
         .stdout(predicates::str::contains("Uninstall one or more runtimes"))
         .stdout(predicates::str::contains(
             "Link an existing local runtime directory",
+        ));
+
+    env.command()
+        .args(["toolchain", "list", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Set RUST_LOG=off in the environment for script-safe raw lists",
+        ));
+
+    env.command()
+        .args(["completions", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Set RUST_LOG=off in the environment before redirecting",
         ));
 
     env.command()
@@ -447,9 +473,9 @@ fn json_parser_errors_emit_error_envelopes() {
 
     let unexpected_extra_arg = env
         .command()
-        .args(["--output", "json", "completions", "bash", "show", "extra"])
+        .args(["--output", "json", "show", "home", "extra"])
         .output()
-        .expect("nodeup --output json completions extra argument");
+        .expect("nodeup --output json show home extra argument");
     assert_json_parser_error(unexpected_extra_arg, "unexpected argument 'extra'");
 }
 
@@ -622,6 +648,52 @@ fn toolchain_list_quiet_prints_runtime_identifiers_only() {
         .collect::<Vec<_>>();
 
     assert_eq!(lines, vec!["v22.1.0", "linked-quiet"]);
+}
+
+#[test]
+#[serial]
+fn toolchain_list_quiet_script_examples_keep_stdout_clean() {
+    let env = TestEnv::new();
+    fs::create_dir_all(env.data_root.join("toolchains").join("v22.1.0")).unwrap();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            r#"schema_version = 1
+tracked_selectors = []
+
+[linked_runtimes]
+linked-script = "{}"
+"#,
+            env.root.join("linked-script-runtime").display()
+        ),
+    )
+    .unwrap();
+
+    let default_logging = env
+        .command()
+        .env_remove("RUST_LOG")
+        .args(["toolchain", "list", "--quiet"])
+        .output()
+        .expect("toolchain list --quiet with default logging");
+    assert!(default_logging.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&default_logging.stdout),
+        "v22.1.0\nlinked-script\n"
+    );
+    assert!(default_logging.stderr.is_empty());
+
+    let script_safe = env
+        .command()
+        .env("RUST_LOG", "off")
+        .args(["toolchain", "list", "--quiet"])
+        .output()
+        .expect("toolchain list --quiet with RUST_LOG=off");
+    assert!(script_safe.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&script_safe.stdout),
+        "v22.1.0\nlinked-script\n"
+    );
+    assert!(script_safe.stderr.is_empty());
 }
 
 #[test]
@@ -812,6 +884,63 @@ fn json_toolchain_link_reserved_name_failure_emits_invalid_input_error_envelope(
         .as_str()
         .unwrap()
         .contains("Invalid linked runtime name: lts"));
+}
+
+#[test]
+#[serial]
+fn toolchain_link_rejects_case_variant_reserved_channel_name() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-reserved-case-name");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n");
+
+    for name in ["LTS", "Current", "LATEST"] {
+        let output = env
+            .command()
+            .args(["toolchain", "link", name, runtime_dir.to_str().unwrap()])
+            .output()
+            .expect("toolchain link with case-variant reserved channel selector");
+
+        assert_eq!(output.status.code(), Some(2));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(&format!("Invalid linked runtime name: {name}")));
+        assert!(stderr.contains("differ from reserved channel selectors"));
+    }
+}
+
+#[test]
+#[serial]
+fn runtime_selector_commands_reject_case_variant_reserved_channel_names() {
+    let env = TestEnv::new();
+    let project_dir = env.root.join("case-variant-override");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    let override_output = env
+        .command()
+        .args([
+            "override",
+            "set",
+            "LTS",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("override set with case-variant reserved channel selector");
+    assert_eq!(override_output.status.code(), Some(2));
+    let override_stderr = String::from_utf8_lossy(&override_output.stderr);
+    assert!(override_stderr.contains("Invalid runtime selector 'LTS'"));
+    assert!(override_stderr.contains("Reserved channel selectors are case-sensitive"));
+
+    let update_output = env
+        .command()
+        .args(["update", "LATEST"])
+        .output()
+        .expect("update with case-variant reserved channel selector");
+    assert_eq!(update_output.status.code(), Some(2));
+    let update_stderr = String::from_utf8_lossy(&update_output.stderr);
+    assert!(update_stderr.contains("Invalid runtime selector 'LATEST'"));
+    assert!(update_stderr.contains("Reserved channel selectors are case-sensitive"));
 }
 
 #[test]
@@ -1075,6 +1204,32 @@ fn toolchain_unlink_conflicts_when_link_is_default() {
 
 #[test]
 #[serial]
+fn toolchain_unlink_conflicts_when_legacy_reserved_case_link_is_default() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-default");
+    fs::create_dir_all(&runtime_dir).unwrap();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ndefault_selector = \"LTS\"\ntracked_selectors = \
+             [\"LTS\"]\n\n[linked_runtimes]\nLTS = \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    env.command()
+        .args(["toolchain", "unlink", "LTS"])
+        .assert()
+        .failure()
+        .code(6)
+        .stderr(predicates::str::contains(
+            "Cannot unlink 'LTS'; it is used as the default runtime",
+        ));
+}
+
+#[test]
+#[serial]
 fn toolchain_unlink_conflicts_when_link_is_used_by_override() {
     let env = TestEnv::new();
     let runtime_dir = env.root.join("linked-runtime-unlink-override");
@@ -1112,6 +1267,42 @@ fn toolchain_unlink_conflicts_when_link_is_used_by_override() {
         .code(6)
         .stderr(predicates::str::contains(
             "Cannot unlink 'linked-unlink-override'; it is referenced by a directory override",
+        ));
+}
+
+#[test]
+#[serial]
+fn toolchain_unlink_conflicts_when_legacy_reserved_case_link_is_used_by_override() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-override");
+    let project_dir = env.root.join("legacy-reserved-case-project");
+    fs::create_dir_all(&runtime_dir).unwrap();
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ntracked_selectors = [\"LATEST\"]\n\n[linked_runtimes]\nLATEST = \
+             \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        env.config_root.join("overrides.toml"),
+        format!(
+            "schema_version = 1\n\n[[entries]]\npath = \"{}\"\nselector = \"LATEST\"\n",
+            project_dir.display()
+        ),
+    )
+    .unwrap();
+
+    env.command()
+        .args(["toolchain", "unlink", "LATEST"])
+        .assert()
+        .failure()
+        .code(6)
+        .stderr(predicates::str::contains(
+            "Cannot unlink 'LATEST'; it is referenced by a directory override",
         ));
 }
 
@@ -1156,11 +1347,35 @@ fn uninstall_blocks_default_selector_with_mixed_version_spelling() {
 
     env.command().args(["default", "22.1.0"]).assert().success();
 
-    env.command()
-        .args(["toolchain", "uninstall", "v22.1.0"])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("used as the default runtime"));
+    let output = env
+        .command()
+        .args(["--output", "json", "toolchain", "uninstall", "v22.1.0"])
+        .output()
+        .expect("uninstall default blocker");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "conflict");
+    assert_eq!(
+        payload["diagnostics"]["blocked_versions"],
+        serde_json::json!(["v22.1.0"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["reference_type"],
+        "global-default"
+    );
+    assert_eq!(payload["diagnostics"]["blockers"][0]["runtime"], "v22.1.0");
+    assert_eq!(payload["diagnostics"]["blockers"][0]["selector"], "22.1.0");
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["path"],
+        env.config_root.join("settings.toml").to_str().unwrap()
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["change_command"],
+        "nodeup default <runtime>"
+    );
 }
 
 #[test]
@@ -1192,12 +1407,82 @@ fn uninstall_blocks_override_selector_with_mixed_version_spelling() {
         .assert()
         .success();
 
+    let output = env
+        .command()
+        .args(["--output", "json", "toolchain", "uninstall", "v22.1.0"])
+        .output()
+        .expect("uninstall override blocker");
+
+    assert_eq!(output.status.code(), Some(6));
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["reference_type"],
+        "directory-override"
+    );
+    assert_eq!(payload["diagnostics"]["blockers"][0]["runtime"], "v22.1.0");
+    assert_eq!(payload["diagnostics"]["blockers"][0]["selector"], "v22.1.0");
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["path"],
+        project_dir.to_str().unwrap()
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["clear_command"],
+        format!("nodeup override unset --path {}", project_dir.display())
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["change_command"],
+        format!(
+            "nodeup override set <runtime> --path {}",
+            project_dir.display()
+        )
+    );
+}
+
+#[test]
+#[serial]
+fn uninstall_reports_all_default_and_override_blockers_with_follow_up_commands() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-combined-blockers");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    env.command().args(["default", "22.1.0"]).assert().success();
     env.command()
-        .args(["toolchain", "uninstall", "v22.1.0"])
+        .args([
+            "override",
+            "set",
+            "v22.1.0",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["toolchain", "uninstall", "22.1.0"])
         .assert()
         .failure()
+        .code(6)
+        .stderr(predicates::str::contains("global-default path="))
+        .stderr(predicates::str::contains("directory-override path="))
+        .stderr(predicates::str::contains("nodeup default <runtime>"))
+        .stderr(predicates::str::contains(format!(
+            "nodeup override unset --path {}",
+            project_dir.display()
+        )))
         .stderr(predicates::str::contains(
-            "referenced by a directory override",
+            "nodeup toolchain uninstall v22.1.0",
         ));
 }
 
@@ -1270,7 +1555,8 @@ fn uninstall_is_atomic_when_later_target_conflicts_with_default() {
         .args(["toolchain", "uninstall", "22.1.0", "24.0.0"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("used as the default runtime"));
+        .stderr(predicates::str::contains("global-default path="))
+        .stderr(predicates::str::contains("nodeup default <runtime>"));
 
     assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
     assert!(env.data_root.join("toolchains").join("v24.0.0").exists());
@@ -1303,6 +1589,67 @@ fn uninstall_is_atomic_when_any_target_is_not_installed() {
         .stderr(predicates::str::contains(
             "Runtime v24.0.0 is not installed",
         ));
+
+    assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn uninstall_reports_reference_blockers_before_missing_targets() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "uninstall",
+            "22.1.0",
+            "24.0.0",
+        ])
+        .output()
+        .expect("uninstall blocked runtime with missing later target");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "conflict");
+    assert_eq!(
+        payload["diagnostics"]["blocked_versions"],
+        serde_json::json!(["v22.1.0"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["reference_type"],
+        "global-default"
+    );
+    assert_eq!(payload["diagnostics"]["blockers"][0]["runtime"], "v22.1.0");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Cannot uninstall v22.1.0"));
+    assert!(!payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Runtime v24.0.0 is not installed"));
 
     assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
 }
@@ -1473,6 +1820,38 @@ tracked_selectors = ["22.1.0"]
 
 #[test]
 #[serial]
+fn default_json_reports_legacy_reserved_case_link_metadata() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-default-json");
+    fs::create_dir_all(runtime_dir.join("bin")).unwrap();
+
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ndefault_selector = \"LTS\"\ntracked_selectors = \
+             [\"LTS\"]\n\n[linked_runtimes]\nLTS = \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "default"])
+        .output()
+        .expect("default --output json with legacy reserved-case linked selector");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["default_selector"], "LTS");
+    assert_eq!(payload["selector_kind"], "linked-runtime");
+    assert_eq!(payload["canonical_selector"], "LTS");
+    assert_eq!(payload["resolved_runtime"], "LTS");
+    assert!(payload["resolution_error"].is_null());
+}
+
+#[test]
+#[serial]
 fn default_human_unresolved_still_prints_selector() {
     let env = TestEnv::new();
     let settings_file = env.config_root.join("settings.toml");
@@ -1494,6 +1873,95 @@ tracked_selectors = ["lts"]
         .success()
         .stdout(predicates::str::contains("Default runtime: lts"))
         .stdout(predicates::str::contains("resolution unavailable"));
+}
+
+#[test]
+#[serial]
+fn show_active_runtime_and_which_resolve_legacy_reserved_case_default_link() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-default-resolve");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho legacy-default\n");
+
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ndefault_selector = \"LTS\"\ntracked_selectors = \
+             [\"LTS\"]\n\n[linked_runtimes]\nLTS = \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    let show_output = env
+        .command()
+        .args(["--output", "json", "show", "active-runtime"])
+        .output()
+        .expect("show active-runtime with legacy reserved-case default");
+    assert!(show_output.status.success());
+    let show_payload: Value = serde_json::from_slice(&show_output.stdout).unwrap();
+    assert_eq!(show_payload["runtime"], "LTS");
+    assert_eq!(show_payload["selector"], "LTS");
+    assert_eq!(show_payload["selector_kind"], "linked-runtime");
+    assert_eq!(show_payload["canonical_selector"], "LTS");
+
+    env.command()
+        .args(["which", "node"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            runtime_bin.join("node").to_str().unwrap(),
+        ));
+}
+
+#[test]
+#[serial]
+fn show_active_runtime_resolves_legacy_reserved_case_override_link() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-override-resolve");
+    let runtime_bin = runtime_dir.join("bin");
+    let project_dir = env.root.join("legacy-reserved-case-override-project");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::create_dir_all(&project_dir).unwrap();
+    write_runtime_executable(
+        runtime_bin.join("node"),
+        "#!/bin/sh\necho legacy-override\n",
+    );
+
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ntracked_selectors = [\"LATEST\"]\n\n[linked_runtimes]\nLATEST = \
+             \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        env.config_root.join("overrides.toml"),
+        format!(
+            "schema_version = 1\n\n[[entries]]\npath = \"{}\"\nselector = \"LATEST\"\n",
+            project_dir.display()
+        ),
+    )
+    .unwrap();
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Active runtime: LATEST"));
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["which", "node"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            runtime_bin.join("node").to_str().unwrap(),
+        ));
 }
 
 #[test]
@@ -1568,11 +2036,11 @@ fn show_active_runtime_logs_unavailable_reason_for_deleted_linked_runtime() {
         .args(["show", "active-runtime"])
         .assert()
         .failure()
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.show.active-runtime\"",
         ))
-        .stdout(predicates::str::contains("availability: false"))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains("availability: false"))
+        .stderr(predicates::str::contains(
             "reason: \"node-executable-missing\"",
         ));
 }
@@ -1718,11 +2186,11 @@ fn override_resolution_logs_hit_with_fallback_reason() {
         .args(["show", "active-runtime"])
         .assert()
         .success()
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.resolve.override\"",
         ))
-        .stdout(predicates::str::contains("matched: true"))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains("matched: true"))
+        .stderr(predicates::str::contains(
             "fallback_reason: \"override-matched\"",
         ));
 }
@@ -1736,11 +2204,11 @@ fn override_resolution_logs_miss_without_default_selector() {
         .args(["show", "active-runtime"])
         .assert()
         .failure()
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.resolve.override\"",
         ))
-        .stdout(predicates::str::contains("matched: false"))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains("matched: false"))
+        .stderr(predicates::str::contains(
             "fallback_reason: \"no-default-selector\"",
         ));
 }
@@ -1791,9 +2259,11 @@ tracked_selectors = ["invalid selector"]
     assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stdout.contains("Default runtime: invalid selector (resolution unavailable)"));
-    assert!(stdout.contains("command_path: \"nodeup.default\""));
-    assert!(stdout.contains("outcome: \"unresolved\""));
+    assert!(!stdout.contains("command_path: \"nodeup.default\""));
+    assert!(stderr.contains("command_path: \"nodeup.default\""));
+    assert!(stderr.contains("outcome: \"unresolved\""));
 }
 
 #[test]
@@ -1865,6 +2335,29 @@ fn json_show_active_runtime_failure_remains_parseable_without_rust_log_env() {
 
 #[test]
 #[serial]
+fn json_show_active_runtime_failure_honors_rust_log_env() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("RUST_LOG", "nodeup=info")
+        .args(["--output", "json", "show", "active-runtime"])
+        .output()
+        .expect("show active-runtime --output json with rust log env");
+
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("command_path: \"nodeup.show.active-runtime\""));
+    assert!(
+        stderr.contains("\"kind\":\"not-found\"") || stderr.contains("\"kind\": \"not-found\"")
+    );
+    assert!(stderr.contains("\"exit_code\":5") || stderr.contains("\"exit_code\": 5"));
+}
+
+#[test]
+#[serial]
 fn json_show_home_remains_parseable_without_rust_log_env() {
     let env = TestEnv::new();
 
@@ -1878,9 +2371,8 @@ fn json_show_home_remains_parseable_without_rust_log_env() {
     assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!stdout.contains("command_path:"));
-    assert!(!stderr.contains("command_path:"));
+    assert!(output.stderr.is_empty());
 
     let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(payload["data_root"].as_str().is_some());
@@ -1923,6 +2415,71 @@ fn json_completions_success_outputs_raw_script() {
 
 #[test]
 #[serial]
+fn completion_redirection_examples_keep_stdout_clean() {
+    let env = TestEnv::new();
+
+    let default_logging = env
+        .command()
+        .env_remove("RUST_LOG")
+        .args(["completions", "bash"])
+        .output()
+        .expect("completions bash with default logging");
+    assert!(default_logging.status.success());
+    let default_stdout = String::from_utf8_lossy(&default_logging.stdout);
+    assert!(default_stdout.contains("nodeup"));
+    assert!(!default_stdout.contains("command_path:"));
+    assert!(serde_json::from_slice::<Value>(&default_logging.stdout).is_err());
+    assert!(default_logging.stderr.is_empty());
+
+    let script_safe = env
+        .command()
+        .env("RUST_LOG", "off")
+        .args(["completions", "bash"])
+        .output()
+        .expect("RUST_LOG=off completions bash");
+    assert!(script_safe.status.success());
+    let script_safe_stdout = String::from_utf8_lossy(&script_safe.stdout);
+    assert!(script_safe_stdout.contains("nodeup"));
+    assert!(!script_safe_stdout.contains("command_path:"));
+    assert!(serde_json::from_slice::<Value>(&script_safe.stdout).is_err());
+    assert!(script_safe.stderr.is_empty());
+}
+
+#[test]
+#[serial]
+fn completions_accepts_global_output_after_shell() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "--output", "json"])
+        .output()
+        .expect("completions bash --output json");
+
+    assert!(output.status.success());
+    assert!(!output.stdout.is_empty());
+    assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completions_accepts_help_after_shell() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "--help"])
+        .output()
+        .expect("completions bash --help");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Generate shell completion scripts"));
+}
+
+#[test]
+#[serial]
 fn completions_accepts_valid_top_level_scope() {
     let env = TestEnv::new();
 
@@ -1935,6 +2492,39 @@ fn completions_accepts_valid_top_level_scope() {
     assert!(output.status.success());
     assert!(!output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completions_accepts_global_output_after_scope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "shim", "--output", "json"])
+        .output()
+        .expect("completions bash shim --output json");
+
+    assert!(output.status.success());
+    assert!(!output.stdout.is_empty());
+    assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completions_accepts_help_after_scope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "shim", "--help"])
+        .output()
+        .expect("completions bash shim --help");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Generate shell completion scripts"));
 }
 
 #[test]
@@ -1981,6 +2571,126 @@ fn json_completions_invalid_scope_emits_invalid_input_error_envelope() {
         .as_str()
         .unwrap()
         .contains("Unsupported command scope"));
+    assert_eq!(
+        payload["diagnostics"]["allowed_scope_category"],
+        "top-level-command"
+    );
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "invalid-scope");
+}
+
+#[test]
+#[serial]
+fn completions_subcommand_scope_suggests_top_level_scope() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["completions", "bash", "toolchain", "install"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "Unsupported command scope 'toolchain install'",
+        ))
+        .stderr(predicates::str::contains(
+            "Only top-level command scopes are supported",
+        ))
+        .stderr(predicates::str::contains(
+            "nodeup completions bash toolchain",
+        ));
+}
+
+#[test]
+#[serial]
+fn json_completions_subcommand_scope_emits_scope_diagnostics() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "completions", "zsh", "override", "set"])
+        .output()
+        .expect("completions --output json invalid subcommand scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope 'override set'"));
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "override set");
+    assert_eq!(
+        payload["diagnostics"]["allowed_scope_category"],
+        "top-level-command"
+    );
+    assert_eq!(payload["diagnostics"]["suggested_scope"], "override");
+    assert!(payload["diagnostics"]["allowed_scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|scope| scope == "override"));
+}
+
+#[test]
+#[serial]
+fn json_completions_subcommand_scope_captures_option_like_tokens() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "completions",
+            "bash",
+            "override",
+            "set",
+            "--path",
+        ])
+        .output()
+        .expect("completions --output json invalid option-like scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope 'override set --path'"));
+    assert_eq!(
+        payload["diagnostics"]["rejected_scope"],
+        "override set --path"
+    );
+    assert_eq!(payload["diagnostics"]["suggested_scope"], "override");
+}
+
+#[test]
+#[serial]
+fn json_completions_escaped_help_scope_is_rejected() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "completions", "bash", "--", "--help"])
+        .output()
+        .expect("completions --output json escaped help scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope '--help'"));
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "--help");
 }
 
 #[test]
@@ -2063,11 +2773,11 @@ fn self_update_logs_action_and_outcome_status() {
         .args(["--output", "json", "self", "update"])
         .assert()
         .success()
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.self.update\"",
         ))
-        .stdout(predicates::str::contains("action: \"self update\""))
-        .stdout(predicates::str::contains("outcome: \"updated\""));
+        .stderr(predicates::str::contains("action: \"self update\""))
+        .stderr(predicates::str::contains("outcome: \"updated\""));
 }
 
 #[test]
@@ -2083,11 +2793,11 @@ fn self_uninstall_removes_artifacts_and_logs_outcome() {
         .assert()
         .success()
         .stdout(predicates::str::contains("\"status\": \"removed\""))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.self.uninstall\"",
         ))
-        .stdout(predicates::str::contains("action: \"self uninstall\""))
-        .stdout(predicates::str::contains("outcome: \"removed\""));
+        .stderr(predicates::str::contains("action: \"self uninstall\""))
+        .stderr(predicates::str::contains("outcome: \"removed\""));
 
     assert!(!env.data_root.exists());
     assert!(!env.cache_root.exists());
@@ -3124,11 +3834,11 @@ selector = "22.1.0"
         .assert()
         .success()
         .stdout(predicates::str::contains("\"status\": \"upgraded\""))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.self.upgrade-data\"",
         ))
-        .stdout(predicates::str::contains("action: \"self upgrade-data\""))
-        .stdout(predicates::str::contains("outcome: \"upgraded\""))
+        .stderr(predicates::str::contains("action: \"self upgrade-data\""))
+        .stderr(predicates::str::contains("outcome: \"upgraded\""))
         .stdout(predicates::str::contains("\"from_schema\": 0"))
         .stdout(predicates::str::contains("\"to_schema\": 1"));
 
@@ -3195,11 +3905,13 @@ fn completions_logs_action_and_outcome() {
         .args(["completions", "zsh"])
         .assert()
         .success()
-        .stdout(predicates::str::contains(
+        .stdout(predicates::str::contains("nodeup"))
+        .stdout(predicates::str::contains("command_path:").not())
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.completions\"",
         ))
-        .stdout(predicates::str::contains("action: \"generate\""))
-        .stdout(predicates::str::contains("outcome: \"generated\""));
+        .stderr(predicates::str::contains("action: \"generate\""))
+        .stderr(predicates::str::contains("outcome: \"generated\""));
 }
 
 #[cfg(unix)]
@@ -3233,11 +3945,11 @@ fn run_logs_exit_code_and_signal_details() {
         .args(["run", "linked-logs", "node"])
         .assert()
         .code(7)
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.run.process\"",
         ))
-        .stdout(predicates::str::contains("exit_code: 7"))
-        .stdout(predicates::str::contains("signal: None"));
+        .stderr(predicates::str::contains("exit_code: 7"))
+        .stderr(predicates::str::contains("signal: None"));
 }
 
 #[cfg(unix)]
@@ -3274,11 +3986,11 @@ fn run_maps_signal_termination_to_standard_exit_code() {
         .stdout(predicates::str::contains(
             "Delegated command 'node' exited with status 143",
         ))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.run.process\"",
         ))
-        .stdout(predicates::str::contains("exit_code: 143"))
-        .stdout(predicates::str::contains("signal: Some(15)"));
+        .stderr(predicates::str::contains("exit_code: 143"))
+        .stderr(predicates::str::contains("signal: Some(15)"));
 }
 
 #[test]
@@ -4150,7 +4862,7 @@ fn override_list_json_includes_configured_entries() {
         .args([
             "override",
             "set",
-            "lts",
+            "latest",
             "--path",
             project_b.to_str().unwrap(),
         ])
@@ -4176,12 +4888,20 @@ fn override_list_json_includes_configured_entries() {
         .unwrap()
         .to_string_lossy()
         .to_string();
-    assert!(entries
-        .iter()
-        .any(|entry| entry["path"] == canonical_a && entry["selector"] == "v22.1.0"));
-    assert!(entries
-        .iter()
-        .any(|entry| entry["path"] == canonical_b && entry["selector"] == "lts"));
+    assert!(entries.iter().any(|entry| {
+        entry["path"] == canonical_a
+            && entry["selector"] == "v22.1.0"
+            && entry["selector_kind"] == "exact-version"
+            && entry["canonical_selector"] == "v22.1.0"
+            && entry.get("selector_alias_of").is_none()
+    }));
+    assert!(entries.iter().any(|entry| {
+        entry["path"] == canonical_b
+            && entry["selector"] == "latest"
+            && entry["selector_kind"] == "channel"
+            && entry["canonical_selector"] == "current"
+            && entry["selector_alias_of"] == "current"
+    }));
 }
 
 #[test]
@@ -4360,7 +5080,7 @@ fn json_override_unset_output_is_machine_parseable() {
         .args([
             "override",
             "set",
-            "22.1.0",
+            "latest",
             "--path",
             project.to_str().unwrap(),
         ])
@@ -4389,7 +5109,57 @@ fn json_override_unset_output_is_machine_parseable() {
         .to_string_lossy()
         .to_string();
     assert_eq!(entries[0]["path"], canonical);
-    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["selector"], "latest");
+    assert_eq!(entries[0]["selector_kind"], "channel");
+    assert_eq!(entries[0]["canonical_selector"], "current");
+    assert_eq!(entries[0]["selector_alias_of"], "current");
+}
+
+#[test]
+#[serial]
+fn json_override_unset_output_handles_legacy_reserved_case_linked_name() {
+    let env = TestEnv::new();
+    let project = env.root.join("legacy-reserved-case-unset-json");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(
+        env.config_root.join("overrides.toml"),
+        format!(
+            "schema_version = 1\n\n[[entries]]\npath = \"{}\"\nselector = \"LATEST\"\n",
+            project.display()
+        ),
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "override",
+            "unset",
+            "--path",
+            project.to_str().unwrap(),
+        ])
+        .output()
+        .expect("override unset legacy reserved-case linked name");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("override unset JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "LATEST");
+    assert_eq!(entries[0]["selector_kind"], "linked-runtime");
+    assert_eq!(entries[0]["canonical_selector"], "LATEST");
+    assert!(entries[0].get("selector_alias_of").is_none());
+
+    let output = env
+        .command()
+        .args(["--output", "json", "override", "list"])
+        .output()
+        .expect("override list after legacy unset");
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload.as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -4491,6 +5261,29 @@ fn toolchain_uninstall_linked_runtime_selector_points_to_unlink() {
 
 #[test]
 #[serial]
+fn toolchain_uninstall_channel_selector_rejection_stays_distinct_from_reference_blockers() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "toolchain", "uninstall", "lts"])
+        .output()
+        .expect("uninstall channel selector");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert!(payload["diagnostics"].is_null());
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("only supports exact version selectors"));
+}
+
+#[test]
+#[serial]
 fn toolchain_link_missing_path_returns_not_found() {
     let env = TestEnv::new();
     let missing = env.root.join("missing-linked-runtime");
@@ -4583,6 +5376,38 @@ tracked_selectors = ["linked-update-priority"]
 
 #[test]
 #[serial]
+fn update_without_selectors_skips_legacy_reserved_case_tracked_link() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-update");
+    fs::create_dir_all(&runtime_dir).unwrap();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ntracked_selectors = [\"LATEST\"]\n\n[linked_runtimes]\nLATEST = \
+             \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update with legacy reserved-case tracked link");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "LATEST");
+    assert_eq!(entries[0]["selector_kind"], "linked-runtime");
+    assert_eq!(entries[0]["canonical_selector"], "LATEST");
+    assert_eq!(entries[0]["status"], "skipped-linked-runtime");
+}
+
+#[test]
+#[serial]
 fn update_linked_selector_reports_skipped_status() {
     let env = TestEnv::new();
 
@@ -4597,6 +5422,8 @@ fn update_linked_selector_reports_skipped_status() {
     let entries = payload.as_array().expect("update JSON array");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["selector"], "linked-update-explicit");
+    assert_eq!(entries[0]["selector_kind"], "linked-runtime");
+    assert_eq!(entries[0]["canonical_selector"], "linked-update-explicit");
     assert_eq!(entries[0]["status"], "skipped-linked-runtime");
     assert!(entries[0]["previous_runtime"].is_null());
     assert!(entries[0]["updated_runtime"].is_null());
@@ -4629,8 +5456,110 @@ fn update_channel_selector_reports_updated_status() {
     let entries = payload.as_array().expect("update JSON array");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["selector"], "lts");
+    assert_eq!(entries[0]["selector_kind"], "channel");
+    assert_eq!(entries[0]["canonical_selector"], "lts");
     assert_eq!(entries[0]["status"], "updated");
     assert_eq!(entries[0]["updated_runtime"], "v22.2.0");
+}
+
+#[test]
+#[serial]
+fn current_and_latest_resolve_as_aliases_and_report_canonical_selector() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", None), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    for selector in ["current", "latest"] {
+        let output = env
+            .command()
+            .args(["--output", "json", "update", selector])
+            .output()
+            .expect("update current/latest selector");
+        assert!(output.status.success());
+
+        let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let entries = payload.as_array().expect("update JSON array");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["selector"], selector);
+        assert_eq!(entries[0]["selector_kind"], "channel");
+        assert_eq!(entries[0]["canonical_selector"], "current");
+        if selector == "latest" {
+            assert_eq!(entries[0]["selector_alias_of"], "current");
+        } else {
+            assert!(entries[0].get("selector_alias_of").is_none());
+        }
+        assert_eq!(entries[0]["updated_runtime"], "v24.0.0");
+    }
+
+    env.command()
+        .args(["--output", "json", "default", "latest"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "\"default_selector\": \"latest\"",
+        ))
+        .stdout(predicates::str::contains("\"selector_kind\": \"channel\""))
+        .stdout(predicates::str::contains(
+            "\"canonical_selector\": \"current\"",
+        ))
+        .stdout(predicates::str::contains(
+            "\"selector_alias_of\": \"current\"",
+        ));
+
+    env.command()
+        .args(["--output", "json", "show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"runtime\": \"v24.0.0\""))
+        .stdout(predicates::str::contains("\"selector\": \"latest\""))
+        .stdout(predicates::str::contains("\"selector_kind\": \"channel\""))
+        .stdout(predicates::str::contains(
+            "\"canonical_selector\": \"current\"",
+        ))
+        .stdout(predicates::str::contains(
+            "\"selector_alias_of\": \"current\"",
+        ));
+}
+
+#[test]
+#[serial]
+fn tracked_current_and_latest_are_canonicalized_to_one_channel_selector() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", None)]);
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    env.command().args(["default", "latest"]).assert().success();
+    env.command()
+        .args(["default", "current"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        tracked_selectors_from_settings(&env.config_root.join("settings.toml")),
+        vec!["current"]
+    );
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update canonicalized current/latest tracked selector");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "current");
+    assert_eq!(entries[0]["selector_kind"], "channel");
+    assert_eq!(entries[0]["canonical_selector"], "current");
 }
 
 #[test]
@@ -4678,6 +5607,8 @@ fn tracked_exact_selectors_are_canonicalized_across_install_and_override() {
     let entries = payload.as_array().expect("update JSON array");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["selector_kind"], "exact-version");
+    assert_eq!(entries[0]["canonical_selector"], "v22.1.0");
     assert_eq!(entries[0]["status"], "skipped-exact-version");
     assert_eq!(entries[0]["previous_runtime"], "v22.1.0");
     assert_eq!(entries[0]["updated_runtime"], "v22.1.0");
@@ -5504,7 +6435,10 @@ fn which_yarn_uses_runtime_npm_path_in_npm_exec_mode() {
 
     let expected = fs::canonicalize(runtime_dir.join("bin").join("npm")).unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.trim(), expected.to_string_lossy());
+    assert!(stdout.contains(expected.to_string_lossy().as_ref()));
+    assert!(stdout.contains("yarn will run via npm exec"));
+    assert!(stdout.contains("@yarnpkg/cli-dist@4.13.0"));
+    assert!(stdout.contains("pinned"));
 }
 
 #[test]
@@ -5540,6 +6474,171 @@ fn run_package_manager_mismatch_returns_conflict() {
         .stderr(predicates::str::contains(
             "does not match packageManager 'pnpm@10.32.1'",
         ));
+}
+
+#[test]
+#[serial]
+fn package_manager_range_json_error_identifies_failed_version_part() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho run-node\n"),
+                ("npm", "#!/bin/sh\n"),
+            ],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-invalid-package-manager-range");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"invalid-range","packageManager":"pnpm@10.x"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args([
+            "--output",
+            "json",
+            "run",
+            "--install",
+            "22.1.0",
+            "pnpm",
+            "--version",
+        ])
+        .output()
+        .expect("invalid packageManager range");
+    assert!(!output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert_eq!(
+        payload["diagnostics"]["diagnostic"],
+        "package-manager-invalid"
+    );
+    assert_eq!(payload["diagnostics"]["failed_part"], "version");
+    assert_eq!(payload["diagnostics"]["problem"], "non-exact-semver");
+    assert_eq!(payload["diagnostics"]["manager"], "pnpm");
+    assert_eq!(payload["diagnostics"]["version"], "10.x");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("pnpm@<major>.<minor>.<patch>"));
+}
+
+#[test]
+#[serial]
+fn unsupported_package_manager_json_error_identifies_manager_part() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho run-node\n"),
+                ("npm", "#!/bin/sh\n"),
+            ],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-invalid-package-manager-npm");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"invalid-npm","packageManager":"npm@10.0.0"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args([
+            "--output",
+            "json",
+            "run",
+            "--install",
+            "22.1.0",
+            "yarn",
+            "--version",
+        ])
+        .output()
+        .expect("unsupported packageManager manager");
+    assert!(!output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["diagnostics"]["failed_part"], "manager");
+    assert_eq!(payload["diagnostics"]["problem"], "unsupported-manager");
+    assert_eq!(payload["diagnostics"]["manager"], "npm");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported packageManager manager 'npm'"));
+}
+
+#[test]
+#[serial]
+fn non_string_package_manager_json_error_identifies_expected_shape() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho run-node\n"),
+                ("npm", "#!/bin/sh\n"),
+            ],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-invalid-package-manager-type");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"invalid-type","packageManager":10}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args([
+            "--output",
+            "json",
+            "run",
+            "--install",
+            "22.1.0",
+            "pnpm",
+            "--version",
+        ])
+        .output()
+        .expect("non-string packageManager");
+    assert!(!output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["diagnostics"]["failed_part"], "value");
+    assert_eq!(payload["diagnostics"]["problem"], "non-string");
+    assert_eq!(payload["diagnostics"]["received_type"], "number");
+    assert_eq!(
+        payload["diagnostics"]["expected"],
+        "<manager>@<exact-semver>"
+    );
 }
 
 #[test]
@@ -5609,6 +6708,9 @@ fn run_yarn_falls_back_to_npm_exec_when_package_manager_field_is_missing_and_bin
         .success()
         .stdout(predicates::str::contains(
             "npm-argv:exec --yes --package @yarnpkg/cli-dist -- yarn --version",
+        ))
+        .stderr(predicates::str::contains(
+            "unpinned fallback; add exact packageManager",
         ));
 }
 
@@ -5654,5 +6756,65 @@ fn which_pnpm_uses_runtime_npm_path_in_npm_exec_mode() {
 
     let expected = fs::canonicalize(runtime_dir.join("bin").join("npm")).unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.trim(), expected.to_string_lossy());
+    assert!(stdout.contains(expected.to_string_lossy().as_ref()));
+    assert!(stdout.contains("pnpm will run via npm exec"));
+    assert!(stdout.contains("pnpm@10.32.1"));
+    assert!(stdout.contains("pinned"));
+}
+
+#[test]
+#[serial]
+fn which_pnpm_json_exposes_npm_exec_planning_fields() {
+    let env = TestEnv::new();
+    let runtime_dir = env
+        .root
+        .join("linked-runtime-which-pnpm-json-package-manager");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+    fs::write(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n").unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-pnpm-json-package-manager",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-pnpm-json-package-manager"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-which-pnpm-json-package-manager");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"which-pnpm-json","packageManager":"pnpm@10.32.1"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args(["--output", "json", "which", "pnpm"])
+        .output()
+        .expect("which pnpm json with packageManager");
+    assert!(output.status.success());
+
+    let expected = fs::canonicalize(runtime_dir.join("bin").join("npm")).unwrap();
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["requested_command"], "pnpm");
+    assert_eq!(
+        payload["executable_path"].as_str().unwrap(),
+        expected.to_string_lossy()
+    );
+    assert_eq!(payload["mode"], "npm-exec");
+    assert_eq!(payload["reason"], "package-manager-pinned");
+    assert_eq!(payload["package_spec"], "pnpm@10.32.1");
+    assert_eq!(payload["package_spec_pinned"], true);
+    assert_eq!(payload["planning"]["mode"], "npm-exec");
+    assert_eq!(payload["planning"]["package_spec"], "pnpm@10.32.1");
 }

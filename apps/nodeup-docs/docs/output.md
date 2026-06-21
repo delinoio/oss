@@ -2,6 +2,19 @@
 
 Nodeup supports human output for operators and JSON output for automation.
 
+## Script-Safe Output
+
+Use one of these patterns when stdout is consumed by another program:
+
+| Need | Recommended command | Stdout contract |
+| --- | --- | --- |
+| Structured command data | `nodeup --output json <command>` | JSON only; JSON mode defaults Nodeup logging off unless `RUST_LOG` is set. |
+| Runtime identifiers for shell loops | Set `RUST_LOG=off`, then run `nodeup toolchain list --quiet` | One runtime identifier per line, no headings. |
+| Completion script redirection | Set `RUST_LOG=off`, then run `nodeup completions <shell> >file` | Raw shell completion script text only. |
+| Human command output with logs disabled | Set `RUST_LOG=off`, then run `nodeup <command>` | Human result text only. |
+
+Tracing logs are written to stderr when enabled. Use `RUST_LOG=nodeup=debug` for troubleshooting, not in pipelines that parse stdout.
+
 ## Human Output
 
 Human output is the default:
@@ -46,6 +59,16 @@ Stable envelope fields:
 ANSI styling is never injected into JSON stdout or stderr payloads.
 
 Without `--output json`, command-line parser failures keep clap's native human help and error formatting.
+
+## Selector Metadata
+
+JSON payloads that report runtime selectors include selector metadata for automation:
+
+- `selector_kind`: `exact-version`, `channel`, or `linked-runtime`
+- `canonical_selector`: the canonical selector identity used for tracking and alias reporting
+- `selector_alias_of`: present only for aliases, currently `latest` as an alias of `current`
+
+Exact versions canonicalize to `v<semver>`. `current` and `latest` both resolve to the newest release-index entry, but `current` is the canonical selector.
 
 ## Delegated Commands in JSON Mode
 

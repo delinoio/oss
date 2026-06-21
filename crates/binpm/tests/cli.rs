@@ -163,6 +163,16 @@ fn add_and_x_help_include_explicit_bin_selection() {
     add.args(["add", "--help"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("--bin <BIN>"))
+        .stdout(predicate::str::contains("--also <CMD=BIN>"))
+        .stdout(predicate::str::contains("--manifest-only"));
+
+    let mut install = binpm();
+    install
+        .args(["install", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--as <CMD>"))
         .stdout(predicate::str::contains("--bin <BIN>"));
 
     let mut exec = binpm();
@@ -170,6 +180,147 @@ fn add_and_x_help_include_explicit_bin_selection() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--bin <BIN>"));
+}
+
+#[test]
+fn update_help_marks_global_update_pending() {
+    let mut command = binpm();
+
+    command
+        .args(["update", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Global update is pending"))
+        .stdout(predicate::str::contains("--global"));
+}
+
+#[test]
+fn global_update_reports_pending_workaround() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["update", "--global"])
+        .assert()
+        .failure()
+        .code(2)
+        .stdout(predicate::str::contains("update scope: global"))
+        .stderr(predicate::str::contains("pending implementation"))
+        .stderr(predicate::str::contains("binpm outdated --global"))
+        .stderr(predicate::str::contains("binpm info --global <cmd>"))
+        .stderr(predicate::str::contains(
+            "binpm install <source> --as <cmd> --bin <selected_binary>",
+        ))
+        .stderr(predicate::str::contains("binpm update --local"));
+}
+
+#[test]
+fn global_update_dry_run_reports_same_pending_workaround() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["update", "--global", "--dry-run"])
+        .assert()
+        .failure()
+        .code(2)
+        .stdout(predicate::str::contains("planned updates").not())
+        .stderr(predicate::str::contains("pending implementation"))
+        .stderr(predicate::str::contains("binpm outdated --global"));
+}
+
+#[test]
+fn add_manifest_only_writes_only_manifest_and_supports_additional_commands() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "foo",
+            "github:owner/tools@v1.2.3",
+            "--bin",
+            "bin/foo",
+            "--also",
+            "bar=bin/bar",
+            "--manifest-only",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("declared foo, bar"))
+        .stdout(predicate::str::contains("manifest-only: did not update"))
+        .stdout(predicate::str::contains("next: run `binpm install`"));
+
+    let manifest = fs::read_to_string(temp_dir.path().join("binpm.toml")).expect("read manifest");
+    assert_eq!(
+        manifest,
+        r#"version = 1
+
+[tools.bar]
+source = "github:owner/tools"
+version = "v1.2.3"
+bin = "bin/bar"
+
+[tools.foo]
+source = "github:owner/tools"
+version = "v1.2.3"
+bin = "bin/foo"
+"#
+    );
+    assert!(!temp_dir.path().join("binpm.lock").exists());
+    assert!(!temp_dir.path().join(".binpm").exists());
+}
+
+#[test]
+fn add_rejects_duplicate_additional_command_declarations() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "foo",
+            "github:owner/tools@v1.2.3",
+            "--bin",
+            "bin/foo",
+            "--also",
+            "foo=bin/other",
+            "--manifest-only",
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Duplicate local command declaration `foo`",
+        ));
+
+    assert!(!temp_dir.path().join("binpm.toml").exists());
+    assert!(!temp_dir.path().join("binpm.lock").exists());
+    assert!(!temp_dir.path().join(".binpm").exists());
+}
+
+#[test]
+fn package_shortcut_without_command_keeps_source_explicit() {
+    let mut command = binpm();
+
+    command
+        .args(["x", "--package", "not-a-source"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Invalid source spec"));
 }
 
 #[test]
@@ -655,6 +806,16 @@ fn doctor_json_reports_path_states() {
         payload["global_bin"],
         home.join("bin").display().to_string()
     );
+    assert_eq!(
+        payload["local_bin"],
+        temp_dir
+            .path()
+            .join(".binpm")
+            .join("bin")
+            .display()
+            .to_string()
+    );
+    assert_eq!(payload["local_bin_on_path"], false);
     assert_eq!(payload["global_bin_on_path"], false);
 }
 
@@ -870,6 +1031,112 @@ signature_verified = false
     assert!(output.stdout.is_empty());
     let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
     assert_eq!(payload["error"]["exit_code"], 2);
+    assert!(payload["error"]["diagnostic"].is_null());
+    assert!(!payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("Frozen lockfile failure"));
+}
+
+#[test]
+fn verify_local_json_stale_lockfile_omits_frozen_diagnostic() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/new-tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+
+[tools.tool.targets.linux-x86_64-gnu]
+package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux"
+installed_path = ".binpm/bin/tool"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+checksum_source = "local"
+provider_digest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+signature_available = false
+signature_verified = false
+"#,
+    )
+    .expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["verify", "--local", "--json"])
+        .output()
+        .expect("verify --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert!(payload["error"].get("diagnostic").is_none());
+    assert!(!payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("\"safest_next_command\""));
+}
+
+#[test]
+fn verify_local_json_missing_lockfile_omits_frozen_diagnostic() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["verify", "--local", "--json"])
+        .output()
+        .expect("verify --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 2);
+    assert!(payload["error"].get("diagnostic").is_none());
+    let message = payload["error"]["message"].as_str().expect("message");
+    assert!(message.contains("stale"));
+    assert!(!message.contains("Frozen lockfile failure"));
+    assert!(!message.contains("--no-frozen-lockfile"));
 }
 
 #[test]
@@ -1117,6 +1384,622 @@ version = "1.0.0"
         .stderr(predicate::str::contains("Frozen lockfile"));
 
     assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn ci_frozen_local_install_reports_structured_missing_lockfile_fix() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    let mut command = binpm();
+
+    let output = command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("CI", "true")
+        .args(["install", "--local", "--json"])
+        .output()
+        .expect("install --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 2);
+    assert_eq!(payload["error"]["diagnostic"]["mode"], "CI=true");
+    assert_eq!(payload["error"]["diagnostic"]["reason"], "missing_lockfile");
+    assert_eq!(
+        payload["error"]["diagnostic"]["would_change"],
+        project.join("binpm.lock").display().to_string()
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm install --local"
+    );
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("then commit `binpm.lock`"));
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn explicit_frozen_x_reports_on_demand_install_attempt() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["x", "--frozen-lockfile", "tool"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("mode `--frozen-lockfile`"))
+        .stderr(predicate::str::contains("reason `missing_lockfile`"))
+        .stderr(predicate::str::contains(
+            "On-demand install attempt: `binpm x`",
+        ))
+        .stderr(predicate::str::contains("would change"))
+        .stderr(predicate::str::contains("--no-frozen-lockfile"));
+
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn frozen_update_with_tool_named_x_is_not_on_demand() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.x]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "x", "--frozen-lockfile", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["on_demand_install_attempt"],
+        false
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm update --local x"
+    );
+}
+
+#[test]
+fn frozen_local_install_recovery_preserves_require_verified() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--require-verified",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("install --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm install --local --require-verified"
+    );
+}
+
+#[test]
+fn frozen_local_install_identifies_missing_tool_record() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(project.join("binpm.lock"), "version = 1\n").expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["install", "--local", "--frozen-lockfile", "--json"])
+        .output()
+        .expect("install --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["reason"],
+        "missing_lockfile_record"
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["record"],
+        "tools.tool target record"
+    );
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("record `tools.tool target record`"));
+}
+
+#[test]
+fn ci_frozen_local_install_distinguishes_orphan_cleanup() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("CI", "true")
+        .args(["install", "--local", "--json"])
+        .output()
+        .expect("install --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["reason"],
+        "orphan_lockfile_record"
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["record"],
+        "orphaned lockfile or package record"
+    );
+}
+
+#[test]
+fn frozen_add_reports_add_specific_recovery_with_quoted_command() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "tool;echo pwn",
+            "github:owner/tool",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("add --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm add 'tool;echo pwn' github:owner/tool --no-frozen-lockfile"
+    );
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("then commit `binpm.toml` and `binpm.lock`"));
+}
+
+#[test]
+fn frozen_add_recovery_preserves_manifest_affecting_flags() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "tool",
+            "github:owner/tool",
+            "--bin",
+            "actual",
+            "--require-verified",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("add --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm add tool github:owner/tool --bin actual --require-verified --no-frozen-lockfile"
+    );
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn frozen_add_stale_lockfile_reports_add_recovery() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+
+[tools.tool.targets.linux-x86_64-gnu]
+package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux"
+installed_path = ".binpm/bin/tool"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+checksum_source = "local"
+provider_digest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+signature_available = false
+signature_verified = false
+"#,
+    )
+    .expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "tool",
+            "github:owner/new-tool",
+            "--bin",
+            "actual",
+            "--require-verified",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("add --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm add tool github:owner/new-tool --bin actual --require-verified --no-frozen-lockfile"
+    );
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("then commit `binpm.toml` and `binpm.lock`"));
+}
+
+#[test]
+fn frozen_local_source_install_reports_source_specific_recovery() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "github:owner/tool",
+            "--local",
+            "--require-verified",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("install --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm install github:owner/tool --local --require-verified --no-frozen-lockfile"
+    );
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("then commit `binpm.toml` and `binpm.lock`"));
+}
+
+#[test]
+fn auto_frozen_update_recovery_preserves_selected_tool_and_verification() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "update",
+            "tool",
+            "--require-verified",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("update --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["diagnostic"]["reason"], "missing_lockfile");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm update --local tool --require-verified"
+    );
+}
+
+#[test]
+fn auto_frozen_update_recovery_preserves_multiple_selected_tools() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.a]
+source = "github:owner/a"
+version = "1.0.0"
+
+[tools.b]
+source = "github:owner/b"
+version = "1.0.0"
+
+[tools.c]
+source = "github:owner/c"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "update",
+            "--local",
+            "a",
+            "b",
+            "--require-verified",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("update --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["diagnostic"]["reason"], "missing_lockfile");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm update --local a b --require-verified"
+    );
+}
+
+#[test]
+fn ci_x_ignores_forwarded_frozen_lockfile_when_reporting_mode() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("CI", "true")
+        .args(["--json", "x", "tool", "--frozen-lockfile"])
+        .output()
+        .expect("x --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["diagnostic"]["mode"], "CI=true");
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn frozen_update_quotes_stale_lockfile_command_recovery() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools."tool;echo pwn"]
+source = "github:owner/new-tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools."tool;echo pwn"]
+source = "github:owner/tool"
+
+[tools."tool;echo pwn".targets.linux-x86_64-gnu]
+package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux"
+installed_path = ".binpm/bin/tool;echo pwn"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+checksum_source = "local"
+provider_digest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+signature_available = false
+signature_verified = false
+"#,
+    )
+    .expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "update",
+            "--local",
+            "tool;echo pwn",
+            "--require-verified",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("update --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm update --local 'tool;echo pwn' --require-verified"
+    );
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains(
+            "Safest next command: `binpm update --local 'tool;echo pwn' --require-verified`"
+        ));
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
