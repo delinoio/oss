@@ -54,11 +54,13 @@ Direct installers are for users who want a release artifact without Homebrew or 
 macOS and Linux:
 
 ```bash
-installer_url="https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.sh"
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
-curl -fsSL "$installer_url" -o "$tmp_dir/nodeup.sh"
-bash "$tmp_dir/nodeup.sh" --version latest --method direct
+(
+  installer_url="https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.sh"
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  curl -fsSL "$installer_url" -o "$tmp_dir/nodeup.sh"
+  bash "$tmp_dir/nodeup.sh" --version latest --method direct
+)
 ```
 
 Windows PowerShell:
@@ -77,7 +79,7 @@ finally {
 }
 ```
 
-These commands fetch the current first-party installer scripts from `delinoio/oss`. For reproducible automation, pin the same raw URL paths to a reviewed commit or repository tag instead of `refs/heads/main`.
+These commands fetch the current first-party installer scripts from `delinoio/oss`. For reproducible automation, pin the same raw URL paths to a reviewed commit or repository tag instead of `refs/heads/main`, and replace `latest` with an explicit Nodeup semver.
 
 The canonical in-repo installer paths remain:
 

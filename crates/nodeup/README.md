@@ -26,11 +26,13 @@ Install `cosign` first and leave it on `PATH`; the installers require it to veri
 macOS and Linux:
 
 ```bash
-installer_url="https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.sh"
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
-curl -fsSL "$installer_url" -o "$tmp_dir/nodeup.sh"
-bash "$tmp_dir/nodeup.sh" --version latest --method direct
+(
+  installer_url="https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.sh"
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  curl -fsSL "$installer_url" -o "$tmp_dir/nodeup.sh"
+  bash "$tmp_dir/nodeup.sh" --version latest --method direct
+)
 ```
 
 Windows PowerShell:
@@ -70,6 +72,20 @@ GitHub Actions:
 ```
 
 Direct installers support bundle-enabled releases only.
+
+Direct installers place the binary in `~/.local/bin` by default and do not modify your shell `PATH`. Add that directory before running `nodeup`, or pass `--install-dir` / `-InstallDir` with a directory already on `PATH`.
+
+macOS and Linux:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:Path = "$HOME\.local\bin;$env:Path"
+```
 
 ## Quick Command Reference
 
