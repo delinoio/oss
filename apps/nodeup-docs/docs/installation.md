@@ -2,6 +2,20 @@
 
 Nodeup is distributed as first-party release artifacts. Install flows are designed for supported macOS, Linux, and Windows x64/arm64 hosts.
 
+This page is published at https://nodeup.delino.io/installation.
+
+## binpm
+
+Use [binpm](https://binpm.delino.io) to install Nodeup from the first-party `delinoio/oss` release asset for a pinned Nodeup release tag:
+
+```bash
+binpm init
+binpm add nodeup github:delinoio/oss@nodeup@v<semver>
+binpm x nodeup --version
+```
+
+Replace `<semver>` with the Nodeup release version to install. Nodeup release tags use `nodeup@v<semver>`.
+
 ## Homebrew
 
 On macOS and Linux:
@@ -16,41 +30,6 @@ The Homebrew formula uses prebuilt Nodeup release archives for:
 - `darwin/arm64`
 - `linux/amd64`
 - `linux/arm64`
-
-## Direct Installers
-
-The repository maintains direct installers at:
-
-- `scripts/install/nodeup.sh`
-- `scripts/install/nodeup.ps1`
-
-Direct installers verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`) with `cosign`. They support bundle-enabled releases only.
-
-macOS and Linux:
-
-```bash
-./scripts/install/nodeup.sh --version latest --method direct
-```
-
-Windows PowerShell:
-
-```powershell
-./scripts/install/nodeup.ps1 -Version latest -Method direct
-```
-
-Direct installers place the binary in `~/.local/bin` by default and do not modify your shell `PATH`. Add that directory before verifying the install, or pass `--install-dir` / `-InstallDir` with a directory already on `PATH`.
-
-macOS and Linux:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Windows PowerShell:
-
-```powershell
-$env:Path = "$HOME\.local\bin;$env:Path"
-```
 
 ## cargo-binstall
 
