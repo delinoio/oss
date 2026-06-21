@@ -252,6 +252,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
         .clone();
     let mut spec = parse_manifest_source(&tool.source)?;
     spec.version = tool.version.clone();
+    let prior_state = capture_local_tool_state(&root, &cmd)?;
     let install = install_local_tool(
         &root,
         &cmd,
@@ -260,7 +261,12 @@ fn exec(args: ExecArgs) -> Result<i32> {
         args.lockfile.frozen_lockfile(),
         false,
     )?;
-    commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install)?;
+    let cache_paths = CachePaths::new(&binpm_home()?);
+    if let Err(error) = commit_deferred_cache_hit(&cache_paths, &install) {
+        rollback_local_install_state(&root, &cmd, &install.record, prior_state);
+        cleanup_failed_install_cache(&cache_paths, &install.record.sha256, Some(&root), &install)?;
+        return Err(error);
+    }
     execute_command(&cmd, args.args(), &[ScopePaths::local(root).bin])
 }
 
@@ -1746,7 +1752,7 @@ fn assert_lock_matches_manifest_tool(
             }
         }
         if record.asset_name != override_target.asset
-            || record.selected_binary != override_target.bin
+            || !manifest_bin_matches_record(&override_target.bin, &record.selected_binary)
         {
             return Err(BinpmError::StaleLockfile {
                 path: root.join(LOCKFILE_FILE),
@@ -1756,7 +1762,7 @@ fn assert_lock_matches_manifest_tool(
         return Ok(());
     }
     if let Some(bin) = tool.and_then(|tool| tool.bin.as_ref()) {
-        if record.selected_binary != *bin {
+        if !manifest_bin_matches_record(bin, &record.selected_binary) {
             return Err(BinpmError::StaleLockfile {
                 path: root.join(LOCKFILE_FILE),
                 cmd: cmd.to_string(),
@@ -1764,6 +1770,11 @@ fn assert_lock_matches_manifest_tool(
         }
     }
     Ok(())
+}
+
+fn manifest_bin_matches_record(manifest_bin: &str, record_selected_binary: &str) -> bool {
+    record_selected_binary == manifest_bin
+        || archive_basename(record_selected_binary) == manifest_bin
 }
 
 fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<ResolvedAsset> {
@@ -1846,7 +1857,12 @@ fn install_selected_executable(
                 repo,
                 selected_binary.as_deref(),
             )?;
-            resolved.selected_binary = selected.path;
+            resolved.selected_binary = selected_binary
+                .as_deref()
+                .map(str::trim)
+                .filter(|bin| !bin.is_empty())
+                .unwrap_or(&selected.path)
+                .to_string();
             install_executable_bytes(installed_path, &selected.bytes)
         }
     }
@@ -1985,6 +2001,13 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
         if file.is_dir() {
             continue;
         }
+        if zip_file_is_symlink(file.unix_mode()) {
+            return Err(BinpmError::UnsafeArchivePath {
+                asset: asset_name.to_string(),
+                path,
+                message: "symlinks and hard links are not installable".to_string(),
+            });
+        }
         let executable = file
             .unix_mode()
             .map(|mode| mode & 0o111 != 0)
@@ -2009,6 +2032,14 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
         members,
         member_bytes,
     )
+}
+
+fn zip_file_is_symlink(unix_mode: Option<u32>) -> bool {
+    const UNIX_FILE_TYPE_MASK: u32 = 0o170000;
+    const UNIX_SYMLINK_TYPE: u32 = 0o120000;
+    unix_mode
+        .map(|mode| mode & UNIX_FILE_TYPE_MASK == UNIX_SYMLINK_TYPE)
+        .unwrap_or(false)
 }
 
 fn select_archive_member(
@@ -2854,6 +2885,7 @@ fn execute_command(
     path_entries: &[PathBuf],
 ) -> Result<i32> {
     let path = prepend_path_entries(path_entries)?;
+    let executable = resolve_managed_executable(cmd, path_entries);
     info!(
         command = "x",
         resolved_command = cmd,
@@ -2861,7 +2893,7 @@ fn execute_command(
         forwarded_arg_count = args.len(),
         "Executing binpm-managed command"
     );
-    let status = ProcessCommand::new(cmd)
+    let status = ProcessCommand::new(&executable)
         .args(args)
         .env("PATH", path)
         .status()
@@ -2870,6 +2902,36 @@ fn execute_command(
             source,
         })?;
     Ok(status.code().unwrap_or(1))
+}
+
+fn resolve_managed_executable(cmd: &str, path_entries: &[PathBuf]) -> PathBuf {
+    let filename = current_platform_installed_filename(cmd);
+    path_entries
+        .iter()
+        .map(|entry| entry.join(&filename))
+        .find(|candidate| {
+            candidate
+                .symlink_metadata()
+                .map(|metadata| metadata.is_file())
+                .unwrap_or(false)
+        })
+        .unwrap_or_else(|| {
+            path_entries
+                .first()
+                .map(|entry| entry.join(filename))
+                .unwrap_or_else(|| PathBuf::from(cmd))
+        })
+}
+
+fn current_platform_installed_filename(cmd: &str) -> String {
+    #[cfg(windows)]
+    {
+        installed_filename(cmd, TargetOs::Windows)
+    }
+    #[cfg(not(windows))]
+    {
+        installed_filename(cmd, TargetOs::Linux)
+    }
 }
 
 fn prepend_path_entries(entries: &[PathBuf]) -> Result<std::ffi::OsString> {
@@ -3115,9 +3177,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
         let installed_path = validate_installed_binary_path(&paths, &cmd, &record)?;
         require_regular_managed_file(&installed_path)?;
         require_executable_managed_file(&installed_path)?;
-        if record.archive_format == ArchiveFormat::BareExecutable {
-            crate::storage::verify_sha256(&installed_path, &record.sha256)?;
-        }
+        verify_installed_binary_contents(&cache_paths, &record, &installed_path)?;
         println!("{cmd} verified {}", record.checksum_source.as_str());
         if !locked.contains(&cmd) {
             checked += 1;
@@ -3128,6 +3188,43 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     }
     println!("checked {checked}");
     Ok(0)
+}
+
+fn verify_installed_binary_contents(
+    cache_paths: &CachePaths,
+    record: &PackageRecord,
+    installed_path: &Path,
+) -> Result<()> {
+    if record.archive_format == ArchiveFormat::BareExecutable {
+        return crate::storage::verify_sha256(installed_path, &record.sha256);
+    }
+
+    let spec = SourceSpec::from_str(
+        &record
+            .requested_version
+            .as_ref()
+            .map(|version| format!("{}@{version}", record.source))
+            .unwrap_or_else(|| record.source.clone()),
+    )?;
+    let selected = read_archive_selected_binary(
+        &cache_paths.asset_path(&record.sha256),
+        record.archive_format,
+        &record.asset_name,
+        repo_name(&spec),
+        Some(&record.selected_binary),
+    )?;
+    let installed_bytes = fs::read(installed_path).map_err(|source| BinpmError::ReadFile {
+        path: installed_path.to_path_buf(),
+        source,
+    })?;
+    if installed_bytes != selected.bytes {
+        return Err(BinpmError::DigestMismatch {
+            path: installed_path.to_path_buf(),
+            expected: format!("{:x}", Sha256::digest(&selected.bytes)),
+            actual: format!("{:x}", Sha256::digest(&installed_bytes)),
+        });
+    }
+    Ok(())
 }
 
 fn validate_package_record_source_identity(cmd: &str, record: &PackageRecord) -> Result<()> {
@@ -3736,8 +3833,9 @@ mod tests {
         validate_locked_record_artifact, validate_locked_record_current_asset,
         validate_locked_record_current_provider_digest, validate_package_record_metadata,
         validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verify_lockfile_records, verify_runtime_cache_bytes,
-        ArtifactKind, InstalledPackage, InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
+        validate_selected_manifest_entries, verify_installed_binary_contents,
+        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_symlink, ArtifactKind,
+        InstalledPackage, InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -3806,6 +3904,45 @@ mod tests {
 
         assert!(matches!(error, BinpmError::UnsafeArchivePath { .. }));
         assert!(error.to_string().contains("parent-directory traversal"));
+    }
+
+    #[test]
+    fn zip_symlink_detection_checks_unix_file_type_bits() {
+        assert!(zip_file_is_symlink(Some(0o120777)));
+        assert!(!zip_file_is_symlink(Some(0o100755)));
+        assert!(!zip_file_is_symlink(Some(0o755)));
+        assert!(!zip_file_is_symlink(None));
+    }
+
+    #[test]
+    fn package_record_verify_checks_archive_installed_member_bytes() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(&temp_dir.path().join("home"));
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[("pkg/bin/tool", b"#!/bin/sh\nexit 0\n".as_slice(), 0o755)],
+        );
+        let archive_bytes = fs::read(&archive_path).expect("read archive");
+        let sha256 = format!("{:x}", Sha256::digest(&archive_bytes));
+        fs::create_dir_all(cache.entry_dir(&sha256)).expect("cache entry");
+        fs::write(cache.asset_path(&sha256), archive_bytes).expect("cache asset");
+
+        let installed_path = temp_dir.path().join("tool");
+        fs::write(&installed_path, b"#!/bin/sh\nexit 1\n").expect("bad installed binary");
+        let mut record = package_record();
+        record.sha256 = sha256;
+        record.archive_format = ArchiveFormat::Zip;
+        record.asset_name = "tool.zip".to_string();
+        record.selected_binary = "tool".to_string();
+
+        let error = verify_installed_binary_contents(&cache, &record, &installed_path)
+            .expect_err("installed bytes differ from archive member");
+        assert!(matches!(error, BinpmError::DigestMismatch { .. }));
+
+        fs::write(&installed_path, b"#!/bin/sh\nexit 0\n").expect("good installed binary");
+        verify_installed_binary_contents(&cache, &record, &installed_path)
+            .expect("installed archive member matches");
     }
 
     #[cfg(unix)]
