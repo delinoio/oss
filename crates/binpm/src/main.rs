@@ -1,4 +1,8 @@
-use binpm::{cli::Cli, error::BinpmError, logging, run_cli};
+use binpm::{
+    cli::{Cli, Command},
+    error::{set_frozen_lockfile_command_context, BinpmError, FrozenLockfileCommandContext},
+    logging, run_cli,
+};
 use swc_malloc as _;
 
 fn main() {
@@ -11,10 +15,22 @@ fn main() {
     if !json {
         logging::init_logging(cli.log_verbosity());
     }
+    set_frozen_lockfile_command_context(frozen_lockfile_command_context(&cli.command));
 
     match run_cli(cli) {
         Ok(code) => std::process::exit(code),
         Err(error) => exit_with_error(error, json),
+    }
+}
+
+fn frozen_lockfile_command_context(command: &Command) -> FrozenLockfileCommandContext {
+    match command {
+        Command::Add(args) => FrozenLockfileCommandContext::Add {
+            cmd: args.cmd.clone(),
+            source: args.source.clone(),
+        },
+        Command::Exec(_) => FrozenLockfileCommandContext::Exec,
+        _ => FrozenLockfileCommandContext::Other,
     }
 }
 

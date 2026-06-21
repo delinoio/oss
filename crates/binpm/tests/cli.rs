@@ -1114,6 +1114,151 @@ version = "1.0.0"
     assert!(!project.join("binpm.lock").exists());
 }
 
+#[test]
+fn frozen_update_with_tool_named_x_is_not_on_demand() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.x]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "x", "--frozen-lockfile", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["on_demand_install_attempt"],
+        false
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm install --local"
+    );
+}
+
+#[test]
+fn frozen_add_reports_add_specific_recovery_with_quoted_command() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "tool;echo pwn",
+            "github:owner/tool",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("add --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm add 'tool;echo pwn' github:owner/tool --no-frozen-lockfile"
+    );
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("then commit `binpm.toml` and `binpm.lock`"));
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn frozen_update_quotes_stale_lockfile_command_recovery() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools."tool;echo pwn"]
+source = "github:owner/new-tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools."tool;echo pwn"]
+source = "github:owner/tool"
+
+[tools."tool;echo pwn".targets.linux-x86_64-gnu]
+package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux"
+installed_path = ".binpm/bin/tool;echo pwn"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+checksum_source = "local"
+provider_digest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+signature_available = false
+signature_verified = false
+"#,
+    )
+    .expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "update",
+            "--local",
+            "tool;echo pwn",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("update --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm update --local 'tool;echo pwn'"
+    );
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("Safest next command: `binpm update --local 'tool;echo pwn'`"));
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[test]
 fn frozen_local_install_restores_missing_runtime_from_verified_cache() {

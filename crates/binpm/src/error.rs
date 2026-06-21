@@ -1,8 +1,21 @@
-use std::{env, ffi::OsStr, fmt, io, path::PathBuf};
+use std::{env, ffi::OsStr, fmt, io, path::PathBuf, sync::OnceLock};
 
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, BinpmError>;
+
+static FROZEN_LOCKFILE_COMMAND_CONTEXT: OnceLock<FrozenLockfileCommandContext> = OnceLock::new();
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FrozenLockfileCommandContext {
+    Add { cmd: String, source: String },
+    Exec,
+    Other,
+}
+
+pub fn set_frozen_lockfile_command_context(context: FrozenLockfileCommandContext) {
+    let _ = FROZEN_LOCKFILE_COMMAND_CONTEXT.set(context);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReleaseLookupDiagnosticKind {
@@ -261,6 +274,7 @@ impl BinpmError {
         match self {
             Self::FrozenLockfile { path } => {
                 let reason = frozen_lockfile_reason(path);
+                let safest_next_command = frozen_lockfile_safest_next_command();
                 Some(serde_json::json!({
                     "kind": "frozen_lockfile",
                     "mode": frozen_lockfile_mode(),
@@ -269,7 +283,7 @@ impl BinpmError {
                     "record": frozen_lockfile_record(reason),
                     "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
                     "would_change": path.display().to_string(),
-                    "safest_next_command": "binpm install --local",
+                    "safest_next_command": safest_next_command,
                     "local_development_escape_hatch": "--no-frozen-lockfile"
                 }))
             }
@@ -281,7 +295,7 @@ impl BinpmError {
                 "record": format!("tools.{cmd} target record"),
                 "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
                 "would_change": path.display().to_string(),
-                "safest_next_command": format!("binpm update --local {cmd}"),
+                "safest_next_command": format!("binpm update --local {}", cli_quote(cmd)),
                 "local_development_escape_hatch": "--no-frozen-lockfile"
             })),
             _ => None,
@@ -348,10 +362,12 @@ impl BinpmError {
 
 fn frozen_lockfile_message(path: &std::path::Path) -> String {
     let reason = frozen_lockfile_reason(path);
+    let safest_next_command = frozen_lockfile_safest_next_command();
+    let commit_target = frozen_lockfile_commit_target();
     let mut message = format!(
         "Frozen lockfile failure: mode `{}`; reason `{reason}`; file `{}`; record `{}`; would \
-         change `{}`. Safest next command: `binpm install --local`, then commit `binpm.lock`. For \
-         local development only, retry with `--no-frozen-lockfile`.",
+         change `{}`. Safest next command: `{safest_next_command}`, then commit {commit_target}. \
+         For local development only, retry with `--no-frozen-lockfile`.",
         frozen_lockfile_mode(),
         path.display(),
         frozen_lockfile_record(reason),
@@ -367,11 +383,11 @@ fn frozen_lockfile_message(path: &std::path::Path) -> String {
 }
 
 fn stale_lockfile_message(path: &std::path::Path, cmd: &str) -> String {
+    let command = format!("binpm update --local {}", cli_quote(cmd));
     let mut message = format!(
         "Frozen lockfile failure: mode `{}`; reason `stale_lockfile_record`; file `{}`; record \
-         `tools.{cmd} target record`; would change `{}`. Safest next command: `binpm update \
-         --local {cmd}`, then commit `binpm.lock`. For local development only, retry with \
-         `--no-frozen-lockfile`.",
+         `tools.{cmd} target record`; would change `{}`. Safest next command: `{command}`, then \
+         commit `binpm.lock`. For local development only, retry with `--no-frozen-lockfile`.",
         frozen_lockfile_mode(),
         path.display(),
         path.display()
@@ -412,8 +428,47 @@ fn frozen_lockfile_mode() -> &'static str {
 }
 
 fn frozen_lockfile_on_demand_install_attempt() -> bool {
-    env::args_os()
-        .any(|arg| arg == OsStr::new("x") || arg == OsStr::new("exec") || arg == OsStr::new("run"))
+    matches!(
+        FROZEN_LOCKFILE_COMMAND_CONTEXT.get(),
+        Some(FrozenLockfileCommandContext::Exec)
+    )
+}
+
+fn frozen_lockfile_safest_next_command() -> String {
+    match FROZEN_LOCKFILE_COMMAND_CONTEXT.get() {
+        Some(FrozenLockfileCommandContext::Add { cmd, source }) => {
+            format!(
+                "binpm add {} {} --no-frozen-lockfile",
+                cli_quote(cmd),
+                cli_quote(source)
+            )
+        }
+        _ => "binpm install --local".to_string(),
+    }
+}
+
+fn frozen_lockfile_commit_target() -> &'static str {
+    match FROZEN_LOCKFILE_COMMAND_CONTEXT.get() {
+        Some(FrozenLockfileCommandContext::Add { .. }) => "`binpm.toml` and `binpm.lock`",
+        _ => "`binpm.lock`",
+    }
+}
+
+fn cli_quote(raw: &str) -> String {
+    if !raw.is_empty()
+        && raw.chars().all(|character| {
+            character.is_ascii_alphanumeric()
+                || matches!(character, '-' | '_' | '.' | '/' | ':' | '@')
+        })
+    {
+        raw.to_string()
+    } else {
+        posix_single_quote(raw)
+    }
+}
+
+fn posix_single_quote(raw: &str) -> String {
+    format!("'{}'", raw.replace('\'', "'\\''"))
 }
 
 fn ambiguous_archive_binaries_message(
