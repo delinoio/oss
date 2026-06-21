@@ -17,6 +17,14 @@ bin = "rg"
 
 Tool command names must be executable basenames. Path separators, `.` and `..` are invalid command names.
 
+`bin` stores the selected upstream executable name or archive member path. Prefer setting it through the CLI:
+
+```bash
+binpm add rg github:BurntSushi/ripgrep@14.1.1 --bin rg
+```
+
+Use `--bin` when a package archive contains more than one plausible executable or when the executable selected from the release differs from the local command name.
+
 Target-specific asset overrides use `[tools.<cmd>.targets.<target-key>]`.
 
 ## Lockfile

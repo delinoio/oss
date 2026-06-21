@@ -20,6 +20,7 @@
 - The package name is `binpm-docs`.
 - The app is registered through the existing `apps/*` pnpm workspace glob.
 - Stable documentation route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/troubleshooting`, and `/reference`.
+- Rspress clean URLs are enabled. Stable public route IDs must remain extensionless, each route ID must have a generated build output artifact, and generated internal links must not use `.html` suffixes for those route IDs.
 - The development server uses fixed port `46260`.
 - Local production preview uses fixed port `46261`.
 - The production output directory is `doc_build`.
@@ -43,7 +44,7 @@
 - Log output must be safe for public CI surfaces.
 
 ## Build and Test
-- Local validation: `pnpm --filter binpm-docs test`
+- Local validation: `pnpm --filter binpm-docs test`, which builds the Rspress output and runs `scripts/validate-clean-urls.mjs` to verify stable route IDs have build output artifacts and generated internal HTML links use clean public URLs rather than `.html` hrefs.
 - Production build: `pnpm --filter binpm-docs build`
 - App preparation: `pnpm run prepare` invokes `prepare:app`; `binpm-docs` currently has no app-specific preparation step.
 
