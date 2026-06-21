@@ -1166,54 +1166,64 @@ fn install_local_from_lock(
     ensure_no_package_record_install_path_collision(&scope_paths, cmd, target.os)?;
     let cache_asset = cache_paths.asset_path(&record.sha256);
     let mut populated_cache_entry = false;
-    if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)?
-        && cache_asset.symlink_metadata().is_ok()
-    {
-        remove_path_if_exists(&cache_asset)?;
-    }
+    let had_existing_cache_entry = cache_asset.symlink_metadata().is_ok();
+    let cache_metadata_snapshot = if had_existing_cache_entry {
+        Some(snapshot_cache_metadata(&cache_paths, &record.sha256)?)
+    } else {
+        None
+    };
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
-        let download_url = locked_record_download_url(&record)?;
-        let bytes = download_asset(&download_url)?;
-        let actual = format!("{:x}", Sha256::digest(&bytes));
-        if actual != record.sha256 {
-            return Err(BinpmError::DigestMismatch {
-                path: cache_asset,
-                expected: record.sha256,
-                actual,
-            });
+        let repair_result = (|| {
+            let download_url = locked_record_download_url(&record)?;
+            let bytes = download_asset(&download_url)?;
+            let actual = format!("{:x}", Sha256::digest(&bytes));
+            if actual != record.sha256 {
+                return Err(BinpmError::DigestMismatch {
+                    path: cache_asset.clone(),
+                    expected: record.sha256.clone(),
+                    actual,
+                });
+            }
+            let resolved = ResolvedAsset {
+                source: SourceSpec::from_str(
+                    &record
+                        .requested_version
+                        .as_ref()
+                        .map(|version| format!("{}@{version}", record.source))
+                        .unwrap_or_else(|| record.source.clone()),
+                )?,
+                release_tag: record.release_tag.clone(),
+                target: target.clone(),
+                decision: crate::assets::CandidateDecision {
+                    asset_name: record.asset_name.clone(),
+                    canonical_url: record.asset_url.clone(),
+                    download_url,
+                    kind: ArtifactKind::BareExecutable,
+                    detected_os: Some(record.target_os),
+                    detected_arch: Some(record.target_arch),
+                    detected_libc: Some(record.target_libc),
+                    score: None,
+                    eligible: true,
+                    recognized_pattern: true,
+                    rejection_reason: None,
+                },
+                archive_format: record.archive_format,
+                selected_binary: record.selected_binary.clone(),
+                provider_digest_sha256: None,
+                checksum_source: record.checksum_source,
+                signature_available: record.signature_available,
+                signature_verified: record.signature_verified,
+            };
+            populate_cache_from_bytes(&cache_paths, &resolved, &bytes)?;
+            Ok(())
+        })();
+        if let Err(error) = repair_result {
+            if let Some(snapshot) = &cache_metadata_snapshot {
+                restore_cache_metadata(&cache_paths, snapshot)?;
+            }
+            return Err(error);
         }
-        let resolved = ResolvedAsset {
-            source: SourceSpec::from_str(
-                &record
-                    .requested_version
-                    .as_ref()
-                    .map(|version| format!("{}@{version}", record.source))
-                    .unwrap_or_else(|| record.source.clone()),
-            )?,
-            release_tag: record.release_tag.clone(),
-            target: target.clone(),
-            decision: crate::assets::CandidateDecision {
-                asset_name: record.asset_name.clone(),
-                canonical_url: record.asset_url.clone(),
-                download_url,
-                kind: ArtifactKind::BareExecutable,
-                detected_os: Some(record.target_os),
-                detected_arch: Some(record.target_arch),
-                detected_libc: Some(record.target_libc),
-                score: None,
-                eligible: true,
-                recognized_pattern: true,
-                rejection_reason: None,
-            },
-            archive_format: record.archive_format,
-            selected_binary: record.selected_binary.clone(),
-            provider_digest_sha256: None,
-            checksum_source: record.checksum_source,
-            signature_available: record.signature_available,
-            signature_verified: record.signature_verified,
-        };
-        populate_cache_from_bytes(&cache_paths, &resolved, &bytes)?;
-        populated_cache_entry = true;
+        populated_cache_entry = cache_metadata_snapshot.is_none();
     }
 
     let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
@@ -1224,7 +1234,7 @@ fn install_local_from_lock(
             record: record.clone(),
             populated_cache_entry,
             deferred_cache_hit: None,
-            cache_metadata_snapshot: None,
+            cache_metadata_snapshot: cache_metadata_snapshot.clone(),
         };
         cleanup_failed_install_cache(&cache_paths, &record.sha256, Some(root), &install)?;
         return Err(error);
@@ -1247,7 +1257,7 @@ fn install_local_from_lock(
             record: runtime_record.clone(),
             populated_cache_entry,
             deferred_cache_hit: None,
-            cache_metadata_snapshot: None,
+            cache_metadata_snapshot: cache_metadata_snapshot.clone(),
         };
         cleanup_failed_install_cache(&cache_paths, &runtime_record.sha256, Some(root), &install)?;
         return Err(error);
@@ -1257,7 +1267,7 @@ fn install_local_from_lock(
         record: runtime_record,
         populated_cache_entry,
         deferred_cache_hit: None,
-        cache_metadata_snapshot: None,
+        cache_metadata_snapshot,
     })
 }
 
@@ -2008,9 +2018,10 @@ fn is_manifest_managed_installed_path(
     path: &Path,
     target_os: TargetOs,
 ) -> bool {
-    manifest_tools
-        .keys()
-        .any(|cmd| managed_installed_path(paths, cmd, target_os) == path)
+    let key = install_path_collision_key(path, target_os);
+    manifest_tools.keys().any(|cmd| {
+        install_path_collision_key(&managed_installed_path(paths, cmd, target_os), target_os) == key
+    })
 }
 
 fn ensure_no_selected_install_path_collisions(
@@ -2514,6 +2525,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
         verify_runtime_cache_bytes(&cache_paths, &record)?;
         let installed_path = validate_installed_binary_path(&paths, &cmd, &record)?;
         require_regular_managed_file(&installed_path)?;
+        require_executable_managed_file(&installed_path)?;
         crate::storage::verify_sha256(&installed_path, &record.sha256)?;
         println!("{cmd} verified {}", record.checksum_source.as_str());
         if !locked.contains(&cmd) {
@@ -2587,6 +2599,27 @@ fn validate_package_record_metadata(
 fn verify_runtime_cache_bytes(cache_paths: &CachePaths, record: &PackageRecord) -> Result<()> {
     reject_symlinked_cache_entry(cache_paths, &record.sha256)?;
     require_verified_regular_cache_asset(&cache_paths.asset_path(&record.sha256), &record.sha256)
+}
+
+#[cfg(unix)]
+fn require_executable_managed_file(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = fs::symlink_metadata(path).map_err(|source| BinpmError::ReadFile {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if metadata.permissions().mode() & 0o111 == 0 {
+        return Err(BinpmError::UnsafeManagedFile {
+            path: path.to_path_buf(),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn require_executable_managed_file(_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 fn validate_provider_digest_evidence(record: &PackageRecord) -> Result<()> {
@@ -3114,9 +3147,10 @@ mod tests {
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         parse_manifest_source, project_root_from, record_matches_current_provider_digest,
-        remove_global_tool_from_paths, remove_local_manifest_orphans, restore_local_remove_state,
-        restore_runtime_tool_state, select_manifest_asset, selected_asset_display_url, shell_path,
-        shell_quote, snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
+        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
+        select_manifest_asset, selected_asset_display_url, shell_path, shell_quote,
+        snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
         validate_locked_record_artifact, validate_locked_record_current_provider_digest,
         validate_package_record_metadata, validate_package_record_source_identity,
         validate_provider_digest_evidence, validate_selected_manifest_entries,
@@ -4057,6 +4091,53 @@ mod tests {
         assert!(!paths.packages.join("foo.toml").exists());
         assert_eq!(
             fs::read(paths.bin.join("foo.exe")).expect("declared executable remains"),
+            b"declared tool"
+        );
+        let lockfile = crate::storage::read_lockfile(&temp_dir.path().join(LOCKFILE_FILE))
+            .expect("read lockfile");
+        assert!(!lockfile.tools.contains_key("foo"));
+    }
+
+    #[test]
+    fn manifest_sync_keeps_declared_darwin_case_collision_path() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        let mut record = package_record();
+        record.target_os = TargetOs::Darwin;
+        record.installed_path = paths.bin.join("foo").display().to_string();
+        write_package_record(&paths, "foo", &record).expect("write package record");
+        fs::write(paths.bin.join("foo"), b"declared tool").expect("write installed binary");
+        write_lockfile(
+            &temp_dir.path().join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "foo".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([("darwin-x86_64-any".to_string(), record)]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+        let manifest_tools = BTreeMap::from([(
+            "FOO".to_string(),
+            ManifestTool {
+                source: "github:owner/tool".to_string(),
+                version: Some("1.0.0".to_string()),
+                bin: None,
+                targets: BTreeMap::new(),
+            },
+        )]);
+
+        remove_local_manifest_orphans(temp_dir.path(), &manifest_tools, false)
+            .expect("remove case-colliding orphan");
+
+        assert!(!paths.packages.join("foo.toml").exists());
+        assert_eq!(
+            fs::read(paths.bin.join("foo")).expect("declared executable remains"),
             b"declared tool"
         );
         let lockfile = crate::storage::read_lockfile(&temp_dir.path().join(LOCKFILE_FILE))
@@ -5496,6 +5577,33 @@ mod tests {
             .contains(&format!("sha256:{}", record.sha256)));
     }
 
+    #[test]
+    fn failed_frozen_cache_repair_restores_existing_corrupt_asset() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let sha256 = format!("{:x}", Sha256::digest(b"expected bytes"));
+        let asset_path = cache.asset_path(&sha256);
+        fs::create_dir_all(asset_path.parent().expect("cache entry")).expect("cache entry");
+        fs::write(&asset_path, b"corrupt bytes").expect("write corrupt asset");
+        let snapshot = snapshot_cache_metadata(&cache, &sha256).expect("snapshot cache");
+        fs::write(&asset_path, b"partial replacement").expect("write replacement");
+        let mut record = package_record();
+        record.sha256 = sha256.clone();
+        let install = InstalledPackage {
+            record,
+            populated_cache_entry: false,
+            deferred_cache_hit: None,
+            cache_metadata_snapshot: Some(snapshot),
+        };
+
+        cleanup_failed_install_cache(&cache, &sha256, None, &install).expect("restore cache");
+
+        assert_eq!(
+            fs::read(asset_path).expect("read restored asset"),
+            b"corrupt bytes"
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn package_record_verify_rejects_symlinked_cache_asset() {
@@ -5559,6 +5667,33 @@ mod tests {
         let error = require_regular_managed_file(&installed_path).expect_err("symlinked install");
 
         assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn package_record_verify_rejects_non_executable_installed_file() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let installed_path = temp_dir.path().join("tool");
+        fs::write(&installed_path, b"expected bytes").expect("write installed file");
+        let mut permissions = fs::metadata(&installed_path)
+            .expect("metadata")
+            .permissions();
+        permissions.set_mode(0o644);
+        fs::set_permissions(&installed_path, permissions).expect("chmod non-executable");
+
+        let error =
+            require_executable_managed_file(&installed_path).expect_err("non-executable install");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
+
+        let mut permissions = fs::metadata(&installed_path)
+            .expect("metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&installed_path, permissions).expect("chmod executable");
+        require_executable_managed_file(&installed_path).expect("executable install");
     }
 
     #[test]
