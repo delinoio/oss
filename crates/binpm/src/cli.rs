@@ -31,8 +31,8 @@ pub enum Command {
     Install(InstallArgs),
     /// Declare a local tool and install it into the project bin directory.
     Add(AddArgs),
-    /// Run a local manifest command or a command from an explicit package.
-    #[command(name = "x")]
+    /// Execute a local manifest command or one-off package command.
+    #[command(name = "x", visible_aliases = ["exec", "run"])]
     Exec(ExecArgs),
     /// Inspect and manage the global release asset cache.
     Cache(CacheArgs),
@@ -86,6 +86,11 @@ pub struct AddArgs {
     pub cmd: String,
     pub source: String,
 
+    /// Upstream executable name or archive member path to install for this
+    /// local command.
+    #[arg(long, value_name = "BIN")]
+    pub bin: Option<String>,
+
     #[command(flatten)]
     pub lockfile: LockfileArgs,
 
@@ -104,6 +109,11 @@ pub struct ExecArgs {
     /// Explicit package source for one-off execution.
     #[arg(long, value_name = "SOURCE")]
     pub package: Option<String>,
+
+    /// Upstream executable name or archive member path to run from the explicit
+    /// package.
+    #[arg(long, value_name = "BIN", requires = "package")]
+    pub bin: Option<String>,
 
     #[command(flatten)]
     pub lockfile: LockfileArgs,
@@ -169,6 +179,10 @@ pub struct RemoveArgs {
     #[command(flatten)]
     pub scope: ScopeArgs,
 
+    /// Show the selected scope and planned removal without mutating state.
+    #[arg(long)]
+    pub dry_run: bool,
+
     /// Bypass future confirmation prompts for scripting.
     #[arg(long)]
     pub no_confirm: bool,
@@ -196,6 +210,10 @@ pub struct UpdateArgs {
     /// available.
     #[arg(long)]
     pub require_verified: bool,
+
+    /// Show the selected scope and planned updates without mutating state.
+    #[arg(long)]
+    pub dry_run: bool,
 
     /// Bypass future confirmation prompts for scripting.
     #[arg(long)]
@@ -309,8 +327,23 @@ mod tests {
         let help = command.render_long_help().to_string();
 
         for expected in [
-            "install", "add", "x", "cache", "list", "remove", "info", "outdated", "update",
-            "doctor", "explain", "verify", "init", "env",
+            "install",
+            "add",
+            "x",
+            "exec",
+            "run",
+            "Execute a local manifest command or one-off package command",
+            "cache",
+            "list",
+            "remove",
+            "info",
+            "outdated",
+            "update",
+            "doctor",
+            "explain",
+            "verify",
+            "init",
+            "env",
         ] {
             assert!(
                 help.contains(expected),
@@ -396,6 +429,37 @@ mod tests {
                 );
             }
             other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_execution_aliases_with_same_forwarding_and_package_flags() {
+        for alias in ["exec", "run"] {
+            let cli = Cli::try_parse_from([
+                "binpm",
+                alias,
+                "--no-frozen-lockfile",
+                "--package",
+                "github:BurntSushi/ripgrep",
+                "rg",
+                "--",
+                "--package",
+                "literal",
+            ])
+            .unwrap_or_else(|error| panic!("parse {alias} alias: {error}"));
+
+            match cli.command {
+                Command::Exec(exec) => {
+                    assert_eq!(exec.package.as_deref(), Some("github:BurntSushi/ripgrep"));
+                    assert!(exec.lockfile.no_frozen_lockfile);
+                    assert_eq!(exec.cmd(), OsStr::new("rg"));
+                    assert_eq!(
+                        exec.args(),
+                        vec![OsString::from("--package"), OsString::from("literal")]
+                    );
+                }
+                other => panic!("unexpected command for {alias}: {other:?}"),
+            }
         }
     }
 
