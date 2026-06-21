@@ -761,9 +761,12 @@ fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget
 }
 
 fn override_snippet_candidate(decisions: &[CandidateDecision]) -> Option<&CandidateDecision> {
-    decisions
-        .iter()
-        .find(|decision| decision.kind.is_installable())
+    decisions.iter().find(|decision| {
+        decision.kind.is_installable()
+            && decision.rejection_reason.as_deref().is_some_and(|reason| {
+                reason.contains("linux musl target requires an explicit libc signal")
+            })
+    })
 }
 
 fn override_snippet_bin(spec: &SourceSpec, decision: &CandidateDecision) -> String {
@@ -788,10 +791,10 @@ fn target_override_snippet(
         toml_string(asset),
         toml_string(bin)
     );
-    if let Some(checksum_source) = checksum_source {
+    if checksum_source == Some(ChecksumSource::GitHubDigest) {
         snippet.push_str(&format!(
             "\nchecksum_source = {}",
-            toml_string(checksum_source.as_str())
+            toml_string(ChecksumSource::GitHubDigest.as_str())
         ));
     }
     snippet
@@ -6246,6 +6249,31 @@ mod tests {
     }
 
     #[test]
+    fn explain_diagnostics_do_not_suggest_override_for_incompatible_target_assets() {
+        let target = HostTarget {
+            os: TargetOs::Darwin,
+            arch: TargetArch::Aarch64,
+            libc: TargetLibc::Any,
+        };
+        let assets = [ReleaseAsset {
+            name: "tool-linux-x64.tar.gz".to_string(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64.tar.gz"
+                .to_string(),
+            provider_url: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+        }];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(decisions.iter().all(|decision| !decision.eligible));
+        assert!(decisions.iter().any(|decision| {
+            decision.rejection_reason.as_deref() == Some("asset target does not match host target")
+        }));
+        assert!(override_snippet_candidate(&decisions).is_none());
+    }
+
+    #[test]
     fn target_override_snippet_uses_canonical_key_and_toml_escaped_fields() {
         let target = linux_target();
         let snippet = target_override_snippet(
@@ -6259,7 +6287,22 @@ mod tests {
         assert!(snippet.starts_with("[tools.\"tool.name\".targets.linux-x86_64-gnu]"));
         assert!(snippet.contains("asset = \"tool-linux-x64.tar.gz\""));
         assert!(snippet.contains("bin = \"bin/tool \\\"quoted\\\"\""));
-        assert!(snippet.contains("checksum_source = \"local\""));
+        assert!(!snippet.contains("checksum_source"));
+        toml::from_str::<toml::Value>(&snippet).expect("valid TOML snippet");
+    }
+
+    #[test]
+    fn target_override_snippet_keeps_manifest_accepted_checksum_source() {
+        let target = linux_target();
+        let snippet = target_override_snippet(
+            "tool",
+            &target,
+            "tool-linux-x64.tar.gz",
+            "tool",
+            Some(ChecksumSource::GitHubDigest),
+        );
+
+        assert!(snippet.contains("checksum_source = \"github-digest\""));
         toml::from_str::<toml::Value>(&snippet).expect("valid TOML snippet");
     }
 
