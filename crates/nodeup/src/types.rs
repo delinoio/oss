@@ -121,6 +121,22 @@ pub enum NodeupChannel {
     Latest,
 }
 
+impl NodeupChannel {
+    pub fn canonical_selector(self) -> &'static str {
+        match self {
+            Self::Lts => "lts",
+            Self::Current | Self::Latest => "current",
+        }
+    }
+
+    pub fn alias_of(self) -> Option<&'static str> {
+        match self {
+            Self::Latest => Some("current"),
+            Self::Lts | Self::Current => None,
+        }
+    }
+}
+
 impl fmt::Display for NodeupChannel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {

@@ -16,9 +16,12 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 
 ## Cross-Domain Invariants
 - Stable channel naming and runtime dispatch semantics must be preserved.
+- `current` is the canonical selector for the newest Node.js release-index entry; `latest` remains a supported alias that resolves identically and reports canonical alias metadata in JSON output.
 - Exact-version runtime selectors are immutable pins for `nodeup update`; they are canonicalized to `v<semver>` when tracked and are semantically deduplicated with non-`v` inputs.
+- Tracked semantic selectors must be canonicalized so legacy duplicate exact selectors and channel aliases such as `current`/`latest` do not produce duplicate update work.
 - Shim behavior must remain deterministic across supported operating systems.
 - Linked runtime lifecycle commands must preserve external runtime directories: `toolchain link` registers settings records and `toolchain unlink` removes those records only.
+- Linked runtime names are case-sensitive, but reserved-channel case variants such as `LTS`, `Current`, and `LATEST` are invalid linked names.
 - Linked runtime resolution must validate that the selected `node` executable is runnable, including Unix executable-bit checks and Windows `node.exe` naming behavior.
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.

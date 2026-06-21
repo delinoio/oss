@@ -24,6 +24,10 @@ struct CheckEntry {
 #[derive(Debug, Serialize)]
 struct UpdateEntry {
     selector: String,
+    selector_kind: String,
+    canonical_selector: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector_alias_of: Option<String>,
     previous_runtime: Option<String>,
     updated_runtime: Option<String>,
     status: String,
@@ -98,10 +102,16 @@ pub fn update(
     let mut updates = Vec::new();
     for selector in selectors {
         let parsed = RuntimeSelector::parse(&selector)?;
+        let selector_kind = parsed.kind().as_str().to_string();
+        let canonical_selector = parsed.canonical_id();
+        let selector_alias_of = parsed.alias_of();
         match parsed {
             RuntimeSelector::LinkedName(_) => {
                 updates.push(UpdateEntry {
                     selector,
+                    selector_kind,
+                    canonical_selector,
+                    selector_alias_of,
                     previous_runtime: None,
                     updated_runtime: None,
                     status: "skipped-linked-runtime".to_string(),
@@ -120,6 +130,9 @@ pub fn update(
                 let report = app.installer.ensure_installed(&version, &app.releases)?;
                 updates.push(UpdateEntry {
                     selector,
+                    selector_kind,
+                    canonical_selector,
+                    selector_alias_of,
                     previous_runtime: None,
                     updated_runtime: Some(report.version),
                     status: if report.state == InstallState::AlreadyInstalled {
@@ -143,6 +156,9 @@ pub fn update(
                 let current = format!("v{version}");
                 updates.push(UpdateEntry {
                     selector,
+                    selector_kind,
+                    canonical_selector,
+                    selector_alias_of,
                     previous_runtime: Some(current.clone()),
                     updated_runtime: Some(current),
                     status: "skipped-exact-version".to_string(),

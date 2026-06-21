@@ -807,6 +807,29 @@ fn json_toolchain_link_reserved_name_failure_emits_invalid_input_error_envelope(
 
 #[test]
 #[serial]
+fn toolchain_link_rejects_case_variant_reserved_channel_name() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-reserved-case-name");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n");
+
+    for name in ["LTS", "Current", "LATEST"] {
+        let output = env
+            .command()
+            .args(["toolchain", "link", name, runtime_dir.to_str().unwrap()])
+            .output()
+            .expect("toolchain link with case-variant reserved channel selector");
+
+        assert_eq!(output.status.code(), Some(2));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(&format!("Invalid linked runtime name: {name}")));
+        assert!(stderr.contains("differ from reserved channel selectors"));
+    }
+}
+
+#[test]
+#[serial]
 fn toolchain_link_rejects_regular_file_path_and_does_not_persist_selector() {
     let env = TestEnv::new();
     let invalid_path = env.root.join("not-a-runtime-file");
@@ -3683,6 +3706,8 @@ fn update_linked_selector_reports_skipped_status() {
     let entries = payload.as_array().expect("update JSON array");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["selector"], "linked-update-explicit");
+    assert_eq!(entries[0]["selector_kind"], "linked-runtime");
+    assert_eq!(entries[0]["canonical_selector"], "linked-update-explicit");
     assert_eq!(entries[0]["status"], "skipped-linked-runtime");
     assert!(entries[0]["previous_runtime"].is_null());
     assert!(entries[0]["updated_runtime"].is_null());
@@ -3715,8 +3740,110 @@ fn update_channel_selector_reports_updated_status() {
     let entries = payload.as_array().expect("update JSON array");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["selector"], "lts");
+    assert_eq!(entries[0]["selector_kind"], "channel");
+    assert_eq!(entries[0]["canonical_selector"], "lts");
     assert_eq!(entries[0]["status"], "updated");
     assert_eq!(entries[0]["updated_runtime"], "v22.2.0");
+}
+
+#[test]
+#[serial]
+fn current_and_latest_resolve_as_aliases_and_report_canonical_selector() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", None), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    for selector in ["current", "latest"] {
+        let output = env
+            .command()
+            .args(["--output", "json", "update", selector])
+            .output()
+            .expect("update current/latest selector");
+        assert!(output.status.success());
+
+        let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let entries = payload.as_array().expect("update JSON array");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["selector"], selector);
+        assert_eq!(entries[0]["selector_kind"], "channel");
+        assert_eq!(entries[0]["canonical_selector"], "current");
+        if selector == "latest" {
+            assert_eq!(entries[0]["selector_alias_of"], "current");
+        } else {
+            assert!(entries[0].get("selector_alias_of").is_none());
+        }
+        assert_eq!(entries[0]["updated_runtime"], "v24.0.0");
+    }
+
+    env.command()
+        .args(["--output", "json", "default", "latest"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "\"default_selector\": \"latest\"",
+        ))
+        .stdout(predicates::str::contains("\"selector_kind\": \"channel\""))
+        .stdout(predicates::str::contains(
+            "\"canonical_selector\": \"current\"",
+        ))
+        .stdout(predicates::str::contains(
+            "\"selector_alias_of\": \"current\"",
+        ));
+
+    env.command()
+        .args(["--output", "json", "show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"runtime\": \"v24.0.0\""))
+        .stdout(predicates::str::contains("\"selector\": \"latest\""))
+        .stdout(predicates::str::contains("\"selector_kind\": \"channel\""))
+        .stdout(predicates::str::contains(
+            "\"canonical_selector\": \"current\"",
+        ))
+        .stdout(predicates::str::contains(
+            "\"selector_alias_of\": \"current\"",
+        ));
+}
+
+#[test]
+#[serial]
+fn tracked_current_and_latest_are_canonicalized_to_one_channel_selector() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", None)]);
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    env.command().args(["default", "latest"]).assert().success();
+    env.command()
+        .args(["default", "current"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        tracked_selectors_from_settings(&env.config_root.join("settings.toml")),
+        vec!["current"]
+    );
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update canonicalized current/latest tracked selector");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "current");
+    assert_eq!(entries[0]["selector_kind"], "channel");
+    assert_eq!(entries[0]["canonical_selector"], "current");
 }
 
 #[test]
@@ -3764,6 +3891,8 @@ fn tracked_exact_selectors_are_canonicalized_across_install_and_override() {
     let entries = payload.as_array().expect("update JSON array");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["selector_kind"], "exact-version");
+    assert_eq!(entries[0]["canonical_selector"], "v22.1.0");
     assert_eq!(entries[0]["status"], "skipped-exact-version");
     assert_eq!(entries[0]["previous_runtime"], "v22.1.0");
     assert_eq!(entries[0]["updated_runtime"], "v22.1.0");

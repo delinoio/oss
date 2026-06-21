@@ -17,6 +17,17 @@ struct OverrideListItem {
     selector: String,
 }
 
+#[derive(Debug, Serialize)]
+struct OverrideSetResponse {
+    path: PathBuf,
+    selector: String,
+    selector_kind: String,
+    canonical_selector: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector_alias_of: Option<String>,
+    status: &'static str,
+}
+
 pub fn execute(
     command: OverrideCommand,
     output: OutputFormat,
@@ -81,11 +92,14 @@ fn set(
         target_path.display(),
         canonical_selector
     );
-    let response = serde_json::json!({
-        "path": target_path,
-        "selector": canonical_selector,
-        "status": "set"
-    });
+    let response = OverrideSetResponse {
+        path: target_path,
+        selector: canonical_selector,
+        selector_kind: selector.kind().as_str().to_string(),
+        canonical_selector: selector.canonical_id(),
+        selector_alias_of: selector.alias_of(),
+        status: "set",
+    };
 
     print_output(output, color, &human, &response)?;
     Ok(0)

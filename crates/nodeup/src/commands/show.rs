@@ -18,6 +18,10 @@ struct ActiveRuntimeResponse {
     runtime: String,
     source: String,
     selector: String,
+    selector_kind: String,
+    canonical_selector: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector_alias_of: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
@@ -170,6 +174,9 @@ fn show_active_runtime(
         runtime: resolved.runtime_id(),
         source: format!("{:?}", resolved.source).to_lowercase(),
         selector: resolved.selector.stable_id(),
+        selector_kind: resolved.selector.kind().as_str().to_string(),
+        canonical_selector: resolved.selector.canonical_id(),
+        selector_alias_of: resolved.selector.alias_of(),
         release_index: app.resolver.release_index_diagnostic(),
     };
     let human = append_release_index_human_note(

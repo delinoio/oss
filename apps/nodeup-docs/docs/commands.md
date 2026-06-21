@@ -132,7 +132,9 @@ Behavior by selector:
 
 Tracked exact versions are canonicalized and deduplicated by semantic version. For example, tracking both `22.1.0` and `v22.1.0` results in one tracked selector, `v22.1.0`.
 
-JSON output is an array with `selector`, `previous_runtime`, `updated_runtime`, and `status`.
+`current` and `latest` resolve to the same newest release-index entry; `latest` is reported as an alias of canonical selector `current`.
+
+JSON output is an array with `selector`, `selector_kind`, `canonical_selector`, optional `selector_alias_of`, `previous_runtime`, `updated_runtime`, and `status`.
 
 ## check
 

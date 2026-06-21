@@ -7,6 +7,7 @@ use crate::{
     errors::{ErrorKind, NodeupError, Result},
     release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
+    selectors::RuntimeSelector,
     types::RuntimeSelectorSource,
     NodeupApp,
 };
@@ -20,6 +21,12 @@ struct DefaultResolutionError {
 #[derive(Debug, Serialize)]
 struct DefaultResponse {
     default_selector: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    canonical_selector: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector_alias_of: Option<String>,
     resolved_runtime: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     release_index: Option<ReleaseIndexResolutionDiagnostic>,
@@ -64,6 +71,9 @@ pub fn execute(
 
         let response = DefaultResponse {
             default_selector: Some(runtime_selector.to_string()),
+            selector_kind: Some(resolved.selector.kind().as_str().to_string()),
+            canonical_selector: Some(resolved.selector.canonical_id()),
+            selector_alias_of: resolved.selector.alias_of(),
             resolved_runtime: Some(resolved.runtime_id()),
             release_index: app.resolver.release_index_diagnostic(),
             resolution_error: None,
@@ -108,8 +118,23 @@ pub fn execute(
         };
 
     let default_selector = settings.default_selector;
+    let selector_metadata = default_selector
+        .as_deref()
+        .and_then(|selector| RuntimeSelector::parse(selector).ok())
+        .map(|selector| {
+            (
+                selector.kind().as_str().to_string(),
+                selector.canonical_id(),
+                selector.alias_of(),
+            )
+        });
     let response = DefaultResponse {
         default_selector: default_selector.clone(),
+        selector_kind: selector_metadata.as_ref().map(|(kind, _, _)| kind.clone()),
+        canonical_selector: selector_metadata
+            .as_ref()
+            .map(|(_, canonical, _)| canonical.clone()),
+        selector_alias_of: selector_metadata.and_then(|(_, _, alias_of)| alias_of),
         resolved_runtime,
         release_index,
         resolution_error,

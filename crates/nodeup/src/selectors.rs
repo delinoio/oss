@@ -8,6 +8,24 @@ use crate::{
     types::NodeupChannel,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RuntimeSelectorKind {
+    ExactVersion,
+    Channel,
+    LinkedRuntime,
+}
+
+impl RuntimeSelectorKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ExactVersion => "exact-version",
+            Self::Channel => "channel",
+            Self::LinkedRuntime => "linked-runtime",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
 pub enum RuntimeSelector {
@@ -64,6 +82,29 @@ impl RuntimeSelector {
         }
     }
 
+    pub fn canonical_id(&self) -> String {
+        match self {
+            Self::Version(version) => format!("v{version}"),
+            Self::Channel(channel) => channel.canonical_selector().to_string(),
+            Self::LinkedName(name) => name.clone(),
+        }
+    }
+
+    pub fn kind(&self) -> RuntimeSelectorKind {
+        match self {
+            Self::Version(_) => RuntimeSelectorKind::ExactVersion,
+            Self::Channel(_) => RuntimeSelectorKind::Channel,
+            Self::LinkedName(_) => RuntimeSelectorKind::LinkedRuntime,
+        }
+    }
+
+    pub fn alias_of(&self) -> Option<String> {
+        match self {
+            Self::Channel(channel) => channel.alias_of().map(str::to_string),
+            _ => None,
+        }
+    }
+
     pub fn is_version(&self) -> bool {
         matches!(self, Self::Version(_))
     }
@@ -100,6 +141,14 @@ pub fn reserved_channel_selector(input: &str) -> Option<NodeupChannel> {
 
 pub fn is_reserved_channel_selector_token(input: &str) -> bool {
     reserved_channel_selector(input).is_some()
+}
+
+pub fn is_case_variant_of_reserved_channel_selector(input: &str) -> bool {
+    reserved_channel_selector(input).is_none()
+        && matches!(
+            input.to_ascii_lowercase().as_str(),
+            "lts" | "current" | "latest"
+        )
 }
 
 #[cfg(test)]
@@ -145,5 +194,32 @@ mod tests {
         assert!(!is_reserved_channel_selector_token("LTS"));
         assert!(!is_reserved_channel_selector_token("Latest"));
         assert!(!is_reserved_channel_selector_token("node-lts"));
+    }
+
+    #[test]
+    fn selector_metadata_identifies_canonical_aliases() {
+        let latest = RuntimeSelector::parse("latest").unwrap();
+        assert_eq!(latest.kind(), RuntimeSelectorKind::Channel);
+        assert_eq!(latest.stable_id(), "latest");
+        assert_eq!(latest.canonical_id(), "current");
+        assert_eq!(latest.alias_of().as_deref(), Some("current"));
+
+        let current = RuntimeSelector::parse("current").unwrap();
+        assert_eq!(current.canonical_id(), "current");
+        assert_eq!(current.alias_of(), None);
+
+        let version = RuntimeSelector::parse("22.1.0").unwrap();
+        assert_eq!(version.kind(), RuntimeSelectorKind::ExactVersion);
+        assert_eq!(version.canonical_id(), "v22.1.0");
+    }
+
+    #[test]
+    fn detects_case_variants_of_reserved_channel_selectors() {
+        assert!(is_case_variant_of_reserved_channel_selector("LTS"));
+        assert!(is_case_variant_of_reserved_channel_selector("Current"));
+        assert!(is_case_variant_of_reserved_channel_selector("LATEST"));
+
+        assert!(!is_case_variant_of_reserved_channel_selector("lts"));
+        assert!(!is_case_variant_of_reserved_channel_selector("node-lts"));
     }
 }
