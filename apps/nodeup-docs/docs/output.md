@@ -25,7 +25,7 @@ nodeup --output json show home
 nodeup --output json toolchain list
 ```
 
-Successful command payloads are pretty-printed JSON on stdout. Handled failures are JSON envelopes on stderr:
+Successful command payloads are pretty-printed JSON on stdout. Handled failures and command-line parser failures are JSON envelopes on stderr:
 
 ```json
 {
@@ -44,6 +44,8 @@ Stable envelope fields:
 `kind` values include `internal`, `invalid-input`, `unsupported-platform`, `network`, `not-found`, `conflict`, and `not-implemented`.
 
 ANSI styling is never injected into JSON stdout or stderr payloads.
+
+Without `--output json`, command-line parser failures keep clap's native human help and error formatting.
 
 ## Delegated Commands in JSON Mode
 
