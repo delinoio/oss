@@ -52,6 +52,8 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `binpm x CMD [args...]` must run commands from the local manifest or from an explicitly supplied `--package`; it must not guess a GitHub repository from `CMD`.
 - `binpm x` is the canonical execution command. `binpm exec` and `binpm run` are documented aliases for discoverability and must share the same argument forwarding, local lockfile, install-on-demand, `--package`, PATH, and exit-code behavior.
 - Local `install`, `update`, and `x` must honor `--frozen-lockfile`; `CI=true` enables frozen lockfile behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.
+- A frozen local update for an empty manifest with no `binpm.lock` changes must succeed without creating `binpm.lock`; frozen local install, update, and `x` still fail when selected tools or orphan cleanup would require lockfile creation or modification.
+- Frozen local install and `x` may restore missing project-local executables and package records from an existing lockfile plus SHA-256-verified global cache bytes, or by downloading the lockfile's persisted asset URL and validating the recorded SHA-256, without provider release-list pagination.
 - `binpm` must not require Node.js, npm, pnpm, yarn, or Bun to install native binary tools.
 - `binpm` release tags use `binpm@v<semver>`.
 - Release automation must publish both standalone prebuilt binaries and archive assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, plus `SHA256SUMS`, `SHA256SUMS.sigstore.json`, and Sigstore bundle sidecars (`*.sigstore.json`) for each artifact.
