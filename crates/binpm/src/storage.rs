@@ -2319,6 +2319,8 @@ created_at = "2026-01-01T00:00:00Z"
                 asset_name: "tool-linux-x64".to_string(),
                 canonical_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64".to_string(),
                 download_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64?token=secret".to_string(),
+                download_auth: None,
+                download_accept: None,
                 kind: ArtifactKind::BareExecutable,
                 detected_os: Some(TargetOs::Linux),
                 detected_arch: Some(TargetArch::X86_64),

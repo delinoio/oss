@@ -1,6 +1,6 @@
 # Releases and Artifacts
 
-Nodeup release automation publishes prebuilt binaries, compressed archives, checksums, and Sigstore bundle sidecars.
+Nodeup releases provide prebuilt CLI downloads, checksums, and Sigstore verification material.
 
 ## Tag Contract
 
@@ -12,7 +12,7 @@ nodeup@v<semver>
 
 ## Nodeup CLI Artifacts
 
-Each release must include standalone prebuilt binaries and compressed archives for:
+Release downloads are provided for:
 
 - `linux/amd64`
 - `linux/arm64`
@@ -21,18 +21,16 @@ Each release must include standalone prebuilt binaries and compressed archives f
 - `windows/amd64`
 - `windows/arm64`
 
-Each artifact has a Sigstore bundle sidecar named `<artifact>.sigstore.json`. Releases also include `SHA256SUMS` and `SHA256SUMS.sigstore.json`.
-
-Legacy `.sig` and `.pem` sidecars are out of scope for direct installation.
+Each download can be checked against `SHA256SUMS` and Sigstore verification material. Direct installers require releases that include this verification material.
 
 ## Direct Installer Verification
 
 Direct installers verify:
 
 1. The selected artifact's `SHA256SUMS` entry.
-2. The artifact Sigstore bundle sidecar with `cosign verify-blob --bundle`.
+2. The artifact's Sigstore bundle with `cosign`.
 
-Direct installers require `cosign` and support bundle-enabled releases only.
+Direct installers require `cosign` and support bundle-enabled releases only. If verification material is missing or verification fails, installation stops before the binary is installed.
 
 ## Runtime Download Artifacts
 
@@ -46,7 +44,7 @@ Runtime archive integrity is verified against the upstream `SHASUMS256.txt` entr
 
 ## Mirrors and Diagnostics
 
-Use these environment variables for mirrors or testing:
+Use these environment variables for custom mirrors:
 
 ```bash
 NODEUP_INDEX_URL=https://mirror.example/index.json

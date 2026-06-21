@@ -3,7 +3,7 @@
 ## Scope
 - Project/component: `binpm` crate foundation contract
 - Canonical path: `crates/binpm`
-- Implementation status: runtime implementation has begun with a Rust CLI, clap command surface, typed contract foundations, source parsing, provider release lookup clients, source-form and local-command explain diagnostics, deterministic asset candidate scoring, release asset download, archive extraction for documented formats, TOML-backed local manifest and lockfile records, global and project-local package records, global cache metadata, sanitized persisted URLs, SHA-256 cache verification, atomic file writes, structured tracing setup, centralized errors, README, and tests
+- Implementation status: runtime implementation has begun with a Rust CLI, clap command surface, typed contract foundations, source parsing, provider release lookup clients, source-form and local-command explain diagnostics, deterministic asset candidate scoring, actionable target rejection diagnostics, target override snippet generation, release asset download, archive extraction for documented formats, TOML-backed local manifest and lockfile records, global and project-local package records, global cache metadata, sanitized persisted URLs, SHA-256 cache verification, atomic file writes, structured tracing setup, centralized errors, README, and tests
 
 ## Runtime and Language
 - Runtime: Rust CLI
@@ -22,7 +22,7 @@
   - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories for supported shells.
   - `binpm doctor` may report manifest, lockfile, and global home state without mutation.
   - `binpm cache key` may print a deterministic key for the current target and project-root `binpm.lock`, using an empty lockfile digest when the file is absent.
-- Current install finalization supports bare executable assets and documented archive assets end to end. Archive extraction is implemented for `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip`, and installs only the selected executable member.
+- Current install finalization supports bare executable assets and documented archive assets end to end. Archive extraction is implemented for `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip`, and installs only the selected executable member. On POSIX hosts, archive installs must write the selected member with executable permissions even when the upstream archive, especially a `.zip`, omitted Unix executable metadata and binary discovery was unambiguous.
 - Canonical global install command: `binpm install <source>`.
 - Canonical local declaration command: `binpm add <cmd> <source> [--bin <upstream-binary>]`.
 - Canonical local sync command: `binpm install`.
@@ -37,7 +37,13 @@
 - When `@version` is omitted, `binpm` must select the latest stable release exposed by the source provider:
   - GitHub sources must ignore draft and prerelease releases.
   - GitLab sources must list releases in descending `released_at` order and choose the first release whose `released_at` is not in the future, whose API response does not set `upcoming_release = true`, and whose normalized tag does not contain a SemVer prerelease segment such as `-alpha`, `-beta`, `-pre`, `-preview`, `-rc`, or another hyphenated prerelease identifier.
-- Explicit versions may be written with or without a leading `v`; release tag matching must try the exact input first, then the opposite `v` prefix form.
+- Version selectors are intentionally exact-tag-only in v1:
+  - `github:owner/repo` selects the latest stable release.
+  - `github:owner/repo@14.1.1` and `github:owner/repo@v14.1.1` request exact release tags; `@14.1.1` must not match a `v14.1.1` release tag, and `@v14.1.1` must not match a `14.1.1` release tag.
+  - `@latest` is rejected with a hint to omit `@version` for latest-stable selection.
+  - SemVer range-like selectors such as `@^1`, `@~1.2`, `@>=1.0.0`, `@1.x`, `@1.*`, and `@1 || @2` are rejected with a hint to use an exact release tag or omit `@version`.
+  - Channel selectors such as `@stable`, `@beta`, `@alpha`, `@nightly`, `@canary`, `@dev`, `@edge`, and `@next` are rejected with a hint to use an exact release tag or omit `@version`.
+  - Major-version pins such as `@1` are rejected with a hint to use an exact release tag; if the upstream release tag is literally `v1`, users may request `@v1`.
 - Commands with both local and global scope must default to local when a local `binpm.toml` is discovered; otherwise they must default to global. Such commands must document `--local` and `--global` overrides.
 - Scoped mutating commands must print the selected local or global scope before mutation. `binpm update` and `binpm remove` must support `--dry-run` previews that validate the selected tools, print the selected scope and planned file/runtime changes, and then exit without mutating manifests, lockfiles, package records, cache references, or executables.
 - `--frozen-lockfile` on local `binpm install`, `binpm update`, and `binpm x` must fail when the command would need to create or modify `binpm.lock`; `CI=true` must enable this behavior by default, and `--no-frozen-lockfile` is the explicit local-development escape hatch.
@@ -54,8 +60,8 @@
 - `binpm outdated [--local|--global]` must compare declared or installed tools with the latest stable release available from their source and must not update manifests, lockfiles, package records, cache entries, or executables.
 - `binpm update [cmd...] [--local|--global] [--dry-run]` must update selected tools or all tools in scope to the latest stable release allowed by their source declarations; local updates must update `binpm.lock` and installed project-local executables. Before mutation it must print `update scope: local` or `update scope: global` and a planned update list; with `--dry-run` it must print the same plan and leave state unchanged.
 - `binpm doctor` must inspect manifest discovery, lockfile readability, package records, cache state, installed executable records, PATH visibility, and provider configuration without mutating state. When `~/.binpm/bin` is not visible on `PATH`, doctor must print guided setup messaging that points to `binpm env` and keeps profile modification opt-in.
-- `binpm explain <cmd-or-source> [--local|--global]` must explain source parsing, release selection, target normalization, asset candidate scoring, binary discovery, and verification decisions without mutating state.
-- Source-form `binpm explain <source>` may perform read-only GitHub or GitLab release API lookup and must print the normalized source, provider API URL, release decision, normalized target, selected asset when one is eligible, candidate scores, and rejection reasons. Local command explanation must inspect existing package records and print source, release, target, selected asset, selected binary, archive format, checksum source, and verification state without installing new bytes.
+- `binpm explain <cmd-or-source> [--local|--global]` must explain source parsing, release selection, target normalization, asset candidate scoring, binary discovery, verification decisions, and target override remediation without mutating state.
+- Source-form `binpm explain <source>` may perform read-only GitHub or GitLab release API lookup and must print the normalized source, provider API URL, release decision, normalized target, selected asset when one is eligible, candidate scores, rejection reasons, and a valid `[tools.<cmd>.targets.<target-key>]` override snippet when inspected data can identify an asset candidate. Local command explanation must inspect existing package records and print source, release, target, selected asset, selected binary, archive format, checksum source, verification state, and a valid exact override snippet without installing new bytes.
 - `binpm verify [--local|--global] [--require-verified]` must validate lockfile records, package records, cache bytes, and installed executable records without mutating state.
 - `binpm init` must create a minimal `binpm.toml` with `version = 1` at the project root when one does not already exist; it must not install tools by default.
 - `binpm env --shell <shell>` must print shell-specific environment commands for adding binpm-managed binary directories to `PATH`; it must not modify shell profiles by default. The printed global bin command must be labeled as suitable for shell profiles, while the project-local command must be labeled for the current project or shell session only.
@@ -76,16 +82,16 @@
   - OS: `linux`, `darwin`, `windows`, `freebsd`
   - CPU architecture: `x86_64`, `aarch64`, `i686`, `armv7`
   - libc or ABI environment: `gnu`, `musl`, `msvc`, `any`
-- Current-host target detection must reject unsupported operating systems and CPU architectures with an unsupported-target error; it must not default unknown OS values to `linux`, unknown architecture values to `x86_64`, or generic 32-bit ARM hard-float targets to `armv7` unless the compile target triple is explicitly `armv7-*`.
+- Current-host target detection must reject unsupported operating systems and CPU architectures with an unsupported-target error; it must not default unknown OS values to `linux`, unknown architecture values to `x86_64`, or generic 32-bit ARM hard-float targets to `armv7` unless the compile target triple is explicitly `armv7-*`. Unsupported generic `arm` current-host diagnostics must include the observed compile target triple when available and must name accepted canonical `armv7` target keys such as `linux-armv7-gnu`, `linux-armv7-musl`, and `linux-armv7-any`.
 - Target alias normalization must include:
   - OS aliases: `darwin`, `macos`, `mac`, `osx` -> `darwin`; `windows`, `win`, `win32` -> `windows`
-  - Architecture aliases: `x86_64`, `amd64`, `x64` -> `x86_64`; `aarch64`, `arm64` -> `aarch64`; `i686`, `i386`, `x86`, `ia32` -> `i686`
+  - Architecture aliases: `x86_64`, `amd64`, `x64` -> `x86_64`; `aarch64`, `arm64` -> `aarch64`; `i686`, `i386`, `x86`, `ia32` -> `i686`; `armv7`, `armv7l`, `armhf` -> `armv7` for release asset names. Manifest override keys under `[tools.<cmd>.targets.<target-key>]` must use canonical target keys such as `linux-armv7-gnu`, `linux-armv7-musl`, and `linux-armv7-any`.
   - Libc/ABI aliases: `gnu`, `glibc` -> `gnu`; `musl`, `alpine` -> `musl`; `msvc` -> `msvc`; explicit `static`, `portable`, `universal`, or `any` -> `any`; missing Linux libc remains `unknown` during candidate scoring.
 - Asset selection must be score-based, deterministic, and stable across identical release asset lists:
   - Exact OS + arch + libc match wins over all partial matches.
   - Exact OS + arch + `any` beats missing-libc candidates and assets with conflicting libc.
   - On Linux `gnu` hosts, exact OS + arch with missing libc may be accepted as a glibc-compatible fallback only when no exact `gnu` or `any` candidate exists.
-  - On Linux `musl` hosts, missing-libc candidates must not be accepted unless the asset has an explicit `static`, `portable`, `universal`, or `any` signal; otherwise resolution must fail instead of installing a likely glibc-linked binary.
+  - On Linux `musl` hosts, missing-libc candidates must not be accepted unless the asset has an explicit `static`, `portable`, `universal`, or `any` signal; otherwise resolution must fail instead of installing a likely glibc-linked binary. Rejection diagnostics must say that a Linux musl target requires an explicit libc signal and must suggest upstream naming fixes or a target override only when the user has verified compatibility.
   - Universal macOS assets may match `darwin/x86_64` and `darwin/aarch64` only when no exact-arch macOS asset exists.
   - If scores tie, prefer the candidate with a recognized tool-specific naming pattern, then shorter normalized filename, then lexicographic filename order.
 - Target tokenization for asset scoring treats punctuation, hyphens, and underscores as separators after preserving `x86_64` as the `x64` alias, so Rust target triples, GoReleaser underscore names, Bun names, and Deno names all normalize through the same enum-backed OS, architecture, and libc/ABI aliases.
@@ -98,8 +104,10 @@
   - Checksum, signature, provenance, and metadata files such as `.sha256`, `.sha512`, `SHA256SUMS`, `checksums.txt`, `.sig`, `.asc`, `.minisig`, `.sigstore.json`, `.sbom.json`, `dist-manifest.json`, and `latest.json`.
   - Package formulas and package-manager metadata such as `.rb`, `.json` manifests, npm package tarballs, and Homebrew formula assets.
 - Desktop or system package formats are de-prioritized and must not be installed by default in v1: `.deb`, `.rpm`, `.apk`, `.pkg.tar.zst`, `.dmg`, `.msi`, `.pkg`, `.AppImage`, `.flatpak`, `.snap`.
+- When all visible release assets are unsupported desktop or system packages, `binpm explain` must distinguish that installer-only boundary from a release with no assets. It must list the unsupported installer asset names and suggest upstream portable archive or bare executable assets instead of implying target scoring could not find any release asset.
 - Archive extraction must locate one or more executable files by executable permission, Windows `.exe` suffix, expected package name, and target-aware filename tokens. Explicit manifest `bin` values may name an exact archive member path or a unique member basename.
-- If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates and includes concrete retry suggestions such as `binpm add <cmd> <source> --bin <candidate>` or `binpm x --package <source> --bin <candidate> <cmd>`.
+- When an archive has no usable POSIX executable metadata for a member, `binpm` may recover the executable bit only after filename and target signals identify the selected binary unambiguously. The automatic recovery path is intentionally narrow: a non-executable member is recoverable when its basename matches the expected repository binary name and target-aware filtering leaves one candidate. Recovered POSIX installs must be chmodded executable during finalization.
+- If archive member permissions are missing and filename/target signals do not identify one binary, `binpm` must fail with an actionable diagnostic instead of guessing. If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates and includes concrete retry suggestions such as `binpm add <cmd> <source> --bin <candidate>` or `binpm x --package <source> --bin <candidate> <cmd>`.
 - The current foundation implements binary discovery as a deterministic member-list heuristic and uses it during archive extraction and install finalization.
 
 ## Local Manifest and Lockfile
@@ -107,7 +115,9 @@
 - `binpm.toml` is the committed local tool declaration file. It must use TOML, `version = 1`, and `[tools.<cmd>]` tables keyed by the local command name.
 - In `binpm.toml`, each tool entry must include `source = "<source-without-version>"`, may include `version = "<release>"`, and may include `bin = "<upstream-binary-name-or-archive-member>"` when the executable selected from the release differs from the local command name or needs explicit disambiguation.
 - `binpm add <cmd> <source>` must persist the package source without the version suffix in `source`; when a version is supplied, it must persist that value in `version`; when `--bin` is supplied, it must persist that value in `bin`.
+- Unsupported selector aliases, ranges, channels, and major-version pins must be rejected before manifest or lockfile writes so `binpm.toml` and `binpm.lock` remain deterministic exact-source records.
 - Target-specific manifest overrides must use `[tools.<cmd>.targets.<target-key>]` tables. Each override must include `asset = "<release-asset-name>"`, `bin = "<asset-member-or-bare-binary>"`, and may include `checksum_source = "<checksum-source>"` when the automatic checksum source must be overridden.
+- Override snippets emitted by diagnostics must use canonical target keys, TOML-escaped command keys and string values, exact release asset names from inspected release metadata, and exact selected binary paths when the local package record already knows them. Source-form explain must not include credential-bearing URLs, query strings, fragments, expiring download URLs, absolute cache paths, or other transient machine-local fields in snippets. When source-form explain has not downloaded an archive and therefore cannot inspect archive members, the snippet may use the repository command name as the `bin` value and the user must adjust it if the archive member differs.
 - Multi-binary releases must keep the existing `[tools.<cmd>]` model: each local command has its own declaration, while multiple commands may share the same source, release asset, cache entry, and package bytes.
 - `binpm.lock` is the committed deterministic local resolution file. It must use TOML, `version = 1`, `[tools.<cmd>]` command tables keyed by local command name, and `[tools.<cmd>.targets.<target-key>]` records keyed by normalized target.
 - The lockfile target key format must be `<target_os>-<target_arch>-<target_libc>`, using the enum-style values from the runtime target model.
@@ -222,7 +232,16 @@ signature_verified = false
 
 ## Security
 - `binpm` must use HTTPS source-provider APIs and release asset URLs.
-- Source-provider tokens may be read from documented environment variables in the future, but tokens and authorization headers must never be logged.
+- Source-provider release lookup may authenticate with provider tokens from environment variables only. Host-specific variables take precedence and are the only supported path for GitHub Enterprise and self-managed GitLab hosts:
+  - GitHub.com: `BINPM_GITHUB_TOKEN_GITHUB_COM`, then `BINPM_GITHUB_TOKEN`, then `GITHUB_TOKEN`.
+  - GitHub Enterprise `github:<host>/owner/repo`: `BINPM_GITHUB_TOKEN_<NORMALIZED_HOST>` only.
+  - GitLab.com: `BINPM_GITLAB_TOKEN_GITLAB_COM`, then `BINPM_GITLAB_TOKEN`, then `GITLAB_TOKEN`.
+  - Self-managed GitLab `gitlab:<host>/<namespace...>/<project>`: `BINPM_GITLAB_TOKEN_<NORMALIZED_HOST>` only.
+- For GitHub Enterprise and self-managed GitLab hosts, `<NORMALIZED_HOST>` must be the source host encoded without collisions by uppercasing ASCII alphanumeric bytes and replacing every other UTF-8 byte with `_HH_` uppercase hexadecimal; for example `ghe.example.com` becomes `GHE_2E_EXAMPLE_2E_COM` and `ghe-example.com` becomes `GHE_2D_EXAMPLE_2E_COM`.
+- Generic `BINPM_GITHUB_TOKEN`, `GITHUB_TOKEN`, `BINPM_GITLAB_TOKEN`, and `GITLAB_TOKEN` must apply only to `github.com` or `gitlab.com` respectively and must never be sent to explicit enterprise or self-managed hosts.
+- GitHub requests must send provider tokens as an `Authorization: Bearer <token>` header. GitLab requests must send provider tokens as a `PRIVATE-TOKEN: <token>` header.
+- Release lookup errors must distinguish missing authentication, insufficient permissions, and rate limiting. Private or hidden repositories returning `401`, `403`, or `404` without a configured token must report missing authentication and suggest the documented host-specific token path. The same statuses with a configured token must report insufficient permissions. `429` responses, GitHub/GitLab error responses with remaining rate-limit quota `0`, and equivalent rate-limit error responses must report rate limiting.
+- Tokens, authorization headers, private-token headers, and credential-bearing URLs must never be logged, returned in errors, printed in diagnostics, written to cache metadata, written to package records, or persisted in lockfiles.
 - Persisted URLs in committed lockfiles, cache metadata, diagnostics, errors, and logs must be sanitized by removing query strings and fragments. Credential-bearing or expiring download URLs must not be written to `binpm.lock`.
 - If provider release asset metadata exposes a trusted SHA-256 digest, `binpm` must verify the downloaded asset against that digest before considering checksum sidecars or local fallback hashes.
 - If an upstream checksum manifest or sidecar exists, `binpm` must verify the selected asset before installation.

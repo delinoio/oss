@@ -118,6 +118,10 @@ fn command_invocation_metadata(
                         "name_provided": !name.is_empty(),
                         "path_provided": !path.is_empty()
                     }),
+                    ToolchainCommand::Unlink { names } => json!({
+                        "output": output,
+                        "names_count": names.len()
+                    }),
                 },
             }
         }
@@ -234,6 +238,7 @@ fn toolchain_command(command: &ToolchainCommand) -> NodeupToolchainCommand {
         ToolchainCommand::Install { .. } => NodeupToolchainCommand::Install,
         ToolchainCommand::Uninstall { .. } => NodeupToolchainCommand::Uninstall,
         ToolchainCommand::Link { .. } => NodeupToolchainCommand::Link,
+        ToolchainCommand::Unlink { .. } => NodeupToolchainCommand::Unlink,
     }
 }
 
@@ -243,6 +248,7 @@ fn toolchain_command_path(command: NodeupToolchainCommand) -> &'static str {
         NodeupToolchainCommand::Install => "nodeup.toolchain.install",
         NodeupToolchainCommand::Uninstall => "nodeup.toolchain.uninstall",
         NodeupToolchainCommand::Link => "nodeup.toolchain.link",
+        NodeupToolchainCommand::Unlink => "nodeup.toolchain.unlink",
     }
 }
 
@@ -250,6 +256,7 @@ fn show_command(command: &ShowCommand) -> NodeupShowCommand {
     match command {
         ShowCommand::ActiveRuntime => NodeupShowCommand::ActiveRuntime,
         ShowCommand::Home => NodeupShowCommand::Home,
+        ShowCommand::Color => NodeupShowCommand::Color,
     }
 }
 
@@ -257,6 +264,7 @@ fn show_command_path(command: NodeupShowCommand) -> &'static str {
     match command {
         NodeupShowCommand::ActiveRuntime => "nodeup.show.active-runtime",
         NodeupShowCommand::Home => "nodeup.show.home",
+        NodeupShowCommand::Color => "nodeup.show.color",
     }
 }
 
@@ -361,6 +369,16 @@ mod tests {
                 }),
             ),
             (
+                Command::Toolchain {
+                    command: ToolchainCommand::Unlink {
+                        names: vec!["linked".to_string()],
+                    },
+                },
+                OutputFormat::Json,
+                "nodeup.toolchain.unlink",
+                json!({ "output": "json", "names_count": 1 }),
+            ),
+            (
                 Command::Default {
                     runtime: Some("lts".to_string()),
                 },
@@ -383,6 +401,14 @@ mod tests {
                 OutputFormat::Human,
                 "nodeup.show.home",
                 json!({ "output": "human", "show_command": "home" }),
+            ),
+            (
+                Command::Show {
+                    command: ShowCommand::Color,
+                },
+                OutputFormat::Human,
+                "nodeup.show.color",
+                json!({ "output": "human", "show_command": "color" }),
             ),
             (
                 Command::Update {

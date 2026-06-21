@@ -1,19 +1,45 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, env, fmt};
 
 use chrono::{DateTime, Utc};
-use reqwest::{blocking::Client, header, Url};
+use reqwest::{
+    blocking::{Client, RequestBuilder},
+    header, StatusCode, Url,
+};
 use serde::{de::DeserializeOwned, Deserialize};
 use tracing::{debug, info};
 
 use crate::{
     assets::{classify_artifact, ArtifactKind},
     contract::{SourceProvider, SourceSpec},
-    error::{BinpmError, Result},
+    error::{BinpmError, ReleaseLookupDiagnosticKind, Result},
 };
 
 const USER_AGENT: &str = concat!("binpm/", env!("CARGO_PKG_VERSION"));
 const RELEASES_PER_PAGE: u16 = 100;
 const MAX_GITLAB_ASSET_REDIRECTS: usize = 10;
+const GITHUB_TOKEN_ENV: &str = "BINPM_GITHUB_TOKEN";
+const GITHUB_TOKEN_ENV_LEGACY: &str = "GITHUB_TOKEN";
+const GITLAB_TOKEN_ENV: &str = "BINPM_GITLAB_TOKEN";
+const GITLAB_TOKEN_ENV_LEGACY: &str = "GITLAB_TOKEN";
+pub(crate) const GITHUB_ASSET_DOWNLOAD_ACCEPT: &str = "application/octet-stream";
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct ProviderAuth {
+    pub(crate) header_name: &'static str,
+    pub(crate) header_value: String,
+    pub(crate) env_var: String,
+}
+
+impl fmt::Debug for ProviderAuth {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderAuth")
+            .field("header_name", &self.header_name)
+            .field("header_value", &"<redacted>")
+            .field("env_var", &self.env_var)
+            .finish()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Release {
@@ -29,6 +55,9 @@ pub struct ReleaseAsset {
     pub name: String,
     pub url: String,
     pub provider_url: Option<String>,
+    pub download_url: Option<String>,
+    pub download_auth: Option<ProviderAuth>,
+    pub download_accept: Option<&'static str>,
     pub digest: Option<String>,
     pub source_archive: bool,
     pub final_url_https: Option<bool>,
@@ -92,10 +121,13 @@ impl ReleaseClient for GitHubReleaseClient {
             "Looking up GitHub releases"
         );
 
+        let auth = provider_auth_for_source(source);
         let releases = fetch_paginated_json::<GitHubRelease>(
             &self.http,
+            source,
             &url,
             Some("application/vnd.github+json"),
+            auth.as_ref(),
         )?;
 
         Ok(releases
@@ -122,6 +154,9 @@ impl ReleaseClient for GitHubReleaseClient {
                             name: asset.name,
                             url: asset.browser_download_url,
                             provider_url: None,
+                            download_url: auth.as_ref().map(|_| asset.url.clone()),
+                            download_auth: auth.clone(),
+                            download_accept: auth.as_ref().map(|_| GITHUB_ASSET_DOWNLOAD_ACCEPT),
                             digest: asset.digest,
                             source_archive: false,
                             final_url_https: None,
@@ -148,6 +183,7 @@ impl GitLabReleaseClient {
         Ok(Self {
             http: Client::builder()
                 .user_agent(USER_AGENT)
+                .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .map_err(BinpmError::ReleaseHttpClient)?,
             now,
@@ -174,10 +210,12 @@ impl ReleaseClient for GitLabReleaseClient {
             "Looking up GitLab releases"
         );
 
-        let mut releases = fetch_paginated_json::<GitLabRelease>(&self.http, &url, None)?
-            .into_iter()
-            .map(|release| release.into_release(self.now))
-            .collect::<Vec<_>>();
+        let auth = provider_auth_for_source(source);
+        let mut releases =
+            fetch_paginated_json::<GitLabRelease>(&self.http, source, &url, None, auth.as_ref())?
+                .into_iter()
+                .map(|release| release.into_release_with_auth(self.now, source, auth.as_ref()))
+                .collect::<Vec<_>>();
 
         sort_gitlab_releases(&mut releases);
         Ok(releases)
@@ -202,30 +240,27 @@ fn sort_gitlab_releases(releases: &mut [Release]) {
 
 pub fn select_release(source: &SourceSpec, releases: Vec<Release>) -> Result<ReleaseSelection> {
     if let Some(version) = &source.version {
-        let tried = matching_tag_candidates(version);
-        for expected in &tried {
-            if let Some(release) = releases.iter().find(|release| &release.tag == expected) {
-                debug!(
-                    source_provider = source.provider.as_str(),
-                    source_host = source.host,
-                    source_path = source.path,
-                    requested_version = version,
-                    release_tag = release.tag,
-                    "Matched explicit release version"
-                );
-                return Ok(ReleaseSelection {
-                    release: release.clone(),
-                    decision: format!(
-                        "explicit version `{version}` matched release tag `{}`",
-                        release.tag
-                    ),
-                });
-            }
+        if let Some(release) = releases.iter().find(|release| &release.tag == version) {
+            debug!(
+                source_provider = source.provider.as_str(),
+                source_host = source.host,
+                source_path = source.path,
+                requested_version = version,
+                release_tag = release.tag,
+                "Matched explicit release version"
+            );
+            return Ok(ReleaseSelection {
+                release: release.clone(),
+                decision: format!(
+                    "explicit version `{version}` matched release tag `{}`",
+                    release.tag
+                ),
+            });
         }
 
         return Err(BinpmError::ReleaseNotFound {
             package: source.to_string(),
-            message: format!("no release tag matched {}", tried.join(" or ")),
+            message: format!("no release tag matched `{version}`"),
         });
     }
 
@@ -254,16 +289,6 @@ pub fn select_release(source: &SourceSpec, releases: Vec<Release>) -> Result<Rel
         package: source.to_string(),
         message: "no stable release found".to_string(),
     })
-}
-
-pub fn matching_tag_candidates(version: &str) -> Vec<String> {
-    let mut tags = vec![version.to_string()];
-    if let Some(without_v) = version.strip_prefix('v') {
-        tags.push(without_v.to_string());
-    } else {
-        tags.push(format!("v{version}"));
-    }
-    tags
 }
 
 pub fn client_for_source(source: &SourceSpec) -> Result<Box<dyn ReleaseClient>> {
@@ -297,6 +322,76 @@ fn sanitize_url(url: &str) -> String {
     parsed.to_string()
 }
 
+fn provider_auth_for_source(source: &SourceSpec) -> Option<ProviderAuth> {
+    provider_auth_for_source_with(source, |name| env::var(name).ok())
+}
+
+fn provider_auth_for_source_with(
+    source: &SourceSpec,
+    get_env: impl Fn(&str) -> Option<String>,
+) -> Option<ProviderAuth> {
+    for env_var in provider_token_env_candidates(source.provider, &source.host) {
+        let Some(token) = get_env(&env_var).map(|token| token.trim().to_string()) else {
+            continue;
+        };
+        if token.is_empty() {
+            continue;
+        }
+
+        return Some(match source.provider {
+            SourceProvider::GitHub => ProviderAuth {
+                header_name: header::AUTHORIZATION.as_str(),
+                header_value: format!("Bearer {token}"),
+                env_var,
+            },
+            SourceProvider::GitLab => ProviderAuth {
+                header_name: "PRIVATE-TOKEN",
+                header_value: token,
+                env_var,
+            },
+        });
+    }
+
+    None
+}
+
+fn provider_token_env_candidates(provider: SourceProvider, host: &str) -> Vec<String> {
+    let normalized_host = match (provider, host) {
+        (SourceProvider::GitHub, "github.com") => "GITHUB_COM".to_string(),
+        (SourceProvider::GitLab, "gitlab.com") => "GITLAB_COM".to_string(),
+        _ => normalized_host_env_suffix(host),
+    };
+    match provider {
+        SourceProvider::GitHub => {
+            let mut candidates = vec![format!("{GITHUB_TOKEN_ENV}_{normalized_host}")];
+            if host == "github.com" {
+                candidates.push(GITHUB_TOKEN_ENV.to_string());
+                candidates.push(GITHUB_TOKEN_ENV_LEGACY.to_string());
+            }
+            candidates
+        }
+        SourceProvider::GitLab => {
+            let mut candidates = vec![format!("{GITLAB_TOKEN_ENV}_{normalized_host}")];
+            if host == "gitlab.com" {
+                candidates.push(GITLAB_TOKEN_ENV.to_string());
+                candidates.push(GITLAB_TOKEN_ENV_LEGACY.to_string());
+            }
+            candidates
+        }
+    }
+}
+
+fn normalized_host_env_suffix(host: &str) -> String {
+    host.bytes().fold(String::new(), |mut suffix, byte| {
+        if byte.is_ascii_alphanumeric() {
+            suffix.push(byte.to_ascii_uppercase() as char);
+        } else {
+            suffix.push_str(&format!("_{byte:02X}_"));
+        }
+        suffix
+    })
+}
+
 fn releases_page_url(url: &str) -> String {
     let separator = if url.contains('?') { '&' } else { '?' };
     format!("{url}{separator}per_page={RELEASES_PER_PAGE}")
@@ -304,8 +399,10 @@ fn releases_page_url(url: &str) -> String {
 
 fn fetch_paginated_json<T>(
     http: &Client,
+    source: &SourceSpec,
     first_url: &str,
     accept: Option<&'static str>,
+    auth: Option<&ProviderAuth>,
 ) -> Result<Vec<T>>
 where
     T: DeserializeOwned,
@@ -330,15 +427,17 @@ where
             "Fetching release metadata page"
         );
 
-        let mut request = http.get(&url);
-        if let Some(accept) = accept {
-            request = request.header(header::ACCEPT, accept);
-        }
-
-        let response = request
+        let response = release_request(http, &url, accept, auth)
             .send()
-            .and_then(|response| response.error_for_status())
-            .map_err(BinpmError::ReleaseLookup)?;
+            .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
+        if let Some(error) =
+            release_lookup_diagnostic(source, auth, response.status(), response.headers())
+        {
+            return Err(error);
+        }
+        let response = response
+            .error_for_status()
+            .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
         next_url = match next_page_url(response.headers().get(header::LINK)) {
             Some(url) => Some(validate_pagination_url(&pagination_origin, &url)?),
             None => None,
@@ -356,6 +455,161 @@ where
     }
 
     Ok(items)
+}
+
+fn release_request(
+    http: &Client,
+    url: &str,
+    accept: Option<&'static str>,
+    auth: Option<&ProviderAuth>,
+) -> RequestBuilder {
+    let mut request = http.get(url);
+    if let Some(accept) = accept {
+        request = request.header(header::ACCEPT, accept);
+    }
+    if let Some(auth) = auth {
+        request = request.header(auth.header_name, auth.header_value.as_str());
+    }
+    request
+}
+
+fn release_lookup_diagnostic(
+    source: &SourceSpec,
+    auth: Option<&ProviderAuth>,
+    status: StatusCode,
+    headers: &header::HeaderMap,
+) -> Option<BinpmError> {
+    let kind = classify_release_lookup_status(status, auth.is_some(), headers)?;
+    let message = match kind {
+        ReleaseLookupDiagnosticKind::MissingAuth => "The provider did not return release metadata \
+                                                     for an unauthenticated request."
+            .to_string(),
+        ReleaseLookupDiagnosticKind::InsufficientPermissions => {
+            "The configured provider token was rejected or does not have access to this repository."
+                .to_string()
+        }
+        ReleaseLookupDiagnosticKind::RateLimited => rate_limit_message(headers),
+    };
+    let hint = release_lookup_hint(source, auth, kind);
+
+    Some(BinpmError::ReleaseLookupDiagnostic {
+        package: source.to_string(),
+        provider: source.provider.as_str(),
+        host: source.host.clone(),
+        status: status.as_u16(),
+        kind,
+        message,
+        hint,
+    })
+}
+
+fn classify_release_lookup_status(
+    status: StatusCode,
+    authenticated: bool,
+    headers: &header::HeaderMap,
+) -> Option<ReleaseLookupDiagnosticKind> {
+    if status == StatusCode::TOO_MANY_REQUESTS
+        || (status.is_client_error() || status.is_server_error()) && rate_limit_indicated(headers)
+    {
+        return Some(ReleaseLookupDiagnosticKind::RateLimited);
+    }
+
+    if status.is_redirection() {
+        return Some(if authenticated {
+            ReleaseLookupDiagnosticKind::InsufficientPermissions
+        } else {
+            ReleaseLookupDiagnosticKind::MissingAuth
+        });
+    }
+
+    match status {
+        StatusCode::UNAUTHORIZED => Some(if authenticated {
+            ReleaseLookupDiagnosticKind::InsufficientPermissions
+        } else {
+            ReleaseLookupDiagnosticKind::MissingAuth
+        }),
+        StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => Some(if authenticated {
+            ReleaseLookupDiagnosticKind::InsufficientPermissions
+        } else {
+            ReleaseLookupDiagnosticKind::MissingAuth
+        }),
+        _ => None,
+    }
+}
+
+fn rate_limit_indicated(headers: &header::HeaderMap) -> bool {
+    header_is_zero(headers, "x-ratelimit-remaining")
+        || header_is_zero(headers, "ratelimit-remaining")
+        || headers.contains_key(header::RETRY_AFTER)
+}
+
+fn header_is_zero(headers: &header::HeaderMap, name: &'static str) -> bool {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.trim() == "0")
+}
+
+fn rate_limit_message(headers: &header::HeaderMap) -> String {
+    let retry_after = headers
+        .get(header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    match retry_after {
+        Some(retry_after) => format!(
+            "The provider rate limit is exhausted. Retry after `{retry_after}` seconds or when \
+             the provider quota resets."
+        ),
+        None => "The provider rate limit is exhausted.".to_string(),
+    }
+}
+
+fn release_lookup_hint(
+    source: &SourceSpec,
+    auth: Option<&ProviderAuth>,
+    kind: ReleaseLookupDiagnosticKind,
+) -> String {
+    match kind {
+        ReleaseLookupDiagnosticKind::MissingAuth => format!(
+            "Set one of {} for this host.",
+            provider_token_env_candidates(source.provider, &source.host)
+                .into_iter()
+                .map(|name| format!("`{name}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        ReleaseLookupDiagnosticKind::InsufficientPermissions => match auth {
+            Some(auth) => format!(
+                "Check that `{}` is valid for `{}` and has permission to read releases for `{}`.",
+                auth.env_var, source.host, source.path
+            ),
+            None => format!(
+                "Set one of {} with permission to read releases for `{}`.",
+                provider_token_env_candidates(source.provider, &source.host)
+                    .into_iter()
+                    .map(|name| format!("`{name}`"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                source.path
+            ),
+        },
+        ReleaseLookupDiagnosticKind::RateLimited => match auth {
+            Some(auth) => format!(
+                "Wait for the provider quota to reset, or use a token with more quota via `{}`.",
+                auth.env_var
+            ),
+            None => format!(
+                "Set one of {} to use an authenticated provider quota, or wait for the anonymous \
+                 quota to reset.",
+                provider_token_env_candidates(source.provider, &source.host)
+                    .into_iter()
+                    .map(|name| format!("`{name}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        },
+    }
 }
 
 fn next_page_url(link: Option<&header::HeaderValue>) -> Option<String> {
@@ -413,6 +667,7 @@ struct GitHubRelease {
 
 #[derive(Debug, Deserialize)]
 struct GitHubAsset {
+    url: String,
     name: String,
     browser_download_url: String,
     digest: Option<String>,
@@ -429,7 +684,20 @@ struct GitLabRelease {
 }
 
 impl GitLabRelease {
+    #[cfg(test)]
     fn into_release(self, now: DateTime<Utc>) -> Release {
+        let source: SourceSpec = "gitlab:gitlab.example.com/group/tool"
+            .parse()
+            .expect("source");
+        self.into_release_with_auth(now, &source, None)
+    }
+
+    fn into_release_with_auth(
+        self,
+        now: DateTime<Utc>,
+        source: &SourceSpec,
+        auth: Option<&ProviderAuth>,
+    ) -> Release {
         let mut stable = true;
         let mut reason = None;
 
@@ -465,8 +733,11 @@ impl GitLabRelease {
                 .into_iter()
                 .map(|link| ReleaseAsset {
                     name: gitlab_link_asset_name(&link),
+                    download_auth: gitlab_asset_download_auth(source, &link, auth),
                     url: link.url,
                     provider_url: link.direct_asset_url,
+                    download_url: None,
+                    download_accept: None,
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
@@ -475,6 +746,9 @@ impl GitLabRelease {
                     name: source.format,
                     url: source.url,
                     provider_url: None,
+                    download_url: None,
+                    download_auth: None,
+                    download_accept: None,
                     digest: None,
                     source_archive: true,
                     final_url_https: None,
@@ -482,6 +756,19 @@ impl GitLabRelease {
                 .collect(),
         }
     }
+}
+
+fn gitlab_asset_download_auth(
+    source: &SourceSpec,
+    link: &GitLabLink,
+    auth: Option<&ProviderAuth>,
+) -> Option<ProviderAuth> {
+    let auth = auth?;
+    let source_origin = Url::parse(&format!("https://{}/", source.host)).ok()?;
+    let request_url = link.direct_asset_url.as_deref().unwrap_or(&link.url);
+    let request_origin = Url::parse(request_url).ok()?;
+
+    same_origin(&source_origin, &request_origin).then(|| auth.clone())
 }
 
 fn gitlab_link_asset_name(link: &GitLabLink) -> String {
@@ -597,14 +884,15 @@ fn verify_gitlab_asset_redirects(releases: &mut [Release]) -> Result<()> {
             }
             crate::storage::validate_download_url(url)?;
 
-            let final_url = match resolve_gitlab_asset_redirect_url(&http, url) {
-                Ok(final_url) => final_url,
-                Err(BinpmError::ReleaseLookup(_)) => {
-                    asset.final_url_https = Some(false);
-                    continue;
-                }
-                Err(error) => return Err(error),
-            };
+            let final_url =
+                match resolve_gitlab_asset_redirect_url(&http, url, asset.download_auth.as_ref()) {
+                    Ok(final_url) => final_url,
+                    Err(BinpmError::ReleaseLookup(_)) => {
+                        asset.final_url_https = Some(false);
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
             let final_url_https = is_https_url(&final_url);
             debug!(
                 release_tag = release.tag,
@@ -621,7 +909,12 @@ fn verify_gitlab_asset_redirects(releases: &mut [Release]) -> Result<()> {
     Ok(())
 }
 
-fn resolve_gitlab_asset_redirect_url(http: &Client, url: &str) -> Result<String> {
+fn resolve_gitlab_asset_redirect_url(
+    http: &Client,
+    url: &str,
+    auth: Option<&ProviderAuth>,
+) -> Result<String> {
+    let origin = Url::parse(url).expect("GitLab asset URL was already validated");
     let mut current_url = url.to_string();
     let mut visited_urls = BTreeSet::new();
 
@@ -636,8 +929,16 @@ fn resolve_gitlab_asset_redirect_url(http: &Client, url: &str) -> Result<String>
         }
         crate::storage::validate_download_url(&current_url)?;
 
-        let response = http
-            .head(&current_url)
+        let current = Url::parse(&current_url).map_err(|error| BinpmError::UnsafeUrl {
+            url: sanitize_url(&current_url),
+            message: format!("invalid release asset redirect URL: {error}"),
+        })?;
+        let mut request = http.head(current.as_str());
+        if let Some(auth) = auth.filter(|_| same_origin(&origin, &current)) {
+            request = request.header(auth.header_name, auth.header_value.as_str());
+        }
+
+        let response = request
             .send()
             .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?
             .error_for_status()
@@ -660,6 +961,12 @@ fn resolve_gitlab_asset_redirect_url(http: &Client, url: &str) -> Result<String>
     })
 }
 
+fn same_origin(left: &Url, right: &Url) -> bool {
+    left.scheme() == right.scheme()
+        && left.host_str() == right.host_str()
+        && left.port_or_known_default() == right.port_or_known_default()
+}
+
 fn is_https_url(url: &str) -> bool {
     url.to_ascii_lowercase().starts_with("https://")
 }
@@ -667,15 +974,20 @@ fn is_https_url(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use chrono::{TimeZone, Utc};
-    use reqwest::header;
+    use reqwest::{header, StatusCode};
 
     use super::{
-        has_prerelease_tag, matching_tag_candidates, next_page_url, releases_page_url,
-        sanitize_url, select_release, sort_gitlab_releases, validate_pagination_url,
-        verify_gitlab_asset_redirects, GitHubReleaseClient, GitLabRelease, GitLabReleaseClient,
-        Release,
+        classify_release_lookup_status, has_prerelease_tag, next_page_url,
+        provider_auth_for_source_with, provider_token_env_candidates, release_lookup_diagnostic,
+        release_request, releases_page_url, sanitize_url, select_release, sort_gitlab_releases,
+        validate_pagination_url, verify_gitlab_asset_redirects, GitHubReleaseClient, GitLabRelease,
+        GitLabReleaseClient, Release,
     };
-    use crate::{contract::SourceSpec, release::ReleaseAsset};
+    use crate::{
+        contract::{SourceProvider, SourceSpec},
+        error::{BinpmError, ReleaseLookupDiagnosticKind},
+        release::ReleaseAsset,
+    };
 
     #[test]
     fn github_client_uses_dot_com_api_for_implicit_host() {
@@ -774,15 +1086,266 @@ mod tests {
     }
 
     #[test]
-    fn explicit_release_matching_tries_exact_then_opposite_v_prefix() {
-        assert_eq!(matching_tag_candidates("1.2.3"), ["1.2.3", "v1.2.3"]);
-        assert_eq!(matching_tag_candidates("v1.2.3"), ["v1.2.3", "1.2.3"]);
+    fn provider_token_env_candidates_are_host_scoped() {
+        assert_eq!(
+            provider_token_env_candidates(SourceProvider::GitHub, "github.com"),
+            [
+                "BINPM_GITHUB_TOKEN_GITHUB_COM",
+                "BINPM_GITHUB_TOKEN",
+                "GITHUB_TOKEN"
+            ]
+        );
+        assert_eq!(
+            provider_token_env_candidates(SourceProvider::GitHub, "ghe.example.com"),
+            ["BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM"]
+        );
+        assert_eq!(
+            provider_token_env_candidates(SourceProvider::GitLab, "gitlab.com"),
+            [
+                "BINPM_GITLAB_TOKEN_GITLAB_COM",
+                "BINPM_GITLAB_TOKEN",
+                "GITLAB_TOKEN"
+            ]
+        );
+        assert_eq!(
+            provider_token_env_candidates(SourceProvider::GitLab, "gitlab.example.com"),
+            ["BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM"]
+        );
+        assert_ne!(
+            provider_token_env_candidates(SourceProvider::GitHub, "ghe.example.com"),
+            provider_token_env_candidates(SourceProvider::GitHub, "ghe-example.com")
+        );
     }
 
     #[test]
-    fn explicit_release_matching_selects_opposite_v_prefix() {
+    fn provider_auth_uses_host_specific_precedence() {
+        let source: SourceSpec = "github:owner/repo".parse().expect("source");
+        let auth = provider_auth_for_source_with(&source, |name| match name {
+            "BINPM_GITHUB_TOKEN_GITHUB_COM" => Some("host-token".to_string()),
+            "BINPM_GITHUB_TOKEN" => Some("generic-token".to_string()),
+            "GITHUB_TOKEN" => Some("legacy-token".to_string()),
+            _ => None,
+        })
+        .expect("auth");
+
+        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GITHUB_COM");
+        assert_eq!(auth.header_name, "authorization");
+        assert_eq!(auth.header_value, "Bearer host-token");
+    }
+
+    #[test]
+    fn provider_auth_does_not_send_dot_com_tokens_to_enterprise_hosts() {
+        let source: SourceSpec = "github:ghe.example.com/owner/repo".parse().expect("source");
+        let auth = provider_auth_for_source_with(&source, |name| match name {
+            "BINPM_GITHUB_TOKEN" | "GITHUB_TOKEN" => Some("wrong-host-token".to_string()),
+            _ => None,
+        });
+
+        assert_eq!(auth, None);
+    }
+
+    #[test]
+    fn provider_auth_does_not_reuse_colliding_host_tokens() {
+        let source: SourceSpec = "github:ghe-example.com/owner/repo".parse().expect("source");
+        let auth = provider_auth_for_source_with(&source, |name| match name {
+            "BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM" => Some("wrong-host-token".to_string()),
+            "BINPM_GITHUB_TOKEN_GHE_2D_EXAMPLE_2E_COM" => Some("right-host-token".to_string()),
+            _ => None,
+        })
+        .expect("auth");
+
+        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GHE_2D_EXAMPLE_2E_COM");
+        assert_eq!(auth.header_value, "Bearer right-host-token");
+    }
+
+    #[test]
+    fn gitlab_provider_auth_uses_private_token_header() {
+        let source: SourceSpec = "gitlab:gitlab.example.com/group/tool"
+            .parse()
+            .expect("source");
+        let auth = provider_auth_for_source_with(&source, |name| match name {
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM" => Some("self-managed-token".to_string()),
+            _ => None,
+        })
+        .expect("auth");
+        let request = release_request(
+            &reqwest::blocking::Client::new(),
+            "https://gitlab.example.com/api/v4/projects/group%2Ftool/releases?per_page=100",
+            None,
+            Some(&auth),
+        )
+        .build()
+        .expect("request");
+
+        assert_eq!(auth.env_var, "BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM");
+        assert_eq!(
+            request
+                .headers()
+                .get("PRIVATE-TOKEN")
+                .and_then(|value| value.to_str().ok()),
+            Some("self-managed-token")
+        );
+        assert_eq!(
+            request
+                .headers()
+                .get(header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
+            None
+        );
+    }
+
+    #[test]
+    fn gitlab_release_assets_keep_provider_auth_for_downloads_and_probes() {
+        let source: SourceSpec = "gitlab:gitlab.example.com/group/tool"
+            .parse()
+            .expect("source");
+        let auth = provider_auth_for_source_with(&source, |name| match name {
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM" => Some("self-managed-token".to_string()),
+            _ => None,
+        })
+        .expect("auth");
+        let release = GitLabRelease {
+            tag_name: "v1.0.0".to_string(),
+            released_at: None,
+            upcoming_release: false,
+            assets: super::GitLabAssets {
+                links: vec![super::GitLabLink {
+                    name: "linux amd64".to_string(),
+                    url: "https://gitlab.example.com/group/tool/-/releases/v1/downloads/tool-linux-amd64.tar.gz".to_string(),
+                    direct_asset_url: Some(
+                        "https://gitlab.example.com/group/tool/-/releases/v1/downloads/tool-linux-amd64.tar.gz".to_string(),
+                    ),
+                }],
+                sources: Vec::new(),
+            },
+        }
+        .into_release_with_auth(
+            Utc.with_ymd_and_hms(2026, 6, 19, 0, 0, 0).unwrap(),
+            &source,
+            Some(&auth),
+        );
+
+        assert_eq!(
+            release.assets[0]
+                .download_auth
+                .as_ref()
+                .map(|auth| (auth.header_name, auth.header_value.as_str())),
+            Some(("PRIVATE-TOKEN", "self-managed-token"))
+        );
+    }
+
+    #[test]
+    fn gitlab_release_assets_drop_provider_auth_for_external_downloads_and_probes() {
+        let source: SourceSpec = "gitlab:gitlab.example.com/group/tool"
+            .parse()
+            .expect("source");
+        let auth = provider_auth_for_source_with(&source, |name| match name {
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM" => Some("self-managed-token".to_string()),
+            _ => None,
+        })
+        .expect("auth");
+        let release = GitLabRelease {
+            tag_name: "v1.0.0".to_string(),
+            released_at: None,
+            upcoming_release: false,
+            assets: super::GitLabAssets {
+                links: vec![super::GitLabLink {
+                    name: "linux amd64".to_string(),
+                    url: "https://downloads.example.net/tool-linux-amd64.tar.gz".to_string(),
+                    direct_asset_url: None,
+                }],
+                sources: Vec::new(),
+            },
+        }
+        .into_release_with_auth(
+            Utc.with_ymd_and_hms(2026, 6, 19, 0, 0, 0).unwrap(),
+            &source,
+            Some(&auth),
+        );
+
+        assert_eq!(release.assets[0].download_auth, None);
+    }
+
+    #[test]
+    fn release_lookup_diagnostic_distinguishes_missing_auth_and_permissions() {
+        let source: SourceSpec = "github:owner/private".parse().expect("source");
+        let headers = header::HeaderMap::new();
+        let missing = release_lookup_diagnostic(&source, None, StatusCode::NOT_FOUND, &headers)
+            .expect("missing auth diagnostic");
+
+        match missing {
+            BinpmError::ReleaseLookupDiagnostic { kind, hint, .. } => {
+                assert_eq!(kind, ReleaseLookupDiagnosticKind::MissingAuth);
+                assert!(hint.contains("BINPM_GITHUB_TOKEN_GITHUB_COM"));
+            }
+            other => panic!("unexpected diagnostic: {other}"),
+        }
+
+        let auth = provider_auth_for_source_with(&source, |name| match name {
+            "BINPM_GITHUB_TOKEN_GITHUB_COM" => Some("secret-token".to_string()),
+            _ => None,
+        })
+        .expect("auth");
+        let insufficient =
+            release_lookup_diagnostic(&source, Some(&auth), StatusCode::FORBIDDEN, &headers)
+                .expect("permission diagnostic");
+        assert!(insufficient
+            .to_string()
+            .contains("insufficient permissions"));
+        assert!(insufficient
+            .to_string()
+            .contains("BINPM_GITHUB_TOKEN_GITHUB_COM"));
+        assert!(!insufficient.to_string().contains("secret-token"));
+
+        assert_eq!(
+            classify_release_lookup_status(StatusCode::FOUND, false, &headers),
+            Some(ReleaseLookupDiagnosticKind::MissingAuth)
+        );
+        assert_eq!(
+            classify_release_lookup_status(StatusCode::SEE_OTHER, true, &headers),
+            Some(ReleaseLookupDiagnosticKind::InsufficientPermissions)
+        );
+    }
+
+    #[test]
+    fn release_lookup_diagnostic_distinguishes_rate_limits() {
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
+            "x-ratelimit-remaining",
+            header::HeaderValue::from_static("0"),
+        );
+
+        assert_eq!(
+            classify_release_lookup_status(StatusCode::FORBIDDEN, false, &headers),
+            Some(ReleaseLookupDiagnosticKind::RateLimited)
+        );
+        assert_eq!(
+            classify_release_lookup_status(
+                StatusCode::TOO_MANY_REQUESTS,
+                true,
+                &header::HeaderMap::new()
+            ),
+            Some(ReleaseLookupDiagnosticKind::RateLimited)
+        );
+        headers.insert(
+            "x-ratelimit-remaining",
+            header::HeaderValue::from_static("10"),
+        );
+        headers.insert(header::RETRY_AFTER, header::HeaderValue::from_static("30"));
+        assert_eq!(
+            classify_release_lookup_status(StatusCode::FORBIDDEN, true, &headers),
+            Some(ReleaseLookupDiagnosticKind::RateLimited)
+        );
+        assert_eq!(
+            classify_release_lookup_status(StatusCode::OK, false, &headers),
+            None
+        );
+    }
+
+    #[test]
+    fn explicit_release_matching_requires_exact_tag() {
         let source: SourceSpec = "github:owner/repo@1.2.3".parse().expect("source");
-        let selected = select_release(
+        let error = select_release(
             &source,
             vec![Release {
                 tag: "v1.2.3".to_string(),
@@ -792,9 +1355,9 @@ mod tests {
                 stability_reason: None,
             }],
         )
-        .expect("selected");
+        .expect_err("opposite v prefix should not match");
 
-        assert_eq!(selected.release.tag, "v1.2.3");
+        assert!(error.to_string().contains("no release tag matched `1.2.3`"));
     }
 
     #[test]
@@ -918,6 +1481,9 @@ mod tests {
                 name: "source".to_string(),
                 url: "https://example.com/source.tar.gz".to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: true,
                 final_url_https: None,
@@ -942,6 +1508,9 @@ mod tests {
                     name: "tool-x86_64-unknown-linux-gnu.tar.gz.sha256".to_string(),
                     url: "https://127.0.0.1:9/tool.tar.gz.sha256".to_string(),
                     provider_url: None,
+                    download_url: None,
+                    download_auth: None,
+                    download_accept: None,
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
@@ -950,6 +1519,9 @@ mod tests {
                     name: "tool.dmg".to_string(),
                     url: "https://127.0.0.1:9/tool.dmg".to_string(),
                     provider_url: None,
+                    download_url: None,
+                    download_auth: None,
+                    download_accept: None,
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
@@ -958,6 +1530,9 @@ mod tests {
                     name: "latest.json".to_string(),
                     url: "https://127.0.0.1:9/latest.json".to_string(),
                     provider_url: None,
+                    download_url: None,
+                    download_auth: None,
+                    download_accept: None,
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
@@ -985,6 +1560,9 @@ mod tests {
                 name: "tool-x86_64-unknown-linux-gnu".to_string(),
                 url: "https://token@127.0.0.1:9/tool".to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -1008,6 +1586,9 @@ mod tests {
                 name: "tool-x86_64-unknown-linux-gnu".to_string(),
                 url: "https://127.0.0.1:9/tool".to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,

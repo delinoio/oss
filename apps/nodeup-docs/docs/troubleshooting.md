@@ -38,7 +38,15 @@ nodeup which node
 nodeup which --runtime 22.1.0 npm
 ```
 
-For linked runtimes, verify the runtime root contains `bin/node` or `bin/node.exe`.
+For linked runtimes, verify the runtime root contains a runnable `bin/node` or `bin/node.exe`. On Unix, `bin/node` must have an executable permission bit.
+
+Remove a stale linked runtime record without deleting the external directory:
+
+```bash
+nodeup toolchain unlink <name>
+```
+
+If unlinking reports `conflict`, change the default runtime or remove/update the blocking directory override first.
 
 ## Shims Are Missing or Stale
 
@@ -87,10 +95,7 @@ JSON errors include deterministic diagnostics:
 - `os`
 - `architecture`
 - `platform_source`
-- `forced_platform`, when `NODEUP_FORCE_PLATFORM` is set
 - `supported_platforms`
-
-For local platform testing, maintainers can use `NODEUP_FORCE_PLATFORM` with values such as `linux-arm64`, `windows-x64`, or `windows-arm64`.
 
 ## Checksum Mismatch
 
@@ -163,6 +168,15 @@ Check precedence:
 3. `NO_COLOR`
 4. terminal detection
 
+Inspect the effective decisions:
+
+```bash
+nodeup show color
+nodeup --output json show color
+```
+
+The diagnostic separates human stdout, human stderr, and log color. Invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values are ignored, and the diagnostic reports the ignored value.
+
 Force plain output:
 
 ```bash
@@ -179,17 +193,3 @@ NODEUP_SELF_UPDATE_SOURCE=/path/to/nodeup.new nodeup self update
 ```
 
 Use `NODEUP_SELF_BIN_PATH` to override the target binary path.
-
-## Validation Commands
-
-Runtime crate validation:
-
-```bash
-cargo test -p nodeup
-```
-
-Documentation app validation:
-
-```bash
-pnpm --filter nodeup-docs test
-```

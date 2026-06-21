@@ -21,13 +21,47 @@ Package manager:
 
 Direct installers:
 
+Install `cosign` first and leave it on `PATH`; the installers require it to verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`).
+
+macOS and Linux:
+
 ```bash
-./scripts/install/nodeup.sh --version latest --method package-manager
+(
+  installer_url="https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.sh"
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  if ! curl -fsSL "$installer_url" -o "$tmp_dir/nodeup.sh"; then
+    exit 1
+  fi
+  bash "$tmp_dir/nodeup.sh" --version latest --method direct
+)
 ```
 
+Windows PowerShell:
+
 ```powershell
-./scripts/install/nodeup.ps1 -Version latest -Method direct
+$InstallerUrl = "https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.ps1"
+$Installer = Join-Path ([System.IO.Path]::GetTempPath()) ("nodeup-install-" + [System.Guid]::NewGuid().ToString("N") + ".ps1")
+try {
+  Invoke-WebRequest -Uri $InstallerUrl -OutFile $Installer -UseBasicParsing
+  Unblock-File -LiteralPath $Installer -ErrorAction SilentlyContinue
+  $PowerShell = (Get-Process -Id $PID).Path
+  & $PowerShell -NoProfile -ExecutionPolicy Bypass -File $Installer -Version latest -Method direct
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+}
+finally {
+  Remove-Item -LiteralPath $Installer -Force -ErrorAction SilentlyContinue
+}
 ```
+
+These commands fetch the current first-party installer scripts from `delinoio/oss`. For reproducible automation, pin the same raw URL paths to a reviewed commit or repository tag instead of `refs/heads/main`, and replace `latest` with an explicit Nodeup semver.
+
+Canonical in-repo installer paths for maintainer workflows:
+
+- `scripts/install/nodeup.sh`
+- `scripts/install/nodeup.ps1`
 
 `cargo-binstall`:
 
@@ -44,7 +78,21 @@ GitHub Actions:
 - run: cargo binstall nodeup --no-confirm
 ```
 
-Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and require `cosign`.
+Direct installers support bundle-enabled releases only.
+
+Direct installers place the binary in `~/.local/bin` by default and do not modify your shell `PATH`. Add that directory before running `nodeup`, or pass `--install-dir` / `-InstallDir` with a directory already on `PATH`.
+
+macOS and Linux:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:Path = "$HOME\.local\bin;$env:Path"
+```
 
 ## Quick Command Reference
 
@@ -52,6 +100,7 @@ Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and requir
 - `nodeup toolchain install <runtime>...`
 - `nodeup toolchain uninstall <runtime>...`
 - `nodeup toolchain link <name> <path>`
+- `nodeup toolchain unlink <name>...`
 - `nodeup default [runtime]`
 - `nodeup show active-runtime`
 - `nodeup show home`
@@ -77,6 +126,21 @@ Runtime resolution follows a stable order:
 3. Global default (`default`)
 
 If no selector resolves, commands fail with deterministic `not-found` errors.
+
+## Linked Runtimes
+
+`nodeup toolchain link <name> <path>` registers an external runtime directory
+without copying or owning that directory. The runtime must provide a runnable
+Node executable under `bin/`: `bin/node` on Unix-like hosts or `bin/node.exe`
+when Windows platform behavior is selected. Unix hosts require an executable
+permission bit on `bin/node`.
+
+`nodeup toolchain unlink <name>...` removes linked runtime records from nodeup
+settings and tracked selectors without deleting external runtime directories.
+Unlinking fails with `conflict` when the linked name is the current default or
+is referenced by a directory override; change the default or remove/update the
+override before unlinking. Missing linked names fail with deterministic
+`not-found` errors.
 
 ## `packageManager` Support
 
@@ -143,6 +207,8 @@ Human output color control:
 - Environment override for human output: `NODEUP_COLOR=auto|always|never`
 - Precedence: `--color` > `NODEUP_COLOR` > `NO_COLOR` > `auto`
 - `auto` enables ANSI styles per stream only when the stream is a terminal
+- `nodeup show color` reports effective human stdout, human stderr, and log color decisions
+- Invalid `NODEUP_COLOR` values are ignored and reported by `nodeup show color`
 - `--output json` never injects ANSI styles into JSON payloads
 - `completions` output remains raw shell script text even when `--color always` is set
 
@@ -150,6 +216,7 @@ Log color control:
 
 - `NODEUP_LOG_COLOR=always|auto|never` (default `always`)
 - `NO_COLOR` disables color when `NODEUP_LOG_COLOR` is unset or `auto`
+- Invalid `NODEUP_LOG_COLOR` values are ignored and reported by `nodeup show color`
 
 ## Completions
 
@@ -191,7 +258,8 @@ cargo test
 - No selector resolved:
   - set one with `nodeup default <runtime>` or `nodeup override set <runtime>`
 - Linked runtime failures:
-  - verify `<path>/bin/node` exists before `toolchain link`
+  - verify `<path>/bin/node` exists and is executable before `toolchain link`
+  - use `nodeup toolchain unlink <name>` to remove a stale linked runtime record
 - JSON parsing issues in automation:
   - use `--output json` and keep `RUST_LOG` unset (or `off`) to avoid log noise
 - Error troubleshooting:

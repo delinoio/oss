@@ -168,6 +168,11 @@ pub enum ToolchainCommand {
         /// Path to a runtime directory containing `bin/node` or `bin/node.exe`.
         path: String,
     },
+    /// Remove a linked runtime record without deleting its external directory.
+    Unlink {
+        /// Linked runtime aliases to remove.
+        names: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -177,6 +182,8 @@ pub enum ShowCommand {
     ActiveRuntime,
     /// Show the nodeup home directory path.
     Home,
+    /// Show effective human output and log color decisions.
+    Color,
 }
 
 #[derive(Debug, Subcommand)]
