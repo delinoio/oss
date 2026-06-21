@@ -81,6 +81,27 @@ pub struct CacheRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct CacheRefRecord {
+    version: u8,
+    project_root: String,
+    cmd: String,
+    cache_key: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct CacheReferenceScan {
+    pub active_keys: BTreeSet<String>,
+    pub stale_refs: Vec<PathBuf>,
+    pub legacy_refs: usize,
+}
+
+impl CacheReferenceScan {
+    pub fn stale_count(&self) -> usize {
+        self.stale_refs.len()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageRecord {
     pub package_spec: String,
     pub source: String,
@@ -918,10 +939,52 @@ pub fn referenced_cache_keys(
             }
         }
     }
-    for key in read_cache_ref_keys(cache)? {
+    for key in scan_cache_references(cache)?.active_keys {
         keys.insert(key);
     }
     Ok(keys)
+}
+
+pub fn scan_cache_references(cache: &CachePaths) -> Result<CacheReferenceScan> {
+    let mut scan = CacheReferenceScan {
+        active_keys: BTreeSet::new(),
+        stale_refs: Vec::new(),
+        legacy_refs: 0,
+    };
+    for entry in read_cache_ref_entries(cache)? {
+        match entry {
+            CacheRefEntry::Legacy { cache_key, .. } => {
+                scan.legacy_refs += 1;
+                scan.active_keys.insert(cache_key);
+            }
+            CacheRefEntry::Structured { path, record } => {
+                if cache_ref_record_is_active(&record)? {
+                    scan.active_keys.insert(record.cache_key);
+                } else {
+                    scan.stale_refs.push(path);
+                }
+            }
+        }
+    }
+    Ok(scan)
+}
+
+pub fn remove_stale_cache_refs(cache: &CachePaths, refs: &[PathBuf]) -> Result<usize> {
+    reject_symlinked_managed_directory(&cache.home)?;
+    reject_symlinked_managed_directory(&cache.root)?;
+    reject_symlinked_managed_directory(&cache.refs)?;
+    let mut removed = 0;
+    for path in refs {
+        require_regular_managed_file(path)?;
+        remove_path_if_exists(path)?;
+        removed += 1;
+        info!(
+            cache_ref_path = %path.display(),
+            cache_action = "remove-stale-ref",
+            "Removed stale cache reference"
+        );
+    }
+    Ok(removed)
 }
 
 pub fn write_cache_ref(
@@ -936,7 +999,15 @@ pub fn write_cache_ref(
     validate_command_name(cmd)?;
     cache.ensure()?;
     let ref_path = cache_ref_path(cache, project_root, cmd);
-    atomic_write_bytes(&ref_path, key.as_bytes())
+    write_toml_atomic(
+        &ref_path,
+        &CacheRefRecord {
+            version: STORAGE_VERSION,
+            project_root: project_root.display().to_string(),
+            cmd: cmd.to_string(),
+            cache_key: key.clone(),
+        },
+    )
 }
 
 pub fn remove_cache_ref(cache: &CachePaths, project_root: &Path, cmd: &str) -> Result<()> {
@@ -946,14 +1017,24 @@ pub fn remove_cache_ref(cache: &CachePaths, project_root: &Path, cmd: &str) -> R
     remove_path_if_exists(&cache_ref_path(cache, project_root, cmd))
 }
 
-fn read_cache_ref_keys(cache: &CachePaths) -> Result<BTreeSet<String>> {
-    let mut keys = BTreeSet::new();
+enum CacheRefEntry {
+    Legacy {
+        cache_key: String,
+    },
+    Structured {
+        path: PathBuf,
+        record: CacheRefRecord,
+    },
+}
+
+fn read_cache_ref_entries(cache: &CachePaths) -> Result<Vec<CacheRefEntry>> {
+    let mut refs = Vec::new();
     reject_symlinked_managed_directory(&cache.home)?;
     reject_symlinked_managed_directory(&cache.root)?;
     reject_symlinked_managed_directory(&cache.refs)?;
     let entries = match fs::read_dir(&cache.refs) {
         Ok(entries) => entries,
-        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(keys),
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(refs),
         Err(source) => {
             return Err(BinpmError::ReadFile {
                 path: cache.refs.clone(),
@@ -975,11 +1056,38 @@ fn read_cache_ref_keys(cache: &CachePaths) -> Result<BTreeSet<String>> {
             path: path.clone(),
             source,
         })?;
-        if !key.trim().is_empty() {
-            keys.insert(key.trim().to_string());
+        let trimmed = key.trim();
+        if trimmed.is_empty() {
+            continue;
         }
+        if trimmed.starts_with("sha256:") {
+            refs.push(CacheRefEntry::Legacy {
+                cache_key: trimmed.to_string(),
+            });
+            continue;
+        }
+        let record: CacheRefRecord =
+            toml::from_str(trimmed).map_err(|source| BinpmError::ParseToml {
+                path: path.clone(),
+                source,
+            })?;
+        ensure_supported_version("cache reference", &path, record.version)?;
+        validate_command_name(&record.cmd)?;
+        refs.push(CacheRefEntry::Structured { path, record });
     }
-    Ok(keys)
+    Ok(refs)
+}
+
+fn cache_ref_record_is_active(record: &CacheRefRecord) -> Result<bool> {
+    let project_root = PathBuf::from(&record.project_root);
+    let package_path = package_record_path(&ScopePaths::local(project_root), &record.cmd);
+    match read_package_record(&package_path) {
+        Ok(package) => Ok(package.cache_key.as_deref() == Some(record.cache_key.as_str())),
+        Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn cache_ref_path(cache: &CachePaths, project_root: &Path, cmd: &str) -> PathBuf {
@@ -1252,10 +1360,10 @@ mod tests {
         managed_installed_path, populate_cache_from_bytes, prune_cache, read_cache_records,
         read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
         referenced_cache_keys, remove_cache_ref, remove_installed_binary, remove_package_record,
-        sanitize_persisted_url, validate_command_name, validate_download_url,
-        validate_sha256_digest, verify_sha256, write_cache_ref, write_lockfile, write_manifest,
-        CachePaths, CacheRecord, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset,
-        ScopePaths,
+        remove_stale_cache_refs, sanitize_persisted_url, scan_cache_references,
+        validate_command_name, validate_download_url, validate_sha256_digest, verify_sha256,
+        write_cache_ref, write_lockfile, write_manifest, write_package_record, CachePaths,
+        CacheRecord, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset, ScopePaths,
     };
     use crate::{
         assets::{ArtifactKind, CandidateDecision},
@@ -1945,6 +2053,12 @@ created_at = "2026-01-01T00:00:00Z"
         let paths = ScopePaths::global(home.path().join("global"));
         let mut record = package_record();
         record.cache_key = Some("sha256:cross-project".to_string());
+        write_package_record(
+            &ScopePaths::local(project.path().to_path_buf()),
+            "tool",
+            &record,
+        )
+        .expect("write package record");
 
         write_cache_ref(&cache, project.path(), "tool", &record).expect("write ref");
         let referenced = referenced_cache_keys(&paths, None, &cache).expect("referenced keys");
@@ -2024,6 +2138,12 @@ created_at = "2026-01-01T00:00:00Z"
         populate_cache_from_bytes(&cache, &resolved, b"bytes").expect("populate cache");
         let mut record = package_record();
         record.cache_key = Some("sha256:cross-project".to_string());
+        write_package_record(
+            &ScopePaths::local(temp_dir.path().to_path_buf()),
+            "tool",
+            &record,
+        )
+        .expect("write package record");
         write_cache_ref(&cache, temp_dir.path(), "tool", &record).expect("write cache ref");
         let bin = temp_dir.path().join("bin");
         std::fs::create_dir_all(&bin).expect("create bin");
@@ -2042,6 +2162,38 @@ created_at = "2026-01-01T00:00:00Z"
             .expect("cache refs"),
             BTreeSet::from(["sha256:cross-project".to_string()])
         );
+    }
+
+    #[test]
+    fn scan_cache_references_detects_stale_project_refs() {
+        let home = tempfile::tempdir().expect("home");
+        let project = tempfile::tempdir().expect("project");
+        let cache = CachePaths::new(home.path());
+        let mut record = package_record();
+        record.cache_key = Some("sha256:stale".to_string());
+        write_cache_ref(&cache, project.path(), "tool", &record).expect("write cache ref");
+
+        let scan = scan_cache_references(&cache).expect("scan refs");
+
+        assert_eq!(scan.stale_count(), 1);
+        assert!(scan.active_keys.is_empty());
+    }
+
+    #[test]
+    fn remove_stale_cache_refs_deletes_only_scanned_ref_files() {
+        let home = tempfile::tempdir().expect("home");
+        let project = tempfile::tempdir().expect("project");
+        let cache = CachePaths::new(home.path());
+        let mut record = package_record();
+        record.cache_key = Some("sha256:stale".to_string());
+        write_cache_ref(&cache, project.path(), "tool", &record).expect("write cache ref");
+        let scan = scan_cache_references(&cache).expect("scan refs");
+
+        let removed = remove_stale_cache_refs(&cache, &scan.stale_refs).expect("remove refs");
+        let rescanned = scan_cache_references(&cache).expect("rescan refs");
+
+        assert_eq!(removed, 1);
+        assert_eq!(rescanned.stale_count(), 0);
     }
 
     #[test]

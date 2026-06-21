@@ -5,7 +5,7 @@ use tracing::info;
 
 use crate::{
     cli::{OutputColorMode, OutputFormat},
-    command_plan::{plan_delegated_command, DelegatedCommandMode},
+    command_plan::{plan_delegated_command, DelegatedCommandMode, DelegatedCommandPlanDiagnostics},
     commands::print_output,
     errors::{NodeupError, Result},
     release_index::ReleaseIndexResolutionDiagnostic,
@@ -18,7 +18,17 @@ use crate::{
 struct WhichResponse {
     runtime: String,
     command: String,
+    requested_command: String,
     executable_path: String,
+    mode: String,
+    reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    package_spec: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    package_spec_pinned: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    package_json_path: Option<String>,
+    planning: DelegatedCommandPlanDiagnostics,
     #[serde(skip_serializing_if = "Option::is_none")]
     release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
@@ -71,6 +81,10 @@ pub fn execute(
     }
 
     let package_spec = plan.package_spec.as_deref().unwrap_or("none");
+    let package_spec_pinned = plan
+        .package_spec_pinned()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "none".to_string());
     let package_json_path = plan
         .package_json_path
         .as_ref()
@@ -85,19 +99,35 @@ pub fn execute(
         delegated_command = command,
         mode = plan.mode.as_str(),
         package_spec,
+        package_spec_pinned,
         package_json_path = %package_json_path,
         reason = plan.reason.as_str(),
         executable = %plan.executable.display(),
         "Resolved delegated executable"
     );
 
+    let planning = plan.diagnostics();
     let response = WhichResponse {
         runtime: resolved.runtime_id(),
         command: command.to_string(),
+        requested_command: planning.requested_command.clone(),
         executable_path: plan.executable.to_string_lossy().to_string(),
+        mode: planning.mode.clone(),
+        reason: planning.reason.clone(),
+        package_spec: planning.package_spec.clone(),
+        package_spec_pinned: planning.package_spec_pinned,
+        package_json_path: planning.package_json_path.clone(),
+        planning,
         release_index: app.resolver.release_index_diagnostic(),
     };
-    print_output(output, color, &response.executable_path, &response)?;
+
+    let human = if let Some(notice) = plan.npm_exec_human_notice() {
+        format!("{}\n{notice}", response.executable_path)
+    } else {
+        response.executable_path.clone()
+    };
+
+    print_output(output, color, &human, &response)?;
 
     Ok(0)
 }

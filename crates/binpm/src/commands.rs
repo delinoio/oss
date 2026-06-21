@@ -29,6 +29,7 @@ use crate::{
     error::{BinpmError, Result},
     release::{
         client_for_source, GitHubReleaseClient, GitLabReleaseClient, ProviderAuth, ReleaseAsset,
+        ReleaseClient,
     },
     storage::{
         archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
@@ -38,7 +39,8 @@ use crate::{
         read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
         referenced_cache_keys, reject_symlinked_cache_entry, remove_cache_ref,
         remove_installed_binary, remove_package_record, remove_path_if_exists,
-        require_regular_managed_file, require_verified_regular_cache_asset, sanitize_persisted_url,
+        remove_stale_cache_refs, require_regular_managed_file,
+        require_verified_regular_cache_asset, sanitize_persisted_url, scan_cache_references,
         validate_command_name, validate_download_url, validate_installed_binary_path,
         validate_sha256_digest, write_cache_ref, write_lockfile, write_manifest,
         write_package_record, CachePaths, LockTool, Manifest, ManifestTool, PackageRecord,
@@ -145,12 +147,16 @@ struct DoctorOutput {
     manifest: PathState,
     lockfile_path: String,
     lockfile: PathState,
+    local_bin: String,
+    local_bin_on_path: bool,
     global_home: String,
     global_bin: String,
     global_bin_on_path: bool,
+    stale_cache_refs: usize,
+    legacy_cache_refs: usize,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 enum PathState {
     #[serde(rename = "present")]
     Present,
@@ -174,6 +180,18 @@ struct VerifyCheckOutput {
     target: Option<HostTarget>,
     checksum_source: ChecksumSource,
     verification: VerificationState,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheKeyOutput {
+    command: &'static str,
+    cache_key: String,
+    target: HostTarget,
+    target_key: String,
+    lockfile_path: String,
+    lockfile: PathState,
+    lockfile_digest: String,
+    read_only: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -326,13 +344,21 @@ pub fn run(cli: Cli) -> Result<i32> {
 fn install(args: InstallArgs) -> Result<i32> {
     let requested_scope = args.scope.scope();
     let frozen_lockfile = args.lockfile.frozen_lockfile();
+    let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
 
     if let Some(source) = &args.source {
         let spec = SourceSpec::from_str(source)?;
         let scope = source_install_scope(requested_scope);
+        let alias = args
+            .alias
+            .clone()
+            .unwrap_or_else(|| repo_name(&spec).to_string());
+        validate_command_name(&alias)?;
         info!(
             command = "install",
             scope = scope.as_str(),
+            install_alias = alias,
+            selected_bin = explicit_bin.as_deref().unwrap_or(""),
             frozen_lockfile,
             require_verified = args.require_verified,
             no_confirm = args.no_confirm,
@@ -343,10 +369,25 @@ fn install(args: InstallArgs) -> Result<i32> {
             "Prepared source install request"
         );
         if scope == Scope::Local {
+            if args.alias.is_some() || explicit_bin.is_some() {
+                return install_local_source_as(
+                    spec,
+                    &alias,
+                    explicit_bin,
+                    frozen_lockfile,
+                    args.require_verified,
+                );
+            }
             return install_local_source(spec, frozen_lockfile, args.require_verified);
         }
-        install_global_source(spec, args.require_verified)
+        install_global_source(spec, &alias, explicit_bin, args.require_verified)
     } else {
+        if args.alias.is_some() || explicit_bin.is_some() {
+            return Err(BinpmError::InvalidSourceSpec {
+                raw: "install".to_string(),
+                message: "`--as` and `--bin` require an explicit source".to_string(),
+            });
+        }
         if requested_scope == Scope::Global {
             return Err(BinpmError::NotImplemented {
                 command: "install --global without a source",
@@ -367,10 +408,19 @@ fn install(args: InstallArgs) -> Result<i32> {
 fn add(args: AddArgs) -> Result<i32> {
     let spec = SourceSpec::from_str(&args.source)?;
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
+    let additional = parse_additional_declarations(&args.also)?;
+    let mut declarations = Vec::with_capacity(1 + additional.len());
+    declarations.push(AddDeclaration {
+        cmd: args.cmd.clone(),
+        bin: explicit_bin.clone(),
+    });
+    declarations.extend(additional);
     info!(
         command = "add",
         local_cmd = args.cmd,
         selected_bin = explicit_bin.as_deref().unwrap_or(""),
+        declaration_count = declarations.len(),
+        manifest_only = args.manifest_only,
         source_provider = spec.provider.as_str(),
         source_host = spec.host,
         source_path = spec.path,
@@ -382,7 +432,15 @@ fn add(args: AddArgs) -> Result<i32> {
     );
     let root = require_manifest_root_or_creation_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
-    validate_command_name(&args.cmd)?;
+    let mut declared = BTreeSet::new();
+    for declaration in &declarations {
+        validate_command_name(&declaration.cmd)?;
+        if !declared.insert(declaration.cmd.clone()) {
+            return Err(BinpmError::DuplicateAddDeclaration {
+                cmd: declaration.cmd.clone(),
+            });
+        }
+    }
     let manifest_existed = path_exists_or_unreadable(&manifest_path);
     let mut manifest = if manifest_existed {
         read_manifest(&manifest_path)?
@@ -393,54 +451,111 @@ fn add(args: AddArgs) -> Result<i32> {
         }
     };
     let prior_manifest = manifest.clone();
-    let manifest_tool = manifest.tools.get(&args.cmd).cloned();
-    let current_target = HostTarget::current()?;
-    let next_manifest_tool = update_manifest_tool_source(
-        manifest_tool.clone(),
-        &spec,
-        explicit_bin,
-        Some(&current_target),
-    );
-    manifest
-        .tools
-        .insert(args.cmd.clone(), next_manifest_tool.clone());
-    ensure_no_selected_install_path_collisions(&manifest, std::slice::from_ref(&args.cmd))?;
-    let prior_state = capture_local_tool_state(&root, &args.cmd)?;
-    let install = install_local_tool(
-        &root,
-        &args.cmd,
-        &spec,
-        Some(&next_manifest_tool),
-        args.lockfile.frozen_lockfile(),
-        args.require_verified,
-    )?;
-    let record = install.record.clone();
+    let current_target = if args.manifest_only {
+        None
+    } else {
+        Some(HostTarget::current()?)
+    };
+    let mut selected = Vec::with_capacity(declarations.len());
+    for declaration in &declarations {
+        let manifest_tool = manifest.tools.get(&declaration.cmd).cloned();
+        let next_manifest_tool = update_manifest_tool_source(
+            manifest_tool,
+            &spec,
+            declaration.bin.clone(),
+            current_target.as_ref(),
+        );
+        manifest
+            .tools
+            .insert(declaration.cmd.clone(), next_manifest_tool);
+        selected.push(declaration.cmd.clone());
+    }
+    ensure_no_selected_install_path_collisions(&manifest, &selected)?;
+    if args.manifest_only {
+        write_manifest(&manifest_path, &manifest)?;
+        println!("declared {}", selected.join(", "));
+        println!("manifest-only: wrote {}", manifest_path.display());
+        println!(
+            "manifest-only: did not update {}",
+            root.join(LOCKFILE_FILE).display()
+        );
+        println!(
+            "manifest-only: did not install executables under {}",
+            ScopePaths::local(root).bin.display()
+        );
+        println!("next: run `binpm install` to resolve, lock, and install declared tools");
+        return Ok(0);
+    }
+    let mut completed = Vec::new();
+    for cmd in &selected {
+        let tool = manifest
+            .tools
+            .get(cmd)
+            .expect("selected command was inserted into manifest")
+            .clone();
+        let prior_state = match capture_local_tool_state(&root, cmd) {
+            Ok(prior_state) => prior_state,
+            Err(error) => {
+                rollback_completed_local_installs(
+                    &root,
+                    completed,
+                    &CachePaths::new(&binpm_home()?),
+                )?;
+                return Err(error);
+            }
+        };
+        let install = match install_local_tool(
+            &root,
+            cmd,
+            &spec,
+            Some(&tool),
+            args.lockfile.frozen_lockfile(),
+            args.require_verified,
+        ) {
+            Ok(install) => install,
+            Err(error) => {
+                rollback_completed_local_installs(
+                    &root,
+                    completed,
+                    &CachePaths::new(&binpm_home()?),
+                )?;
+                return Err(error);
+            }
+        };
+        completed.push(CompletedLocalInstall {
+            cmd: cmd.clone(),
+            install,
+            prior_state,
+        });
+    }
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
-        rollback_local_install_state(&root, &args.cmd, &record, prior_state);
-        cleanup_failed_install_cache(
-            &CachePaths::new(&binpm_home()?),
-            &record.sha256,
-            Some(&root),
-            &install,
-        )?;
+        rollback_completed_local_installs(&root, completed, &CachePaths::new(&binpm_home()?))?;
         return Err(error);
     }
-    if let Err(error) = commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install) {
-        rollback_local_install_state(&root, &args.cmd, &record, prior_state);
+    let cache_paths = CachePaths::new(&binpm_home()?);
+    if let Err(error) = completed
+        .iter()
+        .try_for_each(|completed| commit_deferred_cache_hit(&cache_paths, &completed.install))
+    {
+        let rollback_error =
+            rollback_completed_local_installs_ref(&root, &completed, &cache_paths).err();
         if manifest_existed {
             let _ = write_manifest(&manifest_path, &prior_manifest);
         } else {
             let _ = remove_path_if_exists(&manifest_path);
         }
-        cleanup_failed_install_cache(
-            &CachePaths::new(&binpm_home()?),
-            &record.sha256,
-            Some(&root),
-            &install,
-        )?;
+        if let Some(rollback_error) = rollback_error {
+            return Err(rollback_error);
+        }
         return Err(error);
     }
-    println!("added {}", args.cmd);
+    println!("added {}", selected.join(", "));
+    for cmd in &selected {
+        println!("run: binpm x {cmd}");
+    }
+    println!(
+        "path: use `binpm env --shell <bash|zsh|fish|powershell>` for opt-in direct shell access"
+    );
     Ok(0)
 }
 
@@ -452,9 +567,15 @@ fn source_install_scope(requested_scope: Scope) -> Scope {
 }
 
 fn exec(args: ExecArgs) -> Result<i32> {
-    let cmd = args.cmd().to_string_lossy().to_string();
-    let forwarded_arg_count = args.args().len();
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
+    let cmd = match args.cmd() {
+        Some(cmd) => cmd.to_string_lossy().to_string(),
+        None if args.package.is_some() => {
+            package_shortcut_command(args.package.as_deref(), explicit_bin.as_deref())?
+        }
+        None => return Err(BinpmError::InvalidCommandName { cmd: String::new() }),
+    };
+    let forwarded_arg_count = args.args().len();
 
     if let Some(source) = &args.package {
         let spec = SourceSpec::from_str(source)?;
@@ -488,7 +609,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
         let tool = ManifestTool {
             source: spec.source_without_version(),
             version: spec.version.clone(),
-            bin: Some(explicit_bin.clone().unwrap_or_else(|| cmd.clone())),
+            bin: explicit_bin.clone(),
             targets: BTreeMap::new(),
         };
         let install = install_resolved(
@@ -496,7 +617,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
             &cache_paths,
             &cmd,
             &spec,
-            Some(&tool),
+            explicit_bin.as_ref().map(|_| &tool),
             false,
             None,
         )?;
@@ -548,6 +669,19 @@ fn exec(args: ExecArgs) -> Result<i32> {
         return Err(error);
     }
     execute_command(&cmd, args.args(), &[ScopePaths::local(root).bin])
+}
+
+fn package_shortcut_command(source: Option<&str>, explicit_bin: Option<&str>) -> Result<String> {
+    if let Some(bin) = explicit_bin {
+        let basename = bin.rsplit('/').next().unwrap_or(bin);
+        validate_command_name(basename)?;
+        return Ok(basename.to_string());
+    }
+    let source = source.ok_or_else(|| BinpmError::InvalidCommandName { cmd: String::new() })?;
+    let spec = SourceSpec::from_str(source)?;
+    let cmd = repo_name(&spec).to_string();
+    validate_command_name(&cmd)?;
+    Ok(cmd)
 }
 
 fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
@@ -620,10 +754,14 @@ fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
             let cache_paths = CachePaths::new(&home);
             let global_paths = ScopePaths::global(home);
             let local_paths = manifest_project_root()?.map(ScopePaths::local);
+            let scan = scan_cache_references(&cache_paths)?;
+            let stale_refs_removed = remove_stale_cache_refs(&cache_paths, &scan.stale_refs)?;
             let referenced =
                 referenced_cache_keys(&global_paths, local_paths.as_ref(), &cache_paths)?;
             let removed = prune_cache(&cache_paths, &referenced)?;
-            println!("pruned {removed}");
+            println!("pruned cache entries: {removed}");
+            println!("removed stale local-project cache refs: {stale_refs_removed}");
+            println!("preserved referenced cache entries, package records, and executable links");
             Ok(0)
         }
         CacheCommand::Clean { .. } => {
@@ -634,17 +772,22 @@ fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
             );
             let paths = CachePaths::new(&binpm_home()?);
             let removed = clean_cache(&paths)?;
-            println!("cleaned {removed}");
+            println!("removed cache entries: {removed}");
+            println!("removed: {}", paths.root.join("sha256").display());
+            println!("preserved: {}", paths.refs.display());
+            println!("preserved: {}", paths.home.join("packages").display());
+            println!("preserved: {}", paths.home.join("bin").display());
             Ok(0)
         }
-        CacheCommand::Key => cache_key(),
+        CacheCommand::Key => cache_key(output),
     }
 }
 
-fn cache_key() -> Result<i32> {
+fn cache_key(output: OutputMode) -> Result<i32> {
     let project_root = project_root()?;
     let lockfile_path = project_root.join(LOCKFILE_FILE);
     let target = HostTarget::current()?;
+    let lockfile = json_path_state(&lockfile_path);
     let digest = lockfile_digest(&lockfile_path)?;
     let target_key = target.key();
     let cache_key = format!("binpm-v1-{target_key}-{digest}");
@@ -656,6 +799,24 @@ fn cache_key() -> Result<i32> {
         lockfile_path = %lockfile_path.display(),
         "Computed binpm cache key"
     );
+    if output.is_json() {
+        return print_json(&CacheKeyOutput {
+            command: "cache key",
+            cache_key,
+            target,
+            target_key,
+            lockfile_path: lockfile_path.display().to_string(),
+            lockfile,
+            lockfile_digest: digest,
+            read_only: true,
+        });
+    }
+    if lockfile == PathState::Missing {
+        eprintln!(
+            "warning: {} is missing; cache key uses the empty lockfile digest",
+            lockfile_path.display()
+        );
+    }
     println!("{cache_key}");
     Ok(0)
 }
@@ -872,10 +1033,7 @@ fn update(args: UpdateArgs) -> Result<i32> {
     }
     print_update_plan(scope, &args.cmd)?;
     match scope {
-        Scope::Local if frozen_lockfile => Err(BinpmError::FrozenLockfile {
-            path: require_manifest_root()?.join(LOCKFILE_FILE),
-        }),
-        Scope::Local => install_local_manifest(false, args.require_verified, &args.cmd),
+        Scope::Local => update_local_manifest(frozen_lockfile, args.require_verified, &args.cmd),
         Scope::Global => Err(BinpmError::NotImplemented {
             command: "update global",
         }),
@@ -993,9 +1151,13 @@ fn doctor(output: OutputMode) -> Result<i32> {
     let project_root = project_root()?;
     let manifest_path = project_root.join(MANIFEST_FILE);
     let lockfile_path = project_root.join(LOCKFILE_FILE);
+    let local_bin = project_root.join(".binpm").join("bin");
     let home = binpm_home()?;
     let global_bin = home.join("bin");
+    let local_bin_on_path = path_contains_entry(&local_bin);
     let global_bin_on_path = path_contains_entry(&global_bin);
+    let cache_paths = CachePaths::new(&home);
+    let cache_ref_scan = scan_cache_references(&cache_paths)?;
 
     info!(
         command = "doctor",
@@ -1004,8 +1166,12 @@ fn doctor(output: OutputMode) -> Result<i32> {
         manifest_path = %manifest_path.display(),
         lockfile_path = %lockfile_path.display(),
         binpm_home = %home.display(),
+        local_bin = %local_bin.display(),
+        local_bin_on_path,
         global_bin = %global_bin.display(),
         global_bin_on_path,
+        stale_cache_refs = cache_ref_scan.stale_count(),
+        legacy_cache_refs = cache_ref_scan.legacy_refs,
         "Prepared doctor inspection"
     );
     if output.is_json() {
@@ -1016,17 +1182,25 @@ fn doctor(output: OutputMode) -> Result<i32> {
             manifest: json_path_state(&manifest_path),
             lockfile_path: lockfile_path.display().to_string(),
             lockfile: json_path_state(&lockfile_path),
+            local_bin: local_bin.display().to_string(),
+            local_bin_on_path,
             global_home: home.display().to_string(),
             global_bin: global_bin.display().to_string(),
             global_bin_on_path,
+            stale_cache_refs: cache_ref_scan.stale_count(),
+            legacy_cache_refs: cache_ref_scan.legacy_refs,
         });
     }
     println!("binpm doctor");
     println!("manifest: {}", path_state(&manifest_path));
     println!("lockfile: {}", path_state(&lockfile_path));
+    println!("local_bin: {}", local_bin.display());
+    println!("local_bin_on_path: {}", yes_no(local_bin_on_path));
     println!("global_home: {}", home.display());
     println!("global_bin: {}", global_bin.display());
     println!("global_bin_on_path: {}", yes_no(global_bin_on_path));
+    println!("stale_cache_refs: {}", cache_ref_scan.stale_count());
+    println!("legacy_cache_refs: {}", cache_ref_scan.legacy_refs);
     if !global_bin_on_path {
         print_global_path_setup_guidance(&global_bin);
     }
@@ -1484,28 +1658,38 @@ fn release_api_url(spec: &SourceSpec) -> String {
     }
 }
 
-fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32> {
-    let cmd = repo_name(&spec).to_string();
-    validate_command_name(&cmd)?;
+fn install_global_source(
+    spec: SourceSpec,
+    cmd: &str,
+    explicit_bin: Option<String>,
+    require_verified: bool,
+) -> Result<i32> {
+    validate_command_name(cmd)?;
     let home = binpm_home()?;
     let scope_paths = ScopePaths::global(home.clone());
     let cache_paths = CachePaths::new(&home);
-    let prior_state = capture_runtime_tool_state(&scope_paths, &cmd)?;
+    let prior_state = capture_runtime_tool_state(&scope_paths, cmd)?;
+    let tool = ManifestTool {
+        source: spec.source_without_version(),
+        version: spec.version.clone(),
+        bin: explicit_bin,
+        targets: BTreeMap::new(),
+    };
     let install = install_resolved(
         &scope_paths,
         &cache_paths,
-        &cmd,
+        cmd,
         &spec,
-        None,
+        Some(&tool),
         require_verified,
         None,
     )?;
     let record = install.record.clone();
-    if let Err(error) = write_package_record(&scope_paths, &cmd, &record)
+    if let Err(error) = write_package_record(&scope_paths, cmd, &record)
         .and_then(|_| commit_deferred_cache_hit(&cache_paths, &install))
     {
-        let rollback_result = rollback_failed_install(&scope_paths, &cmd, &record);
-        restore_runtime_tool_state(&scope_paths, &cmd, prior_state);
+        let rollback_result = rollback_failed_install(&scope_paths, cmd, &record);
+        restore_runtime_tool_state(&scope_paths, cmd, prior_state);
         let cache_cleanup_result =
             cleanup_failed_install_cache(&cache_paths, &record.sha256, None, &install);
         rollback_result?;
@@ -1567,6 +1751,65 @@ fn install_local_source(
         )?;
         return Err(error);
     }
+    Ok(0)
+}
+
+fn install_local_source_as(
+    spec: SourceSpec,
+    cmd: &str,
+    explicit_bin: Option<String>,
+    frozen_lockfile: bool,
+    require_verified: bool,
+) -> Result<i32> {
+    let root = require_manifest_root()?;
+    validate_command_name(cmd)?;
+    let manifest_path = root.join(MANIFEST_FILE);
+    let mut manifest = read_manifest(&manifest_path)?;
+    let prior_manifest = manifest.clone();
+    let manifest_tool = manifest.tools.get(cmd).cloned();
+    let next_manifest_tool = update_manifest_tool_source(
+        manifest_tool,
+        &spec,
+        explicit_bin,
+        Some(&HostTarget::current()?),
+    );
+    manifest
+        .tools
+        .insert(cmd.to_string(), next_manifest_tool.clone());
+    ensure_no_selected_install_path_collisions(&manifest, &[cmd.to_string()])?;
+    let prior_state = capture_local_tool_state(&root, cmd)?;
+    let install = install_local_tool(
+        &root,
+        cmd,
+        &spec,
+        Some(&next_manifest_tool),
+        frozen_lockfile,
+        require_verified,
+    )?;
+    let record = install.record.clone();
+    if let Err(error) = write_manifest(&manifest_path, &manifest) {
+        rollback_local_install_state(&root, cmd, &record, prior_state);
+        cleanup_failed_install_cache(
+            &CachePaths::new(&binpm_home()?),
+            &record.sha256,
+            Some(&root),
+            &install,
+        )?;
+        return Err(error);
+    }
+    if let Err(error) = commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install) {
+        rollback_local_install_state(&root, cmd, &record, prior_state);
+        let _ = write_manifest(&manifest_path, &prior_manifest);
+        cleanup_failed_install_cache(
+            &CachePaths::new(&binpm_home()?),
+            &record.sha256,
+            Some(&root),
+            &install,
+        )?;
+        return Err(error);
+    }
+    println!("added {cmd}");
+    println!("run: binpm x {cmd}");
     Ok(0)
 }
 
@@ -1703,6 +1946,94 @@ fn install_local_manifest(
         }
     }
     Ok(0)
+}
+
+fn update_local_manifest(
+    frozen_lockfile: bool,
+    require_verified: bool,
+    selected: &[String],
+) -> Result<i32> {
+    if frozen_lockfile {
+        let root = require_manifest_root()?;
+        let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
+        validate_frozen_local_update_latest(&root, &manifest, selected)?;
+    }
+    install_local_manifest(frozen_lockfile, require_verified, selected)
+}
+
+fn validate_frozen_local_update_latest(
+    root: &Path,
+    manifest: &Manifest,
+    selected: &[String],
+) -> Result<()> {
+    let lockfile_path = root.join(LOCKFILE_FILE);
+    let lockfile = read_lockfile(&lockfile_path)?;
+    let target = HostTarget::current()?;
+    for (cmd, tool) in &manifest.tools {
+        if !selected.is_empty() && !selected.contains(cmd) {
+            continue;
+        }
+        let spec = parse_manifest_tool_source(tool)?;
+        let locked_tool = lockfile.tools.get(cmd).ok_or(BinpmError::FrozenLockfile {
+            path: lockfile_path.clone(),
+        })?;
+        if locked_tool.source != spec.source_without_version()
+            || lock_targets_conflict_with_manifest(
+                &lockfile_path,
+                root,
+                cmd,
+                &spec,
+                Some(tool),
+                locked_tool,
+            )
+        {
+            return Err(BinpmError::StaleLockfile {
+                path: lockfile_path.clone(),
+                cmd: cmd.clone(),
+            });
+        }
+        let record = locked_tool
+            .targets
+            .get(&target.key())
+            .ok_or(BinpmError::FrozenLockfile {
+                path: lockfile_path.clone(),
+            })?;
+        if record.requested_version != spec.version {
+            return Err(BinpmError::StaleLockfile {
+                path: lockfile_path.clone(),
+                cmd: cmd.clone(),
+            });
+        }
+        assert_lock_record_matches_source_and_target(&lockfile_path, cmd, &spec, &target, record)?;
+        assert_lock_matches_manifest_tool(root, cmd, Some(tool), &target, record)?;
+        validate_frozen_update_current_release(
+            &lockfile_path,
+            cmd,
+            &spec,
+            record,
+            client_for_source(&spec)?.as_ref(),
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_frozen_update_current_release(
+    lockfile_path: &Path,
+    cmd: &str,
+    spec: &SourceSpec,
+    record: &PackageRecord,
+    client: &dyn ReleaseClient,
+) -> Result<()> {
+    let release = client.resolve_release(spec)?.release;
+    if release.tag != record.release_tag {
+        return Err(BinpmError::StaleLockfile {
+            path: lockfile_path.to_path_buf(),
+            cmd: cmd.to_string(),
+        });
+    }
+    validate_locked_record_current_asset(lockfile_path, cmd, record, &release.assets)?;
+    validate_locked_record_current_provider_digest(lockfile_path, cmd, record, &release.assets)?;
+    Ok(())
 }
 
 fn validate_selected_manifest_entries(manifest: &Manifest, selected: &[String]) -> Result<()> {
@@ -2255,7 +2586,6 @@ fn install_local_from_lock(
     }
     validate_provider_digest_evidence(&record)?;
     validate_locked_record_artifact(&lockfile_path, cmd, &record, &target, tool)?;
-    validate_locked_record_current_release(&lockfile_path, cmd, &record)?;
     let home = binpm_home()?;
     let cache_paths = CachePaths::new(&home);
     let scope_paths = ScopePaths::local(root.to_path_buf());
@@ -2275,12 +2605,7 @@ fn install_local_from_lock(
     };
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
         let repair_result = (|| {
-            let download_request = locked_record_download_request(&record)?;
-            let bytes = download_asset(
-                &download_request.url,
-                download_request.auth.as_ref(),
-                download_request.accept,
-            )?;
+            let bytes = download_asset(&record.asset_url, None, None)?;
             let actual = format!("{:x}", Sha256::digest(&bytes));
             if actual != record.sha256 {
                 return Err(BinpmError::DigestMismatch {
@@ -2302,9 +2627,9 @@ fn install_local_from_lock(
                 decision: crate::assets::CandidateDecision {
                     asset_name: record.asset_name.clone(),
                     canonical_url: record.asset_url.clone(),
-                    download_url: download_request.url,
-                    download_auth: download_request.auth,
-                    download_accept: download_request.accept,
+                    download_url: record.asset_url.clone(),
+                    download_auth: None,
+                    download_accept: None,
                     kind: crate::assets::classify_artifact(&record.asset_name, false),
                     detected_os: Some(record.target_os),
                     detected_arch: Some(record.target_arch),
@@ -2333,7 +2658,6 @@ fn install_local_from_lock(
         populated_cache_entry = cache_metadata_snapshot.is_none();
     }
 
-    let install_download_request = locked_record_download_request(&record)?;
     let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
     let mut resolved_for_install = ResolvedAsset {
         source: SourceSpec::from_str(
@@ -2348,9 +2672,9 @@ fn install_local_from_lock(
         decision: crate::assets::CandidateDecision {
             asset_name: record.asset_name.clone(),
             canonical_url: record.asset_url.clone(),
-            download_url: install_download_request.url,
-            download_auth: install_download_request.auth,
-            download_accept: install_download_request.accept,
+            download_url: record.asset_url.clone(),
+            download_auth: None,
+            download_accept: None,
             kind: crate::assets::classify_artifact(&record.asset_name, false),
             detected_os: Some(record.target_os),
             detected_arch: Some(record.target_arch),
@@ -2588,69 +2912,6 @@ fn record_matches_current_provider_digest(record: &PackageRecord, assets: &[Rele
         Some(current_digest) => current_digest == record.sha256,
         None => record.checksum_source != ChecksumSource::GitHubDigest,
     }
-}
-
-struct DownloadRequest {
-    url: String,
-    auth: Option<ProviderAuth>,
-    accept: Option<&'static str>,
-}
-
-fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
-    let spec = locked_release_lookup_spec(record)?;
-    let client = client_for_source(&spec)?;
-    let selection = client.resolve_release(&spec)?;
-    let asset = selection
-        .release
-        .assets
-        .iter()
-        .find(|asset| asset.name == record.asset_name)
-        .ok_or_else(|| BinpmError::AssetNotFound {
-            package: record.package_spec.clone(),
-            target: HostTarget {
-                os: record.target_os,
-                arch: record.target_arch,
-                libc: record.target_libc,
-            }
-            .key(),
-        })?;
-    if record.source_provider == crate::contract::SourceProvider::GitLab && asset.source_archive {
-        return Err(BinpmError::AssetNotFound {
-            package: record.package_spec.clone(),
-            target: HostTarget {
-                os: record.target_os,
-                arch: record.target_arch,
-                libc: record.target_libc,
-            }
-            .key(),
-        });
-    }
-    if record.source_provider == crate::contract::SourceProvider::GitLab
-        && !gitlab_https_eligible(asset)
-    {
-        let diagnostic_url = asset
-            .provider_url
-            .as_deref()
-            .unwrap_or(&asset.url)
-            .split(['?', '#'])
-            .next()
-            .unwrap_or(&asset.url)
-            .to_string();
-        return Err(BinpmError::UnsafeUrl {
-            url: diagnostic_url,
-            message: "gitlab asset link is not HTTPS eligible".to_string(),
-        });
-    }
-    Ok(DownloadRequest {
-        url: asset
-            .download_url
-            .as_deref()
-            .or(asset.provider_url.as_deref())
-            .unwrap_or(&asset.url)
-            .to_string(),
-        auth: asset.download_auth.clone(),
-        accept: asset.download_accept,
-    })
 }
 
 fn locked_release_lookup_spec(record: &PackageRecord) -> Result<SourceSpec> {
@@ -3444,6 +3705,28 @@ fn normalize_bin_selection(bin: Option<&str>) -> Result<Option<String>> {
         }
         None => Ok(None),
     }
+}
+
+#[derive(Debug)]
+struct AddDeclaration {
+    cmd: String,
+    bin: Option<String>,
+}
+
+fn parse_additional_declarations(raw: &[String]) -> Result<Vec<AddDeclaration>> {
+    raw.iter()
+        .map(|value| {
+            let (cmd, bin) = value
+                .split_once('=')
+                .ok_or_else(|| BinpmError::InvalidBinSelection { bin: value.clone() })?;
+            validate_command_name(cmd)?;
+            let bin = normalize_bin_selection(Some(bin))?;
+            Ok(AddDeclaration {
+                cmd: cmd.to_string(),
+                bin,
+            })
+        })
+        .collect()
 }
 
 fn update_manifest_tool_source(
@@ -5204,6 +5487,8 @@ fn init(args: InitArgs) -> Result<i32> {
     let project_root = manifest_creation_root()?;
     let manifest_path = project_root.join(MANIFEST_FILE);
 
+    println!("manifest destination: {}", manifest_path.display());
+
     if path_exists_or_unreadable(&manifest_path) && !args.force {
         return Err(BinpmError::ManifestExists {
             path: manifest_path,
@@ -5224,7 +5509,7 @@ fn init(args: InitArgs) -> Result<i32> {
         force = args.force,
         "Wrote minimal binpm manifest"
     );
-    println!("created {}", manifest_path.display());
+    println!("created manifest: {}", manifest_path.display());
     Ok(0)
 }
 
@@ -5582,13 +5867,13 @@ mod tests {
         restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
         selected_asset_display_url, shell_path, shell_quote, snapshot_cache_metadata,
         source_install_scope, target_override_snippet, update_manifest_tool_source,
-        validate_locked_record_artifact, validate_locked_record_current_asset,
-        validate_locked_record_current_provider_digest, validate_package_record_metadata,
-        validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verify_check_output, verify_installed_binary_contents,
-        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_regular,
-        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
-        LocalRemoveState, OutputMode, RuntimeToolState,
+        validate_frozen_update_current_release, validate_locked_record_artifact,
+        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries, verify_check_output,
+        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
+        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
+        InstalledPathSnapshot, LocalRemoveState, OutputMode, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -5597,8 +5882,8 @@ mod tests {
             ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceProvider, SourceSpec,
             TargetArch, TargetLibc, TargetOs, VerificationState,
         },
-        error::BinpmError,
-        release::ReleaseAsset,
+        error::{BinpmError, Result},
+        release::{Release, ReleaseAsset, ReleaseClient, ReleaseSelection},
         storage::{
             managed_installed_path, read_cache_records, require_regular_managed_file,
             validate_installed_binary_path, write_cache_record, write_lockfile, write_manifest,
@@ -5607,6 +5892,53 @@ mod tests {
             LOCKFILE_FILE, MANIFEST_FILE,
         },
     };
+
+    struct StaticReleaseClient {
+        tag: &'static str,
+        assets: Vec<ReleaseAsset>,
+    }
+
+    impl ReleaseClient for StaticReleaseClient {
+        fn list_releases(&self, _source: &SourceSpec) -> Result<Vec<Release>> {
+            Ok(vec![Release {
+                tag: self.tag.to_string(),
+                assets: self.assets.clone(),
+                stable: true,
+                released_at: None,
+                stability_reason: None,
+            }])
+        }
+
+        fn resolve_release(&self, _source: &SourceSpec) -> Result<ReleaseSelection> {
+            Ok(ReleaseSelection {
+                release: Release {
+                    tag: self.tag.to_string(),
+                    assets: self.assets.clone(),
+                    stable: true,
+                    released_at: None,
+                    stability_reason: None,
+                },
+                decision: "test release".to_string(),
+            })
+        }
+    }
+
+    fn release_asset_from_record(record: &PackageRecord) -> ReleaseAsset {
+        ReleaseAsset {
+            name: record.asset_name.clone(),
+            url: record.asset_url.clone(),
+            provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: record
+                .provider_digest_sha256
+                .as_ref()
+                .map(|sha256| format!("sha256:{sha256}")),
+            source_archive: false,
+            final_url_https: None,
+        }
+    }
 
     #[test]
     fn source_installs_default_to_global_scope() {
@@ -8505,6 +8837,157 @@ mod tests {
             &assets,
         )
         .expect_err("changed locked asset URL rejected");
+
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
+    }
+
+    #[test]
+    fn frozen_update_rejects_versionless_lock_when_latest_changed() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source spec");
+        let mut record = package_record();
+        record.package_spec = "github:owner/tool".to_string();
+        record.requested_version = None;
+        record.release_tag = "1.0.0".to_string();
+        let client = StaticReleaseClient {
+            tag: "1.1.0",
+            assets: vec![],
+        };
+
+        let error = validate_frozen_update_current_release(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &record,
+            &client,
+        )
+        .expect_err("latest moved");
+
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
+    }
+
+    #[test]
+    fn frozen_update_accepts_versionless_lock_when_latest_matches() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source spec");
+        let mut record = package_record();
+        record.package_spec = "github:owner/tool".to_string();
+        record.requested_version = None;
+        record.release_tag = "1.0.0".to_string();
+        let client = StaticReleaseClient {
+            tag: "1.0.0",
+            assets: vec![release_asset_from_record(&record)],
+        };
+
+        validate_frozen_update_current_release(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &record,
+            &client,
+        )
+        .expect("latest still matches lock");
+    }
+
+    #[test]
+    fn frozen_update_rejects_versionless_lock_when_current_asset_url_changed() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source spec");
+        let mut record = package_record();
+        record.package_spec = "github:owner/tool".to_string();
+        record.requested_version = None;
+        record.release_tag = "1.0.0".to_string();
+        let mut asset = release_asset_from_record(&record);
+        asset.url =
+            "https://github.com/owner/tool/releases/download/1.0.0/new-tool-linux".to_string();
+        let client = StaticReleaseClient {
+            tag: "1.0.0",
+            assets: vec![asset],
+        };
+
+        let error = validate_frozen_update_current_release(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &record,
+            &client,
+        )
+        .expect_err("changed asset URL is stale");
+
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
+    }
+
+    #[test]
+    fn frozen_update_rejects_versionless_lock_when_current_provider_digest_changed() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source spec");
+        let mut record = package_record();
+        mark_github_verified(&mut record);
+        record.package_spec = "github:owner/tool".to_string();
+        record.requested_version = None;
+        record.release_tag = "1.0.0".to_string();
+        let mut asset = release_asset_from_record(&record);
+        asset.digest = Some(
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111".to_string(),
+        );
+        let client = StaticReleaseClient {
+            tag: "1.0.0",
+            assets: vec![asset],
+        };
+
+        let error = validate_frozen_update_current_release(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &record,
+            &client,
+        )
+        .expect_err("changed provider digest is stale");
+
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
+    }
+
+    #[test]
+    fn frozen_update_accepts_versioned_lock_when_release_asset_matches() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let record = package_record();
+        let client = StaticReleaseClient {
+            tag: "1.0.0",
+            assets: vec![release_asset_from_record(&record)],
+        };
+
+        validate_frozen_update_current_release(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &record,
+            &client,
+        )
+        .expect("versioned manifest pins still match release metadata");
+    }
+
+    #[test]
+    fn frozen_update_rejects_versioned_lock_when_current_asset_url_changed() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let record = package_record();
+        let mut asset = release_asset_from_record(&record);
+        asset.url =
+            "https://github.com/owner/tool/releases/download/1.0.0/new-tool-linux".to_string();
+        let client = StaticReleaseClient {
+            tag: "1.0.0",
+            assets: vec![asset],
+        };
+
+        let error = validate_frozen_update_current_release(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &record,
+            &client,
+        )
+        .expect_err("changed exact-version asset URL is stale");
 
         assert!(matches!(error, BinpmError::StaleLockfile { .. }));
     }

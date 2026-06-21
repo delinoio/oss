@@ -61,6 +61,61 @@ fn bash_quote_path(path: &Path) -> String {
     posix_single_quote(&bash_path(path))
 }
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+fn write_locked_tool_project(project: &Path, sha256: &str) {
+    fs::create_dir_all(project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        format!(
+            r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+
+[tools.tool.targets.linux-x86_64-gnu]
+package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux"
+installed_path = ".binpm/bin/tool"
+sha256 = "{sha256}"
+checksum_source = "github-digest"
+provider_digest_sha256 = "{sha256}"
+signature_available = false
+signature_verified = false
+"#
+        ),
+    )
+    .expect("write lockfile");
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+fn write_cache_asset(home: &Path, sha256: &str, bytes: &[u8]) {
+    let entry = home.join("cache").join("sha256").join(sha256);
+    fs::create_dir_all(&entry).expect("create cache entry");
+    fs::write(entry.join("asset"), bytes).expect("write cache asset");
+}
+
 #[test]
 fn help_includes_initial_command_surface() {
     let mut command = binpm();
@@ -108,6 +163,16 @@ fn add_and_x_help_include_explicit_bin_selection() {
     add.args(["add", "--help"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("--bin <BIN>"))
+        .stdout(predicate::str::contains("--also <CMD=BIN>"))
+        .stdout(predicate::str::contains("--manifest-only"));
+
+    let mut install = binpm();
+    install
+        .args(["install", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--as <CMD>"))
         .stdout(predicate::str::contains("--bin <BIN>"));
 
     let mut exec = binpm();
@@ -115,6 +180,94 @@ fn add_and_x_help_include_explicit_bin_selection() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--bin <BIN>"));
+}
+
+#[test]
+fn add_manifest_only_writes_only_manifest_and_supports_additional_commands() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "foo",
+            "github:owner/tools@v1.2.3",
+            "--bin",
+            "bin/foo",
+            "--also",
+            "bar=bin/bar",
+            "--manifest-only",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("declared foo, bar"))
+        .stdout(predicate::str::contains("manifest-only: did not update"))
+        .stdout(predicate::str::contains("next: run `binpm install`"));
+
+    let manifest = fs::read_to_string(temp_dir.path().join("binpm.toml")).expect("read manifest");
+    assert_eq!(
+        manifest,
+        r#"version = 1
+
+[tools.bar]
+source = "github:owner/tools"
+version = "v1.2.3"
+bin = "bin/bar"
+
+[tools.foo]
+source = "github:owner/tools"
+version = "v1.2.3"
+bin = "bin/foo"
+"#
+    );
+    assert!(!temp_dir.path().join("binpm.lock").exists());
+    assert!(!temp_dir.path().join(".binpm").exists());
+}
+
+#[test]
+fn add_rejects_duplicate_additional_command_declarations() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "foo",
+            "github:owner/tools@v1.2.3",
+            "--bin",
+            "bin/foo",
+            "--also",
+            "foo=bin/other",
+            "--manifest-only",
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Duplicate local command declaration `foo`",
+        ));
+
+    assert!(!temp_dir.path().join("binpm.toml").exists());
+    assert!(!temp_dir.path().join("binpm.lock").exists());
+    assert!(!temp_dir.path().join(".binpm").exists());
+}
+
+#[test]
+fn package_shortcut_without_command_keeps_source_explicit() {
+    let mut command = binpm();
+
+    command
+        .args(["x", "--package", "not-a-source"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Invalid source spec"));
 }
 
 #[test]
@@ -143,6 +296,7 @@ fn execution_aliases_accept_package_and_forwarded_flags() {
 #[test]
 fn init_writes_minimal_manifest() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let manifest_path = temp_dir.path().join("binpm.toml");
     let mut command = binpm();
 
     command
@@ -150,10 +304,16 @@ fn init_writes_minimal_manifest() {
         .arg("init")
         .assert()
         .success()
-        .stdout(predicate::str::contains("created"));
+        .stdout(predicate::str::contains(format!(
+            "manifest destination: {}",
+            manifest_path.display()
+        )))
+        .stdout(predicate::str::contains(format!(
+            "created manifest: {}",
+            manifest_path.display()
+        )));
 
-    let manifest =
-        std::fs::read_to_string(temp_dir.path().join("binpm.toml")).expect("read manifest");
+    let manifest = std::fs::read_to_string(manifest_path).expect("read manifest");
     assert_eq!(manifest, "version = 1\n");
 }
 
@@ -163,6 +323,7 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
     fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
     let nested_dir = temp_dir.path().join("packages").join("cli");
     fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let manifest_path = temp_dir.path().join("binpm.toml");
     let mut command = binpm();
 
     command
@@ -170,9 +331,16 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
         .arg("init")
         .assert()
         .success()
-        .stdout(predicate::str::contains("created"));
+        .stdout(predicate::str::contains(format!(
+            "manifest destination: {}",
+            manifest_path.display()
+        )))
+        .stdout(predicate::str::contains(format!(
+            "created manifest: {}",
+            manifest_path.display()
+        )));
 
-    let manifest = fs::read_to_string(temp_dir.path().join("binpm.toml")).expect("read manifest");
+    let manifest = fs::read_to_string(manifest_path).expect("read manifest");
     assert_eq!(manifest, "version = 1\n");
     assert!(!nested_dir.join("binpm.toml").exists());
 }
@@ -180,7 +348,8 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
 #[test]
 fn init_from_nested_directory_detects_existing_manifest_without_git() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let manifest_path = temp_dir.path().join("binpm.toml");
+    fs::write(&manifest_path, "version = 1\n").expect("write manifest");
     let nested_dir = temp_dir.path().join("packages").join("cli");
     fs::create_dir_all(&nested_dir).expect("create nested dir");
     let mut command = binpm();
@@ -191,6 +360,11 @@ fn init_from_nested_directory_detects_existing_manifest_without_git() {
         .assert()
         .failure()
         .code(2)
+        .stdout(predicate::str::contains(format!(
+            "manifest destination: {}",
+            manifest_path.display()
+        )))
+        .stdout(predicate::str::contains("created manifest:").not())
         .stderr(predicate::str::contains(
             "Refusing to overwrite existing manifest",
         ));
@@ -202,9 +376,10 @@ fn init_from_nested_directory_detects_existing_manifest_without_git() {
 #[test]
 fn init_treats_broken_manifest_symlink_as_existing_manifest() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let manifest_path = temp_dir.path().join("binpm.toml");
     std::os::unix::fs::symlink(
         temp_dir.path().join("missing-manifest-target"),
-        temp_dir.path().join("binpm.toml"),
+        &manifest_path,
     )
     .expect("create broken manifest symlink");
     let nested_dir = temp_dir.path().join("packages").join("cli");
@@ -217,6 +392,11 @@ fn init_treats_broken_manifest_symlink_as_existing_manifest() {
         .assert()
         .failure()
         .code(2)
+        .stdout(predicate::str::contains(format!(
+            "manifest destination: {}",
+            manifest_path.display()
+        )))
+        .stdout(predicate::str::contains("created manifest:").not())
         .stderr(predicate::str::contains(
             "Refusing to overwrite existing manifest",
         ));
@@ -470,6 +650,67 @@ fn cache_key_from_nested_directory_uses_manifest_ancestor_lockfile_without_git()
 }
 
 #[test]
+fn cache_key_warns_when_lockfile_is_missing_without_mutating_state() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let empty_digest = format!("{:x}", Sha256::digest([]));
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .args(["cache", "key"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(empty_digest))
+        .stderr(predicate::str::contains(
+            "cache key uses the empty lockfile digest",
+        ));
+
+    assert!(!temp_dir.path().join("binpm.lock").exists());
+}
+
+#[test]
+fn cache_key_json_reports_lockfile_status() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .args(["cache", "key", "--json"])
+        .output()
+        .expect("cache key --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse cache key json");
+    assert_eq!(payload["command"], "cache key");
+    assert_eq!(payload["lockfile"], "missing");
+    assert_eq!(payload["read_only"], true);
+    assert!(payload["cache_key"]
+        .as_str()
+        .expect("cache key string")
+        .starts_with("binpm-v1-"));
+}
+
+#[test]
+fn cache_clean_output_states_removed_and_preserved_boundaries() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let entry = home.join("cache").join("sha256").join("abc");
+    fs::create_dir_all(&entry).expect("create cache entry");
+    fs::write(entry.join("asset"), b"bytes").expect("write cache asset");
+
+    binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["cache", "clean"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed cache entries: 1"))
+        .stdout(predicate::str::contains("preserved:"))
+        .stdout(predicate::str::contains("/cache/refs"))
+        .stdout(predicate::str::contains("/packages"))
+        .stdout(predicate::str::contains("/bin"));
+}
+
+#[test]
 fn doctor_from_nested_directory_reports_git_root_state() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -512,6 +753,16 @@ fn doctor_json_reports_path_states() {
         payload["global_bin"],
         home.join("bin").display().to_string()
     );
+    assert_eq!(
+        payload["local_bin"],
+        temp_dir
+            .path()
+            .join(".binpm")
+            .join("bin")
+            .display()
+            .to_string()
+    );
+    assert_eq!(payload["local_bin_on_path"], false);
     assert_eq!(payload["global_bin_on_path"], false);
 }
 
@@ -903,6 +1154,150 @@ fn install_rejects_empty_source_version() {
         .failure()
         .code(2)
         .stderr(predicate::str::contains("source version cannot be empty"));
+}
+
+#[test]
+fn frozen_local_update_allows_empty_manifest_without_lockfile() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--frozen-lockfile"])
+        .assert()
+        .success();
+
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn ci_local_update_allows_empty_manifest_without_lockfile() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("CI", "true")
+        .args(["update", "--local"])
+        .assert()
+        .success();
+
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn frozen_local_update_rejects_declared_tool_without_lockfile() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--frozen-lockfile"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Frozen lockfile"));
+
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn frozen_local_install_restores_missing_runtime_from_verified_cache() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'restored install\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+    let lock_before = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("installed tool"));
+
+    assert!(project.join(".binpm").join("bin").join("tool").exists());
+    assert!(project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
+    assert_eq!(
+        fs::read_to_string(project.join("binpm.lock")).expect("read lockfile"),
+        lock_before
+    );
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn frozen_x_restores_missing_runtime_from_verified_cache() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'tool args:%s\\n' \"$1\"\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+    let lock_before = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["x", "--frozen-lockfile", "tool", "--probe"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tool args:--probe"));
+
+    assert!(project.join(".binpm").join("bin").join("tool").exists());
+    assert!(project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
+    assert_eq!(
+        fs::read_to_string(project.join("binpm.lock")).expect("read lockfile"),
+        lock_before
+    );
 }
 
 #[test]

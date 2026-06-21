@@ -16,6 +16,7 @@ pub enum NodeupCommand {
     Override,
     Which,
     Run,
+    Shim,
     SelfCmd,
     Completions,
 }
@@ -31,6 +32,7 @@ impl NodeupCommand {
             Self::Override => "override",
             Self::Which => "which",
             Self::Run => "run",
+            Self::Shim => "shim",
             Self::SelfCmd => "self",
             Self::Completions => "completions",
         }
@@ -109,6 +111,20 @@ impl NodeupSelfCommand {
             Self::Update => "update",
             Self::Uninstall => "uninstall",
             Self::UpgradeData => "upgrade-data",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum NodeupShimCommand {
+    Setup,
+}
+
+impl NodeupShimCommand {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Setup => "setup",
         }
     }
 }
