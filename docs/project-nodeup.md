@@ -22,7 +22,8 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Windows copied shims must use adjacent Nodeup ownership markers so stale Nodeup copies can be repaired without replacing unrelated executables.
 - Linked runtime lifecycle commands must preserve external runtime directories: `toolchain link` registers settings records and `toolchain unlink` removes those records only.
 - Linked runtime resolution must validate that the selected `node` executable is runnable, including Unix executable-bit checks and Windows `node.exe` naming behavior.
-- `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic.
+- `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic: supported values are exact `yarn@<semver>` or `pnpm@<semver>` strings only, and invalid values must report the failed part plus JSON diagnostics.
+- `yarn` and `pnpm` npm-exec delegation must be visible in human output, JSON output, and planning logs, including whether the package spec is pinned or an unpinned fallback.
 - `nodeup self uninstall` cleanup boundaries are data/cache/config only; binary, shims, and shell profile/PATH cleanup must remain manual and visible in human and JSON output.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.

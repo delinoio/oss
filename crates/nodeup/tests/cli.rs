@@ -5504,7 +5504,10 @@ fn which_yarn_uses_runtime_npm_path_in_npm_exec_mode() {
 
     let expected = fs::canonicalize(runtime_dir.join("bin").join("npm")).unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.trim(), expected.to_string_lossy());
+    assert!(stdout.contains(expected.to_string_lossy().as_ref()));
+    assert!(stdout.contains("yarn will run via npm exec"));
+    assert!(stdout.contains("@yarnpkg/cli-dist@4.13.0"));
+    assert!(stdout.contains("pinned"));
 }
 
 #[test]
@@ -5540,6 +5543,171 @@ fn run_package_manager_mismatch_returns_conflict() {
         .stderr(predicates::str::contains(
             "does not match packageManager 'pnpm@10.32.1'",
         ));
+}
+
+#[test]
+#[serial]
+fn package_manager_range_json_error_identifies_failed_version_part() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho run-node\n"),
+                ("npm", "#!/bin/sh\n"),
+            ],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-invalid-package-manager-range");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"invalid-range","packageManager":"pnpm@10.x"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args([
+            "--output",
+            "json",
+            "run",
+            "--install",
+            "22.1.0",
+            "pnpm",
+            "--version",
+        ])
+        .output()
+        .expect("invalid packageManager range");
+    assert!(!output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert_eq!(
+        payload["diagnostics"]["diagnostic"],
+        "package-manager-invalid"
+    );
+    assert_eq!(payload["diagnostics"]["failed_part"], "version");
+    assert_eq!(payload["diagnostics"]["problem"], "non-exact-semver");
+    assert_eq!(payload["diagnostics"]["manager"], "pnpm");
+    assert_eq!(payload["diagnostics"]["version"], "10.x");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("pnpm@<major>.<minor>.<patch>"));
+}
+
+#[test]
+#[serial]
+fn unsupported_package_manager_json_error_identifies_manager_part() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho run-node\n"),
+                ("npm", "#!/bin/sh\n"),
+            ],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-invalid-package-manager-npm");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"invalid-npm","packageManager":"npm@10.0.0"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args([
+            "--output",
+            "json",
+            "run",
+            "--install",
+            "22.1.0",
+            "yarn",
+            "--version",
+        ])
+        .output()
+        .expect("unsupported packageManager manager");
+    assert!(!output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["diagnostics"]["failed_part"], "manager");
+    assert_eq!(payload["diagnostics"]["problem"], "unsupported-manager");
+    assert_eq!(payload["diagnostics"]["manager"], "npm");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported packageManager manager 'npm'"));
+}
+
+#[test]
+#[serial]
+fn non_string_package_manager_json_error_identifies_expected_shape() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho run-node\n"),
+                ("npm", "#!/bin/sh\n"),
+            ],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-invalid-package-manager-type");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"invalid-type","packageManager":10}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args([
+            "--output",
+            "json",
+            "run",
+            "--install",
+            "22.1.0",
+            "pnpm",
+            "--version",
+        ])
+        .output()
+        .expect("non-string packageManager");
+    assert!(!output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["diagnostics"]["failed_part"], "value");
+    assert_eq!(payload["diagnostics"]["problem"], "non-string");
+    assert_eq!(payload["diagnostics"]["received_type"], "number");
+    assert_eq!(
+        payload["diagnostics"]["expected"],
+        "<manager>@<exact-semver>"
+    );
 }
 
 #[test]
@@ -5609,6 +5777,9 @@ fn run_yarn_falls_back_to_npm_exec_when_package_manager_field_is_missing_and_bin
         .success()
         .stdout(predicates::str::contains(
             "npm-argv:exec --yes --package @yarnpkg/cli-dist -- yarn --version",
+        ))
+        .stderr(predicates::str::contains(
+            "unpinned fallback; add exact packageManager",
         ));
 }
 
@@ -5654,5 +5825,65 @@ fn which_pnpm_uses_runtime_npm_path_in_npm_exec_mode() {
 
     let expected = fs::canonicalize(runtime_dir.join("bin").join("npm")).unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.trim(), expected.to_string_lossy());
+    assert!(stdout.contains(expected.to_string_lossy().as_ref()));
+    assert!(stdout.contains("pnpm will run via npm exec"));
+    assert!(stdout.contains("pnpm@10.32.1"));
+    assert!(stdout.contains("pinned"));
+}
+
+#[test]
+#[serial]
+fn which_pnpm_json_exposes_npm_exec_planning_fields() {
+    let env = TestEnv::new();
+    let runtime_dir = env
+        .root
+        .join("linked-runtime-which-pnpm-json-package-manager");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+    fs::write(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n").unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-pnpm-json-package-manager",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-pnpm-json-package-manager"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-which-pnpm-json-package-manager");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"which-pnpm-json","packageManager":"pnpm@10.32.1"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args(["--output", "json", "which", "pnpm"])
+        .output()
+        .expect("which pnpm json with packageManager");
+    assert!(output.status.success());
+
+    let expected = fs::canonicalize(runtime_dir.join("bin").join("npm")).unwrap();
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["requested_command"], "pnpm");
+    assert_eq!(
+        payload["executable_path"].as_str().unwrap(),
+        expected.to_string_lossy()
+    );
+    assert_eq!(payload["mode"], "npm-exec");
+    assert_eq!(payload["reason"], "package-manager-pinned");
+    assert_eq!(payload["package_spec"], "pnpm@10.32.1");
+    assert_eq!(payload["package_spec_pinned"], true);
+    assert_eq!(payload["planning"]["mode"], "npm-exec");
+    assert_eq!(payload["planning"]["package_spec"], "pnpm@10.32.1");
 }
