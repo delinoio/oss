@@ -50,6 +50,7 @@
 
 ## Logging
 - Use structured `tracing` logs for install, resolve, and dispatch flows.
+- Default log filters must remain `nodeup=warn` for managed alias dispatch, `nodeup=warn` for human management commands, and `nodeup=off` for JSON management commands unless `RUST_LOG` explicitly overrides them.
 - Include resolution source, requested channel, selected version, and result state.
 - Delegated command planning logs must include `mode=direct|npm-exec`, `package_spec`, `package_json_path`, and `reason`.
 - Completion generation logs must include shell, command scope, and `generated|failed` outcome state.

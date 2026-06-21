@@ -93,7 +93,7 @@ Logs use `NODEUP_LOG_COLOR=always|auto|never`. The default is colored logs unles
 Default filters depend on context:
 
 - Managed alias dispatch: `nodeup=warn`
-- Human management commands: `nodeup=info`
+- Human management commands: `nodeup=warn`
 - JSON management commands: `nodeup=off`
 
 Set `RUST_LOG` to override logging:
