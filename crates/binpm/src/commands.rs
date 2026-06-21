@@ -441,21 +441,19 @@ fn remove(args: RemoveArgs) -> Result<i32> {
 }
 
 fn info_cmd(args: InfoArgs) -> Result<i32> {
-    match parse_source_argument(&args.cmd_or_source)? {
-        Some(spec) => {
-            debug!(
-                command = "info",
-                source_provider = spec.provider.as_str(),
-                source_host = spec.host,
-                source_path = spec.path,
-                source_version = spec.version.as_deref().unwrap_or(""),
-                "Parsed info argument as source"
-            );
-            log_read_only_scope("info", args.scope.scope());
-            return print_source_info(&spec);
-        }
-        None => {}
+    if let Some(spec) = parse_source_argument(&args.cmd_or_source)? {
+        debug!(
+            command = "info",
+            source_provider = spec.provider.as_str(),
+            source_host = spec.host,
+            source_path = spec.path,
+            source_version = spec.version.as_deref().unwrap_or(""),
+            "Parsed info argument as source"
+        );
+        log_read_only_scope("info", args.scope.scope());
+        return print_source_info(&spec);
     }
+
     log_read_only_scope("info", args.scope.scope());
     let scope = select_scope(args.scope.scope())?;
     let paths = match scope {
