@@ -8,6 +8,8 @@ This page is published at https://nodeup.delino.io/installation.
 
 Use [binpm](https://binpm.delino.io) to install Nodeup from the first-party `delinoio/oss` release asset for a pinned Nodeup release tag:
 
+macOS and Linux:
+
 ```bash
 NODEUP_BINPM_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/nodeup-binpm"
 mkdir -p "$NODEUP_BINPM_HOME"
@@ -17,7 +19,18 @@ binpm add nodeup github:delinoio/oss@nodeup@v<semver>
 binpm env --shell <shell>
 ```
 
-Replace `<semver>` with the Nodeup release version to install. Nodeup release tags use `nodeup@v<semver>`. The `NODEUP_BINPM_HOME` directory keeps binpm's local manifest and `nodeup` binary out of unrelated project worktrees. Replace `<shell>` with `bash`, `zsh`, `fish`, or `powershell`, then apply the printed environment command before verifying the install.
+Windows PowerShell:
+
+```powershell
+$env:NODEUP_BINPM_HOME = Join-Path ${env:LOCALAPPDATA} "nodeup-binpm"
+New-Item -ItemType Directory -Force -Path $env:NODEUP_BINPM_HOME | Out-Null
+Set-Location $env:NODEUP_BINPM_HOME
+binpm init
+binpm add nodeup github:delinoio/oss@nodeup@v<semver>
+binpm env --shell powershell
+```
+
+Replace `<semver>` with the Nodeup release version to install. Nodeup release tags use `nodeup@v<semver>`. The `NODEUP_BINPM_HOME` directory keeps binpm's local manifest and `nodeup` binary out of unrelated project worktrees. In POSIX shells, replace `<shell>` with `bash`, `zsh`, or `fish`. Apply the printed environment command before verifying the install.
 
 ## Homebrew
 
