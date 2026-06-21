@@ -35,6 +35,12 @@ pub enum BinpmError {
     ReleaseHttpClient(#[source] reqwest::Error),
     #[error("Failed to look up release metadata: {0}")]
     ReleaseLookup(#[source] reqwest::Error),
+    #[error("Failed to stream release asset `{url}`: {source}")]
+    DownloadStream {
+        url: String,
+        #[source]
+        source: io::Error,
+    },
     #[error("Release pagination loop detected at `{url}`.")]
     ReleasePaginationLoop { url: String },
     #[error("Failed to resolve release for `{package}`: {message}")]
@@ -188,6 +194,22 @@ pub enum BinpmError {
 }
 
 impl BinpmError {
+    pub fn suggest_verbose_diagnostics(&self) -> bool {
+        matches!(
+            self,
+            Self::ReleaseLookup(_)
+                | Self::DownloadStream { .. }
+                | Self::ReleaseNotFound { .. }
+                | Self::AssetNotFound { .. }
+                | Self::ArchiveBinaryNotFound { .. }
+                | Self::AmbiguousArchiveBinaries { .. }
+                | Self::ArchiveMemberNotFound { .. }
+                | Self::VerificationRequired { .. }
+                | Self::DigestMismatch { .. }
+                | Self::ProviderDigestMismatch { .. }
+        )
+    }
+
     pub fn exit_code(&self) -> i32 {
         match self {
             Self::NotImplemented { .. } => 2,
@@ -212,6 +234,7 @@ impl BinpmError {
             | Self::InvalidGlobalHome { .. }
             | Self::ReleaseHttpClient(_)
             | Self::ReleaseLookup(_)
+            | Self::DownloadStream { .. }
             | Self::ReleasePaginationLoop { .. } => 1,
             Self::FrozenLockfile { .. }
             | Self::StaleLockfile { .. }

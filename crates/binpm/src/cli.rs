@@ -11,6 +11,14 @@ use crate::contract::Scope;
     about = "Install and run native command-line tools from release assets"
 )]
 pub struct Cli {
+    /// Enable info-level binpm tracing diagnostics.
+    #[arg(short = 'v', long, global = true, conflicts_with = "debug")]
+    pub verbose: bool,
+
+    /// Enable debug-level binpm tracing diagnostics.
+    #[arg(long, global = true)]
+    pub debug: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -23,6 +31,23 @@ impl Cli {
     pub fn command_for_tests() -> clap::Command {
         <Self as CommandFactory>::command()
     }
+
+    pub fn log_verbosity(&self) -> LogVerbosity {
+        if self.debug {
+            LogVerbosity::Debug
+        } else if self.verbose {
+            LogVerbosity::Verbose
+        } else {
+            LogVerbosity::Default
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogVerbosity {
+    Default,
+    Verbose,
+    Debug,
 }
 
 #[derive(Debug, Subcommand)]

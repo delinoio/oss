@@ -3,12 +3,14 @@
 `binpm` is a Rust CLI for managing native command-line tools from release
 assets without requiring Node.js or language-specific package managers.
 
-This crate currently contains the runtime skeleton: stable command parsing,
-typed contract foundations, structured tracing setup, centralized errors, and
-minimal safe implementations for bootstrapping and diagnostics. Release lookup,
-asset selection, download, cache population, extraction, install, update, and
-execution flows are intentionally gated behind explicit not-yet-implemented
-errors until their storage and verification behavior is implemented.
+This crate contains the binpm runtime: stable command parsing, typed contract
+foundations, structured tracing setup, centralized errors, release lookup, asset
+selection, download/cache/install flows, local tooling records, and command
+execution.
+
+Use `-v`/`--verbose` for info-level tracing diagnostics and `--debug` for
+debug-level tracing diagnostics. `BINPM_LOG` remains supported when no CLI
+verbosity flag is provided; CLI verbosity flags take precedence.
 
 Canonical contracts live in:
 

@@ -1,14 +1,16 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
-    io::{Cursor, ErrorKind, Read},
+    io::{Cursor, ErrorKind, IsTerminal, Read, Write},
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
     str::FromStr,
+    thread,
+    time::{Duration, Instant},
 };
 
 use sha2::{Digest, Sha256};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 #[cfg(test)]
 use crate::assets::ArtifactKind;
@@ -39,6 +41,12 @@ use crate::{
         ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
+
+const DOWNLOAD_RETRY_ATTEMPTS: usize = 3;
+const DOWNLOAD_RETRY_BASE_DELAY: Duration = Duration::from_millis(200);
+const DOWNLOAD_PROGRESS_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
+const DOWNLOAD_PROGRESS_STEP_BYTES: u64 = 5 * 1024 * 1024;
+const DOWNLOAD_PROGRESS_INTERVAL: Duration = Duration::from_secs(2);
 
 pub fn run(cli: Cli) -> Result<i32> {
     match cli.command {
@@ -2993,11 +3001,15 @@ fn restore_executable_symlink(path: &Path, target: &Path) -> Result<()> {
 
 fn download_asset(url: &str) -> Result<Vec<u8>> {
     validate_download_url(url)?;
+    let sanitized_url = sanitize_download_diagnostic_url(url);
+    let asset_name = download_asset_name(&sanitized_url);
     info!(
-        asset_url = url.split(['?', '#']).next().unwrap_or(url),
-        "Downloading release asset"
+        asset_url = %sanitized_url,
+        asset_name = %asset_name,
+        retry_attempt = 0usize,
+        "Starting release asset download"
     );
-    let response = reqwest::blocking::Client::builder()
+    let client = reqwest::blocking::Client::builder()
         .user_agent(concat!("binpm/", env!("CARGO_PKG_VERSION")))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if let Err(error) = validate_download_url(attempt.url().as_str()) {
@@ -3009,17 +3021,204 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
             }
         }))
         .build()
-        .map_err(BinpmError::ReleaseHttpClient)?
+        .map_err(BinpmError::ReleaseHttpClient)?;
+
+    let mut last_error = None;
+    for attempt in 1..=DOWNLOAD_RETRY_ATTEMPTS {
+        match download_asset_attempt(&client, url, attempt, &sanitized_url, &asset_name) {
+            Ok(bytes) => return Ok(bytes),
+            Err(error)
+                if attempt < DOWNLOAD_RETRY_ATTEMPTS && is_retryable_download_error(&error) =>
+            {
+                let delay = download_retry_delay(attempt);
+                warn!(
+                    asset_url = %sanitized_url,
+                    asset_name = %asset_name,
+                    retry_attempt = attempt,
+                    retry_delay_ms = delay.as_millis(),
+                    error = %error,
+                    "Retrying release asset download"
+                );
+                eprintln!(
+                    "binpm: retrying download of {asset_name} after a transient failure (attempt \
+                     {}/{})",
+                    attempt + 1,
+                    DOWNLOAD_RETRY_ATTEMPTS
+                );
+                thread::sleep(delay);
+                last_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_error.expect("download retry loop always returns before exhaustion"))
+}
+
+fn download_asset_attempt(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    attempt: usize,
+    sanitized_url: &str,
+    asset_name: &str,
+) -> Result<Vec<u8>> {
+    let mut response = client
         .get(url)
         .send()
-        .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?
-        .error_for_status()
         .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
     validate_download_url(response.url().as_str())?;
-    response
-        .bytes()
-        .map(|bytes| bytes.to_vec())
-        .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))
+    let final_url = sanitize_download_diagnostic_url(response.url().as_str());
+    let status = response.status();
+    if !status.is_success() {
+        let error = response
+            .error_for_status()
+            .expect_err("non-success status must produce an error")
+            .without_url();
+        if is_retryable_status(status) {
+            return Err(BinpmError::ReleaseLookup(error));
+        }
+        return Err(BinpmError::ReleaseLookup(error));
+    }
+
+    let total_bytes = response.content_length();
+    let show_progress = download_progress_enabled(total_bytes);
+    if show_progress {
+        eprintln!(
+            "binpm: downloading {asset_name}{}",
+            total_bytes
+                .map(|bytes| format!(" ({})", human_bytes(bytes)))
+                .unwrap_or_default()
+        );
+    }
+
+    let mut bytes =
+        Vec::with_capacity(total_bytes.unwrap_or_default().min(usize::MAX as u64) as usize);
+    let mut buffer = [0u8; 64 * 1024];
+    let mut downloaded = 0u64;
+    let mut next_progress_at = DOWNLOAD_PROGRESS_STEP_BYTES;
+    let mut last_progress_at = Instant::now();
+
+    loop {
+        let read = response
+            .read(&mut buffer)
+            .map_err(|source| BinpmError::DownloadStream {
+                url: final_url.clone(),
+                source,
+            })?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+        downloaded += read as u64;
+
+        if show_progress
+            && (downloaded >= next_progress_at
+                || last_progress_at.elapsed() >= DOWNLOAD_PROGRESS_INTERVAL)
+        {
+            eprintln!(
+                "binpm: downloading {asset_name} {}",
+                format_download_progress(downloaded, total_bytes)
+            );
+            let _ = std::io::stderr().flush();
+            next_progress_at =
+                ((downloaded / DOWNLOAD_PROGRESS_STEP_BYTES) + 1) * DOWNLOAD_PROGRESS_STEP_BYTES;
+            last_progress_at = Instant::now();
+        }
+    }
+
+    if show_progress {
+        eprintln!(
+            "binpm: downloaded {asset_name} {}",
+            format_download_progress(downloaded, total_bytes)
+        );
+    }
+    info!(
+        asset_url = %sanitized_url,
+        final_url = %final_url,
+        asset_name = %asset_name,
+        cache_bytes = downloaded,
+        retry_attempt = attempt.saturating_sub(1),
+        outcome = "success",
+        "Downloaded release asset"
+    );
+    Ok(bytes)
+}
+
+fn is_retryable_download_error(error: &BinpmError) -> bool {
+    match error {
+        BinpmError::ReleaseLookup(source) => source
+            .status()
+            .map(is_retryable_status)
+            .unwrap_or_else(|| source.is_connect() || source.is_timeout() || source.is_body()),
+        BinpmError::DownloadStream { .. } => true,
+        _ => false,
+    }
+}
+
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+fn download_retry_delay(attempt: usize) -> Duration {
+    DOWNLOAD_RETRY_BASE_DELAY * attempt as u32
+}
+
+fn download_progress_enabled(total_bytes: Option<u64>) -> bool {
+    let ci = env::var("CI")
+        .map(|value| {
+            let value = value.trim().to_ascii_lowercase();
+            !(value.is_empty() || value == "0" || value == "false")
+        })
+        .unwrap_or(false);
+    !ci && std::io::stderr().is_terminal()
+        && total_bytes
+            .map(|bytes| bytes >= DOWNLOAD_PROGRESS_THRESHOLD_BYTES)
+            .unwrap_or(true)
+}
+
+fn format_download_progress(downloaded: u64, total: Option<u64>) -> String {
+    match total {
+        Some(total) => format!("{}/{}", human_bytes(downloaded), human_bytes(total)),
+        None => human_bytes(downloaded),
+    }
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB"];
+    let mut value = bytes as f64;
+    let mut unit = 0usize;
+    while value >= 1024.0 && unit + 1 < UNITS.len() {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} {}", UNITS[unit])
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
+fn download_asset_name(sanitized_url: &str) -> String {
+    reqwest::Url::parse(sanitized_url)
+        .ok()
+        .and_then(|url| {
+            url.path_segments()
+                .and_then(|mut segments| segments.next_back().map(str::to_string))
+        })
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "release asset".to_string())
+}
+
+fn sanitize_download_diagnostic_url(url: &str) -> String {
+    let without_query = url.split(['?', '#']).next().unwrap_or(url);
+    let Ok(mut parsed) = reqwest::Url::parse(without_query) else {
+        return without_query.to_string();
+    };
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        let _ = parsed.set_username("");
+        let _ = parsed.set_password(None);
+    }
+    parsed.to_string()
 }
 
 fn execute_command(
@@ -3966,9 +4165,10 @@ mod tests {
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
-        ensure_no_package_record_install_path_collision, execute_command, github_sha256_digest,
-        has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
-        install_path_collision_key, local_runtime_lock_records, local_tool_execution_ready,
+        download_asset_name, ensure_no_package_record_install_path_collision, execute_command,
+        format_download_progress, github_sha256_digest, has_current_cache_record,
+        has_local_runtime_or_lock_state, install_local_from_lock, install_path_collision_key,
+        is_retryable_status, local_runtime_lock_records, local_tool_execution_ready,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
@@ -3976,15 +4176,15 @@ mod tests {
         parse_manifest_source, project_root_from, read_archive_selected_binary,
         record_matches_current_provider_digest, remove_global_tool_from_paths,
         remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
-        restore_runtime_tool_state, select_manifest_asset, selected_asset_display_url, shell_path,
-        shell_quote, snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
-        validate_locked_record_artifact, validate_locked_record_current_asset,
-        validate_locked_record_current_provider_digest, validate_package_record_metadata,
-        validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verify_installed_binary_contents,
-        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_regular,
-        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
-        LocalRemoveState, RuntimeToolState,
+        restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
+        selected_asset_display_url, shell_path, shell_quote, snapshot_cache_metadata,
+        source_install_scope, update_manifest_tool_source, validate_locked_record_artifact,
+        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries,
+        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
+        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
+        InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4009,6 +4209,38 @@ mod tests {
         assert_eq!(source_install_scope(Scope::Auto), Scope::Global);
         assert_eq!(source_install_scope(Scope::Global), Scope::Global);
         assert_eq!(source_install_scope(Scope::Local), Scope::Local);
+    }
+
+    #[test]
+    fn download_diagnostic_urls_redact_credentials_queries_and_fragments() {
+        assert_eq!(
+            sanitize_download_diagnostic_url("https://token:secret@example.com/asset?sig=secret#x"),
+            "https://example.com/asset"
+        );
+    }
+
+    #[test]
+    fn download_asset_name_uses_sanitized_path_basename() {
+        assert_eq!(
+            download_asset_name("https://example.com/releases/download/v1/tool.tar.gz"),
+            "tool.tar.gz"
+        );
+        assert_eq!(download_asset_name("not a url"), "release asset");
+    }
+
+    #[test]
+    fn download_progress_format_is_human_readable() {
+        assert_eq!(
+            format_download_progress(5 * 1024 * 1024, Some(10 * 1024 * 1024)),
+            "5.0 MiB/10.0 MiB"
+        );
+    }
+
+    #[test]
+    fn retryable_download_statuses_are_limited_to_rate_limits_and_server_errors() {
+        assert!(is_retryable_status(reqwest::StatusCode::TOO_MANY_REQUESTS));
+        assert!(is_retryable_status(reqwest::StatusCode::BAD_GATEWAY));
+        assert!(!is_retryable_status(reqwest::StatusCode::NOT_FOUND));
     }
 
     #[test]
