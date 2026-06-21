@@ -17,7 +17,7 @@
 - Navigation and page ID contracts in `apps/public-docs/docs.json` must remain stable.
 - Public-facing routes and content groupings must map to canonical docs contracts.
 - Top-level product page IDs currently include `cargo-mono`, `derun`, and `with-watch`.
-- The legacy Nodeup Mintlify page ID `nodeup` must not be published by `apps/public-docs`; Nodeup public documentation remains owned by `apps/nodeup-docs` at `https://nodeup.delino.io`.
+- The legacy Nodeup Mintlify route `/nodeup` is retained only as an unlisted compatibility handoff to `https://nodeup.delino.io`; Nodeup public documentation remains owned by `apps/nodeup-docs`.
 - The `With Watch` tab must route to the stable page ID `with-watch` and keep the `Command Rerun Watcher` grouping unless contracts are updated together.
 - Rust CLI/crate product pages may omit repo-local installer script flows from public guidance even when those installers remain supported by release/runtime contracts elsewhere in the repository.
 - Breaking navigation changes require explicit migration notes.
