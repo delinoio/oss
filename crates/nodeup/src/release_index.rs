@@ -540,7 +540,7 @@ mod tests {
         let fetched = client.fetch_index().unwrap();
         assert_eq!(fetched.len(), 1);
         assert_eq!(fetched[0].version, "v24.14.0");
-        index_mock.assert_calls(0);
+        assert_eq!(index_mock.calls(), 0);
     }
 
     #[test]
