@@ -5,6 +5,9 @@ export default defineConfig({
   description: "Documentation for the Nodeup Node.js version manager.",
   root: "docs",
   outDir: "doc_build",
+  route: {
+    cleanUrls: true,
+  },
   themeConfig: {
     nav: [
       {

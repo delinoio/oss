@@ -38,7 +38,7 @@
 - Log output must be safe for public CI surfaces.
 
 ## Build and Test
-- Local validation: `pnpm --filter nodeup-docs test`
+- Local validation: `pnpm --filter nodeup-docs test`, which builds the Rspress output and verifies documented route IDs are emitted as extensionless links rather than `.html` hrefs.
 - Production build: `pnpm --filter nodeup-docs build`
 - CI alignment: `node-nodeup-docs-test`
 - App preparation: `pnpm run prepare` invokes `prepare:app`; `nodeup-docs` currently has no app-specific preparation step.

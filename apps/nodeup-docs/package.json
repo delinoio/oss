@@ -8,7 +8,7 @@
     "dev": "rspress dev --port 46250",
     "build": "rspress build",
     "preview": "rspress preview --port 46251",
-    "test": "rspress build"
+    "test": "rspress build && node scripts/validate-clean-urls.mjs"
   },
   "devDependencies": {
     "@rspress/core": "^2.0.0"
