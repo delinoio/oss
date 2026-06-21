@@ -1345,8 +1345,7 @@ fn validate_locked_record_current_release(
     target: &HostTarget,
     tool: Option<&ManifestTool>,
 ) -> Result<()> {
-    let mut spec = SourceSpec::from_str(&record.source)?;
-    spec.version = record.requested_version.clone();
+    let spec = locked_release_lookup_spec(record)?;
     let release = client_for_source(&spec)?.resolve_release(&spec)?.release;
     if release.tag != record.release_tag {
         return Err(BinpmError::StaleLockfile {
@@ -1383,20 +1382,18 @@ fn validate_locked_record_current_provider_digest(
 }
 
 fn record_matches_current_provider_digest(record: &PackageRecord, assets: &[ReleaseAsset]) -> bool {
-    if record.checksum_source != ChecksumSource::GitHubDigest {
-        return true;
-    }
     let current_digest = assets
         .iter()
         .find(|asset| asset.name == record.asset_name)
         .and_then(|asset| github_sha256_digest(asset.digest.as_deref()));
-    current_digest.as_deref() == Some(record.sha256.as_str())
-        && record.provider_digest_sha256.as_deref() == Some(record.sha256.as_str())
+    match current_digest {
+        Some(current_digest) => current_digest == record.sha256,
+        None => record.checksum_source != ChecksumSource::GitHubDigest,
+    }
 }
 
 fn locked_record_download_url(record: &PackageRecord) -> Result<String> {
-    let mut spec = SourceSpec::from_str(&record.source)?;
-    spec.version = Some(record.release_tag.clone());
+    let spec = locked_release_lookup_spec(record)?;
     let client = client_for_source(&spec)?;
     let selection = client.resolve_release(&spec)?;
     let asset = selection
@@ -1439,6 +1436,12 @@ fn locked_record_download_url(record: &PackageRecord) -> Result<String> {
         .as_deref()
         .unwrap_or(&asset.url)
         .to_string())
+}
+
+fn locked_release_lookup_spec(record: &PackageRecord) -> Result<SourceSpec> {
+    let mut spec = SourceSpec::from_str(&record.source)?;
+    spec.version = Some(record.release_tag.clone());
+    Ok(spec)
 }
 
 fn assert_lock_matches_manifest_tool(
@@ -3055,8 +3058,9 @@ mod tests {
         ensure_no_package_record_install_path_collision, github_sha256_digest,
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
         install_path_collision_key, local_runtime_lock_records,
-        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
+        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
+        locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
+        manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         parse_manifest_source, project_root_from, record_matches_current_provider_digest,
         remove_global_tool_from_paths, remove_local_manifest_orphans, restore_local_remove_state,
@@ -4811,6 +4815,31 @@ mod tests {
     }
 
     #[test]
+    fn frozen_lock_rejects_local_record_when_current_provider_digest_differs() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let record = package_record();
+        let changed_digest = "1111111111111111111111111111111111111111111111111111111111111111";
+        let assets = [ReleaseAsset {
+            name: record.asset_name.clone(),
+            url: record.asset_url.clone(),
+            provider_url: None,
+            digest: Some(format!("sha256:{changed_digest}")),
+            source_archive: false,
+            final_url_https: None,
+        }];
+
+        let error = validate_locked_record_current_provider_digest(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &record,
+            &assets,
+        )
+        .expect_err("current provider digest must be strongest evidence");
+
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
+    }
+
+    #[test]
     fn package_record_provider_digest_requires_matching_current_asset_digest() {
         let mut record = package_record();
         mark_github_verified(&mut record);
@@ -4840,6 +4869,33 @@ mod tests {
         }];
 
         assert!(!record_matches_current_provider_digest(&record, &assets));
+    }
+
+    #[test]
+    fn package_record_local_checksum_accepts_matching_current_provider_digest() {
+        let record = package_record();
+        let assets = [ReleaseAsset {
+            name: record.asset_name.clone(),
+            url: record.asset_url.clone(),
+            provider_url: None,
+            digest: Some(format!("sha256:{}", record.sha256)),
+            source_archive: false,
+            final_url_https: None,
+        }];
+
+        assert!(record_matches_current_provider_digest(&record, &assets));
+    }
+
+    #[test]
+    fn locked_release_lookup_uses_record_release_tag_for_versionless_sources() {
+        let mut record = package_record();
+        record.requested_version = None;
+        record.package_spec = "github:owner/tool@1.0.0".to_string();
+        record.release_tag = "1.0.0".to_string();
+
+        let spec = locked_release_lookup_spec(&record).expect("lookup spec");
+
+        assert_eq!(spec.version.as_deref(), Some("1.0.0"));
     }
 
     #[test]
