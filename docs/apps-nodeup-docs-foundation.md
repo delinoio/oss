@@ -17,6 +17,7 @@
 ## Interfaces and Contracts
 - The package name is `nodeup-docs`.
 - The app is registered through the existing `apps/*` pnpm workspace glob.
+- The canonical production URL is `https://nodeup.delino.io`.
 - Stable documentation route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
 - The development server uses fixed port `46250`.
 - Local production preview uses fixed port `46251`.

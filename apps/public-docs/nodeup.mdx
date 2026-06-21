@@ -18,14 +18,51 @@
 
 ## Install
 
+Canonical install docs:
+
+- `https://nodeup.delino.io/installation`
+
 Tag contract:
 
 - `nodeup@v<semver>`
+
+`binpm`:
+
+macOS and Linux (bash/zsh):
+
+```bash
+NODEUP_BINPM_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/nodeup-binpm"
+mkdir -p "$NODEUP_BINPM_HOME"
+cd "$NODEUP_BINPM_HOME"
+[ -f binpm.toml ] || binpm init
+binpm add nodeup github:delinoio/oss@nodeup@v<semver>
+binpm env --shell <shell>
+```
+
+Windows PowerShell:
+
+```powershell
+$env:NODEUP_BINPM_HOME = Join-Path ${env:LOCALAPPDATA} "nodeup-binpm"
+New-Item -ItemType Directory -Force -Path $env:NODEUP_BINPM_HOME | Out-Null
+Set-Location $env:NODEUP_BINPM_HOME
+if (-not (Test-Path -LiteralPath "binpm.toml")) { binpm init }
+binpm add nodeup github:delinoio/oss@nodeup@v<semver>
+binpm env --shell powershell
+```
+
+Use the dedicated `NODEUP_BINPM_HOME` directory so binpm's local manifest and `nodeup` binary do not modify whichever project directory you started from. In bash or zsh, replace `<shell>` with `bash` or `zsh`. Apply the printed environment command before running `nodeup`.
 
 Package manager:
 
 - macOS/Linux: `brew install delinoio/tap/nodeup`
 - Homebrew installs prebuilt archives on macOS Intel, macOS Apple Silicon, Linux amd64, and Linux arm64
+
+Direct installers:
+
+- `scripts/install/nodeup.sh`
+- `scripts/install/nodeup.ps1`
+- Direct installers verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`) with `cosign`.
+- Direct installers support bundle-enabled releases only.
 
 `cargo-binstall`:
 
