@@ -888,6 +888,63 @@ fn json_toolchain_link_reserved_name_failure_emits_invalid_input_error_envelope(
 
 #[test]
 #[serial]
+fn toolchain_link_rejects_case_variant_reserved_channel_name() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-reserved-case-name");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n");
+
+    for name in ["LTS", "Current", "LATEST"] {
+        let output = env
+            .command()
+            .args(["toolchain", "link", name, runtime_dir.to_str().unwrap()])
+            .output()
+            .expect("toolchain link with case-variant reserved channel selector");
+
+        assert_eq!(output.status.code(), Some(2));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(&format!("Invalid linked runtime name: {name}")));
+        assert!(stderr.contains("differ from reserved channel selectors"));
+    }
+}
+
+#[test]
+#[serial]
+fn runtime_selector_commands_reject_case_variant_reserved_channel_names() {
+    let env = TestEnv::new();
+    let project_dir = env.root.join("case-variant-override");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    let override_output = env
+        .command()
+        .args([
+            "override",
+            "set",
+            "LTS",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("override set with case-variant reserved channel selector");
+    assert_eq!(override_output.status.code(), Some(2));
+    let override_stderr = String::from_utf8_lossy(&override_output.stderr);
+    assert!(override_stderr.contains("Invalid runtime selector 'LTS'"));
+    assert!(override_stderr.contains("Reserved channel selectors are case-sensitive"));
+
+    let update_output = env
+        .command()
+        .args(["update", "LATEST"])
+        .output()
+        .expect("update with case-variant reserved channel selector");
+    assert_eq!(update_output.status.code(), Some(2));
+    let update_stderr = String::from_utf8_lossy(&update_output.stderr);
+    assert!(update_stderr.contains("Invalid runtime selector 'LATEST'"));
+    assert!(update_stderr.contains("Reserved channel selectors are case-sensitive"));
+}
+
+#[test]
+#[serial]
 fn toolchain_link_rejects_regular_file_path_and_does_not_persist_selector() {
     let env = TestEnv::new();
     let invalid_path = env.root.join("not-a-runtime-file");
@@ -1147,6 +1204,32 @@ fn toolchain_unlink_conflicts_when_link_is_default() {
 
 #[test]
 #[serial]
+fn toolchain_unlink_conflicts_when_legacy_reserved_case_link_is_default() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-default");
+    fs::create_dir_all(&runtime_dir).unwrap();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ndefault_selector = \"LTS\"\ntracked_selectors = \
+             [\"LTS\"]\n\n[linked_runtimes]\nLTS = \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    env.command()
+        .args(["toolchain", "unlink", "LTS"])
+        .assert()
+        .failure()
+        .code(6)
+        .stderr(predicates::str::contains(
+            "Cannot unlink 'LTS'; it is used as the default runtime",
+        ));
+}
+
+#[test]
+#[serial]
 fn toolchain_unlink_conflicts_when_link_is_used_by_override() {
     let env = TestEnv::new();
     let runtime_dir = env.root.join("linked-runtime-unlink-override");
@@ -1184,6 +1267,42 @@ fn toolchain_unlink_conflicts_when_link_is_used_by_override() {
         .code(6)
         .stderr(predicates::str::contains(
             "Cannot unlink 'linked-unlink-override'; it is referenced by a directory override",
+        ));
+}
+
+#[test]
+#[serial]
+fn toolchain_unlink_conflicts_when_legacy_reserved_case_link_is_used_by_override() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-override");
+    let project_dir = env.root.join("legacy-reserved-case-project");
+    fs::create_dir_all(&runtime_dir).unwrap();
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ntracked_selectors = [\"LATEST\"]\n\n[linked_runtimes]\nLATEST = \
+             \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        env.config_root.join("overrides.toml"),
+        format!(
+            "schema_version = 1\n\n[[entries]]\npath = \"{}\"\nselector = \"LATEST\"\n",
+            project_dir.display()
+        ),
+    )
+    .unwrap();
+
+    env.command()
+        .args(["toolchain", "unlink", "LATEST"])
+        .assert()
+        .failure()
+        .code(6)
+        .stderr(predicates::str::contains(
+            "Cannot unlink 'LATEST'; it is referenced by a directory override",
         ));
 }
 
@@ -1701,6 +1820,38 @@ tracked_selectors = ["22.1.0"]
 
 #[test]
 #[serial]
+fn default_json_reports_legacy_reserved_case_link_metadata() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-default-json");
+    fs::create_dir_all(runtime_dir.join("bin")).unwrap();
+
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ndefault_selector = \"LTS\"\ntracked_selectors = \
+             [\"LTS\"]\n\n[linked_runtimes]\nLTS = \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "default"])
+        .output()
+        .expect("default --output json with legacy reserved-case linked selector");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["default_selector"], "LTS");
+    assert_eq!(payload["selector_kind"], "linked-runtime");
+    assert_eq!(payload["canonical_selector"], "LTS");
+    assert_eq!(payload["resolved_runtime"], "LTS");
+    assert!(payload["resolution_error"].is_null());
+}
+
+#[test]
+#[serial]
 fn default_human_unresolved_still_prints_selector() {
     let env = TestEnv::new();
     let settings_file = env.config_root.join("settings.toml");
@@ -1722,6 +1873,95 @@ tracked_selectors = ["lts"]
         .success()
         .stdout(predicates::str::contains("Default runtime: lts"))
         .stdout(predicates::str::contains("resolution unavailable"));
+}
+
+#[test]
+#[serial]
+fn show_active_runtime_and_which_resolve_legacy_reserved_case_default_link() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-default-resolve");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho legacy-default\n");
+
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ndefault_selector = \"LTS\"\ntracked_selectors = \
+             [\"LTS\"]\n\n[linked_runtimes]\nLTS = \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    let show_output = env
+        .command()
+        .args(["--output", "json", "show", "active-runtime"])
+        .output()
+        .expect("show active-runtime with legacy reserved-case default");
+    assert!(show_output.status.success());
+    let show_payload: Value = serde_json::from_slice(&show_output.stdout).unwrap();
+    assert_eq!(show_payload["runtime"], "LTS");
+    assert_eq!(show_payload["selector"], "LTS");
+    assert_eq!(show_payload["selector_kind"], "linked-runtime");
+    assert_eq!(show_payload["canonical_selector"], "LTS");
+
+    env.command()
+        .args(["which", "node"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            runtime_bin.join("node").to_str().unwrap(),
+        ));
+}
+
+#[test]
+#[serial]
+fn show_active_runtime_resolves_legacy_reserved_case_override_link() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-override-resolve");
+    let runtime_bin = runtime_dir.join("bin");
+    let project_dir = env.root.join("legacy-reserved-case-override-project");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::create_dir_all(&project_dir).unwrap();
+    write_runtime_executable(
+        runtime_bin.join("node"),
+        "#!/bin/sh\necho legacy-override\n",
+    );
+
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ntracked_selectors = [\"LATEST\"]\n\n[linked_runtimes]\nLATEST = \
+             \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        env.config_root.join("overrides.toml"),
+        format!(
+            "schema_version = 1\n\n[[entries]]\npath = \"{}\"\nselector = \"LATEST\"\n",
+            project_dir.display()
+        ),
+    )
+    .unwrap();
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Active runtime: LATEST"));
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["which", "node"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            runtime_bin.join("node").to_str().unwrap(),
+        ));
 }
 
 #[test]
@@ -4622,7 +4862,7 @@ fn override_list_json_includes_configured_entries() {
         .args([
             "override",
             "set",
-            "lts",
+            "latest",
             "--path",
             project_b.to_str().unwrap(),
         ])
@@ -4648,12 +4888,20 @@ fn override_list_json_includes_configured_entries() {
         .unwrap()
         .to_string_lossy()
         .to_string();
-    assert!(entries
-        .iter()
-        .any(|entry| entry["path"] == canonical_a && entry["selector"] == "v22.1.0"));
-    assert!(entries
-        .iter()
-        .any(|entry| entry["path"] == canonical_b && entry["selector"] == "lts"));
+    assert!(entries.iter().any(|entry| {
+        entry["path"] == canonical_a
+            && entry["selector"] == "v22.1.0"
+            && entry["selector_kind"] == "exact-version"
+            && entry["canonical_selector"] == "v22.1.0"
+            && entry.get("selector_alias_of").is_none()
+    }));
+    assert!(entries.iter().any(|entry| {
+        entry["path"] == canonical_b
+            && entry["selector"] == "latest"
+            && entry["selector_kind"] == "channel"
+            && entry["canonical_selector"] == "current"
+            && entry["selector_alias_of"] == "current"
+    }));
 }
 
 #[test]
@@ -4832,7 +5080,7 @@ fn json_override_unset_output_is_machine_parseable() {
         .args([
             "override",
             "set",
-            "22.1.0",
+            "latest",
             "--path",
             project.to_str().unwrap(),
         ])
@@ -4861,7 +5109,57 @@ fn json_override_unset_output_is_machine_parseable() {
         .to_string_lossy()
         .to_string();
     assert_eq!(entries[0]["path"], canonical);
-    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["selector"], "latest");
+    assert_eq!(entries[0]["selector_kind"], "channel");
+    assert_eq!(entries[0]["canonical_selector"], "current");
+    assert_eq!(entries[0]["selector_alias_of"], "current");
+}
+
+#[test]
+#[serial]
+fn json_override_unset_output_handles_legacy_reserved_case_linked_name() {
+    let env = TestEnv::new();
+    let project = env.root.join("legacy-reserved-case-unset-json");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(
+        env.config_root.join("overrides.toml"),
+        format!(
+            "schema_version = 1\n\n[[entries]]\npath = \"{}\"\nselector = \"LATEST\"\n",
+            project.display()
+        ),
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "override",
+            "unset",
+            "--path",
+            project.to_str().unwrap(),
+        ])
+        .output()
+        .expect("override unset legacy reserved-case linked name");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("override unset JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "LATEST");
+    assert_eq!(entries[0]["selector_kind"], "linked-runtime");
+    assert_eq!(entries[0]["canonical_selector"], "LATEST");
+    assert!(entries[0].get("selector_alias_of").is_none());
+
+    let output = env
+        .command()
+        .args(["--output", "json", "override", "list"])
+        .output()
+        .expect("override list after legacy unset");
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload.as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -5078,6 +5376,38 @@ tracked_selectors = ["linked-update-priority"]
 
 #[test]
 #[serial]
+fn update_without_selectors_skips_legacy_reserved_case_tracked_link() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-update");
+    fs::create_dir_all(&runtime_dir).unwrap();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ntracked_selectors = [\"LATEST\"]\n\n[linked_runtimes]\nLATEST = \
+             \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update with legacy reserved-case tracked link");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "LATEST");
+    assert_eq!(entries[0]["selector_kind"], "linked-runtime");
+    assert_eq!(entries[0]["canonical_selector"], "LATEST");
+    assert_eq!(entries[0]["status"], "skipped-linked-runtime");
+}
+
+#[test]
+#[serial]
 fn update_linked_selector_reports_skipped_status() {
     let env = TestEnv::new();
 
@@ -5092,6 +5422,8 @@ fn update_linked_selector_reports_skipped_status() {
     let entries = payload.as_array().expect("update JSON array");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["selector"], "linked-update-explicit");
+    assert_eq!(entries[0]["selector_kind"], "linked-runtime");
+    assert_eq!(entries[0]["canonical_selector"], "linked-update-explicit");
     assert_eq!(entries[0]["status"], "skipped-linked-runtime");
     assert!(entries[0]["previous_runtime"].is_null());
     assert!(entries[0]["updated_runtime"].is_null());
@@ -5124,8 +5456,110 @@ fn update_channel_selector_reports_updated_status() {
     let entries = payload.as_array().expect("update JSON array");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["selector"], "lts");
+    assert_eq!(entries[0]["selector_kind"], "channel");
+    assert_eq!(entries[0]["canonical_selector"], "lts");
     assert_eq!(entries[0]["status"], "updated");
     assert_eq!(entries[0]["updated_runtime"], "v22.2.0");
+}
+
+#[test]
+#[serial]
+fn current_and_latest_resolve_as_aliases_and_report_canonical_selector() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", None), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    for selector in ["current", "latest"] {
+        let output = env
+            .command()
+            .args(["--output", "json", "update", selector])
+            .output()
+            .expect("update current/latest selector");
+        assert!(output.status.success());
+
+        let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let entries = payload.as_array().expect("update JSON array");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["selector"], selector);
+        assert_eq!(entries[0]["selector_kind"], "channel");
+        assert_eq!(entries[0]["canonical_selector"], "current");
+        if selector == "latest" {
+            assert_eq!(entries[0]["selector_alias_of"], "current");
+        } else {
+            assert!(entries[0].get("selector_alias_of").is_none());
+        }
+        assert_eq!(entries[0]["updated_runtime"], "v24.0.0");
+    }
+
+    env.command()
+        .args(["--output", "json", "default", "latest"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "\"default_selector\": \"latest\"",
+        ))
+        .stdout(predicates::str::contains("\"selector_kind\": \"channel\""))
+        .stdout(predicates::str::contains(
+            "\"canonical_selector\": \"current\"",
+        ))
+        .stdout(predicates::str::contains(
+            "\"selector_alias_of\": \"current\"",
+        ));
+
+    env.command()
+        .args(["--output", "json", "show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"runtime\": \"v24.0.0\""))
+        .stdout(predicates::str::contains("\"selector\": \"latest\""))
+        .stdout(predicates::str::contains("\"selector_kind\": \"channel\""))
+        .stdout(predicates::str::contains(
+            "\"canonical_selector\": \"current\"",
+        ))
+        .stdout(predicates::str::contains(
+            "\"selector_alias_of\": \"current\"",
+        ));
+}
+
+#[test]
+#[serial]
+fn tracked_current_and_latest_are_canonicalized_to_one_channel_selector() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", None)]);
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    env.command().args(["default", "latest"]).assert().success();
+    env.command()
+        .args(["default", "current"])
+        .assert()
+        .success();
+
+    assert_eq!(
+        tracked_selectors_from_settings(&env.config_root.join("settings.toml")),
+        vec!["current"]
+    );
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update canonicalized current/latest tracked selector");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "current");
+    assert_eq!(entries[0]["selector_kind"], "channel");
+    assert_eq!(entries[0]["canonical_selector"], "current");
 }
 
 #[test]
@@ -5173,6 +5607,8 @@ fn tracked_exact_selectors_are_canonicalized_across_install_and_override() {
     let entries = payload.as_array().expect("update JSON array");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["selector_kind"], "exact-version");
+    assert_eq!(entries[0]["canonical_selector"], "v22.1.0");
     assert_eq!(entries[0]["status"], "skipped-exact-version");
     assert_eq!(entries[0]["previous_runtime"], "v22.1.0");
     assert_eq!(entries[0]["updated_runtime"], "v22.1.0");
