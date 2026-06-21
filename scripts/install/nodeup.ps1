@@ -58,7 +58,7 @@ function Download-Bundle {
   )
 
   try {
-    Invoke-WebRequest -Uri "$BaseUrl/$AssetName.sigstore.json" -OutFile $BundlePath
+    Invoke-WebRequest -Uri "$BaseUrl/$AssetName.sigstore.json" -OutFile $BundlePath -UseBasicParsing
   }
   catch {
     throw "[install.nodeup] direct installs require releases published with Sigstore bundle sidecars"
@@ -138,8 +138,8 @@ function Install-Direct {
     $bundlePath = "$assetPath.sigstore.json"
 
     Write-Host "[install.nodeup] downloading $assetName"
-    Invoke-WebRequest -Uri "$baseUrl/$assetName" -OutFile $assetPath
-    Invoke-WebRequest -Uri "$baseUrl/SHA256SUMS" -OutFile $sumsPath
+    Invoke-WebRequest -Uri "$baseUrl/$assetName" -OutFile $assetPath -UseBasicParsing
+    Invoke-WebRequest -Uri "$baseUrl/SHA256SUMS" -OutFile $sumsPath -UseBasicParsing
     Download-Bundle -BaseUrl $baseUrl -AssetName $assetName -BundlePath $bundlePath
 
     Verify-Checksum -FilePath $assetPath -Sha256SumsPath $sumsPath -AssetName $assetName
