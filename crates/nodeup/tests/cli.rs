@@ -7,6 +7,7 @@ use std::{
 
 use assert_cmd::Command;
 use httpmock::{Method::GET, MockServer};
+use predicates::prelude::PredicateBooleanExt;
 use serde_json::Value;
 use serial_test::serial;
 use sha2::{Digest, Sha256};
@@ -221,6 +222,22 @@ fn make_npm_argv_script(prefix: &str) -> String {
     format!("#!/bin/sh\necho {prefix}:$*\n")
 }
 
+fn assert_json_parser_error(output: std::process::Output, expected_message: &str) {
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("\u{1b}["));
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains(expected_message));
+}
+
 #[test]
 #[serial]
 fn help_lists_top_level_subcommand_descriptions() {
@@ -277,6 +294,153 @@ fn help_lists_nested_subcommand_descriptions() {
         .stdout(predicates::str::contains(
             "Remove a runtime override for a directory",
         ));
+}
+
+#[test]
+#[serial]
+fn install_and_uninstall_help_show_required_runtime_arguments() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "install", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Usage: nodeup toolchain install [OPTIONS] <RUNTIMES>...",
+        ))
+        .stdout(predicates::str::contains(
+            "<RUNTIMES>...  Runtime selectors to install",
+        ));
+
+    env.command()
+        .args(["toolchain", "uninstall", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Usage: nodeup toolchain uninstall [OPTIONS] <RUNTIMES>...",
+        ))
+        .stdout(predicates::str::contains(
+            "<RUNTIMES>...  Installed runtime selectors to remove",
+        ));
+}
+
+#[test]
+#[serial]
+fn human_parser_errors_keep_clap_formatting() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "list", "--quiet", "--verbose"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "error: the argument '--quiet' cannot be used with '--verbose'",
+        ))
+        .stderr(predicates::str::contains(
+            "Usage: nodeup toolchain list --quiet",
+        ))
+        .stderr(predicates::str::contains("nodeup error:").not());
+}
+
+#[test]
+#[serial]
+fn json_parser_errors_emit_error_envelopes() {
+    let env = TestEnv::new();
+
+    let root_missing = env
+        .command()
+        .args(["--output", "json"])
+        .output()
+        .expect("nodeup --output json without subcommand");
+    assert_json_parser_error(root_missing, "requires a subcommand");
+
+    let conflicting_flags = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "list",
+            "--quiet",
+            "--verbose",
+        ])
+        .output()
+        .expect("nodeup --output json toolchain list conflict");
+    assert_json_parser_error(conflicting_flags, "cannot be used with '--verbose'");
+
+    let missing_nested_arg = env
+        .command()
+        .args(["--output", "json", "toolchain", "link", "local-node"])
+        .output()
+        .expect("nodeup --output json toolchain link missing path");
+    assert_json_parser_error(missing_nested_arg, "required arguments were not provided");
+
+    let missing_install_runtime = env
+        .command()
+        .args(["--output", "json", "toolchain", "install"])
+        .output()
+        .expect("nodeup --output json toolchain install missing runtime");
+    assert_json_parser_error(
+        missing_install_runtime,
+        "required arguments were not provided",
+    );
+
+    let missing_uninstall_runtime = env
+        .command()
+        .args(["--output", "json", "toolchain", "uninstall"])
+        .output()
+        .expect("nodeup --output json toolchain uninstall missing runtime");
+    assert_json_parser_error(
+        missing_uninstall_runtime,
+        "required arguments were not provided",
+    );
+
+    let unknown_command = env
+        .command()
+        .args(["--output", "json", "unknown-command"])
+        .output()
+        .expect("nodeup --output json unknown command");
+    assert_json_parser_error(unknown_command, "unrecognized subcommand");
+
+    let unexpected_extra_arg = env
+        .command()
+        .args(["--output", "json", "completions", "bash", "show", "extra"])
+        .output()
+        .expect("nodeup --output json completions extra argument");
+    assert_json_parser_error(unexpected_extra_arg, "unexpected argument 'extra'");
+}
+
+#[test]
+#[serial]
+fn json_output_help_still_uses_clap_help_output() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["--output", "json", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Rustup-like Node.js version manager",
+        ))
+        .stdout(predicates::str::contains(
+            "Usage: nodeup [OPTIONS] <COMMAND>",
+        ))
+        .stderr(predicates::str::is_empty());
+}
+
+#[test]
+#[serial]
+fn delegated_run_arguments_do_not_request_json_parser_errors() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["run", "lts", "node", "--output", "json"])
+        .assert()
+        .failure()
+        .code(4)
+        .stderr(predicates::str::contains("nodeup error:"))
+        .stderr(predicates::str::contains("Release index request failed"));
 }
 
 #[test]
@@ -2735,7 +2899,10 @@ fn toolchain_install_requires_at_least_one_runtime_selector() {
         .failure()
         .code(2)
         .stderr(predicates::str::contains(
-            "Missing runtime selector for `nodeup toolchain install`",
+            "required arguments were not provided",
+        ))
+        .stderr(predicates::str::contains(
+            "Usage: nodeup toolchain install <RUNTIMES>...",
         ));
 }
 
@@ -2770,6 +2937,22 @@ fn toolchain_install_rejects_linked_runtime_selector() {
 
 #[test]
 #[serial]
+fn toolchain_install_rejects_missing_linked_runtime_selector_before_lookup() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "install", "ghost-linked"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "`toolchain install` only supports semantic version or channel selectors",
+        ))
+        .stderr(predicates::str::contains("Linked runtime 'ghost-linked'").not());
+}
+
+#[test]
+#[serial]
 fn toolchain_uninstall_requires_at_least_one_runtime_selector() {
     let env = TestEnv::new();
 
@@ -2779,7 +2962,10 @@ fn toolchain_uninstall_requires_at_least_one_runtime_selector() {
         .failure()
         .code(2)
         .stderr(predicates::str::contains(
-            "Missing runtime selector for `nodeup toolchain uninstall`",
+            "required arguments were not provided",
+        ))
+        .stderr(predicates::str::contains(
+            "Usage: nodeup toolchain uninstall <RUNTIMES>...",
         ));
 }
 

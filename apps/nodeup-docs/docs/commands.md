@@ -29,14 +29,14 @@ Use `RUST_LOG=off nodeup toolchain list --quiet` or `nodeup --output json toolch
 nodeup toolchain install <runtime>...
 ```
 
-Installs or verifies one or more semantic-version or channel selectors. Supported examples:
+Installs or verifies one or more semantic-version or channel selectors. At least one runtime selector is required. Supported examples:
 
 ```bash
 nodeup toolchain install 22.1.0
 nodeup toolchain install v22.1.0 lts current latest
 ```
 
-The command rejects linked runtime names. JSON output is an array of entries with `selector`, `runtime`, and `status`, where `status` is `installed` or `already-installed`.
+The command rejects linked runtime names before linked-runtime lookup, so a linked-name selector fails the same way whether or not that linked runtime exists. JSON output is an array of entries with `selector`, `runtime`, and `status`, where `status` is `installed` or `already-installed`.
 
 ## toolchain uninstall
 
@@ -44,7 +44,7 @@ The command rejects linked runtime names. JSON output is an array of entries wit
 nodeup toolchain uninstall <version>...
 ```
 
-Removes exact installed versions only. Channels and linked runtime names are rejected. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
+Removes exact installed versions only. At least one version selector is required. Channels and linked runtime names are rejected. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
 
 JSON output is the removed version list.
 
