@@ -15,8 +15,10 @@ Provide the Mintlify-based public documentation site for user-facing product and
 ## Cross-Domain Invariants
 - Mintlify navigation IDs and docs structure must stay aligned with documented contracts.
 - User-facing content changes should be versioned alongside relevant contract updates.
-- Public project pages currently exposed in top-level navigation include `cargo-mono`, `derun`, and `with-watch`.
-- Nodeup is intentionally not exposed in this Mintlify surface's navigation; the legacy `/nodeup` route remains only as an unlisted compatibility handoff to `https://nodeup.delino.io`.
+- Public project pages currently exposed as in-site top-level navigation sections include `cargo-mono`, `derun`, and `with-watch`.
+- Nodeup and binpm are major projects exposed from this Mintlify surface through external top-level navigation links to `https://nodeup.delino.io` and `https://binpm.delino.io`.
+- The legacy `/nodeup` route remains supported as a lightweight compatibility handoff page to `https://nodeup.delino.io`.
+- Nodeup and binpm public guides must not be duplicated as in-site Mintlify routes; their standalone documentation apps own those docs.
 - `public-docs` is an existing documented exception to the default Rsbuild/Rspress-style static-site toolchain and Cloudflare Pages deployment preference.
 
 ## Change Policy
