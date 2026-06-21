@@ -41,7 +41,6 @@
 ## Build and Test
 - Local validation: `pnpm --filter binpm-docs test`
 - Production build: `pnpm --filter binpm-docs build`
-- CI alignment: `node-binpm-docs-test`
 - App preparation: `pnpm run prepare` invokes `prepare:app`; `binpm-docs` currently has no app-specific preparation step.
 
 ## Dependencies and Integrations
