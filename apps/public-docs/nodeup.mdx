@@ -94,6 +94,20 @@ Canonical in-repo installer paths for maintainer workflows:
 
 - Direct installers support bundle-enabled releases only.
 
+Direct installers place the binary in `~/.local/bin` by default and do not modify your shell `PATH`. Add that directory before running `nodeup`, or pass `--install-dir` / `-InstallDir` with a directory already on `PATH`.
+
+macOS and Linux:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:Path = "$HOME\.local\bin;$env:Path"
+```
+
 `cargo-binstall`:
 
 ```bash

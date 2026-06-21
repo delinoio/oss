@@ -21,13 +21,38 @@ Package manager:
 
 Direct installers:
 
+Install `cosign` first and leave it on `PATH`; the installers require it to verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`).
+
+macOS and Linux:
+
 ```bash
-./scripts/install/nodeup.sh --version latest --method package-manager
+installer_url="https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.sh"
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT
+curl -fsSL "$installer_url" -o "$tmp_dir/nodeup.sh"
+bash "$tmp_dir/nodeup.sh" --version latest --method direct
 ```
 
+Windows PowerShell:
+
 ```powershell
-./scripts/install/nodeup.ps1 -Version latest -Method direct
+$InstallerUrl = "https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.ps1"
+$Installer = Join-Path ([System.IO.Path]::GetTempPath()) ("nodeup-install-" + [System.Guid]::NewGuid().ToString("N") + ".ps1")
+try {
+  Invoke-WebRequest -Uri $InstallerUrl -OutFile $Installer
+  Unblock-File -LiteralPath $Installer -ErrorAction SilentlyContinue
+  $PowerShell = (Get-Process -Id $PID).Path
+  & $PowerShell -NoProfile -ExecutionPolicy Bypass -File $Installer -Version latest -Method direct
+}
+finally {
+  Remove-Item -LiteralPath $Installer -Force -ErrorAction SilentlyContinue
+}
 ```
+
+Canonical in-repo installer paths for maintainer workflows:
+
+- `scripts/install/nodeup.sh`
+- `scripts/install/nodeup.ps1`
 
 `cargo-binstall`:
 
@@ -44,7 +69,7 @@ GitHub Actions:
 - run: cargo binstall nodeup --no-confirm
 ```
 
-Direct installers verify Sigstore bundle sidecars (`*.sigstore.json`) and require `cosign`.
+Direct installers support bundle-enabled releases only.
 
 ## Quick Command Reference
 
