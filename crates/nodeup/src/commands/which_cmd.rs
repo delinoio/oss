@@ -8,6 +8,7 @@ use crate::{
     command_plan::{plan_delegated_command, DelegatedCommandMode},
     commands::print_output,
     errors::{NodeupError, Result},
+    release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
     store::runtime_executable_is_runnable,
     NodeupApp,
@@ -18,6 +19,8 @@ struct WhichResponse {
     runtime: String,
     command: String,
     executable_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
 
 pub fn execute(
@@ -92,9 +95,9 @@ pub fn execute(
         runtime: resolved.runtime_id(),
         command: command.to_string(),
         executable_path: plan.executable.to_string_lossy().to_string(),
+        release_index: app.resolver.release_index_diagnostic(),
     };
-    let human = response.executable_path.clone();
-    print_output(output, color, &human, &response)?;
+    print_output(output, color, &response.executable_path, &response)?;
 
     Ok(0)
 }

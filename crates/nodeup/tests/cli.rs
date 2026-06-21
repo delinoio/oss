@@ -2603,14 +2603,91 @@ fn checksum_mismatch_fails_install() {
 #[serial]
 fn unsupported_platform_is_reported() {
     let env = TestEnv::new();
-    env.register_index(&[("22.1.0", Some("Jod"))]);
 
     let mut cmd = env.command();
     cmd.env("NODEUP_FORCE_PLATFORM", "windows-x86")
         .args(["toolchain", "install", "22.1.0"])
         .assert()
+        .code(3)
         .failure()
-        .stderr(predicates::str::contains("supports macOS/Linux/Windows"));
+        .stderr(predicates::str::contains("Unsupported host platform"))
+        .stderr(predicates::str::contains("Windows x64"))
+        .stderr(predicates::str::contains("x86 hosts are unsupported"))
+        .stderr(predicates::str::contains(
+            "Use an x64/arm64 host or a supported CI image",
+        ));
+}
+
+#[test]
+#[serial]
+fn unsupported_platform_json_includes_deterministic_diagnostics() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NODEUP_FORCE_PLATFORM", "linux-x86")
+        .args(["--output", "json", "toolchain", "install", "22.1.0"])
+        .output()
+        .expect("unsupported platform json error");
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "unsupported-platform");
+    assert_eq!(payload["exit_code"], 3);
+    assert_eq!(payload["diagnostics"]["os"], "linux");
+    assert_eq!(payload["diagnostics"]["architecture"], "x86");
+    assert_eq!(
+        payload["diagnostics"]["platform_source"],
+        "NODEUP_FORCE_PLATFORM"
+    );
+    assert_eq!(payload["diagnostics"]["forced_platform"], "linux-x86");
+    assert_eq!(
+        payload["diagnostics"]["supported_platforms"],
+        serde_json::json!([
+            "macos/x64",
+            "macos/arm64",
+            "linux/x64",
+            "linux/arm64",
+            "windows/x64",
+            "windows/arm64"
+        ])
+    );
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn shim_dispatch_rejects_unsupported_x86_before_resolution() {
+    let env = TestEnv::new();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        r#"schema_version = 1
+default_selector = "22.1.0"
+tracked_selectors = []
+
+[linked_runtimes]
+"#,
+    )
+    .unwrap();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("node");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .env("NODEUP_FORCE_PLATFORM", "windows-x86")
+        .output()
+        .expect("run shim binary on unsupported x86 platform");
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Unsupported host platform for shim dispatch"));
+    assert!(stderr.contains("forced_platform=windows-x86"));
+    assert!(stderr.contains("x86 hosts are unsupported"));
 }
 
 #[test]
@@ -2749,6 +2826,114 @@ fn which_resolves_command_path_from_default_selector() {
         .join("node");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(stdout.trim(), expected.to_string_lossy());
+}
+
+#[test]
+#[serial]
+fn which_json_reports_stale_release_index_cache_fallback_for_channel_selector() {
+    let env = TestEnv::new();
+    let runtime_bin = env
+        .data_root
+        .join("toolchains")
+        .join("v22.11.0")
+        .join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho stale-cache\n");
+    fs::write(
+        env.cache_root.join("release-index.json"),
+        serde_json::json!({
+            "schema_version": 1,
+            "index_url": env.index_url,
+            "fetched_at_epoch_seconds": 1,
+            "entries": [
+                { "version": "v22.11.0", "lts": "Jod" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let index_mock = env.server.mock(|when, then| {
+        when.method(GET).path("/download/release/index.json");
+        then.status(500);
+    });
+
+    let output = env
+        .command()
+        .args(["--output", "json", "which", "--runtime", "lts", "node"])
+        .output()
+        .expect("which --runtime lts with stale release index fallback");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["runtime"], "v22.11.0");
+    assert_eq!(payload["release_index"]["cache_state"], "stale-fallback");
+    assert_eq!(
+        payload["release_index"]["fallback_reason"],
+        "refresh-failed"
+    );
+    assert_eq!(payload["release_index"]["selector"], "lts");
+    assert_eq!(payload["release_index"]["selected_version"], "v22.11.0");
+    assert!(payload["release_index"]["cache_age_seconds"]
+        .as_u64()
+        .is_some_and(|age| age > 600));
+    assert_eq!(payload["release_index"]["ttl_seconds"], 600);
+    assert!(payload["release_index"]["source_url"]
+        .as_str()
+        .is_some_and(|url| !url.contains('?') && !url.contains('#')));
+    index_mock.assert_calls(3);
+}
+
+#[test]
+#[serial]
+fn which_human_output_stays_path_only_with_stale_release_index_cache_fallback() {
+    let env = TestEnv::new();
+    let runtime_bin = env
+        .data_root
+        .join("toolchains")
+        .join("v22.11.0")
+        .join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho stale-cache\n");
+    fs::write(
+        env.cache_root.join("release-index.json"),
+        serde_json::json!({
+            "schema_version": 1,
+            "index_url": env.index_url,
+            "fetched_at_epoch_seconds": 1,
+            "entries": [
+                { "version": "v22.11.0", "lts": "Jod" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let index_mock = env.server.mock(|when, then| {
+        when.method(GET).path("/download/release/index.json");
+        then.status(500);
+    });
+
+    let output = env
+        .command()
+        .args(["which", "--runtime", "lts", "node"])
+        .output()
+        .expect("which --runtime lts with stale release index fallback");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let expected = env
+        .data_root
+        .join("toolchains")
+        .join("v22.11.0")
+        .join("bin")
+        .join("node");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("{}\n", expected.display())
+    );
+    index_mock.assert_calls(3);
 }
 
 #[test]
@@ -3750,6 +3935,45 @@ fn json_output_does_not_include_ansi_when_color_is_forced() {
 
 #[test]
 #[serial]
+fn invalid_release_index_ttl_does_not_log_for_commands_without_release_index() {
+    let env = TestEnv::new();
+    let output = env
+        .command()
+        .env("RUST_LOG", "nodeup=warn")
+        .env("NODEUP_RELEASE_INDEX_TTL_SECONDS", "abc")
+        .args(["show", "home"])
+        .output()
+        .expect("show home with invalid release index ttl");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup home:"));
+    assert!(!stdout.contains("Invalid release index TTL value"));
+    assert!(!stdout.contains("invalid_value_category"));
+    assert!(!stdout.contains("fallback_seconds"));
+    assert!(!stdout.contains("env_value"));
+    assert!(!stdout.contains("abc"));
+}
+
+#[test]
+#[serial]
+fn json_output_stays_parseable_with_invalid_release_index_ttl() {
+    let env = TestEnv::new();
+    let output = env
+        .command()
+        .env("NODEUP_RELEASE_INDEX_TTL_SECONDS", "-1")
+        .args(["--output", "json", "show", "home"])
+        .output()
+        .expect("show home json with invalid release index ttl");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["data_root"].is_string());
+}
+
+#[test]
+#[serial]
 fn completions_output_stays_raw_without_ansi_when_color_is_forced() {
     let env = TestEnv::new();
 
@@ -3763,6 +3987,27 @@ fn completions_output_stays_raw_without_ansi_when_color_is_forced() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("nodeup"));
     assert!(!stdout.contains("\u{1b}["));
+}
+
+#[test]
+#[serial]
+fn completions_output_stays_raw_with_invalid_release_index_ttl() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("RUST_LOG", "nodeup=warn")
+        .env("NODEUP_RELEASE_INDEX_TTL_SECONDS", "abc")
+        .args(["completions", "bash"])
+        .output()
+        .expect("bash completions with invalid release index ttl");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup"));
+    assert!(!stdout.contains("Invalid release index TTL value"));
+    assert!(!stdout.contains("invalid_value_category"));
+    assert!(!stdout.contains("abc"));
 }
 
 #[test]

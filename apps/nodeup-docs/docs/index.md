@@ -21,7 +21,7 @@ Nodeup runtime installation and shim dispatch target:
 - Linux x64 and arm64
 - Windows x64 and arm64
 
-x86 hosts are outside the documented support scope.
+x86 hosts are unsupported. If Nodeup detects an unsupported host, use an x64/arm64 machine or a supported CI image.
 
 ## Runtime Selectors
 

@@ -20,6 +20,8 @@ USAGE
 repo="delinoio/oss"
 tag_prefix="nodeup@v"
 workflow_identity="https://github.com/delinoio/oss/.github/workflows/release-nodeup.yml@"
+supported_platforms="macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64"
+unsupported_platform_hint="Use an x64/arm64 host or a supported CI image: macOS x64/arm64, Linux x64/arm64, or Windows x64/arm64."
 
 version="latest"
 method="package-manager"
@@ -117,12 +119,10 @@ verify_bundle() {
     "$artifact"
 }
 
-install_direct() {
-  local tag
-  tag="$(resolve_tag)"
-
+detect_direct_platform() {
   local uname_os
-  uname_os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  uname_os="${NODEUP_INSTALL_TEST_UNAME_OS:-$(uname -s)}"
+  uname_os="$(printf '%s' "$uname_os" | tr '[:upper:]' '[:lower:]')"
 
   local os=""
   case "$uname_os" in
@@ -133,13 +133,15 @@ install_direct() {
       os="darwin"
       ;;
     *)
-      echo "[install.nodeup] unsupported OS for this installer: $uname_os" >&2
-      exit 1
+      echo "[install.nodeup] unsupported host platform for direct installation: os=${uname_os}, arch=unknown" >&2
+      echo "[install.nodeup] supported platforms: ${supported_platforms}; x86 hosts are unsupported" >&2
+      echo "[install.nodeup] hint: ${unsupported_platform_hint}" >&2
+      return 1
       ;;
   esac
 
   local uname_arch
-  uname_arch="$(uname -m)"
+  uname_arch="${NODEUP_INSTALL_TEST_UNAME_ARCH:-$(uname -m)}"
 
   local arch=""
   case "$uname_arch" in
@@ -149,11 +151,31 @@ install_direct() {
     arm64|aarch64)
       arch="arm64"
       ;;
+    x86|i386|i486|i586|i686|ia32|386)
+      echo "[install.nodeup] unsupported host platform for direct installation: os=${os}, arch=${uname_arch}" >&2
+      echo "[install.nodeup] supported platforms: ${supported_platforms}; x86 hosts are unsupported" >&2
+      echo "[install.nodeup] hint: ${unsupported_platform_hint}" >&2
+      return 1
+      ;;
     *)
-      echo "[install.nodeup] unsupported architecture: $uname_arch" >&2
-      exit 1
+      echo "[install.nodeup] unsupported host platform for direct installation: os=${os}, arch=${uname_arch}" >&2
+      echo "[install.nodeup] supported platforms: ${supported_platforms}; x86 hosts are unsupported" >&2
+      echo "[install.nodeup] hint: ${unsupported_platform_hint}" >&2
+      return 1
       ;;
   esac
+
+  printf '%s %s\n' "$os" "$arch"
+}
+
+install_direct() {
+  local platform
+  platform="$(detect_direct_platform)" || exit 1
+  local os="${platform%% *}"
+  local arch="${platform##* }"
+
+  local tag
+  tag="$(resolve_tag)"
 
   local ext="tar.gz"
   local asset_name="nodeup-${os}-${arch}.${ext}"

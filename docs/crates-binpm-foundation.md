@@ -19,7 +19,7 @@
 - Command dispatch must return explicit not-yet-implemented errors for flows whose release lookup, asset selection, download, cache mutation, extraction, install, update, remove, verification, explanation, listing, info, outdated, or process execution behavior is not yet implemented.
 - Implemented safe commands may perform read-only or bootstrap behavior when they do not violate storage or mutation contracts:
   - `binpm init` may create `binpm.toml` containing `version = 1`.
-  - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories.
+  - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories for supported shells.
   - `binpm doctor` may report manifest, lockfile, and global home state without mutation.
   - `binpm cache key` may print a deterministic key for the current target and project-root `binpm.lock`, using an empty lockfile digest when the file is absent.
 - Current install finalization supports bare executable assets and documented archive assets end to end. Archive extraction is implemented for `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip`, and installs only the selected executable member.
@@ -53,12 +53,15 @@
 - `binpm info <cmd-or-source> [--local|--global]` must print source metadata, resolved release metadata when available, selected target asset, selected binary, and checksum source without installing new bytes.
 - `binpm outdated [--local|--global]` must compare declared or installed tools with the latest stable release available from their source and must not update manifests, lockfiles, package records, cache entries, or executables.
 - `binpm update [cmd...] [--local|--global] [--dry-run]` must update selected tools or all tools in scope to the latest stable release allowed by their source declarations; local updates must update `binpm.lock` and installed project-local executables. Before mutation it must print `update scope: local` or `update scope: global` and a planned update list; with `--dry-run` it must print the same plan and leave state unchanged.
-- `binpm doctor` must inspect manifest discovery, lockfile readability, package records, cache state, installed executable records, PATH visibility, and provider configuration without mutating state.
+- `binpm doctor` must inspect manifest discovery, lockfile readability, package records, cache state, installed executable records, PATH visibility, and provider configuration without mutating state. When `~/.binpm/bin` is not visible on `PATH`, doctor must print guided setup messaging that points to `binpm env` and keeps profile modification opt-in.
 - `binpm explain <cmd-or-source> [--local|--global]` must explain source parsing, release selection, target normalization, asset candidate scoring, binary discovery, and verification decisions without mutating state.
 - Source-form `binpm explain <source>` may perform read-only GitHub or GitLab release API lookup and must print the normalized source, provider API URL, release decision, normalized target, selected asset when one is eligible, candidate scores, and rejection reasons. Local command explanation must inspect existing package records and print source, release, target, selected asset, selected binary, archive format, checksum source, and verification state without installing new bytes.
 - `binpm verify [--local|--global] [--require-verified]` must validate lockfile records, package records, cache bytes, and installed executable records without mutating state.
 - `binpm init` must create a minimal `binpm.toml` with `version = 1` at the project root when one does not already exist; it must not install tools by default.
-- `binpm env --shell <shell>` must print shell-specific environment commands for adding binpm-managed binary directories to `PATH`; it must not modify shell profiles by default.
+- `binpm env --shell <shell>` must print shell-specific environment commands for adding binpm-managed binary directories to `PATH`; it must not modify shell profiles by default. The printed global bin command must be labeled as suitable for shell profiles, while the project-local command must be labeled for the current project or shell session only.
+- Supported `binpm env --shell` values are `bash`, `zsh`, `fish`, and `powershell`. `PowerShell` is accepted case-insensitively for user ergonomics.
+- `binpm env --shell cmd` is a recognized but explicitly deferred shell value; it must fail with an unsupported-shell diagnostic that lists supported shells and says cmd support is deferred.
+- After global installs, when `~/.binpm/bin` is not visible on `PATH`, binpm must print guided PATH setup messaging that points to `binpm env --shell <bash|zsh|fish|powershell>`, says persistent profile changes are opt-in, and tells users to persist only the global bin line.
 - On Windows, `binpm env --shell bash` and `binpm env --shell zsh` must render drive-letter and UNC paths in POSIX shell form so colon-separated `PATH` exports remain valid.
 - `binpm add <cmd> <source> [--bin <upstream-binary>]` must declare `<cmd>` in `binpm.toml`, install the selected executable into `$repoRoot/.binpm/bin`, and update `binpm.lock`.
 - When `binpm add` receives `--bin`, it must persist that value as `[tools.<cmd>].bin` in `binpm.toml` so future local installs and executions use the same upstream binary selection without manual TOML editing.
@@ -235,7 +238,10 @@ signature_verified = false
 
 ## Logging
 - Use structured `tracing` logs for manifest discovery, lockfile parsing, release lookup, target normalization, asset candidate scoring, checksum discovery, download, extraction, binary discovery, install finalization, and `binpm x` command execution.
-- The initial skeleton uses `BINPM_LOG` as the binpm-specific `tracing_subscriber` env filter, defaults to `binpm=warn`, and supports `BINPM_LOG_COLOR` plus `NO_COLOR` for ANSI color control.
+- `binpm -v` and `binpm --verbose` are stable global flags that set the binpm tracing filter to `binpm=info`.
+- `binpm --debug` is a stable global flag that sets the binpm tracing filter to `binpm=debug`.
+- `BINPM_LOG` remains supported as the binpm-specific `tracing_subscriber` env filter when no CLI verbosity flag is present. Deterministic precedence is: `--debug`, then `-v`/`--verbose`, then non-empty `BINPM_LOG`, then the default `binpm=warn`.
+- Tracing color is controlled independently by `BINPM_LOG_COLOR` and `NO_COLOR`; verbosity flags must not change ANSI color policy.
 - Candidate scoring logs must include normalized package spec, source provider, source host, release tag, asset name, detected OS, detected architecture, detected libc/ABI, artifact kind, score, and rejection reason when applicable.
 - Download and cache logs must include sanitized URL origin, asset name, byte count when known, cache hit or miss state, cache key, cache path, cache action, cache validation source, cache reused state, cache eviction state, retry attempt, and final outcome.
 - Install logs must include package spec, release tag, selected asset, selected archive member or bare executable, installed path, manifest path, lockfile path when local, and whether the install is global or project-local.
@@ -243,6 +249,13 @@ signature_verified = false
 - `binpm x` logs must include local project root when present, resolved command, explicit package spec when used, PATH entries added by binpm, install-on-demand state, process exit status, and whether command resolution came from `binpm.toml` or `--package`.
 - Diagnostic command logs for `doctor`, `explain`, `verify`, and `cache key` must include enough structured context to distinguish read-only inspection from mutating install or update flows.
 - Human CLI output may be concise, but debug logs must be sufficient to reconstruct why a candidate won or lost.
+- Failures in release lookup, asset selection, download streaming, or verification must mention `--verbose` or `--debug` when structured diagnostics are likely to help.
+
+## Download Progress
+- Interactive installs must show human-facing progress on stderr for large or unknown-size release asset downloads. Progress output may be concise, but it must reassure users that the download is active and include a human-readable byte count when available.
+- Non-interactive output, including redirected stderr and `CI=true`, must not emit periodic progress lines so scripts and CI logs stay stable.
+- Retry messages for retryable download failures must explain which asset is being retried and the retry attempt, but must never include credentials, query strings, fragments, or expiring signed URL parameters.
+- Download logs and progress diagnostics must use sanitized URLs that remove query strings and fragments and redact URL userinfo before display.
 
 ## Build and Test
 - Local validation for binpm runtime changes must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.

@@ -1,6 +1,9 @@
-use std::{ffi::OsStr, fmt};
+use std::{collections::BTreeMap, ffi::OsStr, fmt};
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+use crate::errors::{ErrorDiagnostics, NodeupError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -190,6 +193,49 @@ pub enum PlatformTarget {
     WindowsArm64,
 }
 
+pub const SUPPORTED_PLATFORM_PAIRS: &[&str] = &[
+    "macos/x64",
+    "macos/arm64",
+    "linux/x64",
+    "linux/arm64",
+    "windows/x64",
+    "windows/arm64",
+];
+
+pub const SUPPORTED_PLATFORM_GUIDANCE: &str = "Nodeup supports macOS x64, macOS arm64, Linux x64, \
+                                               Linux arm64, Windows x64, and Windows arm64 hosts. \
+                                               x86 hosts are unsupported.";
+
+pub const UNSUPPORTED_PLATFORM_HINT: &str = "Use an x64/arm64 host or a supported CI image: macOS \
+                                             x64/arm64, Linux x64/arm64, or Windows x64/arm64.";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PlatformDiagnostic {
+    pub os: String,
+    pub architecture: String,
+    pub platform_source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forced_platform: Option<String>,
+    pub supported_platforms: Vec<String>,
+}
+
+impl PlatformDiagnostic {
+    pub fn into_error_diagnostics(self) -> ErrorDiagnostics {
+        let mut diagnostics = BTreeMap::new();
+        diagnostics.insert("os".to_string(), json!(self.os));
+        diagnostics.insert("architecture".to_string(), json!(self.architecture));
+        diagnostics.insert("platform_source".to_string(), json!(self.platform_source));
+        if let Some(forced_platform) = self.forced_platform {
+            diagnostics.insert("forced_platform".to_string(), json!(forced_platform));
+        }
+        diagnostics.insert(
+            "supported_platforms".to_string(),
+            json!(SUPPORTED_PLATFORM_PAIRS),
+        );
+        diagnostics
+    }
+}
+
 impl PlatformTarget {
     pub fn archive_segment(self) -> &'static str {
         match self {
@@ -212,18 +258,44 @@ impl PlatformTarget {
     }
 
     pub fn from_host() -> Option<Self> {
+        Self::from_host_result().ok()
+    }
+
+    pub fn from_host_result() -> std::result::Result<Self, PlatformDiagnostic> {
         if let Ok(value) = std::env::var("NODEUP_FORCE_PLATFORM") {
-            return Self::from_forced(&value);
+            if let Some(target) = Self::from_forced(&value) {
+                return Ok(target);
+            }
+            let (os, architecture) = parse_forced_platform_diagnostic(&value);
+            return Err(PlatformDiagnostic {
+                os,
+                architecture,
+                platform_source: "NODEUP_FORCE_PLATFORM".to_string(),
+                forced_platform: Some(value),
+                supported_platforms: SUPPORTED_PLATFORM_PAIRS
+                    .iter()
+                    .map(|value| (*value).to_string())
+                    .collect(),
+            });
         }
 
         match (std::env::consts::OS, std::env::consts::ARCH) {
-            ("macos", "x86_64") => Some(Self::DarwinX64),
-            ("macos", "aarch64") => Some(Self::DarwinArm64),
-            ("linux", "x86_64") => Some(Self::LinuxX64),
-            ("linux", "aarch64") => Some(Self::LinuxArm64),
-            ("windows", "x86_64") => Some(Self::WindowsX64),
-            ("windows", "aarch64") => Some(Self::WindowsArm64),
-            _ => None,
+            ("macos", "x86_64") => Ok(Self::DarwinX64),
+            ("macos", "aarch64") => Ok(Self::DarwinArm64),
+            ("linux", "x86_64") => Ok(Self::LinuxX64),
+            ("linux", "aarch64") => Ok(Self::LinuxArm64),
+            ("windows", "x86_64") => Ok(Self::WindowsX64),
+            ("windows", "aarch64") => Ok(Self::WindowsArm64),
+            (os, architecture) => Err(PlatformDiagnostic {
+                os: os.to_string(),
+                architecture: architecture.to_string(),
+                platform_source: "host".to_string(),
+                forced_platform: None,
+                supported_platforms: SUPPORTED_PLATFORM_PAIRS
+                    .iter()
+                    .map(|value| (*value).to_string())
+                    .collect(),
+            }),
         }
     }
 
@@ -238,6 +310,49 @@ impl PlatformTarget {
             _ => None,
         }
     }
+
+    pub fn ensure_supported_host(action: &str) -> std::result::Result<Self, NodeupError> {
+        Self::from_host_result()
+            .map_err(|diagnostic| unsupported_platform_error(action, diagnostic))
+    }
+}
+
+fn parse_forced_platform_diagnostic(value: &str) -> (String, String) {
+    if let Some((os, architecture)) = value.split_once('-') {
+        (os.to_string(), architecture.to_string())
+    } else {
+        ("unknown".to_string(), value.to_string())
+    }
+}
+
+fn unsupported_platform_error(action: &str, diagnostic: PlatformDiagnostic) -> NodeupError {
+    let host = format!("{}/{}", diagnostic.os, diagnostic.architecture);
+    let forced = diagnostic
+        .forced_platform
+        .as_ref()
+        .map(|value| format!(", forced_platform={value}"))
+        .unwrap_or_default();
+    let x86_context = if is_x86_architecture(&diagnostic.architecture) {
+        " x86 hosts are unsupported."
+    } else {
+        ""
+    };
+    NodeupError::unsupported_platform_with_diagnostics(
+        format!(
+            "Unsupported host platform for {action}. host={host}, \
+             platform_source={}{}.{x86_context} {SUPPORTED_PLATFORM_GUIDANCE}",
+            diagnostic.platform_source, forced
+        ),
+        UNSUPPORTED_PLATFORM_HINT,
+        diagnostic.into_error_diagnostics(),
+    )
+}
+
+fn is_x86_architecture(architecture: &str) -> bool {
+    matches!(
+        architecture.to_ascii_lowercase().as_str(),
+        "x86" | "i386" | "i486" | "i586" | "i686" | "ia32" | "386"
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -287,7 +402,7 @@ impl ManagedAlias {
 
 #[cfg(test)]
 mod tests {
-    use super::ManagedAlias;
+    use super::{ManagedAlias, PlatformTarget};
 
     #[test]
     fn managed_alias_from_argv0_accepts_extensionless_and_windows_exe_aliases() {
@@ -304,5 +419,39 @@ mod tests {
             Some(ManagedAlias::Npm)
         );
         assert_eq!(ManagedAlias::from_argv0("nodeup.exe".as_ref()), None);
+    }
+
+    #[test]
+    fn platform_target_maps_supported_forced_platforms() {
+        assert_eq!(
+            PlatformTarget::from_forced("darwin-x64"),
+            Some(PlatformTarget::DarwinX64)
+        );
+        assert_eq!(
+            PlatformTarget::from_forced("darwin-arm64"),
+            Some(PlatformTarget::DarwinArm64)
+        );
+        assert_eq!(
+            PlatformTarget::from_forced("linux-x64"),
+            Some(PlatformTarget::LinuxX64)
+        );
+        assert_eq!(
+            PlatformTarget::from_forced("linux-arm64"),
+            Some(PlatformTarget::LinuxArm64)
+        );
+        assert_eq!(
+            PlatformTarget::from_forced("windows-x64"),
+            Some(PlatformTarget::WindowsX64)
+        );
+        assert_eq!(
+            PlatformTarget::from_forced("windows-arm64"),
+            Some(PlatformTarget::WindowsArm64)
+        );
+    }
+
+    #[test]
+    fn platform_target_rejects_forced_x86_platforms() {
+        assert_eq!(PlatformTarget::from_forced("linux-x86"), None);
+        assert_eq!(PlatformTarget::from_forced("windows-x86"), None);
     }
 }
