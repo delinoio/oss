@@ -18,14 +18,33 @@
 
 ## Install
 
+Canonical install docs:
+
+- `https://nodeup.delino.io/installation`
+
 Tag contract:
 
 - `nodeup@v<semver>`
+
+`binpm`:
+
+```bash
+binpm init
+binpm add nodeup github:delinoio/oss@nodeup@v<semver>
+binpm env --shell <shell>
+```
 
 Package manager:
 
 - macOS/Linux: `brew install delinoio/tap/nodeup`
 - Homebrew installs prebuilt archives on macOS Intel, macOS Apple Silicon, Linux amd64, and Linux arm64
+
+Direct installers:
+
+- `scripts/install/nodeup.sh`
+- `scripts/install/nodeup.ps1`
+- Direct installers verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`) with `cosign`.
+- Direct installers support bundle-enabled releases only.
 
 `cargo-binstall`:
 
