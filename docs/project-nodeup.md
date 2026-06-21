@@ -23,6 +23,8 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Release automation must publish both standalone prebuilt binaries and archive assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, plus Sigstore bundle sidecars (`*.sigstore.json`) for each artifact and `SHA256SUMS`.
 - Direct installers must verify `SHA256SUMS` entries and Sigstore bundle sidecars, require `cosign`, and only support bundle-enabled releases.
 - Direct installers must remain available at `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1`.
+- Public direct-installer documentation must include copy-pasteable remote commands for POSIX shells and PowerShell that fetch the installer from first-party `delinoio/oss` raw GitHub URLs, while also preserving the canonical in-repo script paths for maintainer workflows.
+- Remote direct-installer examples must use `https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.sh` and `https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.ps1` for current public docs, or a tag/commit-pinned equivalent of those same first-party paths when reproducibility is required.
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable third-party quick-install and compile fallback strategies.
 - Homebrew installation must use prebuilt `nodeup` release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - `nodeup` runtime installation and shim dispatch must support `macOS`, `Linux`, and `Windows` x64/arm64 hosts while leaving x86 hosts out of scope.
