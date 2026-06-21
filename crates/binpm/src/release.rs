@@ -322,6 +322,33 @@ fn sanitize_url(url: &str) -> String {
     parsed.to_string()
 }
 
+pub(crate) fn locked_asset_download_auth(
+    source: &SourceSpec,
+    asset_url: &str,
+) -> (Option<ProviderAuth>, Option<&'static str>) {
+    let Some(auth) = provider_auth_for_source(source) else {
+        return (None, None);
+    };
+
+    match source.provider {
+        SourceProvider::GitHub => (Some(auth), Some(GITHUB_ASSET_DOWNLOAD_ACCEPT)),
+        SourceProvider::GitLab => {
+            let source_origin = Url::parse(&format!("https://{}/", source.host)).ok();
+            let request_origin = Url::parse(asset_url).ok();
+            if source_origin
+                .zip(request_origin)
+                .is_some_and(|(source_origin, request_origin)| {
+                    same_origin(&source_origin, &request_origin)
+                })
+            {
+                (Some(auth), None)
+            } else {
+                (None, None)
+            }
+        }
+    }
+}
+
 fn provider_auth_for_source(source: &SourceSpec) -> Option<ProviderAuth> {
     provider_auth_for_source_with(source, |name| env::var(name).ok())
 }
@@ -973,21 +1000,47 @@ fn is_https_url(url: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
     use chrono::{TimeZone, Utc};
     use reqwest::{header, StatusCode};
 
     use super::{
-        classify_release_lookup_status, has_prerelease_tag, next_page_url,
-        provider_auth_for_source_with, provider_token_env_candidates, release_lookup_diagnostic,
-        release_request, releases_page_url, sanitize_url, select_release, sort_gitlab_releases,
-        validate_pagination_url, verify_gitlab_asset_redirects, GitHubReleaseClient, GitLabRelease,
-        GitLabReleaseClient, Release,
+        classify_release_lookup_status, has_prerelease_tag, locked_asset_download_auth,
+        next_page_url, provider_auth_for_source_with, provider_token_env_candidates,
+        release_lookup_diagnostic, release_request, releases_page_url, sanitize_url,
+        select_release, sort_gitlab_releases, validate_pagination_url,
+        verify_gitlab_asset_redirects, GitHubReleaseClient, GitLabRelease, GitLabReleaseClient,
+        Release, GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
         contract::{SourceProvider, SourceSpec},
         error::{BinpmError, ReleaseLookupDiagnosticKind},
         release::ReleaseAsset,
     };
+
+    struct EnvGuard {
+        name: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(name: &'static str, value: &str) -> Self {
+            let previous = env::var(name).ok();
+            env::set_var(name, value);
+            Self { name, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            if let Some(previous) = &self.previous {
+                env::set_var(self.name, previous);
+            } else {
+                env::remove_var(self.name);
+            }
+        }
+    }
 
     #[test]
     fn github_client_uses_dot_com_api_for_implicit_host() {
@@ -1264,6 +1317,62 @@ mod tests {
         );
 
         assert_eq!(release.assets[0].download_auth, None);
+    }
+
+    #[test]
+    fn locked_github_asset_download_auth_uses_provider_token_and_accept() {
+        let source: SourceSpec = "github:owner/tool".parse().expect("source");
+        let _guard = EnvGuard::set("BINPM_GITHUB_TOKEN_GITHUB_COM", "github-token");
+
+        let (auth, accept) = locked_asset_download_auth(
+            &source,
+            "https://github.com/owner/tool/releases/download/v1/tool-linux",
+        );
+
+        let auth = auth.expect("auth");
+        assert_eq!(auth.header_name, header::AUTHORIZATION.as_str());
+        assert_eq!(auth.header_value, "Bearer github-token");
+        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GITHUB_COM");
+        assert_eq!(accept, Some(GITHUB_ASSET_DOWNLOAD_ACCEPT));
+    }
+
+    #[test]
+    fn locked_gitlab_asset_download_auth_uses_same_origin_private_token() {
+        let source: SourceSpec = "gitlab:gitlab.example.com/group/tool"
+            .parse()
+            .expect("source");
+        let _guard = EnvGuard::set(
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM",
+            "gitlab-token",
+        );
+
+        let (auth, accept) = locked_asset_download_auth(
+            &source,
+            "https://gitlab.example.com/group/tool/-/releases/v1/downloads/tool-linux",
+        );
+
+        let auth = auth.expect("auth");
+        assert_eq!(auth.header_name, "PRIVATE-TOKEN");
+        assert_eq!(auth.header_value, "gitlab-token");
+        assert_eq!(auth.env_var, "BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM");
+        assert_eq!(accept, None);
+    }
+
+    #[test]
+    fn locked_gitlab_asset_download_auth_drops_external_url_auth() {
+        let source: SourceSpec = "gitlab:gitlab.example.com/group/tool"
+            .parse()
+            .expect("source");
+        let _guard = EnvGuard::set(
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM",
+            "gitlab-token",
+        );
+
+        let (auth, accept) =
+            locked_asset_download_auth(&source, "https://downloads.example.com/tool-linux");
+
+        assert_eq!(auth, None);
+        assert_eq!(accept, None);
     }
 
     #[test]
