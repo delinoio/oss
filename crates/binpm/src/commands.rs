@@ -1605,6 +1605,10 @@ fn override_snippet_candidate(decisions: &[CandidateDecision]) -> Option<&Candid
         decision.kind.is_installable()
             && decision.rejection_reason.as_deref().is_some_and(|reason| {
                 reason.contains("linux musl target requires an explicit libc signal")
+                    || (decision.score.is_some()
+                        && reason.contains(
+                            "CPU feature variant `modern` requires explicit host capability",
+                        ))
             })
     })
 }
@@ -8781,6 +8785,36 @@ mod tests {
     }
 
     #[test]
+    fn explain_diagnostics_suggest_override_for_modern_only_compatible_assets() {
+        let target = linux_target();
+        let assets = [release_asset("tool-linux-x64-modern.tar.gz")];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(decisions.iter().all(|decision| !decision.eligible));
+        assert_eq!(
+            override_snippet_candidate(&decisions).map(|decision| decision.asset_name.as_str()),
+            Some("tool-linux-x64-modern.tar.gz")
+        );
+        let lines = release_diagnostic_lines(&decisions, &target);
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("CPU feature variants were detected")));
+    }
+
+    #[test]
+    fn explain_diagnostics_do_not_suggest_modern_override_for_incompatible_target_assets() {
+        let target = linux_target();
+        let assets = [release_asset("tool-darwin-aarch64-modern.tar.gz")];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(decisions.iter().all(|decision| !decision.eligible));
+        assert!(decisions.iter().any(|decision| {
+            decision.rejection_reason.as_deref() == Some("asset target does not match host target")
+        }));
+        assert!(override_snippet_candidate(&decisions).is_none());
+    }
+
+    #[test]
     fn explain_diagnostics_do_not_suggest_override_for_incompatible_target_assets() {
         let target = HostTarget {
             os: TargetOs::Darwin,
@@ -10214,6 +10248,21 @@ mod tests {
             os: TargetOs::Linux,
             arch: TargetArch::X86_64,
             libc: TargetLibc::Gnu,
+        }
+    }
+
+    fn release_asset(name: &str) -> ReleaseAsset {
+        ReleaseAsset {
+            name: name.to_string(),
+            url: format!("https://github.com/owner/tool/releases/download/1.0.0/{name}"),
+            provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+            final_url: None,
         }
     }
 

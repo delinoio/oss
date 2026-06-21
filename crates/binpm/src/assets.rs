@@ -336,7 +336,7 @@ pub(crate) fn target_archive_candidates(
 }
 
 fn archive_member_target_score(target: &HostTarget, path: &str) -> Option<i32> {
-    let signal = detect_target(path);
+    let signal = detect_archive_member_target(path);
     if signal.cpu_feature == Some(CpuFeatureVariant::Modern) {
         return None;
     }
@@ -423,16 +423,6 @@ fn score_asset(
         }
     }
 
-    if target_signal.cpu_feature == Some(CpuFeatureVariant::Modern) {
-        decision.rejection_reason = Some(
-            "CPU feature variant `modern` requires explicit host capability selection; baseline \
-             or unspecified assets are preferred by default"
-                .to_string(),
-        );
-        log_candidate(target, &decision);
-        return decision;
-    }
-
     match kind {
         ArtifactKind::Archive(_) | ArtifactKind::BareExecutable => {}
         ArtifactKind::DesktopPackage => {
@@ -468,6 +458,17 @@ fn score_asset(
         log_candidate(target, &decision);
         return decision;
     };
+
+    if target_signal.cpu_feature == Some(CpuFeatureVariant::Modern) {
+        decision.score = Some(score);
+        decision.rejection_reason = Some(
+            "CPU feature variant `modern` requires explicit host capability selection; baseline \
+             or unspecified assets are preferred by default"
+                .to_string(),
+        );
+        log_candidate(target, &decision);
+        return decision;
+    }
 
     decision.score = Some(score);
     decision.eligible = true;
@@ -645,6 +646,17 @@ struct TargetSignal {
 }
 
 fn detect_target(name: &str) -> TargetSignal {
+    detect_target_with_options(name, true)
+}
+
+fn detect_archive_member_target(path: &str) -> TargetSignal {
+    detect_target_with_options(path, false)
+}
+
+fn detect_target_with_options(
+    name: &str,
+    allow_leading_cpu_feature_product_token: bool,
+) -> TargetSignal {
     let lower_name = name.to_ascii_lowercase().replace("x86_64", "x64");
     let is_windows_executable = lower_name.ends_with(".exe");
     let lower = strip_known_suffixes(&lower_name);
@@ -668,7 +680,13 @@ fn detect_target(name: &str) -> TargetSignal {
         if signal.libc.is_none() {
             signal.libc = libc_alias(token);
         }
-        if signal.cpu_feature.is_none() && cpu_feature_token_has_target_context(&tokens, index) {
+        if signal.cpu_feature.is_none()
+            && cpu_feature_token_has_target_context(
+                &tokens,
+                index,
+                allow_leading_cpu_feature_product_token,
+            )
+        {
             signal.cpu_feature = cpu_feature_alias(token);
         }
     }
@@ -761,11 +779,15 @@ fn cpu_feature_alias(token: &str) -> Option<CpuFeatureVariant> {
     }
 }
 
-fn cpu_feature_token_has_target_context(tokens: &[&str], index: usize) -> bool {
+fn cpu_feature_token_has_target_context(
+    tokens: &[&str],
+    index: usize,
+    allow_leading_cpu_feature_product_token: bool,
+) -> bool {
     if cpu_feature_alias(tokens[index]).is_none() {
         return false;
     }
-    if index == 0 {
+    if index == 0 && allow_leading_cpu_feature_product_token {
         return false;
     }
     let has_target_context = |token: &str| {
@@ -1375,6 +1397,24 @@ mod tests {
 
         let modern_only =
             target_archive_candidates(&host, vec!["pkg/bin/linux-x64-modern/tool".to_string()]);
+        assert!(modern_only.is_empty());
+    }
+
+    #[test]
+    fn archive_member_discovery_rejects_leading_modern_cpu_variant_by_default() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let candidates = target_archive_candidates(
+            &host,
+            vec![
+                "modern/linux-x64/tool".to_string(),
+                "baseline/linux-x64/tool".to_string(),
+            ],
+        );
+
+        assert_eq!(candidates, vec!["baseline/linux-x64/tool"]);
+
+        let modern_only =
+            target_archive_candidates(&host, vec!["modern/linux-x64/tool".to_string()]);
         assert!(modern_only.is_empty());
     }
 
