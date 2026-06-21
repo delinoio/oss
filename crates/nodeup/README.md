@@ -178,7 +178,7 @@ Fallback rules when `packageManager` is absent:
   - handled failures are written to stderr as JSON envelopes
     - fields: `kind`, `message`, `exit_code`
     - `message` follows `<cause>. Hint: <next action>` for actionable recovery guidance
-  - default logging is off unless explicitly enabled via `RUST_LOG`
+  - logging stays off so stdout and stderr remain parseable
 - `completions` command:
   - always writes raw completion script text to stdout
   - does not wrap completion output in JSON, even when `--output json` is set
@@ -187,9 +187,9 @@ Fallback rules when `packageManager` is absent:
 Script-safe output patterns:
 
 - Structured automation: `nodeup --output json <command>`
-- Runtime identifier loops: `RUST_LOG=off nodeup toolchain list --quiet`
-- Completion redirection: `RUST_LOG=off nodeup completions <shell> >file`
-- Human output without logs: `RUST_LOG=off nodeup <command>`
+- Runtime identifier loops: set `RUST_LOG=off`, then run `nodeup toolchain list --quiet`
+- Completion redirection: set `RUST_LOG=off`, then run `nodeup completions <shell> >file`
+- Human output without logs: set `RUST_LOG=off`, then run `nodeup <command>`
 
 Human output color control:
 

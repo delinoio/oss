@@ -285,10 +285,10 @@ fn help_lists_top_level_subcommand_descriptions() {
             "Use `--output json` for structured automation.",
         ))
         .stdout(predicates::str::contains(
-            "RUST_LOG=off nodeup toolchain list --quiet",
+            "`nodeup toolchain list --quiet` with RUST_LOG=off in the environment",
         ))
         .stdout(predicates::str::contains(
-            "RUST_LOG=off nodeup completions <shell> >file",
+            "`nodeup completions <shell> >file` with RUST_LOG=off in the environment",
         ))
         .stdout(predicates::str::contains("Manage installed runtimes"))
         .stdout(predicates::str::contains(
@@ -329,7 +329,7 @@ fn help_lists_nested_subcommand_descriptions() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "Use RUST_LOG=off for script-safe raw lists",
+            "Set RUST_LOG=off in the environment for script-safe raw lists",
         ));
 
     env.command()
@@ -337,7 +337,7 @@ fn help_lists_nested_subcommand_descriptions() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "Redirect with RUST_LOG=off for script-safe raw output",
+            "Set RUST_LOG=off in the environment before redirecting",
         ));
 
     env.command()
@@ -1919,6 +1919,26 @@ fn json_show_active_runtime_failure_remains_parseable_without_rust_log_env() {
         .args(["--output", "json", "show", "active-runtime"])
         .output()
         .expect("show active-runtime --output json without rust log env");
+
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+    assert_eq!(payload["exit_code"], 5);
+}
+
+#[test]
+#[serial]
+fn json_show_active_runtime_failure_remains_parseable_with_rust_log_env() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("RUST_LOG", "nodeup=info")
+        .args(["--output", "json", "show", "active-runtime"])
+        .output()
+        .expect("show active-runtime --output json with rust log env");
 
     assert_eq!(output.status.code(), Some(5));
     assert!(output.stdout.is_empty());

@@ -21,8 +21,13 @@ impl LoggingContext {
 }
 
 pub fn init_logging(context: LoggingContext) {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(context.default_filter()));
+    let env_filter = match context {
+        LoggingContext::ManagementJson => EnvFilter::new(context.default_filter()),
+        LoggingContext::ManagedAlias | LoggingContext::ManagementHuman => {
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new(context.default_filter()))
+        }
+    };
     let _ = tracing_subscriber::fmt()
         .pretty()
         .with_writer(std::io::stderr)
