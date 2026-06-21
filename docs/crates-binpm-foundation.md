@@ -28,6 +28,7 @@
 - Canonical local sync command: `binpm install`.
 - Canonical local execution command: `binpm x CMD [args...]`.
 - Canonical one-off execution command: `binpm x --package <source> CMD [args...]`.
+- Documented execution aliases: `binpm exec` and `binpm run`. These aliases are stable compatibility entry points for discoverability, but `binpm x` remains the canonical execution command used in contracts, diagnostics, examples, and logs.
 - Stable source enum values:
   - `github:owner/repo[@version]` addresses GitHub.com Releases and may omit the host only for `github.com`.
   - `github:<host>/owner/repo[@version]` addresses GitHub Enterprise Releases on an explicit host.
@@ -64,7 +65,8 @@
 - `binpm install` without a package spec must sync the local `binpm.toml` manifest into `$repoRoot/.binpm/bin` and update `binpm.lock`; `binpm install <source>` keeps the global install behavior.
 - `binpm x CMD [args...]` must resolve `CMD` from `binpm.toml`, install it on demand when the lockfile or local executable is missing or stale, prepend `$repoRoot/.binpm/bin` to `PATH`, preserve the caller's current working directory, and forward every argument after `CMD` to the executed command.
 - `binpm x --package <source> CMD [args...]` must install or reuse the explicit package in a temporary or cache-backed execution context, prepend that context and `$repoRoot/.binpm/bin` to `PATH` when a local project exists, and run `CMD [args...]`.
-- If `CMD` is absent from the local manifest and no explicit `--package` is provided, `binpm x` must fail with a clear hint to run `binpm add <cmd> <source>` or retry with `--package`; it must not infer a source repository from the command name.
+- `binpm exec` and `binpm run` must dispatch through the same execution implementation as `binpm x`, including argument forwarding, `--package` behavior, local manifest and lockfile behavior, install-on-demand behavior, PATH prepending, and process exit handling.
+- If `CMD` is absent from the local manifest and no explicit `--package` is provided, `binpm x` and its execution aliases must fail with a clear hint to run `binpm add <cmd> <source>` or retry with `--package`; they must not infer a source repository from the command name.
 - The host target model must be enum-driven and include:
   - OS: `linux`, `darwin`, `windows`, `freebsd`
   - CPU architecture: `x86_64`, `aarch64`, `i686`, `armv7`

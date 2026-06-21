@@ -69,9 +69,37 @@ fn help_includes_initial_command_surface() {
         .assert()
         .success()
         .stdout(predicate::str::contains("install"))
+        .stdout(predicate::str::contains(
+            "Execute a local manifest command or one-off package command",
+        ))
+        .stdout(predicate::str::contains("exec"))
+        .stdout(predicate::str::contains("run"))
         .stdout(predicate::str::contains("cache"))
         .stdout(predicate::str::contains("verify"))
         .stdout(predicate::str::contains("env"));
+}
+
+#[test]
+fn execution_aliases_accept_package_and_forwarded_flags() {
+    for alias in ["exec", "run"] {
+        let mut command = binpm();
+
+        command
+            .args([
+                alias,
+                "--package",
+                "not-a-source",
+                "tool",
+                "--",
+                "--package",
+                "literal",
+            ])
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(predicate::str::contains("Invalid source spec"))
+            .stderr(predicate::str::contains("literal").not());
+    }
 }
 
 #[test]
