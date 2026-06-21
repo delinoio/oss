@@ -240,7 +240,7 @@ fn plan_symlink(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
             }
 
             if metadata.is_file() && same_file_content(path, nodeup_binary)? {
-                return Ok(ShimPlanAction::Keep);
+                return Ok(ShimPlanAction::Repair);
             }
 
             Err(shim_conflict(format!(

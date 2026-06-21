@@ -1830,6 +1830,11 @@ fn self_uninstall_reports_cleanup_boundaries_and_manual_steps() {
 fn self_uninstall_reports_default_setup_shim_leftovers() {
     let env = TestEnv::new();
     let shim_dir = env.root.join(".local").join("bin");
+    let node_shim = if cfg!(windows) {
+        shim_dir.join("node.exe")
+    } else {
+        shim_dir.join("node")
+    };
 
     env.command()
         .env("HOME", &env.root)
@@ -1842,11 +1847,9 @@ fn self_uninstall_reports_default_setup_shim_leftovers() {
         .args(["--output", "json", "self", "uninstall"])
         .assert()
         .success()
-        .stdout(predicates::str::contains(
-            shim_dir.join("node").to_str().unwrap(),
-        ));
+        .stdout(predicates::str::contains(node_shim.to_str().unwrap()));
 
-    assert!(shim_dir.join("node").exists());
+    assert!(node_shim.exists());
 }
 
 #[test]
@@ -2104,6 +2107,36 @@ fn shim_setup_is_idempotent_for_existing_valid_aliases() {
             "\"status\": \"already-configured\"",
         ))
         .stdout(predicates::str::contains("\"status\": \"existing\""));
+}
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn shim_setup_repairs_copied_unix_alias_to_symlink() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-copied-alias");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let copied_alias = shim_dir.join("node");
+    fs::copy(assert_cmd::cargo::cargo_bin!("nodeup"), &copied_alias).unwrap();
+
+    env.command()
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"status\": \"repaired\""))
+        .stdout(predicates::str::contains("\"alias\": \"node\""));
+
+    assert!(fs::symlink_metadata(&copied_alias)
+        .unwrap()
+        .file_type()
+        .is_symlink());
 }
 
 #[test]
