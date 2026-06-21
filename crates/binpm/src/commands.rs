@@ -14,8 +14,8 @@ use tracing::{debug, info};
 use crate::assets::ArtifactKind;
 use crate::{
     assets::{
-        discover_archive_binary, gitlab_https_eligible, select_asset, ArchiveMember,
-        BinaryDiscovery,
+        discover_archive_binary, gitlab_https_eligible, select_asset, target_archive_candidates,
+        ArchiveMember, BinaryDiscovery,
     },
     cli::{
         AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
@@ -1072,7 +1072,11 @@ fn local_tool_execution_ready(
         }
         Err(error) => return Err(error),
     }
-    require_executable_managed_file(&installed_path)?;
+    match require_executable_managed_file(&installed_path) {
+        Ok(()) => {}
+        Err(BinpmError::UnsafeManagedFile { .. }) => return Ok(false),
+        Err(error) => return Err(error),
+    }
     Ok(true)
 }
 
@@ -1996,6 +2000,24 @@ fn read_tar_selected_binary<R: Read>(
             asset: asset_name.to_string(),
             message: error.to_string(),
         })?;
+        let entry_type = entry.header().entry_type();
+        if !entry_type.is_file() {
+            if entry_type.is_symlink() || entry_type.is_hard_link() {
+                let path = entry
+                    .path()
+                    .map_err(|error| BinpmError::ArchiveExtraction {
+                        asset: asset_name.to_string(),
+                        message: error.to_string(),
+                    })?;
+                let path = validate_archive_member_path(asset_name, &path)?;
+                return Err(BinpmError::UnsafeArchivePath {
+                    asset: asset_name.to_string(),
+                    path,
+                    message: "symlinks and hard links are not installable".to_string(),
+                });
+            }
+            continue;
+        }
         let path = entry
             .path()
             .map_err(|error| BinpmError::ArchiveExtraction {
@@ -2003,17 +2025,6 @@ fn read_tar_selected_binary<R: Read>(
                 message: error.to_string(),
             })?;
         let path = validate_archive_member_path(asset_name, &path)?;
-        let entry_type = entry.header().entry_type();
-        if entry_type.is_symlink() || entry_type.is_hard_link() {
-            return Err(BinpmError::UnsafeArchivePath {
-                asset: asset_name.to_string(),
-                path,
-                message: "symlinks and hard links are not installable".to_string(),
-            });
-        }
-        if !entry_type.is_file() {
-            continue;
-        }
         let executable = entry
             .header()
             .mode()
@@ -2177,6 +2188,7 @@ fn select_archive_member(
                 })
                 .map(|member| member.path.clone())
                 .collect::<Vec<_>>();
+            let matches = target_archive_candidates(target, matches);
             match matches.as_slice() {
                 [path] => path.clone(),
                 [] => {
@@ -3956,7 +3968,7 @@ mod tests {
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
         ensure_no_package_record_install_path_collision, execute_command, github_sha256_digest,
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
-        install_path_collision_key, local_runtime_lock_records,
+        install_path_collision_key, local_runtime_lock_records, local_tool_execution_ready,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
@@ -4023,6 +4035,47 @@ mod tests {
 
         assert_eq!(selected.path, "tool-1.0.0/tool");
         assert_eq!(selected.bytes, b"#!/bin/sh\nexit 0\n");
+    }
+
+    #[test]
+    fn archive_extraction_skips_root_tar_directory_entry() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.tar.gz");
+        let file = fs::File::create(&archive_path).expect("create archive");
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        let mut directory_header = tar::Header::new_gnu();
+        directory_header.set_entry_type(tar::EntryType::Directory);
+        directory_header.set_size(0);
+        directory_header.set_mode(0o755);
+        directory_header.set_cksum();
+        builder
+            .append_data(&mut directory_header, ".", std::io::empty())
+            .expect("append root directory entry");
+        let mut file_header = tar::Header::new_gnu();
+        let bytes = b"#!/bin/sh\nexit 0\n";
+        file_header.set_size(bytes.len() as u64);
+        file_header.set_mode(0o755);
+        file_header.set_cksum();
+        builder
+            .append_data(&mut file_header, "tool", bytes.as_slice())
+            .expect("append executable entry");
+        builder.finish().expect("finish tar");
+        let encoder = builder.into_inner().expect("finish gzip stream");
+        encoder.finish().expect("finish gzip file");
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::TarGz,
+            "tool.tar.gz",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected binary");
+
+        assert_eq!(selected.path, "tool");
+        assert_eq!(selected.bytes, bytes);
     }
 
     #[test]
@@ -4143,6 +4196,32 @@ mod tests {
 
         assert_eq!(selected.path, "pkg/tool.exe");
         assert_eq!(selected.bytes, b"windows");
+    }
+
+    #[test]
+    fn archive_extraction_filters_explicit_basename_matches_by_target() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[
+                ("bin/darwin/bar", b"darwin".as_slice(), 0o100755),
+                ("bin/linux/bar", b"linux".as_slice(), 0o100755),
+            ],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            Some("bar"),
+        )
+        .expect("selected target-matching explicit binary");
+
+        assert_eq!(selected.path, "bin/linux/bar");
+        assert_eq!(selected.bytes, b"linux");
     }
 
     #[test]
@@ -6830,6 +6909,55 @@ mod tests {
         permissions.set_mode(0o755);
         fs::set_permissions(&installed_path, permissions).expect("chmod executable");
         require_executable_managed_file(&installed_path).expect("executable install");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_tool_execution_ready_treats_non_executable_binary_as_stale() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        let target = HostTarget::current().expect("current target");
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("local scope dirs");
+        let installed_path = managed_installed_path(&paths, "tool", target.os);
+        fs::write(&installed_path, b"#!/bin/sh\nexit 0\n").expect("write installed file");
+        let mut permissions = fs::metadata(&installed_path)
+            .expect("metadata")
+            .permissions();
+        permissions.set_mode(0o644);
+        fs::set_permissions(&installed_path, permissions).expect("chmod non-executable");
+
+        let mut lock_record = package_record();
+        lock_record.target_os = target.os;
+        lock_record.target_arch = target.arch;
+        lock_record.target_libc = target.libc;
+        lock_record.installed_path = deterministic_installed_path("tool", target.os);
+        let mut runtime_record = lock_record.clone();
+        runtime_record.installed_path = installed_path.display().to_string();
+        write_lockfile(
+            &root.join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([(target.key(), lock_record)]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+        write_package_record(&paths, "tool", &runtime_record).expect("write runtime record");
+        let mut spec = SourceSpec::from_str("github:owner/tool").expect("parse source");
+        spec.version = Some("1.0.0".to_string());
+
+        assert!(
+            !local_tool_execution_ready(root, "tool", &spec, None).expect("readiness check"),
+            "non-executable managed binaries should be repaired by local x"
+        );
     }
 
     #[test]

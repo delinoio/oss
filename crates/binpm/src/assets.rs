@@ -224,7 +224,10 @@ pub fn discover_archive_binary(
     }
 }
 
-fn target_archive_candidates(target: &HostTarget, candidates: Vec<String>) -> Vec<String> {
+pub(crate) fn target_archive_candidates(
+    target: &HostTarget,
+    candidates: Vec<String>,
+) -> Vec<String> {
     let mut scored = candidates
         .into_iter()
         .filter_map(|candidate| {
