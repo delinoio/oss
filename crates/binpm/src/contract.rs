@@ -475,6 +475,23 @@ impl ChecksumSource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VerificationState {
+    #[serde(rename = "verified")]
+    Verified,
+    #[serde(rename = "unverified")]
+    Unverified,
+}
+
+impl VerificationState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Verified => "verified",
+            Self::Unverified => "unverified",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ArchiveFormat {
     #[serde(rename = "tar.gz")]
     TarGz,
@@ -512,7 +529,7 @@ mod tests {
 
     use super::{
         ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceProvider, SourceSpec, TargetArch,
-        TargetLibc, TargetOs,
+        TargetLibc, TargetOs, VerificationState,
     };
     use crate::error::BinpmError;
 
@@ -749,6 +766,7 @@ mod tests {
         assert_json_string(TargetArch::X86_64, "x86_64");
         assert_json_string(TargetLibc::Any, "any");
         assert_json_string(ChecksumSource::GitHubDigest, "github-digest");
+        assert_json_string(VerificationState::Verified, "verified");
         assert_json_string(ArchiveFormat::TarGz, "tar.gz");
         assert_json_string(ArchiveFormat::BareExecutable, "bare-executable");
     }

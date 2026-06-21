@@ -100,6 +100,8 @@ pub enum BinpmError {
         #[source]
         source: toml::ser::Error,
     },
+    #[error("Failed to serialize JSON output: {0}")]
+    SerializeJson(#[source] serde_json::Error),
     #[error("Failed to parse `{}`: {source}", path.display())]
     ParseToml {
         path: PathBuf,
@@ -241,6 +243,7 @@ impl BinpmError {
             | Self::RemovePath { .. }
             | Self::RenamePath { .. }
             | Self::SerializeToml { .. }
+            | Self::SerializeJson(_)
             | Self::ParseToml { .. }
             | Self::DigestMismatch { .. }
             | Self::MissingGlobalHome

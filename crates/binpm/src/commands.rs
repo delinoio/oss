@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
@@ -25,7 +26,7 @@ use crate::{
     },
     contract::{
         validate_version_selector, ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec,
-        TargetOs,
+        TargetArch, TargetLibc, TargetOs, VerificationState,
     },
     error::{BinpmError, Result},
     release::{client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset},
@@ -45,6 +46,228 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputMode {
+    Human,
+    Json,
+}
+
+impl OutputMode {
+    fn from_json_flag(json: bool) -> Self {
+        if json {
+            Self::Json
+        } else {
+            Self::Human
+        }
+    }
+
+    fn is_json(self) -> bool {
+        self == Self::Json
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ListOutput {
+    command: &'static str,
+    scope: Scope,
+    tools: Vec<ListToolOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct ListToolOutput {
+    cmd: String,
+    state: ToolState,
+    source: String,
+    requested_version: Option<String>,
+    release_tag: Option<String>,
+    selected_binary: Option<String>,
+    installed_path: Option<String>,
+    verification: Option<VerificationState>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+enum ToolState {
+    #[serde(rename = "declared")]
+    Declared,
+    #[serde(rename = "installed")]
+    Installed,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheListOutput {
+    command: &'static str,
+    entries: Vec<CacheEntryOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheEntryOutput {
+    cache_key: String,
+    byte_size: Option<u64>,
+    source_provider: crate::contract::SourceProvider,
+    source_host: String,
+    source_path: String,
+    release_tag: String,
+    asset_name: String,
+    checksum_source: ChecksumSource,
+    last_used_at: Option<String>,
+    reference_state: CacheReferenceState,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+enum CacheReferenceState {
+    #[serde(rename = "referenced")]
+    Referenced,
+    #[serde(rename = "unreferenced")]
+    Unreferenced,
+}
+
+#[derive(Debug, Serialize)]
+struct OutdatedOutput {
+    command: &'static str,
+    scope: Scope,
+    checked: usize,
+    tools: Vec<OutdatedToolOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct OutdatedToolOutput {
+    cmd: String,
+    current: String,
+    latest: String,
+    outdated: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorOutput {
+    command: &'static str,
+    project_root: String,
+    manifest_path: String,
+    manifest: PathState,
+    lockfile_path: String,
+    lockfile: PathState,
+    global_home: String,
+    global_bin: String,
+    global_bin_on_path: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+enum PathState {
+    #[serde(rename = "present")]
+    Present,
+    #[serde(rename = "missing")]
+    Missing,
+}
+
+#[derive(Debug, Serialize)]
+struct VerifyOutput {
+    command: &'static str,
+    scope: Scope,
+    require_verified: bool,
+    checked: usize,
+    checks: Vec<VerifyCheckOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct VerifyCheckOutput {
+    cmd: String,
+    checksum_source: ChecksumSource,
+    verification: VerificationState,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum InfoOutput {
+    Source {
+        command: &'static str,
+        source: String,
+        normalized_source: String,
+        provider: crate::contract::SourceProvider,
+        host: String,
+        path: String,
+        release: String,
+        target: HostTarget,
+        selected_asset: Option<SelectedAssetOutput>,
+    },
+    Package {
+        command: &'static str,
+        scope: Scope,
+        cmd: String,
+        record: PackageRecordOutput,
+    },
+}
+
+#[derive(Debug, Serialize)]
+struct SelectedAssetOutput {
+    asset_name: String,
+    asset_url: String,
+    archive_format: Option<ArchiveFormat>,
+    score: Option<i32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum ExplainOutput {
+    Source {
+        command: &'static str,
+        source: String,
+        normalized_source: String,
+        provider: crate::contract::SourceProvider,
+        host: String,
+        path: String,
+        requested_version: Option<String>,
+        target: HostTarget,
+        release_api: String,
+        release: String,
+        release_decision: String,
+        selected_asset: Option<SelectedAssetOutput>,
+        candidates: Vec<CandidateOutput>,
+    },
+    Package {
+        command: &'static str,
+        scope: Scope,
+        cmd: String,
+        record: PackageRecordOutput,
+    },
+}
+
+#[derive(Debug, Serialize)]
+struct CandidateOutput {
+    asset_name: String,
+    kind: String,
+    archive_format: Option<ArchiveFormat>,
+    detected_os: Option<TargetOs>,
+    detected_arch: Option<TargetArch>,
+    detected_libc: Option<TargetLibc>,
+    score: Option<i32>,
+    eligible: bool,
+    recognized_pattern: bool,
+    rejection_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct PackageRecordOutput {
+    package_spec: String,
+    source: String,
+    source_provider: crate::contract::SourceProvider,
+    source_host: String,
+    source_path: String,
+    requested_version: Option<String>,
+    release_tag: String,
+    asset_name: String,
+    asset_url: String,
+    target: HostTarget,
+    archive_format: ArchiveFormat,
+    selected_binary: String,
+    installed_path: String,
+    cache_key: Option<String>,
+    cache_path: Option<String>,
+    sha256: String,
+    checksum_source: ChecksumSource,
+    verification: VerificationState,
+    signature_available: bool,
+    signature_verified: bool,
+}
+
 const DOWNLOAD_RETRY_ATTEMPTS: usize = 3;
 const DOWNLOAD_RETRY_BASE_DELAY: Duration = Duration::from_millis(200);
 const DOWNLOAD_PROGRESS_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
@@ -53,19 +276,20 @@ const DOWNLOAD_PROGRESS_INTERVAL: Duration = Duration::from_secs(2);
 const DOWNLOAD_INITIAL_CAPACITY_LIMIT: usize = 8 * 1024 * 1024;
 
 pub fn run(cli: Cli) -> Result<i32> {
+    let output = OutputMode::from_json_flag(cli.json);
     match cli.command {
         Command::Install(args) => install(args),
         Command::Add(args) => add(args),
         Command::Exec(args) => exec(args),
-        Command::Cache(args) => cache(args.command),
-        Command::List(args) => list(args),
+        Command::Cache(args) => cache(args.command, output),
+        Command::List(args) => list(args, output),
         Command::Remove(args) => remove(args),
-        Command::Info(args) => info_cmd(args),
-        Command::Outdated(args) => outdated(args),
+        Command::Info(args) => info_cmd(args, output),
+        Command::Outdated(args) => outdated(args, output),
         Command::Update(args) => update(args),
-        Command::Doctor => doctor(),
-        Command::Explain(args) => explain(args),
-        Command::Verify(args) => verify(args),
+        Command::Doctor => doctor(output),
+        Command::Explain(args) => explain(args, output),
+        Command::Verify(args) => verify(args, output),
         Command::Init(args) => init(args),
         Command::Env(args) => env_cmd(args),
     }
@@ -298,7 +522,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
     execute_command(&cmd, args.args(), &[ScopePaths::local(root).bin])
 }
 
-fn cache(command: CacheCommand) -> Result<i32> {
+fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
     match command {
         CacheCommand::List => {
             info!(
@@ -311,25 +535,50 @@ fn cache(command: CacheCommand) -> Result<i32> {
             let global_paths = ScopePaths::global(home);
             let local_paths = manifest_project_root()?.map(ScopePaths::local);
             let referenced = referenced_cache_keys(&global_paths, local_paths.as_ref(), &paths)?;
+            let mut entries = Vec::new();
             for record in read_cache_records(&paths)? {
                 let reference_state = if referenced.contains(&record.cache_key) {
-                    "referenced"
+                    CacheReferenceState::Referenced
                 } else {
-                    "unreferenced"
+                    CacheReferenceState::Unreferenced
                 };
-                println!(
-                    "{} {} {} {}/{} {} {} {} {} {}",
-                    record.cache_key,
-                    record.byte_size.unwrap_or_default(),
-                    record.source_provider.as_str(),
-                    record.source_host,
-                    record.source_path,
-                    record.release_tag,
-                    record.asset_name,
-                    record.checksum_source.as_str(),
-                    record.last_used_at.as_deref().unwrap_or("<unknown>"),
-                    reference_state
-                );
+                if output.is_json() {
+                    entries.push(CacheEntryOutput {
+                        cache_key: record.cache_key,
+                        byte_size: record.byte_size,
+                        source_provider: record.source_provider,
+                        source_host: record.source_host,
+                        source_path: record.source_path,
+                        release_tag: record.release_tag,
+                        asset_name: record.asset_name,
+                        checksum_source: record.checksum_source,
+                        last_used_at: record.last_used_at,
+                        reference_state,
+                    });
+                } else {
+                    println!(
+                        "{} {} {} {}/{} {} {} {} {} {}",
+                        record.cache_key,
+                        record.byte_size.unwrap_or_default(),
+                        record.source_provider.as_str(),
+                        record.source_host,
+                        record.source_path,
+                        record.release_tag,
+                        record.asset_name,
+                        record.checksum_source.as_str(),
+                        record.last_used_at.as_deref().unwrap_or("<unknown>"),
+                        match reference_state {
+                            CacheReferenceState::Referenced => "referenced",
+                            CacheReferenceState::Unreferenced => "unreferenced",
+                        }
+                    );
+                }
+            }
+            if output.is_json() {
+                return print_json(&CacheListOutput {
+                    command: "cache list",
+                    entries,
+                });
             }
             Ok(0)
         }
@@ -383,9 +632,10 @@ fn cache_key() -> Result<i32> {
     Ok(0)
 }
 
-fn list(args: ScopedArgs) -> Result<i32> {
+fn list(args: ScopedArgs, output: OutputMode) -> Result<i32> {
     let scope = select_scope(args.scope.scope())?;
     log_read_only_scope("list", scope);
+    let mut tools = Vec::new();
     match scope {
         Scope::Local => {
             let root = require_manifest_root()?;
@@ -398,53 +648,49 @@ fn list(args: ScopedArgs) -> Result<i32> {
                 let state = package_record_path(&paths, &cmd);
                 if state.exists() {
                     let record = read_package_record(&state)?;
-                    println!(
-                        "{cmd} installed {} {} {} {} {} {}",
-                        record.source,
-                        record.requested_version.as_deref().unwrap_or("<latest>"),
-                        record.release_tag,
-                        record.selected_binary,
-                        record.installed_path,
-                        verification_state(&record)
-                    );
+                    let row = list_installed_tool(cmd, record);
+                    print_list_tool(&row, output);
+                    tools.push(row);
                 } else {
-                    println!(
-                        "{cmd} declared {} {} <unknown> <unknown> <unknown> <unknown>",
-                        tool.source,
-                        tool.version.as_deref().unwrap_or("<latest>")
-                    );
+                    let row = ListToolOutput {
+                        cmd,
+                        state: ToolState::Declared,
+                        source: tool.source,
+                        requested_version: tool.version,
+                        release_tag: None,
+                        selected_binary: None,
+                        installed_path: None,
+                        verification: None,
+                    };
+                    print_list_tool(&row, output);
+                    tools.push(row);
                 }
             }
             for (cmd, record) in list_package_records(&paths)? {
                 if printed.contains(&cmd) {
                     continue;
                 }
-                println!(
-                    "{cmd} installed {} {} {} {} {} {}",
-                    record.source,
-                    record.requested_version.as_deref().unwrap_or("<latest>"),
-                    record.release_tag,
-                    record.selected_binary,
-                    record.installed_path,
-                    verification_state(&record)
-                );
+                let row = list_installed_tool(cmd, record);
+                print_list_tool(&row, output);
+                tools.push(row);
             }
         }
         Scope::Global => {
             let paths = ScopePaths::global(binpm_home()?);
             for (cmd, record) in list_package_records(&paths)? {
-                println!(
-                    "{cmd} installed {} {} {} {} {} {}",
-                    record.source,
-                    record.requested_version.as_deref().unwrap_or("<latest>"),
-                    record.release_tag,
-                    record.selected_binary,
-                    record.installed_path,
-                    verification_state(&record)
-                );
+                let row = list_installed_tool(cmd, record);
+                print_list_tool(&row, output);
+                tools.push(row);
             }
         }
         Scope::Auto => unreachable!("select_scope never returns auto"),
+    }
+    if output.is_json() {
+        return print_json(&ListOutput {
+            command: "list",
+            scope,
+            tools,
+        });
     }
     Ok(0)
 }
@@ -470,7 +716,7 @@ fn remove(args: RemoveArgs) -> Result<i32> {
     }
 }
 
-fn info_cmd(args: InfoArgs) -> Result<i32> {
+fn info_cmd(args: InfoArgs, output: OutputMode) -> Result<i32> {
     if let Some(spec) = parse_source_argument(&args.cmd_or_source)? {
         debug!(
             command = "info",
@@ -481,7 +727,7 @@ fn info_cmd(args: InfoArgs) -> Result<i32> {
             "Parsed info argument as source"
         );
         log_read_only_scope("info", args.scope.scope());
-        return print_source_info(&spec);
+        return print_source_info(&spec, output);
     }
 
     log_read_only_scope("info", args.scope.scope());
@@ -493,14 +739,23 @@ fn info_cmd(args: InfoArgs) -> Result<i32> {
     };
     validate_command_name(&args.cmd_or_source)?;
     let record = read_package_record(&package_record_path(&paths, &args.cmd_or_source))?;
+    if output.is_json() {
+        return print_json(&InfoOutput::Package {
+            command: "info",
+            scope,
+            cmd: args.cmd_or_source,
+            record: package_record_output(&record),
+        });
+    }
     print_package_record_info(&args.cmd_or_source, &record);
     Ok(0)
 }
 
-fn outdated(args: ScopedArgs) -> Result<i32> {
+fn outdated(args: ScopedArgs, output: OutputMode) -> Result<i32> {
     let scope = select_scope(args.scope.scope())?;
     log_read_only_scope("outdated", scope);
     let mut checked = 0usize;
+    let mut tools = Vec::new();
     match scope {
         Scope::Local => {
             let root = require_manifest_root()?;
@@ -522,9 +777,16 @@ fn outdated(args: ScopedArgs) -> Result<i32> {
                     .resolve_release(&latest_spec)?
                     .release
                     .tag;
-                if current != latest {
+                let is_outdated = current != latest;
+                if !output.is_json() && current != latest {
                     println!("{cmd} {current} -> {latest}");
                 }
+                tools.push(OutdatedToolOutput {
+                    cmd,
+                    current,
+                    latest,
+                    outdated: is_outdated,
+                });
                 checked += 1;
             }
         }
@@ -536,13 +798,28 @@ fn outdated(args: ScopedArgs) -> Result<i32> {
                     .resolve_release(&spec)?
                     .release
                     .tag;
-                if record.release_tag != latest {
+                let is_outdated = record.release_tag != latest;
+                if !output.is_json() && record.release_tag != latest {
                     println!("{cmd} {} -> {latest}", record.release_tag);
                 }
+                tools.push(OutdatedToolOutput {
+                    cmd,
+                    current: record.release_tag,
+                    latest,
+                    outdated: is_outdated,
+                });
                 checked += 1;
             }
         }
         Scope::Auto => unreachable!("select_scope never returns auto"),
+    }
+    if output.is_json() {
+        return print_json(&OutdatedOutput {
+            command: "outdated",
+            scope,
+            checked,
+            tools,
+        });
     }
     println!("checked {checked}");
     Ok(0)
@@ -684,7 +961,7 @@ fn print_global_update_plan(selected: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn doctor() -> Result<i32> {
+fn doctor(output: OutputMode) -> Result<i32> {
     let project_root = project_root()?;
     let manifest_path = project_root.join(MANIFEST_FILE);
     let lockfile_path = project_root.join(LOCKFILE_FILE);
@@ -703,6 +980,19 @@ fn doctor() -> Result<i32> {
         global_bin_on_path,
         "Prepared doctor inspection"
     );
+    if output.is_json() {
+        return print_json(&DoctorOutput {
+            command: "doctor",
+            project_root: project_root.display().to_string(),
+            manifest_path: manifest_path.display().to_string(),
+            manifest: json_path_state(&manifest_path),
+            lockfile_path: lockfile_path.display().to_string(),
+            lockfile: json_path_state(&lockfile_path),
+            global_home: home.display().to_string(),
+            global_bin: global_bin.display().to_string(),
+            global_bin_on_path,
+        });
+    }
     println!("binpm doctor");
     println!("manifest: {}", path_state(&manifest_path));
     println!("lockfile: {}", path_state(&lockfile_path));
@@ -715,7 +1005,7 @@ fn doctor() -> Result<i32> {
     Ok(0)
 }
 
-fn explain(args: ExplainArgs) -> Result<i32> {
+fn explain(args: ExplainArgs, output: OutputMode) -> Result<i32> {
     match parse_source_argument(&args.cmd_or_source)? {
         Some(spec) => {
             let target = HostTarget::current()?;
@@ -730,7 +1020,7 @@ fn explain(args: ExplainArgs) -> Result<i32> {
                 target = target.key(),
                 "Prepared source explanation"
             );
-            return explain_source(spec, target);
+            return explain_source(spec, target, output);
         }
         None => {
             info!(
@@ -750,6 +1040,14 @@ fn explain(args: ExplainArgs) -> Result<i32> {
     };
     validate_command_name(&args.cmd_or_source)?;
     let record = read_package_record(&package_record_path(&paths, &args.cmd_or_source))?;
+    if output.is_json() {
+        return print_json(&ExplainOutput::Package {
+            command: "explain",
+            scope,
+            cmd: args.cmd_or_source,
+            record: package_record_output(&record),
+        });
+    }
     println!("binpm explain");
     println!("cmd: {}", args.cmd_or_source);
     println!("source: {}", record.source);
@@ -764,7 +1062,7 @@ fn explain(args: ExplainArgs) -> Result<i32> {
     println!("selected_binary: {}", record.selected_binary);
     println!("archive_format: {}", record.archive_format.as_str());
     println!("checksum_source: {}", record.checksum_source.as_str());
-    println!("verification: {}", verification_state(&record));
+    println!("verification: {}", verification_state(&record).as_str());
     Ok(0)
 }
 
@@ -776,7 +1074,37 @@ fn parse_source_argument(raw: &str) -> Result<Option<SourceSpec>> {
     Ok(None)
 }
 
-fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
+fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> Result<i32> {
+    let client = client_for_source(&spec)?;
+    let selection = client.resolve_release(&spec)?;
+    let asset_selection = select_asset(spec.provider, &target, &selection.release.assets);
+    let all_decisions = match &asset_selection {
+        Some(selection) => selection.decisions.clone(),
+        None => crate::assets::score_assets(spec.provider, &target, &selection.release.assets),
+    };
+
+    if output.is_json() {
+        let release_api = release_api_url(&spec);
+        return print_json(&ExplainOutput::Source {
+            command: "explain",
+            source: spec.to_string(),
+            normalized_source: spec.source_without_version(),
+            provider: spec.provider,
+            host: spec.host.clone(),
+            path: spec.path.clone(),
+            requested_version: spec.version.clone(),
+            target,
+            release_api,
+            release: selection.release.tag,
+            release_decision: selection.decision,
+            selected_asset: asset_selection
+                .as_ref()
+                .map(|selection| selected_asset_output(&selection.selected))
+                .transpose()?,
+            candidates: all_decisions.iter().map(candidate_output).collect(),
+        });
+    }
+
     println!("binpm explain");
     println!("source: {spec}");
     println!("normalized_source: {}", spec.source_without_version());
@@ -790,12 +1118,10 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
     println!("target: {}", target.key());
     println!("release_api: {}", release_api_url(&spec));
 
-    let client = client_for_source(&spec)?;
-    let selection = client.resolve_release(&spec)?;
     println!("release: {}", selection.release.tag);
     println!("release_decision: {}", selection.decision);
 
-    match select_asset(spec.provider, &target, &selection.release.assets) {
+    match asset_selection {
         Some(selection) => {
             println!("selected_asset: {}", selection.selected.asset_name);
             println!(
@@ -812,9 +1138,7 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
         }
         None => {
             println!("selected_asset: <none>");
-            for decision in
-                crate::assets::score_assets(spec.provider, &target, &selection.release.assets)
-            {
+            for decision in all_decisions {
                 println!("{}", decision.explain_line());
             }
         }
@@ -823,9 +1147,26 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
     Ok(0)
 }
 
-fn print_source_info(spec: &SourceSpec) -> Result<i32> {
+fn print_source_info(spec: &SourceSpec, output: OutputMode) -> Result<i32> {
     let target = HostTarget::current()?;
     let selection = client_for_source(spec)?.resolve_release(spec)?;
+    let asset_selection = select_asset(spec.provider, &target, &selection.release.assets);
+    if output.is_json() {
+        return print_json(&InfoOutput::Source {
+            command: "info",
+            source: spec.to_string(),
+            normalized_source: spec.source_without_version(),
+            provider: spec.provider,
+            host: spec.host.clone(),
+            path: spec.path.clone(),
+            release: selection.release.tag,
+            target,
+            selected_asset: asset_selection
+                .as_ref()
+                .map(|selection| selected_asset_output(&selection.selected))
+                .transpose()?,
+        });
+    }
     println!("binpm info");
     println!("source: {spec}");
     println!("normalized_source: {}", spec.source_without_version());
@@ -834,7 +1175,7 @@ fn print_source_info(spec: &SourceSpec) -> Result<i32> {
     println!("path: {}", spec.path);
     println!("release: {}", selection.release.tag);
     println!("target: {}", target.key());
-    match select_asset(spec.provider, &target, &selection.release.assets) {
+    match asset_selection {
         Some(selection) => {
             println!("selected_asset: {}", selection.selected.asset_name);
             println!(
@@ -863,7 +1204,7 @@ fn print_package_record_info(cmd: &str, record: &PackageRecord) {
     println!("selected_binary: {}", record.selected_binary);
     println!("installed_path: {}", record.installed_path);
     println!("checksum_source: {}", record.checksum_source.as_str());
-    println!("verification: {}", verification_state(record));
+    println!("verification: {}", verification_state(record).as_str());
 }
 
 fn selected_asset_display_url(decision: &crate::assets::CandidateDecision) -> Result<String> {
@@ -2753,11 +3094,128 @@ fn remove_unreferenced_cache_entry(
     Ok(())
 }
 
-fn verification_state(record: &PackageRecord) -> &'static str {
-    if record.has_verified_source() {
-        "verified"
+fn print_json(value: &impl Serialize) -> Result<i32> {
+    let rendered = serde_json::to_string(value).map_err(BinpmError::SerializeJson)?;
+    println!("{rendered}");
+    Ok(0)
+}
+
+fn list_installed_tool(cmd: String, record: PackageRecord) -> ListToolOutput {
+    let verification = verification_state(&record);
+    ListToolOutput {
+        cmd,
+        state: ToolState::Installed,
+        source: record.source,
+        requested_version: record.requested_version,
+        release_tag: Some(record.release_tag),
+        selected_binary: Some(record.selected_binary),
+        installed_path: Some(record.installed_path),
+        verification: Some(verification),
+    }
+}
+
+fn print_list_tool(row: &ListToolOutput, output: OutputMode) {
+    if output.is_json() {
+        return;
+    }
+    match row.state {
+        ToolState::Declared => println!(
+            "{} declared {} {} <unknown> <unknown> <unknown> <unknown>",
+            row.cmd,
+            row.source,
+            row.requested_version.as_deref().unwrap_or("<latest>")
+        ),
+        ToolState::Installed => println!(
+            "{} installed {} {} {} {} {} {}",
+            row.cmd,
+            row.source,
+            row.requested_version.as_deref().unwrap_or("<latest>"),
+            row.release_tag.as_deref().unwrap_or("<unknown>"),
+            row.selected_binary.as_deref().unwrap_or("<unknown>"),
+            row.installed_path.as_deref().unwrap_or("<unknown>"),
+            row.verification
+                .map(VerificationState::as_str)
+                .unwrap_or("unknown")
+        ),
+    }
+}
+
+fn package_record_output(record: &PackageRecord) -> PackageRecordOutput {
+    PackageRecordOutput {
+        package_spec: record.package_spec.clone(),
+        source: record.source.clone(),
+        source_provider: record.source_provider,
+        source_host: record.source_host.clone(),
+        source_path: record.source_path.clone(),
+        requested_version: record.requested_version.clone(),
+        release_tag: record.release_tag.clone(),
+        asset_name: record.asset_name.clone(),
+        asset_url: record.asset_url.clone(),
+        target: HostTarget {
+            os: record.target_os,
+            arch: record.target_arch,
+            libc: record.target_libc,
+        },
+        archive_format: record.archive_format,
+        selected_binary: record.selected_binary.clone(),
+        installed_path: record.installed_path.clone(),
+        cache_key: record.cache_key.clone(),
+        cache_path: record.cache_path.clone(),
+        sha256: record.sha256.clone(),
+        checksum_source: record.checksum_source,
+        verification: verification_state(record),
+        signature_available: record.signature_available,
+        signature_verified: record.signature_verified,
+    }
+}
+
+fn selected_asset_output(
+    decision: &crate::assets::CandidateDecision,
+) -> Result<SelectedAssetOutput> {
+    Ok(SelectedAssetOutput {
+        asset_name: decision.asset_name.clone(),
+        asset_url: selected_asset_display_url(decision)?,
+        archive_format: candidate_archive_format(decision.kind),
+        score: decision.score,
+    })
+}
+
+fn candidate_output(decision: &crate::assets::CandidateDecision) -> CandidateOutput {
+    CandidateOutput {
+        asset_name: decision.asset_name.clone(),
+        kind: decision.kind.as_str().to_string(),
+        archive_format: candidate_archive_format(decision.kind),
+        detected_os: decision.detected_os,
+        detected_arch: decision.detected_arch,
+        detected_libc: decision.detected_libc,
+        score: decision.score,
+        eligible: decision.eligible,
+        recognized_pattern: decision.recognized_pattern,
+        rejection_reason: decision.rejection_reason.clone(),
+    }
+}
+
+fn candidate_archive_format(kind: crate::assets::ArtifactKind) -> Option<ArchiveFormat> {
+    match kind {
+        crate::assets::ArtifactKind::Archive(format) => Some(format),
+        crate::assets::ArtifactKind::BareExecutable => Some(ArchiveFormat::BareExecutable),
+        _ => None,
+    }
+}
+
+fn json_path_state(path: &Path) -> PathState {
+    if path.exists() {
+        PathState::Present
     } else {
-        "unverified"
+        PathState::Missing
+    }
+}
+
+fn verification_state(record: &PackageRecord) -> VerificationState {
+    if record.has_verified_source() {
+        VerificationState::Verified
+    } else {
+        VerificationState::Unverified
     }
 }
 
@@ -3721,7 +4179,7 @@ fn repo_name(spec: &SourceSpec) -> &str {
     spec.path.rsplit('/').next().unwrap_or(&spec.path)
 }
 
-fn verify(args: VerifyArgs) -> Result<i32> {
+fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
     info!(
         command = "verify",
         read_only = true,
@@ -3743,6 +4201,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     };
     let cache_paths = CachePaths::new(&home);
     let mut checked = 0usize;
+    let mut checks = Vec::new();
     let mut locked = BTreeSet::new();
     let mut local_runtime_locks = BTreeMap::new();
     if let Some(root) = &root {
@@ -3788,13 +4247,29 @@ fn verify(args: VerifyArgs) -> Result<i32> {
         require_regular_managed_file(&installed_path)?;
         require_executable_managed_file(&installed_path)?;
         verify_installed_binary_contents(&cache_paths, &record, &installed_path)?;
-        println!("{cmd} verified {}", record.checksum_source.as_str());
+        checks.push(VerifyCheckOutput {
+            cmd: cmd.clone(),
+            checksum_source: record.checksum_source,
+            verification: verification_state(&record),
+        });
+        if !output.is_json() {
+            println!("{cmd} verified {}", record.checksum_source.as_str());
+        }
         if !locked.contains(&cmd) {
             checked += 1;
         }
     }
     if let Some(root) = &root {
         assert_local_runtime_records_complete(root, &local_runtime_locks)?;
+    }
+    if output.is_json() {
+        return print_json(&VerifyOutput {
+            command: "verify",
+            scope,
+            require_verified: args.require_verified,
+            checked,
+            checks,
+        });
     }
     println!("checked {checked}");
     Ok(0)

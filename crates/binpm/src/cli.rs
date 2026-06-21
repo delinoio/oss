@@ -11,6 +11,10 @@ use crate::contract::Scope;
     about = "Install and run native command-line tools from release assets"
 )]
 pub struct Cli {
+    /// Emit stable JSON for read-only diagnostic commands.
+    #[arg(long, global = true)]
+    pub json: bool,
+
     /// Enable info-level binpm tracing diagnostics.
     #[arg(short = 'v', long, global = true, conflicts_with = "debug")]
     pub verbose: bool,
