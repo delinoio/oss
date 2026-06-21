@@ -7,6 +7,7 @@ use crate::{
     errors::{NodeupError, Result},
     process::{run_command, DelegatedStdioPolicy},
     resolver::ResolvedRuntimeTarget,
+    store::runtime_executable_is_runnable,
     types::PlatformTarget,
     NodeupApp,
 };
@@ -44,6 +45,21 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
                 resolved.runtime_id()
             ),
             "Install or relink the active runtime so it provides the delegated executable.",
+        ));
+    }
+
+    if plan.mode == DelegatedCommandMode::Direct
+        && !runtime_executable_is_runnable(&plan.executable)
+    {
+        return Err(NodeupError::not_found_with_hint(
+            format!(
+                "Managed alias '{}' exists but is not runnable for runtime {} (path={})",
+                alias.as_str(),
+                resolved.runtime_id(),
+                plan.executable.display()
+            ),
+            "On Unix, ensure the executable bit is set. On Windows, relink a runtime that \
+             provides the expected executable name.",
         ));
     }
 

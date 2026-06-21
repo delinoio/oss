@@ -22,7 +22,8 @@
 - The development server uses fixed port `46250`.
 - Local production preview uses fixed port `46251`.
 - The production output directory is `doc_build`.
-- Content must stay aligned with the Nodeup project and crate contracts, especially installation and verification flows, release verification, supported host targets, command behavior, runtime resolution precedence, shim behavior, shell completions, package-manager resolution, human/JSON output contracts, parser-error envelope behavior, and color-control precedence.
+- The default theme must expose a visible GitHub repository link to `https://github.com/delinoio/oss`, including the top-level GitHub social link and the document-page footer repository link.
+- Content must stay aligned with the Nodeup project and crate contracts, especially installation and verification flows, release verification, supported host targets, command behavior, linked-runtime lifecycle and executable validation, runtime resolution precedence, shim behavior, shell completions, package-manager resolution, human/JSON output contracts, parser-error envelope behavior, and color-control precedence.
 
 ## Storage
 - Source documentation is versioned in-repo under `apps/nodeup-docs/docs`.
@@ -52,7 +53,7 @@
 - Depends on `docs/project-nodeup.md` and `docs/crates-nodeup-foundation.md` for canonical Nodeup product and runtime contracts.
 
 ## Change Triggers
-- Update `docs/project-nodeup.md`, this file, and `apps/AGENTS.md` when the app path, route IDs, validation commands, toolchain, output directory, or deployment target changes.
+- Update `docs/project-nodeup.md`, this file, and `apps/AGENTS.md` when the app path, route IDs, theme repository-link surface, validation commands, toolchain, output directory, or deployment target changes.
 - Update `docs/crates-nodeup-foundation.md` and the relevant app pages when Nodeup runtime, release, installer, shim, completion, package-manager, or color-control behavior changes.
 - Update `docs/README.md` when adding, renaming, or removing this domain contract.
 

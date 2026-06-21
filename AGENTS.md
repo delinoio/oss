@@ -126,6 +126,8 @@ enum ProjectId {
 ### binpm Source Contract
 
 - Stable `binpm` source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
+- binpm provider tokens are host-scoped. GitHub.com may use `BINPM_GITHUB_TOKEN_GITHUB_COM`, `BINPM_GITHUB_TOKEN`, or `GITHUB_TOKEN`; GitHub Enterprise must use `BINPM_GITHUB_TOKEN_<NORMALIZED_HOST>`. GitLab.com may use `BINPM_GITLAB_TOKEN_GITLAB_COM`, `BINPM_GITLAB_TOKEN`, or `GITLAB_TOKEN`; self-managed GitLab must use `BINPM_GITLAB_TOKEN_<NORMALIZED_HOST>`. For explicit hosts, `<NORMALIZED_HOST>` must encode non-ASCII-alphanumeric UTF-8 bytes as `_HH_` uppercase hexadecimal so distinct hosts cannot share a token variable. Generic SaaS tokens must not be sent to enterprise or self-managed hosts.
+- binpm release lookup diagnostics must distinguish missing authentication, insufficient permissions, and rate limiting while keeping tokens, authorization headers, private-token headers, query strings, fragments, and credential-bearing URLs out of logs, errors, persisted URLs, cache metadata, package records, and lockfiles.
 - `binpm` source versions are exact release tag requests only; omitted `@version` selects latest stable, while `@latest`, semver range-like selectors, channel selectors, and major-version pins must be rejected before manifest or lockfile persistence.
 - GitLab versionless installs must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
 - GitLab release asset links must use HTTPS link URLs and HTTPS final redirect targets before candidate scoring or download.
@@ -156,6 +158,14 @@ enum ProjectId {
 - The canonical production URL for `apps/binpm-docs` is `https://binpm.delino.io`.
 - `apps/binpm-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-binpm.md` and `docs/apps-binpm-docs-foundation.md` document a replacement.
 - binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live `https://binpm.delino.io` site.
+- `apps/binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
+
+### Nodeup Docs App Contract
+
+- `apps/nodeup-docs` is the Rspress static documentation app for `nodeup` and uses the existing `apps/*` workspace.
+- The canonical production URL for `apps/nodeup-docs` is `https://nodeup.delino.io`.
+- `apps/nodeup-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-nodeup.md` and `docs/apps-nodeup-docs-foundation.md` document a replacement.
+- `apps/nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
 
 ### Thenv Component Contract
 

@@ -1,8 +1,25 @@
-use std::{io, path::PathBuf};
+use std::{fmt, io, path::PathBuf};
 
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, BinpmError>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReleaseLookupDiagnosticKind {
+    MissingAuth,
+    InsufficientPermissions,
+    RateLimited,
+}
+
+impl fmt::Display for ReleaseLookupDiagnosticKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::MissingAuth => "missing authentication",
+            Self::InsufficientPermissions => "insufficient permissions",
+            Self::RateLimited => "rate limited",
+        })
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum BinpmError {
@@ -40,6 +57,19 @@ pub enum BinpmError {
     ReleaseHttpClient(#[source] reqwest::Error),
     #[error("Failed to look up release metadata: {0}")]
     ReleaseLookup(#[source] reqwest::Error),
+    #[error(
+        "Failed to look up release metadata for `{package}` on {provider} host `{host}`: {kind} \
+         (HTTP {status}). {message} Hint: {hint}"
+    )]
+    ReleaseLookupDiagnostic {
+        package: String,
+        provider: &'static str,
+        host: String,
+        status: u16,
+        kind: ReleaseLookupDiagnosticKind,
+        message: String,
+        hint: String,
+    },
     #[error("Release asset `{url}` returned unexpected HTTP status {status}.")]
     ReleaseAssetStatus { url: String, status: u16 },
     #[error("Failed to stream release asset `{url}`: {source}")]
@@ -126,7 +156,11 @@ pub enum BinpmError {
     MissingTool { cmd: String, manifest: PathBuf },
     #[error("No installable asset matched `{package}` for target `{target}`.")]
     AssetNotFound { package: String, target: String },
-    #[error("Archive `{asset}` does not contain an executable binary.")]
+    #[error(
+        "Archive `{asset}` does not contain an executable binary with permission metadata or an \
+         unambiguous filename/target match. Set `bin` in binpm.toml to the intended archive \
+         member when upstream archives omit executable metadata."
+    )]
     ArchiveBinaryNotFound { asset: String },
     #[error(
         "{}",
@@ -250,6 +284,7 @@ impl BinpmError {
             | Self::InvalidGlobalHome { .. }
             | Self::ReleaseHttpClient(_)
             | Self::ReleaseLookup(_)
+            | Self::ReleaseLookupDiagnostic { .. }
             | Self::ReleaseAssetStatus { .. }
             | Self::DownloadStream { .. }
             | Self::ReleasePaginationLoop { .. } => 1,

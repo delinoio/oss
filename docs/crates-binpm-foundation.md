@@ -22,7 +22,7 @@
   - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories for supported shells.
   - `binpm doctor` may report manifest, lockfile, and global home state without mutation.
   - `binpm cache key` may print a deterministic key for the current target and project-root `binpm.lock`, using an empty lockfile digest when the file is absent.
-- Current install finalization supports bare executable assets and documented archive assets end to end. Archive extraction is implemented for `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip`, and installs only the selected executable member.
+- Current install finalization supports bare executable assets and documented archive assets end to end. Archive extraction is implemented for `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip`, and installs only the selected executable member. On POSIX hosts, archive installs must write the selected member with executable permissions even when the upstream archive, especially a `.zip`, omitted Unix executable metadata and binary discovery was unambiguous.
 - Canonical global install command: `binpm install <source>`.
 - Canonical local declaration command: `binpm add <cmd> <source> [--bin <upstream-binary>]`.
 - Canonical local sync command: `binpm install`.
@@ -110,7 +110,8 @@
 - Desktop or system package formats are de-prioritized and must not be installed by default in v1: `.deb`, `.rpm`, `.apk`, `.pkg.tar.zst`, `.dmg`, `.msi`, `.pkg`, `.AppImage`, `.flatpak`, `.snap`.
 - When all visible release assets are unsupported desktop or system packages, `binpm explain` must distinguish that installer-only boundary from a release with no assets. It must list the unsupported installer asset names and suggest upstream portable archive or bare executable assets instead of implying target scoring could not find any release asset.
 - Archive extraction must locate one or more executable files by executable permission, Windows `.exe` suffix, expected package name, and target-aware filename tokens. Explicit manifest `bin` values may name an exact archive member path or a unique member basename.
-- If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates and includes concrete retry suggestions such as `binpm add <cmd> <source> --bin <candidate>` or `binpm x --package <source> --bin <candidate> <cmd>`.
+- When an archive has no usable POSIX executable metadata for a member, `binpm` may recover the executable bit only after filename and target signals identify the selected binary unambiguously. The automatic recovery path is intentionally narrow: a non-executable member is recoverable when its basename matches the expected repository binary name and target-aware filtering leaves one candidate. Recovered POSIX installs must be chmodded executable during finalization.
+- If archive member permissions are missing and filename/target signals do not identify one binary, `binpm` must fail with an actionable diagnostic instead of guessing. If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates and includes concrete retry suggestions such as `binpm add <cmd> <source> --bin <candidate>` or `binpm x --package <source> --bin <candidate> <cmd>`.
 - The current foundation implements binary discovery as a deterministic member-list heuristic and uses it during archive extraction and install finalization.
 
 ## Local Manifest and Lockfile
@@ -235,7 +236,16 @@ signature_verified = false
 
 ## Security
 - `binpm` must use HTTPS source-provider APIs and release asset URLs.
-- Source-provider tokens may be read from documented environment variables in the future, but tokens and authorization headers must never be logged.
+- Source-provider release lookup may authenticate with provider tokens from environment variables only. Host-specific variables take precedence and are the only supported path for GitHub Enterprise and self-managed GitLab hosts:
+  - GitHub.com: `BINPM_GITHUB_TOKEN_GITHUB_COM`, then `BINPM_GITHUB_TOKEN`, then `GITHUB_TOKEN`.
+  - GitHub Enterprise `github:<host>/owner/repo`: `BINPM_GITHUB_TOKEN_<NORMALIZED_HOST>` only.
+  - GitLab.com: `BINPM_GITLAB_TOKEN_GITLAB_COM`, then `BINPM_GITLAB_TOKEN`, then `GITLAB_TOKEN`.
+  - Self-managed GitLab `gitlab:<host>/<namespace...>/<project>`: `BINPM_GITLAB_TOKEN_<NORMALIZED_HOST>` only.
+- For GitHub Enterprise and self-managed GitLab hosts, `<NORMALIZED_HOST>` must be the source host encoded without collisions by uppercasing ASCII alphanumeric bytes and replacing every other UTF-8 byte with `_HH_` uppercase hexadecimal; for example `ghe.example.com` becomes `GHE_2E_EXAMPLE_2E_COM` and `ghe-example.com` becomes `GHE_2D_EXAMPLE_2E_COM`.
+- Generic `BINPM_GITHUB_TOKEN`, `GITHUB_TOKEN`, `BINPM_GITLAB_TOKEN`, and `GITLAB_TOKEN` must apply only to `github.com` or `gitlab.com` respectively and must never be sent to explicit enterprise or self-managed hosts.
+- GitHub requests must send provider tokens as an `Authorization: Bearer <token>` header. GitLab requests must send provider tokens as a `PRIVATE-TOKEN: <token>` header.
+- Release lookup errors must distinguish missing authentication, insufficient permissions, and rate limiting. Private or hidden repositories returning `401`, `403`, or `404` without a configured token must report missing authentication and suggest the documented host-specific token path. The same statuses with a configured token must report insufficient permissions. `429` responses, GitHub/GitLab error responses with remaining rate-limit quota `0`, and equivalent rate-limit error responses must report rate limiting.
+- Tokens, authorization headers, private-token headers, and credential-bearing URLs must never be logged, returned in errors, printed in diagnostics, written to cache metadata, written to package records, or persisted in lockfiles.
 - Persisted URLs in committed lockfiles, cache metadata, diagnostics, errors, and logs must be sanitized by removing query strings and fragments. Credential-bearing or expiring download URLs must not be written to `binpm.lock`.
 - If provider release asset metadata exposes a trusted SHA-256 digest, `binpm` must verify the downloaded asset against that digest before considering checksum sidecars or local fallback hashes.
 - If an upstream checksum manifest or sidecar exists, `binpm` must verify the selected asset before installation.

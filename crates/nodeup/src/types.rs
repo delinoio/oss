@@ -44,6 +44,7 @@ pub enum NodeupToolchainCommand {
     Install,
     Uninstall,
     Link,
+    Unlink,
 }
 
 impl NodeupToolchainCommand {
@@ -53,6 +54,7 @@ impl NodeupToolchainCommand {
             Self::Install => "install",
             Self::Uninstall => "uninstall",
             Self::Link => "link",
+            Self::Unlink => "unlink",
         }
     }
 }

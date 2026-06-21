@@ -80,8 +80,16 @@ export default defineConfig({
         },
       ],
     },
+    socialLinks: [
+      {
+        icon: "github",
+        mode: "link",
+        content: "https://github.com/delinoio/oss",
+      },
+    ],
     footer: {
-      message: "Nodeup documentation is maintained in the Delino OSS monorepo.",
+      message:
+        'Nodeup documentation for installing, running, and troubleshooting Nodeup is maintained in the <a href="https://github.com/delinoio/oss">Delino OSS repository</a>.',
     },
   },
 });

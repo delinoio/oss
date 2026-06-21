@@ -2,8 +2,6 @@
 
 Nodeup is distributed as first-party release artifacts. Install flows are designed for macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64 hosts.
 
-This page is published at https://nodeup.delino.io/installation.
-
 ## binpm
 
 Install binpm by following the [binpm installation docs](https://binpm.delino.io/installation). Use a dedicated Nodeup binpm home so `binpm add` does not modify an unrelated project manifest.
@@ -91,21 +89,17 @@ The canonical in-repo installer paths remain:
 - `scripts/install/nodeup.sh`
 - `scripts/install/nodeup.ps1`
 
-From a repository checkout, maintainers can run the scripts directly.
-
-Direct installers detect unsupported x86 hosts before resolving release tags or downloading assets. Use an x64/arm64 host or a supported CI image when an installer reports an unsupported host.
-
-macOS and Linux:
+From a repository checkout, maintainers can run the scripts directly:
 
 ```bash
-./scripts/install/nodeup.sh --version latest --method direct
+bash ./scripts/install/nodeup.sh --version latest --method direct
 ```
-
-Windows PowerShell:
 
 ```powershell
 ./scripts/install/nodeup.ps1 -Version latest -Method direct
 ```
+
+Direct installers detect unsupported x86 hosts before resolving release tags or downloading assets. Use an x64/arm64 host or a supported CI image when an installer reports an unsupported host.
 
 Direct installers support bundle-enabled releases only.
 
@@ -165,7 +159,7 @@ Nodeup runtime installation and shim dispatch support:
 | Windows | x64 | `node-v<version>-win-x64.zip` |
 | Windows | arm64 | `node-v<version>-win-arm64.zip` |
 
-x86 hosts are unsupported. Runtime installation and shim dispatch fail with `unsupported-platform` before archive download or delegated command planning. JSON errors include deterministic diagnostics: `os`, `architecture`, `platform_source`, optional `forced_platform`, and `supported_platforms`.
+x86 hosts are unsupported. Runtime installation and shim dispatch fail with `unsupported-platform` before archive download or delegated command planning. JSON errors include deterministic diagnostics: `os`, `architecture`, `platform_source`, and `supported_platforms`.
 
 ## Local Directories
 
