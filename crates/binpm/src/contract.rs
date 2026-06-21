@@ -160,7 +160,7 @@ fn split_version<'source>(
     }
 }
 
-fn validate_version_selector(raw: &str, version: &str) -> Result<(), BinpmError> {
+pub(crate) fn validate_version_selector(raw: &str, version: &str) -> Result<(), BinpmError> {
     if version == "latest" {
         return Err(unsupported_version_selector(
             raw,
@@ -179,7 +179,7 @@ fn validate_version_selector(raw: &str, version: &str) -> Result<(), BinpmError>
         ));
     }
 
-    if version.chars().all(|character| character.is_ascii_digit()) {
+    if version.chars().all(|character| character.is_ascii_digit()) && version.len() <= 3 {
         return Err(unsupported_version_selector(
             raw,
             "major-version pins such as `@1` are not supported; use an exact release tag such as \
@@ -603,9 +603,11 @@ mod tests {
     fn preserves_exact_tag_forms_that_do_not_match_unsupported_selectors() {
         let v1 = SourceSpec::from_str("github:owner/repo@v1").expect("v1 tag");
         let release = SourceSpec::from_str("github:owner/repo@release-2026.06").expect("tag");
+        let numeric_date = SourceSpec::from_str("github:owner/repo@20240621").expect("tag");
 
         assert_eq!(v1.version.as_deref(), Some("v1"));
         assert_eq!(release.version.as_deref(), Some("release-2026.06"));
+        assert_eq!(numeric_date.version.as_deref(), Some("20240621"));
     }
 
     #[test]

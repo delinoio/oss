@@ -24,6 +24,8 @@ The production URL is deployment metadata. Documentation content must be sourced
 - `github:<host>/owner/repo[@version]`
 - `gitlab:<host>/<namespace...>/<project>[@version]`
 
+`@version` is an exact release tag request. Omit it to select the latest stable release. `@latest`, SemVer range-like selectors, channel selectors such as `@beta`, and numeric major-version pins such as `@1` are rejected with diagnostics.
+
 ## Target Model
 
 The host target model is enum-driven:

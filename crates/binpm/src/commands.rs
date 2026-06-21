@@ -21,7 +21,10 @@ use crate::{
         AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
         InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs, VerifyArgs,
     },
-    contract::{ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec, TargetOs},
+    contract::{
+        validate_version_selector, ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec,
+        TargetOs,
+    },
     error::{BinpmError, Result},
     release::{client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset},
     storage::{
@@ -250,8 +253,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
             manifest: root.join(MANIFEST_FILE),
         })?
         .clone();
-    let mut spec = parse_manifest_source(&tool.source)?;
-    spec.version = tool.version.clone();
+    let spec = parse_manifest_tool_source(&tool)?;
     if local_tool_execution_ready(&root, &cmd, &spec, Some(&tool))? {
         return execute_command(&cmd, args.args(), &[ScopePaths::local(root).bin]);
     }
@@ -479,8 +481,7 @@ fn outdated(args: ScopedArgs) -> Result<i32> {
             let target_key = HostTarget::current()?.key();
             for (cmd, tool) in manifest.tools {
                 validate_command_name(&cmd)?;
-                let mut spec = parse_manifest_source(&tool.source)?;
-                spec.version = tool.version.clone();
+                let spec = parse_manifest_tool_source(&tool)?;
                 let current = lockfile
                     .tools
                     .get(&cmd)
@@ -833,8 +834,7 @@ fn install_local_manifest(
             continue;
         }
         validate_command_name(cmd)?;
-        let mut spec = parse_manifest_source(&tool.source)?;
-        spec.version = tool.version.clone();
+        let spec = parse_manifest_tool_source(tool)?;
         let prior_state = match capture_local_tool_state(&root, cmd) {
             Ok(prior_state) => prior_state,
             Err(error) => {
@@ -951,7 +951,7 @@ fn validate_selected_manifest_entries(manifest: &Manifest, selected: &[String]) 
             continue;
         }
         validate_command_name(cmd)?;
-        parse_manifest_source(&tool.source)?;
+        parse_manifest_tool_source(tool)?;
     }
     Ok(())
 }
@@ -2329,6 +2329,16 @@ fn parse_manifest_source(raw: &str) -> Result<SourceSpec> {
     Ok(spec)
 }
 
+fn parse_manifest_tool_source(tool: &ManifestTool) -> Result<SourceSpec> {
+    let mut spec = parse_manifest_source(&tool.source)?;
+    if let Some(version) = tool.version.as_deref() {
+        let raw = format!("{}@{version}", tool.source);
+        validate_version_selector(&raw, version)?;
+    }
+    spec.version = tool.version.clone();
+    Ok(spec)
+}
+
 fn manifest_tool_from_source(spec: &SourceSpec) -> ManifestTool {
     ManifestTool {
         source: spec.source_without_version(),
@@ -3577,8 +3587,7 @@ fn verify_lockfile_records(
     if let Some((manifest, root)) = manifest {
         for (cmd, manifest_tool) in &manifest.tools {
             validate_command_name(cmd)?;
-            let mut spec = parse_manifest_source(&manifest_tool.source)?;
-            spec.version = manifest_tool.version.clone();
+            let spec = parse_manifest_tool_source(manifest_tool)?;
             let locked_tool = lockfile.tools.get(cmd).ok_or(BinpmError::FrozenLockfile {
                 path: lockfile_path.to_path_buf(),
             })?;
@@ -3985,11 +3994,12 @@ mod tests {
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        parse_manifest_source, project_root_from, read_archive_selected_binary,
-        record_matches_current_provider_digest, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
-        restore_runtime_tool_state, select_manifest_asset, selected_asset_display_url, shell_path,
-        shell_quote, snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
+        parse_manifest_source, parse_manifest_tool_source, project_root_from,
+        read_archive_selected_binary, record_matches_current_provider_digest,
+        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
+        select_manifest_asset, selected_asset_display_url, shell_path, shell_quote,
+        snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
         validate_locked_record_artifact, validate_locked_record_current_asset,
         validate_locked_record_current_provider_digest, validate_package_record_metadata,
         validate_package_record_source_identity, validate_provider_digest_evidence,
@@ -4669,6 +4679,22 @@ mod tests {
             .expect_err("versioned manifest source");
 
         assert!(error.to_string().contains("must be versionless"));
+    }
+
+    #[test]
+    fn manifest_version_rejects_unsupported_selectors() {
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("beta".to_string()),
+            bin: None,
+            targets: BTreeMap::new(),
+        };
+
+        let error = parse_manifest_tool_source(&tool).expect_err("unsupported selector");
+
+        assert!(error
+            .to_string()
+            .contains("channel selectors are not supported"));
     }
 
     #[test]
