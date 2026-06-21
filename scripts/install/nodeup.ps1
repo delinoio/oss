@@ -50,6 +50,22 @@ function Verify-Checksum {
   }
 }
 
+function Assert-CosignPrerequisite {
+  if (Get-Command cosign -ErrorAction SilentlyContinue) {
+    return
+  }
+
+  throw @"
+[install.nodeup] missing required prerequisite: cosign
+[install.nodeup] direct installs require cosign before artifact download so SHA256SUMS and Sigstore bundle sidecars can be verified
+[install.nodeup] install cosign and retry:
+[install.nodeup]   macOS: brew install cosign
+[install.nodeup]   Linux: brew install cosign, or follow https://docs.sigstore.dev/cosign/system_config/installation/
+[install.nodeup]   Windows: winget install sigstore.cosign, or scoop install cosign
+[install.nodeup] alternate install paths: brew install delinoio/tap/nodeup, or cargo binstall nodeup --no-confirm
+"@
+}
+
 function Download-Bundle {
   param(
     [string]$BaseUrl,
@@ -72,16 +88,16 @@ function Verify-Bundle {
   )
 
   if (-not (Get-Command cosign -ErrorAction SilentlyContinue)) {
-    throw "[install.nodeup] cosign is required for direct installation"
+    Assert-CosignPrerequisite
   }
 
-  cosign verify-blob `
+  & cosign verify-blob `
     --bundle $BundlePath `
     --certificate-identity-regexp $WorkflowIdentityPattern `
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
     $FilePath | Out-Null
   if ($LASTEXITCODE -ne 0) {
-    throw "[install.nodeup] Sigstore bundle verification failed"
+    throw "[install.nodeup] Sigstore bundle verification failed for $FilePath. This is a verification failure, not a missing-prerequisite failure."
   }
 }
 
@@ -124,6 +140,7 @@ function Get-DirectPlatform {
 
 function Install-Direct {
   $platform = Get-DirectPlatform
+  Assert-CosignPrerequisite
   $tag = Resolve-Tag
   $baseUrl = "https://github.com/$Repo/releases/download/$tag"
   $assetArch = $platform.AssetArch
