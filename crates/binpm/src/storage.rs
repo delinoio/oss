@@ -750,7 +750,11 @@ pub fn install_bare_executable(cache_asset: &Path, installed_path: &Path) -> Res
         path: cache_asset.to_path_buf(),
         source,
     })?;
-    atomic_write_executable(installed_path, &bytes)
+    install_executable_bytes(installed_path, &bytes)
+}
+
+pub fn install_executable_bytes(installed_path: &Path, bytes: &[u8]) -> Result<()> {
+    atomic_write_executable(installed_path, bytes)
 }
 
 pub fn cache_asset_is_verified_regular(path: &Path, expected: &str) -> Result<bool> {

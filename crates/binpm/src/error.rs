@@ -111,8 +111,39 @@ pub enum BinpmError {
     MissingTool { cmd: String, manifest: PathBuf },
     #[error("No installable asset matched `{package}` for target `{target}`.")]
     AssetNotFound { package: String, target: String },
-    #[error("Archive extraction is not implemented for `{asset}` yet.")]
-    ArchiveExtractionNotImplemented { asset: String },
+    #[error("Archive `{asset}` does not contain an executable binary.")]
+    ArchiveBinaryNotFound { asset: String },
+    #[error(
+        "Archive `{asset}` contains multiple plausible executables: {}. Set `bin` in binpm.toml to disambiguate.",
+        candidates.join(", ")
+    )]
+    AmbiguousArchiveBinaries {
+        asset: String,
+        candidates: Vec<String>,
+    },
+    #[error("Archive `{asset}` does not contain selected binary `{member}`.")]
+    ArchiveMemberNotFound { asset: String, member: String },
+    #[error("Unsafe archive member path `{path}` in `{asset}`: {message}")]
+    UnsafeArchivePath {
+        asset: String,
+        path: String,
+        message: String,
+    },
+    #[error("Failed to extract archive `{asset}`: {message}")]
+    ArchiveExtraction { asset: String, message: String },
+    #[error("Failed to execute `{cmd}`: {source}")]
+    Execute {
+        cmd: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Command `{cmd}` exited with status {status}.")]
+    CommandFailed { cmd: String, status: i32 },
+    #[error(
+        "Tool `{cmd}` is not declared in `{}`. Run `binpm add {cmd} <source>` or retry with `binpm x --package <source> {cmd}`.",
+        manifest.display()
+    )]
+    ExecToolMissing { cmd: String, manifest: PathBuf },
     #[error(
         "`--require-verified` requires upstream digest, checksum, or verified signature material \
          for `{package}`."
@@ -187,9 +218,14 @@ impl BinpmError {
             | Self::StalePackageRecord { .. }
             | Self::MissingManifest { .. }
             | Self::MissingTool { .. }
+            | Self::ExecToolMissing { .. }
             | Self::InstalledPathCollision { .. }
             | Self::AssetNotFound { .. }
-            | Self::ArchiveExtractionNotImplemented { .. }
+            | Self::ArchiveBinaryNotFound { .. }
+            | Self::AmbiguousArchiveBinaries { .. }
+            | Self::ArchiveMemberNotFound { .. }
+            | Self::UnsafeArchivePath { .. }
+            | Self::ArchiveExtraction { .. }
             | Self::VerificationRequired { .. }
             | Self::ProviderDigestMismatch { .. }
             | Self::UnverifiedChecksumSourceOverride { .. }
@@ -197,7 +233,9 @@ impl BinpmError {
             | Self::UnsafeInstalledPath { .. }
             | Self::UnsafeManagedDirectory { .. }
             | Self::UnsafeManagedFile { .. }
-            | Self::UnsafeCachePath { .. } => 2,
+            | Self::UnsafeCachePath { .. }
+            | Self::CommandFailed { .. } => 2,
+            Self::Execute { .. } => 1,
         }
     }
 }

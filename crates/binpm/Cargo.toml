@@ -11,14 +11,19 @@ publish = false
 [dependencies]
 chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
 clap = { version = "4.5.32", features = ["derive"] }
+flate2 = "1.1.5"
 reqwest = { version = "0.12.14", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1.0.219", features = ["derive"] }
 sha2 = "0.10.8"
 swc_malloc = "1.2.5"
+tar = "0.4.44"
 thiserror = "2.0.12"
 toml = "0.8.20"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }
+xz2 = "0.1.7"
+zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
+zstd = "0.13.3"
 
 [dev-dependencies]
 assert_cmd = "2.0.16"
