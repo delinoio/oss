@@ -14,7 +14,7 @@ macOS and Linux:
 NODEUP_BINPM_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/nodeup-binpm"
 mkdir -p "$NODEUP_BINPM_HOME"
 cd "$NODEUP_BINPM_HOME"
-binpm init
+[ -f binpm.toml ] || binpm init
 binpm add nodeup github:delinoio/oss@nodeup@v<semver>
 binpm env --shell <shell>
 ```
@@ -25,7 +25,7 @@ Windows PowerShell:
 $env:NODEUP_BINPM_HOME = Join-Path ${env:LOCALAPPDATA} "nodeup-binpm"
 New-Item -ItemType Directory -Force -Path $env:NODEUP_BINPM_HOME | Out-Null
 Set-Location $env:NODEUP_BINPM_HOME
-binpm init
+if (-not (Test-Path -LiteralPath "binpm.toml")) { binpm init }
 binpm add nodeup github:delinoio/oss@nodeup@v<semver>
 binpm env --shell powershell
 ```
