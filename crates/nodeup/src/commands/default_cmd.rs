@@ -5,6 +5,7 @@ use crate::{
     cli::{OutputColorMode, OutputFormat},
     commands::print_output,
     errors::{ErrorKind, NodeupError, Result},
+    release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
     types::RuntimeSelectorSource,
     NodeupApp,
@@ -20,6 +21,8 @@ struct DefaultResolutionError {
 struct DefaultResponse {
     default_selector: Option<String>,
     resolved_runtime: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    release_index: Option<ReleaseIndexResolutionDiagnostic>,
     resolution_error: Option<DefaultResolutionError>,
 }
 
@@ -62,24 +65,28 @@ pub fn execute(
         let response = DefaultResponse {
             default_selector: Some(runtime_selector.to_string()),
             resolved_runtime: Some(resolved.runtime_id()),
+            release_index: resolved.release_index,
             resolution_error: None,
         };
-        let human = format!(
-            "Default runtime set to {}",
-            response.default_selector.as_deref().unwrap_or("")
+        let human = append_release_index_human_note(
+            format!(
+                "Default runtime set to {}",
+                response.default_selector.as_deref().unwrap_or("")
+            ),
+            response.release_index.as_ref(),
         );
         print_output(output, color, &human, &response)?;
         return Ok(0);
     }
 
     let settings = app.store.load_settings()?;
-    let (resolved_runtime, resolution_error) =
+    let (resolved_runtime, release_index, resolution_error) =
         if let Some(selector) = settings.default_selector.as_ref() {
             match app
                 .resolver
                 .resolve_selector_with_source(selector, RuntimeSelectorSource::Default)
             {
-                Ok(resolved) => (Some(resolved.runtime_id()), None),
+                Ok(resolved) => (Some(resolved.runtime_id()), resolved.release_index, None),
                 Err(error) => {
                     warn!(
                         command_path = "nodeup.default",
@@ -89,17 +96,18 @@ pub fn execute(
                         outcome = "unresolved",
                         "Default selector resolution failed during introspection"
                     );
-                    (None, Some(DefaultResolutionError::from(error)))
+                    (None, None, Some(DefaultResolutionError::from(error)))
                 }
             }
         } else {
-            (None, None)
+            (None, None, None)
         };
 
     let default_selector = settings.default_selector;
     let response = DefaultResponse {
         default_selector: default_selector.clone(),
         resolved_runtime,
+        release_index,
         resolution_error,
     };
     let human = if let Some(selector) = default_selector.as_ref() {
@@ -111,10 +119,24 @@ pub fn execute(
     } else {
         "Default runtime is not set".to_string()
     };
+    let human = append_release_index_human_note(human, response.release_index.as_ref());
 
     print_output(output, color, &human, &response)?;
 
     Ok(0)
+}
+
+fn append_release_index_human_note(
+    human: String,
+    diagnostic: Option<&ReleaseIndexResolutionDiagnostic>,
+) -> String {
+    match diagnostic {
+        Some(diagnostic) => format!(
+            "{human} (release index: stale cache fallback, age={}s, selected={})",
+            diagnostic.cache_age_seconds, diagnostic.selected_version
+        ),
+        None => human,
+    }
 }
 
 fn error_kind_key(kind: ErrorKind) -> &'static str {

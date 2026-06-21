@@ -6,7 +6,7 @@ use tracing::info;
 use crate::{
     errors::{NodeupError, Result},
     overrides::OverrideStore,
-    release_index::{normalize_version, ReleaseIndexClient},
+    release_index::{normalize_version, ReleaseIndexClient, ReleaseIndexResolutionDiagnostic},
     selectors::RuntimeSelector,
     store::{runtime_executable_path, Store},
     types::{OverrideLookupFallbackReason, RuntimeSelectorSource},
@@ -23,6 +23,7 @@ pub struct ResolvedRuntime {
     pub source: RuntimeSelectorSource,
     pub selector: RuntimeSelector,
     pub target: ResolvedRuntimeTarget,
+    pub release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
 
 impl ResolvedRuntime {
@@ -137,13 +138,18 @@ impl RuntimeResolver {
         source: RuntimeSelectorSource,
     ) -> Result<ResolvedRuntime> {
         let selector = RuntimeSelector::parse(selector_value)?;
+        let mut release_index = None;
         let target = match &selector {
             RuntimeSelector::Version(version) => ResolvedRuntimeTarget::Version {
                 version: normalize_version(&version.to_string()),
             },
-            RuntimeSelector::Channel(channel) => ResolvedRuntimeTarget::Version {
-                version: self.releases.resolve_channel(*channel)?,
-            },
+            RuntimeSelector::Channel(channel) => {
+                let resolution = self.releases.resolve_channel_with_diagnostics(*channel)?;
+                release_index = resolution.release_index;
+                ResolvedRuntimeTarget::Version {
+                    version: resolution.version,
+                }
+            }
             RuntimeSelector::LinkedName(name) => {
                 let settings = self.store.load_settings()?;
                 let path = settings.linked_runtimes.get(name).ok_or_else(|| {
@@ -175,6 +181,7 @@ impl RuntimeResolver {
             source,
             selector,
             target,
+            release_index,
         })
     }
 

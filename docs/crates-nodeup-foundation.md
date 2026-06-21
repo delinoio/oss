@@ -47,11 +47,13 @@
 - Download and install flows must validate source and artifact integrity.
 - Secrets must not be logged, and sensitive file paths should be minimized in logs.
 - URL diagnostics in error messages must omit query strings and fragments.
+- `NODEUP_RELEASE_INDEX_TTL_SECONDS` must accept non-negative integer second values, treat invalid empty, negative, or non-integer values as a safe warning category, and preserve the 600-second fallback.
+- Channel resolution that uses stale release-index cache after refresh failure must expose selector, selected version, cache age, TTL, fallback reason, and sanitized source URL in logs and JSON command output where the command resolves a channel.
 
 ## Logging
 - Use structured `tracing` logs for install, resolve, and dispatch flows.
 - Default log filters must remain `nodeup=warn` for managed alias dispatch, `nodeup=warn` for human management commands, and `nodeup=off` for JSON management commands unless `RUST_LOG` explicitly overrides them.
-- Include resolution source, requested channel, selected version, and result state.
+- Include resolution source, requested channel, selected version, result state, release-index cache fallback state, and sanitized URL diagnostics.
 - Delegated command planning logs must include `mode=direct|npm-exec`, `package_spec`, `package_json_path`, and `reason`.
 - Completion generation logs must include shell, command scope, and `generated|failed` outcome state.
 

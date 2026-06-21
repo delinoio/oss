@@ -74,4 +74,30 @@ Channel selectors use the Node.js release index. The cache:
 - is ignored when its schema, source URL, or timestamp is invalid
 - can fall back to stale cache entries after refresh failures
 
-Set `NODEUP_RELEASE_INDEX_TTL_SECONDS` to tune the TTL. Invalid TTL values fall back to 600 seconds.
+Set `NODEUP_RELEASE_INDEX_TTL_SECONDS` to tune the TTL:
+
+```bash
+NODEUP_RELEASE_INDEX_TTL_SECONDS=300 nodeup default lts
+NODEUP_RELEASE_INDEX_TTL_SECONDS=0 nodeup --output json which --runtime latest node
+```
+
+The value must be a non-negative integer duration in seconds. Empty values, negative values such as `-1`, and non-integer values such as `abc` are invalid. Invalid values produce a safe warning category in human/log diagnostics and keep the 600-second fallback TTL. JSON mode keeps stdout machine-parseable.
+
+When a channel selector uses stale cache because refresh failed, JSON responses for channel-resolving commands include `release_index`:
+
+```json
+{
+  "runtime": "v22.11.0",
+  "release_index": {
+    "cache_state": "stale-fallback",
+    "fallback_reason": "refresh-failed",
+    "cache_age_seconds": 3600,
+    "ttl_seconds": 600,
+    "selector": "lts",
+    "selected_version": "v22.11.0",
+    "source_url": "https://nodejs.org/download/release/index.json"
+  }
+}
+```
+
+The `source_url` field is sanitized and omits query strings and fragments.

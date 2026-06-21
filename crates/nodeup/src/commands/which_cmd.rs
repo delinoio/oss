@@ -8,6 +8,7 @@ use crate::{
     command_plan::{plan_delegated_command, DelegatedCommandMode},
     commands::print_output,
     errors::{NodeupError, Result},
+    release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
     NodeupApp,
 };
@@ -17,6 +18,8 @@ struct WhichResponse {
     runtime: String,
     command: String,
     executable_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
 
 pub fn execute(
@@ -77,9 +80,26 @@ pub fn execute(
         runtime: resolved.runtime_id(),
         command: command.to_string(),
         executable_path: plan.executable.to_string_lossy().to_string(),
+        release_index: resolved.release_index,
     };
-    let human = response.executable_path.clone();
+    let human = append_release_index_human_note(
+        response.executable_path.clone(),
+        response.release_index.as_ref(),
+    );
     print_output(output, color, &human, &response)?;
 
     Ok(0)
+}
+
+fn append_release_index_human_note(
+    human: String,
+    diagnostic: Option<&ReleaseIndexResolutionDiagnostic>,
+) -> String {
+    match diagnostic {
+        Some(diagnostic) => format!(
+            "{human}\nrelease index: stale cache fallback, age={}s, selected={}",
+            diagnostic.cache_age_seconds, diagnostic.selected_version
+        ),
+        None => human,
+    }
 }
