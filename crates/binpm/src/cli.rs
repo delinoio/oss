@@ -191,20 +191,21 @@ pub struct CacheArgs {
 pub enum CacheCommand {
     /// List cache entries.
     List,
-    /// Remove only cache entries not referenced by installed package records.
+    /// Remove stale project refs, then cache entries not referenced by records
+    /// or refs.
     Prune {
         /// Bypass future confirmation prompts for scripting.
         #[arg(long)]
         no_confirm: bool,
     },
-    /// Remove all cache entries while preserving installed package records and
+    /// Remove cache asset entries while preserving refs, package records, and
     /// bins.
     Clean {
         /// Bypass future confirmation prompts for scripting.
         #[arg(long)]
         no_confirm: bool,
     },
-    /// Print a read-only CI cache key for the current target and lockfile.
+    /// Print a read-only CI cache key and lockfile status.
     Key,
 }
 
