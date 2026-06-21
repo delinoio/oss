@@ -25,10 +25,11 @@ use crate::{
         read_cache_records, read_lockfile, read_manifest, read_package_record,
         record_verified_cache_hit, referenced_cache_keys, reject_symlinked_cache_entry,
         remove_cache_ref, remove_installed_binary, remove_package_record, remove_path_if_exists,
-        sanitize_persisted_url, validate_command_name, validate_download_url,
-        validate_installed_binary_path, validate_sha256_digest, write_cache_ref, write_lockfile,
-        write_manifest, write_package_record, CachePaths, LockTool, Manifest, ManifestTool,
-        PackageRecord, ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
+        require_verified_regular_cache_asset, sanitize_persisted_url, validate_command_name,
+        validate_download_url, validate_installed_binary_path, validate_sha256_digest,
+        write_cache_ref, write_lockfile, write_manifest, write_package_record, CachePaths,
+        LockTool, Manifest, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths, LOCKFILE_FILE,
+        MANIFEST_FILE,
     },
 };
 
@@ -2531,7 +2532,7 @@ fn validate_package_record_metadata(
 }
 
 fn verify_runtime_cache_bytes(cache_paths: &CachePaths, record: &PackageRecord) -> Result<()> {
-    crate::storage::verify_sha256(&cache_paths.asset_path(&record.sha256), &record.sha256)
+    require_verified_regular_cache_asset(&cache_paths.asset_path(&record.sha256), &record.sha256)
 }
 
 fn validate_provider_digest_evidence(record: &PackageRecord) -> Result<()> {
@@ -3064,8 +3065,8 @@ mod tests {
         validate_locked_record_artifact, validate_locked_record_current_provider_digest,
         validate_package_record_metadata, validate_package_record_source_identity,
         validate_provider_digest_evidence, validate_selected_manifest_entries,
-        verify_lockfile_records, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
-        LocalRemoveState, RuntimeToolState,
+        verify_lockfile_records, verify_runtime_cache_bytes, ArtifactKind, InstalledPackage,
+        InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -5308,6 +5309,27 @@ mod tests {
         assert!(error
             .to_string()
             .contains(&format!("sha256:{}", record.sha256)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn package_record_verify_rejects_symlinked_cache_asset() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let outside = tempfile::tempdir().expect("outside");
+        let bytes = b"expected bytes";
+        let sha256 = format!("{:x}", Sha256::digest(bytes));
+        let asset_path = cache.asset_path(&sha256);
+        let outside_asset = outside.path().join("asset");
+        std::fs::create_dir_all(asset_path.parent().expect("cache entry")).expect("cache entry");
+        std::fs::write(&outside_asset, bytes).expect("write outside asset");
+        std::os::unix::fs::symlink(&outside_asset, &asset_path).expect("symlink asset");
+        let mut record = package_record();
+        record.sha256 = sha256;
+
+        let error = verify_runtime_cache_bytes(&cache, &record).expect_err("symlinked asset");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
     }
 
     #[test]

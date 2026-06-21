@@ -66,6 +66,8 @@ pub enum BinpmError {
     },
     #[error("Unsafe managed directory `{}`: managed directories must not be symlinks.", path.display())]
     UnsafeManagedDirectory { path: PathBuf },
+    #[error("Unsafe managed file `{}`: managed files must be regular files, not symlinks.", path.display())]
+    UnsafeManagedFile { path: PathBuf },
     #[error("Failed to remove `{}`: {source}", path.display())]
     RemovePath {
         path: PathBuf,
@@ -194,6 +196,7 @@ impl BinpmError {
             | Self::UnsafeUrl { .. }
             | Self::UnsafeInstalledPath { .. }
             | Self::UnsafeManagedDirectory { .. }
+            | Self::UnsafeManagedFile { .. }
             | Self::UnsafeCachePath { .. } => 2,
         }
     }

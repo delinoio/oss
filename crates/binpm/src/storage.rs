@@ -311,6 +311,7 @@ fn is_windows_reserved_device_name(cmd: &str) -> bool {
 }
 
 pub fn read_package_record(path: &Path) -> Result<PackageRecord> {
+    require_regular_managed_file(path)?;
     read_toml(path)
 }
 
@@ -771,13 +772,13 @@ fn path_exists_no_follow(path: &Path) -> Result<bool> {
     }
 }
 
-fn require_verified_regular_cache_asset(path: &Path, expected: &str) -> Result<()> {
+pub fn require_verified_regular_cache_asset(path: &Path, expected: &str) -> Result<()> {
     let metadata = fs::symlink_metadata(path).map_err(|source| BinpmError::ReadFile {
         path: path.to_path_buf(),
         source,
     })?;
     if !metadata.is_file() {
-        return Err(BinpmError::UnsafeManagedDirectory {
+        return Err(BinpmError::UnsafeManagedFile {
             path: path.to_path_buf(),
         });
     }
@@ -1067,6 +1068,19 @@ fn reject_symlinked_managed_directory(path: &Path) -> Result<()> {
     }
 }
 
+fn require_regular_managed_file(path: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(path).map_err(|source| BinpmError::ReadFile {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(BinpmError::UnsafeManagedFile {
+            path: path.to_path_buf(),
+        });
+    }
+    Ok(())
+}
+
 pub fn remove_path_if_exists(path: &Path) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.is_dir() => {
@@ -1214,11 +1228,11 @@ mod tests {
     use super::{
         atomic_write_bytes, clean_cache, install_bare_executable, list_package_records,
         managed_installed_path, populate_cache_from_bytes, prune_cache, read_cache_records,
-        read_lockfile, read_manifest, record_verified_cache_hit, referenced_cache_keys,
-        remove_cache_ref, remove_installed_binary, remove_package_record, sanitize_persisted_url,
-        validate_command_name, validate_download_url, validate_sha256_digest, verify_sha256,
-        write_cache_ref, write_lockfile, write_manifest, CachePaths, LockTool, Lockfile, Manifest,
-        PackageRecord, ResolvedAsset, ScopePaths,
+        read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
+        referenced_cache_keys, remove_cache_ref, remove_installed_binary, remove_package_record,
+        sanitize_persisted_url, validate_command_name, validate_download_url,
+        validate_sha256_digest, verify_sha256, write_cache_ref, write_lockfile, write_manifest,
+        CachePaths, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset, ScopePaths,
     };
     use crate::{
         assets::{ArtifactKind, CandidateDecision},
@@ -2183,6 +2197,26 @@ created_at = "2026-01-01T00:00:00Z"
 
         assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
         assert!(outside.join("packages").join("tool.toml").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_package_record_rejects_symlinked_record_file() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        std::fs::create_dir_all(&paths.packages).expect("create packages");
+        let outside_record = temp_dir.path().join("outside.toml");
+        std::fs::write(
+            &outside_record,
+            toml::to_string(&package_record()).expect("serialize record"),
+        )
+        .expect("write outside record");
+        let record_path = paths.packages.join("tool.toml");
+        std::os::unix::fs::symlink(&outside_record, &record_path).expect("symlink record");
+
+        let error = read_package_record(&record_path).expect_err("symlinked record");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
     }
 
     fn resolved_asset() -> ResolvedAsset {
