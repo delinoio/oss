@@ -1608,6 +1608,95 @@ tracked_selectors = ["lts"]
 
 #[test]
 #[serial]
+fn show_active_runtime_and_which_resolve_legacy_reserved_case_default_link() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-default-resolve");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho legacy-default\n");
+
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ndefault_selector = \"LTS\"\ntracked_selectors = \
+             [\"LTS\"]\n\n[linked_runtimes]\nLTS = \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    let show_output = env
+        .command()
+        .args(["--output", "json", "show", "active-runtime"])
+        .output()
+        .expect("show active-runtime with legacy reserved-case default");
+    assert!(show_output.status.success());
+    let show_payload: Value = serde_json::from_slice(&show_output.stdout).unwrap();
+    assert_eq!(show_payload["runtime"], "LTS");
+    assert_eq!(show_payload["selector"], "LTS");
+    assert_eq!(show_payload["selector_kind"], "linked-runtime");
+    assert_eq!(show_payload["canonical_selector"], "LTS");
+
+    env.command()
+        .args(["which", "node"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            runtime_bin.join("node").to_str().unwrap(),
+        ));
+}
+
+#[test]
+#[serial]
+fn show_active_runtime_resolves_legacy_reserved_case_override_link() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-override-resolve");
+    let runtime_bin = runtime_dir.join("bin");
+    let project_dir = env.root.join("legacy-reserved-case-override-project");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::create_dir_all(&project_dir).unwrap();
+    write_runtime_executable(
+        runtime_bin.join("node"),
+        "#!/bin/sh\necho legacy-override\n",
+    );
+
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ntracked_selectors = [\"LATEST\"]\n\n[linked_runtimes]\nLATEST = \
+             \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        env.config_root.join("overrides.toml"),
+        format!(
+            "schema_version = 1\n\n[[entries]]\npath = \"{}\"\nselector = \"LATEST\"\n",
+            project_dir.display()
+        ),
+    )
+    .unwrap();
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Active runtime: LATEST"));
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["which", "node"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            runtime_bin.join("node").to_str().unwrap(),
+        ));
+}
+
+#[test]
+#[serial]
 fn show_active_runtime_fails_when_linked_runtime_path_is_deleted() {
     let env = TestEnv::new();
     let runtime_dir = env.root.join("linked-runtime-deleted");

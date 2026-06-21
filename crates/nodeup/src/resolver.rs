@@ -10,7 +10,7 @@ use crate::{
     errors::{NodeupError, Result},
     overrides::OverrideStore,
     release_index::{normalize_version, ReleaseIndexClient, ReleaseIndexResolutionDiagnostic},
-    selectors::RuntimeSelector,
+    selectors::{is_case_variant_of_reserved_channel_selector, RuntimeSelector},
     store::{runtime_executable_path, Store},
     types::{OverrideLookupFallbackReason, RuntimeSelectorSource},
 };
@@ -148,7 +148,7 @@ impl RuntimeResolver {
         selector_value: &str,
         source: RuntimeSelectorSource,
     ) -> Result<ResolvedRuntime> {
-        let selector = RuntimeSelector::parse(selector_value)?;
+        let selector = parse_selector_for_resolution(selector_value, source)?;
         let mut release_index = None;
         let target = match &selector {
             RuntimeSelector::Version(version) => ResolvedRuntimeTarget::Version {
@@ -222,6 +222,28 @@ fn runtime_id_for_target(target: &ResolvedRuntimeTarget) -> String {
     match target {
         ResolvedRuntimeTarget::Version { version } => version.clone(),
         ResolvedRuntimeTarget::LinkedPath { name, .. } => name.clone(),
+    }
+}
+
+fn parse_selector_for_resolution(
+    selector_value: &str,
+    source: RuntimeSelectorSource,
+) -> Result<RuntimeSelector> {
+    match RuntimeSelector::parse(selector_value) {
+        Ok(selector) => Ok(selector),
+        Err(error)
+            if source != RuntimeSelectorSource::Explicit
+                && is_case_variant_of_reserved_channel_selector(selector_value.trim()) =>
+        {
+            // Settings and override files may predate the reserved-channel case
+            // restriction. Keep those persisted linked names resolvable while
+            // explicit user input remains strict; this fallback can be removed
+            // after a future data migration rewrites them.
+            Ok(RuntimeSelector::LinkedName(
+                selector_value.trim().to_string(),
+            ))
+        }
+        Err(error) => Err(error),
     }
 }
 
