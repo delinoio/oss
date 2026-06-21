@@ -24,6 +24,7 @@
 - The development server uses fixed port `46260`.
 - Local production preview uses fixed port `46261`.
 - The production output directory is `doc_build`.
+- The default theme must expose a visible GitHub repository link to `https://github.com/delinoio/oss`, including the top-level GitHub social link and the document-page footer repository link.
 - The canonical production URL is `https://binpm.delino.io`; documentation must treat this value as deployment metadata only and must not infer product behavior or published page content from the live site.
 - Content must stay aligned with the binpm project and crate contracts, especially source identifiers, local manifest and lockfile behavior, target selection, asset scoring, cache reuse, verification, read-only diagnostics, install finalization, release distribution, direct installers, cargo-binstall metadata, Homebrew installation, and Node-free runtime requirements.
 - This app is a documentation surface only. It must not expand binpm runtime behavior, release automation, package-manager backend scope, checksum discovery, signature verification, or global update behavior without corresponding updates to `docs/project-binpm.md` and `docs/crates-binpm-foundation.md`.
@@ -57,7 +58,7 @@
 - Depends on `docs/project-binpm.md` and `docs/crates-binpm-foundation.md` for canonical binpm product and runtime contracts.
 
 ## Change Triggers
-- Update `docs/project-binpm.md`, this file, and `apps/AGENTS.md` when the app path, route IDs, validation commands, toolchain, output directory, or deployment target changes.
+- Update `docs/project-binpm.md`, this file, and `apps/AGENTS.md` when the app path, route IDs, theme repository-link surface, validation commands, toolchain, output directory, or deployment target changes.
 - Update `docs/crates-binpm-foundation.md` and the relevant app pages when binpm runtime, source, target, local tooling, cache, verification, install, execution, release distribution, installer, diagnostic, or output behavior changes.
 - Update `docs/README.md` when adding, renaming, or removing this domain contract.
 
