@@ -53,7 +53,14 @@ RUST_LOG=off nodeup completions bash >nodeup.bash
 RUST_LOG=off nodeup completions zsh >_nodeup
 ```
 
-`--output json` and `--color always` do not wrap or style completion script output. `RUST_LOG=off` is the recommended redirection form because completion scripts are raw text, not structured command data.
+PowerShell:
+
+```powershell
+$env:RUST_LOG = "off"
+nodeup completions powershell > nodeup.ps1
+```
+
+`--output json` and `--color always` do not wrap or style completion script output. Set `RUST_LOG=off` before redirecting because completion scripts are raw text, not structured command data.
 
 ## Logging
 

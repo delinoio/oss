@@ -9,9 +9,9 @@ Use one of these patterns when stdout is consumed by another program:
 | Need | Recommended command | Stdout contract |
 | --- | --- | --- |
 | Structured command data | `nodeup --output json <command>` | JSON only; JSON mode defaults Nodeup logging off unless `RUST_LOG` is set. |
-| Runtime identifiers for shell loops | `RUST_LOG=off nodeup toolchain list --quiet` | One runtime identifier per line, no headings. |
-| Completion script redirection | `RUST_LOG=off nodeup completions <shell> >file` | Raw shell completion script text only. |
-| Human command output with logs disabled | `RUST_LOG=off nodeup <command>` | Human result text only. |
+| Runtime identifiers for shell loops | Set `RUST_LOG=off`, then run `nodeup toolchain list --quiet` | One runtime identifier per line, no headings. |
+| Completion script redirection | Set `RUST_LOG=off`, then run `nodeup completions <shell> >file` | Raw shell completion script text only. |
+| Human command output with logs disabled | Set `RUST_LOG=off`, then run `nodeup <command>` | Human result text only. |
 
 Tracing logs are written to stderr when enabled. Use `RUST_LOG=nodeup=debug` for troubleshooting, not in pipelines that parse stdout.
 
