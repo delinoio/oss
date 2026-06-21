@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
 use semver::Version;
 use tracing::info;
@@ -23,7 +26,6 @@ pub struct ResolvedRuntime {
     pub source: RuntimeSelectorSource,
     pub selector: RuntimeSelector,
     pub target: ResolvedRuntimeTarget,
-    pub release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
 
 impl ResolvedRuntime {
@@ -65,6 +67,7 @@ pub struct RuntimeResolver {
     store: Store,
     overrides: OverrideStore,
     releases: ReleaseIndexClient,
+    last_release_index_diagnostic: Arc<Mutex<Option<ReleaseIndexResolutionDiagnostic>>>,
 }
 
 impl RuntimeResolver {
@@ -73,7 +76,15 @@ impl RuntimeResolver {
             store,
             overrides,
             releases,
+            last_release_index_diagnostic: Arc::new(Mutex::new(None)),
         }
+    }
+
+    pub fn release_index_diagnostic(&self) -> Option<ReleaseIndexResolutionDiagnostic> {
+        self.last_release_index_diagnostic
+            .lock()
+            .ok()
+            .and_then(|diagnostic| diagnostic.clone())
     }
 
     pub fn resolve_with_precedence(
@@ -177,11 +188,14 @@ impl RuntimeResolver {
             "Resolved runtime selector"
         );
 
+        if let Ok(mut last_release_index_diagnostic) = self.last_release_index_diagnostic.lock() {
+            *last_release_index_diagnostic = release_index;
+        }
+
         Ok(ResolvedRuntime {
             source,
             selector,
             target,
-            release_index,
         })
     }
 

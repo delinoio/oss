@@ -91,7 +91,7 @@ fn show_active_runtime(
         runtime: resolved.runtime_id(),
         source: format!("{:?}", resolved.source).to_lowercase(),
         selector: resolved.selector.stable_id(),
-        release_index: resolved.release_index,
+        release_index: app.resolver.release_index_diagnostic(),
     };
     let human = append_release_index_human_note(
         format!("Active runtime: {}", response.runtime),

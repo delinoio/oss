@@ -46,6 +46,7 @@ pub fn execute(
     let resolved = app
         .resolver
         .resolve_selector_with_source(runtime, RuntimeSelectorSource::Explicit)?;
+    let release_index = app.resolver.release_index_diagnostic();
 
     if let ResolvedRuntimeTarget::Version { version } = &resolved.target {
         if !app.store.is_installed(version) {
@@ -128,7 +129,7 @@ pub fn execute(
         runtime: resolved.runtime_id(),
         command: delegated_command.clone(),
         exit_code,
-        release_index: resolved.release_index,
+        release_index,
     };
     let human = append_release_index_human_note(
         format!(

@@ -3587,7 +3587,7 @@ fn json_output_does_not_include_ansi_when_color_is_forced() {
 
 #[test]
 #[serial]
-fn invalid_release_index_ttl_logs_safe_category_and_preserves_human_stdout() {
+fn invalid_release_index_ttl_does_not_log_for_commands_without_release_index() {
     let env = TestEnv::new();
     let output = env
         .command()
@@ -3600,9 +3600,9 @@ fn invalid_release_index_ttl_logs_safe_category_and_preserves_human_stdout() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("nodeup home:"));
-    assert!(stdout.contains("Invalid release index TTL value"));
-    assert!(stdout.contains("invalid_value_category: \"not-integer\""));
-    assert!(stdout.contains("fallback_seconds: 600"));
+    assert!(!stdout.contains("Invalid release index TTL value"));
+    assert!(!stdout.contains("invalid_value_category"));
+    assert!(!stdout.contains("fallback_seconds"));
     assert!(!stdout.contains("env_value"));
     assert!(!stdout.contains("abc"));
 }
@@ -3639,6 +3639,27 @@ fn completions_output_stays_raw_without_ansi_when_color_is_forced() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("nodeup"));
     assert!(!stdout.contains("\u{1b}["));
+}
+
+#[test]
+#[serial]
+fn completions_output_stays_raw_with_invalid_release_index_ttl() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("RUST_LOG", "nodeup=warn")
+        .env("NODEUP_RELEASE_INDEX_TTL_SECONDS", "abc")
+        .args(["completions", "bash"])
+        .output()
+        .expect("bash completions with invalid release index ttl");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup"));
+    assert!(!stdout.contains("Invalid release index TTL value"));
+    assert!(!stdout.contains("invalid_value_category"));
+    assert!(!stdout.contains("abc"));
 }
 
 #[test]

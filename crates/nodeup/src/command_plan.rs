@@ -445,7 +445,6 @@ mod tests {
                 name: name.to_string(),
                 path: runtime_dir.to_path_buf(),
             },
-            release_index: None,
         }
     }
 

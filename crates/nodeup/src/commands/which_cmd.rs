@@ -80,7 +80,7 @@ pub fn execute(
         runtime: resolved.runtime_id(),
         command: command.to_string(),
         executable_path: plan.executable.to_string_lossy().to_string(),
-        release_index: resolved.release_index,
+        release_index: app.resolver.release_index_diagnostic(),
     };
     print_output(output, color, &response.executable_path, &response)?;
 

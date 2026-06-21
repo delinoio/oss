@@ -112,6 +112,7 @@ pub fn update(
                 let resolved = app
                     .resolver
                     .resolve_selector_with_source(&selector, RuntimeSelectorSource::Explicit)?;
+                let release_index = app.resolver.release_index_diagnostic();
                 let version = match resolved.target {
                     ResolvedRuntimeTarget::Version { version } => version,
                     ResolvedRuntimeTarget::LinkedPath { .. } => unreachable!(),
@@ -126,7 +127,7 @@ pub fn update(
                     } else {
                         "updated".to_string()
                     },
-                    release_index: resolved.release_index,
+                    release_index,
                 });
                 if let Some(entry) = updates.last() {
                     info!(

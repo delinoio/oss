@@ -169,6 +169,7 @@ fn install(
             &selector.stable_id(),
             crate::types::RuntimeSelectorSource::Explicit,
         )?;
+        let release_index = app.resolver.release_index_diagnostic();
 
         let version = match resolved.target {
             ResolvedRuntimeTarget::Version { version } => version,
@@ -205,7 +206,7 @@ fn install(
             selector: runtime.clone(),
             runtime: report.version,
             status: status.to_string(),
-            release_index: resolved.release_index,
+            release_index,
         });
     }
 

@@ -65,7 +65,7 @@ pub fn execute(
         let response = DefaultResponse {
             default_selector: Some(runtime_selector.to_string()),
             resolved_runtime: Some(resolved.runtime_id()),
-            release_index: resolved.release_index,
+            release_index: app.resolver.release_index_diagnostic(),
             resolution_error: None,
         };
         let human = append_release_index_human_note(
@@ -86,7 +86,11 @@ pub fn execute(
                 .resolver
                 .resolve_selector_with_source(selector, RuntimeSelectorSource::Default)
             {
-                Ok(resolved) => (Some(resolved.runtime_id()), resolved.release_index, None),
+                Ok(resolved) => (
+                    Some(resolved.runtime_id()),
+                    app.resolver.release_index_diagnostic(),
+                    None,
+                ),
                 Err(error) => {
                     warn!(
                         command_path = "nodeup.default",

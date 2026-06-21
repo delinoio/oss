@@ -30,6 +30,7 @@ pub struct ReleaseIndexClient {
     download_base_url: String,
     cache_file: PathBuf,
     cache_ttl: Duration,
+    cache_ttl_warning: Option<ReleaseIndexTtlWarning>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +91,12 @@ enum TtlParseError {
     NotInteger,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ReleaseIndexTtlWarning {
+    invalid_value_category: &'static str,
+    fallback_seconds: u64,
+}
+
 impl TtlParseError {
     fn as_str(self) -> &'static str {
         match self {
@@ -120,25 +127,40 @@ impl ReleaseIndexClient {
             download_base_url,
             cache_file,
             cache_ttl,
+            cache_ttl_warning: None,
         })
     }
 
+    pub fn new_from_env(cache_file: PathBuf) -> Result<Self> {
+        let ttl_config = Self::cache_ttl_config_from_env();
+        let mut client = Self::new(cache_file, ttl_config.cache_ttl)?;
+        client.cache_ttl_warning = ttl_config.warning;
+        Ok(client)
+    }
+
     pub fn cache_ttl_from_env() -> Duration {
+        Self::cache_ttl_config_from_env().cache_ttl
+    }
+
+    fn cache_ttl_config_from_env() -> ReleaseIndexTtlConfig {
         match std::env::var(RELEASE_INDEX_TTL_ENV) {
             Ok(raw) => match parse_release_index_ttl_seconds(&raw) {
-                Ok(seconds) => Duration::from_secs(seconds),
-                Err(error) => {
-                    warn!(
-                        command_path = "nodeup.release-index.cache",
-                        env_var = RELEASE_INDEX_TTL_ENV,
-                        invalid_value_category = error.as_str(),
-                        fallback_seconds = DEFAULT_RELEASE_INDEX_TTL_SECONDS,
-                        "Invalid release index TTL value; using default"
-                    );
-                    Duration::from_secs(DEFAULT_RELEASE_INDEX_TTL_SECONDS)
-                }
+                Ok(seconds) => ReleaseIndexTtlConfig {
+                    cache_ttl: Duration::from_secs(seconds),
+                    warning: None,
+                },
+                Err(error) => ReleaseIndexTtlConfig {
+                    cache_ttl: Duration::from_secs(DEFAULT_RELEASE_INDEX_TTL_SECONDS),
+                    warning: Some(ReleaseIndexTtlWarning {
+                        invalid_value_category: error.as_str(),
+                        fallback_seconds: DEFAULT_RELEASE_INDEX_TTL_SECONDS,
+                    }),
+                },
             },
-            Err(_) => Duration::from_secs(DEFAULT_RELEASE_INDEX_TTL_SECONDS),
+            Err(_) => ReleaseIndexTtlConfig {
+                cache_ttl: Duration::from_secs(DEFAULT_RELEASE_INDEX_TTL_SECONDS),
+                warning: None,
+            },
         }
     }
 
@@ -170,6 +192,7 @@ impl ReleaseIndexClient {
             download_base_url,
             cache_file,
             cache_ttl,
+            cache_ttl_warning: None,
         })
     }
 
@@ -178,6 +201,7 @@ impl ReleaseIndexClient {
     }
 
     pub fn fetch_index_with_diagnostics(&self) -> Result<ReleaseIndexFetch> {
+        self.warn_invalid_ttl_if_needed();
         let now_epoch_seconds = unix_epoch_seconds();
         let ttl_seconds = self.cache_ttl.as_secs();
         let cached = self.read_cached_index(now_epoch_seconds);
@@ -533,6 +557,24 @@ impl ReleaseIndexClient {
     pub fn http(&self) -> &Client {
         &self.http
     }
+
+    fn warn_invalid_ttl_if_needed(&self) {
+        if let Some(warning) = self.cache_ttl_warning {
+            warn!(
+                command_path = "nodeup.release-index.cache",
+                env_var = RELEASE_INDEX_TTL_ENV,
+                invalid_value_category = warning.invalid_value_category,
+                fallback_seconds = warning.fallback_seconds,
+                "Invalid release index TTL value; using default"
+            );
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReleaseIndexTtlConfig {
+    cache_ttl: Duration,
+    warning: Option<ReleaseIndexTtlWarning>,
 }
 
 fn parse_release_index_ttl_seconds(raw: &str) -> std::result::Result<u64, TtlParseError> {
