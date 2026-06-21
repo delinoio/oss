@@ -138,7 +138,7 @@ pub fn classify_artifact(name: &str, source_archive: bool) -> ArtifactKind {
     if lower.ends_with(".zip") {
         return ArtifactKind::Archive(ArchiveFormat::Zip);
     }
-    if lower.ends_with(".exe") || !lower.rsplit('/').next().unwrap_or(&lower).contains('.') {
+    if is_bare_executable_name(&lower) {
         return ArtifactKind::BareExecutable;
     }
 
@@ -552,6 +552,23 @@ fn is_desktop_package_name(lower: &str) -> bool {
         || lower.ends_with(".snap")
 }
 
+fn is_bare_executable_name(lower: &str) -> bool {
+    let basename = basename(lower);
+    if lower.ends_with(".exe") || !basename.contains('.') {
+        return true;
+    }
+
+    basename
+        .rsplit_once('.')
+        .map(|(_, extension)| {
+            extension.is_empty()
+                || !extension
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric())
+        })
+        .unwrap_or(false)
+}
+
 fn has_installable_archive_suffix(lower: &str) -> bool {
     lower.ends_with(".tar.gz")
         || lower.ends_with(".tgz")
@@ -629,6 +646,14 @@ mod tests {
         assert_eq!(
             classify_artifact("tool.exe", false),
             ArtifactKind::BareExecutable
+        );
+        assert_eq!(
+            classify_artifact("tool_1.2.3_linux_amd64", false),
+            ArtifactKind::BareExecutable
+        );
+        assert_eq!(
+            classify_artifact("tool-linux-amd64.txt", false),
+            ArtifactKind::Unknown
         );
     }
 

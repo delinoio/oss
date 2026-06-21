@@ -1771,7 +1771,11 @@ struct RuntimeToolState {
 
 #[derive(Debug, Clone)]
 enum InstalledPathSnapshot {
-    RegularFile(Vec<u8>),
+    RegularFile {
+        bytes: Vec<u8>,
+        #[cfg(unix)]
+        mode: u32,
+    },
     Symlink(PathBuf),
 }
 
@@ -1802,8 +1806,18 @@ fn capture_runtime_tool_state(paths: &ScopePaths, cmd: &str) -> Result<RuntimeTo
                     path: path.clone(),
                     source,
                 }),
-            Ok(_) => fs::read(path)
-                .map(|bytes| Some(InstalledPathSnapshot::RegularFile(bytes)))
+            Ok(metadata) => fs::read(path)
+                .map(|bytes| {
+                    Some(InstalledPathSnapshot::RegularFile {
+                        bytes,
+                        #[cfg(unix)]
+                        mode: {
+                            use std::os::unix::fs::PermissionsExt;
+
+                            metadata.permissions().mode()
+                        },
+                    })
+                })
                 .map_err(|source| BinpmError::ReadFile {
                     path: path.clone(),
                     source,
@@ -2156,12 +2170,21 @@ fn restore_runtime_tool_state(paths: &ScopePaths, cmd: &str, prior_state: Runtim
 
 fn restore_executable_snapshot(path: &Path, snapshot: InstalledPathSnapshot) -> Result<()> {
     match snapshot {
-        InstalledPathSnapshot::RegularFile(bytes) => restore_executable_bytes(path, &bytes),
+        InstalledPathSnapshot::RegularFile {
+            bytes,
+            #[cfg(unix)]
+            mode,
+        } => restore_executable_bytes(
+            path,
+            &bytes,
+            #[cfg(unix)]
+            mode,
+        ),
         InstalledPathSnapshot::Symlink(target) => restore_executable_symlink(path, &target),
     }
 }
 
-fn restore_executable_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
+fn restore_executable_bytes(path: &Path, bytes: &[u8], #[cfg(unix)] mode: u32) -> Result<()> {
     crate::storage::atomic_write_bytes(path, bytes)?;
     #[cfg(unix)]
     {
@@ -2173,7 +2196,7 @@ fn restore_executable_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
                 source,
             })?
             .permissions();
-        permissions.set_mode(0o755);
+        permissions.set_mode(mode);
         fs::set_permissions(path, permissions).map_err(|source| BinpmError::WriteFile {
             path: path.to_path_buf(),
             source,
@@ -3820,9 +3843,11 @@ mod tests {
             runtime: RuntimeToolState {
                 package_record: None,
                 installed_path: Some(PathBuf::from(".binpm/bin/tool")),
-                installed_snapshot: Some(InstalledPathSnapshot::RegularFile(
-                    b"manual tool".to_vec(),
-                )),
+                installed_snapshot: Some(InstalledPathSnapshot::RegularFile {
+                    bytes: b"manual tool".to_vec(),
+                    #[cfg(unix)]
+                    mode: 0o700,
+                }),
             },
         };
 
@@ -4385,7 +4410,11 @@ mod tests {
             RuntimeToolState {
                 package_record: Some(record),
                 installed_path: Some(outside.clone()),
-                installed_snapshot: Some(InstalledPathSnapshot::RegularFile(b"changed".to_vec())),
+                installed_snapshot: Some(InstalledPathSnapshot::RegularFile {
+                    bytes: b"changed".to_vec(),
+                    #[cfg(unix)]
+                    mode: 0o755,
+                }),
             },
         );
 
@@ -4398,6 +4427,46 @@ mod tests {
         ))
         .expect("restored package record");
         assert_eq!(restored.installed_path, outside.display().to_string());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rollback_restores_regular_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = crate::storage::ScopePaths::local(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        let installed_path = paths.bin.join("tool");
+        std::fs::write(&installed_path, "replacement").expect("write replacement file");
+        let mut record = package_record();
+        record.installed_path = installed_path.display().to_string();
+
+        restore_runtime_tool_state(
+            &paths,
+            "tool",
+            RuntimeToolState {
+                package_record: Some(record),
+                installed_path: Some(installed_path.clone()),
+                installed_snapshot: Some(InstalledPathSnapshot::RegularFile {
+                    bytes: b"original".to_vec(),
+                    mode: 0o750,
+                }),
+            },
+        );
+
+        assert_eq!(
+            std::fs::read_to_string(&installed_path).expect("read restored file"),
+            "original"
+        );
+        assert_eq!(
+            std::fs::metadata(&installed_path)
+                .expect("restored metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o750
+        );
     }
 
     #[test]
