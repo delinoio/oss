@@ -32,6 +32,19 @@ impl Cli {
         Self::parse()
     }
 
+    pub fn try_parse_args() -> std::result::Result<Self, clap::Error> {
+        Self::try_parse()
+    }
+
+    pub fn json_requested<I, T>(args: I) -> bool
+    where
+        I: IntoIterator<Item = T>,
+        T: AsRef<OsStr>,
+    {
+        args.into_iter()
+            .any(|arg| arg.as_ref() == OsStr::new("--json"))
+    }
+
     pub fn command_for_tests() -> clap::Command {
         <Self as CommandFactory>::command()
     }

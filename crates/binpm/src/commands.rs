@@ -225,6 +225,7 @@ enum ExplainOutput {
         scope: Scope,
         cmd: String,
         record: PackageRecordOutput,
+        override_snippet: String,
     },
 }
 
@@ -1039,11 +1040,24 @@ fn explain(args: ExplainArgs, output: OutputMode) -> Result<i32> {
     validate_command_name(&args.cmd_or_source)?;
     let record = read_package_record(&package_record_path(&paths, &args.cmd_or_source))?;
     if output.is_json() {
+        let target = HostTarget {
+            os: record.target_os,
+            arch: record.target_arch,
+            libc: record.target_libc,
+        };
+        let override_snippet = target_override_snippet(
+            &args.cmd_or_source,
+            &target,
+            &record.asset_name,
+            &record.selected_binary,
+            Some(record.checksum_source),
+        );
         return print_json(&ExplainOutput::Package {
             command: "explain",
             scope,
             cmd: args.cmd_or_source,
             record: package_record_output(&record),
+            override_snippet,
         });
     }
     println!("binpm explain");
@@ -4387,6 +4401,7 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
             lockfile,
             Some((&manifest, root.as_path())),
             args.require_verified,
+            output,
         )?;
         checked += lock_checked;
         locked = lock_commands;
@@ -4674,6 +4689,7 @@ fn verify_lockfile_records(
     lockfile: crate::storage::Lockfile,
     manifest: Option<(&Manifest, &Path)>,
     require_verified: bool,
+    output: OutputMode,
 ) -> Result<(usize, BTreeSet<String>)> {
     let mut checked = 0usize;
     let mut locked = BTreeSet::new();
@@ -4764,10 +4780,12 @@ fn verify_lockfile_records(
             validate_provider_digest_evidence(&record)?;
             validate_locked_record_current_release(lockfile_path, &cmd, &record)?;
             locked.insert(cmd.clone());
-            println!(
-                "{cmd} lock verified {target_key} {}",
-                record.checksum_source.as_str()
-            );
+            if !output.is_json() {
+                println!(
+                    "{cmd} lock verified {target_key} {}",
+                    record.checksum_source.as_str()
+                );
+            }
             checked += 1;
         }
     }
@@ -5161,7 +5179,7 @@ mod tests {
         validate_provider_digest_evidence, validate_selected_manifest_entries,
         verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
         zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
+        InstalledPathSnapshot, LocalRemoveState, OutputMode, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -6109,9 +6127,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("unverified target is rejected");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("unverified target is rejected");
 
         assert!(error.to_string().contains("github:owner/tool@1.0.0"));
     }
@@ -6132,9 +6155,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, false)
-                .expect_err("missing digest evidence is rejected");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            false,
+            OutputMode::Human,
+        )
+        .expect_err("missing digest evidence is rejected");
 
         assert!(error
             .to_string()
@@ -6658,9 +6686,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("mismatched target is stale");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("mismatched target is stale");
 
         assert!(error.to_string().contains("stale"));
     }
@@ -6690,6 +6723,7 @@ mod tests {
             lockfile,
             Some((&manifest, temp_dir.path())),
             true,
+            OutputMode::Human,
         )
         .expect_err("manifest tool must be locked");
 
@@ -6719,6 +6753,7 @@ mod tests {
             lockfile,
             Some((&manifest, temp_dir.path())),
             true,
+            OutputMode::Human,
         )
         .expect_err("lock-only tool is stale");
 
@@ -7793,9 +7828,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("unsafe asset url");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("unsafe asset url");
 
         assert!(error.to_string().contains("must not include query"));
         assert!(!error.to_string().contains("secret"));
@@ -7822,9 +7862,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("absolute installed path is stale");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("absolute installed path is stale");
 
         assert!(error.to_string().contains("stale"));
     }
@@ -7845,9 +7890,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("target alias is stale");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("target alias is stale");
 
         assert!(error.to_string().contains("stale"));
     }
@@ -7871,9 +7921,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("runtime fields are stale");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("runtime fields are stale");
 
         assert!(error.to_string().contains("stale"));
     }
