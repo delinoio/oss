@@ -23,7 +23,10 @@ use crate::{
         AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
         InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs, VerifyArgs,
     },
-    contract::{ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec, TargetOs},
+    contract::{
+        validate_version_selector, ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec,
+        TargetOs,
+    },
     error::{BinpmError, Result},
     release::{client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset},
     storage::{
@@ -273,8 +276,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
             manifest: root.join(MANIFEST_FILE),
         })?
         .clone();
-    let mut spec = parse_manifest_source(&tool.source)?;
-    spec.version = tool.version.clone();
+    let spec = parse_manifest_tool_source(&tool)?;
     if local_tool_execution_ready(&root, &cmd, &spec, Some(&tool))? {
         return execute_command(&cmd, args.args(), &[ScopePaths::local(root).bin]);
     }
@@ -469,7 +471,7 @@ fn remove(args: RemoveArgs) -> Result<i32> {
 }
 
 fn info_cmd(args: InfoArgs) -> Result<i32> {
-    if let Ok(spec) = SourceSpec::from_str(&args.cmd_or_source) {
+    if let Some(spec) = parse_source_argument(&args.cmd_or_source)? {
         debug!(
             command = "info",
             source_provider = spec.provider.as_str(),
@@ -481,6 +483,7 @@ fn info_cmd(args: InfoArgs) -> Result<i32> {
         log_read_only_scope("info", args.scope.scope());
         return print_source_info(&spec);
     }
+
     log_read_only_scope("info", args.scope.scope());
     let scope = select_scope(args.scope.scope())?;
     let paths = match scope {
@@ -506,8 +509,7 @@ fn outdated(args: ScopedArgs) -> Result<i32> {
             let target_key = HostTarget::current()?.key();
             for (cmd, tool) in manifest.tools {
                 validate_command_name(&cmd)?;
-                let mut spec = parse_manifest_source(&tool.source)?;
-                spec.version = tool.version.clone();
+                let spec = parse_manifest_tool_source(&tool)?;
                 let current = lockfile
                     .tools
                     .get(&cmd)
@@ -714,28 +716,31 @@ fn doctor() -> Result<i32> {
 }
 
 fn explain(args: ExplainArgs) -> Result<i32> {
-    if let Ok(spec) = SourceSpec::from_str(&args.cmd_or_source) {
-        let target = HostTarget::current()?;
-        info!(
-            command = "explain",
-            read_only = true,
-            selected_scope = args.scope.scope().as_str(),
-            source_provider = spec.provider.as_str(),
-            source_host = spec.host,
-            source_path = spec.path,
-            source_version = spec.version.as_deref().unwrap_or(""),
-            target = target.key(),
-            "Prepared source explanation"
-        );
-        return explain_source(spec, target);
-    } else {
-        info!(
-            command = "explain",
-            read_only = true,
-            selected_scope = args.scope.scope().as_str(),
-            local_cmd = args.cmd_or_source,
-            "Prepared local command explanation"
-        );
+    match parse_source_argument(&args.cmd_or_source)? {
+        Some(spec) => {
+            let target = HostTarget::current()?;
+            info!(
+                command = "explain",
+                read_only = true,
+                selected_scope = args.scope.scope().as_str(),
+                source_provider = spec.provider.as_str(),
+                source_host = spec.host,
+                source_path = spec.path,
+                source_version = spec.version.as_deref().unwrap_or(""),
+                target = target.key(),
+                "Prepared source explanation"
+            );
+            return explain_source(spec, target);
+        }
+        None => {
+            info!(
+                command = "explain",
+                read_only = true,
+                selected_scope = args.scope.scope().as_str(),
+                local_cmd = args.cmd_or_source,
+                "Prepared local command explanation"
+            );
+        }
     }
     let scope = select_scope(args.scope.scope())?;
     let paths = match scope {
@@ -761,6 +766,14 @@ fn explain(args: ExplainArgs) -> Result<i32> {
     println!("checksum_source: {}", record.checksum_source.as_str());
     println!("verification: {}", verification_state(&record));
     Ok(0)
+}
+
+fn parse_source_argument(raw: &str) -> Result<Option<SourceSpec>> {
+    if raw.starts_with("github:") || raw.starts_with("gitlab:") {
+        return SourceSpec::from_str(raw).map(Some);
+    }
+
+    Ok(None)
 }
 
 fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
@@ -974,8 +987,7 @@ fn install_local_manifest(
             continue;
         }
         validate_command_name(cmd)?;
-        let mut spec = parse_manifest_source(&tool.source)?;
-        spec.version = tool.version.clone();
+        let spec = parse_manifest_tool_source(tool)?;
         let prior_state = match capture_local_tool_state(&root, cmd) {
             Ok(prior_state) => prior_state,
             Err(error) => {
@@ -1092,7 +1104,7 @@ fn validate_selected_manifest_entries(manifest: &Manifest, selected: &[String]) 
             continue;
         }
         validate_command_name(cmd)?;
-        parse_manifest_source(&tool.source)?;
+        parse_manifest_tool_source(tool)?;
     }
     Ok(())
 }
@@ -2535,6 +2547,16 @@ fn parse_manifest_source(raw: &str) -> Result<SourceSpec> {
                 .to_string(),
         });
     }
+    Ok(spec)
+}
+
+fn parse_manifest_tool_source(tool: &ManifestTool) -> Result<SourceSpec> {
+    let mut spec = parse_manifest_source(&tool.source)?;
+    if let Some(version) = tool.version.as_deref() {
+        let raw = format!("{}@{version}", tool.source);
+        validate_version_selector(&raw, version)?;
+    }
+    spec.version = tool.version.clone();
     Ok(spec)
 }
 
@@ -4010,8 +4032,7 @@ fn verify_lockfile_records(
     if let Some((manifest, root)) = manifest {
         for (cmd, manifest_tool) in &manifest.tools {
             validate_command_name(cmd)?;
-            let mut spec = parse_manifest_source(&manifest_tool.source)?;
-            spec.version = manifest_tool.version.clone();
+            let spec = parse_manifest_tool_source(manifest_tool)?;
             let locked_tool = lockfile.tools.get(cmd).ok_or(BinpmError::FrozenLockfile {
                 path: lockfile_path.to_path_buf(),
             })?;
@@ -4479,8 +4500,8 @@ mod tests {
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        normalize_bin_selection, parse_manifest_source, project_root_from,
-        read_archive_selected_binary, record_matches_current_provider_digest,
+        normalize_bin_selection, parse_manifest_source, parse_manifest_tool_source,
+        project_root_from, read_archive_selected_binary, record_matches_current_provider_digest,
         remove_global_tool_from_paths, remove_local_manifest_orphans,
         require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
         sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
@@ -5292,6 +5313,22 @@ mod tests {
             .expect_err("versioned manifest source");
 
         assert!(error.to_string().contains("must be versionless"));
+    }
+
+    #[test]
+    fn manifest_version_rejects_unsupported_selectors() {
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("beta".to_string()),
+            bin: None,
+            targets: BTreeMap::new(),
+        };
+
+        let error = parse_manifest_tool_source(&tool).expect_err("unsupported selector");
+
+        assert!(error
+            .to_string()
+            .contains("channel selectors are not supported"));
     }
 
     #[test]
