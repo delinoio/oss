@@ -2039,6 +2039,7 @@ fn read_tar_selected_binary<R: Read>(
     select_archive_member(
         asset_name,
         repo_name,
+        target,
         explicit_binary,
         members,
         member_bytes,
@@ -2077,6 +2078,13 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
                 message: "symlinks and hard links are not installable".to_string(),
             });
         }
+        if !zip_file_is_regular(file.unix_mode()) {
+            return Err(BinpmError::UnsafeArchivePath {
+                asset: asset_name.to_string(),
+                path,
+                message: "non-regular zip entries are not installable".to_string(),
+            });
+        }
         let executable = file
             .unix_mode()
             .map(|mode| mode & 0o111 != 0)
@@ -2100,6 +2108,7 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
     select_archive_member(
         asset_name,
         repo_name,
+        target,
         explicit_binary,
         members,
         member_bytes,
@@ -2112,6 +2121,17 @@ fn zip_file_is_symlink(unix_mode: Option<u32>) -> bool {
     unix_mode
         .map(|mode| mode & UNIX_FILE_TYPE_MASK == UNIX_SYMLINK_TYPE)
         .unwrap_or(false)
+}
+
+fn zip_file_is_regular(unix_mode: Option<u32>) -> bool {
+    const UNIX_FILE_TYPE_MASK: u32 = 0o170000;
+    const UNIX_REGULAR_TYPE: u32 = 0o100000;
+    unix_mode
+        .map(|mode| {
+            let file_type = mode & UNIX_FILE_TYPE_MASK;
+            file_type == 0 || file_type == UNIX_REGULAR_TYPE
+        })
+        .unwrap_or(true)
 }
 
 fn archive_exe_is_executable(path: &str, target: &HostTarget) -> bool {
@@ -2129,6 +2149,7 @@ fn duplicate_archive_member(asset_name: &str, path: &str) -> BinpmError {
 fn select_archive_member(
     asset_name: &str,
     repo_name: &str,
+    target: &HostTarget,
     explicit_binary: Option<&str>,
     members: Vec<ArchiveMember>,
     mut member_bytes: BTreeMap<String, Vec<u8>>,
@@ -2151,7 +2172,8 @@ fn select_archive_member(
             let matches = members
                 .iter()
                 .filter(|member| {
-                    member.executable && archive_basename(&member.path) == explicit_binary
+                    member.executable
+                        && archive_binary_name_matches(target, &member.path, explicit_binary)
                 })
                 .map(|member| member.path.clone())
                 .collect::<Vec<_>>();
@@ -2172,7 +2194,7 @@ fn select_archive_member(
             }
         }
     } else {
-        match discover_archive_binary(repo_name, &members) {
+        match discover_archive_binary(repo_name, target, &members) {
             BinaryDiscovery::Selected(path) => path,
             BinaryDiscovery::Ambiguous(candidates) => {
                 return Err(BinpmError::AmbiguousArchiveBinaries {
@@ -2202,6 +2224,21 @@ fn select_archive_member(
 
 fn archive_basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
+}
+
+fn archive_binary_name_matches(target: &HostTarget, path: &str, expected: &str) -> bool {
+    let basename = archive_basename(path);
+    if basename == expected {
+        return true;
+    }
+    if target.os != TargetOs::Windows {
+        return false;
+    }
+    basename.eq_ignore_ascii_case(expected)
+        || basename
+            .to_ascii_lowercase()
+            .strip_suffix(".exe")
+            .is_some_and(|stripped| stripped.eq_ignore_ascii_case(expected))
 }
 
 fn validate_archive_member_path(asset_name: &str, path: &Path) -> Result<String> {
@@ -3933,8 +3970,9 @@ mod tests {
         validate_locked_record_current_provider_digest, validate_package_record_metadata,
         validate_package_record_source_identity, validate_provider_digest_evidence,
         validate_selected_manifest_entries, verify_installed_binary_contents,
-        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_symlink, ArtifactKind,
-        InstalledPackage, InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
+        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_regular,
+        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4081,11 +4119,48 @@ mod tests {
     }
 
     #[test]
+    fn archive_extraction_matches_explicit_windows_binary_without_exe_suffix() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[("pkg/tool.exe", b"windows".as_slice(), 0o100644)],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &HostTarget {
+                os: TargetOs::Windows,
+                arch: TargetArch::X86_64,
+                libc: TargetLibc::Msvc,
+            },
+            Some("tool"),
+        )
+        .expect("selected windows exe");
+
+        assert_eq!(selected.path, "pkg/tool.exe");
+        assert_eq!(selected.bytes, b"windows");
+    }
+
+    #[test]
     fn zip_symlink_detection_checks_unix_file_type_bits() {
         assert!(zip_file_is_symlink(Some(0o120777)));
         assert!(!zip_file_is_symlink(Some(0o100755)));
         assert!(!zip_file_is_symlink(Some(0o755)));
         assert!(!zip_file_is_symlink(None));
+    }
+
+    #[test]
+    fn zip_regular_file_detection_rejects_non_regular_file_type_bits() {
+        assert!(zip_file_is_regular(Some(0o100755)));
+        assert!(zip_file_is_regular(Some(0o755)));
+        assert!(zip_file_is_regular(None));
+        assert!(!zip_file_is_regular(Some(0o010755)));
+        assert!(!zip_file_is_regular(Some(0o020755)));
+        assert!(!zip_file_is_regular(Some(0o120777)));
     }
 
     #[test]
