@@ -14,8 +14,8 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 
 ## Cross-Domain Invariants
 - `binpm` is implemented as a Rust CLI under `crates/binpm`.
-- The initial runtime skeleton includes clap-based command parsing, enum-backed contract foundations, structured `tracing` setup, centralized CLI error handling, README/test scaffolding, release source parsing, provider release lookup clients, deterministic release asset candidate scoring, and minimal safe implementations for `binpm init`, `binpm env`, `binpm doctor`, source-form `binpm explain`, and `binpm cache key`.
-- Downloads, cache mutation, extraction, install, update, remove, verify, list, info, outdated, local-command explain, and `x` execution flows must remain explicit not-yet-implemented errors until their documented storage and verification behavior is implemented.
+- The runtime implementation includes clap-based command parsing, enum-backed contract foundations, structured `tracing` setup, centralized CLI error handling, README/test scaffolding, release source parsing, provider release lookup clients, deterministic release asset candidate scoring, TOML-backed `binpm.toml` and `binpm.lock` parsing/writing, global and project-local package records, global cache metadata, URL sanitization, SHA-256 cache validation, and atomic file writes.
+- `binpm init`, `binpm env`, `binpm doctor`, source-form `binpm explain`, `binpm cache key`, `binpm cache list`, `binpm cache prune`, `binpm cache clean`, `binpm list`, `binpm remove`, `binpm verify`, and bare-executable install flows have concrete runtime behavior. Archive extraction, checksum sidecar/manifest discovery, signature verification, local-command explain, info, outdated, global update, and `x` execution remain implementation work.
 - Stable source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
 - Versionless installs must resolve to the latest stable release exposed by the source provider; GitHub sources must exclude draft and prerelease releases, and GitLab sources must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
 - Binary selection must be deterministic and target-aware across operating system, CPU architecture, and libc or ABI environment.
@@ -25,13 +25,16 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `~/.binpm` remains the canonical global home directory for globally installed binaries, package records, cache entries, and temporary extraction state.
 - `~/.binpm/cache` is the user-level global asset cache shared by all `binpm` installs for the same account.
 - Global cache reuse must never bypass provider asset digest, upstream checksum, signature, or locally recorded SHA-256 verification.
+- Project-local installs must maintain user-level cache references so pruning from one checkout does not remove cache entries still referenced by another checkout.
 - Cache management commands must preserve installed package records and `~/.binpm/bin` entries unless a separate uninstall contract explicitly changes that behavior.
 - `binpm cache key` must be a read-only diagnostic command that prints a current-target CI cache key derived from `binpm.lock`.
 - Project-local tooling must use `binpm.toml` at the repository root as the committed local tool manifest.
 - Project-local tooling must use `binpm.lock` at the repository root as the committed deterministic resolution record for release tags, target-specific assets, selected binaries, checksums, and installed paths.
 - Committed lockfiles must store sanitized canonical asset URLs only, never credential-bearing or expiring download URLs.
 - Local target-specific asset overrides must live under `[tools.<cmd>.targets.<target-key>]` and must preserve deterministic lockfile output.
+- Local command names must be executable basenames and must not contain path separators or relative path components.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`; other project-local binpm runtime state must stay under `$repoRoot/.binpm`.
+- The current install implementation finalizes bare executable release assets only. Archive assets are selected and classified by the scoring layer, but install finalization fails explicitly until archive extraction is implemented.
 - `binpm x CMD [args...]` must run commands from the local manifest or from an explicitly supplied `--package`; it must not guess a GitHub repository from `CMD`.
 - Local `install`, `update`, and `x` must honor `--frozen-lockfile`; `CI=true` enables frozen lockfile behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.
 - `binpm` must not require Node.js, npm, pnpm, yarn, or Bun to install native binary tools.

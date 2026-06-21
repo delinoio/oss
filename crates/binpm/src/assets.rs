@@ -44,6 +44,7 @@ impl ArtifactKind {
 pub struct CandidateDecision {
     pub asset_name: String,
     pub canonical_url: String,
+    pub download_url: String,
     pub kind: ArtifactKind,
     pub detected_os: Option<TargetOs>,
     pub detected_arch: Option<TargetArch>,
@@ -137,7 +138,7 @@ pub fn classify_artifact(name: &str, source_archive: bool) -> ArtifactKind {
     if lower.ends_with(".zip") {
         return ArtifactKind::Archive(ArchiveFormat::Zip);
     }
-    if lower.ends_with(".exe") || !lower.rsplit('/').next().unwrap_or(&lower).contains('.') {
+    if is_bare_executable_name(&lower) {
         return ArtifactKind::BareExecutable;
     }
 
@@ -205,10 +206,12 @@ fn score_asset(
     target: &HostTarget,
     asset: &ReleaseAsset,
 ) -> CandidateDecision {
-    let canonical_url = asset
+    let download_url = asset
         .provider_url
         .as_deref()
         .unwrap_or(&asset.url)
+        .to_string();
+    let canonical_url = download_url
         .split(['?', '#'])
         .next()
         .unwrap_or(&asset.url)
@@ -218,6 +221,7 @@ fn score_asset(
     let mut decision = CandidateDecision {
         asset_name: asset.name.clone(),
         canonical_url,
+        download_url,
         kind,
         detected_os: target_signal.os,
         detected_arch: target_signal.arch,
@@ -276,7 +280,7 @@ fn score_asset(
     decision
 }
 
-fn gitlab_https_eligible(asset: &ReleaseAsset) -> bool {
+pub(crate) fn gitlab_https_eligible(asset: &ReleaseAsset) -> bool {
     is_https_url(&asset.url)
         && asset
             .provider_url
@@ -548,6 +552,23 @@ fn is_desktop_package_name(lower: &str) -> bool {
         || lower.ends_with(".snap")
 }
 
+fn is_bare_executable_name(lower: &str) -> bool {
+    let basename = basename(lower);
+    if lower.ends_with(".exe") || !basename.contains('.') {
+        return true;
+    }
+
+    basename
+        .rsplit_once('.')
+        .map(|(_, extension)| {
+            extension.is_empty()
+                || !extension
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric())
+        })
+        .unwrap_or(false)
+}
+
 fn has_installable_archive_suffix(lower: &str) -> bool {
     lower.ends_with(".tar.gz")
         || lower.ends_with(".tgz")
@@ -599,6 +620,7 @@ mod tests {
             name: name.to_string(),
             url: format!("https://example.com/{name}"),
             provider_url: None,
+            digest: None,
             source_archive: false,
             final_url_https: None,
         }
@@ -624,6 +646,14 @@ mod tests {
         assert_eq!(
             classify_artifact("tool.exe", false),
             ArtifactKind::BareExecutable
+        );
+        assert_eq!(
+            classify_artifact("tool_1.2.3_linux_amd64", false),
+            ArtifactKind::BareExecutable
+        );
+        assert_eq!(
+            classify_artifact("tool-linux-amd64.txt", false),
+            ArtifactKind::Unknown
         );
     }
 
@@ -728,6 +758,21 @@ mod tests {
 
         assert_eq!(selected.selected.asset_name, "tool.exe");
         assert_eq!(selected.selected.detected_os, Some(TargetOs::Windows));
+    }
+
+    #[test]
+    fn keeps_runtime_download_url_separate_from_persisted_url() {
+        let linux = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let mut release_asset = asset("tool-x86_64-unknown-linux-gnu");
+        release_asset.url = "https://example.com/tool?token=secret#fragment".to_string();
+        let selected =
+            select_asset(SourceProvider::GitHub, &linux, &[release_asset]).expect("selected");
+
+        assert_eq!(
+            selected.selected.download_url,
+            "https://example.com/tool?token=secret#fragment"
+        );
+        assert_eq!(selected.selected.canonical_url, "https://example.com/tool");
     }
 
     #[test]

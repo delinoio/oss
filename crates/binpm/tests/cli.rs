@@ -132,6 +132,30 @@ fn init_from_nested_directory_detects_existing_manifest_without_git() {
     assert!(!nested_dir.join("binpm.toml").exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn init_treats_broken_manifest_symlink_as_existing_manifest() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    std::os::unix::fs::symlink(
+        temp_dir.path().join("missing-manifest-target"),
+        temp_dir.path().join("binpm.toml"),
+    )
+    .expect("create broken manifest symlink");
+    let nested_dir = temp_dir.path().join("packages").join("cli");
+    fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let mut command = binpm();
+
+    command
+        .current_dir(&nested_dir)
+        .arg("init")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Refusing to overwrite existing manifest",
+        ));
+}
+
 #[test]
 fn env_prints_shell_path_exports() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -488,4 +512,266 @@ fn install_rejects_empty_source_version() {
         .failure()
         .code(2)
         .stderr(predicate::str::contains("source version cannot be empty"));
+}
+
+#[test]
+fn local_remove_rejects_corrupt_package_record_with_unsafe_installed_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let unsafe_installed_path = temp_dir.path().join("outside-binpm-tool");
+    fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    let package_record = format!(
+        r#"package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux-x64"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux-x64"
+installed_path = "{}"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+checksum_source = "local"
+signature_available = false
+signature_verified = false
+"#,
+        unsafe_installed_path.display()
+    );
+    fs::write(
+        project.join(".binpm").join("packages").join("tool.toml"),
+        package_record,
+    )
+    .expect("write package record");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "tool"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Unsafe installed path"));
+
+    assert!(project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
+    let manifest = fs::read_to_string(project.join("binpm.toml")).expect("read manifest");
+    let lockfile = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
+    assert!(manifest.contains("tools.tool"));
+    assert!(lockfile.contains("tools.tool"));
+    assert!(!project.join(".binpm").join("bin").join("tool").exists());
+}
+
+#[test]
+fn local_remove_without_package_record_preserves_unowned_binary() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(project.join(".binpm").join("bin")).expect("create bin");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    fs::write(project.join(".binpm").join("bin").join("tool"), "manual")
+        .expect("write manual executable");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "tool"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed tool"));
+
+    assert_eq!(
+        fs::read_to_string(project.join(".binpm").join("bin").join("tool"))
+            .expect("read manual executable"),
+        "manual"
+    );
+    let manifest = fs::read_to_string(project.join("binpm.toml")).expect("read manifest");
+    let lockfile = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
+    assert!(!manifest.contains("tools.tool"));
+    assert!(!lockfile.contains("tools.tool"));
+}
+
+#[test]
+fn local_remove_missing_tool_does_not_create_lockfile() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "missing"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Tool `missing` is not declared"));
+
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn local_remove_preserves_exe_sibling_tool() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(project.join(".binpm").join("bin")).expect("create bin");
+    fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+
+[tools."tool.exe"]
+source = "github:owner/tool-exe"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+
+[tools."tool.exe"]
+source = "github:owner/tool-exe"
+"#,
+    )
+    .expect("write lockfile");
+    fs::write(project.join(".binpm").join("bin").join("tool"), "tool").expect("write tool");
+    let tool_path = project.join(".binpm").join("bin").join("tool");
+    let tool_exe_path = project.join(".binpm").join("bin").join("tool.exe");
+    fs::write(&tool_exe_path, "tool exe").expect("write tool.exe");
+    fs::write(
+        project.join(".binpm").join("packages").join("tool.toml"),
+        format!(
+            r#"package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux-x64"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux-x64"
+installed_path = "{}"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+checksum_source = "local"
+signature_available = false
+signature_verified = false
+"#,
+            tool_path.display()
+        ),
+    )
+    .expect("write tool package record");
+    fs::write(
+        project
+            .join(".binpm")
+            .join("packages")
+            .join("tool.exe.toml"),
+        format!(
+            r#"package_spec = "github:owner/tool-exe@1.0.0"
+source = "github:owner/tool-exe"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool-exe"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool.exe"
+asset_url = "https://github.com/owner/tool-exe/releases/download/1.0.0/tool.exe"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool.exe"
+installed_path = "{}"
+sha256 = "abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123"
+checksum_source = "local"
+signature_available = false
+signature_verified = false
+"#,
+            tool_exe_path.display()
+        ),
+    )
+    .expect("write tool.exe package record");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "tool"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed tool"));
+
+    assert!(!project.join(".binpm").join("bin").join("tool").exists());
+    assert_eq!(
+        fs::read_to_string(project.join(".binpm").join("bin").join("tool.exe"))
+            .expect("read sibling executable"),
+        "tool exe"
+    );
+    assert!(!project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
+    assert!(project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.exe.toml")
+        .exists());
 }
