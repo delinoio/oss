@@ -10,6 +10,7 @@ use serde_json::Value;
 use tracing::info;
 
 use crate::{
+    command_diagnostics::RuntimeCommandAvailability,
     errors::{NodeupError, Result},
     resolver::ResolvedRuntime,
     store::Store,
@@ -170,13 +171,28 @@ fn build_npm_exec_plan(
 ) -> Result<DelegatedCommandPlan> {
     let npm_executable = resolved.executable_path(store, "npm");
     if !npm_executable.exists() {
-        return Err(NodeupError::not_found_with_hint(
+        let availability = RuntimeCommandAvailability::for_resolved_runtime(
+            resolved,
+            store,
+            "npm",
+            matches!(
+                &resolved.target,
+                crate::resolver::ResolvedRuntimeTarget::Version { .. }
+            ),
+            "package-manager-fallback-requires-runtime-npm",
+        );
+        let checked_paths = availability.checked_paths.join("|");
+        let diagnostics = availability.into_error_diagnostics();
+        return Err(NodeupError::not_found_with_diagnostics(
             format!(
-                "Command 'npm' does not exist for runtime {} (required_for_package_manager={})",
+                "Command 'npm' does not exist for runtime {} (required_for_package_manager={}, \
+                 checked_paths={checked_paths})",
                 resolved.runtime_id(),
                 manager.as_str(),
             ),
-            "Install or relink a runtime that provides npm, then retry the command.",
+            "Install or relink a runtime that provides npm, then retry the command. On Windows, \
+             verify PATH/PATHEXT precedence with `where npm` or PowerShell `Get-Command npm -All`.",
+            diagnostics,
         ));
     }
 

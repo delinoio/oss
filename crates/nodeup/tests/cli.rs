@@ -942,6 +942,49 @@ fn toolchain_link_accepts_windows_node_exe_when_platform_is_forced() {
 
 #[test]
 #[serial]
+fn toolchain_link_json_reports_managed_shim_command_availability() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-command-availability");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+    write_runtime_executable(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n");
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "link",
+            "linked-command-availability",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("toolchain link --output json reports availability");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["name"], "linked-command-availability");
+    assert_eq!(payload["install_on_demand_eligible"], false);
+
+    let commands = payload["managed_shim_commands"].as_array().unwrap();
+    let npm = commands
+        .iter()
+        .find(|entry| entry["command"] == "npm")
+        .expect("npm availability entry");
+    assert_eq!(npm["linked_runtime_name"], "linked-command-availability");
+    assert_eq!(npm["direct_executable_exists"], true);
+    assert_eq!(npm["install_on_demand_eligible"], false);
+    assert!(npm["checked_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path.as_str().unwrap().ends_with("/bin/npm")));
+}
+
+#[test]
+#[serial]
 fn toolchain_link_rejects_windows_extensionless_node_when_platform_is_forced() {
     let env = TestEnv::new();
     let runtime_dir = env.root.join("linked-runtime-windows-node");
@@ -2708,6 +2751,36 @@ fn missing_runtime_without_install_flag_fails() {
 
 #[test]
 #[serial]
+fn missing_runtime_without_install_flag_json_explains_install_on_demand_difference() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+
+    let output = env
+        .command()
+        .args(["--output", "json", "run", "22.1.0", "node"])
+        .output()
+        .expect("run missing runtime json failure");
+    assert_eq!(output.status.code(), Some(5));
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+    assert_eq!(payload["diagnostics"]["install_on_demand_eligible"], false);
+    assert_eq!(
+        payload["diagnostics"]["install_on_demand_scope"],
+        "nodeup-run-explicit-runtime-requires---install"
+    );
+    assert_eq!(
+        payload["diagnostics"]["retry_with_install"],
+        "nodeup run --install 22.1.0 ..."
+    );
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Managed shim aliases"));
+}
+
+#[test]
+#[serial]
 fn checksum_mismatch_fails_install() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);
@@ -3188,6 +3261,56 @@ fn which_fails_when_command_is_missing_for_runtime() {
         .stderr(predicates::str::contains(
             "Command 'npm' does not exist for runtime linked-which-missing-command",
         ));
+}
+
+#[test]
+#[serial]
+fn which_missing_linked_runtime_command_json_includes_checked_paths() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-which-json-missing-command");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho only-node\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-json-missing-command",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-json-missing-command"])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "which", "npm"])
+        .output()
+        .expect("which missing linked command json failure");
+    assert_eq!(output.status.code(), Some(5));
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+    assert_eq!(
+        payload["diagnostics"]["linked_runtime_name"],
+        "linked-which-json-missing-command"
+    );
+    assert_eq!(payload["diagnostics"]["command"], "npm");
+    assert_eq!(payload["diagnostics"]["direct_executable_exists"], false);
+    assert_eq!(payload["diagnostics"]["install_on_demand_eligible"], false);
+    assert!(payload["diagnostics"]["checked_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path.as_str().unwrap().ends_with("/bin/npm")));
+    assert!(payload["diagnostics"]["path_precedence_guidance"]
+        .as_str()
+        .unwrap()
+        .contains("PATHEXT"));
 }
 
 #[test]
@@ -4376,6 +4499,41 @@ fn shim_dispatch_supports_npm_alias() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("shim-npm"));
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn shim_dispatch_supports_cmd_wrapper_alias_name() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho shim-node\n"),
+                ("npm", "#!/bin/sh\necho shim-npm-cmd\n"),
+            ],
+        ),
+        None,
+    );
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("npm.cmd");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .output()
+        .expect("run npm.cmd shim binary");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("shim-npm-cmd"));
 }
 
 #[cfg(unix)]

@@ -18,8 +18,11 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Stable channel naming and runtime dispatch semantics must be preserved.
 - Exact-version runtime selectors are immutable pins for `nodeup update`; they are canonicalized to `v<semver>` when tracked and are semantically deduplicated with non-`v` inputs.
 - Shim behavior must remain deterministic across supported operating systems.
+- Windows shim alias filenames and delegated runtime executable filenames are separate concepts: Nodeup recognizes managed alias basenames through extensionless, `.exe`, and `.cmd` invocations, while Windows runtime package-manager delegation checks the selected runtime's `bin/<command>.cmd` files.
 - Linked runtime lifecycle commands must preserve external runtime directories: `toolchain link` registers settings records and `toolchain unlink` removes those records only.
 - Linked runtime resolution must validate that the selected `node` executable is runnable, including Unix executable-bit checks and Windows `node.exe` naming behavior.
+- Linked runtime command availability diagnostics must distinguish the minimum `node` link requirement from per-shim availability for `node`, `npm`, `npx`, `yarn`, and `pnpm`, and expose checked paths, linked runtime identity, install-on-demand eligibility, and PATH/PATHEXT guidance in human and JSON output.
+- `nodeup run` missing-version errors must keep installation opt-in with `--install`, while managed alias dispatch may install a missing selected version runtime on demand. Human and JSON diagnostics must make that distinction explicit.
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.

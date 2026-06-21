@@ -212,6 +212,14 @@ impl NodeupError {
         Self::with_hint(ErrorKind::NotFound, cause, hint)
     }
 
+    pub fn not_found_with_diagnostics(
+        cause: impl Into<String>,
+        hint: impl Into<String>,
+        diagnostics: ErrorDiagnostics,
+    ) -> Self {
+        Self::with_hint_and_diagnostics(ErrorKind::NotFound, cause, hint, diagnostics)
+    }
+
     pub fn conflict(cause: impl Into<String>) -> Self {
         Self::new(ErrorKind::Conflict, cause)
     }

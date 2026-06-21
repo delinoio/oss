@@ -60,7 +60,21 @@ Linked names must match `[A-Za-z0-9][A-Za-z0-9_-]*`. Reserved channel names `lts
 
 The linked `node` command must be runnable. Unix hosts require an executable permission bit on `bin/node`; Windows platform behavior uses `bin/node.exe`.
 
-JSON output includes `name`, `path`, and `status: "linked"`.
+Linking validates the minimum runtime requirement only. It does not require every managed alias command to exist. Successful human output includes a managed shim command availability matrix for `node`, `npm`, `npx`, `yarn`, and `pnpm`, including the checked runtime paths.
+
+JSON output includes `name`, `path`, `status: "linked"`, `managed_shim_commands`, `install_on_demand_eligible`, and `path_precedence_guidance`. Each `managed_shim_commands` entry includes:
+
+- `command`
+- `runtime`
+- `linked_runtime_name`
+- `linked_runtime_path`
+- `checked_paths`
+- `selected_path`
+- `direct_executable_exists`
+- `direct_executable_runnable`
+- `install_on_demand_eligible`
+- `install_on_demand_scope`
+- `path_precedence_guidance`
 
 ## toolchain unlink
 
@@ -184,6 +198,8 @@ For `yarn` and `pnpm`, `which` uses package-manager planning. In npm-exec mode, 
 
 JSON output includes `runtime`, `command`, and `executable_path`.
 
+Missing-command JSON errors include `diagnostics.checked_paths`, `diagnostics.selected_path`, linked runtime fields when applicable, `diagnostics.install_on_demand_eligible`, and PATH/PATHEXT precedence guidance.
+
 ## run
 
 ```bash
@@ -193,6 +209,8 @@ nodeup run [--install] <runtime> <command> [args...]
 Runs a delegated command with an explicit runtime selector. Missing version runtimes fail unless `--install` is provided.
 
 In human mode, delegated stdio is inherited. In JSON mode, delegated stdout is routed to stderr so stdout can contain the final JSON response with `runtime`, `command`, and `exit_code`.
+
+When a version runtime is missing and `--install` is omitted, the error includes the exact retry shape `nodeup run --install <runtime> ...` and explains that `nodeup run` requires explicit installation while managed shim dispatch can install a missing version runtime selected by the active default or override. JSON errors include `diagnostics.install_on_demand_eligible: false`, `diagnostics.retry_with_install`, and checked runtime command paths.
 
 ## self update
 

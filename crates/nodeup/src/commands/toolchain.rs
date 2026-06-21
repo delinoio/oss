@@ -5,6 +5,10 @@ use tracing::info;
 
 use crate::{
     cli::{OutputColorMode, OutputFormat, ToolchainCommand, ToolchainListDetail},
+    command_diagnostics::{
+        managed_alias_availability_for_linked_runtime, render_availability_matrix,
+        RuntimeCommandAvailability, PATH_PRECEDENCE_GUIDANCE,
+    },
     commands::print_output,
     errors::{NodeupError, Result},
     release_index::ReleaseIndexResolutionDiagnostic,
@@ -28,6 +32,16 @@ struct ToolchainInstallResult {
     status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     release_index: Option<ReleaseIndexResolutionDiagnostic>,
+}
+
+#[derive(Debug, Serialize)]
+struct ToolchainLinkResponse {
+    name: String,
+    path: String,
+    status: String,
+    managed_shim_commands: Vec<RuntimeCommandAvailability>,
+    install_on_demand_eligible: bool,
+    path_precedence_guidance: &'static str,
 }
 
 pub fn execute(
@@ -516,12 +530,24 @@ fn link(
         "Linked runtime"
     );
 
-    let message = format!("Linked runtime '{name}' -> {}", absolute.display());
-    let response = serde_json::json!({
-        "name": name,
-        "path": absolute,
-        "status": "linked"
-    });
+    let managed_shim_commands = managed_alias_availability_for_linked_runtime(name, &absolute);
+    let availability_matrix = render_availability_matrix(&managed_shim_commands);
+    let message = format!(
+        "Linked runtime '{name}' -> {}\nManaged shim command availability:\n{}\nInstall on \
+         demand: not eligible for linked runtimes; install-on-demand only provisions missing \
+         Nodeup-managed version runtimes selected by a shim.\nWindows PATH/PATHEXT guidance: {}",
+        absolute.display(),
+        availability_matrix,
+        PATH_PRECEDENCE_GUIDANCE
+    );
+    let response = ToolchainLinkResponse {
+        name: name.to_string(),
+        path: absolute.display().to_string(),
+        status: "linked".to_string(),
+        managed_shim_commands,
+        install_on_demand_eligible: false,
+        path_precedence_guidance: PATH_PRECEDENCE_GUIDANCE,
+    };
     print_output(output, color, &message, &response)?;
 
     Ok(0)

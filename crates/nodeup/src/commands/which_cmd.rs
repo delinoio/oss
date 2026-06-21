@@ -5,6 +5,7 @@ use tracing::info;
 
 use crate::{
     cli::{OutputColorMode, OutputFormat},
+    command_diagnostics::RuntimeCommandAvailability,
     command_plan::{plan_delegated_command, DelegatedCommandMode},
     commands::print_output,
     errors::{NodeupError, Result},
@@ -46,20 +47,39 @@ pub fn execute(
     let plan = plan_delegated_command(&resolved, &app.store, command, &[], &cwd)?;
 
     if plan.mode == DelegatedCommandMode::Direct && !Path::new(&plan.executable).exists() {
-        return Err(NodeupError::not_found_with_hint(
+        let diagnostics = RuntimeCommandAvailability::for_resolved_runtime(
+            &resolved,
+            &app.store,
+            command,
+            false,
+            "nodeup-which-command-resolution",
+        )
+        .into_error_diagnostics();
+        return Err(NodeupError::not_found_with_diagnostics(
             format!(
-                "Command '{command}' does not exist for runtime {}",
-                resolved.runtime_id()
+                "Command '{command}' does not exist for runtime {} (checked_path={})",
+                resolved.runtime_id(),
+                plan.executable.display()
             ),
             "Use `nodeup show active-runtime` to confirm the runtime, then install or relink a \
-             runtime that provides the command.",
+             runtime that provides the command. On Windows, verify PATH/PATHEXT precedence with \
+             `where <command>` or PowerShell `Get-Command <command> -All`.",
+            diagnostics,
         ));
     }
 
     if plan.mode == DelegatedCommandMode::Direct
         && !runtime_executable_is_runnable(&plan.executable)
     {
-        return Err(NodeupError::not_found_with_hint(
+        let diagnostics = RuntimeCommandAvailability::for_resolved_runtime(
+            &resolved,
+            &app.store,
+            command,
+            false,
+            "nodeup-which-command-resolution",
+        )
+        .into_error_diagnostics();
+        return Err(NodeupError::not_found_with_diagnostics(
             format!(
                 "Command '{command}' exists but is not runnable for runtime {} (path={})",
                 resolved.runtime_id(),
@@ -67,6 +87,7 @@ pub fn execute(
             ),
             "On Unix, ensure the executable bit is set. On Windows, relink a runtime that \
              provides the expected executable name.",
+            diagnostics,
         ));
     }
 

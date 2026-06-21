@@ -69,6 +69,30 @@ Nodeup verifies availability when commands need an executable:
 
 For linked runtimes, Unix hosts require an executable bit on `bin/node`. Windows platform behavior resolves `node` to `bin/node.exe`.
 
+`toolchain link` only requires the linked runtime to provide runnable `node`. Package-manager commands are checked per command later. Successful link output reports availability for each managed shim command:
+
+| Shim command | Linked-runtime direct path on Unix | Linked-runtime direct path on Windows |
+| --- | --- | --- |
+| `node` | `bin/node` | `bin/node.exe` |
+| `npm` | `bin/npm` | `bin/npm.cmd` |
+| `npx` | `bin/npx` | `bin/npx.cmd` |
+| `yarn` | `bin/yarn` | `bin/yarn.cmd` |
+| `pnpm` | `bin/pnpm` | `bin/pnpm.cmd` |
+
+Missing linked-runtime commands fail when resolved by `which`, `run`, or a managed shim. JSON errors include the linked runtime name, checked paths, selected path, direct executable state, install-on-demand eligibility, and PATH/PATHEXT precedence guidance.
+
+## Missing Runtime Installation Behavior
+
+`nodeup run` and managed shim dispatch intentionally differ when a selected version runtime is missing:
+
+| Execution path | Selector source | Missing version runtime behavior | JSON diagnostic |
+| --- | --- | --- | --- |
+| `nodeup run <runtime> <command>` | Explicit argument | Fails unless `--install` is provided. | `install_on_demand_eligible: false` plus `retry_with_install`. |
+| Managed shim alias such as `node` or `npm` | Directory override or global default | Installs the missing selected version runtime before execution. | `install_on_demand_eligible: true` for version runtimes. |
+| Linked runtime selector | Explicit, override, or default | Never installed by Nodeup; linked paths are external. | `install_on_demand_eligible: false` and linked runtime fields. |
+
+Use `nodeup run --install <runtime> <command>` when explicit runtime execution should provision a missing version. Use managed aliases when the active default or override should behave like a rustup-style shim.
+
 ## Release Index Cache
 
 Channel selectors use the Node.js release index. The cache:

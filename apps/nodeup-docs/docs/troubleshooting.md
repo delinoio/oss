@@ -28,6 +28,16 @@ nodeup run --install <runtime> node --version
 
 `nodeup run` requires `--install` to install a missing runtime. Managed alias dispatch installs a missing selected version automatically.
 
+Comparison:
+
+| Path | Installs missing version runtime? | What to do |
+| --- | --- | --- |
+| `nodeup run <runtime> node --version` | No | Retry as `nodeup run --install <runtime> node --version` or run `nodeup toolchain install <runtime>` first. |
+| Managed `node`, `npm`, `npx`, `yarn`, or `pnpm` shim | Yes, for version runtimes selected by default or override | Check `nodeup default` or `nodeup override list` if the wrong runtime is selected. |
+| Linked runtime | No | Fix the external runtime path or relink a different runtime. |
+
+In JSON mode, missing-runtime errors from `nodeup run` include `diagnostics.install_on_demand_eligible: false` and `diagnostics.retry_with_install`.
+
 ## Command Does Not Exist
 
 Check the active runtime and executable path:
@@ -40,6 +50,19 @@ nodeup which --runtime 22.1.0 npm
 
 For linked runtimes, verify the runtime root contains a runnable `bin/node` or `bin/node.exe`. On Unix, `bin/node` must have an executable permission bit.
 
+`toolchain link` reports a managed shim availability matrix for `node`, `npm`, `npx`, `yarn`, and `pnpm`. The minimum link requirement is still only runnable `node`; package-manager commands can be missing and fail later when a shim or `nodeup which <command>` needs them.
+
+JSON missing-command diagnostics include:
+
+- `checked_paths`
+- `selected_path`
+- `linked_runtime_name`
+- `linked_runtime_path`
+- `direct_executable_exists`
+- `direct_executable_runnable`
+- `install_on_demand_eligible`
+- `path_precedence_guidance`
+
 Remove a stale linked runtime record without deleting the external directory:
 
 ```bash
@@ -47,6 +70,22 @@ nodeup toolchain unlink <name>
 ```
 
 If unlinking reports `conflict`, change the default runtime or remove/update the blocking directory override first.
+
+## Windows Shim Is Shadowed
+
+Windows resolves commands using `PATH` order and `PATHEXT`. Nodeup shim aliases such as `npm.exe` or `npm.cmd` must appear earlier than other Node.js or package-manager commands when you want Nodeup to dispatch them.
+
+Check the effective command order:
+
+```powershell
+where npm
+where node
+Get-Command npm -All
+```
+
+If another `npm.cmd`, `npm.exe`, `node.exe`, or package-manager directory appears first, move the Nodeup shim directory earlier on `PATH` or invoke the desired shim by full path.
+
+Do not confuse the shim alias file with the runtime executable Nodeup delegates to. A Nodeup shim can be `npm.exe` or `npm.cmd`; the selected Windows Node.js runtime usually provides package managers as `bin/npm.cmd`, `bin/npx.cmd`, `bin/yarn.cmd`, and `bin/pnpm.cmd`.
 
 ## packageManager Conflict
 

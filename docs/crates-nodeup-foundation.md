@@ -32,8 +32,12 @@
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies.
 - Runtime archive selection must remain enum-driven: `tar.xz` for `darwin/*` and `linux/*`, `zip` for `windows/*`.
 - Windows runtime archives that unpack without a top-level directory must be normalized into the stable `bin/` runtime layout used by nodeup execution and linking flows.
+- Windows managed shim aliases may be extensionless, `.exe`, or `.cmd` by executable basename, while delegated Windows runtime package-manager executables normalize to `bin/<command>.cmd` for `npm`, `npx`, `yarn`, `pnpm`, and `corepack`.
 - Linked runtime validation must require a runnable `node` command during `toolchain link` and active-runtime availability checks.
 - Unix linked-runtime validation must require an executable permission bit on `bin/node`; Windows platform behavior must select `bin/node.exe` for `node`.
+- `toolchain link` success output must report per-managed-shim direct command availability for `node`, `npm`, `npx`, `yarn`, and `pnpm`, including checked runtime paths, linked runtime name/path in JSON, install-on-demand eligibility, and PATH/PATHEXT precedence guidance.
+- Missing linked-runtime command failures from `which`, `run`, package-manager fallback planning, or managed shim dispatch must include actionable human checked-path context and JSON diagnostics for `command`, `runtime`, `checked_paths`, `selected_path`, direct executable existence/runnability, linked runtime name/path when applicable, install-on-demand eligibility, install-on-demand scope, and PATH/PATHEXT precedence guidance.
+- `nodeup run <runtime> <command>` missing-version errors must state that `nodeup run` requires explicit `--install`, include the retry shape `nodeup run --install <runtime> ...`, and distinguish that behavior from managed shim dispatch install-on-demand for missing selected version runtimes. JSON diagnostics must include `install_on_demand_eligible: false` and `retry_with_install`.
 - `yarn`/`pnpm` delegated execution must honor nearest `package.json` `packageManager` when present.
 - `packageManager` parsing contract is strict: `<manager>@<exact-semver>` with manager limited to `yarn|pnpm`.
 - `packageManager` manager-command mismatch must fail with `conflict`; malformed values must fail with `invalid-input`.

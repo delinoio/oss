@@ -21,6 +21,27 @@ If the binary is linked or copied as one of those names, Nodeup:
 
 Normal management commands still use the `nodeup` executable name.
 
+## Windows Shim Alias Files
+
+Windows shim aliases and runtime package-manager executables are separate files:
+
+| Layer | Example | Meaning |
+| --- | --- | --- |
+| Nodeup shim alias | `npm.exe` or `npm.cmd` | A copy, link, or wrapper that invokes the Nodeup binary and lets Nodeup dispatch by `argv[0]`. |
+| Delegated runtime executable | `bin/npm.cmd` | The package-manager command inside the selected Node.js runtime that Nodeup runs after resolution. |
+
+The recommended first-party setup copies the Nodeup binary to `.exe` aliases such as `node.exe`, `npm.exe`, `npx.exe`, `yarn.exe`, and `pnpm.exe`. A `.cmd` wrapper alias is also recognized when its basename is one of the managed aliases. The alias extension only controls how Windows starts Nodeup; it does not change which executable Nodeup checks inside the selected runtime.
+
+On Windows, command lookup depends on `PATH` order and `PATHEXT`. If another `npm.cmd` or `node.exe` appears earlier on `PATH`, Windows may run that command instead of the Nodeup shim. Check precedence with:
+
+```powershell
+where npm
+where node
+Get-Command npm -All
+```
+
+Place the Nodeup shim directory before other Node.js or package-manager directories when you want Nodeup-managed dispatch.
+
 ## Direct Dispatch
 
 For `node`, `npm`, `npx`, and non-package-manager commands, Nodeup resolves the command under the selected runtime's `bin/` directory.
@@ -93,6 +114,7 @@ npm exec --yes --package pnpm -- pnpm ...
 
 - Direct mode prints the runtime's `yarn` or `pnpm` executable.
 - npm-exec mode prints the runtime's `npm` executable because `npm exec` will run the package-manager CLI.
+- Missing direct commands include JSON diagnostics with checked paths, linked runtime names when applicable, install-on-demand eligibility, and PATH/PATHEXT guidance.
 
 ## Failure Examples
 

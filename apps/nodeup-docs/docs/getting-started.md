@@ -110,6 +110,8 @@ foreach ($Alias in "node", "npm", "npx", "yarn", "pnpm") {
 $env:PATH = "$ShimDir;$env:PATH"
 ```
 
+The Windows examples create `.exe` Nodeup shim aliases. Nodeup also recognizes `.cmd` wrapper aliases, but the delegated package-manager files inside a Windows Node.js runtime are usually `bin/npm.cmd`, `bin/npx.cmd`, `bin/yarn.cmd`, and `bin/pnpm.cmd`. Keep the shim directory before other Node.js directories on `PATH`; use `where npm` or `Get-Command npm -All` if a different command is shadowing the shim.
+
 ```bash
 node --version
 npm --version
