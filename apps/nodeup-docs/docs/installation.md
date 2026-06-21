@@ -9,12 +9,10 @@ This page is published at https://nodeup.delino.io/installation.
 Use [binpm](https://binpm.delino.io) to install Nodeup from the first-party `delinoio/oss` release asset for a pinned Nodeup release tag:
 
 ```bash
-binpm init
-binpm add nodeup github:delinoio/oss@nodeup@v<semver>
-binpm x nodeup --version
+binpm install github:delinoio/oss@nodeup@v<semver>
 ```
 
-Replace `<semver>` with the Nodeup release version to install. Nodeup release tags use `nodeup@v<semver>`.
+Replace `<semver>` with the Nodeup release version to install. Nodeup release tags use `nodeup@v<semver>`. If `~/.binpm/bin` is not already on `PATH`, run `binpm env --shell <shell>` and apply the printed environment command before verifying the install.
 
 ## Homebrew
 
