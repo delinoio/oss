@@ -86,6 +86,11 @@ pub struct AddArgs {
     pub cmd: String,
     pub source: String,
 
+    /// Upstream executable name or archive member path to install for this
+    /// local command.
+    #[arg(long, value_name = "BIN")]
+    pub bin: Option<String>,
+
     #[command(flatten)]
     pub lockfile: LockfileArgs,
 
@@ -104,6 +109,11 @@ pub struct ExecArgs {
     /// Explicit package source for one-off execution.
     #[arg(long, value_name = "SOURCE")]
     pub package: Option<String>,
+
+    /// Upstream executable name or archive member path to run from the explicit
+    /// package.
+    #[arg(long, value_name = "BIN", requires = "package")]
+    pub bin: Option<String>,
 
     #[command(flatten)]
     pub lockfile: LockfileArgs,

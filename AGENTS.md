@@ -139,6 +139,7 @@ enum ProjectId {
 - `binpm.lock` must not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata.
 - `binpm.lock` must store sanitized canonical asset URLs only, never query strings, fragments, credential-bearing URLs, or expiring signed download URLs.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`.
+- `binpm add <cmd> <source> --bin <upstream-binary>` must persist the upstream binary selection in `binpm.toml`, and `binpm x --package <source> --bin <upstream-binary> <cmd>` must use that upstream binary for one-off execution.
 - Local `binpm remove` must clean project-local package records when they exist.
 - Local target-specific asset overrides must use `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.
 - Local `binpm install`, `binpm update`, and `binpm x` must honor `--frozen-lockfile`; `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.

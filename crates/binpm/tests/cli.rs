@@ -75,6 +75,21 @@ fn help_includes_initial_command_surface() {
 }
 
 #[test]
+fn add_and_x_help_include_explicit_bin_selection() {
+    let mut add = binpm();
+    add.args(["add", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--bin <BIN>"));
+
+    let mut exec = binpm();
+    exec.args(["x", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--bin <BIN>"));
+}
+
+#[test]
 fn init_writes_minimal_manifest() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut command = binpm();
