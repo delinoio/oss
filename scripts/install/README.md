@@ -5,7 +5,8 @@ Cross-platform install scripts with the shared interface:
 - `--version <semver|latest>`
 - `--method package-manager|direct`
 - `direct` verifies `SHA256SUMS` plus Sigstore bundle sidecars (`*.sigstore.json`)
-- `direct` requires `cosign` for Sigstore bundle verification
+- `direct` requires `cosign` for Sigstore bundle verification and fails before release artifact download when `cosign` is not on `PATH`
+- Missing `cosign` is a prerequisite failure; checksum mismatch or `cosign verify-blob` failure is a verification failure
 - Older releases that only published legacy `.sig`/`.pem` files are not supported in direct mode
 - PowerShell installers default to `-Method direct` on Windows hosts
 - `cargo-mono` accepts `package-manager` only as a compatibility alias and maps it to `direct`
