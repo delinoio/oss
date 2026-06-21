@@ -139,11 +139,7 @@ fn output_color_decision_for_stream(
         OutputStream::Stderr => stderr_is_terminal,
     };
     let (mode, source) = resolve_output_color_mode(color_flag, env_mode, no_color_present);
-    let enabled = match mode {
-        OutputColorMode::Always => true,
-        OutputColorMode::Never => false,
-        OutputColorMode::Auto => is_terminal,
-    };
+    let enabled = resolve_output_color_enabled(color_flag, env_mode, no_color_present, is_terminal);
 
     OutputColorDecision {
         stream: match stream {
@@ -200,9 +196,12 @@ fn resolve_output_color_enabled(
 
 #[cfg(test)]
 mod tests {
+    use serial_test::serial;
+
     use super::{
-        parse_output_color_mode, resolve_output_color_enabled,
+        output_color_decision_for_stream, parse_output_color_mode, resolve_output_color_enabled,
         style_human_error_with_terminal_detection, style_human_stdout_with_terminal_detection,
+        OutputStream, NODEUP_COLOR_ENV, NO_COLOR_ENV,
     };
     use crate::cli::OutputColorMode;
 
@@ -271,6 +270,42 @@ mod tests {
             false,
             true,
         ));
+    }
+
+    #[test]
+    #[serial]
+    fn color_decision_auto_mode_respects_no_color_before_terminal_detection() {
+        let previous_nodeup_color = std::env::var_os(NODEUP_COLOR_ENV);
+        let previous_no_color = std::env::var_os(NO_COLOR_ENV);
+
+        std::env::set_var(NO_COLOR_ENV, "1");
+        std::env::remove_var(NODEUP_COLOR_ENV);
+
+        let flag_decision = output_color_decision_for_stream(
+            OutputStream::Stdout,
+            Some(OutputColorMode::Auto),
+            true,
+            false,
+        );
+        assert!(!flag_decision.enabled);
+        assert_eq!(flag_decision.mode, OutputColorMode::Auto);
+        assert_eq!(flag_decision.source, "--color");
+
+        std::env::set_var(NODEUP_COLOR_ENV, "auto");
+        let env_decision =
+            output_color_decision_for_stream(OutputStream::Stdout, None, true, false);
+        assert!(!env_decision.enabled);
+        assert_eq!(env_decision.mode, OutputColorMode::Auto);
+        assert_eq!(env_decision.source, NODEUP_COLOR_ENV);
+
+        match previous_nodeup_color {
+            Some(value) => std::env::set_var(NODEUP_COLOR_ENV, value),
+            None => std::env::remove_var(NODEUP_COLOR_ENV),
+        }
+        match previous_no_color {
+            Some(value) => std::env::set_var(NO_COLOR_ENV, value),
+            None => std::env::remove_var(NO_COLOR_ENV),
+        }
     }
 
     #[test]
