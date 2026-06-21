@@ -100,6 +100,7 @@ $env:Path = "$HOME\.local\bin;$env:Path"
 - `nodeup toolchain install <runtime>...`
 - `nodeup toolchain uninstall <runtime>...`
 - `nodeup toolchain link <name> <path>`
+- `nodeup toolchain unlink <name>...`
 - `nodeup default [runtime]`
 - `nodeup show active-runtime`
 - `nodeup show home`
@@ -124,6 +125,21 @@ Runtime resolution follows a stable order:
 3. Global default (`default`)
 
 If no selector resolves, commands fail with deterministic `not-found` errors.
+
+## Linked Runtimes
+
+`nodeup toolchain link <name> <path>` registers an external runtime directory
+without copying or owning that directory. The runtime must provide a runnable
+Node executable under `bin/`: `bin/node` on Unix-like hosts or `bin/node.exe`
+when Windows platform behavior is selected. Unix hosts require an executable
+permission bit on `bin/node`.
+
+`nodeup toolchain unlink <name>...` removes linked runtime records from nodeup
+settings and tracked selectors without deleting external runtime directories.
+Unlinking fails with `conflict` when the linked name is the current default or
+is referenced by a directory override; change the default or remove/update the
+override before unlinking. Missing linked names fail with deterministic
+`not-found` errors.
 
 ## `packageManager` Support
 
@@ -224,7 +240,8 @@ cargo test
 - No selector resolved:
   - set one with `nodeup default <runtime>` or `nodeup override set <runtime>`
 - Linked runtime failures:
-  - verify `<path>/bin/node` exists before `toolchain link`
+  - verify `<path>/bin/node` exists and is executable before `toolchain link`
+  - use `nodeup toolchain unlink <name>` to remove a stale linked runtime record
 - JSON parsing issues in automation:
   - use `--output json` and keep `RUST_LOG` unset (or `off`) to avoid log noise
 - Error troubleshooting:

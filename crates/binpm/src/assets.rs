@@ -5,7 +5,7 @@ use tracing::debug;
 
 use crate::{
     contract::{ArchiveFormat, HostTarget, SourceProvider, TargetArch, TargetLibc, TargetOs},
-    release::ReleaseAsset,
+    release::{ProviderAuth, ReleaseAsset},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +49,8 @@ pub struct CandidateDecision {
     pub asset_name: String,
     pub canonical_url: String,
     pub download_url: String,
+    pub download_auth: Option<ProviderAuth>,
+    pub download_accept: Option<&'static str>,
     pub kind: ArtifactKind,
     pub detected_os: Option<TargetOs>,
     pub detected_arch: Option<TargetArch>,
@@ -342,11 +344,17 @@ fn score_asset(
     asset: &ReleaseAsset,
 ) -> CandidateDecision {
     let download_url = asset
+        .download_url
+        .as_deref()
+        .or(asset.provider_url.as_deref())
+        .unwrap_or(&asset.url)
+        .to_string();
+    let canonical_url = asset
         .provider_url
         .as_deref()
         .unwrap_or(&asset.url)
         .to_string();
-    let canonical_url = download_url
+    let canonical_url = canonical_url
         .split(['?', '#'])
         .next()
         .unwrap_or(&asset.url)
@@ -357,6 +365,8 @@ fn score_asset(
         asset_name: asset.name.clone(),
         canonical_url,
         download_url,
+        download_auth: asset.download_auth.clone(),
+        download_accept: asset.download_accept,
         kind,
         detected_os: target_signal.os,
         detected_arch: target_signal.arch,
@@ -777,6 +787,9 @@ mod tests {
             name: name.to_string(),
             url: format!("https://example.com/{name}"),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: None,
@@ -931,6 +944,22 @@ mod tests {
             "https://example.com/tool?token=secret#fragment"
         );
         assert_eq!(selected.selected.canonical_url, "https://example.com/tool");
+
+        let mut release_asset = asset("tool-x86_64-unknown-linux-gnu");
+        release_asset.url = "https://github.com/owner/tool/releases/download/v1/tool".to_string();
+        release_asset.download_url =
+            Some("https://api.github.com/repos/owner/tool/releases/assets/1".to_string());
+        let selected =
+            select_asset(SourceProvider::GitHub, &linux, &[release_asset]).expect("selected");
+
+        assert_eq!(
+            selected.selected.download_url,
+            "https://api.github.com/repos/owner/tool/releases/assets/1"
+        );
+        assert_eq!(
+            selected.selected.canonical_url,
+            "https://github.com/owner/tool/releases/download/v1/tool"
+        );
     }
 
     #[test]
