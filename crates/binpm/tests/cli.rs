@@ -69,9 +69,52 @@ fn help_includes_initial_command_surface() {
         .assert()
         .success()
         .stdout(predicate::str::contains("install"))
+        .stdout(predicate::str::contains(
+            "Execute a local manifest command or one-off package command",
+        ))
+        .stdout(predicate::str::contains("exec"))
+        .stdout(predicate::str::contains("run"))
         .stdout(predicate::str::contains("cache"))
         .stdout(predicate::str::contains("verify"))
         .stdout(predicate::str::contains("env"));
+}
+
+#[test]
+fn add_and_x_help_include_explicit_bin_selection() {
+    let mut add = binpm();
+    add.args(["add", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--bin <BIN>"));
+
+    let mut exec = binpm();
+    exec.args(["x", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--bin <BIN>"));
+}
+
+#[test]
+fn execution_aliases_accept_package_and_forwarded_flags() {
+    for alias in ["exec", "run"] {
+        let mut command = binpm();
+
+        command
+            .args([
+                alias,
+                "--package",
+                "not-a-source",
+                "tool",
+                "--",
+                "--package",
+                "literal",
+            ])
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(predicate::str::contains("Invalid source spec"))
+            .stderr(predicate::str::contains("literal").not());
+    }
 }
 
 #[test]
@@ -637,6 +680,57 @@ source = "github:owner/tool"
 }
 
 #[test]
+fn local_remove_dry_run_reports_scope_and_preserves_state() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(project.join(".binpm").join("bin")).expect("create bin");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    fs::write(project.join(".binpm").join("bin").join("tool"), "manual")
+        .expect("write manual executable");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "--dry-run", "tool"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("remove scope: local"))
+        .stdout(predicate::str::contains(
+            "would remove tool from local scope",
+        ))
+        .stdout(predicate::str::contains("dry run: no changes made"));
+
+    assert_eq!(
+        fs::read_to_string(project.join(".binpm").join("bin").join("tool"))
+            .expect("read manual executable"),
+        "manual"
+    );
+    let manifest = fs::read_to_string(project.join("binpm.toml")).expect("read manifest");
+    let lockfile = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
+    assert!(manifest.contains("tools.tool"));
+    assert!(lockfile.contains("tools.tool"));
+}
+
+#[test]
 fn local_remove_missing_tool_does_not_create_lockfile() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -654,6 +748,47 @@ fn local_remove_missing_tool_does_not_create_lockfile() {
         .stderr(predicate::str::contains("Tool `missing` is not declared"));
 
     assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn local_update_dry_run_reports_scope_and_planned_tools_without_mutation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.alpha]
+source = "github:owner/alpha"
+
+[tools.beta]
+source = "github:owner/beta"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("update scope: local"))
+        .stdout(predicate::str::contains("planned updates: 2"))
+        .stdout(predicate::str::contains(
+            "would update alpha from github:owner/alpha <latest>",
+        ))
+        .stdout(predicate::str::contains(
+            "would update beta from github:owner/beta 1.0.0",
+        ))
+        .stdout(predicate::str::contains("dry run: no changes made"));
+
+    assert!(!project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
 }
 
 #[test]

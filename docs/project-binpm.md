@@ -41,14 +41,18 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - Committed lockfiles must store sanitized canonical asset URLs only, never credential-bearing or expiring download URLs.
 - Local target-specific asset overrides must live under `[tools.<cmd>.targets.<target-key>]` and must preserve deterministic lockfile output.
 - Local command names must be executable basenames and must not contain path separators or relative path components.
+- `binpm add <cmd> <source> --bin <upstream-binary>` must persist the selected upstream binary in `binpm.toml`; `binpm x --package <source> --bin <upstream-binary> CMD [args...]` must use that selected upstream binary for one-off execution while installing it under `CMD`.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`; other project-local binpm runtime state must stay under `$repoRoot/.binpm`.
 - The current install implementation finalizes bare executable assets and archives in `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip` formats. Archive install finalization validates member paths, rejects symlinks and hard links, selects an executable member, and installs only the selected member into the managed bin directory.
+- Archive binary ambiguity errors must list the plausible executable candidates and include concrete retry commands using `--bin`.
 - `binpm x CMD [args...]` must run commands from the local manifest or from an explicitly supplied `--package`; it must not guess a GitHub repository from `CMD`.
+- `binpm x` is the canonical execution command. `binpm exec` and `binpm run` are documented aliases for discoverability and must share the same argument forwarding, local lockfile, install-on-demand, `--package`, PATH, and exit-code behavior.
 - Local `install`, `update`, and `x` must honor `--frozen-lockfile`; `CI=true` enables frozen lockfile behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.
 - `binpm` must not require Node.js, npm, pnpm, yarn, or Bun to install native binary tools.
 - Installs without upstream checksum material or successfully verified signature material are allowed in v1 only with an explicit warning and locally recorded SHA-256 metadata.
 - `--require-verified` and `binpm verify --require-verified` must fail unless provider digest, upstream checksum sidecar, upstream checksum manifest, or a successfully verified signature under a documented trust policy is available.
 - `--no-confirm` must remain a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
+- `binpm update` and `binpm remove` must print the selected local or global scope before mutation and support `--dry-run` previews that leave manifests, lockfiles, package records, cache references, and executables unchanged. `--global` remains an explicit scope override even inside a project and does not currently require an interactive confirmation prompt.
 - `binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, `binpm outdated`, and `binpm cache key` must not mutate manifests, lockfiles, package records, cache entries, or executables.
 - `binpm remove` must clean project-local package records when they exist so removed tools are not reported as installed.
 
