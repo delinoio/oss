@@ -525,7 +525,7 @@ pub(crate) fn gitlab_https_diagnostic_url(asset: &ReleaseAsset) -> String {
 
 fn sanitized_origin(raw: &str) -> String {
     let Ok(parsed) = Url::parse(raw) else {
-        return raw.split(['?', '#']).next().unwrap_or(raw).to_string();
+        return sanitize_unparsed_url_like_input(raw);
     };
     let Some(host) = parsed.host_str() else {
         return format!("{}:", parsed.scheme());
@@ -534,6 +534,20 @@ fn sanitized_origin(raw: &str) -> String {
         Some(port) => format!("{}://{}:{}", parsed.scheme(), host, port),
         None => format!("{}://{}", parsed.scheme(), host),
     }
+}
+
+fn sanitize_unparsed_url_like_input(raw: &str) -> String {
+    let without_query = raw.split(['?', '#']).next().unwrap_or(raw);
+    let Some((scheme, rest)) = without_query.split_once("://") else {
+        return without_query.to_string();
+    };
+    let authority_end = rest.find('/').unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    let Some((_, hostish)) = authority.rsplit_once('@') else {
+        return without_query.to_string();
+    };
+
+    format!("{scheme}://<redacted>@{hostish}{}", &rest[authority_end..])
 }
 
 fn is_https_url(url: &str) -> bool {
@@ -1220,10 +1234,19 @@ mod tests {
         link.url = "http://example.com/tool.tar.gz".to_string();
         let mut direct = asset("tool-x86_64-unknown-linux-gnu.zip");
         direct.provider_url = Some("http://gitlab.example.com/direct.zip".to_string());
+        let mut malformed_link = asset("tool-x86_64-unknown-linux-gnu.tar.xz");
+        malformed_link.url = "http://user:secret@[::1/tool.tar.xz?token=secret".to_string();
+        let mut malformed_direct = asset("tool-x86_64-unknown-linux-gnu");
+        malformed_direct.provider_url =
+            Some("http://user:secret@[::1/tool?token=secret".to_string());
         let mut redirected = asset("tool-x86_64-unknown-linux-gnu.tgz");
         redirected.final_url_https = Some(false);
         redirected.final_url = Some("http://cdn.example.com/tool.tgz?token=secret".to_string());
-        let decisions = score_assets(SourceProvider::GitLab, &host, &[link, direct]);
+        let decisions = score_assets(
+            SourceProvider::GitLab,
+            &host,
+            &[link, direct, malformed_link, malformed_direct],
+        );
 
         assert!(decisions.iter().all(|decision| !decision.eligible));
         assert!(decisions.iter().any(|decision| {
@@ -1238,6 +1261,16 @@ mod tests {
                 .as_deref()
                 .is_some_and(|reason| reason.contains("gitlab direct asset URL is not HTTPS"))
         }));
+        assert!(decisions.iter().any(|decision| {
+            decision
+                .rejection_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("http://<redacted>@[::1/tool"))
+        }));
+        assert!(decisions.iter().all(|decision| decision
+            .rejection_reason
+            .as_deref()
+            .is_none_or(|reason| !reason.contains("secret"))));
 
         let redirected_decisions = score_assets(SourceProvider::GitLab, &host, &[redirected]);
         assert!(!redirected_decisions[0].eligible);
