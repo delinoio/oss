@@ -213,7 +213,16 @@ signature_verified = false
 
 ## Security
 - `binpm` must use HTTPS source-provider APIs and release asset URLs.
-- Source-provider tokens may be read from documented environment variables in the future, but tokens and authorization headers must never be logged.
+- Source-provider release lookup may authenticate with provider tokens from environment variables only. Host-specific variables take precedence and are the only supported path for GitHub Enterprise and self-managed GitLab hosts:
+  - GitHub.com: `BINPM_GITHUB_TOKEN_GITHUB_COM`, then `BINPM_GITHUB_TOKEN`, then `GITHUB_TOKEN`.
+  - GitHub Enterprise `github:<host>/owner/repo`: `BINPM_GITHUB_TOKEN_<NORMALIZED_HOST>` only.
+  - GitLab.com: `BINPM_GITLAB_TOKEN_GITLAB_COM`, then `BINPM_GITLAB_TOKEN`, then `GITLAB_TOKEN`.
+  - Self-managed GitLab `gitlab:<host>/<namespace...>/<project>`: `BINPM_GITLAB_TOKEN_<NORMALIZED_HOST>` only.
+- `<NORMALIZED_HOST>` must be the source host uppercased with every non-ASCII-alphanumeric character replaced by `_`; for example `ghe.example.com` becomes `GHE_EXAMPLE_COM`.
+- Generic `BINPM_GITHUB_TOKEN`, `GITHUB_TOKEN`, `BINPM_GITLAB_TOKEN`, and `GITLAB_TOKEN` must apply only to `github.com` or `gitlab.com` respectively and must never be sent to explicit enterprise or self-managed hosts.
+- GitHub requests must send provider tokens as an `Authorization: Bearer <token>` header. GitLab requests must send provider tokens as a `PRIVATE-TOKEN: <token>` header.
+- Release lookup errors must distinguish missing authentication, insufficient permissions, and rate limiting. Private or hidden repositories returning `401`, `403`, or `404` without a configured token must report missing authentication and suggest the documented host-specific token path. The same statuses with a configured token must report insufficient permissions. `429` responses, GitHub/GitLab responses with remaining rate-limit quota `0`, and equivalent rate-limit responses must report rate limiting.
+- Tokens, authorization headers, private-token headers, and credential-bearing URLs must never be logged, returned in errors, printed in diagnostics, written to cache metadata, written to package records, or persisted in lockfiles.
 - Persisted URLs in committed lockfiles, cache metadata, diagnostics, errors, and logs must be sanitized by removing query strings and fragments. Credential-bearing or expiring download URLs must not be written to `binpm.lock`.
 - If provider release asset metadata exposes a trusted SHA-256 digest, `binpm` must verify the downloaded asset against that digest before considering checksum sidecars or local fallback hashes.
 - If an upstream checksum manifest or sidecar exists, `binpm` must verify the selected asset before installation.

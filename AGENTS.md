@@ -126,6 +126,8 @@ enum ProjectId {
 ### binpm Source Contract
 
 - Stable `binpm` source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
+- binpm provider tokens are host-scoped. GitHub.com may use `BINPM_GITHUB_TOKEN_GITHUB_COM`, `BINPM_GITHUB_TOKEN`, or `GITHUB_TOKEN`; GitHub Enterprise must use `BINPM_GITHUB_TOKEN_<NORMALIZED_HOST>`. GitLab.com may use `BINPM_GITLAB_TOKEN_GITLAB_COM`, `BINPM_GITLAB_TOKEN`, or `GITLAB_TOKEN`; self-managed GitLab must use `BINPM_GITLAB_TOKEN_<NORMALIZED_HOST>`. Generic SaaS tokens must not be sent to enterprise or self-managed hosts.
+- binpm release lookup diagnostics must distinguish missing authentication, insufficient permissions, and rate limiting while keeping tokens, authorization headers, private-token headers, query strings, fragments, and credential-bearing URLs out of logs, errors, persisted URLs, cache metadata, package records, and lockfiles.
 - GitLab versionless installs must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
 - GitLab release asset links must use HTTPS link URLs and HTTPS final redirect targets before candidate scoring or download.
 - GitLab generated `assets.sources` source archives must not be selected as installable assets.

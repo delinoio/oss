@@ -1,8 +1,25 @@
-use std::{io, path::PathBuf};
+use std::{fmt, io, path::PathBuf};
 
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, BinpmError>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReleaseLookupDiagnosticKind {
+    MissingAuth,
+    InsufficientPermissions,
+    RateLimited,
+}
+
+impl fmt::Display for ReleaseLookupDiagnosticKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::MissingAuth => "missing authentication",
+            Self::InsufficientPermissions => "insufficient permissions",
+            Self::RateLimited => "rate limited",
+        })
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum BinpmError {
@@ -35,6 +52,19 @@ pub enum BinpmError {
     ReleaseHttpClient(#[source] reqwest::Error),
     #[error("Failed to look up release metadata: {0}")]
     ReleaseLookup(#[source] reqwest::Error),
+    #[error(
+        "Failed to look up release metadata for `{package}` on {provider} host `{host}`: {kind} \
+         (HTTP {status}). {message} Hint: {hint}"
+    )]
+    ReleaseLookupDiagnostic {
+        package: String,
+        provider: &'static str,
+        host: String,
+        status: u16,
+        kind: ReleaseLookupDiagnosticKind,
+        message: String,
+        hint: String,
+    },
     #[error("Release pagination loop detected at `{url}`.")]
     ReleasePaginationLoop { url: String },
     #[error("Failed to resolve release for `{package}`: {message}")]
@@ -212,6 +242,7 @@ impl BinpmError {
             | Self::InvalidGlobalHome { .. }
             | Self::ReleaseHttpClient(_)
             | Self::ReleaseLookup(_)
+            | Self::ReleaseLookupDiagnostic { .. }
             | Self::ReleasePaginationLoop { .. } => 1,
             Self::FrozenLockfile { .. }
             | Self::StaleLockfile { .. }
