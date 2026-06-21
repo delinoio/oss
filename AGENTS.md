@@ -47,7 +47,7 @@
 - `docs/project-<id>.md`: Canonical project index docs (ownership + domain-doc index + cross-domain invariants).
 - `docs/<domain>-<project-or-component>-<contract>.md`: Canonical domain contract docs (`apps`, `cmds`, `servers`, `crates`, `protos`, `packages`).
 - `docs/project-binpm.md`: binpm binary package manager project index.
-- `docs/apps-binpm-docs-foundation.md`: binpm Rspress documentation app, route, validation, and Cloudflare Pages deployment contract.
+- `docs/apps-binpm-docs-foundation.md`: binpm Rspress documentation app, route, validation, canonical production URL, and Cloudflare Pages deployment contract.
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
 - `docs/project-nodeup.md`: Node.js version manager project index.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
@@ -144,6 +144,13 @@ enum ProjectId {
 - Local `binpm install`, `binpm update`, and `binpm x` must honor `--frozen-lockfile`; `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.
 - `binpm verify --require-verified` must fail when no provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature under a documented trust policy is available.
 - `--no-confirm` is a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
+
+### binpm Docs App Contract
+
+- `apps/binpm-docs` is the Rspress static documentation app for `binpm` and uses the existing `apps/*` workspace.
+- The canonical production URL for `apps/binpm-docs` is `https://binpm.delino.io`.
+- `apps/binpm-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-binpm.md` and `docs/apps-binpm-docs-foundation.md` document a replacement.
+- binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live `https://binpm.delino.io` site.
 
 ### Thenv Component Contract
 

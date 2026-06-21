@@ -2,6 +2,8 @@
 
 Rspress-based documentation app for the `binpm` project.
 
+Canonical production URL: `https://binpm.delino.io`.
+
 ## Commands
 
 Run from the repository root:
@@ -15,6 +17,8 @@ pnpm --filter binpm-docs preview
 
 `pnpm --filter binpm-docs dev` runs Rspress on fixed port `46260`.
 `pnpm --filter binpm-docs preview` serves the production build on fixed port `46261`.
+
+Production deployment is static Cloudflare Pages output from `doc_build`. The production URL is deployment metadata; docs content must come from repository contracts, not from assumptions about the current live site contents.
 
 ## Files
 

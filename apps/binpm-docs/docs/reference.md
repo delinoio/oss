@@ -11,6 +11,13 @@
 - `/troubleshooting`
 - `/reference`
 
+## Production Deployment
+
+- Canonical production URL: `https://binpm.delino.io`
+- Deployment target: Cloudflare Pages static site output from `doc_build`
+
+The production URL is deployment metadata. Documentation content must be sourced from repository contracts and must not infer behavior or page contents from the live site.
+
 ## Stable Source Identifiers
 
 - `github:owner/repo[@version]`

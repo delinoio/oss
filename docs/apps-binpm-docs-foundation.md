@@ -3,12 +3,14 @@
 ## Scope
 - Project/component: binpm documentation web app contract
 - Canonical path: `apps/binpm-docs`
+- Canonical production URL: `https://binpm.delino.io`
 
 ## Runtime and Language
 - Runtime: Rspress static documentation app
 - Primary language: Markdown and TypeScript configuration with web build tooling
 - Build toolchain: Rspress, aligned with the repository default preference for Rsbuild/Rspress-style static documentation surfaces.
 - Deployment target: Cloudflare Pages by default.
+- Production host: `https://binpm.delino.io`.
 
 ## Users and Operators
 - External users reading binpm installation, local tooling, cache, verification, and CLI behavior documentation.
@@ -21,6 +23,7 @@
 - The development server uses fixed port `46260`.
 - Local production preview uses fixed port `46261`.
 - The production output directory is `doc_build`.
+- The canonical production URL is `https://binpm.delino.io`; documentation must treat this value as deployment metadata only and must not infer product behavior or published page content from the live site.
 - Content must stay aligned with the binpm project and crate contracts, especially source identifiers, local manifest and lockfile behavior, target selection, asset scoring, cache reuse, verification, read-only diagnostics, install finalization, and Node-free runtime requirements.
 - This app is a documentation surface only. It must not expand binpm runtime behavior, release automation, package-manager backend scope, checksum discovery, signature verification, or global update behavior without corresponding updates to `docs/project-binpm.md` and `docs/crates-binpm-foundation.md`.
 
@@ -33,6 +36,7 @@
 - Published content must not expose internal-only secrets, unpublished release credentials, private CI environment details, or source-provider tokens.
 - Installation guidance must preserve the binpm HTTPS, sanitized URL persistence, cache validation, and `--require-verified` contracts.
 - Cloudflare Pages deployment credentials must remain managed by CI or hosting configuration, not checked into the repository.
+- Published content must be sourced from repository contracts and app documentation, not from assumptions about the current live contents of `https://binpm.delino.io`.
 
 ## Logging
 - Build and deployment logs should include the workspace name, changed documentation paths, build status, and deployment status.

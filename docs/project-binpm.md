@@ -18,8 +18,10 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `binpm` is implemented as a Rust CLI under `crates/binpm`.
 - `apps/binpm-docs` is the Rspress static documentation app for `binpm`.
 - `apps/binpm-docs` must use the repository-default Rspress/Rsbuild-family static documentation toolchain and Cloudflare Pages deployment contract unless this project index and `docs/apps-binpm-docs-foundation.md` document a replacement.
+- The canonical production URL for `apps/binpm-docs` is `https://binpm.delino.io`.
 - binpm documentation routes exposed by `apps/binpm-docs` are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/troubleshooting`, and `/reference`.
 - binpm documentation content must remain documentation-only and must not expand runtime behavior, release automation, package-manager backend scope, checksum discovery, signature verification, or global update behavior without corresponding runtime contract updates.
+- binpm documentation must not infer current product behavior or page content from the live `https://binpm.delino.io` site; repository contracts remain the source of truth.
 - The runtime implementation includes clap-based command parsing, enum-backed contract foundations, structured `tracing` setup, centralized CLI error handling, README/test scaffolding, release source parsing, provider release lookup clients, deterministic release asset candidate scoring, asset downloads, archive extraction for documented formats, TOML-backed `binpm.toml` and `binpm.lock` parsing/writing, global and project-local package records, global cache metadata, URL sanitization, SHA-256 cache validation, and atomic file writes.
 - `binpm init`, `binpm env`, `binpm doctor`, source-form and local-command `binpm explain`, `binpm cache key`, `binpm cache list`, `binpm cache prune`, `binpm cache clean`, `binpm list`, `binpm remove`, `binpm info`, `binpm outdated`, `binpm verify`, bare-executable and archive install flows, and `binpm x` execution have concrete runtime behavior. Checksum sidecar/manifest discovery, signature verification, and global update remain implementation work.
 - Stable source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
@@ -52,7 +54,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 
 ## Change Policy
 - Update this index and `docs/crates-binpm-foundation.md` together when CLI shape, local manifest or lockfile format, target selection, storage layout, cache behavior, security behavior, or heuristic scoring changes.
-- Update this index and `docs/apps-binpm-docs-foundation.md` in the same change for `apps/binpm-docs` path, route, toolchain, validation, or deployment contract updates.
+- Update this index and `docs/apps-binpm-docs-foundation.md` in the same change for `apps/binpm-docs` path, route, toolchain, validation, production URL, or deployment contract updates.
 - Update root `AGENTS.md`, `apps/AGENTS.md`, and `crates/AGENTS.md` when `binpm` ownership, planned path status, or repository policy boundaries change.
 - Keep `crates/binpm` as an explicit Rust workspace member while runtime implementation continues.
 
