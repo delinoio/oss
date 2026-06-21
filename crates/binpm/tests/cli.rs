@@ -2,6 +2,7 @@ use std::{fs, path::Path};
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 fn binpm() -> Command {
@@ -542,6 +543,262 @@ fn doctor_from_nested_directory_reports_git_root_state() {
         .success()
         .stdout(predicate::str::contains("manifest: present"))
         .stdout(predicate::str::contains("lockfile: present"));
+}
+
+#[test]
+fn doctor_json_reports_path_states() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["doctor", "--json"])
+        .output()
+        .expect("doctor --json");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse doctor json");
+    assert_eq!(payload["command"], "doctor");
+    assert_eq!(payload["manifest"], "present");
+    assert_eq!(payload["lockfile"], "missing");
+    assert_eq!(payload["global_home"], home.display().to_string());
+    assert_eq!(
+        payload["global_bin"],
+        home.join("bin").display().to_string()
+    );
+    assert_eq!(payload["global_bin_on_path"], false);
+}
+
+#[test]
+fn list_json_reports_declared_local_tools_with_stable_fields() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(
+        temp_dir.path().join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["list", "--local", "--json"])
+        .output()
+        .expect("list --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("\u{1b}["));
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse list json");
+    assert_eq!(payload["command"], "list");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["state"], "declared");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    assert_eq!(payload["tools"][0]["requested_version"], "1.0.0");
+    assert!(payload["tools"][0]["release_tag"].is_null());
+}
+
+#[test]
+fn cache_list_json_is_parseable_without_entries() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["cache", "list", "--json"])
+        .output()
+        .expect("cache list --json");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse cache list json");
+    assert_eq!(payload["command"], "cache list");
+    assert_eq!(
+        payload["entries"].as_array().expect("entries array").len(),
+        0
+    );
+}
+
+#[test]
+fn explain_command_json_reuses_contract_enum_values() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join(".binpm").join("packages").join("tool.toml"),
+        format!(
+            r#"package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux-x64"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux-x64"
+installed_path = "{}"
+cache_key = "sha256-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+cache_path = "{}"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+checksum_source = "local"
+signature_available = false
+signature_verified = false
+"#,
+            project.join(".binpm").join("bin").join("tool").display(),
+            home.join("cache")
+                .join("sha256-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+                .join("asset")
+                .display()
+        ),
+    )
+    .expect("write package record");
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["explain", "tool", "--local", "--json"])
+        .output()
+        .expect("explain --json");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse explain json");
+    assert_eq!(payload["kind"], "package");
+    assert_eq!(payload["command"], "explain");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["record"]["target"]["os"], "linux");
+    assert_eq!(payload["record"]["target"]["arch"], "x86_64");
+    assert_eq!(payload["record"]["target"]["libc"], "gnu");
+    assert_eq!(payload["record"]["archive_format"], "bare-executable");
+    assert_eq!(payload["record"]["checksum_source"], "local");
+    assert_eq!(payload["record"]["verification"], "unverified");
+    let override_snippet = payload["override_snippet"]
+        .as_str()
+        .expect("override snippet");
+    assert_eq!(
+        override_snippet,
+        "[tools.tool.targets.linux-x86_64-gnu]\nasset = \"tool-linux-x64\"\nbin = \
+         \"tool-linux-x64\""
+    );
+}
+
+#[test]
+fn verbose_verify_json_failure_emits_parseable_error_envelope() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .env("BINPM_LOG", "binpm=info")
+        .args(["--verbose", "verify", "--local", "--json"])
+        .output()
+        .expect("verify --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 2);
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("error message")
+        .contains("No local binpm.toml manifest found"));
+}
+
+#[test]
+fn verify_local_json_suppresses_lockfile_progress_before_error_envelope() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+
+[tools.tool.targets.linux-x86_64-gnu]
+asset = "tool-linux-x64"
+bin = "tool-linux-x64"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+
+[tools.tool.targets.linux-x86_64-gnu]
+package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux-x64"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux-x64"
+installed_path = ".binpm/bin/tool"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+checksum_source = "local"
+signature_available = false
+signature_verified = false
+"#,
+    )
+    .expect("write lockfile");
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["verify", "--local", "--json"])
+        .output()
+        .expect("verify --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 2);
+}
+
+#[test]
+fn parse_error_with_json_flag_emits_parseable_error_envelope() {
+    let output = binpm()
+        .args(["explain", "--json"])
+        .output()
+        .expect("explain --json parse error");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 2);
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("error message")
+        .contains("required"));
 }
 
 #[test]
@@ -1141,7 +1398,11 @@ source = "github:owner/tool-exe"
     fs::write(project.join(".binpm").join("bin").join("tool"), "tool").expect("write tool");
     let tool_path = project.join(".binpm").join("bin").join("tool");
     let tool_exe_path = project.join(".binpm").join("bin").join("tool.exe");
+    let canonical_tool_path = tool_path.canonicalize().expect("canonical tool path");
     fs::write(&tool_exe_path, "tool exe").expect("write tool.exe");
+    let canonical_tool_exe_path = tool_exe_path
+        .canonicalize()
+        .expect("canonical tool.exe path");
     fs::write(
         project.join(".binpm").join("packages").join("tool.toml"),
         format!(
@@ -1165,7 +1426,7 @@ checksum_source = "local"
 signature_available = false
 signature_verified = false
 "#,
-            tool_path.display()
+            canonical_tool_path.display()
         ),
     )
     .expect("write tool package record");
@@ -1195,7 +1456,7 @@ checksum_source = "local"
 signature_available = false
 signature_verified = false
 "#,
-            tool_exe_path.display()
+            canonical_tool_exe_path.display()
         ),
     )
     .expect("write tool.exe package record");

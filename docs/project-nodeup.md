@@ -38,11 +38,12 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - `apps/nodeup-docs` must use the repository-default Rspress/Rsbuild-family static documentation toolchain and Cloudflare Pages deployment contract unless this project index and `docs/apps-nodeup-docs-foundation.md` document a replacement.
 - The canonical `nodeup-docs` production URL is `https://nodeup.delino.io`.
 - Nodeup documentation routes exposed by `apps/nodeup-docs` are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
+- `apps/nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in the top-level social links and in the document-page footer.
 - Nodeup documentation routes exposed by `apps/nodeup-docs` must stay aligned with runtime, release, installer, shim, completion, package-manager, human/JSON output, and color-control contracts.
 
 ## Change Policy
 - Update this index, `docs/crates-nodeup-foundation.md`, and `docs/apps-nodeup-docs-foundation.md` in the same change for behavior or storage contract updates that affect Nodeup documentation.
-- Update this index and `docs/apps-nodeup-docs-foundation.md` in the same change for `apps/nodeup-docs` path, route, toolchain, validation, or deployment contract updates.
+- Update this index and `docs/apps-nodeup-docs-foundation.md` in the same change for `apps/nodeup-docs` path, route, theme repository-link surface, toolchain, validation, or deployment contract updates.
 - Keep `scripts/install/nodeup.sh`, `scripts/install/nodeup.ps1`, and `crates/nodeup/Cargo.toml` synchronized with release asset names and signing contracts.
 - Keep release, install, and documentation-app contracts synchronized with root, `crates/AGENTS.md`, and `apps/AGENTS.md` rules.
 

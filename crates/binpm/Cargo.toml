@@ -6,7 +6,39 @@ license = "MIT"
 description = "Node-free binary package manager for release assets"
 readme = "README.md"
 repository = "https://github.com/delinoio/oss"
-publish = false
+
+[package.metadata.binstall]
+disabled-strategies = ["quick-install", "compile"]
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/binpm@v{ version }/binpm-linux-amd64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "binpm"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/binpm@v{ version }/binpm-linux-arm64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "binpm"
+
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/binpm@v{ version }/binpm-darwin-amd64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "binpm"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/binpm@v{ version }/binpm-darwin-arm64.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "binpm"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/binpm@v{ version }/binpm-windows-amd64.zip"
+pkg-fmt = "zip"
+bin-dir = "binpm.exe"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/binpm@v{ version }/binpm-windows-arm64.zip"
+pkg-fmt = "zip"
+bin-dir = "binpm.exe"
 
 [dependencies]
 chrono = { version = "0.4.42", default-features = false, features = ["clock", "std"] }
@@ -14,6 +46,7 @@ clap = { version = "4.5.32", features = ["derive"] }
 flate2 = "1.1.5"
 reqwest = { version = "0.12.14", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
 sha2 = "0.10.8"
 swc_malloc = "1.2.5"
 tar = "0.4.44"
@@ -28,5 +61,4 @@ zstd = "0.13.3"
 [dev-dependencies]
 assert_cmd = "2.0.16"
 predicates = "3.1.3"
-serde_json = "1.0.140"
 tempfile = "3.18.0"

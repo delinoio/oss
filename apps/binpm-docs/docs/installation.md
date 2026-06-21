@@ -1,6 +1,122 @@
 # Installation
 
-binpm installs native binary tools without requiring Node.js, npm, pnpm, yarn, or Bun.
+binpm is distributed as first-party release artifacts. Install flows are designed for macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64 hosts.
+
+## Homebrew
+
+On macOS and Linux:
+
+```bash
+brew install delinoio/tap/binpm
+```
+
+The Homebrew formula uses prebuilt binpm release archives for:
+
+- `darwin/amd64`
+- `darwin/arm64`
+- `linux/amd64`
+- `linux/arm64`
+
+## Direct Installers
+
+Direct installers are for users who want a release artifact without Homebrew or `cargo-binstall`. Install `cosign` first and leave it on `PATH`; the installers require it to verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`) with `cosign verify-blob --bundle`. Missing `cosign` is a prerequisite failure, not a reason to disable verification. If you do not want to manage that prerequisite directly, use Homebrew or `cargo-binstall` instead.
+
+macOS and Linux:
+
+```bash
+(
+  installer_url="https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/binpm.sh"
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  if ! curl -fsSL "$installer_url" -o "$tmp_dir/binpm.sh"; then
+    exit 1
+  fi
+  bash "$tmp_dir/binpm.sh" --version latest --method direct
+)
+```
+
+Windows PowerShell:
+
+```powershell
+$InstallerUrl = "https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/binpm.ps1"
+$Installer = Join-Path ([System.IO.Path]::GetTempPath()) ("binpm-install-" + [System.Guid]::NewGuid().ToString("N") + ".ps1")
+try {
+  Invoke-WebRequest -Uri $InstallerUrl -OutFile $Installer -UseBasicParsing
+  Unblock-File -LiteralPath $Installer -ErrorAction SilentlyContinue
+  $PowerShell = (Get-Process -Id $PID).Path
+  & $PowerShell -NoProfile -ExecutionPolicy Bypass -File $Installer -Version latest -Method direct
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+}
+finally {
+  Remove-Item -LiteralPath $Installer -Force -ErrorAction SilentlyContinue
+}
+```
+
+These commands fetch the current first-party installer scripts from `delinoio/oss`. For reproducible automation, pin the same raw URL paths to a reviewed commit or repository tag instead of `refs/heads/main`, and replace `latest` with an explicit binpm semver.
+
+The canonical in-repo installer paths remain:
+
+- `scripts/install/binpm.sh`
+- `scripts/install/binpm.ps1`
+
+From a repository checkout, maintainers can run the scripts directly:
+
+```bash
+bash ./scripts/install/binpm.sh --version latest --method direct
+```
+
+```powershell
+./scripts/install/binpm.ps1 -Version latest -Method direct
+```
+
+Direct installers detect unsupported x86 hosts before resolving release tags or downloading assets. Use an x64/arm64 host or a supported CI image when an installer reports an unsupported host.
+
+Direct installers support bundle-enabled releases only.
+
+Direct installers place the binary in `~/.local/bin` by default and do not modify your shell `PATH`. Add that directory before verifying the install, or pass `--install-dir` / `-InstallDir` with a directory already on `PATH`.
+
+macOS and Linux:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:Path = "$HOME\.local\bin;$env:Path"
+```
+
+## cargo-binstall
+
+```bash
+cargo binstall binpm --no-confirm
+```
+
+binpm's `cargo-binstall` metadata resolves first-party GitHub Release assets only. Third-party quick-install and compile fallback strategies are disabled by contract.
+
+## GitHub Actions
+
+```yaml
+- uses: taiki-e/install-action@v2
+  with:
+    tool: cargo-binstall
+- run: cargo binstall binpm --no-confirm
+```
+
+## Verify the Install
+
+Run these commands in a shell where `binpm` resolves on `PATH`:
+
+```bash
+binpm --version
+binpm doctor
+binpm env --shell bash
+```
+
+`binpm doctor` verifies that the binary can inspect local and global binpm state. `binpm env --shell bash` verifies shell-specific PATH command generation without mutating shell profile files.
 
 ## Supported Release Assets
 
@@ -41,6 +157,8 @@ binpm does not edit shell profile files from these commands. Persistent profile 
 
 ## Security Boundary
 
-binpm uses HTTPS source-provider APIs and release asset URLs. Stored URLs are sanitized so query strings, fragments, credentials, and expiring signed URL details are not written into project files.
+Release installers verify binpm's own published release artifacts. That release verification is separate from binpm's package-asset verification for tools installed by binpm.
 
-When strict verification is requested, `--require-verified` and `binpm verify --require-verified` fail unless a trusted provider digest is available. Checksum sidecar discovery, checksum manifest discovery, and signature verification remain implementation work.
+binpm package installs use HTTPS source-provider APIs and release asset URLs. Stored URLs are sanitized so query strings, fragments, credentials, and expiring signed URL details are not written into project files.
+
+When strict verification is requested for installed tools, `--require-verified` and `binpm verify --require-verified` fail unless a trusted provider digest is available. Checksum sidecar discovery, checksum manifest discovery, and signature verification for packages installed by binpm remain implementation work.

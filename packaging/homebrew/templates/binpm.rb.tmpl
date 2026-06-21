@@ -1,0 +1,37 @@
+class Binpm < Formula
+  desc "Node-free binary package manager for release assets"
+  homepage "https://github.com/delinoio/oss"
+  version "__VERSION__"
+  license "MIT"
+
+  on_macos do
+    if Hardware::CPU.intel?
+      url "__DARWIN_AMD64_URL__"
+      sha256 "__DARWIN_AMD64_SHA256__"
+    else
+      url "__DARWIN_ARM64_URL__"
+      sha256 "__DARWIN_ARM64_SHA256__"
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.intel?
+      url "__LINUX_AMD64_URL__"
+      sha256 "__LINUX_AMD64_SHA256__"
+    elsif Hardware::CPU.arm?
+      url "__LINUX_ARM64_URL__"
+      sha256 "__LINUX_ARM64_SHA256__"
+    else
+      odie "binpm prebuilt distribution currently supports Linux amd64 and arm64 only"
+    end
+  end
+
+  def install
+    bin.install "binpm"
+  end
+
+  test do
+    assert_predicate bin/"binpm", :exist?
+    assert_match version.to_s, shell_output("#{bin}/binpm --version").strip
+  end
+end

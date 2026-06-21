@@ -8,7 +8,7 @@ Render and optionally push Homebrew formula/cask updates.
 
 Usage:
   ./scripts/release/update-homebrew.sh \
-    --project <nodeup|with-watch|derun> \
+    --project <binpm|nodeup|with-watch|derun> \
     --version <semver> \
     [--darwin-amd64-url <url>] [--darwin-amd64-sha256 <sha>] \
     [--darwin-arm64-url <url>] [--darwin-arm64-sha256 <sha>] \
@@ -20,21 +20,21 @@ Options:
   --project <id>         Package identifier.
   --version <semver>     Release version without v-prefix.
   --darwin-amd64-url <url>
-                         Darwin amd64 prebuilt artifact URL (nodeup, with-watch, and derun formulas).
+                         Darwin amd64 prebuilt artifact URL (binpm, nodeup, with-watch, and derun formulas).
   --darwin-amd64-sha256 <sha>
-                         Darwin amd64 prebuilt artifact SHA256 (nodeup, with-watch, and derun formulas).
+                         Darwin amd64 prebuilt artifact SHA256 (binpm, nodeup, with-watch, and derun formulas).
   --darwin-arm64-url <url>
-                         Darwin arm64 prebuilt artifact URL (nodeup, with-watch, and derun formulas).
+                         Darwin arm64 prebuilt artifact URL (binpm, nodeup, with-watch, and derun formulas).
   --darwin-arm64-sha256 <sha>
-                         Darwin arm64 prebuilt artifact SHA256 (nodeup, with-watch, and derun formulas).
+                         Darwin arm64 prebuilt artifact SHA256 (binpm, nodeup, with-watch, and derun formulas).
   --linux-amd64-url <url>
-                         Linux amd64 prebuilt artifact URL (nodeup, with-watch, and derun formulas).
+                         Linux amd64 prebuilt artifact URL (binpm, nodeup, with-watch, and derun formulas).
   --linux-amd64-sha256 <sha>
-                         Linux amd64 prebuilt artifact SHA256 (nodeup, with-watch, and derun formulas).
+                         Linux amd64 prebuilt artifact SHA256 (binpm, nodeup, with-watch, and derun formulas).
   --linux-arm64-url <url>
-                         Linux arm64 prebuilt artifact URL (nodeup and with-watch formulas).
+                         Linux arm64 prebuilt artifact URL (binpm, nodeup, and with-watch formulas).
   --linux-arm64-sha256 <sha>
-                         Linux arm64 prebuilt artifact SHA256 (nodeup and with-watch formulas).
+                         Linux arm64 prebuilt artifact SHA256 (binpm, nodeup, and with-watch formulas).
   --tap-repo <repo>      Homebrew tap repository (default: delinoio/homebrew-tap).
   --dry-run              Render only; do not push to the tap repository.
 USAGE
@@ -131,13 +131,13 @@ rendered_file=""
 destination_path=""
 
 case "$project" in
-  nodeup|with-watch|derun)
+  binpm|nodeup|with-watch|derun)
     if [ -z "$darwin_amd64_url" ] || [ -z "$darwin_amd64_sha256" ] || [ -z "$darwin_arm64_url" ] || [ -z "$darwin_arm64_sha256" ] || [ -z "$linux_amd64_url" ] || [ -z "$linux_amd64_sha256" ]; then
       log "$project requires --darwin-amd64-url, --darwin-amd64-sha256, --darwin-arm64-url, --darwin-arm64-sha256, --linux-amd64-url, and --linux-amd64-sha256"
       exit 1
     fi
 
-    if { [ "$project" = "nodeup" ] || [ "$project" = "with-watch" ]; } && { [ -z "$linux_arm64_url" ] || [ -z "$linux_arm64_sha256" ]; }; then
+    if { [ "$project" = "binpm" ] || [ "$project" = "nodeup" ] || [ "$project" = "with-watch" ]; } && { [ -z "$linux_arm64_url" ] || [ -z "$linux_arm64_sha256" ]; }; then
       log "$project requires --linux-arm64-url and --linux-arm64-sha256"
       exit 1
     fi

@@ -57,6 +57,10 @@ export default defineConfig({
               link: "/cache-and-verification",
             },
             {
+              text: "Releases",
+              link: "/releases",
+            },
+            {
               text: "Troubleshooting",
               link: "/troubleshooting",
             },
@@ -68,8 +72,16 @@ export default defineConfig({
         },
       ],
     },
+    socialLinks: [
+      {
+        icon: "github",
+        mode: "link",
+        content: "https://github.com/delinoio/oss",
+      },
+    ],
     footer: {
-      message: "binpm documentation is maintained in the Delino OSS monorepo.",
+      message:
+        'binpm documentation is maintained in the <a href="https://github.com/delinoio/oss">Delino OSS repository</a>.',
     },
   },
 });
