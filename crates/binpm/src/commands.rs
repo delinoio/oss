@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
@@ -23,7 +24,7 @@ use crate::{
     },
     contract::{
         validate_version_selector, ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec,
-        TargetOs,
+        TargetArch, TargetLibc, TargetOs, VerificationState,
     },
     error::{BinpmError, Result},
     release::{
@@ -45,6 +46,256 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputMode {
+    Human,
+    Json,
+}
+
+impl OutputMode {
+    fn from_json_flag(json: bool) -> Self {
+        if json {
+            Self::Json
+        } else {
+            Self::Human
+        }
+    }
+
+    fn is_json(self) -> bool {
+        self == Self::Json
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ListOutput {
+    command: &'static str,
+    scope: Scope,
+    tools: Vec<ListToolOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct ListToolOutput {
+    cmd: String,
+    state: ToolState,
+    source: String,
+    requested_version: Option<String>,
+    release_tag: Option<String>,
+    selected_binary: Option<String>,
+    installed_path: Option<String>,
+    verification: Option<VerificationState>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+enum ToolState {
+    #[serde(rename = "declared")]
+    Declared,
+    #[serde(rename = "installed")]
+    Installed,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheListOutput {
+    command: &'static str,
+    entries: Vec<CacheEntryOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheEntryOutput {
+    cache_key: String,
+    byte_size: Option<u64>,
+    source_provider: crate::contract::SourceProvider,
+    source_host: String,
+    source_path: String,
+    release_tag: String,
+    asset_name: String,
+    checksum_source: ChecksumSource,
+    last_used_at: Option<String>,
+    reference_state: CacheReferenceState,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+enum CacheReferenceState {
+    #[serde(rename = "referenced")]
+    Referenced,
+    #[serde(rename = "unreferenced")]
+    Unreferenced,
+}
+
+#[derive(Debug, Serialize)]
+struct OutdatedOutput {
+    command: &'static str,
+    scope: Scope,
+    checked: usize,
+    tools: Vec<OutdatedToolOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct OutdatedToolOutput {
+    cmd: String,
+    current: String,
+    latest: String,
+    outdated: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct DoctorOutput {
+    command: &'static str,
+    project_root: String,
+    manifest_path: String,
+    manifest: PathState,
+    lockfile_path: String,
+    lockfile: PathState,
+    global_home: String,
+    global_bin: String,
+    global_bin_on_path: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+enum PathState {
+    #[serde(rename = "present")]
+    Present,
+    #[serde(rename = "missing")]
+    Missing,
+}
+
+#[derive(Debug, Serialize)]
+struct VerifyOutput {
+    command: &'static str,
+    scope: Scope,
+    require_verified: bool,
+    checked: usize,
+    checks: Vec<VerifyCheckOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct VerifyCheckOutput {
+    cmd: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target: Option<HostTarget>,
+    checksum_source: ChecksumSource,
+    verification: VerificationState,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum InfoOutput {
+    Source {
+        command: &'static str,
+        source: String,
+        normalized_source: String,
+        provider: crate::contract::SourceProvider,
+        host: String,
+        path: String,
+        release: String,
+        target: HostTarget,
+        selected_asset: Option<SelectedAssetOutput>,
+    },
+    Package {
+        command: &'static str,
+        scope: Scope,
+        cmd: String,
+        record: PackageRecordOutput,
+    },
+}
+
+#[derive(Debug, Serialize)]
+struct SelectedAssetOutput {
+    asset_name: String,
+    asset_url: String,
+    archive_format: Option<ArchiveFormat>,
+    score: Option<i32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+enum ExplainOutput {
+    Source {
+        command: &'static str,
+        source: String,
+        normalized_source: String,
+        provider: crate::contract::SourceProvider,
+        host: String,
+        path: String,
+        requested_version: Option<String>,
+        target: HostTarget,
+        release_api: String,
+        release: String,
+        release_decision: String,
+        selected_asset: Option<SelectedAssetOutput>,
+        candidates: Vec<CandidateOutput>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        release_diagnostics: Vec<ReleaseDiagnosticOutput>,
+    },
+    Package {
+        command: &'static str,
+        scope: Scope,
+        cmd: String,
+        record: PackageRecordOutput,
+        override_snippet: String,
+    },
+}
+
+#[derive(Debug, Serialize)]
+struct CandidateOutput {
+    asset_name: String,
+    kind: String,
+    archive_format: Option<ArchiveFormat>,
+    detected_os: Option<TargetOs>,
+    detected_arch: Option<TargetArch>,
+    detected_libc: Option<TargetLibc>,
+    score: Option<i32>,
+    eligible: bool,
+    recognized_pattern: bool,
+    rejection_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ReleaseDiagnosticOutput {
+    kind: ReleaseDiagnosticKind,
+    target: HostTarget,
+    message: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    unsupported_installers: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    sidecar_assets: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remediation: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+enum ReleaseDiagnosticKind {
+    #[serde(rename = "no-downloadable-assets")]
+    NoDownloadableAssets,
+    #[serde(rename = "unsupported-installers")]
+    UnsupportedInstallers,
+    #[serde(rename = "target-scoring-remediation")]
+    TargetScoringRemediation,
+}
+
+#[derive(Debug, Serialize)]
+struct PackageRecordOutput {
+    package_spec: String,
+    source: String,
+    source_provider: crate::contract::SourceProvider,
+    source_host: String,
+    source_path: String,
+    requested_version: Option<String>,
+    release_tag: String,
+    asset_name: String,
+    asset_url: String,
+    target: HostTarget,
+    archive_format: ArchiveFormat,
+    selected_binary: String,
+    installed_path: String,
+    cache_key: Option<String>,
+    cache_path: Option<String>,
+    sha256: String,
+    checksum_source: ChecksumSource,
+    verification: VerificationState,
+    signature_available: bool,
+    signature_verified: bool,
+}
+
 const DOWNLOAD_RETRY_ATTEMPTS: usize = 3;
 const DOWNLOAD_RETRY_BASE_DELAY: Duration = Duration::from_millis(200);
 const DOWNLOAD_PROGRESS_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
@@ -53,19 +304,20 @@ const DOWNLOAD_PROGRESS_INTERVAL: Duration = Duration::from_secs(2);
 const DOWNLOAD_INITIAL_CAPACITY_LIMIT: usize = 8 * 1024 * 1024;
 
 pub fn run(cli: Cli) -> Result<i32> {
+    let output = OutputMode::from_json_flag(cli.json);
     match cli.command {
         Command::Install(args) => install(args),
         Command::Add(args) => add(args),
         Command::Exec(args) => exec(args),
-        Command::Cache(args) => cache(args.command),
-        Command::List(args) => list(args),
+        Command::Cache(args) => cache(args.command, output),
+        Command::List(args) => list(args, output),
         Command::Remove(args) => remove(args),
-        Command::Info(args) => info_cmd(args),
-        Command::Outdated(args) => outdated(args),
+        Command::Info(args) => info_cmd(args, output),
+        Command::Outdated(args) => outdated(args, output),
         Command::Update(args) => update(args),
-        Command::Doctor => doctor(),
-        Command::Explain(args) => explain(args),
-        Command::Verify(args) => verify(args),
+        Command::Doctor => doctor(output),
+        Command::Explain(args) => explain(args, output),
+        Command::Verify(args) => verify(args, output),
         Command::Init(args) => init(args),
         Command::Env(args) => env_cmd(args),
     }
@@ -298,7 +550,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
     execute_command(&cmd, args.args(), &[ScopePaths::local(root).bin])
 }
 
-fn cache(command: CacheCommand) -> Result<i32> {
+fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
     match command {
         CacheCommand::List => {
             info!(
@@ -311,25 +563,50 @@ fn cache(command: CacheCommand) -> Result<i32> {
             let global_paths = ScopePaths::global(home);
             let local_paths = manifest_project_root()?.map(ScopePaths::local);
             let referenced = referenced_cache_keys(&global_paths, local_paths.as_ref(), &paths)?;
+            let mut entries = Vec::new();
             for record in read_cache_records(&paths)? {
                 let reference_state = if referenced.contains(&record.cache_key) {
-                    "referenced"
+                    CacheReferenceState::Referenced
                 } else {
-                    "unreferenced"
+                    CacheReferenceState::Unreferenced
                 };
-                println!(
-                    "{} {} {} {}/{} {} {} {} {} {}",
-                    record.cache_key,
-                    record.byte_size.unwrap_or_default(),
-                    record.source_provider.as_str(),
-                    record.source_host,
-                    record.source_path,
-                    record.release_tag,
-                    record.asset_name,
-                    record.checksum_source.as_str(),
-                    record.last_used_at.as_deref().unwrap_or("<unknown>"),
-                    reference_state
-                );
+                if output.is_json() {
+                    entries.push(CacheEntryOutput {
+                        cache_key: record.cache_key,
+                        byte_size: record.byte_size,
+                        source_provider: record.source_provider,
+                        source_host: record.source_host,
+                        source_path: record.source_path,
+                        release_tag: record.release_tag,
+                        asset_name: record.asset_name,
+                        checksum_source: record.checksum_source,
+                        last_used_at: record.last_used_at,
+                        reference_state,
+                    });
+                } else {
+                    println!(
+                        "{} {} {} {}/{} {} {} {} {} {}",
+                        record.cache_key,
+                        record.byte_size.unwrap_or_default(),
+                        record.source_provider.as_str(),
+                        record.source_host,
+                        record.source_path,
+                        record.release_tag,
+                        record.asset_name,
+                        record.checksum_source.as_str(),
+                        record.last_used_at.as_deref().unwrap_or("<unknown>"),
+                        match reference_state {
+                            CacheReferenceState::Referenced => "referenced",
+                            CacheReferenceState::Unreferenced => "unreferenced",
+                        }
+                    );
+                }
+            }
+            if output.is_json() {
+                return print_json(&CacheListOutput {
+                    command: "cache list",
+                    entries,
+                });
             }
             Ok(0)
         }
@@ -383,9 +660,10 @@ fn cache_key() -> Result<i32> {
     Ok(0)
 }
 
-fn list(args: ScopedArgs) -> Result<i32> {
+fn list(args: ScopedArgs, output: OutputMode) -> Result<i32> {
     let scope = select_scope(args.scope.scope())?;
     log_read_only_scope("list", scope);
+    let mut tools = Vec::new();
     match scope {
         Scope::Local => {
             let root = require_manifest_root()?;
@@ -398,53 +676,49 @@ fn list(args: ScopedArgs) -> Result<i32> {
                 let state = package_record_path(&paths, &cmd);
                 if state.exists() {
                     let record = read_package_record(&state)?;
-                    println!(
-                        "{cmd} installed {} {} {} {} {} {}",
-                        record.source,
-                        record.requested_version.as_deref().unwrap_or("<latest>"),
-                        record.release_tag,
-                        record.selected_binary,
-                        record.installed_path,
-                        verification_state(&record)
-                    );
+                    let row = list_installed_tool(cmd, record);
+                    print_list_tool(&row, output);
+                    tools.push(row);
                 } else {
-                    println!(
-                        "{cmd} declared {} {} <unknown> <unknown> <unknown> <unknown>",
-                        tool.source,
-                        tool.version.as_deref().unwrap_or("<latest>")
-                    );
+                    let row = ListToolOutput {
+                        cmd,
+                        state: ToolState::Declared,
+                        source: tool.source,
+                        requested_version: tool.version,
+                        release_tag: None,
+                        selected_binary: None,
+                        installed_path: None,
+                        verification: None,
+                    };
+                    print_list_tool(&row, output);
+                    tools.push(row);
                 }
             }
             for (cmd, record) in list_package_records(&paths)? {
                 if printed.contains(&cmd) {
                     continue;
                 }
-                println!(
-                    "{cmd} installed {} {} {} {} {} {}",
-                    record.source,
-                    record.requested_version.as_deref().unwrap_or("<latest>"),
-                    record.release_tag,
-                    record.selected_binary,
-                    record.installed_path,
-                    verification_state(&record)
-                );
+                let row = list_installed_tool(cmd, record);
+                print_list_tool(&row, output);
+                tools.push(row);
             }
         }
         Scope::Global => {
             let paths = ScopePaths::global(binpm_home()?);
             for (cmd, record) in list_package_records(&paths)? {
-                println!(
-                    "{cmd} installed {} {} {} {} {} {}",
-                    record.source,
-                    record.requested_version.as_deref().unwrap_or("<latest>"),
-                    record.release_tag,
-                    record.selected_binary,
-                    record.installed_path,
-                    verification_state(&record)
-                );
+                let row = list_installed_tool(cmd, record);
+                print_list_tool(&row, output);
+                tools.push(row);
             }
         }
         Scope::Auto => unreachable!("select_scope never returns auto"),
+    }
+    if output.is_json() {
+        return print_json(&ListOutput {
+            command: "list",
+            scope,
+            tools,
+        });
     }
     Ok(0)
 }
@@ -470,7 +744,7 @@ fn remove(args: RemoveArgs) -> Result<i32> {
     }
 }
 
-fn info_cmd(args: InfoArgs) -> Result<i32> {
+fn info_cmd(args: InfoArgs, output: OutputMode) -> Result<i32> {
     if let Some(spec) = parse_source_argument(&args.cmd_or_source)? {
         debug!(
             command = "info",
@@ -481,7 +755,7 @@ fn info_cmd(args: InfoArgs) -> Result<i32> {
             "Parsed info argument as source"
         );
         log_read_only_scope("info", args.scope.scope());
-        return print_source_info(&spec);
+        return print_source_info(&spec, output);
     }
 
     log_read_only_scope("info", args.scope.scope());
@@ -493,14 +767,23 @@ fn info_cmd(args: InfoArgs) -> Result<i32> {
     };
     validate_command_name(&args.cmd_or_source)?;
     let record = read_package_record(&package_record_path(&paths, &args.cmd_or_source))?;
+    if output.is_json() {
+        return print_json(&InfoOutput::Package {
+            command: "info",
+            scope,
+            cmd: args.cmd_or_source,
+            record: package_record_output(&record)?,
+        });
+    }
     print_package_record_info(&args.cmd_or_source, &record);
     Ok(0)
 }
 
-fn outdated(args: ScopedArgs) -> Result<i32> {
+fn outdated(args: ScopedArgs, output: OutputMode) -> Result<i32> {
     let scope = select_scope(args.scope.scope())?;
     log_read_only_scope("outdated", scope);
     let mut checked = 0usize;
+    let mut tools = Vec::new();
     match scope {
         Scope::Local => {
             let root = require_manifest_root()?;
@@ -522,9 +805,16 @@ fn outdated(args: ScopedArgs) -> Result<i32> {
                     .resolve_release(&latest_spec)?
                     .release
                     .tag;
-                if current != latest {
+                let is_outdated = current != latest;
+                if !output.is_json() && current != latest {
                     println!("{cmd} {current} -> {latest}");
                 }
+                tools.push(OutdatedToolOutput {
+                    cmd,
+                    current,
+                    latest,
+                    outdated: is_outdated,
+                });
                 checked += 1;
             }
         }
@@ -536,13 +826,28 @@ fn outdated(args: ScopedArgs) -> Result<i32> {
                     .resolve_release(&spec)?
                     .release
                     .tag;
-                if record.release_tag != latest {
+                let is_outdated = record.release_tag != latest;
+                if !output.is_json() && record.release_tag != latest {
                     println!("{cmd} {} -> {latest}", record.release_tag);
                 }
+                tools.push(OutdatedToolOutput {
+                    cmd,
+                    current: record.release_tag,
+                    latest,
+                    outdated: is_outdated,
+                });
                 checked += 1;
             }
         }
         Scope::Auto => unreachable!("select_scope never returns auto"),
+    }
+    if output.is_json() {
+        return print_json(&OutdatedOutput {
+            command: "outdated",
+            scope,
+            checked,
+            tools,
+        });
     }
     println!("checked {checked}");
     Ok(0)
@@ -684,7 +989,7 @@ fn print_global_update_plan(selected: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn doctor() -> Result<i32> {
+fn doctor(output: OutputMode) -> Result<i32> {
     let project_root = project_root()?;
     let manifest_path = project_root.join(MANIFEST_FILE);
     let lockfile_path = project_root.join(LOCKFILE_FILE);
@@ -703,6 +1008,19 @@ fn doctor() -> Result<i32> {
         global_bin_on_path,
         "Prepared doctor inspection"
     );
+    if output.is_json() {
+        return print_json(&DoctorOutput {
+            command: "doctor",
+            project_root: project_root.display().to_string(),
+            manifest_path: manifest_path.display().to_string(),
+            manifest: json_path_state(&manifest_path),
+            lockfile_path: lockfile_path.display().to_string(),
+            lockfile: json_path_state(&lockfile_path),
+            global_home: home.display().to_string(),
+            global_bin: global_bin.display().to_string(),
+            global_bin_on_path,
+        });
+    }
     println!("binpm doctor");
     println!("manifest: {}", path_state(&manifest_path));
     println!("lockfile: {}", path_state(&lockfile_path));
@@ -715,7 +1033,7 @@ fn doctor() -> Result<i32> {
     Ok(0)
 }
 
-fn explain(args: ExplainArgs) -> Result<i32> {
+fn explain(args: ExplainArgs, output: OutputMode) -> Result<i32> {
     match parse_source_argument(&args.cmd_or_source)? {
         Some(spec) => {
             let target = HostTarget::current()?;
@@ -730,7 +1048,7 @@ fn explain(args: ExplainArgs) -> Result<i32> {
                 target = target.key(),
                 "Prepared source explanation"
             );
-            return explain_source(spec, target);
+            return explain_source(spec, target, output);
         }
         None => {
             info!(
@@ -750,6 +1068,27 @@ fn explain(args: ExplainArgs) -> Result<i32> {
     };
     validate_command_name(&args.cmd_or_source)?;
     let record = read_package_record(&package_record_path(&paths, &args.cmd_or_source))?;
+    if output.is_json() {
+        let target = HostTarget {
+            os: record.target_os,
+            arch: record.target_arch,
+            libc: record.target_libc,
+        };
+        let override_snippet = target_override_snippet(
+            &args.cmd_or_source,
+            &target,
+            &record.asset_name,
+            &record.selected_binary,
+            Some(record.checksum_source),
+        );
+        return print_json(&ExplainOutput::Package {
+            command: "explain",
+            scope,
+            cmd: args.cmd_or_source,
+            record: package_record_output(&record)?,
+            override_snippet,
+        });
+    }
     println!("binpm explain");
     println!("cmd: {}", args.cmd_or_source);
     println!("source: {}", record.source);
@@ -764,7 +1103,7 @@ fn explain(args: ExplainArgs) -> Result<i32> {
     println!("selected_binary: {}", record.selected_binary);
     println!("archive_format: {}", record.archive_format.as_str());
     println!("checksum_source: {}", record.checksum_source.as_str());
-    println!("verification: {}", verification_state(&record));
+    println!("verification: {}", verification_state(&record).as_str());
     println!("override_snippet:");
     println!(
         "{}",
@@ -791,7 +1130,38 @@ fn parse_source_argument(raw: &str) -> Result<Option<SourceSpec>> {
     Ok(None)
 }
 
-fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
+fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> Result<i32> {
+    let client = client_for_source(&spec)?;
+    let selection = client.resolve_release(&spec)?;
+    let asset_selection = select_asset(spec.provider, &target, &selection.release.assets);
+    let all_decisions = match &asset_selection {
+        Some(selection) => selection.decisions.clone(),
+        None => crate::assets::score_assets(spec.provider, &target, &selection.release.assets),
+    };
+
+    if output.is_json() {
+        let release_api = release_api_url(&spec);
+        return print_json(&ExplainOutput::Source {
+            command: "explain",
+            source: spec.to_string(),
+            normalized_source: spec.source_without_version(),
+            provider: spec.provider,
+            host: spec.host.clone(),
+            path: spec.path.clone(),
+            requested_version: spec.version.clone(),
+            target: target.clone(),
+            release_api,
+            release: selection.release.tag,
+            release_decision: selection.decision,
+            selected_asset: asset_selection
+                .as_ref()
+                .map(|selection| selected_asset_output(&selection.selected))
+                .transpose()?,
+            candidates: all_decisions.iter().map(candidate_output).collect(),
+            release_diagnostics: release_diagnostics(&all_decisions, &target),
+        });
+    }
+
     println!("binpm explain");
     println!("source: {spec}");
     println!("normalized_source: {}", spec.source_without_version());
@@ -805,12 +1175,10 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
     println!("target: {}", target.key());
     println!("release_api: {}", release_api_url(&spec));
 
-    let client = client_for_source(&spec)?;
-    let selection = client.resolve_release(&spec)?;
     println!("release: {}", selection.release.tag);
     println!("release_decision: {}", selection.decision);
 
-    match select_asset(spec.provider, &target, &selection.release.assets) {
+    match asset_selection {
         Some(selection) => {
             println!("selected_asset: {}", selection.selected.asset_name);
             println!(
@@ -838,15 +1206,13 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
         }
         None => {
             println!("selected_asset: <none>");
-            let decisions =
-                crate::assets::score_assets(spec.provider, &target, &selection.release.assets);
-            for decision in &decisions {
+            for decision in &all_decisions {
                 println!("{}", decision.explain_line());
             }
-            for line in release_diagnostic_lines(&decisions, &target) {
+            for line in release_diagnostic_lines(&all_decisions, &target) {
                 println!("{line}");
             }
-            if let Some(candidate) = override_snippet_candidate(&decisions) {
+            if let Some(candidate) = override_snippet_candidate(&all_decisions) {
                 println!("override_snippet:");
                 println!(
                     "{}",
@@ -866,10 +1232,43 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
 }
 
 fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget) -> Vec<String> {
+    release_diagnostics(decisions, target)
+        .into_iter()
+        .flat_map(|diagnostic| {
+            let mut lines = vec![format!("diagnostic: {}", diagnostic.message)];
+            if !diagnostic.unsupported_installers.is_empty() {
+                lines.push(format!(
+                    "unsupported_installers: {}",
+                    diagnostic.unsupported_installers.join(", ")
+                ));
+            }
+            if !diagnostic.sidecar_assets.is_empty() {
+                lines.push(format!(
+                    "sidecar_assets: {}",
+                    diagnostic.sidecar_assets.join(", ")
+                ));
+            }
+            if let Some(remediation) = diagnostic.remediation {
+                lines.push(format!("remediation: {remediation}"));
+            }
+            lines
+        })
+        .collect()
+}
+
+fn release_diagnostics(
+    decisions: &[CandidateDecision],
+    target: &HostTarget,
+) -> Vec<ReleaseDiagnosticOutput> {
     if decisions.is_empty() {
-        return vec![
-            "diagnostic: release has no downloadable assets for binpm to score".to_string(),
-        ];
+        return vec![ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::NoDownloadableAssets,
+            target: target.clone(),
+            message: "release has no downloadable assets for binpm to score".to_string(),
+            unsupported_installers: Vec::new(),
+            sidecar_assets: Vec::new(),
+            remediation: None,
+        }];
     }
 
     let installable_count = decisions
@@ -887,26 +1286,34 @@ fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget
         .map(|decision| decision.asset_name.as_str())
         .collect::<Vec<_>>();
 
-    let mut lines = Vec::new();
+    let mut diagnostics = Vec::new();
     if installable_count == 0 && !desktop_packages.is_empty() {
-        lines.push(format!(
-            "diagnostic: release only provides unsupported desktop or system installer packages \
-             for target {}; binpm v1 installs portable archives or bare executables by default",
-            target.key()
-        ));
-        lines.push(format!(
-            "unsupported_installers: {}",
-            desktop_packages.join(", ")
-        ));
-        lines.push(
-            "remediation: ask upstream for a portable archive or bare executable asset; installer \
-             package installation is not enabled by default"
-                .to_string(),
-        );
-    }
-
-    if installable_count == 0 && !sidecars.is_empty() && !desktop_packages.is_empty() {
-        lines.push(format!("sidecar_assets: {}", sidecars.join(", ")));
+        diagnostics.push(ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::UnsupportedInstallers,
+            target: target.clone(),
+            message: format!(
+                "release only provides unsupported desktop or system installer packages for \
+                 target {}; binpm v1 installs portable archives or bare executables by default",
+                target.key()
+            ),
+            unsupported_installers: desktop_packages
+                .iter()
+                .map(|asset_name| (*asset_name).to_string())
+                .collect(),
+            sidecar_assets: if sidecars.is_empty() {
+                Vec::new()
+            } else {
+                sidecars
+                    .iter()
+                    .map(|asset_name| (*asset_name).to_string())
+                    .collect()
+            },
+            remediation: Some(
+                "ask upstream for a portable archive or bare executable asset; installer package \
+                 installation is not enabled by default"
+                    .to_string(),
+            ),
+        });
     }
 
     if decisions.iter().any(|decision| {
@@ -914,15 +1321,23 @@ fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget
             reason.contains("linux musl target requires an explicit libc signal")
         })
     }) {
-        lines.push(
-            "remediation: Linux musl releases should include musl, static, portable, universal, \
-             or any in compatible asset names; use the override snippet only when you have \
-             verified compatibility"
+        diagnostics.push(ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::TargetScoringRemediation,
+            target: target.clone(),
+            message: "target-specific release assets need clearer libc compatibility signals"
                 .to_string(),
-        );
+            unsupported_installers: Vec::new(),
+            sidecar_assets: Vec::new(),
+            remediation: Some(
+                "Linux musl releases should include musl, static, portable, universal, or any in \
+                 compatible asset names; use the override snippet only when you have verified \
+                 compatibility"
+                    .to_string(),
+            ),
+        });
     }
 
-    lines
+    diagnostics
 }
 
 fn override_snippet_candidate(decisions: &[CandidateDecision]) -> Option<&CandidateDecision> {
@@ -998,9 +1413,26 @@ fn toml_string(value: &str) -> String {
     escaped
 }
 
-fn print_source_info(spec: &SourceSpec) -> Result<i32> {
+fn print_source_info(spec: &SourceSpec, output: OutputMode) -> Result<i32> {
     let target = HostTarget::current()?;
     let selection = client_for_source(spec)?.resolve_release(spec)?;
+    let asset_selection = select_asset(spec.provider, &target, &selection.release.assets);
+    if output.is_json() {
+        return print_json(&InfoOutput::Source {
+            command: "info",
+            source: spec.to_string(),
+            normalized_source: spec.source_without_version(),
+            provider: spec.provider,
+            host: spec.host.clone(),
+            path: spec.path.clone(),
+            release: selection.release.tag,
+            target,
+            selected_asset: asset_selection
+                .as_ref()
+                .map(|selection| selected_asset_output(&selection.selected))
+                .transpose()?,
+        });
+    }
     println!("binpm info");
     println!("source: {spec}");
     println!("normalized_source: {}", spec.source_without_version());
@@ -1009,7 +1441,7 @@ fn print_source_info(spec: &SourceSpec) -> Result<i32> {
     println!("path: {}", spec.path);
     println!("release: {}", selection.release.tag);
     println!("target: {}", target.key());
-    match select_asset(spec.provider, &target, &selection.release.assets) {
+    match asset_selection {
         Some(selection) => {
             println!("selected_asset: {}", selection.selected.asset_name);
             println!(
@@ -1038,7 +1470,7 @@ fn print_package_record_info(cmd: &str, record: &PackageRecord) {
     println!("selected_binary: {}", record.selected_binary);
     println!("installed_path: {}", record.installed_path);
     println!("checksum_source: {}", record.checksum_source.as_str());
-    println!("verification: {}", verification_state(record));
+    println!("verification: {}", verification_state(record).as_str());
 }
 
 fn selected_asset_display_url(decision: &crate::assets::CandidateDecision) -> Result<String> {
@@ -3184,11 +3616,141 @@ fn remove_unreferenced_cache_entry(
     Ok(())
 }
 
-fn verification_state(record: &PackageRecord) -> &'static str {
-    if record.has_verified_source() {
-        "verified"
+fn print_json(value: &impl Serialize) -> Result<i32> {
+    let rendered = serde_json::to_string(value).map_err(BinpmError::SerializeJson)?;
+    println!("{rendered}");
+    Ok(0)
+}
+
+fn verify_check_output(
+    cmd: String,
+    target: Option<HostTarget>,
+    record: &PackageRecord,
+) -> VerifyCheckOutput {
+    VerifyCheckOutput {
+        cmd,
+        target,
+        checksum_source: record.checksum_source,
+        verification: verification_state(record),
+    }
+}
+
+fn list_installed_tool(cmd: String, record: PackageRecord) -> ListToolOutput {
+    let verification = verification_state(&record);
+    ListToolOutput {
+        cmd,
+        state: ToolState::Installed,
+        source: record.source,
+        requested_version: record.requested_version,
+        release_tag: Some(record.release_tag),
+        selected_binary: Some(record.selected_binary),
+        installed_path: Some(record.installed_path),
+        verification: Some(verification),
+    }
+}
+
+fn print_list_tool(row: &ListToolOutput, output: OutputMode) {
+    if output.is_json() {
+        return;
+    }
+    match row.state {
+        ToolState::Declared => println!(
+            "{} declared {} {} <unknown> <unknown> <unknown> <unknown>",
+            row.cmd,
+            row.source,
+            row.requested_version.as_deref().unwrap_or("<latest>")
+        ),
+        ToolState::Installed => println!(
+            "{} installed {} {} {} {} {} {}",
+            row.cmd,
+            row.source,
+            row.requested_version.as_deref().unwrap_or("<latest>"),
+            row.release_tag.as_deref().unwrap_or("<unknown>"),
+            row.selected_binary.as_deref().unwrap_or("<unknown>"),
+            row.installed_path.as_deref().unwrap_or("<unknown>"),
+            row.verification
+                .map(VerificationState::as_str)
+                .unwrap_or("unknown")
+        ),
+    }
+}
+
+fn package_record_output(record: &PackageRecord) -> Result<PackageRecordOutput> {
+    Ok(PackageRecordOutput {
+        package_spec: record.package_spec.clone(),
+        source: record.source.clone(),
+        source_provider: record.source_provider,
+        source_host: record.source_host.clone(),
+        source_path: record.source_path.clone(),
+        requested_version: record.requested_version.clone(),
+        release_tag: record.release_tag.clone(),
+        asset_name: record.asset_name.clone(),
+        asset_url: sanitize_persisted_url(&record.asset_url)?,
+        target: HostTarget {
+            os: record.target_os,
+            arch: record.target_arch,
+            libc: record.target_libc,
+        },
+        archive_format: record.archive_format,
+        selected_binary: record.selected_binary.clone(),
+        installed_path: record.installed_path.clone(),
+        cache_key: record.cache_key.clone(),
+        cache_path: record.cache_path.clone(),
+        sha256: record.sha256.clone(),
+        checksum_source: record.checksum_source,
+        verification: verification_state(record),
+        signature_available: record.signature_available,
+        signature_verified: record.signature_verified,
+    })
+}
+
+fn selected_asset_output(
+    decision: &crate::assets::CandidateDecision,
+) -> Result<SelectedAssetOutput> {
+    Ok(SelectedAssetOutput {
+        asset_name: decision.asset_name.clone(),
+        asset_url: selected_asset_display_url(decision)?,
+        archive_format: candidate_archive_format(decision.kind),
+        score: decision.score,
+    })
+}
+
+fn candidate_output(decision: &crate::assets::CandidateDecision) -> CandidateOutput {
+    CandidateOutput {
+        asset_name: decision.asset_name.clone(),
+        kind: decision.kind.as_str().to_string(),
+        archive_format: candidate_archive_format(decision.kind),
+        detected_os: decision.detected_os,
+        detected_arch: decision.detected_arch,
+        detected_libc: decision.detected_libc,
+        score: decision.score,
+        eligible: decision.eligible,
+        recognized_pattern: decision.recognized_pattern,
+        rejection_reason: decision.rejection_reason.clone(),
+    }
+}
+
+fn candidate_archive_format(kind: crate::assets::ArtifactKind) -> Option<ArchiveFormat> {
+    match kind {
+        crate::assets::ArtifactKind::Archive(format) => Some(format),
+        crate::assets::ArtifactKind::BareExecutable => Some(ArchiveFormat::BareExecutable),
+        _ => None,
+    }
+}
+
+fn json_path_state(path: &Path) -> PathState {
+    if path.exists() {
+        PathState::Present
     } else {
-        "unverified"
+        PathState::Missing
+    }
+}
+
+fn verification_state(record: &PackageRecord) -> VerificationState {
+    if record.has_verified_source() {
+        VerificationState::Verified
+    } else {
+        VerificationState::Unverified
     }
 }
 
@@ -4209,7 +4771,7 @@ fn repo_name(spec: &SourceSpec) -> &str {
     spec.path.rsplit('/').next().unwrap_or(&spec.path)
 }
 
-fn verify(args: VerifyArgs) -> Result<i32> {
+fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
     info!(
         command = "verify",
         read_only = true,
@@ -4231,6 +4793,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     };
     let cache_paths = CachePaths::new(&home);
     let mut checked = 0usize;
+    let mut checks = Vec::new();
     let mut locked = BTreeSet::new();
     let mut local_runtime_locks = BTreeMap::new();
     if let Some(root) = &root {
@@ -4238,14 +4801,16 @@ fn verify(args: VerifyArgs) -> Result<i32> {
         let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
         local_runtime_locks =
             local_runtime_lock_records(&manifest, &lockfile, &HostTarget::current()?)?;
-        let (lock_checked, lock_commands) = verify_lockfile_records(
+        let (lock_checked, lock_commands, lock_checks) = verify_lockfile_records(
             &root.join(LOCKFILE_FILE),
             lockfile,
             Some((&manifest, root.as_path())),
             args.require_verified,
+            output,
         )?;
         checked += lock_checked;
         locked = lock_commands;
+        checks.extend(lock_checks);
     }
     for (cmd, record) in list_package_records(&paths)? {
         validate_command_name(&cmd)?;
@@ -4276,13 +4841,25 @@ fn verify(args: VerifyArgs) -> Result<i32> {
         require_regular_managed_file(&installed_path)?;
         require_executable_managed_file(&installed_path)?;
         verify_installed_binary_contents(&cache_paths, &record, &installed_path)?;
-        println!("{cmd} verified {}", record.checksum_source.as_str());
+        checks.push(verify_check_output(cmd.clone(), None, &record));
+        if !output.is_json() {
+            println!("{cmd} verified {}", record.checksum_source.as_str());
+        }
         if !locked.contains(&cmd) {
             checked += 1;
         }
     }
     if let Some(root) = &root {
         assert_local_runtime_records_complete(root, &local_runtime_locks)?;
+    }
+    if output.is_json() {
+        return print_json(&VerifyOutput {
+            command: "verify",
+            scope,
+            require_verified: args.require_verified,
+            checked,
+            checks,
+        });
     }
     println!("checked {checked}");
     Ok(0)
@@ -4514,9 +5091,11 @@ fn verify_lockfile_records(
     lockfile: crate::storage::Lockfile,
     manifest: Option<(&Manifest, &Path)>,
     require_verified: bool,
-) -> Result<(usize, BTreeSet<String>)> {
+    output: OutputMode,
+) -> Result<(usize, BTreeSet<String>, Vec<VerifyCheckOutput>)> {
     let mut checked = 0usize;
     let mut locked = BTreeSet::new();
+    let mut checks = Vec::new();
     if let Some((manifest, root)) = manifest {
         for (cmd, manifest_tool) in &manifest.tools {
             validate_command_name(cmd)?;
@@ -4604,14 +5183,21 @@ fn verify_lockfile_records(
             validate_provider_digest_evidence(&record)?;
             validate_locked_record_current_release(lockfile_path, &cmd, &record)?;
             locked.insert(cmd.clone());
-            println!(
-                "{cmd} lock verified {target_key} {}",
-                record.checksum_source.as_str()
-            );
+            checks.push(verify_check_output(
+                cmd.clone(),
+                Some(target.clone()),
+                &record,
+            ));
+            if !output.is_json() {
+                println!(
+                    "{cmd} lock verified {target_key} {}",
+                    record.checksum_source.as_str()
+                );
+            }
             checked += 1;
         }
     }
-    Ok((checked, locked))
+    Ok((checked, locked, checks))
 }
 
 fn init(args: InitArgs) -> Result<i32> {
@@ -4988,27 +5574,28 @@ mod tests {
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        normalize_bin_selection, override_snippet_candidate, parse_manifest_source,
-        parse_manifest_tool_source, project_root_from, read_archive_selected_binary,
-        record_matches_current_provider_digest, release_diagnostic_lines,
-        remove_global_tool_from_paths, remove_local_manifest_orphans,
-        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
-        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
-        shell_path, shell_quote, snapshot_cache_metadata, source_install_scope,
-        target_override_snippet, update_manifest_tool_source, validate_locked_record_artifact,
-        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries,
-        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
-        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
+        normalize_bin_selection, override_snippet_candidate, package_record_output,
+        parse_manifest_source, parse_manifest_tool_source, project_root_from,
+        read_archive_selected_binary, record_matches_current_provider_digest,
+        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
+        remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
+        restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
+        selected_asset_display_url, shell_path, shell_quote, snapshot_cache_metadata,
+        source_install_scope, target_override_snippet, update_manifest_tool_source,
+        validate_locked_record_artifact, validate_locked_record_current_asset,
+        validate_locked_record_current_provider_digest, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verify_check_output, verify_installed_binary_contents,
+        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_regular,
+        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, OutputMode, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
         cli::Shell,
         contract::{
             ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceProvider, SourceSpec,
-            TargetArch, TargetLibc, TargetOs,
+            TargetArch, TargetLibc, TargetOs, VerificationState,
         },
         error::BinpmError,
         release::ReleaseAsset,
@@ -6258,11 +6845,32 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("unverified target is rejected");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("unverified target is rejected");
 
         assert!(error.to_string().contains("github:owner/tool@1.0.0"));
+    }
+
+    #[test]
+    fn json_lockfile_verify_check_reports_target_record() {
+        let mut record = package_record();
+        mark_github_verified(&mut record);
+
+        let check = verify_check_output("tool".to_string(), Some(linux_target()), &record);
+
+        assert_eq!(check.cmd, "tool");
+        let target = check.target.expect("target");
+        assert_eq!(target.os, TargetOs::Linux);
+        assert_eq!(target.arch, TargetArch::X86_64);
+        assert_eq!(target.libc, TargetLibc::Gnu);
+        assert_eq!(check.checksum_source, ChecksumSource::GitHubDigest);
+        assert_eq!(check.verification, VerificationState::Verified);
     }
 
     #[test]
@@ -6281,9 +6889,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, false)
-                .expect_err("missing digest evidence is rejected");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            false,
+            OutputMode::Human,
+        )
+        .expect_err("missing digest evidence is rejected");
 
         assert!(error
             .to_string()
@@ -6807,9 +7420,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("mismatched target is stale");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("mismatched target is stale");
 
         assert!(error.to_string().contains("stale"));
     }
@@ -6839,6 +7457,7 @@ mod tests {
             lockfile,
             Some((&manifest, temp_dir.path())),
             true,
+            OutputMode::Human,
         )
         .expect_err("manifest tool must be locked");
 
@@ -6868,6 +7487,7 @@ mod tests {
             lockfile,
             Some((&manifest, temp_dir.path())),
             true,
+            OutputMode::Human,
         )
         .expect_err("lock-only tool is stale");
 
@@ -7557,6 +8177,49 @@ mod tests {
     }
 
     #[test]
+    fn explain_json_diagnostics_preserve_installer_remediation() {
+        let target = linux_target();
+        let assets = [
+            ReleaseAsset {
+                name: "Tool-1.0.0.dmg".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/Tool.dmg".to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+            ReleaseAsset {
+                name: "Tool-1.0.0.msi".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/Tool.msi".to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+        ];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+        let diagnostics = release_diagnostics(&decisions, &target);
+        let payload = serde_json::to_value(&diagnostics[0]).expect("serialize diagnostic");
+
+        assert_eq!(payload["kind"], "unsupported-installers");
+        assert_eq!(payload["target"]["os"], "linux");
+        assert_eq!(payload["target"]["arch"], "x86_64");
+        assert_eq!(payload["target"]["libc"], "gnu");
+        assert_eq!(payload["unsupported_installers"][0], "Tool-1.0.0.dmg");
+        assert_eq!(payload["unsupported_installers"][1], "Tool-1.0.0.msi");
+        assert!(payload["remediation"]
+            .as_str()
+            .expect("remediation")
+            .contains("portable archive or bare executable"));
+    }
+
+    #[test]
     fn explain_diagnostics_suggest_musl_override_for_missing_libc_assets() {
         let target = HostTarget {
             os: TargetOs::Linux,
@@ -7671,6 +8334,19 @@ mod tests {
 
         assert!(error.to_string().contains("credentials"));
         assert!(!error.to_string().contains("token"));
+    }
+
+    #[test]
+    fn package_record_json_rejects_unsafe_persisted_asset_url() {
+        let mut record = package_record();
+        record.asset_url =
+            "https://github.com/owner/tool/releases/download/1.0.0/tool?token=secret#frag"
+                .to_string();
+
+        let error = package_record_output(&record).expect_err("unsafe persisted URL");
+
+        assert!(error.to_string().contains("must not include query"));
+        assert!(!error.to_string().contains("secret"));
     }
 
     #[test]
@@ -8015,9 +8691,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("unsafe asset url");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("unsafe asset url");
 
         assert!(error.to_string().contains("must not include query"));
         assert!(!error.to_string().contains("secret"));
@@ -8044,9 +8725,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("absolute installed path is stale");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("absolute installed path is stale");
 
         assert!(error.to_string().contains("stale"));
     }
@@ -8067,9 +8753,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("target alias is stale");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("target alias is stale");
 
         assert!(error.to_string().contains("stale"));
     }
@@ -8093,9 +8784,14 @@ mod tests {
             )]),
         };
 
-        let error =
-            verify_lockfile_records(&temp_dir.path().join("binpm.lock"), lockfile, None, true)
-                .expect_err("runtime fields are stale");
+        let error = verify_lockfile_records(
+            &temp_dir.path().join("binpm.lock"),
+            lockfile,
+            None,
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("runtime fields are stale");
 
         assert!(error.to_string().contains("stale"));
     }
