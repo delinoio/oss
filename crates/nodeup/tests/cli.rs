@@ -1583,6 +1583,38 @@ tracked_selectors = ["22.1.0"]
 
 #[test]
 #[serial]
+fn default_json_reports_legacy_reserved_case_link_metadata() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-default-json");
+    fs::create_dir_all(runtime_dir.join("bin")).unwrap();
+
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ndefault_selector = \"LTS\"\ntracked_selectors = \
+             [\"LTS\"]\n\n[linked_runtimes]\nLTS = \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "default"])
+        .output()
+        .expect("default --output json with legacy reserved-case linked selector");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["default_selector"], "LTS");
+    assert_eq!(payload["selector_kind"], "linked-runtime");
+    assert_eq!(payload["canonical_selector"], "LTS");
+    assert_eq!(payload["resolved_runtime"], "LTS");
+    assert!(payload["resolution_error"].is_null());
+}
+
+#[test]
+#[serial]
 fn default_human_unresolved_still_prints_selector() {
     let env = TestEnv::new();
     let settings_file = env.config_root.join("settings.toml");

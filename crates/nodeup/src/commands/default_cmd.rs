@@ -7,7 +7,7 @@ use crate::{
     errors::{ErrorKind, NodeupError, Result},
     release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
-    selectors::RuntimeSelector,
+    selectors::stored_selector_metadata,
     types::RuntimeSelectorSource,
     NodeupApp,
 };
@@ -120,21 +120,16 @@ pub fn execute(
     let default_selector = settings.default_selector;
     let selector_metadata = default_selector
         .as_deref()
-        .and_then(|selector| RuntimeSelector::parse(selector).ok())
-        .map(|selector| {
-            (
-                selector.kind().as_str().to_string(),
-                selector.canonical_id(),
-                selector.alias_of(),
-            )
-        });
+        .and_then(|selector| stored_selector_metadata(selector).ok());
     let response = DefaultResponse {
         default_selector: default_selector.clone(),
-        selector_kind: selector_metadata.as_ref().map(|(kind, _, _)| kind.clone()),
+        selector_kind: selector_metadata
+            .as_ref()
+            .map(|metadata| metadata.kind.as_str().to_string()),
         canonical_selector: selector_metadata
             .as_ref()
-            .map(|(_, canonical, _)| canonical.clone()),
-        selector_alias_of: selector_metadata.and_then(|(_, _, alias_of)| alias_of),
+            .map(|metadata| metadata.canonical_selector.clone()),
+        selector_alias_of: selector_metadata.and_then(|metadata| metadata.alias_of),
         resolved_runtime,
         release_index,
         resolution_error,
