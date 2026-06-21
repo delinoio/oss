@@ -28,6 +28,45 @@ nodeup run --install <runtime> node --version
 
 `nodeup run` requires `--install` to install a missing runtime. Managed alias dispatch installs a missing selected version automatically.
 
+## Runtime Removal Is Blocked
+
+Symptom:
+
+```text
+Cannot uninstall v22.1.0; referenced by blocking runtime selectors
+```
+
+`nodeup toolchain uninstall <version>` removes exact installed versions only. It refuses to remove a runtime while an exact-version global default or directory override still points at that runtime.
+
+Inspect the blocking references:
+
+```bash
+nodeup --output json toolchain uninstall 22.1.0
+nodeup default
+nodeup override list
+```
+
+If the blocker is `global-default`, change the default first:
+
+```bash
+nodeup default <runtime>
+nodeup toolchain uninstall 22.1.0
+```
+
+If the blocker is `directory-override`, remove or update the override path reported in the error:
+
+```bash
+nodeup override unset --path <path>
+nodeup toolchain uninstall 22.1.0
+```
+
+```bash
+nodeup override set <runtime> --path <path>
+nodeup toolchain uninstall 22.1.0
+```
+
+JSON errors expose `diagnostics.blockers` with the blocker `reference_type`, `path`, `selector`, `runtime`, `clear_command`, and `change_command`.
+
 ## Command Does Not Exist
 
 Check the active runtime and executable path:

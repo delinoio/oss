@@ -1156,11 +1156,35 @@ fn uninstall_blocks_default_selector_with_mixed_version_spelling() {
 
     env.command().args(["default", "22.1.0"]).assert().success();
 
-    env.command()
-        .args(["toolchain", "uninstall", "v22.1.0"])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("used as the default runtime"));
+    let output = env
+        .command()
+        .args(["--output", "json", "toolchain", "uninstall", "v22.1.0"])
+        .output()
+        .expect("uninstall default blocker");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "conflict");
+    assert_eq!(
+        payload["diagnostics"]["blocked_versions"],
+        serde_json::json!(["v22.1.0"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["reference_type"],
+        "global-default"
+    );
+    assert_eq!(payload["diagnostics"]["blockers"][0]["runtime"], "v22.1.0");
+    assert_eq!(payload["diagnostics"]["blockers"][0]["selector"], "22.1.0");
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["path"],
+        env.config_root.join("settings.toml").to_str().unwrap()
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["change_command"],
+        "nodeup default <runtime>"
+    );
 }
 
 #[test]
@@ -1192,12 +1216,82 @@ fn uninstall_blocks_override_selector_with_mixed_version_spelling() {
         .assert()
         .success();
 
+    let output = env
+        .command()
+        .args(["--output", "json", "toolchain", "uninstall", "v22.1.0"])
+        .output()
+        .expect("uninstall override blocker");
+
+    assert_eq!(output.status.code(), Some(6));
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["reference_type"],
+        "directory-override"
+    );
+    assert_eq!(payload["diagnostics"]["blockers"][0]["runtime"], "v22.1.0");
+    assert_eq!(payload["diagnostics"]["blockers"][0]["selector"], "v22.1.0");
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["path"],
+        project_dir.to_str().unwrap()
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["clear_command"],
+        format!("nodeup override unset --path {}", project_dir.display())
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["change_command"],
+        format!(
+            "nodeup override set <runtime> --path {}",
+            project_dir.display()
+        )
+    );
+}
+
+#[test]
+#[serial]
+fn uninstall_reports_all_default_and_override_blockers_with_follow_up_commands() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-combined-blockers");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    env.command().args(["default", "22.1.0"]).assert().success();
     env.command()
-        .args(["toolchain", "uninstall", "v22.1.0"])
+        .args([
+            "override",
+            "set",
+            "v22.1.0",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["toolchain", "uninstall", "22.1.0"])
         .assert()
         .failure()
+        .code(6)
+        .stderr(predicates::str::contains("global-default path="))
+        .stderr(predicates::str::contains("directory-override path="))
+        .stderr(predicates::str::contains("nodeup default <runtime>"))
+        .stderr(predicates::str::contains(format!(
+            "nodeup override unset --path {}",
+            project_dir.display()
+        )))
         .stderr(predicates::str::contains(
-            "referenced by a directory override",
+            "nodeup toolchain uninstall v22.1.0",
         ));
 }
 
@@ -1270,7 +1364,8 @@ fn uninstall_is_atomic_when_later_target_conflicts_with_default() {
         .args(["toolchain", "uninstall", "22.1.0", "24.0.0"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("used as the default runtime"));
+        .stderr(predicates::str::contains("global-default path="))
+        .stderr(predicates::str::contains("nodeup default <runtime>"));
 
     assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
     assert!(env.data_root.join("toolchains").join("v24.0.0").exists());
@@ -1303,6 +1398,67 @@ fn uninstall_is_atomic_when_any_target_is_not_installed() {
         .stderr(predicates::str::contains(
             "Runtime v24.0.0 is not installed",
         ));
+
+    assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn uninstall_reports_reference_blockers_before_missing_targets() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "uninstall",
+            "22.1.0",
+            "24.0.0",
+        ])
+        .output()
+        .expect("uninstall blocked runtime with missing later target");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "conflict");
+    assert_eq!(
+        payload["diagnostics"]["blocked_versions"],
+        serde_json::json!(["v22.1.0"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["reference_type"],
+        "global-default"
+    );
+    assert_eq!(payload["diagnostics"]["blockers"][0]["runtime"], "v22.1.0");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Cannot uninstall v22.1.0"));
+    assert!(!payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Runtime v24.0.0 is not installed"));
 
     assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
 }
@@ -4487,6 +4643,29 @@ fn toolchain_uninstall_linked_runtime_selector_points_to_unlink() {
             "`toolchain uninstall` only supports exact version selectors",
         ))
         .stderr(predicates::str::contains("nodeup toolchain unlink <name>"));
+}
+
+#[test]
+#[serial]
+fn toolchain_uninstall_channel_selector_rejection_stays_distinct_from_reference_blockers() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "toolchain", "uninstall", "lts"])
+        .output()
+        .expect("uninstall channel selector");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert!(payload["diagnostics"].is_null());
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("only supports exact version selectors"));
 }
 
 #[test]
