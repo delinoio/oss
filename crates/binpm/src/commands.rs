@@ -28,7 +28,9 @@ use crate::{
         TargetOs,
     },
     error::{BinpmError, Result},
-    release::{client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset},
+    release::{
+        client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset, ReleaseClient,
+    },
     storage::{
         archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
         install_bare_executable, install_executable_bytes, installed_filename,
@@ -567,7 +569,7 @@ fn update(args: UpdateArgs) -> Result<i32> {
     }
     print_update_plan(scope, &args.cmd)?;
     match scope {
-        Scope::Local => install_local_manifest(frozen_lockfile, args.require_verified, &args.cmd),
+        Scope::Local => update_local_manifest(frozen_lockfile, args.require_verified, &args.cmd),
         Scope::Global => Err(BinpmError::NotImplemented {
             command: "update global",
         }),
@@ -1093,6 +1095,98 @@ fn install_local_manifest(
         }
     }
     Ok(0)
+}
+
+fn update_local_manifest(
+    frozen_lockfile: bool,
+    require_verified: bool,
+    selected: &[String],
+) -> Result<i32> {
+    if frozen_lockfile {
+        let root = require_manifest_root()?;
+        let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
+        validate_frozen_local_update_latest(&root, &manifest, selected)?;
+    }
+    install_local_manifest(frozen_lockfile, require_verified, selected)
+}
+
+fn validate_frozen_local_update_latest(
+    root: &Path,
+    manifest: &Manifest,
+    selected: &[String],
+) -> Result<()> {
+    let lockfile_path = root.join(LOCKFILE_FILE);
+    let lockfile = read_lockfile(&lockfile_path)?;
+    let target = HostTarget::current()?;
+    for (cmd, tool) in &manifest.tools {
+        if !selected.is_empty() && !selected.contains(cmd) {
+            continue;
+        }
+        let spec = parse_manifest_tool_source(tool)?;
+        if spec.version.is_some() {
+            continue;
+        }
+        let locked_tool = lockfile.tools.get(cmd).ok_or(BinpmError::FrozenLockfile {
+            path: lockfile_path.clone(),
+        })?;
+        if locked_tool.source != spec.source_without_version()
+            || lock_targets_conflict_with_manifest(
+                &lockfile_path,
+                root,
+                cmd,
+                &spec,
+                Some(tool),
+                locked_tool,
+            )
+        {
+            return Err(BinpmError::StaleLockfile {
+                path: lockfile_path.clone(),
+                cmd: cmd.clone(),
+            });
+        }
+        let record = locked_tool
+            .targets
+            .get(&target.key())
+            .ok_or(BinpmError::FrozenLockfile {
+                path: lockfile_path.clone(),
+            })?;
+        if record.requested_version != spec.version {
+            return Err(BinpmError::StaleLockfile {
+                path: lockfile_path.clone(),
+                cmd: cmd.clone(),
+            });
+        }
+        assert_lock_record_matches_source_and_target(&lockfile_path, cmd, &spec, &target, record)?;
+        assert_lock_matches_manifest_tool(root, cmd, Some(tool), &target, record)?;
+        validate_frozen_update_versionless_current_release(
+            &lockfile_path,
+            cmd,
+            &spec,
+            record,
+            client_for_source(&spec)?.as_ref(),
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_frozen_update_versionless_current_release(
+    lockfile_path: &Path,
+    cmd: &str,
+    spec: &SourceSpec,
+    record: &PackageRecord,
+    client: &dyn ReleaseClient,
+) -> Result<()> {
+    if spec.version.is_some() {
+        return Ok(());
+    }
+    let release = client.resolve_release(spec)?.release;
+    if release.tag != record.release_tag {
+        return Err(BinpmError::StaleLockfile {
+            path: lockfile_path.to_path_buf(),
+            cmd: cmd.to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn validate_selected_manifest_entries(manifest: &Manifest, selected: &[String]) -> Result<()> {
@@ -4430,13 +4524,14 @@ mod tests {
         require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
         sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
         shell_path, shell_quote, snapshot_cache_metadata, source_install_scope,
-        update_manifest_tool_source, validate_locked_record_artifact,
-        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries,
-        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
-        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
+        update_manifest_tool_source, validate_frozen_update_versionless_current_release,
+        validate_locked_record_artifact, validate_locked_record_current_asset,
+        validate_locked_record_current_provider_digest, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verify_installed_binary_contents,
+        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_regular,
+        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4445,8 +4540,8 @@ mod tests {
             ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceProvider, SourceSpec,
             TargetArch, TargetLibc, TargetOs,
         },
-        error::BinpmError,
-        release::ReleaseAsset,
+        error::{BinpmError, Result},
+        release::{Release, ReleaseAsset, ReleaseClient, ReleaseSelection},
         storage::{
             managed_installed_path, read_cache_records, require_regular_managed_file,
             validate_installed_binary_path, write_cache_record, write_lockfile, write_manifest,
@@ -4455,6 +4550,35 @@ mod tests {
             LOCKFILE_FILE, MANIFEST_FILE,
         },
     };
+
+    struct StaticReleaseClient {
+        tag: &'static str,
+    }
+
+    impl ReleaseClient for StaticReleaseClient {
+        fn list_releases(&self, _source: &SourceSpec) -> Result<Vec<Release>> {
+            Ok(vec![Release {
+                tag: self.tag.to_string(),
+                assets: vec![],
+                stable: true,
+                released_at: None,
+                stability_reason: None,
+            }])
+        }
+
+        fn resolve_release(&self, _source: &SourceSpec) -> Result<ReleaseSelection> {
+            Ok(ReleaseSelection {
+                release: Release {
+                    tag: self.tag.to_string(),
+                    assets: vec![],
+                    stable: true,
+                    released_at: None,
+                    stability_reason: None,
+                },
+                decision: "test release".to_string(),
+            })
+        }
+    }
 
     #[test]
     fn source_installs_default_to_global_scope() {
@@ -6776,6 +6900,65 @@ mod tests {
         .expect_err("changed locked asset URL rejected");
 
         assert!(matches!(error, BinpmError::StaleLockfile { .. }));
+    }
+
+    #[test]
+    fn frozen_update_rejects_versionless_lock_when_latest_changed() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source spec");
+        let mut record = package_record();
+        record.package_spec = "github:owner/tool".to_string();
+        record.requested_version = None;
+        record.release_tag = "1.0.0".to_string();
+        let client = StaticReleaseClient { tag: "1.1.0" };
+
+        let error = validate_frozen_update_versionless_current_release(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &record,
+            &client,
+        )
+        .expect_err("latest moved");
+
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
+    }
+
+    #[test]
+    fn frozen_update_accepts_versionless_lock_when_latest_matches() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source spec");
+        let mut record = package_record();
+        record.package_spec = "github:owner/tool".to_string();
+        record.requested_version = None;
+        record.release_tag = "1.0.0".to_string();
+        let client = StaticReleaseClient { tag: "1.0.0" };
+
+        validate_frozen_update_versionless_current_release(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &record,
+            &client,
+        )
+        .expect("latest still matches lock");
+    }
+
+    #[test]
+    fn frozen_update_does_not_check_latest_for_versioned_lock() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let record = package_record();
+        let client = StaticReleaseClient { tag: "1.1.0" };
+
+        validate_frozen_update_versionless_current_release(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &record,
+            &client,
+        )
+        .expect("versioned manifest pins do not advance during update");
     }
 
     #[test]
