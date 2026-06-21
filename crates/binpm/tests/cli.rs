@@ -69,6 +69,11 @@ fn help_includes_initial_command_surface() {
         .assert()
         .success()
         .stdout(predicate::str::contains("install"))
+        .stdout(predicate::str::contains(
+            "Execute a local manifest command or one-off package command",
+        ))
+        .stdout(predicate::str::contains("exec"))
+        .stdout(predicate::str::contains("run"))
         .stdout(predicate::str::contains("cache"))
         .stdout(predicate::str::contains("verify"))
         .stdout(predicate::str::contains("env"))
@@ -94,6 +99,44 @@ fn verbose_flag_overrides_binpm_log_env_filter() {
         .stderr(predicate::str::contains(
             "Rendered PATH environment commands",
         ));
+}
+
+#[test]
+fn add_and_x_help_include_explicit_bin_selection() {
+    let mut add = binpm();
+    add.args(["add", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--bin <BIN>"));
+
+    let mut exec = binpm();
+    exec.args(["x", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--bin <BIN>"));
+}
+
+#[test]
+fn execution_aliases_accept_package_and_forwarded_flags() {
+    for alias in ["exec", "run"] {
+        let mut command = binpm();
+
+        command
+            .args([
+                alias,
+                "--package",
+                "not-a-source",
+                "tool",
+                "--",
+                "--package",
+                "literal",
+            ])
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(predicate::str::contains("Invalid source spec"))
+            .stderr(predicate::str::contains("literal").not());
+    }
 }
 
 #[test]
