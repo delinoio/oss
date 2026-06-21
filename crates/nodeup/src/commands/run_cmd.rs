@@ -9,6 +9,7 @@ use crate::{
     commands::print_output,
     errors::{NodeupError, Result},
     process::{run_command, DelegatedStdioPolicy},
+    release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
     types::RuntimeSelectorSource,
     NodeupApp,
@@ -19,6 +20,8 @@ struct RunResponse {
     runtime: String,
     command: String,
     exit_code: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
 
 pub fn execute(
@@ -43,6 +46,7 @@ pub fn execute(
     let resolved = app
         .resolver
         .resolve_selector_with_source(runtime, RuntimeSelectorSource::Explicit)?;
+    let release_index = app.resolver.release_index_diagnostic();
 
     if let ResolvedRuntimeTarget::Version { version } = &resolved.target {
         if !app.store.is_installed(version) {
@@ -125,12 +129,29 @@ pub fn execute(
         runtime: resolved.runtime_id(),
         command: delegated_command.clone(),
         exit_code,
+        release_index,
     };
-    let human = format!(
-        "Delegated command '{}' exited with status {}",
-        delegated_command, exit_code
+    let human = append_release_index_human_note(
+        format!(
+            "Delegated command '{}' exited with status {}",
+            delegated_command, exit_code
+        ),
+        response.release_index.as_ref(),
     );
 
     print_output(output, color, &human, &response)?;
     Ok(exit_code)
+}
+
+fn append_release_index_human_note(
+    human: String,
+    diagnostic: Option<&ReleaseIndexResolutionDiagnostic>,
+) -> String {
+    match diagnostic {
+        Some(diagnostic) => format!(
+            "{human} (release index: stale cache fallback, age={}s, selected={})",
+            diagnostic.cache_age_seconds, diagnostic.selected_version
+        ),
+        None => human,
+    }
 }

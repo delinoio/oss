@@ -41,6 +41,16 @@ binpm outdated [--local|--global]
 
 `binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, and `binpm outdated` must not mutate manifests, lockfiles, package records, cache entries, or executables.
 
+## Environment
+
+```bash
+binpm env --shell <bash|zsh|fish|powershell>
+```
+
+`binpm env` prints shell-specific commands for adding the project-local and global binpm binary directories to `PATH`. It labels the global command as profile-safe and the project-local command as current-project/session-only. It does not edit shell profile files.
+
+Supported shell values are `bash`, `zsh`, `fish`, and `powershell`. `PowerShell` is accepted case-insensitively. `cmd` is a recognized but deferred value and returns an unsupported-shell diagnostic.
+
 ## Cache
 
 ```bash
