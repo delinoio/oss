@@ -236,6 +236,7 @@ fn show_command(command: &ShowCommand) -> NodeupShowCommand {
     match command {
         ShowCommand::ActiveRuntime => NodeupShowCommand::ActiveRuntime,
         ShowCommand::Home => NodeupShowCommand::Home,
+        ShowCommand::Color => NodeupShowCommand::Color,
     }
 }
 
@@ -243,6 +244,7 @@ fn show_command_path(command: NodeupShowCommand) -> &'static str {
     match command {
         NodeupShowCommand::ActiveRuntime => "nodeup.show.active-runtime",
         NodeupShowCommand::Home => "nodeup.show.home",
+        NodeupShowCommand::Color => "nodeup.show.color",
     }
 }
 
@@ -357,6 +359,14 @@ mod tests {
                 OutputFormat::Human,
                 "nodeup.show.home",
                 json!({ "output": "human", "show_command": "home" }),
+            ),
+            (
+                Command::Show {
+                    command: ShowCommand::Color,
+                },
+                OutputFormat::Human,
+                "nodeup.show.color",
+                json!({ "output": "human", "show_command": "color" }),
             ),
             (
                 Command::Update {
