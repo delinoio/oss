@@ -20,6 +20,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `apps/binpm-docs` must use the repository-default Rspress/Rsbuild-family static documentation toolchain and Cloudflare Pages deployment contract unless this project index and `docs/apps-binpm-docs-foundation.md` document a replacement.
 - The canonical production URL for `apps/binpm-docs` is `https://binpm.delino.io`.
 - binpm documentation routes exposed by `apps/binpm-docs` are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/troubleshooting`, and `/reference`.
+- `apps/binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in the top-level social links and in the document-page footer.
 - binpm documentation content must remain documentation-only and must not expand runtime behavior, release automation, package-manager backend scope, checksum discovery, signature verification, or global update behavior without corresponding runtime contract updates.
 - binpm documentation must not infer current product behavior or page content from the live `https://binpm.delino.io` site; repository contracts remain the source of truth.
 - The runtime implementation includes clap-based command parsing, discoverable global verbosity flags, enum-backed contract foundations, structured `tracing` setup, centralized CLI error handling, README/test scaffolding, release source parsing, provider release lookup clients, deterministic release asset candidate scoring, asset downloads with interactive large-download progress, archive extraction for documented formats, TOML-backed `binpm.toml` and `binpm.lock` parsing/writing, global and project-local package records, global cache metadata, URL sanitization, SHA-256 cache validation, and atomic file writes.
@@ -64,7 +65,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 
 ## Change Policy
 - Update this index and `docs/crates-binpm-foundation.md` together when CLI shape, local manifest or lockfile format, target selection, storage layout, cache behavior, security behavior, or heuristic scoring changes.
-- Update this index and `docs/apps-binpm-docs-foundation.md` in the same change for `apps/binpm-docs` path, route, toolchain, validation, production URL, or deployment contract updates.
+- Update this index and `docs/apps-binpm-docs-foundation.md` in the same change for `apps/binpm-docs` path, route, theme repository-link surface, toolchain, validation, production URL, or deployment contract updates.
 - Update root `AGENTS.md`, `apps/AGENTS.md`, and `crates/AGENTS.md` when `binpm` ownership, planned path status, or repository policy boundaries change.
 - Keep `crates/binpm` as an explicit Rust workspace member while runtime implementation continues.
 
