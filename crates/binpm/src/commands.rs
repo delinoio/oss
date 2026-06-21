@@ -1974,9 +1974,10 @@ fn validate_frozen_local_update_latest(
             continue;
         }
         let spec = parse_manifest_tool_source(tool)?;
-        let locked_tool = lockfile.tools.get(cmd).ok_or(BinpmError::FrozenLockfile {
-            path: lockfile_path.clone(),
-        })?;
+        let locked_tool = lockfile
+            .tools
+            .get(cmd)
+            .ok_or_else(|| frozen_lockfile_missing_record_error(&lockfile_path, cmd))?;
         if locked_tool.source != spec.source_without_version()
             || lock_targets_conflict_with_manifest(
                 &lockfile_path,
@@ -1995,9 +1996,7 @@ fn validate_frozen_local_update_latest(
         let record = locked_tool
             .targets
             .get(&target.key())
-            .ok_or(BinpmError::FrozenLockfile {
-                path: lockfile_path.clone(),
-            })?;
+            .ok_or_else(|| frozen_lockfile_missing_record_error(&lockfile_path, cmd))?;
         if record.requested_version != spec.version {
             return Err(BinpmError::StaleLockfile {
                 path: lockfile_path.clone(),
@@ -2015,6 +2014,19 @@ fn validate_frozen_local_update_latest(
         )?;
     }
     Ok(())
+}
+
+fn frozen_lockfile_missing_record_error(lockfile_path: &Path, cmd: &str) -> BinpmError {
+    if lockfile_path.exists() {
+        BinpmError::FrozenLockfileMissingRecord {
+            path: lockfile_path.to_path_buf(),
+            cmd: cmd.to_string(),
+        }
+    } else {
+        BinpmError::FrozenLockfile {
+            path: lockfile_path.to_path_buf(),
+        }
+    }
 }
 
 fn validate_frozen_update_current_release(
@@ -2548,9 +2560,10 @@ fn install_local_from_lock(
     let lockfile_path = root.join(LOCKFILE_FILE);
     let lockfile = read_lockfile(&lockfile_path)?;
     let target = HostTarget::current()?;
-    let locked_tool = lockfile.tools.get(cmd).ok_or(BinpmError::FrozenLockfile {
-        path: lockfile_path.clone(),
-    })?;
+    let locked_tool = lockfile
+        .tools
+        .get(cmd)
+        .ok_or_else(|| frozen_lockfile_missing_record_error(&lockfile_path, cmd))?;
     if locked_tool.source != spec.source_without_version() {
         return Err(BinpmError::StaleLockfile {
             path: lockfile_path.clone(),
@@ -2568,9 +2581,7 @@ fn install_local_from_lock(
         .get(cmd)
         .and_then(|tool| tool.targets.get(&target.key()))
         .cloned()
-        .ok_or(BinpmError::FrozenLockfile {
-            path: lockfile_path.clone(),
-        })?;
+        .ok_or_else(|| frozen_lockfile_missing_record_error(&lockfile_path, cmd))?;
     if record.requested_version != spec.version {
         return Err(BinpmError::StaleLockfile {
             path: lockfile_path.clone(),
@@ -4175,7 +4186,7 @@ fn remove_local_manifest_orphans(
         return Ok(());
     }
     if frozen_lockfile {
-        return Err(BinpmError::FrozenLockfile {
+        return Err(BinpmError::FrozenLockfileOrphanCleanup {
             path: lockfile_path,
         });
     }
@@ -5383,9 +5394,13 @@ fn verify_lockfile_records(
         for (cmd, manifest_tool) in &manifest.tools {
             validate_command_name(cmd)?;
             let spec = parse_manifest_tool_source(manifest_tool)?;
-            let locked_tool = lockfile.tools.get(cmd).ok_or(BinpmError::FrozenLockfile {
-                path: lockfile_path.to_path_buf(),
-            })?;
+            let locked_tool = lockfile
+                .tools
+                .get(cmd)
+                .ok_or_else(|| BinpmError::StaleLockfile {
+                    path: lockfile_path.to_path_buf(),
+                    cmd: cmd.clone(),
+                })?;
             if locked_tool.source != spec.source_without_version() || locked_tool.targets.is_empty()
             {
                 return Err(BinpmError::StaleLockfile {
@@ -7590,7 +7605,10 @@ mod tests {
         let error = remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new(), true)
             .expect_err("frozen orphan cleanup is rejected");
 
-        assert!(error.to_string().contains("Frozen lockfile"));
+        assert!(matches!(
+            error,
+            BinpmError::FrozenLockfileOrphanCleanup { .. }
+        ));
         let lockfile = crate::storage::read_lockfile(&temp_dir.path().join(LOCKFILE_FILE))
             .expect("read lockfile");
         assert!(lockfile.tools.contains_key("tool"));
@@ -7793,7 +7811,9 @@ mod tests {
         )
         .expect_err("manifest tool must be locked");
 
-        assert!(error.to_string().contains("Frozen lockfile"));
+        let message = error.to_string();
+        assert!(message.contains("stale"));
+        assert!(!message.contains("Frozen lockfile"));
     }
 
     #[test]
@@ -8717,7 +8737,7 @@ mod tests {
         )
         .expect_err("locked format mismatch rejected");
 
-        assert!(error.to_string().contains("Frozen lockfile"));
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
     }
 
     #[test]
