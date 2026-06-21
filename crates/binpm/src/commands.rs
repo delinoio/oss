@@ -1152,7 +1152,7 @@ fn install_local_from_lock(
     }
     validate_provider_digest_evidence(&record)?;
     validate_locked_record_artifact(&lockfile_path, cmd, &record, &target, tool)?;
-    validate_locked_record_current_release(&lockfile_path, cmd, &record, &target, tool)?;
+    validate_locked_record_current_release(&lockfile_path, cmd, &record)?;
     if record.archive_format != ArchiveFormat::BareExecutable {
         return Err(BinpmError::ArchiveExtractionNotImplemented {
             asset: record.asset_name,
@@ -1382,8 +1382,6 @@ fn validate_locked_record_current_release(
     lockfile_path: &Path,
     cmd: &str,
     record: &PackageRecord,
-    target: &HostTarget,
-    tool: Option<&ManifestTool>,
 ) -> Result<()> {
     let spec = locked_release_lookup_spec(record)?;
     let release = client_for_source(&spec)?.resolve_release(&spec)?.release;
@@ -1393,17 +1391,40 @@ fn validate_locked_record_current_release(
             cmd: cmd.to_string(),
         });
     }
-    let selected = select_manifest_asset(&spec, tool, target, &release.assets)?;
-    if selected.asset_name != record.asset_name
-        || selected_asset_display_url(&selected)? != record.asset_url
-    {
-        return Err(BinpmError::StaleLockfile {
-            path: lockfile_path.to_path_buf(),
-            cmd: cmd.to_string(),
-        });
-    }
+    validate_locked_record_current_asset(lockfile_path, cmd, record, &release.assets)?;
     validate_locked_record_current_provider_digest(lockfile_path, cmd, record, &release.assets)?;
     Ok(())
+}
+
+fn validate_locked_record_current_asset(
+    lockfile_path: &Path,
+    cmd: &str,
+    record: &PackageRecord,
+    assets: &[ReleaseAsset],
+) -> Result<()> {
+    for asset in assets
+        .iter()
+        .filter(|asset| asset.name == record.asset_name)
+    {
+        if release_asset_display_url(asset)? == record.asset_url {
+            return Ok(());
+        }
+    }
+    Err(BinpmError::StaleLockfile {
+        path: lockfile_path.to_path_buf(),
+        cmd: cmd.to_string(),
+    })
+}
+
+fn release_asset_display_url(asset: &ReleaseAsset) -> Result<String> {
+    let raw = asset
+        .provider_url
+        .as_deref()
+        .unwrap_or(&asset.url)
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(&asset.url);
+    sanitize_persisted_url(raw)
 }
 
 fn validate_locked_record_current_provider_digest(
@@ -2818,13 +2839,7 @@ fn verify_lockfile_records(
                 });
             }
             validate_provider_digest_evidence(&record)?;
-            validate_locked_record_current_release(
-                lockfile_path,
-                &cmd,
-                &record,
-                &target,
-                manifest_tool,
-            )?;
+            validate_locked_record_current_release(lockfile_path, &cmd, &record)?;
             locked.insert(cmd.clone());
             println!(
                 "{cmd} lock verified {target_key} {}",
@@ -3157,11 +3172,11 @@ mod tests {
         require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
         select_manifest_asset, selected_asset_display_url, shell_path, shell_quote,
         snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
-        validate_locked_record_artifact, validate_locked_record_current_provider_digest,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries,
-        verify_lockfile_records, verify_runtime_cache_bytes, ArtifactKind, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
+        validate_locked_record_artifact, validate_locked_record_current_asset,
+        validate_locked_record_current_provider_digest, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verify_lockfile_records, verify_runtime_cache_bytes,
+        ArtifactKind, InstalledPackage, InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4995,6 +5010,69 @@ mod tests {
             Some(&tool),
         )
         .expect("explicit override asset is accepted");
+    }
+
+    #[test]
+    fn frozen_lock_preserves_locked_asset_when_better_release_asset_appears() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let record = package_record();
+        let assets = [
+            ReleaseAsset {
+                name: record.asset_name.clone(),
+                url: record.asset_url.clone(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+            ReleaseAsset {
+                name: "tool-x86_64-unknown-linux-gnu".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool-x86_64-unknown-linux-gnu"
+                    .to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+        ];
+        let selected =
+            select_manifest_asset(&spec, None, &target, &assets).expect("best current asset");
+
+        assert_ne!(selected.asset_name, record.asset_name);
+        validate_locked_record_current_asset(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &record,
+            &assets,
+        )
+        .expect("locked asset remains valid while present with the same URL");
+    }
+
+    #[test]
+    fn frozen_lock_rejects_locked_asset_with_changed_current_url() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let record = package_record();
+        let assets = [ReleaseAsset {
+            name: record.asset_name.clone(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/renamed-tool-linux"
+                .to_string(),
+            provider_url: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+        }];
+
+        let error = validate_locked_record_current_asset(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &record,
+            &assets,
+        )
+        .expect_err("changed locked asset URL rejected");
+
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
     }
 
     #[test]
