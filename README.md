@@ -16,6 +16,7 @@ This repository hosts multiple products and shared tooling across apps, CLIs, se
 
 | Project ID | Purpose | Owned Paths | Status | Primary Docs |
 | --- | --- | --- | --- | --- |
+| `binpm` | Rust-based, Node-free binary package manager for installing and running command-line tools from release assets. | `crates/binpm` | `active` | [project-binpm](docs/project-binpm.md), [crates-binpm-foundation](docs/crates-binpm-foundation.md) |
 | `cargo-mono` | Cargo subcommand for Rust monorepo lifecycle management, including version bump and publish orchestration. | `crates/cargo-mono` | `active` | [project-cargo-mono](docs/project-cargo-mono.md), [crates-cargo-mono-foundation](docs/crates-cargo-mono-foundation.md) |
 | `nodeup` | Rust-based Node.js version manager with deterministic channel resolution, shell completions, and shim execution. | `crates/nodeup` | `active` | [project-nodeup](docs/project-nodeup.md), [crates-nodeup-foundation](docs/crates-nodeup-foundation.md) |
 | `with-watch` | Rust-based CLI wrapper that reruns delegated shell utilities and arbitrary commands when inferred or explicit filesystem inputs change. | `crates/with-watch` | `active` | [project-with-watch](docs/project-with-watch.md), [crates-with-watch-foundation](docs/crates-with-watch-foundation.md) |
