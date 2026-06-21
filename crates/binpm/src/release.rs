@@ -202,30 +202,27 @@ fn sort_gitlab_releases(releases: &mut [Release]) {
 
 pub fn select_release(source: &SourceSpec, releases: Vec<Release>) -> Result<ReleaseSelection> {
     if let Some(version) = &source.version {
-        let tried = matching_tag_candidates(version);
-        for expected in &tried {
-            if let Some(release) = releases.iter().find(|release| &release.tag == expected) {
-                debug!(
-                    source_provider = source.provider.as_str(),
-                    source_host = source.host,
-                    source_path = source.path,
-                    requested_version = version,
-                    release_tag = release.tag,
-                    "Matched explicit release version"
-                );
-                return Ok(ReleaseSelection {
-                    release: release.clone(),
-                    decision: format!(
-                        "explicit version `{version}` matched release tag `{}`",
-                        release.tag
-                    ),
-                });
-            }
+        if let Some(release) = releases.iter().find(|release| &release.tag == version) {
+            debug!(
+                source_provider = source.provider.as_str(),
+                source_host = source.host,
+                source_path = source.path,
+                requested_version = version,
+                release_tag = release.tag,
+                "Matched explicit release version"
+            );
+            return Ok(ReleaseSelection {
+                release: release.clone(),
+                decision: format!(
+                    "explicit version `{version}` matched release tag `{}`",
+                    release.tag
+                ),
+            });
         }
 
         return Err(BinpmError::ReleaseNotFound {
             package: source.to_string(),
-            message: format!("no release tag matched {}", tried.join(" or ")),
+            message: format!("no release tag matched `{version}`"),
         });
     }
 
@@ -254,16 +251,6 @@ pub fn select_release(source: &SourceSpec, releases: Vec<Release>) -> Result<Rel
         package: source.to_string(),
         message: "no stable release found".to_string(),
     })
-}
-
-pub fn matching_tag_candidates(version: &str) -> Vec<String> {
-    let mut tags = vec![version.to_string()];
-    if let Some(without_v) = version.strip_prefix('v') {
-        tags.push(without_v.to_string());
-    } else {
-        tags.push(format!("v{version}"));
-    }
-    tags
 }
 
 pub fn client_for_source(source: &SourceSpec) -> Result<Box<dyn ReleaseClient>> {
@@ -670,10 +657,9 @@ mod tests {
     use reqwest::header;
 
     use super::{
-        has_prerelease_tag, matching_tag_candidates, next_page_url, releases_page_url,
-        sanitize_url, select_release, sort_gitlab_releases, validate_pagination_url,
-        verify_gitlab_asset_redirects, GitHubReleaseClient, GitLabRelease, GitLabReleaseClient,
-        Release,
+        has_prerelease_tag, next_page_url, releases_page_url, sanitize_url, select_release,
+        sort_gitlab_releases, validate_pagination_url, verify_gitlab_asset_redirects,
+        GitHubReleaseClient, GitLabRelease, GitLabReleaseClient, Release,
     };
     use crate::{contract::SourceSpec, release::ReleaseAsset};
 
@@ -774,15 +760,9 @@ mod tests {
     }
 
     #[test]
-    fn explicit_release_matching_tries_exact_then_opposite_v_prefix() {
-        assert_eq!(matching_tag_candidates("1.2.3"), ["1.2.3", "v1.2.3"]);
-        assert_eq!(matching_tag_candidates("v1.2.3"), ["v1.2.3", "1.2.3"]);
-    }
-
-    #[test]
-    fn explicit_release_matching_selects_opposite_v_prefix() {
+    fn explicit_release_matching_requires_exact_tag() {
         let source: SourceSpec = "github:owner/repo@1.2.3".parse().expect("source");
-        let selected = select_release(
+        let error = select_release(
             &source,
             vec![Release {
                 tag: "v1.2.3".to_string(),
@@ -792,9 +772,9 @@ mod tests {
                 stability_reason: None,
             }],
         )
-        .expect("selected");
+        .expect_err("opposite v prefix should not match");
 
-        assert_eq!(selected.release.tag, "v1.2.3");
+        assert!(error.to_string().contains("no release tag matched `1.2.3`"));
     }
 
     #[test]

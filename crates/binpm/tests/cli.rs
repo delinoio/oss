@@ -124,9 +124,74 @@ fn help_includes_initial_command_surface() {
         .assert()
         .success()
         .stdout(predicate::str::contains("install"))
+        .stdout(predicate::str::contains(
+            "Execute a local manifest command or one-off package command",
+        ))
+        .stdout(predicate::str::contains("exec"))
+        .stdout(predicate::str::contains("run"))
         .stdout(predicate::str::contains("cache"))
         .stdout(predicate::str::contains("verify"))
-        .stdout(predicate::str::contains("env"));
+        .stdout(predicate::str::contains("env"))
+        .stdout(predicate::str::contains("--verbose"))
+        .stdout(predicate::str::contains("--debug"));
+}
+
+#[test]
+fn verbose_flag_overrides_binpm_log_env_filter() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_LOG", "binpm=off")
+        .env("BINPM_LOG_COLOR", "never")
+        .env("BINPM_HOME", &home)
+        .args(["--verbose", "env", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Rendered PATH environment commands").not())
+        .stderr(predicate::str::contains(
+            "Rendered PATH environment commands",
+        ));
+}
+
+#[test]
+fn add_and_x_help_include_explicit_bin_selection() {
+    let mut add = binpm();
+    add.args(["add", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--bin <BIN>"));
+
+    let mut exec = binpm();
+    exec.args(["x", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--bin <BIN>"));
+}
+
+#[test]
+fn execution_aliases_accept_package_and_forwarded_flags() {
+    for alias in ["exec", "run"] {
+        let mut command = binpm();
+
+        command
+            .args([
+                alias,
+                "--package",
+                "not-a-source",
+                "tool",
+                "--",
+                "--package",
+                "literal",
+            ])
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(predicate::str::contains("Invalid source spec"))
+            .stderr(predicate::str::contains("literal").not());
+    }
 }
 
 #[test]
@@ -220,10 +285,13 @@ fn env_prints_shell_path_exports() {
         .join(".binpm")
         .join("bin");
     let global_bin = home.join("bin");
-    let expected = format!(
-        "export PATH={}:{}${{PATH:+:$PATH}}",
-        bash_quote_path(&local_bin),
+    let expected_global = format!(
+        "export PATH={}${{PATH:+:$PATH}}",
         bash_quote_path(&global_bin)
+    );
+    let expected_local = format!(
+        "export PATH={}${{PATH:+:$PATH}}",
+        bash_quote_path(&local_bin)
     );
     let mut command = binpm();
 
@@ -233,7 +301,14 @@ fn env_prints_shell_path_exports() {
         .args(["env", "--shell", "bash"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(expected));
+        .stdout(predicate::str::contains(
+            "# Global bin: persist this line in shell profiles",
+        ))
+        .stdout(predicate::str::contains(expected_global))
+        .stdout(predicate::str::contains(
+            "# Project-local bin: use for the current project/session only",
+        ))
+        .stdout(predicate::str::contains(expected_local));
 }
 
 #[test]
@@ -451,6 +526,7 @@ fn cache_key_from_nested_directory_uses_manifest_ancestor_lockfile_without_git()
 #[test]
 fn doctor_from_nested_directory_reports_git_root_state() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
     fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
     fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
     fs::write(temp_dir.path().join("binpm.lock"), "root lock\n").expect("write lockfile");
@@ -460,11 +536,55 @@ fn doctor_from_nested_directory_reports_git_root_state() {
 
     command
         .current_dir(&nested_dir)
+        .env("BINPM_HOME", &home)
         .arg("doctor")
         .assert()
         .success()
         .stdout(predicate::str::contains("manifest: present"))
         .stdout(predicate::str::contains("lockfile: present"));
+}
+
+#[test]
+fn doctor_guides_path_setup_when_global_bin_is_absent_from_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("global_bin_on_path: no"))
+        .stdout(predicate::str::contains("binpm env --shell"))
+        .stdout(predicate::str::contains("profile changes are opt-in"))
+        .stdout(predicate::str::contains("persist only the global bin line"))
+        .stdout(predicate::str::contains(
+            "project-local PATH line is for the current project/session only",
+        ));
+}
+
+#[test]
+fn doctor_omits_path_setup_guidance_when_global_bin_is_on_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let global_bin = home.join("bin");
+    fs::create_dir_all(&global_bin).expect("create global bin");
+    let path = std::env::join_paths([global_bin.as_path()]).expect("join PATH");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("PATH", path)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("global_bin_on_path: yes"))
+        .stdout(predicate::str::contains("path_setup:").not());
 }
 
 #[test]
@@ -492,11 +612,8 @@ fn env_fish_preserves_paths_before_directories_exist() {
         .join(".binpm")
         .join("bin");
     let global_bin = home.join("bin");
-    let expected = format!(
-        "set -gx PATH '{}' '{}' $PATH",
-        local_bin.display(),
-        global_bin.display()
-    );
+    let expected_global = format!("set -gx PATH '{}' $PATH", global_bin.display());
+    let expected_local = format!("set -gx PATH '{}' $PATH", local_bin.display());
     let mut command = binpm();
 
     command
@@ -505,7 +622,8 @@ fn env_fish_preserves_paths_before_directories_exist() {
         .args(["env", "--shell", "fish"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(expected))
+        .stdout(predicate::str::contains(expected_global))
+        .stdout(predicate::str::contains(expected_local))
         .stdout(predicate::str::contains("fish_add_path").not());
 }
 
@@ -543,6 +661,22 @@ fn env_powershell_avoids_trailing_separator_when_path_is_unset() {
         .stdout(predicate::str::contains(
             "[System.IO.Path]::PathSeparator + $env:PATH",
         ));
+}
+
+#[test]
+fn env_cmd_reports_explicitly_deferred_shell() {
+    let mut command = binpm();
+
+    command
+        .args(["env", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Unsupported shell `cmd`"))
+        .stderr(predicate::str::contains(
+            "Supported shells: bash, zsh, fish, powershell",
+        ))
+        .stderr(predicate::str::contains("Deferred shell: cmd"));
 }
 
 #[test]
@@ -711,6 +845,32 @@ fn frozen_x_restores_missing_runtime_from_verified_cache() {
         fs::read_to_string(project.join("binpm.lock")).expect("read lockfile"),
         lock_before
     );
+}
+
+#[test]
+fn explain_rejects_latest_selector_with_omitted_version_hint() {
+    let mut command = binpm();
+
+    command
+        .args(["explain", "github:owner/repo@latest"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("`@latest` is not supported"))
+        .stderr(predicate::str::contains("omit `@version`"));
+}
+
+#[test]
+fn explain_rejects_semver_range_selector_with_exact_tag_hint() {
+    let mut command = binpm();
+
+    command
+        .args(["explain", "github:owner/repo@^1"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("semver ranges are not supported"))
+        .stderr(predicate::str::contains("use an exact release tag"));
 }
 
 #[test]

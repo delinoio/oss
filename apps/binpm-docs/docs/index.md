@@ -30,6 +30,8 @@ gitlab:<host>/<namespace...>/<project>[@version]
 
 Direct URLs, registries, and package-manager backends are outside the current contract.
 
+Explicit source versions must be exact release tags. Omit `@version` to select the latest stable release. `@latest`, SemVer range-like selectors, channel selectors such as `@beta`, and numeric major-version pins such as `@1` are rejected before manifest or lockfile writes.
+
 ## Validation Commands
 
 Use these commands from the repository root when changing binpm docs:

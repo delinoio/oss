@@ -20,15 +20,6 @@
         ]
       },
       {
-        "tab": "Nodeup",
-        "groups": [
-          {
-            "group": "Node Runtime Manager",
-            "pages": ["nodeup"]
-          }
-        ]
-      },
-      {
         "tab": "Cargo Mono",
         "groups": [
           {
@@ -36,6 +27,14 @@
             "pages": ["cargo-mono"]
           }
         ]
+      },
+      {
+        "tab": "Nodeup",
+        "href": "https://nodeup.delino.io"
+      },
+      {
+        "tab": "binpm",
+        "href": "https://binpm.delino.io"
       },
       {
         "tab": "Derun",

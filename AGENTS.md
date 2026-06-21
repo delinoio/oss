@@ -126,6 +126,7 @@ enum ProjectId {
 ### binpm Source Contract
 
 - Stable `binpm` source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
+- `binpm` source versions are exact release tag requests only; omitted `@version` selects latest stable, while `@latest`, semver range-like selectors, channel selectors, and major-version pins must be rejected before manifest or lockfile persistence.
 - GitLab versionless installs must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
 - GitLab release asset links must use HTTPS link URLs and HTTPS final redirect targets before candidate scoring or download.
 - GitLab generated `assets.sources` source archives must not be selected as installable assets.
@@ -139,12 +140,15 @@ enum ProjectId {
 - `binpm.lock` must not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata.
 - `binpm.lock` must store sanitized canonical asset URLs only, never query strings, fragments, credential-bearing URLs, or expiring signed download URLs.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`.
+- `binpm add <cmd> <source> --bin <upstream-binary>` must persist the upstream binary selection in `binpm.toml`, and `binpm x --package <source> --bin <upstream-binary> <cmd>` must use that upstream binary for one-off execution.
 - Local `binpm remove` must clean project-local package records when they exist.
 - Local target-specific asset overrides must use `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.
-- Local `binpm install`, `binpm update`, and `binpm x` must honor `--frozen-lockfile`; `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.
+- Local `binpm install`, `binpm update`, and `binpm x` must honor `--frozen-lockfile`; `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch. Documented execution aliases `binpm exec` and `binpm run` must share `binpm x` lockfile and command execution behavior while `binpm x` remains canonical.
 - `binpm verify --require-verified` must fail when no provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature under a documented trust policy is available.
 - `binpm update` and `binpm remove` must print selected local/global scope before mutation and support `--dry-run` previews that do not mutate manifests, lockfiles, package records, cache references, or executables.
 - `--no-confirm` is a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
+- `binpm env --shell` must keep supported shell values explicit: `bash`, `zsh`, `fish`, and `powershell` are supported, while `cmd` is accepted only to return a clear deferred-shell diagnostic.
+- Global install and doctor PATH setup messaging must remain guided and opt-in; binpm must not edit shell profile files unless a future contract explicitly adds an opt-in profile modification command, and must not imply project-local `.binpm/bin` entries are suitable for profile persistence.
 
 ### binpm Docs App Contract
 

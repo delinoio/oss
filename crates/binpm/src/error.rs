@@ -31,10 +31,23 @@ pub enum BinpmError {
         component: &'static str,
         raw: String,
     },
+    #[error(
+        "Unsupported shell `{shell}` for binpm env. Supported shells: bash, zsh, fish, \
+         powershell. Deferred shell: cmd."
+    )]
+    UnsupportedShell { shell: String },
     #[error("Failed to build release HTTP client: {0}")]
     ReleaseHttpClient(#[source] reqwest::Error),
     #[error("Failed to look up release metadata: {0}")]
     ReleaseLookup(#[source] reqwest::Error),
+    #[error("Release asset `{url}` returned unexpected HTTP status {status}.")]
+    ReleaseAssetStatus { url: String, status: u16 },
+    #[error("Failed to stream release asset `{url}`: {source}")]
+    DownloadStream {
+        url: String,
+        #[source]
+        source: io::Error,
+    },
     #[error("Release pagination loop detected at `{url}`.")]
     ReleasePaginationLoop { url: String },
     #[error("Failed to resolve release for `{package}`: {message}")]
@@ -114,13 +127,16 @@ pub enum BinpmError {
     #[error("Archive `{asset}` does not contain an executable binary.")]
     ArchiveBinaryNotFound { asset: String },
     #[error(
-        "Archive `{asset}` contains multiple plausible executables: {}. Set `bin` in binpm.toml to disambiguate.",
-        candidates.join(", ")
+        "{}",
+        ambiguous_archive_binaries_message(asset, candidates, suggestions)
     )]
     AmbiguousArchiveBinaries {
         asset: String,
         candidates: Vec<String>,
+        suggestions: Vec<String>,
     },
+    #[error("Invalid binary selection `{bin}`: binary selection must not be empty.")]
+    InvalidBinSelection { bin: String },
     #[error("Archive `{asset}` does not contain selected binary `{member}`.")]
     ArchiveMemberNotFound { asset: String, member: String },
     #[error("Unsafe archive member path `{path}` in `{asset}`: {message}")]
@@ -188,13 +204,32 @@ pub enum BinpmError {
 }
 
 impl BinpmError {
+    pub fn suggest_verbose_diagnostics(&self) -> bool {
+        matches!(
+            self,
+            Self::ReleaseLookup(_)
+                | Self::ReleaseAssetStatus { .. }
+                | Self::DownloadStream { .. }
+                | Self::ReleaseNotFound { .. }
+                | Self::AssetNotFound { .. }
+                | Self::ArchiveBinaryNotFound { .. }
+                | Self::AmbiguousArchiveBinaries { .. }
+                | Self::ArchiveMemberNotFound { .. }
+                | Self::VerificationRequired { .. }
+                | Self::DigestMismatch { .. }
+                | Self::ProviderDigestMismatch { .. }
+        )
+    }
+
     pub fn exit_code(&self) -> i32 {
         match self {
             Self::NotImplemented { .. } => 2,
             Self::InvalidSourceSpec { .. }
             | Self::InvalidTargetKey { .. }
             | Self::InvalidCommandName { .. }
+            | Self::InvalidBinSelection { .. }
             | Self::UnsupportedTargetComponent { .. }
+            | Self::UnsupportedShell { .. }
             | Self::ReleaseNotFound { .. }
             | Self::ManifestExists { .. }
             | Self::UnsupportedStorageVersion { .. }
@@ -212,6 +247,8 @@ impl BinpmError {
             | Self::InvalidGlobalHome { .. }
             | Self::ReleaseHttpClient(_)
             | Self::ReleaseLookup(_)
+            | Self::ReleaseAssetStatus { .. }
+            | Self::DownloadStream { .. }
             | Self::ReleasePaginationLoop { .. } => 1,
             Self::FrozenLockfile { .. }
             | Self::StaleLockfile { .. }
@@ -238,4 +275,23 @@ impl BinpmError {
             Self::Execute { .. } => 1,
         }
     }
+}
+
+fn ambiguous_archive_binaries_message(
+    asset: &str,
+    candidates: &[String],
+    suggestions: &[String],
+) -> String {
+    let mut message = format!(
+        "Archive `{asset}` contains multiple plausible executables: {}.",
+        candidates.join(", ")
+    );
+    if suggestions.is_empty() {
+        message.push_str(" Retry with `--bin <candidate>` or set `bin` in binpm.toml.");
+    } else {
+        message.push_str(" Retry with ");
+        message.push_str(&suggestions.join(" or "));
+        message.push('.');
+    }
+    message
 }

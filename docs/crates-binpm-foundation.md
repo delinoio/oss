@@ -19,15 +19,16 @@
 - Command dispatch must return explicit not-yet-implemented errors for flows whose release lookup, asset selection, download, cache mutation, extraction, install, update, remove, verification, explanation, listing, info, outdated, or process execution behavior is not yet implemented.
 - Implemented safe commands may perform read-only or bootstrap behavior when they do not violate storage or mutation contracts:
   - `binpm init` may create `binpm.toml` containing `version = 1`.
-  - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories.
+  - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories for supported shells.
   - `binpm doctor` may report manifest, lockfile, and global home state without mutation.
   - `binpm cache key` may print a deterministic key for the current target and project-root `binpm.lock`, using an empty lockfile digest when the file is absent.
 - Current install finalization supports bare executable assets and documented archive assets end to end. Archive extraction is implemented for `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip`, and installs only the selected executable member.
 - Canonical global install command: `binpm install <source>`.
-- Canonical local declaration command: `binpm add <cmd> <source>`.
+- Canonical local declaration command: `binpm add <cmd> <source> [--bin <upstream-binary>]`.
 - Canonical local sync command: `binpm install`.
 - Canonical local execution command: `binpm x CMD [args...]`.
-- Canonical one-off execution command: `binpm x --package <source> CMD [args...]`.
+- Canonical one-off execution command: `binpm x --package <source> [--bin <upstream-binary>] CMD [args...]`.
+- Documented execution aliases: `binpm exec` and `binpm run`. These aliases are stable compatibility entry points for discoverability, but `binpm x` remains the canonical execution command used in contracts, diagnostics, examples, and logs.
 - Stable source enum values:
   - `github:owner/repo[@version]` addresses GitHub.com Releases and may omit the host only for `github.com`.
   - `github:<host>/owner/repo[@version]` addresses GitHub Enterprise Releases on an explicit host.
@@ -36,7 +37,13 @@
 - When `@version` is omitted, `binpm` must select the latest stable release exposed by the source provider:
   - GitHub sources must ignore draft and prerelease releases.
   - GitLab sources must list releases in descending `released_at` order and choose the first release whose `released_at` is not in the future, whose API response does not set `upcoming_release = true`, and whose normalized tag does not contain a SemVer prerelease segment such as `-alpha`, `-beta`, `-pre`, `-preview`, `-rc`, or another hyphenated prerelease identifier.
-- Explicit versions may be written with or without a leading `v`; release tag matching must try the exact input first, then the opposite `v` prefix form.
+- Version selectors are intentionally exact-tag-only in v1:
+  - `github:owner/repo` selects the latest stable release.
+  - `github:owner/repo@14.1.1` and `github:owner/repo@v14.1.1` request exact release tags; `@14.1.1` must not match a `v14.1.1` release tag, and `@v14.1.1` must not match a `14.1.1` release tag.
+  - `@latest` is rejected with a hint to omit `@version` for latest-stable selection.
+  - SemVer range-like selectors such as `@^1`, `@~1.2`, `@>=1.0.0`, `@1.x`, `@1.*`, and `@1 || @2` are rejected with a hint to use an exact release tag or omit `@version`.
+  - Channel selectors such as `@stable`, `@beta`, `@alpha`, `@nightly`, `@canary`, `@dev`, `@edge`, and `@next` are rejected with a hint to use an exact release tag or omit `@version`.
+  - Major-version pins such as `@1` are rejected with a hint to use an exact release tag; if the upstream release tag is literally `v1`, users may request `@v1`.
 - Commands with both local and global scope must default to local when a local `binpm.toml` is discovered; otherwise they must default to global. Such commands must document `--local` and `--global` overrides.
 - `--frozen-lockfile` on local `binpm install`, `binpm update`, and `binpm x` must fail when the command would need to create or modify `binpm.lock`; `CI=true` must enable this behavior by default, and `--no-frozen-lockfile` is the explicit local-development escape hatch. Empty-manifest local updates that do not require lockfile changes must succeed without creating `binpm.lock`.
 - Frozen local install and `x` must restore missing `.binpm/bin` executables and `.binpm/packages` package records from existing target lock records when the global cache asset is present and SHA-256-valid for the locked digest. If the cache asset is absent or corrupt, frozen restore may download only the lockfile's persisted sanitized asset URL and must validate the recorded SHA-256 before populating cache or installing; this restore path must not require provider release-list pagination.
@@ -53,19 +60,25 @@
 - `binpm info <cmd-or-source> [--local|--global]` must print source metadata, resolved release metadata when available, selected target asset, selected binary, and checksum source without installing new bytes.
 - `binpm outdated [--local|--global]` must compare declared or installed tools with the latest stable release available from their source and must not update manifests, lockfiles, package records, cache entries, or executables.
 - `binpm update [cmd...] [--local|--global] [--dry-run]` must update selected tools or all tools in scope to the latest stable release allowed by their source declarations; local updates must update `binpm.lock` and installed project-local executables. Before mutation it must print `update scope: local` or `update scope: global` and a planned update list; with `--dry-run` it must print the same plan and leave state unchanged.
-- `binpm doctor` must inspect manifest discovery, lockfile readability, package records, cache state, installed executable records, PATH visibility, and provider configuration without mutating state.
+- `binpm doctor` must inspect manifest discovery, lockfile readability, package records, cache state, installed executable records, PATH visibility, and provider configuration without mutating state. When `~/.binpm/bin` is not visible on `PATH`, doctor must print guided setup messaging that points to `binpm env` and keeps profile modification opt-in.
 - `binpm explain <cmd-or-source> [--local|--global]` must explain source parsing, release selection, target normalization, asset candidate scoring, binary discovery, and verification decisions without mutating state.
 - Source-form `binpm explain <source>` may perform read-only GitHub or GitLab release API lookup and must print the normalized source, provider API URL, release decision, normalized target, selected asset when one is eligible, candidate scores, and rejection reasons. Local command explanation must inspect existing package records and print source, release, target, selected asset, selected binary, archive format, checksum source, and verification state without installing new bytes.
 - `binpm verify [--local|--global] [--require-verified]` must validate lockfile records, package records, cache bytes, and installed executable records without mutating state.
 - `binpm init` must create a minimal `binpm.toml` with `version = 1` at the project root when one does not already exist; it must not install tools by default.
-- `binpm env --shell <shell>` must print shell-specific environment commands for adding binpm-managed binary directories to `PATH`; it must not modify shell profiles by default.
+- `binpm env --shell <shell>` must print shell-specific environment commands for adding binpm-managed binary directories to `PATH`; it must not modify shell profiles by default. The printed global bin command must be labeled as suitable for shell profiles, while the project-local command must be labeled for the current project or shell session only.
+- Supported `binpm env --shell` values are `bash`, `zsh`, `fish`, and `powershell`. `PowerShell` is accepted case-insensitively for user ergonomics.
+- `binpm env --shell cmd` is a recognized but explicitly deferred shell value; it must fail with an unsupported-shell diagnostic that lists supported shells and says cmd support is deferred.
+- After global installs, when `~/.binpm/bin` is not visible on `PATH`, binpm must print guided PATH setup messaging that points to `binpm env --shell <bash|zsh|fish|powershell>`, says persistent profile changes are opt-in, and tells users to persist only the global bin line.
 - On Windows, `binpm env --shell bash` and `binpm env --shell zsh` must render drive-letter and UNC paths in POSIX shell form so colon-separated `PATH` exports remain valid.
-- `binpm add <cmd> <source>` must declare `<cmd>` in `binpm.toml`, install the selected executable into `$repoRoot/.binpm/bin`, and update `binpm.lock`.
+- `binpm add <cmd> <source> [--bin <upstream-binary>]` must declare `<cmd>` in `binpm.toml`, install the selected executable into `$repoRoot/.binpm/bin`, and update `binpm.lock`.
+- When `binpm add` receives `--bin`, it must persist that value as `[tools.<cmd>].bin` in `binpm.toml` so future local installs and executions use the same upstream binary selection without manual TOML editing.
 - Tool command names in `binpm.toml`, package records, and install commands must be executable basenames; path separators, `.` and `..` are invalid command names.
 - `binpm install` without a package spec must sync the local `binpm.toml` manifest into `$repoRoot/.binpm/bin` and update `binpm.lock`; `binpm install <source>` keeps the global install behavior.
 - `binpm x CMD [args...]` must resolve `CMD` from `binpm.toml`, install it on demand when the lockfile or local executable is missing or stale, prepend `$repoRoot/.binpm/bin` to `PATH`, preserve the caller's current working directory, and forward every argument after `CMD` to the executed command.
-- `binpm x --package <source> CMD [args...]` must install or reuse the explicit package in a temporary or cache-backed execution context, prepend that context and `$repoRoot/.binpm/bin` to `PATH` when a local project exists, and run `CMD [args...]`.
-- If `CMD` is absent from the local manifest and no explicit `--package` is provided, `binpm x` must fail with a clear hint to run `binpm add <cmd> <source>` or retry with `--package`; it must not infer a source repository from the command name.
+- `binpm x --package <source> [--bin <upstream-binary>] CMD [args...]` must install or reuse the explicit package in a temporary or cache-backed execution context, prepend that context and `$repoRoot/.binpm/bin` to `PATH` when a local project exists, and run `CMD [args...]`.
+- When one-off execution receives `--bin`, `binpm` must use that upstream executable name or archive member path while exposing it as the requested `CMD` inside the temporary execution context.
+- `binpm exec` and `binpm run` must dispatch through the same execution implementation as `binpm x`, including argument forwarding, `--package` and `--bin` behavior, local manifest and lockfile behavior, install-on-demand behavior, PATH prepending, and process exit handling.
+- If `CMD` is absent from the local manifest and no explicit `--package` is provided, `binpm x` and its execution aliases must fail with a clear hint to run `binpm add <cmd> <source>` or retry with `--package`; they must not infer a source repository from the command name.
 - The host target model must be enum-driven and include:
   - OS: `linux`, `darwin`, `windows`, `freebsd`
   - CPU architecture: `x86_64`, `aarch64`, `i686`, `armv7`
@@ -93,14 +106,15 @@
   - Package formulas and package-manager metadata such as `.rb`, `.json` manifests, npm package tarballs, and Homebrew formula assets.
 - Desktop or system package formats are de-prioritized and must not be installed by default in v1: `.deb`, `.rpm`, `.apk`, `.pkg.tar.zst`, `.dmg`, `.msi`, `.pkg`, `.AppImage`, `.flatpak`, `.snap`.
 - Archive extraction must locate one or more executable files by executable permission, Windows `.exe` suffix, expected package name, and target-aware filename tokens. Explicit manifest `bin` values may name an exact archive member path or a unique member basename.
-- If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates.
+- If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates and includes concrete retry suggestions such as `binpm add <cmd> <source> --bin <candidate>` or `binpm x --package <source> --bin <candidate> <cmd>`.
 - The current foundation implements binary discovery as a deterministic member-list heuristic and uses it during archive extraction and install finalization.
 
 ## Local Manifest and Lockfile
 - The local project root is the nearest ancestor containing `binpm.toml`; commands that create `binpm.toml` must use the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory.
 - `binpm.toml` is the committed local tool declaration file. It must use TOML, `version = 1`, and `[tools.<cmd>]` tables keyed by the local command name.
-- In `binpm.toml`, each tool entry must include `source = "<source-without-version>"`, may include `version = "<release>"`, and may include `bin = "<upstream-binary-name>"` when the executable selected from the release differs from the local command name or needs explicit disambiguation.
-- `binpm add <cmd> <source>` must persist the package source without the version suffix in `source`; when a version is supplied, it must persist that value in `version`.
+- In `binpm.toml`, each tool entry must include `source = "<source-without-version>"`, may include `version = "<release>"`, and may include `bin = "<upstream-binary-name-or-archive-member>"` when the executable selected from the release differs from the local command name or needs explicit disambiguation.
+- `binpm add <cmd> <source>` must persist the package source without the version suffix in `source`; when a version is supplied, it must persist that value in `version`; when `--bin` is supplied, it must persist that value in `bin`.
+- Unsupported selector aliases, ranges, channels, and major-version pins must be rejected before manifest or lockfile writes so `binpm.toml` and `binpm.lock` remain deterministic exact-source records.
 - Target-specific manifest overrides must use `[tools.<cmd>.targets.<target-key>]` tables. Each override must include `asset = "<release-asset-name>"`, `bin = "<asset-member-or-bare-binary>"`, and may include `checksum_source = "<checksum-source>"` when the automatic checksum source must be overridden.
 - Multi-binary releases must keep the existing `[tools.<cmd>]` model: each local command has its own declaration, while multiple commands may share the same source, release asset, cache entry, and package bytes.
 - `binpm.lock` is the committed deterministic local resolution file. It must use TOML, `version = 1`, `[tools.<cmd>]` command tables keyed by local command name, and `[tools.<cmd>.targets.<target-key>]` records keyed by normalized target.
@@ -232,7 +246,10 @@ signature_verified = false
 
 ## Logging
 - Use structured `tracing` logs for manifest discovery, lockfile parsing, release lookup, target normalization, asset candidate scoring, checksum discovery, download, extraction, binary discovery, install finalization, and `binpm x` command execution.
-- The initial skeleton uses `BINPM_LOG` as the binpm-specific `tracing_subscriber` env filter, defaults to `binpm=warn`, and supports `BINPM_LOG_COLOR` plus `NO_COLOR` for ANSI color control.
+- `binpm -v` and `binpm --verbose` are stable global flags that set the binpm tracing filter to `binpm=info`.
+- `binpm --debug` is a stable global flag that sets the binpm tracing filter to `binpm=debug`.
+- `BINPM_LOG` remains supported as the binpm-specific `tracing_subscriber` env filter when no CLI verbosity flag is present. Deterministic precedence is: `--debug`, then `-v`/`--verbose`, then non-empty `BINPM_LOG`, then the default `binpm=warn`.
+- Tracing color is controlled independently by `BINPM_LOG_COLOR` and `NO_COLOR`; verbosity flags must not change ANSI color policy.
 - Candidate scoring logs must include normalized package spec, source provider, source host, release tag, asset name, detected OS, detected architecture, detected libc/ABI, artifact kind, score, and rejection reason when applicable.
 - Download and cache logs must include sanitized URL origin, asset name, byte count when known, cache hit or miss state, cache key, cache path, cache action, cache validation source, cache reused state, cache eviction state, retry attempt, and final outcome.
 - Install logs must include package spec, release tag, selected asset, selected archive member or bare executable, installed path, manifest path, lockfile path when local, and whether the install is global or project-local.
@@ -240,6 +257,13 @@ signature_verified = false
 - `binpm x` logs must include local project root when present, resolved command, explicit package spec when used, PATH entries added by binpm, install-on-demand state, process exit status, and whether command resolution came from `binpm.toml` or `--package`.
 - Diagnostic command logs for `doctor`, `explain`, `verify`, and `cache key` must include enough structured context to distinguish read-only inspection from mutating install or update flows.
 - Human CLI output may be concise, but debug logs must be sufficient to reconstruct why a candidate won or lost.
+- Failures in release lookup, asset selection, download streaming, or verification must mention `--verbose` or `--debug` when structured diagnostics are likely to help.
+
+## Download Progress
+- Interactive installs must show human-facing progress on stderr for large or unknown-size release asset downloads. Progress output may be concise, but it must reassure users that the download is active and include a human-readable byte count when available.
+- Non-interactive output, including redirected stderr and `CI=true`, must not emit periodic progress lines so scripts and CI logs stay stable.
+- Retry messages for retryable download failures must explain which asset is being retried and the retry attempt, but must never include credentials, query strings, fragments, or expiring signed URL parameters.
+- Download logs and progress diagnostics must use sanitized URLs that remove query strings and fragments and redact URL userinfo before display.
 
 ## Build and Test
 - Local validation for binpm runtime changes must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.

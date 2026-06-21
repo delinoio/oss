@@ -1,12 +1,16 @@
 use tracing_subscriber::EnvFilter;
 
+use crate::cli::LogVerbosity;
+
 const BINPM_LOG_ENV: &str = "BINPM_LOG";
 const BINPM_LOG_COLOR_ENV: &str = "BINPM_LOG_COLOR";
 const NO_COLOR_ENV: &str = "NO_COLOR";
 const DEFAULT_LOG_FILTER: &str = "binpm=warn";
+const VERBOSE_LOG_FILTER: &str = "binpm=info";
+const DEBUG_LOG_FILTER: &str = "binpm=debug";
 
-pub fn init_logging() {
-    let env_filter = resolve_env_filter_from_environment();
+pub fn init_logging(verbosity: LogVerbosity) {
+    let env_filter = resolve_env_filter_from_environment(verbosity);
     let _ = tracing_subscriber::fmt()
         .with_env_filter(env_filter)
         .with_writer(std::io::stderr)
@@ -17,15 +21,19 @@ pub fn init_logging() {
         .try_init();
 }
 
-fn resolve_env_filter_from_environment() -> EnvFilter {
-    resolve_env_filter(std::env::var(BINPM_LOG_ENV).ok().as_deref())
+fn resolve_env_filter_from_environment(verbosity: LogVerbosity) -> EnvFilter {
+    resolve_env_filter(verbosity, std::env::var(BINPM_LOG_ENV).ok().as_deref())
 }
 
-fn resolve_env_filter(binpm_log: Option<&str>) -> EnvFilter {
-    let filter = binpm_log
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(DEFAULT_LOG_FILTER);
+fn resolve_env_filter(verbosity: LogVerbosity, binpm_log: Option<&str>) -> EnvFilter {
+    let filter = match verbosity {
+        LogVerbosity::Debug => DEBUG_LOG_FILTER,
+        LogVerbosity::Verbose => VERBOSE_LOG_FILTER,
+        LogVerbosity::Default => binpm_log
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(DEFAULT_LOG_FILTER),
+    };
 
     EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER))
 }
@@ -65,18 +73,45 @@ fn parse_log_color_mode(raw: &str) -> Option<LogColorMode> {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_env_filter, resolve_log_color_enabled, DEFAULT_LOG_FILTER};
+    use super::{
+        resolve_env_filter, resolve_log_color_enabled, DEBUG_LOG_FILTER, DEFAULT_LOG_FILTER,
+        VERBOSE_LOG_FILTER,
+    };
+    use crate::cli::LogVerbosity;
 
     #[test]
     fn default_filter_enables_warning_level_binpm_logs() {
-        assert_eq!(resolve_env_filter(None).to_string(), DEFAULT_LOG_FILTER);
+        assert_eq!(
+            resolve_env_filter(LogVerbosity::Default, None).to_string(),
+            DEFAULT_LOG_FILTER
+        );
     }
 
     #[test]
     fn blank_filter_uses_default() {
         assert_eq!(
-            resolve_env_filter(Some("  ")).to_string(),
+            resolve_env_filter(LogVerbosity::Default, Some("  ")).to_string(),
             DEFAULT_LOG_FILTER
+        );
+    }
+
+    #[test]
+    fn cli_verbosity_overrides_binpm_log() {
+        assert_eq!(
+            resolve_env_filter(LogVerbosity::Verbose, Some("binpm=off")).to_string(),
+            VERBOSE_LOG_FILTER
+        );
+        assert_eq!(
+            resolve_env_filter(LogVerbosity::Debug, Some("binpm=off")).to_string(),
+            DEBUG_LOG_FILTER
+        );
+    }
+
+    #[test]
+    fn binpm_log_still_applies_without_cli_verbosity() {
+        assert_eq!(
+            resolve_env_filter(LogVerbosity::Default, Some("binpm=info")).to_string(),
+            "binpm=info"
         );
     }
 

@@ -55,16 +55,7 @@ impl RuntimeInstaller {
             });
         }
 
-        let target = PlatformTarget::from_host().ok_or_else(|| {
-            NodeupError::unsupported_platform_with_hint(
-                format!(
-                    "nodeup currently supports macOS/Linux/Windows x64/arm64 only. host={}/{}",
-                    std::env::consts::OS,
-                    std::env::consts::ARCH
-                ),
-                "Run this command on a supported host platform.",
-            )
-        })?;
+        let target = PlatformTarget::ensure_supported_host("runtime installation")?;
 
         let _lock = InstallLock::acquire(&self.paths.toolchains_dir, &canonical_version)?;
 
