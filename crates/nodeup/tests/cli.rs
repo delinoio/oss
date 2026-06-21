@@ -46,6 +46,12 @@ fn set_executable(path: &Path) {
     }
 }
 
+fn path_string_ends_with_components(path: &str, suffix: &[&str]) -> bool {
+    let normalized = path.replace('\\', "/");
+    let components = normalized.split('/').collect::<Vec<_>>();
+    components.ends_with(suffix)
+}
+
 impl TestEnv {
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap().keep();
@@ -1118,7 +1124,7 @@ fn toolchain_link_json_reports_managed_shim_command_availability() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|path| path.as_str().unwrap().ends_with("/bin/npm")));
+        .any(|path| path_string_ends_with_components(path.as_str().unwrap(), &["bin", "npm"])));
 }
 
 #[test]
@@ -4383,13 +4389,14 @@ fn missing_runtime_without_install_flag_json_explains_install_on_demand_differen
 
     let output = env
         .command()
-        .args(["--output", "json", "run", "22.1.0", "node"])
+        .args(["--output", "json", "run", "22.1.0", "npm"])
         .output()
         .expect("run missing runtime json failure");
     assert_eq!(output.status.code(), Some(5));
 
     let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
     assert_eq!(payload["kind"], "not-found");
+    assert_eq!(payload["diagnostics"]["command"], "npm");
     assert_eq!(payload["diagnostics"]["install_on_demand_eligible"], false);
     assert_eq!(
         payload["diagnostics"]["install_on_demand_scope"],
@@ -4932,7 +4939,7 @@ fn which_missing_linked_runtime_command_json_includes_checked_paths() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|path| path.as_str().unwrap().ends_with("/bin/npm")));
+        .any(|path| path_string_ends_with_components(path.as_str().unwrap(), &["bin", "npm"])));
     assert!(payload["diagnostics"]["path_precedence_guidance"]
         .as_str()
         .unwrap()

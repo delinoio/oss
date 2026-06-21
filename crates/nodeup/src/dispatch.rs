@@ -43,7 +43,7 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
             &resolved,
             &app.store,
             alias.as_str(),
-            matches!(&resolved.target, ResolvedRuntimeTarget::Version { .. }),
+            false,
             "managed-shim-active-selector",
         )
         .into_error_diagnostics();
@@ -54,7 +54,7 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
                 alias.as_str(),
                 resolved.runtime_id(),
                 plan.executable.display(),
-                matches!(&resolved.target, ResolvedRuntimeTarget::Version { .. })
+                false
             ),
             "Install or relink the active runtime so it provides the delegated executable. On \
              Windows, verify PATH/PATHEXT precedence with `where <alias>` or PowerShell \
@@ -70,7 +70,7 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
             &resolved,
             &app.store,
             alias.as_str(),
-            matches!(&resolved.target, ResolvedRuntimeTarget::Version { .. }),
+            false,
             "managed-shim-active-selector",
         )
         .into_error_diagnostics();

@@ -50,6 +50,7 @@ pub fn execute(
         PlatformTarget::ensure_supported_host("runtime installation")?;
     }
 
+    let delegated_command = &command[0];
     let resolved = app
         .resolver
         .resolve_selector_with_source(runtime, RuntimeSelectorSource::Explicit)?;
@@ -63,7 +64,7 @@ pub fn execute(
                 let mut diagnostics = RuntimeCommandAvailability::for_resolved_runtime(
                     &resolved,
                     &app.store,
-                    "node",
+                    delegated_command,
                     false,
                     "nodeup-run-explicit-runtime-requires---install",
                 )
@@ -97,7 +98,6 @@ pub fn execute(
         }
     }
 
-    let delegated_command = &command[0];
     let delegated_args = command[1..]
         .iter()
         .map(OsString::from)
