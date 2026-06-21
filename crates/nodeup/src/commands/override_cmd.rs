@@ -22,6 +22,16 @@ struct OverrideListItem {
 }
 
 #[derive(Debug, Serialize)]
+struct OverrideUnsetItem {
+    path: String,
+    selector: String,
+    selector_kind: String,
+    canonical_selector: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector_alias_of: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 struct OverrideSetResponse {
     path: PathBuf,
     selector: String,
@@ -124,6 +134,19 @@ fn unset(
 ) -> Result<i32> {
     let path = path.map(PathBuf::from);
     let removed = app.overrides.unset(path.as_deref(), nonexistent)?;
+    let removed = removed
+        .into_iter()
+        .map(|entry| {
+            let selector = RuntimeSelector::parse(&entry.selector)?;
+            Ok(OverrideUnsetItem {
+                path: entry.path,
+                selector: entry.selector,
+                selector_kind: selector.kind().as_str().to_string(),
+                canonical_selector: selector.canonical_id(),
+                selector_alias_of: selector.alias_of(),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
     let human = format!("Removed {} override(s)", removed.len());
     print_output(output, color, &human, &removed)?;
     Ok(0)

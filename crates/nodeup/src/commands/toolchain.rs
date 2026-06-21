@@ -378,10 +378,11 @@ fn selector_references_version(selector: &str, target_version: &str) -> bool {
 }
 
 fn selector_references_linked_name(selector: &str, target_name: &str) -> bool {
-    matches!(
-        RuntimeSelector::parse(selector).ok(),
-        Some(RuntimeSelector::LinkedName(name)) if name == target_name
-    )
+    match RuntimeSelector::parse(selector).ok() {
+        Some(RuntimeSelector::LinkedName(name)) => name == target_name,
+        Some(_) => false,
+        None => selector == target_name,
+    }
 }
 
 fn canonical_version_selector(selector: &str) -> Option<String> {

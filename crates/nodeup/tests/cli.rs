@@ -1123,6 +1123,32 @@ fn toolchain_unlink_conflicts_when_link_is_default() {
 
 #[test]
 #[serial]
+fn toolchain_unlink_conflicts_when_legacy_reserved_case_link_is_default() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-default");
+    fs::create_dir_all(&runtime_dir).unwrap();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ndefault_selector = \"LTS\"\ntracked_selectors = \
+             [\"LTS\"]\n\n[linked_runtimes]\nLTS = \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    env.command()
+        .args(["toolchain", "unlink", "LTS"])
+        .assert()
+        .failure()
+        .code(6)
+        .stderr(predicates::str::contains(
+            "Cannot unlink 'LTS'; it is used as the default runtime",
+        ));
+}
+
+#[test]
+#[serial]
 fn toolchain_unlink_conflicts_when_link_is_used_by_override() {
     let env = TestEnv::new();
     let runtime_dir = env.root.join("linked-runtime-unlink-override");
@@ -1160,6 +1186,42 @@ fn toolchain_unlink_conflicts_when_link_is_used_by_override() {
         .code(6)
         .stderr(predicates::str::contains(
             "Cannot unlink 'linked-unlink-override'; it is referenced by a directory override",
+        ));
+}
+
+#[test]
+#[serial]
+fn toolchain_unlink_conflicts_when_legacy_reserved_case_link_is_used_by_override() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-override");
+    let project_dir = env.root.join("legacy-reserved-case-project");
+    fs::create_dir_all(&runtime_dir).unwrap();
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ntracked_selectors = [\"LATEST\"]\n\n[linked_runtimes]\nLATEST = \
+             \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+    fs::write(
+        env.config_root.join("overrides.toml"),
+        format!(
+            "schema_version = 1\n\n[[entries]]\npath = \"{}\"\nselector = \"LATEST\"\n",
+            project_dir.display()
+        ),
+    )
+    .unwrap();
+
+    env.command()
+        .args(["toolchain", "unlink", "LATEST"])
+        .assert()
+        .failure()
+        .code(6)
+        .stderr(predicates::str::contains(
+            "Cannot unlink 'LATEST'; it is referenced by a directory override",
         ));
 }
 
@@ -3511,7 +3573,7 @@ fn json_override_unset_output_is_machine_parseable() {
         .args([
             "override",
             "set",
-            "22.1.0",
+            "latest",
             "--path",
             project.to_str().unwrap(),
         ])
@@ -3540,7 +3602,10 @@ fn json_override_unset_output_is_machine_parseable() {
         .to_string_lossy()
         .to_string();
     assert_eq!(entries[0]["path"], canonical);
-    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["selector"], "latest");
+    assert_eq!(entries[0]["selector_kind"], "channel");
+    assert_eq!(entries[0]["canonical_selector"], "current");
+    assert_eq!(entries[0]["selector_alias_of"], "current");
 }
 
 #[test]
