@@ -7,7 +7,7 @@ use crate::{
     cli::{OutputColorMode, OutputFormat, OverrideCommand},
     commands::print_output,
     errors::Result,
-    selectors::RuntimeSelector,
+    selectors::{stored_selector_metadata, RuntimeSelector},
     NodeupApp,
 };
 
@@ -65,13 +65,13 @@ fn list(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupApp) -
         .list()?
         .into_iter()
         .map(|entry| {
-            let selector = RuntimeSelector::parse(&entry.selector)?;
+            let metadata = stored_selector_metadata(&entry.selector)?;
             Ok(OverrideListItem {
                 path: entry.path,
                 selector: entry.selector,
-                selector_kind: selector.kind().as_str().to_string(),
-                canonical_selector: selector.canonical_id(),
-                selector_alias_of: selector.alias_of(),
+                selector_kind: metadata.kind.as_str().to_string(),
+                canonical_selector: metadata.canonical_selector,
+                selector_alias_of: metadata.alias_of,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -137,13 +137,13 @@ fn unset(
     let removed = removed
         .into_iter()
         .map(|entry| {
-            let selector = RuntimeSelector::parse(&entry.selector)?;
+            let metadata = stored_selector_metadata(&entry.selector)?;
             Ok(OverrideUnsetItem {
                 path: entry.path,
                 selector: entry.selector,
-                selector_kind: selector.kind().as_str().to_string(),
-                canonical_selector: selector.canonical_id(),
-                selector_alias_of: selector.alias_of(),
+                selector_kind: metadata.kind.as_str().to_string(),
+                canonical_selector: metadata.canonical_selector,
+                selector_alias_of: metadata.alias_of,
             })
         })
         .collect::<Result<Vec<_>>>()?;

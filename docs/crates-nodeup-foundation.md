@@ -37,6 +37,7 @@
 - Windows runtime archives that unpack without a top-level directory must be normalized into the stable `bin/` runtime layout used by nodeup execution and linking flows.
 - Linked runtime validation must require a runnable `node` command during `toolchain link` and active-runtime availability checks.
 - Linked runtime names are case-sensitive, but names that differ from reserved channel selectors only by case, such as `LTS`, `Current`, or `LATEST`, must be rejected with `invalid-input`.
+- Legacy settings and overrides that already contain reserved-channel case variants as linked runtime selectors must remain removable and must continue to report linked-runtime metadata in JSON output.
 - Unix linked-runtime validation must require an executable permission bit on `bin/node`; Windows platform behavior must select `bin/node.exe` for `node`.
 - `yarn`/`pnpm` delegated execution must honor nearest `package.json` `packageManager` when present.
 - `packageManager` parsing contract is strict: `<manager>@<exact-semver>` with manager limited to `yarn|pnpm`.

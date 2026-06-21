@@ -22,6 +22,7 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Shim behavior must remain deterministic across supported operating systems.
 - Linked runtime lifecycle commands must preserve external runtime directories: `toolchain link` registers settings records and `toolchain unlink` removes those records only.
 - Linked runtime names are case-sensitive, but reserved-channel case variants such as `LTS`, `Current`, and `LATEST` are invalid linked names.
+- Legacy persisted linked runtime selectors that use reserved-channel case variants must remain removable and reportable as linked-runtime selectors.
 - Linked runtime resolution must validate that the selected `node` executable is runnable, including Unix executable-bit checks and Windows `node.exe` naming behavior.
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.

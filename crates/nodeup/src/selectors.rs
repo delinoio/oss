@@ -34,6 +34,13 @@ pub enum RuntimeSelector {
     LinkedName(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeSelectorMetadata {
+    pub kind: RuntimeSelectorKind,
+    pub canonical_selector: String,
+    pub alias_of: Option<String>,
+}
+
 impl RuntimeSelector {
     pub fn parse(input: &str) -> Result<Self> {
         let normalized = input.trim();
@@ -117,6 +124,14 @@ impl RuntimeSelector {
     pub fn is_version(&self) -> bool {
         matches!(self, Self::Version(_))
     }
+
+    pub fn metadata(&self) -> RuntimeSelectorMetadata {
+        RuntimeSelectorMetadata {
+            kind: self.kind(),
+            canonical_selector: self.canonical_id(),
+            alias_of: self.alias_of(),
+        }
+    }
 }
 
 impl fmt::Display for RuntimeSelector {
@@ -158,6 +173,26 @@ pub fn is_case_variant_of_reserved_channel_selector(input: &str) -> bool {
             input.to_ascii_lowercase().as_str(),
             "lts" | "current" | "latest"
         )
+}
+
+pub fn stored_selector_metadata(input: &str) -> Result<RuntimeSelectorMetadata> {
+    match RuntimeSelector::parse(input) {
+        Ok(selector) => Ok(selector.metadata()),
+        Err(error) => {
+            // Existing settings and override files may contain linked runtime names that
+            // are now rejected because they differ from reserved channel
+            // selectors only by case.
+            if is_case_variant_of_reserved_channel_selector(input.trim()) {
+                return Ok(RuntimeSelectorMetadata {
+                    kind: RuntimeSelectorKind::LinkedRuntime,
+                    canonical_selector: input.trim().to_string(),
+                    alias_of: None,
+                });
+            }
+
+            Err(error)
+        }
+    }
 }
 
 #[cfg(test)]

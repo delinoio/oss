@@ -3610,6 +3610,53 @@ fn json_override_unset_output_is_machine_parseable() {
 
 #[test]
 #[serial]
+fn json_override_unset_output_handles_legacy_reserved_case_linked_name() {
+    let env = TestEnv::new();
+    let project = env.root.join("legacy-reserved-case-unset-json");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(
+        env.config_root.join("overrides.toml"),
+        format!(
+            "schema_version = 1\n\n[[entries]]\npath = \"{}\"\nselector = \"LATEST\"\n",
+            project.display()
+        ),
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "override",
+            "unset",
+            "--path",
+            project.to_str().unwrap(),
+        ])
+        .output()
+        .expect("override unset legacy reserved-case linked name");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("override unset JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "LATEST");
+    assert_eq!(entries[0]["selector_kind"], "linked-runtime");
+    assert_eq!(entries[0]["canonical_selector"], "LATEST");
+    assert!(entries[0].get("selector_alias_of").is_none());
+
+    let output = env
+        .command()
+        .args(["--output", "json", "override", "list"])
+        .output()
+        .expect("override list after legacy unset");
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload.as_array().unwrap().is_empty());
+}
+
+#[test]
+#[serial]
 fn toolchain_install_requires_at_least_one_runtime_selector() {
     let env = TestEnv::new();
 
@@ -3794,6 +3841,38 @@ tracked_selectors = ["linked-update-priority"]
     let entries = payload.as_array().expect("update JSON array");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["selector"], "linked-update-priority");
+    assert_eq!(entries[0]["status"], "skipped-linked-runtime");
+}
+
+#[test]
+#[serial]
+fn update_without_selectors_skips_legacy_reserved_case_tracked_link() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("legacy-reserved-case-update");
+    fs::create_dir_all(&runtime_dir).unwrap();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            "schema_version = 1\ntracked_selectors = [\"LATEST\"]\n\n[linked_runtimes]\nLATEST = \
+             \"{}\"\n",
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update with legacy reserved-case tracked link");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "LATEST");
+    assert_eq!(entries[0]["selector_kind"], "linked-runtime");
+    assert_eq!(entries[0]["canonical_selector"], "LATEST");
     assert_eq!(entries[0]["status"], "skipped-linked-runtime");
 }
 
