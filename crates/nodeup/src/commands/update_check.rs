@@ -7,7 +7,7 @@ use crate::{
     commands::print_output,
     errors::{NodeupError, Result},
     installer::InstallState,
-    release_index::normalize_version,
+    release_index::{normalize_version, ReleaseIndexResolutionDiagnostic},
     resolver::ResolvedRuntimeTarget,
     selectors::RuntimeSelector,
     types::RuntimeSelectorSource,
@@ -27,6 +27,8 @@ struct UpdateEntry {
     previous_runtime: Option<String>,
     updated_runtime: Option<String>,
     status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -103,12 +105,14 @@ pub fn update(
                     previous_runtime: None,
                     updated_runtime: None,
                     status: "skipped-linked-runtime".to_string(),
+                    release_index: None,
                 });
             }
             RuntimeSelector::Channel(_) => {
                 let resolved = app
                     .resolver
                     .resolve_selector_with_source(&selector, RuntimeSelectorSource::Explicit)?;
+                let release_index = app.resolver.release_index_diagnostic();
                 let version = match resolved.target {
                     ResolvedRuntimeTarget::Version { version } => version,
                     ResolvedRuntimeTarget::LinkedPath { .. } => unreachable!(),
@@ -123,6 +127,7 @@ pub fn update(
                     } else {
                         "updated".to_string()
                     },
+                    release_index,
                 });
                 if let Some(entry) = updates.last() {
                     info!(
@@ -141,6 +146,7 @@ pub fn update(
                     previous_runtime: Some(current.clone()),
                     updated_runtime: Some(current),
                     status: "skipped-exact-version".to_string(),
+                    release_index: None,
                 });
                 if let Some(entry) = updates.last() {
                     info!(
@@ -156,9 +162,34 @@ pub fn update(
         }
     }
 
-    let human = format!("Processed updates for {} selector(s)", updates.len());
+    let human = append_release_index_human_notes(
+        format!("Processed updates for {} selector(s)", updates.len()),
+        updates
+            .iter()
+            .filter_map(|entry| entry.release_index.as_ref()),
+    );
     print_output(output, color, &human, &updates)?;
     Ok(0)
+}
+
+fn append_release_index_human_notes<'a>(
+    human: String,
+    diagnostics: impl Iterator<Item = &'a ReleaseIndexResolutionDiagnostic>,
+) -> String {
+    let notes = diagnostics
+        .map(|diagnostic| {
+            format!(
+                "{}->{} stale cache age={}s",
+                diagnostic.selector, diagnostic.selected_version, diagnostic.cache_age_seconds
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if notes.is_empty() {
+        human
+    } else {
+        format!("{human} (release index: {})", notes.join(", "))
+    }
 }
 
 fn selectors_for_update(app: &NodeupApp) -> Result<(Vec<String>, UpdateSelectorContext)> {

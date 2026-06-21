@@ -71,6 +71,8 @@ fn default_hint_for_kind(kind: ErrorKind) -> &'static str {
 
 fn sanitized_url(url: &reqwest::Url) -> String {
     let mut sanitized = url.clone();
+    let _ = sanitized.set_username("");
+    let _ = sanitized.set_password(None);
     sanitized.set_query(None);
     sanitized.set_fragment(None);
     sanitized.to_string()
@@ -308,4 +310,17 @@ pub fn with_context<E: fmt::Display>(kind: ErrorKind, context: &str, error: E) -
         format!("{context}: {error}"),
         default_hint_for_kind(kind),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_url_text;
+
+    #[test]
+    fn sanitize_url_text_strips_userinfo_query_and_fragment() {
+        let sanitized =
+            sanitize_url_text("https://user:token@example.test/index.json?token=secret#fragment");
+
+        assert_eq!(sanitized, "https://example.test/index.json");
+    }
 }

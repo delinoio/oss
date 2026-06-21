@@ -31,6 +31,11 @@ pub enum BinpmError {
         component: &'static str,
         raw: String,
     },
+    #[error(
+        "Unsupported shell `{shell}` for binpm env. Supported shells: bash, zsh, fish, \
+         powershell. Deferred shell: cmd."
+    )]
+    UnsupportedShell { shell: String },
     #[error("Failed to build release HTTP client: {0}")]
     ReleaseHttpClient(#[source] reqwest::Error),
     #[error("Failed to look up release metadata: {0}")]
@@ -199,6 +204,7 @@ impl BinpmError {
             | Self::InvalidCommandName { .. }
             | Self::InvalidBinSelection { .. }
             | Self::UnsupportedTargetComponent { .. }
+            | Self::UnsupportedShell { .. }
             | Self::ReleaseNotFound { .. }
             | Self::ManifestExists { .. }
             | Self::UnsupportedStorageVersion { .. }

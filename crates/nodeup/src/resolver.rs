@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
 use semver::Version;
 use tracing::info;
@@ -6,7 +9,7 @@ use tracing::info;
 use crate::{
     errors::{NodeupError, Result},
     overrides::OverrideStore,
-    release_index::{normalize_version, ReleaseIndexClient},
+    release_index::{normalize_version, ReleaseIndexClient, ReleaseIndexResolutionDiagnostic},
     selectors::RuntimeSelector,
     store::{runtime_executable_path, Store},
     types::{OverrideLookupFallbackReason, RuntimeSelectorSource},
@@ -64,6 +67,7 @@ pub struct RuntimeResolver {
     store: Store,
     overrides: OverrideStore,
     releases: ReleaseIndexClient,
+    last_release_index_diagnostic: Arc<Mutex<Option<ReleaseIndexResolutionDiagnostic>>>,
 }
 
 impl RuntimeResolver {
@@ -72,7 +76,15 @@ impl RuntimeResolver {
             store,
             overrides,
             releases,
+            last_release_index_diagnostic: Arc::new(Mutex::new(None)),
         }
+    }
+
+    pub fn release_index_diagnostic(&self) -> Option<ReleaseIndexResolutionDiagnostic> {
+        self.last_release_index_diagnostic
+            .lock()
+            .ok()
+            .and_then(|diagnostic| diagnostic.clone())
     }
 
     pub fn resolve_with_precedence(
@@ -137,13 +149,18 @@ impl RuntimeResolver {
         source: RuntimeSelectorSource,
     ) -> Result<ResolvedRuntime> {
         let selector = RuntimeSelector::parse(selector_value)?;
+        let mut release_index = None;
         let target = match &selector {
             RuntimeSelector::Version(version) => ResolvedRuntimeTarget::Version {
                 version: normalize_version(&version.to_string()),
             },
-            RuntimeSelector::Channel(channel) => ResolvedRuntimeTarget::Version {
-                version: self.releases.resolve_channel(*channel)?,
-            },
+            RuntimeSelector::Channel(channel) => {
+                let resolution = self.releases.resolve_channel_with_diagnostics(*channel)?;
+                release_index = resolution.release_index;
+                ResolvedRuntimeTarget::Version {
+                    version: resolution.version,
+                }
+            }
             RuntimeSelector::LinkedName(name) => {
                 let settings = self.store.load_settings()?;
                 let path = settings.linked_runtimes.get(name).ok_or_else(|| {
@@ -170,6 +187,10 @@ impl RuntimeResolver {
             resolved_runtime = %runtime_id_for_target(&target),
             "Resolved runtime selector"
         );
+
+        if let Ok(mut last_release_index_diagnostic) = self.last_release_index_diagnostic.lock() {
+            *last_release_index_diagnostic = release_index;
+        }
 
         Ok(ResolvedRuntime {
             source,
