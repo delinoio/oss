@@ -221,11 +221,28 @@ fn sanitize_source_url(parsed: &Url) -> String {
 
 fn sanitize_unparsed_url_like_input(raw: &str) -> String {
     let without_fragment = raw.split('#').next().unwrap_or(raw);
-    without_fragment
+    let without_query = without_fragment
         .split('?')
         .next()
-        .unwrap_or(without_fragment)
-        .to_string()
+        .unwrap_or(without_fragment);
+    let Some(scheme_end) = without_query.find("://") else {
+        return without_query.to_string();
+    };
+    let authority_start = scheme_end + "://".len();
+    let authority_end = without_query[authority_start..]
+        .find('/')
+        .map(|offset| authority_start + offset)
+        .unwrap_or(without_query.len());
+    let authority = &without_query[authority_start..authority_end];
+    let Some(credentials_end) = authority.rfind('@') else {
+        return without_query.to_string();
+    };
+    format!(
+        "{}{}{}",
+        &without_query[..authority_start],
+        &authority[credentials_end + 1..],
+        &without_query[authority_end..]
+    )
 }
 
 fn parse_github_owner_repo_shorthand(
@@ -815,6 +832,22 @@ mod tests {
                 assert_eq!(raw, "http://github.com/owner/tool");
                 assert!(message.contains("must use HTTPS"));
                 assert!(message.contains("github:owner/repo"));
+            }
+            other => panic!("expected InvalidSourceSpec, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_url_shorthands_without_echoing_credentials() {
+        match normalize_source_input("https://user:secret@[::1?token=secret")
+            .expect_err("malformed URL")
+        {
+            BinpmError::InvalidSourceSpec { raw, message } => {
+                assert_eq!(raw, "https://[::1");
+                assert!(message.contains("invalid source URL shorthand"));
+                assert!(!raw.contains("user"));
+                assert!(!raw.contains("secret"));
+                assert!(!message.contains("secret"));
             }
             other => panic!("expected InvalidSourceSpec, got {other:?}"),
         }

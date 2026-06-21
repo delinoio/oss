@@ -2797,52 +2797,10 @@ struct DownloadRequest {
 }
 
 fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
-    let spec = locked_release_lookup_spec(record)?;
-    let client = client_for_source(&spec)?;
-    let selection = client.resolve_release(&spec)?;
-    let asset = selection
-        .release
-        .assets
-        .iter()
-        .find(|asset| asset.name == record.asset_name)
-        .ok_or_else(|| BinpmError::AssetNotFound {
-            package: record.package_spec.clone(),
-            target: HostTarget {
-                os: record.target_os,
-                arch: record.target_arch,
-                libc: record.target_libc,
-            }
-            .key(),
-        })?;
-    if record.source_provider == crate::contract::SourceProvider::GitLab && asset.source_archive {
-        return Err(BinpmError::AssetNotFound {
-            package: record.package_spec.clone(),
-            target: HostTarget {
-                os: record.target_os,
-                arch: record.target_arch,
-                libc: record.target_libc,
-            }
-            .key(),
-        });
-    }
-    if record.source_provider == crate::contract::SourceProvider::GitLab
-        && !gitlab_https_eligible(asset)
-    {
-        return Err(BinpmError::UnsafeUrl {
-            url: gitlab_https_diagnostic_url(asset),
-            message: gitlab_https_rejection_reason(asset)
-                .unwrap_or_else(|| "gitlab asset link is not HTTPS eligible".to_string()),
-        });
-    }
     Ok(DownloadRequest {
-        url: asset
-            .download_url
-            .as_deref()
-            .or(asset.provider_url.as_deref())
-            .unwrap_or(&asset.url)
-            .to_string(),
-        auth: asset.download_auth.clone(),
-        accept: asset.download_accept,
+        url: sanitize_persisted_url(&record.asset_url)?,
+        auth: None,
+        accept: None,
     })
 }
 
@@ -5761,8 +5719,8 @@ mod tests {
         install_local_from_lock, install_path_collision_key, is_retryable_status,
         local_runtime_lock_records, local_tool_execution_ready,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
-        locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
-        manifest_creation_root_from, manifest_project_root_from,
+        locked_record_download_request, locked_release_lookup_spec, lockfile_digest,
+        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         normalize_bin_selection, override_snippet_candidate, package_record_output,
         parse_manifest_source, parse_manifest_tool_source, project_root_from,
@@ -8701,6 +8659,20 @@ mod tests {
             Some(&tool),
         )
         .expect("explicit override asset is accepted");
+    }
+
+    #[test]
+    fn locked_record_download_request_uses_locked_asset_url() {
+        let mut record = package_record();
+        record.asset_url =
+            "https://github.com/owner/tool/releases/download/1.0.0/locked-tool-linux".to_string();
+        record.asset_name = "tool-linux".to_string();
+
+        let request = locked_record_download_request(&record).expect("download request");
+
+        assert_eq!(request.url, record.asset_url);
+        assert_eq!(request.auth, None);
+        assert_eq!(request.accept, None);
     }
 
     #[test]

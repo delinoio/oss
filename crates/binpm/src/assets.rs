@@ -337,6 +337,9 @@ pub(crate) fn target_archive_candidates(
 
 fn archive_member_target_score(target: &HostTarget, path: &str) -> Option<i32> {
     let signal = detect_target(path);
+    if signal.cpu_feature == Some(CpuFeatureVariant::Modern) {
+        return None;
+    }
     if signal.os.is_none() && signal.arch.is_none() && signal.libc.is_none() {
         return Some(0);
     }
@@ -748,9 +751,16 @@ fn cpu_feature_token_has_target_context(tokens: &[&str], index: usize) -> bool {
     if cpu_feature_alias(tokens[index]).is_none() {
         return false;
     }
-    tokens.iter().take(index).any(|token| {
+    let has_target_context = |token: &str| {
         os_alias(token).is_some() || arch_alias(token).is_some() || libc_alias(token).is_some()
-    })
+    };
+    index
+        .checked_sub(1)
+        .and_then(|previous| tokens.get(previous))
+        .is_some_and(|token| has_target_context(token))
+        || tokens
+            .get(index + 1)
+            .is_some_and(|token| has_target_context(token))
 }
 
 fn is_source_archive_name(lower: &str) -> bool {
@@ -896,8 +906,8 @@ fn normalized_binary_name(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_artifact, discover_archive_binary, score_assets, select_asset, ArchiveMember,
-        ArtifactKind, BinaryDiscovery, CpuFeatureVariant,
+        classify_artifact, discover_archive_binary, score_assets, select_asset,
+        target_archive_candidates, ArchiveMember, ArtifactKind, BinaryDiscovery, CpuFeatureVariant,
     };
     use crate::{
         contract::{ArchiveFormat, HostTarget, SourceProvider, TargetArch, TargetLibc, TargetOs},
@@ -1267,6 +1277,28 @@ mod tests {
     }
 
     #[test]
+    fn cpu_feature_variants_are_detected_before_adjacent_target_tokens() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let decisions = score_assets(
+            SourceProvider::GitHub,
+            &host,
+            &[
+                asset("bun-modern-linux-x64.zip"),
+                asset("bun-baseline-linux-x64.zip"),
+            ],
+        );
+
+        assert_eq!(decisions[0].asset_name, "bun-baseline-linux-x64.zip");
+        assert_eq!(decisions[0].cpu_feature, Some(CpuFeatureVariant::Baseline));
+        let modern = decisions
+            .iter()
+            .find(|decision| decision.asset_name == "bun-modern-linux-x64.zip")
+            .expect("modern decision");
+        assert_eq!(modern.cpu_feature, Some(CpuFeatureVariant::Modern));
+        assert!(!modern.eligible);
+    }
+
+    #[test]
     fn modern_product_name_token_is_not_rejected_as_cpu_feature() {
         let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
         let decisions = score_assets(
@@ -1277,6 +1309,24 @@ mod tests {
 
         assert_eq!(decisions[0].cpu_feature, None);
         assert!(decisions[0].eligible);
+    }
+
+    #[test]
+    fn archive_member_discovery_rejects_modern_cpu_variant_by_default() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let candidates = target_archive_candidates(
+            &host,
+            vec![
+                "pkg/bin/linux-x64-modern/tool".to_string(),
+                "pkg/bin/linux-x64-baseline/tool".to_string(),
+            ],
+        );
+
+        assert_eq!(candidates, vec!["pkg/bin/linux-x64-baseline/tool"]);
+
+        let modern_only =
+            target_archive_candidates(&host, vec!["pkg/bin/linux-x64-modern/tool".to_string()]);
+        assert!(modern_only.is_empty());
     }
 
     #[test]
