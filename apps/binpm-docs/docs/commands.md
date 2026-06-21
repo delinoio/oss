@@ -16,7 +16,7 @@ binpm remove <cmd> [--local|--global]
 
 Use `binpm add <cmd> <source> --bin <upstream-binary>` when the release archive contains multiple executables or when the upstream executable name differs from the local command name. The selected binary is persisted in `binpm.toml`.
 
-Commands that support both local and global scope default to local when a local `binpm.toml` is discovered. Otherwise they default to global. `--local` and `--global` are explicit overrides.
+Commands that support both local and global scope default to local when a local `binpm.toml` is discovered. Otherwise they default to global. `--local` and `--global` are explicit overrides. Global update is not implemented yet; use local `binpm update` for project tools.
 
 ## Execution
 

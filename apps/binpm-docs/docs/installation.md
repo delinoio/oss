@@ -19,6 +19,7 @@ On POSIX hosts, archive installs write the selected binary with executable permi
 Global installs use `~/.binpm`:
 
 - `~/.binpm/bin`: globally installed executable links or copies.
+- `~/.binpm/packages`: global installed package records.
 - `~/.binpm/cache`: user-level asset cache.
 
 ## PATH Setup
@@ -42,4 +43,4 @@ binpm does not edit shell profile files from these commands. Persistent profile 
 
 binpm uses HTTPS source-provider APIs and release asset URLs. Stored URLs are sanitized so query strings, fragments, credentials, and expiring signed URL details are not written into project files.
 
-When strict verification is requested, `--require-verified` and `binpm verify --require-verified` fail unless a provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature is available.
+When strict verification is requested, `--require-verified` and `binpm verify --require-verified` fail unless a trusted provider digest is available. Checksum sidecar discovery, checksum manifest discovery, and signature verification remain implementation work.
