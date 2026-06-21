@@ -5,7 +5,7 @@
 Each project must have one project index document and one or more domain contract documents.
 
 ## Repository Defaults
-- Repository-wide default technology choices are defined in `docs/repository-defaults.md`.
+- Repository-wide default technology choices and workflow defaults are defined in `docs/repository-defaults.md`.
 - Project and domain contracts must document deviations from those defaults when a different language, ID format, search backend, build toolchain, static-site deployment platform, or file storage/access pattern is chosen.
 
 ## Documentation Editing Rules
@@ -21,7 +21,7 @@ Each project must have one project index document and one or more domain contrac
 - Use lowercase kebab-case identifiers and stable enum-style IDs in contract sections.
 
 ## Templates
-- `docs/repository-defaults.md`: repository-wide default technology choices
+- `docs/repository-defaults.md`: repository-wide default technology choices and workflow defaults
 - `docs/project-template.md`: template for project index docs
 - `docs/domain-template.md`: template for domain contract docs
 

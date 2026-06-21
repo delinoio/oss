@@ -229,6 +229,15 @@ enum RustiaComponent {
   - `## Out of Scope`
 - Optional `## Additional Notes` may be appended only when needed.
 
+### GitHub Pull Request Title Contract
+
+- Apply this contract to newly created pull requests.
+- Pull request titles must use Conventional Commit-style format with a required scope: `<type>(<scope>): <description>`.
+- `<type>` must be an appropriate Conventional Commit type such as `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `build`, `perf`, or `revert`.
+- `<scope>` must use a stable lowercase project, component, domain, or tooling identifier from repository contracts when one applies (for example: `ttl`, `nodeup`, `serde-feather`, `thenv`, `docs`, `ci`).
+- `<description>` should be concise, specific, and start with a lowercase verb phrase when possible.
+- Do not create unscoped pull request titles or use bracket-style project prefixes like `[serde-feather]`.
+
 ### Node Runtime Baseline
 
 - Root `.nvmrc` is the canonical Node.js runtime selector for local development workflows.
