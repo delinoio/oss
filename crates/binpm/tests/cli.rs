@@ -163,6 +163,16 @@ fn add_and_x_help_include_explicit_bin_selection() {
     add.args(["add", "--help"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("--bin <BIN>"))
+        .stdout(predicate::str::contains("--also <CMD=BIN>"))
+        .stdout(predicate::str::contains("--manifest-only"));
+
+    let mut install = binpm();
+    install
+        .args(["install", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--as <CMD>"))
         .stdout(predicate::str::contains("--bin <BIN>"));
 
     let mut exec = binpm();
@@ -170,6 +180,94 @@ fn add_and_x_help_include_explicit_bin_selection() {
         .assert()
         .success()
         .stdout(predicate::str::contains("--bin <BIN>"));
+}
+
+#[test]
+fn add_manifest_only_writes_only_manifest_and_supports_additional_commands() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "foo",
+            "github:owner/tools@v1.2.3",
+            "--bin",
+            "bin/foo",
+            "--also",
+            "bar=bin/bar",
+            "--manifest-only",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("declared foo, bar"))
+        .stdout(predicate::str::contains("manifest-only: did not update"))
+        .stdout(predicate::str::contains("next: run `binpm install`"));
+
+    let manifest = fs::read_to_string(temp_dir.path().join("binpm.toml")).expect("read manifest");
+    assert_eq!(
+        manifest,
+        r#"version = 1
+
+[tools.bar]
+source = "github:owner/tools"
+version = "v1.2.3"
+bin = "bin/bar"
+
+[tools.foo]
+source = "github:owner/tools"
+version = "v1.2.3"
+bin = "bin/foo"
+"#
+    );
+    assert!(!temp_dir.path().join("binpm.lock").exists());
+    assert!(!temp_dir.path().join(".binpm").exists());
+}
+
+#[test]
+fn add_rejects_duplicate_additional_command_declarations() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "foo",
+            "github:owner/tools@v1.2.3",
+            "--bin",
+            "bin/foo",
+            "--also",
+            "foo=bin/other",
+            "--manifest-only",
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Duplicate local command declaration `foo`",
+        ));
+
+    assert!(!temp_dir.path().join("binpm.toml").exists());
+    assert!(!temp_dir.path().join("binpm.lock").exists());
+    assert!(!temp_dir.path().join(".binpm").exists());
+}
+
+#[test]
+fn package_shortcut_without_command_keeps_source_explicit() {
+    let mut command = binpm();
+
+    command
+        .args(["x", "--package", "not-a-source"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Invalid source spec"));
 }
 
 #[test]
@@ -655,6 +753,16 @@ fn doctor_json_reports_path_states() {
         payload["global_bin"],
         home.join("bin").display().to_string()
     );
+    assert_eq!(
+        payload["local_bin"],
+        temp_dir
+            .path()
+            .join(".binpm")
+            .join("bin")
+            .display()
+            .to_string()
+    );
+    assert_eq!(payload["local_bin_on_path"], false);
     assert_eq!(payload["global_bin_on_path"], false);
 }
 

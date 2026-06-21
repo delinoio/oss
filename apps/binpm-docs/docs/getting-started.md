@@ -16,6 +16,8 @@ When you run `binpm init` from a nested directory, manifest creation uses the cu
 
 `binpm x CMD [args...]` resolves `CMD` from `binpm.toml`, installs on demand when allowed by the lockfile policy, prepends `<project>/.binpm/bin` to `PATH`, preserves the caller's working directory, and forwards arguments after `CMD`.
 
+After `binpm add`, use `binpm x <cmd>` as the default local invocation path. `binpm env --shell <bash|zsh|fish|powershell>` prints opt-in PATH commands when you want direct shell access; it does not edit shell profiles.
+
 ## One-Off Execution
 
 Use an explicit package when a command is not declared in the local manifest:
@@ -24,7 +26,13 @@ Use an explicit package when a command is not declared in the local manifest:
 binpm x --package github:BurntSushi/ripgrep rg --version
 ```
 
-binpm does not infer a GitHub repository from the command name. If `CMD` is missing and `--package` is not supplied, the command fails with a clear hint.
+For packages where the repository name is the command, the shorter explicit-source form is available:
+
+```bash
+binpm x --package github:owner/tool
+```
+
+Use `--bin <upstream-binary>` when the upstream executable or archive member has a different basename. Provide an explicit `CMD` when you need to forward args. binpm does not infer a GitHub repository from the command name. If `CMD` is missing and `--package` is not supplied, the command fails with a clear hint.
 
 ## Frozen Lockfiles
 
