@@ -23,6 +23,23 @@ Global binpm state uses `~/.binpm`:
 - `~/.binpm/cache`: user-level asset cache.
 - `~/.binpm/tmp`: temporary downloads and extraction roots.
 
+## PATH Setup
+
+Global installs place executables under `~/.binpm/bin`. When that directory is not on `PATH`, global install output and `binpm doctor` print guided setup messaging.
+
+Use `binpm env` to print shell-specific PATH commands:
+
+```bash
+binpm env --shell bash
+binpm env --shell zsh
+binpm env --shell fish
+binpm env --shell powershell
+```
+
+Supported `--shell` values are `bash`, `zsh`, `fish`, and `powershell`. `PowerShell` is accepted case-insensitively. `cmd` is recognized but explicitly deferred and returns an unsupported-shell diagnostic.
+
+binpm does not edit shell profile files from these commands. Persistent profile changes are opt-in: add the printed commands to your shell profile only when you want them to persist.
+
 ## Security Boundary
 
 binpm uses HTTPS source-provider APIs and release asset URLs. Persisted URLs in lockfiles, cache metadata, diagnostics, errors, and logs must be sanitized by removing query strings and fragments.

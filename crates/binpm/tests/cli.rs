@@ -396,6 +396,7 @@ fn cache_key_from_nested_directory_uses_manifest_ancestor_lockfile_without_git()
 #[test]
 fn doctor_from_nested_directory_reports_git_root_state() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
     fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
     fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
     fs::write(temp_dir.path().join("binpm.lock"), "root lock\n").expect("write lockfile");
@@ -405,11 +406,51 @@ fn doctor_from_nested_directory_reports_git_root_state() {
 
     command
         .current_dir(&nested_dir)
+        .env("BINPM_HOME", &home)
         .arg("doctor")
         .assert()
         .success()
         .stdout(predicate::str::contains("manifest: present"))
         .stdout(predicate::str::contains("lockfile: present"));
+}
+
+#[test]
+fn doctor_guides_path_setup_when_global_bin_is_absent_from_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("global_bin_on_path: no"))
+        .stdout(predicate::str::contains("binpm env --shell"))
+        .stdout(predicate::str::contains("profile changes are opt-in"));
+}
+
+#[test]
+fn doctor_omits_path_setup_guidance_when_global_bin_is_on_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let global_bin = home.join("bin");
+    fs::create_dir_all(&global_bin).expect("create global bin");
+    let path = std::env::join_paths([global_bin.as_path()]).expect("join PATH");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("PATH", path)
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("global_bin_on_path: yes"))
+        .stdout(predicate::str::contains("path_setup:").not());
 }
 
 #[test]
@@ -488,6 +529,22 @@ fn env_powershell_avoids_trailing_separator_when_path_is_unset() {
         .stdout(predicate::str::contains(
             "[System.IO.Path]::PathSeparator + $env:PATH",
         ));
+}
+
+#[test]
+fn env_cmd_reports_explicitly_deferred_shell() {
+    let mut command = binpm();
+
+    command
+        .args(["env", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Unsupported shell `cmd`"))
+        .stderr(predicate::str::contains(
+            "Supported shells: bash, zsh, fish, powershell",
+        ))
+        .stderr(predicate::str::contains("Deferred shell: cmd"));
 }
 
 #[test]

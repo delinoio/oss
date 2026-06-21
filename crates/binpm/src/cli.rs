@@ -230,7 +230,7 @@ pub struct InitArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct EnvArgs {
-    #[arg(long, value_enum)]
+    #[arg(long, value_enum, ignore_case = true)]
     pub shell: Shell,
 }
 
@@ -276,11 +276,14 @@ impl LockfileArgs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "lower")]
 pub enum Shell {
     Bash,
     Zsh,
     Fish,
+    #[value(alias = "pwsh")]
     Powershell,
+    Cmd,
 }
 
 impl Shell {
@@ -290,6 +293,7 @@ impl Shell {
             Self::Zsh => "zsh",
             Self::Fish => "fish",
             Self::Powershell => "powershell",
+            Self::Cmd => "cmd",
         }
     }
 }
@@ -415,6 +419,26 @@ mod tests {
 
         match cli.command {
             Command::Env(args) => assert_eq!(args.shell, Shell::Fish),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_env_powershell_case_insensitively() {
+        let cli = Cli::parse_from(["binpm", "env", "--shell", "PowerShell"]);
+
+        match cli.command {
+            Command::Env(args) => assert_eq!(args.shell, Shell::Powershell),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_env_cmd_as_deferred_shell_value() {
+        let cli = Cli::parse_from(["binpm", "env", "--shell", "cmd"]);
+
+        match cli.command {
+            Command::Env(args) => assert_eq!(args.shell, Shell::Cmd),
             other => panic!("unexpected command: {other:?}"),
         }
     }

@@ -19,6 +19,8 @@ Use `binpm doctor` to inspect manifest discovery, lockfile readability, package 
 binpm doctor
 ```
 
+When `~/.binpm/bin` is not on `PATH`, doctor prints setup guidance that points to `binpm env --shell <bash|zsh|fish|powershell>`. binpm does not edit profile files from doctor or env output; persistent profile changes are opt-in.
+
 ## Verify Installed Records
 
 Use `binpm verify` to validate lockfile records, package records, cache bytes, and installed executable records.
