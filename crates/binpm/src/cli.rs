@@ -194,6 +194,10 @@ pub struct RemoveArgs {
     #[command(flatten)]
     pub scope: ScopeArgs,
 
+    /// Show the selected scope and planned removal without mutating state.
+    #[arg(long)]
+    pub dry_run: bool,
+
     /// Bypass future confirmation prompts for scripting.
     #[arg(long)]
     pub no_confirm: bool,
@@ -221,6 +225,10 @@ pub struct UpdateArgs {
     /// available.
     #[arg(long)]
     pub require_verified: bool,
+
+    /// Show the selected scope and planned updates without mutating state.
+    #[arg(long)]
+    pub dry_run: bool,
 
     /// Bypass future confirmation prompts for scripting.
     #[arg(long)]

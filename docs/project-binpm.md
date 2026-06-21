@@ -50,6 +50,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `--require-verified` and `binpm verify --require-verified` must fail unless provider digest, upstream checksum sidecar, upstream checksum manifest, or a successfully verified signature under a documented trust policy is available.
 - `--no-confirm` must remain a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
 - `-v`/`--verbose` and `--debug` must remain discoverable global flags that map to structured binpm tracing. They override `BINPM_LOG`; `BINPM_LOG` remains supported when no CLI verbosity flag is present.
+- `binpm update` and `binpm remove` must print the selected local or global scope before mutation and support `--dry-run` previews that leave manifests, lockfiles, package records, cache references, and executables unchanged. `--global` remains an explicit scope override even inside a project and does not currently require an interactive confirmation prompt.
 - `binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, `binpm outdated`, and `binpm cache key` must not mutate manifests, lockfiles, package records, cache entries, or executables.
 - `binpm remove` must clean project-local package records when they exist so removed tools are not reported as installed.
 
