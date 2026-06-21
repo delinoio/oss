@@ -880,9 +880,17 @@ pub fn prune_cache(paths: &CachePaths, referenced_keys: &BTreeSet<String>) -> Re
 pub fn clean_cache(paths: &CachePaths) -> Result<usize> {
     ensure_dir(&paths.home)?;
     ensure_dir(&paths.root)?;
-    let count = cache_entry_dirs(paths)
-        .map(|dirs| dirs.len())
-        .unwrap_or_default();
+    let count = match cache_entry_dirs(paths) {
+        Ok(dirs) => dirs.len(),
+        Err(BinpmError::ReadFile { path, source }) if source.kind() == ErrorKind::NotADirectory => {
+            debug!(
+                cache_path = %path.display(),
+                "Removing malformed sha256 cache root"
+            );
+            0
+        }
+        Err(error) => return Err(error),
+    };
     remove_path_if_exists(&paths.root.join("sha256"))?;
     ensure_dir(&paths.refs)?;
     Ok(count)
@@ -2077,6 +2085,26 @@ created_at = "2026-01-01T00:00:00Z"
 
         assert!(error.to_string().contains("Unsafe managed directory"));
         assert!(outside_entry.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clean_cache_rejects_symlinked_sha256_root_before_removing_entries() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        let outside_entry = outside.path().join("keep");
+        std::fs::create_dir_all(&cache.root).expect("create cache root");
+        std::fs::create_dir_all(&outside_entry).expect("create outside entry");
+        std::fs::write(outside_entry.join("asset"), b"keep").expect("write outside asset");
+        std::os::unix::fs::symlink(outside.path(), cache.root.join("sha256"))
+            .expect("symlink sha root");
+
+        let error = clean_cache(&cache).expect_err("symlinked sha256 cache root");
+
+        assert!(error.to_string().contains("Unsafe managed directory"));
+        assert!(outside_entry.exists());
+        assert!(cache.root.join("sha256").exists());
     }
 
     #[test]

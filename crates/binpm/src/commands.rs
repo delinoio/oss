@@ -2419,7 +2419,9 @@ fn is_global_managed_installed_path(
         if cmd == removed_cmd {
             continue;
         }
-        if managed_installed_path(paths, &cmd, record.target_os) == path {
+        let key = install_path_collision_key(path, record.target_os);
+        let managed_path = managed_installed_path(paths, &cmd, record.target_os);
+        if install_path_collision_key(&managed_path, record.target_os) == key {
             return Ok(true);
         }
     }
@@ -4648,6 +4650,30 @@ mod tests {
         assert!(crate::storage::package_record_path(&paths, "tool.exe").exists());
         assert_eq!(
             std::fs::read_to_string(paths.bin.join("tool.exe")).expect("read exe"),
+            "remaining tool"
+        );
+    }
+
+    #[test]
+    fn global_remove_preserves_darwin_case_insensitive_path_owned_by_remaining_record() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
+        let mut removed = package_record();
+        removed.target_os = TargetOs::Darwin;
+        removed.installed_path = paths.bin.join("foo").display().to_string();
+        let mut remaining = package_record();
+        remaining.target_os = TargetOs::Darwin;
+        remaining.installed_path = paths.bin.join("FOO").display().to_string();
+        write_package_record(&paths, "foo", &removed).expect("write removed record");
+        write_package_record(&paths, "FOO", &remaining).expect("write remaining record");
+        std::fs::write(paths.bin.join("foo"), "remaining tool").expect("write darwin tool");
+
+        remove_global_tool_from_paths(&paths, "foo").expect("remove global tool");
+
+        assert!(!crate::storage::package_record_path(&paths, "foo").exists());
+        assert!(crate::storage::package_record_path(&paths, "FOO").exists());
+        assert_eq!(
+            std::fs::read_to_string(paths.bin.join("foo")).expect("read darwin tool"),
             "remaining tool"
         );
     }
