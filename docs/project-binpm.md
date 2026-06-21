@@ -37,9 +37,11 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `~/.binpm` remains the canonical global home directory for globally installed binaries, package records, cache entries, and temporary extraction state.
 - `~/.binpm/cache` is the user-level global asset cache shared by all `binpm` installs for the same account.
 - Global cache reuse must never bypass provider asset digest, upstream checksum, signature, or locally recorded SHA-256 verification.
-- Project-local installs must maintain user-level cache references so pruning from one checkout does not remove cache entries still referenced by another checkout.
-- Cache management commands must preserve installed package records and `~/.binpm/bin` entries unless a separate uninstall contract explicitly changes that behavior.
-- `binpm cache key` must be a read-only diagnostic command that prints a current-target CI cache key derived from `binpm.lock`.
+- Project-local installs must maintain user-level cache references so pruning from one checkout does not remove cache entries still referenced by another checkout. New cache references must include enough project and command metadata for stale-reference diagnostics.
+- Cache management commands must preserve installed package records and `~/.binpm/bin` entries unless a separate uninstall contract explicitly changes that behavior. `binpm cache clean` removes only global cache asset entries under `~/.binpm/cache/sha256` and preserves the local-project reference index under `~/.binpm/cache/refs`.
+- `binpm cache prune` must remove stale structured local-project cache references before deciding which cache entries are still referenced. Stale references are references whose project-local package record is absent or no longer points at the referenced cache key. Legacy plain-text references remain preserving until rewritten by a future install or removal flow.
+- `binpm doctor` must report stale and legacy cache-reference counts without mutating them.
+- `binpm cache key` must be a read-only diagnostic command that prints a current-target CI cache key derived from `binpm.lock`. When `binpm.lock` is absent, human output must warn that the empty lockfile digest is used, and JSON output must expose lockfile status.
 - Project-local tooling must use `binpm.toml` at the repository root as the committed local tool manifest.
 - `binpm init` must print the resolved full `binpm.toml` destination before it creates or refuses to overwrite the manifest. Creation targets the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory. There is no contracted flag for forcing initialization in a nested current directory.
 - Project-local tooling must use `binpm.lock` at the repository root as the committed deterministic resolution record for release tags, target-specific assets, selected binaries, checksums, and installed paths.

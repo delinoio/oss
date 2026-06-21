@@ -121,7 +121,10 @@ enum ProjectId {
 - `binpm` cache reuse must be validated with the strongest available integrity source: provider asset digest, upstream checksum material, successfully verified signature, or locally recorded SHA-256 metadata.
 - Cache management and diagnostic command identifiers are `list`, `prune`, `clean`, and `key` under `binpm cache`.
 - `binpm cache prune` and `binpm cache clean` must not remove installed package records or executable links/copies under `~/.binpm/bin`.
+- `binpm cache clean` must state the removed cache asset boundary and the preserved `~/.binpm/cache/refs`, package-record, and executable boundaries.
+- `binpm cache prune` must remove stale structured local-project cache references before asset pruning while preserving active and legacy references.
 - `binpm cache key` must be read-only and must not download, install, or populate cache entries.
+- `binpm cache key` must warn or expose structured status when `binpm.lock` is absent.
 
 ### binpm Source Contract
 
