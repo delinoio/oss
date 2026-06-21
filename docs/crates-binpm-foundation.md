@@ -24,10 +24,10 @@
   - `binpm cache key` may print a deterministic key for the current target and project-root `binpm.lock`, using an empty lockfile digest when the file is absent.
 - Current install finalization supports bare executable assets and documented archive assets end to end. Archive extraction is implemented for `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip`, and installs only the selected executable member.
 - Canonical global install command: `binpm install <source>`.
-- Canonical local declaration command: `binpm add <cmd> <source>`.
+- Canonical local declaration command: `binpm add <cmd> <source> [--bin <upstream-binary>]`.
 - Canonical local sync command: `binpm install`.
 - Canonical local execution command: `binpm x CMD [args...]`.
-- Canonical one-off execution command: `binpm x --package <source> CMD [args...]`.
+- Canonical one-off execution command: `binpm x --package <source> [--bin <upstream-binary>] CMD [args...]`.
 - Documented execution aliases: `binpm exec` and `binpm run`. These aliases are stable compatibility entry points for discoverability, but `binpm x` remains the canonical execution command used in contracts, diagnostics, examples, and logs.
 - Stable source enum values:
   - `github:owner/repo[@version]` addresses GitHub.com Releases and may omit the host only for `github.com`.
@@ -60,12 +60,14 @@
 - `binpm init` must create a minimal `binpm.toml` with `version = 1` at the project root when one does not already exist; it must not install tools by default.
 - `binpm env --shell <shell>` must print shell-specific environment commands for adding binpm-managed binary directories to `PATH`; it must not modify shell profiles by default.
 - On Windows, `binpm env --shell bash` and `binpm env --shell zsh` must render drive-letter and UNC paths in POSIX shell form so colon-separated `PATH` exports remain valid.
-- `binpm add <cmd> <source>` must declare `<cmd>` in `binpm.toml`, install the selected executable into `$repoRoot/.binpm/bin`, and update `binpm.lock`.
+- `binpm add <cmd> <source> [--bin <upstream-binary>]` must declare `<cmd>` in `binpm.toml`, install the selected executable into `$repoRoot/.binpm/bin`, and update `binpm.lock`.
+- When `binpm add` receives `--bin`, it must persist that value as `[tools.<cmd>].bin` in `binpm.toml` so future local installs and executions use the same upstream binary selection without manual TOML editing.
 - Tool command names in `binpm.toml`, package records, and install commands must be executable basenames; path separators, `.` and `..` are invalid command names.
 - `binpm install` without a package spec must sync the local `binpm.toml` manifest into `$repoRoot/.binpm/bin` and update `binpm.lock`; `binpm install <source>` keeps the global install behavior.
 - `binpm x CMD [args...]` must resolve `CMD` from `binpm.toml`, install it on demand when the lockfile or local executable is missing or stale, prepend `$repoRoot/.binpm/bin` to `PATH`, preserve the caller's current working directory, and forward every argument after `CMD` to the executed command.
-- `binpm x --package <source> CMD [args...]` must install or reuse the explicit package in a temporary or cache-backed execution context, prepend that context and `$repoRoot/.binpm/bin` to `PATH` when a local project exists, and run `CMD [args...]`.
-- `binpm exec` and `binpm run` must dispatch through the same execution implementation as `binpm x`, including argument forwarding, `--package` behavior, local manifest and lockfile behavior, install-on-demand behavior, PATH prepending, and process exit handling.
+- `binpm x --package <source> [--bin <upstream-binary>] CMD [args...]` must install or reuse the explicit package in a temporary or cache-backed execution context, prepend that context and `$repoRoot/.binpm/bin` to `PATH` when a local project exists, and run `CMD [args...]`.
+- When one-off execution receives `--bin`, `binpm` must use that upstream executable name or archive member path while exposing it as the requested `CMD` inside the temporary execution context.
+- `binpm exec` and `binpm run` must dispatch through the same execution implementation as `binpm x`, including argument forwarding, `--package` and `--bin` behavior, local manifest and lockfile behavior, install-on-demand behavior, PATH prepending, and process exit handling.
 - If `CMD` is absent from the local manifest and no explicit `--package` is provided, `binpm x` and its execution aliases must fail with a clear hint to run `binpm add <cmd> <source>` or retry with `--package`; they must not infer a source repository from the command name.
 - The host target model must be enum-driven and include:
   - OS: `linux`, `darwin`, `windows`, `freebsd`
@@ -94,14 +96,14 @@
   - Package formulas and package-manager metadata such as `.rb`, `.json` manifests, npm package tarballs, and Homebrew formula assets.
 - Desktop or system package formats are de-prioritized and must not be installed by default in v1: `.deb`, `.rpm`, `.apk`, `.pkg.tar.zst`, `.dmg`, `.msi`, `.pkg`, `.AppImage`, `.flatpak`, `.snap`.
 - Archive extraction must locate one or more executable files by executable permission, Windows `.exe` suffix, expected package name, and target-aware filename tokens. Explicit manifest `bin` values may name an exact archive member path or a unique member basename.
-- If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates.
+- If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates and includes concrete retry suggestions such as `binpm add <cmd> <source> --bin <candidate>` or `binpm x --package <source> --bin <candidate> <cmd>`.
 - The current foundation implements binary discovery as a deterministic member-list heuristic and uses it during archive extraction and install finalization.
 
 ## Local Manifest and Lockfile
 - The local project root is the nearest ancestor containing `binpm.toml`; commands that create `binpm.toml` must use the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory.
 - `binpm.toml` is the committed local tool declaration file. It must use TOML, `version = 1`, and `[tools.<cmd>]` tables keyed by the local command name.
-- In `binpm.toml`, each tool entry must include `source = "<source-without-version>"`, may include `version = "<release>"`, and may include `bin = "<upstream-binary-name>"` when the executable selected from the release differs from the local command name or needs explicit disambiguation.
-- `binpm add <cmd> <source>` must persist the package source without the version suffix in `source`; when a version is supplied, it must persist that value in `version`.
+- In `binpm.toml`, each tool entry must include `source = "<source-without-version>"`, may include `version = "<release>"`, and may include `bin = "<upstream-binary-name-or-archive-member>"` when the executable selected from the release differs from the local command name or needs explicit disambiguation.
+- `binpm add <cmd> <source>` must persist the package source without the version suffix in `source`; when a version is supplied, it must persist that value in `version`; when `--bin` is supplied, it must persist that value in `bin`.
 - Target-specific manifest overrides must use `[tools.<cmd>.targets.<target-key>]` tables. Each override must include `asset = "<release-asset-name>"`, `bin = "<asset-member-or-bare-binary>"`, and may include `checksum_source = "<checksum-source>"` when the automatic checksum source must be overridden.
 - Multi-binary releases must keep the existing `[tools.<cmd>]` model: each local command has its own declaration, while multiple commands may share the same source, release asset, cache entry, and package bytes.
 - `binpm.lock` is the committed deterministic local resolution file. It must use TOML, `version = 1`, `[tools.<cmd>]` command tables keyed by local command name, and `[tools.<cmd>.targets.<target-key>]` records keyed by normalized target.

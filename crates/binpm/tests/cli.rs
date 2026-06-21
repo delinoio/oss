@@ -80,6 +80,21 @@ fn help_includes_initial_command_surface() {
 }
 
 #[test]
+fn add_and_x_help_include_explicit_bin_selection() {
+    let mut add = binpm();
+    add.args(["add", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--bin <BIN>"));
+
+    let mut exec = binpm();
+    exec.args(["x", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--bin <BIN>"));
+}
+
+#[test]
 fn execution_aliases_accept_package_and_forwarded_flags() {
     for alias in ["exec", "run"] {
         let mut command = binpm();
