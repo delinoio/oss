@@ -6,6 +6,7 @@ use crate::{
     commands::print_output,
     errors::{NodeupError, Result},
     resolver::ResolvedRuntimeTarget,
+    store::runtime_executable_is_runnable,
     NodeupApp,
 };
 
@@ -81,6 +82,28 @@ fn show_active_runtime(
             ),
             "Reinstall the runtime with `nodeup toolchain install <runtime>` or relink it with \
              `nodeup toolchain link <name> <path>`.",
+        ));
+    }
+
+    if !runtime_executable_is_runnable(&executable) {
+        info!(
+            command_path = "nodeup.show.active-runtime",
+            runtime = %resolved.runtime_id(),
+            selector = %resolved.selector,
+            selector_source = resolved.source.as_str(),
+            availability = false,
+            reason = "node-executable-not-runnable",
+            executable = %executable.display(),
+            "Active runtime is unavailable"
+        );
+        return Err(NodeupError::not_found_with_hint(
+            format!(
+                "Command 'node' exists but is not runnable for runtime {} (path={})",
+                resolved.runtime_id(),
+                executable.display()
+            ),
+            "On Unix, ensure the executable bit is set. On Windows, relink a runtime that \
+             provides `bin/node.exe`.",
         ));
     }
 

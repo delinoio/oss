@@ -44,7 +44,7 @@ The command rejects linked runtime names. JSON output is an array of entries wit
 nodeup toolchain uninstall <version>...
 ```
 
-Removes exact installed versions only. Channels and linked runtime names are rejected. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
+Removes exact installed versions only. Channels and linked runtime names are rejected. Use `nodeup toolchain unlink <name>` for linked runtime records. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
 
 JSON output is the removed version list.
 
@@ -58,7 +58,21 @@ Registers an existing runtime directory. The directory must contain `bin/node` o
 
 Linked names must match `[A-Za-z0-9][A-Za-z0-9_-]*`. Reserved channel names `lts`, `current`, and `latest` cannot be used as linked runtime names.
 
+The linked `node` command must be runnable. Unix hosts require an executable permission bit on `bin/node`; Windows platform behavior uses `bin/node.exe`.
+
 JSON output includes `name`, `path`, and `status: "linked"`.
+
+## toolchain unlink
+
+```bash
+nodeup toolchain unlink <name>...
+```
+
+Removes linked runtime records from nodeup settings and tracked selectors without deleting the external runtime directories.
+
+Unlinking fails with `conflict` when a linked name is the current default or is referenced by a directory override. Change the default or remove/update the override before unlinking.
+
+Missing linked names fail with `not-found`. JSON output is the removed linked-name list.
 
 ## default
 
@@ -82,7 +96,7 @@ JSON output includes:
 nodeup show active-runtime
 ```
 
-Prints the active runtime after override/default resolution. It verifies that version runtimes are installed and that the resolved runtime has a `node` executable.
+Prints the active runtime after override/default resolution. It verifies that version runtimes are installed and that the resolved runtime has a runnable `node` executable.
 
 JSON output includes `runtime`, `source`, and `selector`.
 

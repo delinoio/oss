@@ -10,7 +10,7 @@
 
 ## Core capabilities
 
-- Toolchain lifecycle: `toolchain list|install|uninstall|link`
+- Toolchain lifecycle: `toolchain list|install|uninstall|link|unlink`
 - Runtime selection: `default`, `override set|unset|list`, `show active-runtime`
 - Runtime-aware execution: `run`, `which`
 - Self-management: `self update|uninstall|upgrade-data`
@@ -64,6 +64,15 @@ Use a project directory override:
 ```bash
 nodeup override set lts --path /path/to/project
 ```
+
+Register or remove an external linked runtime record:
+
+```bash
+nodeup toolchain link work-node /opt/node-v22
+nodeup toolchain unlink work-node
+```
+
+Linked runtime removal does not delete the external runtime directory. Linked runtime validation requires a runnable `bin/node` on Unix or `bin/node.exe` for Windows platform behavior.
 
 ## Runtime resolution precedence
 

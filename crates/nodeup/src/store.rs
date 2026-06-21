@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
@@ -136,6 +138,30 @@ pub fn runtime_executable_path(runtime_root: &Path, command: &str) -> PathBuf {
     }
 
     bin_dir.join(runtime_primary_executable_name(command))
+}
+
+pub fn runtime_executable_is_runnable(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+
+    if runtime_host_is_windows() {
+        return true;
+    }
+
+    executable_permission_is_set(path)
+}
+
+#[cfg(unix)]
+fn executable_permission_is_set(path: &Path) -> bool {
+    path.metadata()
+        .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn executable_permission_is_set(path: &Path) -> bool {
+    path.exists()
 }
 
 fn runtime_executable_candidates(command: &str) -> Vec<String> {

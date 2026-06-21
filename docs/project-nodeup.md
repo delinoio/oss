@@ -17,6 +17,8 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 ## Cross-Domain Invariants
 - Stable channel naming and runtime dispatch semantics must be preserved.
 - Shim behavior must remain deterministic across supported operating systems.
+- Linked runtime lifecycle commands must preserve external runtime directories: `toolchain link` registers settings records and `toolchain unlink` removes those records only.
+- Linked runtime resolution must validate that the selected `node` executable is runnable, including Unix executable-bit checks and Windows `node.exe` naming behavior.
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.

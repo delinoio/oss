@@ -17,6 +17,9 @@
 - Binary entrypoints must force-link `swc_malloc` allocator policy, while the library target remains allocator-agnostic for downstream consumers.
 - Shim dispatch behavior must remain deterministic by executable name (`node`, `npm`, `npx`, `yarn`, `pnpm`).
 - Install/update command surfaces must preserve backward-compatible flags and outputs.
+- Linked runtime command identifiers are `toolchain link` for registration and `toolchain unlink` for record removal.
+- `toolchain unlink <name>...` must remove only nodeup settings records and tracked selectors; it must not delete files from external runtime directories.
+- `toolchain unlink` must fail with `conflict` when the linked runtime name is referenced by the global default selector or a directory override.
 - Host support must include `macOS`, `Linux`, and `Windows` x64/arm64, while x86 hosts remain unsupported.
 - Homebrew installation must consume prebuilt release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - Direct install scripts must verify release artifacts with `SHA256SUMS` and Sigstore bundle sidecars (`<artifact>.sigstore.json`) via `cosign verify-blob --bundle`.
@@ -24,6 +27,8 @@
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies.
 - Runtime archive selection must remain enum-driven: `tar.xz` for `darwin/*` and `linux/*`, `zip` for `windows/*`.
 - Windows runtime archives that unpack without a top-level directory must be normalized into the stable `bin/` runtime layout used by nodeup execution and linking flows.
+- Linked runtime validation must require a runnable `node` command during `toolchain link` and active-runtime availability checks.
+- Unix linked-runtime validation must require an executable permission bit on `bin/node`; Windows platform behavior must select `bin/node.exe` for `node`.
 - `yarn`/`pnpm` delegated execution must honor nearest `package.json` `packageManager` when present.
 - `packageManager` parsing contract is strict: `<manager>@<exact-semver>` with manager limited to `yarn|pnpm`.
 - `packageManager` manager-command mismatch must fail with `conflict`; malformed values must fail with `invalid-input`.
@@ -42,6 +47,7 @@
 ## Storage
 - Maintains local version metadata, installation roots, and shim state.
 - Downloaded runtime artifacts must follow deterministic path resolution.
+- Linked runtime records are stored in settings under `linked_runtimes`; removing a link must also remove the matching tracked selector while preserving external runtime directories.
 
 ## Security
 - Download and install flows must validate source and artifact integrity.
@@ -68,6 +74,7 @@
 - Output color coverage must include flag/env precedence, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
 - `packageManager` coverage must include strict parsing, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, and npm-exec fallback behavior.
 - Runtime install coverage must include `linux-arm64`, `windows-x64`, and `windows-arm64` archive selection and extraction behavior.
+- Linked runtime coverage must include unlink success without external directory deletion, missing-link `not-found` errors, default/override unlink conflicts, Unix executable-bit validation, and Windows `node.exe` name selection.
 
 ## Dependencies and Integrations
 - Integrates with filesystem runtime shims and remote distribution channels.

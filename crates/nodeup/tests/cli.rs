@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     collections::HashMap,
     fs,
@@ -21,6 +23,26 @@ struct TestEnv {
     index_url: String,
     download_base_url: String,
     server: MockServer,
+}
+
+fn write_runtime_executable(path: impl AsRef<Path>, content: &str) {
+    let path = path.as_ref();
+    fs::write(path, content).unwrap();
+    set_executable(path);
+}
+
+fn set_executable(path: &Path) {
+    #[cfg(unix)]
+    {
+        let mut permissions = fs::metadata(path).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(path, permissions).unwrap();
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
 }
 
 impl TestEnv {
@@ -333,11 +355,10 @@ fn toolchain_list_standard_prints_summary_counts_only() {
     let linked_runtime = env.root.join("linked-runtime-standard");
     let linked_runtime_bin = linked_runtime.join("bin");
     fs::create_dir_all(&linked_runtime_bin).unwrap();
-    fs::write(
+    write_runtime_executable(
         linked_runtime_bin.join("node"),
         "#!/bin/sh\necho linked-runtime-standard\n",
-    )
-    .unwrap();
+    );
 
     env.command()
         .args([
@@ -388,11 +409,10 @@ fn toolchain_list_quiet_prints_runtime_identifiers_only() {
     let linked_runtime = env.root.join("linked-runtime-quiet");
     let linked_runtime_bin = linked_runtime.join("bin");
     fs::create_dir_all(&linked_runtime_bin).unwrap();
-    fs::write(
+    write_runtime_executable(
         linked_runtime_bin.join("node"),
         "#!/bin/sh\necho linked-runtime-quiet\n",
-    )
-    .unwrap();
+    );
 
     env.command()
         .args([
@@ -443,11 +463,10 @@ fn toolchain_list_verbose_includes_runtime_and_link_paths() {
     let linked_runtime = env.root.join("linked-runtime-verbose");
     let linked_runtime_bin = linked_runtime.join("bin");
     fs::create_dir_all(&linked_runtime_bin).unwrap();
-    fs::write(
+    write_runtime_executable(
         linked_runtime_bin.join("node"),
         "#!/bin/sh\necho linked-runtime-verbose\n",
-    )
-    .unwrap();
+    );
 
     env.command()
         .args([
@@ -499,11 +518,10 @@ fn toolchain_list_json_output_is_stable_with_detail_flags() {
     let linked_runtime = env.root.join("linked-runtime-json");
     let linked_runtime_bin = linked_runtime.join("bin");
     fs::create_dir_all(&linked_runtime_bin).unwrap();
-    fs::write(
+    write_runtime_executable(
         linked_runtime_bin.join("node"),
         "#!/bin/sh\necho linked-runtime-json\n",
-    )
-    .unwrap();
+    );
 
     env.command()
         .args([
@@ -551,7 +569,7 @@ fn toolchain_link_rejects_reserved_channel_name_and_does_not_persist_selector() 
     let runtime_dir = env.root.join("linked-runtime-reserved-name");
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
-    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n").unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n");
 
     let output = env
         .command()
@@ -585,7 +603,7 @@ fn json_toolchain_link_reserved_name_failure_emits_invalid_input_error_envelope(
     let runtime_dir = env.root.join("linked-runtime-reserved-name-json");
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
-    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n").unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n");
 
     let output = env
         .command()
@@ -698,6 +716,193 @@ fn json_toolchain_link_failure_emits_invalid_input_error_envelope() {
         .as_str()
         .unwrap()
         .contains("Linked runtime path must contain a node executable under `bin/`"));
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn toolchain_link_rejects_non_executable_node_file() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-not-executable");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho no-exec\n").unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-not-executable",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "Linked runtime node executable exists but is not runnable",
+        ))
+        .stderr(predicates::str::contains("executable bit is set"));
+}
+
+#[test]
+#[serial]
+fn toolchain_link_accepts_windows_node_exe_when_platform_is_forced() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-windows-node-exe");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node.exe"), "windows node").unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args([
+            "toolchain",
+            "link",
+            "linked-windows-node-exe",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+}
+
+#[test]
+#[serial]
+fn toolchain_unlink_removes_record_without_deleting_external_runtime() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-unlink");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho unlink\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-unlink",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["toolchain", "unlink", "linked-unlink"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Removed 1 linked runtime(s)"));
+
+    assert!(runtime_dir.exists());
+    assert!(runtime_bin.join("node").exists());
+
+    let list_output = env
+        .command()
+        .args(["--output", "json", "toolchain", "list"])
+        .output()
+        .expect("toolchain list after unlink");
+    assert!(list_output.status.success());
+
+    let payload: Value = serde_json::from_slice(&list_output.stdout).unwrap();
+    assert!(payload["linked"].get("linked-unlink").is_none());
+
+    let settings = fs::read_to_string(env.config_root.join("settings.toml")).unwrap();
+    assert!(!settings.contains("linked-unlink"));
+}
+
+#[test]
+#[serial]
+fn toolchain_unlink_missing_link_returns_not_found() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "toolchain", "unlink", "missing-link"])
+        .output()
+        .expect("toolchain unlink missing link");
+
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+    assert_eq!(payload["exit_code"], 5);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Linked runtime 'missing-link' does not exist"));
+}
+
+#[test]
+#[serial]
+fn toolchain_unlink_conflicts_when_link_is_default() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-unlink-default");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho default\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-unlink-default",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-unlink-default"])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["toolchain", "unlink", "linked-unlink-default"])
+        .assert()
+        .failure()
+        .code(6)
+        .stderr(predicates::str::contains(
+            "Cannot unlink 'linked-unlink-default'; it is used as the default runtime",
+        ));
+}
+
+#[test]
+#[serial]
+fn toolchain_unlink_conflicts_when_link_is_used_by_override() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-unlink-override");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho override\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-unlink-override",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-unlink-override");
+    fs::create_dir_all(&project_dir).unwrap();
+    env.command()
+        .args([
+            "override",
+            "set",
+            "linked-unlink-override",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["toolchain", "unlink", "linked-unlink-override"])
+        .assert()
+        .failure()
+        .code(6)
+        .stderr(predicates::str::contains(
+            "Cannot unlink 'linked-unlink-override'; it is referenced by a directory override",
+        ));
 }
 
 #[test]
@@ -1088,11 +1293,10 @@ fn show_active_runtime_fails_when_linked_runtime_path_is_deleted() {
     let runtime_dir = env.root.join("linked-runtime-deleted");
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
-    fs::write(
+    write_runtime_executable(
         runtime_bin.join("node"),
         "#!/bin/sh\necho linked-runtime-node\n",
-    )
-    .unwrap();
+    );
 
     env.command()
         .args([
@@ -1128,11 +1332,10 @@ fn show_active_runtime_logs_unavailable_reason_for_deleted_linked_runtime() {
     let runtime_dir = env.root.join("linked-runtime-deleted-logs");
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
-    fs::write(
+    write_runtime_executable(
         runtime_bin.join("node"),
         "#!/bin/sh\necho linked-runtime-node\n",
-    )
-    .unwrap();
+    );
 
     env.command()
         .args([
@@ -1161,6 +1364,59 @@ fn show_active_runtime_logs_unavailable_reason_for_deleted_linked_runtime() {
         .stdout(predicates::str::contains("availability: false"))
         .stdout(predicates::str::contains(
             "reason: \"node-executable-missing\"",
+        ));
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn show_active_runtime_fails_when_linked_node_is_not_executable() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-active-not-executable");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho inactive\n").unwrap();
+
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            r#"schema_version = 1
+default_selector = "linked-active-not-executable"
+tracked_selectors = ["linked-active-not-executable"]
+
+[linked_runtimes]
+"linked-active-not-executable" = "{}"
+"#,
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    env.command()
+        .args(["show", "active-runtime"])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicates::str::contains(
+            "Command 'node' exists but is not runnable for runtime linked-active-not-executable",
+        ));
+
+    env.command()
+        .args(["which", "node"])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicates::str::contains(
+            "Command 'node' exists but is not runnable for runtime linked-active-not-executable",
+        ));
+
+    env.command()
+        .args(["run", "linked-active-not-executable", "node"])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicates::str::contains(
+            "Command 'node' exists but is not runnable for runtime linked-active-not-executable",
         ));
 }
 
@@ -2279,7 +2535,7 @@ fn which_resolves_command_path_from_default_selector() {
     let runtime_dir = env.root.join("linked-runtime-which-default");
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
-    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho which-default\n").unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho which-default\n");
 
     env.command()
         .args([
@@ -2324,11 +2580,10 @@ fn which_explicit_runtime_takes_precedence_over_override_and_default() {
     ] {
         let runtime_bin = runtime_dir.join("bin");
         fs::create_dir_all(&runtime_bin).unwrap();
-        fs::write(
+        write_runtime_executable(
             runtime_bin.join("node"),
-            format!("#!/bin/sh\necho {marker}\n").as_bytes(),
-        )
-        .unwrap();
+            &format!("#!/bin/sh\necho {marker}\n"),
+        );
     }
 
     env.command()
@@ -2410,7 +2665,7 @@ fn which_fails_when_command_is_missing_for_runtime() {
     let runtime_dir = env.root.join("linked-runtime-which-missing-command");
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
-    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho only-node\n").unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho only-node\n");
 
     env.command()
         .args([
@@ -2746,7 +3001,7 @@ fn toolchain_install_rejects_linked_runtime_selector() {
     let runtime_dir = env.root.join("linked-runtime-install-reject");
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
-    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n").unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho linked-runtime\n");
 
     env.command()
         .args([
@@ -2781,6 +3036,22 @@ fn toolchain_uninstall_requires_at_least_one_runtime_selector() {
         .stderr(predicates::str::contains(
             "Missing runtime selector for `nodeup toolchain uninstall`",
         ));
+}
+
+#[test]
+#[serial]
+fn toolchain_uninstall_linked_runtime_selector_points_to_unlink() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "uninstall", "linked-runtime"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "`toolchain uninstall` only supports exact version selectors",
+        ))
+        .stderr(predicates::str::contains("nodeup toolchain unlink <name>"));
 }
 
 #[test]
@@ -3317,7 +3588,7 @@ fn which_yarn_uses_runtime_npm_path_in_npm_exec_mode() {
     let runtime_dir = env.root.join("linked-runtime-which-yarn-package-manager");
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
-    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho node\n").unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
     fs::write(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n").unwrap();
 
     env.command()
@@ -3467,7 +3738,7 @@ fn which_pnpm_uses_runtime_npm_path_in_npm_exec_mode() {
     let runtime_dir = env.root.join("linked-runtime-which-pnpm-package-manager");
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
-    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho node\n").unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
     fs::write(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n").unwrap();
 
     env.command()

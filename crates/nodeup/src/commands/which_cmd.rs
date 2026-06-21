@@ -9,6 +9,7 @@ use crate::{
     commands::print_output,
     errors::{NodeupError, Result},
     resolver::ResolvedRuntimeTarget,
+    store::runtime_executable_is_runnable,
     NodeupApp,
 };
 
@@ -49,6 +50,20 @@ pub fn execute(
             ),
             "Use `nodeup show active-runtime` to confirm the runtime, then install or relink a \
              runtime that provides the command.",
+        ));
+    }
+
+    if plan.mode == DelegatedCommandMode::Direct
+        && !runtime_executable_is_runnable(&plan.executable)
+    {
+        return Err(NodeupError::not_found_with_hint(
+            format!(
+                "Command '{command}' exists but is not runnable for runtime {} (path={})",
+                resolved.runtime_id(),
+                plan.executable.display()
+            ),
+            "On Unix, ensure the executable bit is set. On Windows, relink a runtime that \
+             provides the expected executable name.",
         ));
     }
 

@@ -116,6 +116,10 @@ fn command_invocation_metadata(
                         "name_provided": !name.is_empty(),
                         "path_provided": !path.is_empty()
                     }),
+                    ToolchainCommand::Unlink { names } => json!({
+                        "output": output,
+                        "names_count": names.len()
+                    }),
                 },
             }
         }
@@ -220,6 +224,7 @@ fn toolchain_command(command: &ToolchainCommand) -> NodeupToolchainCommand {
         ToolchainCommand::Install { .. } => NodeupToolchainCommand::Install,
         ToolchainCommand::Uninstall { .. } => NodeupToolchainCommand::Uninstall,
         ToolchainCommand::Link { .. } => NodeupToolchainCommand::Link,
+        ToolchainCommand::Unlink { .. } => NodeupToolchainCommand::Unlink,
     }
 }
 
@@ -229,6 +234,7 @@ fn toolchain_command_path(command: NodeupToolchainCommand) -> &'static str {
         NodeupToolchainCommand::Install => "nodeup.toolchain.install",
         NodeupToolchainCommand::Uninstall => "nodeup.toolchain.uninstall",
         NodeupToolchainCommand::Link => "nodeup.toolchain.link",
+        NodeupToolchainCommand::Unlink => "nodeup.toolchain.unlink",
     }
 }
 
@@ -333,6 +339,16 @@ mod tests {
                     "name_provided": true,
                     "path_provided": true
                 }),
+            ),
+            (
+                Command::Toolchain {
+                    command: ToolchainCommand::Unlink {
+                        names: vec!["linked".to_string()],
+                    },
+                },
+                OutputFormat::Json,
+                "nodeup.toolchain.unlink",
+                json!({ "output": "json", "names_count": 1 }),
             ),
             (
                 Command::Default {
