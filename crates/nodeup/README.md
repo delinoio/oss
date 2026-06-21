@@ -108,7 +108,7 @@ Fallback rules when `packageManager` is absent:
 - Global output mode: `--output human|json` (default: `human`)
 - `human` mode:
   - command results and logs are written for operators
-  - default log filter is `nodeup=info` for management commands
+  - default log filter is `nodeup=warn` for management commands
 - `json` mode:
   - success payloads are written to stdout as JSON
   - handled failures are written to stderr as JSON envelopes

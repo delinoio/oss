@@ -14,7 +14,7 @@ impl LoggingContext {
     fn default_filter(self) -> &'static str {
         match self {
             Self::ManagedAlias => "nodeup=warn",
-            Self::ManagementHuman => "nodeup=info",
+            Self::ManagementHuman => "nodeup=warn",
             Self::ManagementJson => "nodeup=off",
         }
     }
@@ -80,10 +80,10 @@ mod tests {
     }
 
     #[test]
-    fn management_human_default_filter_is_info() {
+    fn management_human_default_filter_is_warn() {
         assert_eq!(
             LoggingContext::ManagementHuman.default_filter(),
-            "nodeup=info"
+            "nodeup=warn"
         );
     }
 

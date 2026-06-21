@@ -1226,7 +1226,7 @@ fn override_resolution_logs_miss_without_default_selector() {
 
 #[test]
 #[serial]
-fn management_human_default_logging_emits_info_logs_without_rust_log_env() {
+fn management_human_default_logging_suppresses_info_logs_without_rust_log_env() {
     let env = TestEnv::new();
 
     let output = env
@@ -1239,7 +1239,40 @@ fn management_human_default_logging_emits_info_logs_without_rust_log_env() {
     assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("command_path: \"nodeup.show.home\""));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stdout.contains("command_path: \"nodeup.show.home\""));
+    assert!(!stderr.contains("command_path: \"nodeup.show.home\""));
+}
+
+#[test]
+#[serial]
+fn management_human_default_logging_keeps_warning_logs_without_rust_log_env() {
+    let env = TestEnv::new();
+    let settings_file = env.config_root.join("settings.toml");
+    fs::write(
+        &settings_file,
+        r#"schema_version = 1
+default_selector = "invalid selector"
+tracked_selectors = ["invalid selector"]
+
+[linked_runtimes]
+"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .env_remove("RUST_LOG")
+        .args(["default"])
+        .output()
+        .expect("show default without rust log env");
+
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Default runtime: invalid selector (resolution unavailable)"));
+    assert!(stdout.contains("command_path: \"nodeup.default\""));
+    assert!(stdout.contains("outcome: \"unresolved\""));
 }
 
 #[test]
