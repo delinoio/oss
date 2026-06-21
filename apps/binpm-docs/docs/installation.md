@@ -12,6 +12,8 @@ binpm can install release assets distributed as:
 - `.tar.zst` archives.
 - `.zip` archives.
 
+On POSIX hosts, archive installs write the selected binary with executable permissions. Zip archives that omit Unix executable metadata can still install when the expected binary name and target-aware path tokens identify exactly one member; otherwise binpm fails and asks for an explicit `bin` value instead of guessing.
+
 ## Global Home
 
 Global installs use `~/.binpm`:

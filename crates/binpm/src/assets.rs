@@ -96,6 +96,7 @@ pub struct AssetSelection {
 pub struct ArchiveMember {
     pub path: String,
     pub executable: bool,
+    pub missing_executable_metadata: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,11 +184,47 @@ pub fn discover_archive_binary(
     target: &HostTarget,
     members: &[ArchiveMember],
 ) -> BinaryDiscovery {
-    let mut candidates = members
+    let executable_candidates = members
         .iter()
         .filter(|member| member.executable)
         .map(|member| member.path.clone())
         .collect::<Vec<_>>();
+    let executable_repo_discovery = discover_archive_binary_from_candidates(
+        repo_name,
+        target,
+        executable_candidates.clone(),
+        true,
+    );
+    if !matches!(executable_repo_discovery, BinaryDiscovery::NotFound) {
+        return executable_repo_discovery;
+    }
+
+    let executable_discovery =
+        discover_archive_binary_from_candidates(repo_name, target, executable_candidates, false);
+
+    let recoverable_candidates = members
+        .iter()
+        .filter(|member| {
+            member.missing_executable_metadata
+                && recoverable_archive_binary_name(repo_name, target, &member.path)
+        })
+        .map(|member| member.path.clone())
+        .collect::<Vec<_>>();
+    let recoverable_discovery =
+        discover_archive_binary_from_candidates(repo_name, target, recoverable_candidates, true);
+    if !matches!(recoverable_discovery, BinaryDiscovery::NotFound) {
+        return recoverable_discovery;
+    }
+
+    executable_discovery
+}
+
+fn discover_archive_binary_from_candidates(
+    repo_name: &str,
+    target: &HostTarget,
+    mut candidates: Vec<String>,
+    require_repo_name_match: bool,
+) -> BinaryDiscovery {
     candidates.sort();
 
     if candidates.is_empty() {
@@ -209,6 +246,10 @@ pub fn discover_archive_binary(
         _ => {}
     }
 
+    if require_repo_name_match {
+        return BinaryDiscovery::NotFound;
+    }
+
     let candidates = target_archive_candidates(target, candidates);
     if candidates.is_empty() {
         return BinaryDiscovery::NotFound;
@@ -226,6 +267,14 @@ pub fn discover_archive_binary(
         _ if candidates.len() == 1 => BinaryDiscovery::Selected(candidates[0].clone()),
         _ => BinaryDiscovery::Ambiguous(candidates),
     }
+}
+
+fn recoverable_archive_binary_name(repo_name: &str, target: &HostTarget, path: &str) -> bool {
+    let basename = basename(path);
+    if target.os != TargetOs::Windows && basename.to_ascii_lowercase().ends_with(".exe") {
+        return false;
+    }
+    normalized_binary_name(basename) == normalized_binary_name(repo_name)
 }
 
 pub(crate) fn target_archive_candidates(
@@ -742,6 +791,7 @@ mod tests {
         ArchiveMember {
             path: path.to_string(),
             executable,
+            missing_executable_metadata: !executable,
         }
     }
 
@@ -1086,6 +1136,71 @@ mod tests {
                 &[member("bin/linux/helper", true), member("pkg/tool", true),],
             ),
             BinaryDiscovery::Selected("pkg/tool".to_string())
+        );
+    }
+
+    #[test]
+    fn archive_binary_discovery_recovers_missing_executable_metadata_for_repo_binary() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[member("pkg/README.md", false), member("pkg/tool", false),],
+            ),
+            BinaryDiscovery::Selected("pkg/tool".to_string())
+        );
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[
+                    member("bin/darwin/tool", false),
+                    member("bin/linux-x64/tool", false),
+                ],
+            ),
+            BinaryDiscovery::Selected("bin/linux-x64/tool".to_string())
+        );
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[member("pkg/install.sh", true), member("pkg/tool", false),],
+            ),
+            BinaryDiscovery::Selected("pkg/tool".to_string())
+        );
+    }
+
+    #[test]
+    fn archive_binary_discovery_does_not_guess_non_executable_non_repo_files() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[member("pkg/alpha", false), member("pkg/beta", false)],
+            ),
+            BinaryDiscovery::NotFound
+        );
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[
+                    member("linux-x64/README", false),
+                    member("linux-x64/LICENSE", false)
+                ],
+            ),
+            BinaryDiscovery::NotFound
+        );
+    }
+
+    #[test]
+    fn archive_binary_discovery_does_not_recover_windows_exe_on_posix_target() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        assert_eq!(
+            discover_archive_binary("tool", &host, &[member("pkg/tool.exe", false)]),
+            BinaryDiscovery::NotFound
         );
     }
 }

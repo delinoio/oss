@@ -77,10 +77,7 @@ JSON errors include deterministic diagnostics:
 - `os`
 - `architecture`
 - `platform_source`
-- `forced_platform`, when `NODEUP_FORCE_PLATFORM` is set
 - `supported_platforms`
-
-For local platform testing, maintainers can use `NODEUP_FORCE_PLATFORM` with values such as `linux-arm64`, `windows-x64`, or `windows-arm64`.
 
 ## Checksum Mismatch
 
@@ -178,17 +175,3 @@ NODEUP_SELF_UPDATE_SOURCE=/path/to/nodeup.new nodeup self update
 ```
 
 Use `NODEUP_SELF_BIN_PATH` to override the target binary path.
-
-## Validation Commands
-
-Runtime crate validation:
-
-```bash
-cargo test -p nodeup
-```
-
-Documentation app validation:
-
-```bash
-pnpm --filter nodeup-docs test
-```
