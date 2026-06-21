@@ -63,4 +63,8 @@ binpm cache prune
 binpm cache clean
 ```
 
-`binpm cache key` is read-only. `binpm cache prune` and `binpm cache clean` remove cached assets without uninstalling tools or removing executables.
+`binpm cache key` is read-only. If `binpm.lock` is missing, human output warns that the empty lockfile digest is used; `--json` exposes `lockfile` status with the computed key.
+
+`binpm cache prune` removes stale structured local-project cache references before deleting unreferenced cached assets. Active references from other checkouts are preserved, and legacy plain-text references remain preserving until rewritten.
+
+`binpm cache clean` removes global cached asset entries and states exactly what it removes and preserves. It preserves `~/.binpm/cache/refs`, installed package records, and executable links or copies under `~/.binpm/bin`.

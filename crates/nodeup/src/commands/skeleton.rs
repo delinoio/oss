@@ -67,6 +67,7 @@ enum CompletionScope {
     Override,
     Which,
     Run,
+    Shim,
     SelfCmd,
     Completions,
 }
@@ -82,12 +83,13 @@ impl CompletionScope {
             "override" => Ok(Self::Override),
             "which" => Ok(Self::Which),
             "run" => Ok(Self::Run),
+            "shim" => Ok(Self::Shim),
             "self" => Ok(Self::SelfCmd),
             "completions" => Ok(Self::Completions),
             _ => Err(NodeupError::invalid_input_with_hint(
                 format!(
                     "Unsupported command scope '{raw}'. Supported top-level commands: toolchain, \
-                     default, show, update, check, override, which, run, self, completions"
+                     default, show, update, check, override, which, run, shim, self, completions"
                 ),
                 "Pass a valid top-level command name as the optional scope.",
             )),
@@ -104,6 +106,7 @@ impl CompletionScope {
             Self::Override => "override",
             Self::Which => "which",
             Self::Run => "run",
+            Self::Shim => "shim",
             Self::SelfCmd => "self",
             Self::Completions => "completions",
         }

@@ -602,6 +602,67 @@ fn cache_key_from_nested_directory_uses_manifest_ancestor_lockfile_without_git()
 }
 
 #[test]
+fn cache_key_warns_when_lockfile_is_missing_without_mutating_state() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let empty_digest = format!("{:x}", Sha256::digest([]));
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .args(["cache", "key"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(empty_digest))
+        .stderr(predicate::str::contains(
+            "cache key uses the empty lockfile digest",
+        ));
+
+    assert!(!temp_dir.path().join("binpm.lock").exists());
+}
+
+#[test]
+fn cache_key_json_reports_lockfile_status() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .args(["cache", "key", "--json"])
+        .output()
+        .expect("cache key --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse cache key json");
+    assert_eq!(payload["command"], "cache key");
+    assert_eq!(payload["lockfile"], "missing");
+    assert_eq!(payload["read_only"], true);
+    assert!(payload["cache_key"]
+        .as_str()
+        .expect("cache key string")
+        .starts_with("binpm-v1-"));
+}
+
+#[test]
+fn cache_clean_output_states_removed_and_preserved_boundaries() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let entry = home.join("cache").join("sha256").join("abc");
+    fs::create_dir_all(&entry).expect("create cache entry");
+    fs::write(entry.join("asset"), b"bytes").expect("write cache asset");
+
+    binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["cache", "clean"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("removed cache entries: 1"))
+        .stdout(predicate::str::contains("preserved:"))
+        .stdout(predicate::str::contains("/cache/refs"))
+        .stdout(predicate::str::contains("/packages"))
+        .stdout(predicate::str::contains("/bin"));
+}
+
+#[test]
 fn doctor_from_nested_directory_reports_git_root_state() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
