@@ -1,9 +1,10 @@
-use std::{fmt, io};
+use std::{collections::BTreeMap, fmt, io};
 
 use serde::Serialize;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, NodeupError>;
+pub type ErrorDiagnostics = BTreeMap<String, serde_json::Value>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -36,6 +37,7 @@ impl ErrorKind {
 pub struct NodeupError {
     pub kind: ErrorKind,
     pub message: String,
+    pub diagnostics: Option<ErrorDiagnostics>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -43,6 +45,8 @@ pub struct NodeupErrorEnvelope {
     pub kind: ErrorKind,
     pub message: String,
     pub exit_code: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<ErrorDiagnostics>,
 }
 
 fn default_hint_for_kind(kind: ErrorKind) -> &'static str {
@@ -71,6 +75,8 @@ fn default_hint_for_kind(kind: ErrorKind) -> &'static str {
 
 fn sanitized_url(url: &reqwest::Url) -> String {
     let mut sanitized = url.clone();
+    let _ = sanitized.set_username("");
+    let _ = sanitized.set_password(None);
     sanitized.set_query(None);
     sanitized.set_fragment(None);
     sanitized.to_string()
@@ -138,6 +144,20 @@ impl NodeupError {
         Self {
             kind,
             message: format_error_message(kind, cause, hint),
+            diagnostics: None,
+        }
+    }
+
+    pub fn with_hint_and_diagnostics(
+        kind: ErrorKind,
+        cause: impl Into<String>,
+        hint: impl Into<String>,
+        diagnostics: ErrorDiagnostics,
+    ) -> Self {
+        Self {
+            kind,
+            message: format_error_message(kind, cause, hint),
+            diagnostics: Some(diagnostics),
         }
     }
 
@@ -166,6 +186,14 @@ impl NodeupError {
         hint: impl Into<String>,
     ) -> Self {
         Self::with_hint(ErrorKind::UnsupportedPlatform, cause, hint)
+    }
+
+    pub fn unsupported_platform_with_diagnostics(
+        cause: impl Into<String>,
+        hint: impl Into<String>,
+        diagnostics: ErrorDiagnostics,
+    ) -> Self {
+        Self::with_hint_and_diagnostics(ErrorKind::UnsupportedPlatform, cause, hint, diagnostics)
     }
 
     pub fn network(cause: impl Into<String>) -> Self {
@@ -209,6 +237,7 @@ impl NodeupError {
             kind: self.kind,
             message: self.message.clone(),
             exit_code: self.exit_code(),
+            diagnostics: self.diagnostics.clone(),
         }
     }
 }
@@ -308,4 +337,17 @@ pub fn with_context<E: fmt::Display>(kind: ErrorKind, context: &str, error: E) -
         format!("{context}: {error}"),
         default_hint_for_kind(kind),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_url_text;
+
+    #[test]
+    fn sanitize_url_text_strips_userinfo_query_and_fragment() {
+        let sanitized =
+            sanitize_url_text("https://user:token@example.test/index.json?token=secret#fragment");
+
+        assert_eq!(sanitized, "https://example.test/index.json");
+    }
 }

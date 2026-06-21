@@ -25,7 +25,7 @@ Nodeup supports runtime installation and shim dispatch on:
 - `windows/amd64`
 - `windows/arm64`
 
-x86 hosts are unsupported.
+x86 hosts are unsupported. Direct installers, runtime installation, and shim dispatch report unsupported hosts before selecting missing assets or planning delegated commands. JSON failures use `kind: "unsupported-platform"` and include `os`, `architecture`, `platform_source`, optional `forced_platform`, and the supported platform list.
 
 ## Route Map
 

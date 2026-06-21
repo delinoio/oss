@@ -76,7 +76,19 @@ Invalid examples:
 
 ## Install Fails on Unsupported Host
 
-Nodeup supports macOS, Linux, and Windows x64/arm64 hosts. x86 hosts are unsupported.
+Nodeup supports macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64 hosts. x86 hosts are unsupported.
+
+Direct installers fail before release lookup or asset download. Runtime installation and shim dispatch fail with `unsupported-platform` before archive download or delegated command planning.
+
+Fix: use an x64/arm64 host or a supported CI image.
+
+JSON errors include deterministic diagnostics:
+
+- `os`
+- `architecture`
+- `platform_source`
+- `forced_platform`, when `NODEUP_FORCE_PLATFORM` is set
+- `supported_platforms`
 
 For local platform testing, maintainers can use `NODEUP_FORCE_PLATFORM` with values such as `linux-arm64`, `windows-x64`, or `windows-arm64`.
 
@@ -89,6 +101,48 @@ Fix:
 1. Remove the downloaded archive from the Nodeup downloads directory.
 2. Retry the install.
 3. If a mirror is configured, verify `NODEUP_DOWNLOAD_BASE_URL` and `NODEUP_INDEX_URL` point to matching release data.
+
+## Stale Release Index Cache
+
+Channel selectors such as `lts`, `current`, and `latest` can use the cached Node.js release index. If the cache is expired and refresh fails, Nodeup falls back to stale cache data instead of failing channel resolution.
+
+Symptoms:
+
+```text
+release index: stale cache fallback
+```
+
+In JSON output, inspect `release_index.cache_state`, `release_index.fallback_reason`, `release_index.cache_age_seconds`, `release_index.selector`, and `release_index.selected_version`.
+
+Fix:
+
+1. Verify network access to `NODEUP_INDEX_URL` or the default Node.js release index.
+2. If a mirror is configured, verify it serves valid release-index JSON for the same source URL.
+3. Clear the cached index from the cache root shown by `nodeup show home`.
+4. Retry with a short TTL, for example `NODEUP_RELEASE_INDEX_TTL_SECONDS=0 nodeup default lts`.
+
+Invalid cache schema, mismatched source URL, invalid JSON, and future timestamps are ignored rather than used as stale fallback.
+
+## Invalid Release Index TTL
+
+`NODEUP_RELEASE_INDEX_TTL_SECONDS` must be a non-negative integer duration in seconds.
+
+Valid examples:
+
+```bash
+NODEUP_RELEASE_INDEX_TTL_SECONDS=0 nodeup default latest
+NODEUP_RELEASE_INDEX_TTL_SECONDS=300 nodeup toolchain install lts
+```
+
+Invalid examples:
+
+```bash
+NODEUP_RELEASE_INDEX_TTL_SECONDS= nodeup default lts
+NODEUP_RELEASE_INDEX_TTL_SECONDS=-1 nodeup default lts
+NODEUP_RELEASE_INDEX_TTL_SECONDS=abc nodeup default lts
+```
+
+Invalid values fall back to 600 seconds. Human/log diagnostics report only a safe invalid-value category such as `empty`, `negative`, or `not-integer`.
 
 ## JSON Output Has Log Noise
 

@@ -30,6 +30,7 @@ pub struct ReleaseIndexClient {
     download_base_url: String,
     cache_file: PathBuf,
     cache_ttl: Duration,
+    cache_ttl_warning: Option<ReleaseIndexTtlWarning>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +54,59 @@ struct CachedReleaseIndex {
     age_seconds: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct ReleaseIndexFetch {
+    pub entries: Vec<ReleaseEntry>,
+    stale_fallback: Option<ReleaseIndexStaleFallback>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReleaseIndexResolutionDiagnostic {
+    pub cache_state: &'static str,
+    pub fallback_reason: &'static str,
+    pub cache_age_seconds: u64,
+    pub ttl_seconds: u64,
+    pub selector: String,
+    pub selected_version: String,
+    pub source_url: String,
+}
+
+#[derive(Debug, Clone)]
+struct ReleaseIndexStaleFallback {
+    age_seconds: u64,
+    ttl_seconds: u64,
+    source_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChannelResolution {
+    pub version: String,
+    pub release_index: Option<ReleaseIndexResolutionDiagnostic>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TtlParseError {
+    Empty,
+    Negative,
+    NotInteger,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReleaseIndexTtlWarning {
+    invalid_value_category: &'static str,
+    fallback_seconds: u64,
+}
+
+impl TtlParseError {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::Negative => "negative",
+            Self::NotInteger => "not-integer",
+        }
+    }
+}
+
 impl ReleaseEntry {
     pub fn is_lts(&self) -> bool {
         self.lts.as_bool().unwrap_or(false) || self.lts.as_str().is_some()
@@ -73,25 +127,40 @@ impl ReleaseIndexClient {
             download_base_url,
             cache_file,
             cache_ttl,
+            cache_ttl_warning: None,
         })
     }
 
+    pub fn new_from_env(cache_file: PathBuf) -> Result<Self> {
+        let ttl_config = Self::cache_ttl_config_from_env();
+        let mut client = Self::new(cache_file, ttl_config.cache_ttl)?;
+        client.cache_ttl_warning = ttl_config.warning;
+        Ok(client)
+    }
+
     pub fn cache_ttl_from_env() -> Duration {
+        Self::cache_ttl_config_from_env().cache_ttl
+    }
+
+    fn cache_ttl_config_from_env() -> ReleaseIndexTtlConfig {
         match std::env::var(RELEASE_INDEX_TTL_ENV) {
-            Ok(raw) => match raw.parse::<i64>() {
-                Ok(seconds) if seconds > 0 => Duration::from_secs(seconds as u64),
-                _ => {
-                    warn!(
-                        command_path = "nodeup.release-index.cache",
-                        env_var = RELEASE_INDEX_TTL_ENV,
-                        env_value = %raw,
-                        fallback_seconds = DEFAULT_RELEASE_INDEX_TTL_SECONDS,
-                        "Invalid release index TTL value; using default"
-                    );
-                    Duration::from_secs(DEFAULT_RELEASE_INDEX_TTL_SECONDS)
-                }
+            Ok(raw) => match parse_release_index_ttl_seconds(&raw) {
+                Ok(seconds) => ReleaseIndexTtlConfig {
+                    cache_ttl: Duration::from_secs(seconds),
+                    warning: None,
+                },
+                Err(error) => ReleaseIndexTtlConfig {
+                    cache_ttl: Duration::from_secs(DEFAULT_RELEASE_INDEX_TTL_SECONDS),
+                    warning: Some(ReleaseIndexTtlWarning {
+                        invalid_value_category: error.as_str(),
+                        fallback_seconds: DEFAULT_RELEASE_INDEX_TTL_SECONDS,
+                    }),
+                },
             },
-            Err(_) => Duration::from_secs(DEFAULT_RELEASE_INDEX_TTL_SECONDS),
+            Err(_) => ReleaseIndexTtlConfig {
+                cache_ttl: Duration::from_secs(DEFAULT_RELEASE_INDEX_TTL_SECONDS),
+                warning: None,
+            },
         }
     }
 
@@ -123,13 +192,20 @@ impl ReleaseIndexClient {
             download_base_url,
             cache_file,
             cache_ttl,
+            cache_ttl_warning: None,
         })
     }
 
     pub fn fetch_index(&self) -> Result<Vec<ReleaseEntry>> {
+        Ok(self.fetch_index_with_diagnostics()?.entries)
+    }
+
+    pub fn fetch_index_with_diagnostics(&self) -> Result<ReleaseIndexFetch> {
+        self.warn_invalid_ttl_if_needed();
         let now_epoch_seconds = unix_epoch_seconds();
         let ttl_seconds = self.cache_ttl.as_secs();
         let cached = self.read_cached_index(now_epoch_seconds);
+        let sanitized_index_url = sanitize_url_text(&self.index_url);
 
         match cached.as_ref() {
             Some(cached_index) if cached_index.age_seconds <= ttl_seconds => {
@@ -141,7 +217,10 @@ impl ReleaseIndexClient {
                     ttl_seconds,
                     "Using cached Node.js release index"
                 );
-                return Ok(cached_index.entries.clone());
+                return Ok(ReleaseIndexFetch {
+                    entries: cached_index.entries.clone(),
+                    stale_fallback: None,
+                });
             }
             Some(cached_index) => {
                 info!(
@@ -184,7 +263,10 @@ impl ReleaseIndexClient {
                         "Failed to persist release index cache"
                     );
                 }
-                Ok(entries)
+                Ok(ReleaseIndexFetch {
+                    entries,
+                    stale_fallback: None,
+                })
             }
             Err(error) => {
                 if let Some(stale_cache) = cached {
@@ -194,10 +276,18 @@ impl ReleaseIndexClient {
                         outcome = "stale-fallback",
                         age_seconds = stale_cache.age_seconds,
                         ttl_seconds,
+                        source_url = %sanitized_index_url,
                         error = %error.message,
                         "Using stale release index cache after refresh failure"
                     );
-                    return Ok(stale_cache.entries);
+                    return Ok(ReleaseIndexFetch {
+                        entries: stale_cache.entries,
+                        stale_fallback: Some(ReleaseIndexStaleFallback {
+                            age_seconds: stale_cache.age_seconds,
+                            ttl_seconds,
+                            source_url: sanitized_index_url,
+                        }),
+                    });
                 }
                 Err(error)
             }
@@ -210,7 +300,7 @@ impl ReleaseIndexClient {
             info!(
                 command_path = "nodeup.release-index.fetch",
                 attempt,
-                url = %self.index_url,
+                url = %sanitized_index_url,
                 "Fetching Node.js release index"
             );
 
@@ -318,13 +408,15 @@ impl ReleaseIndexClient {
         }
 
         if payload.index_url != self.index_url {
+            let cached_index_url = sanitize_url_text(&payload.index_url);
+            let requested_index_url = sanitize_url_text(&self.index_url);
             warn!(
                 command_path = "nodeup.release-index.cache",
                 cache_path = %self.cache_file.display(),
                 outcome = "miss",
                 reason = "index-url-mismatch",
-                cached_index_url = %payload.index_url,
-                requested_index_url = %self.index_url,
+                cached_index_url = %cached_index_url,
+                requested_index_url = %requested_index_url,
                 "Release index cache source URL mismatch; treating as cache miss"
             );
             return None;
@@ -384,23 +476,60 @@ impl ReleaseIndexClient {
     }
 
     pub fn resolve_channel(&self, channel: NodeupChannel) -> Result<String> {
-        let releases = self.fetch_index()?;
+        Ok(self.resolve_channel_with_diagnostics(channel)?.version)
+    }
+
+    pub fn resolve_channel_with_diagnostics(
+        &self,
+        channel: NodeupChannel,
+    ) -> Result<ChannelResolution> {
+        let fetch = self.fetch_index_with_diagnostics()?;
         let selected = match channel {
             NodeupChannel::Latest | NodeupChannel::Current => {
-                releases.first().map(|entry| entry.version.clone())
+                fetch.entries.first().map(|entry| entry.version.clone())
             }
-            NodeupChannel::Lts => releases
+            NodeupChannel::Lts => fetch
+                .entries
                 .iter()
                 .find(|entry| entry.is_lts())
                 .map(|entry| entry.version.clone()),
         };
 
-        selected.ok_or_else(|| {
+        let version = selected.ok_or_else(|| {
             NodeupError::not_found_with_hint(
                 format!("Could not resolve a release for channel {channel}"),
                 "Retry later or inspect available versions with `nodeup check` after installing \
                  at least one runtime.",
             )
+        })?;
+
+        let release_index = fetch.stale_fallback.map(|fallback| {
+            warn!(
+                command_path = "nodeup.resolve.channel",
+                selector = %channel,
+                selected_version = %version,
+                cache_state = "stale-fallback",
+                fallback_reason = "refresh-failed",
+                cache_age_seconds = fallback.age_seconds,
+                ttl_seconds = fallback.ttl_seconds,
+                source_url = %fallback.source_url,
+                "Resolved channel selector from stale release index cache"
+            );
+
+            ReleaseIndexResolutionDiagnostic {
+                cache_state: "stale-fallback",
+                fallback_reason: "refresh-failed",
+                cache_age_seconds: fallback.age_seconds,
+                ttl_seconds: fallback.ttl_seconds,
+                selector: channel.to_string(),
+                selected_version: version.clone(),
+                source_url: fallback.source_url,
+            }
+        });
+
+        Ok(ChannelResolution {
+            version,
+            release_index,
         })
     }
 
@@ -428,6 +557,37 @@ impl ReleaseIndexClient {
     pub fn http(&self) -> &Client {
         &self.http
     }
+
+    fn warn_invalid_ttl_if_needed(&self) {
+        if let Some(warning) = self.cache_ttl_warning {
+            warn!(
+                command_path = "nodeup.release-index.cache",
+                env_var = RELEASE_INDEX_TTL_ENV,
+                invalid_value_category = warning.invalid_value_category,
+                fallback_seconds = warning.fallback_seconds,
+                "Invalid release index TTL value; using default"
+            );
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReleaseIndexTtlConfig {
+    cache_ttl: Duration,
+    warning: Option<ReleaseIndexTtlWarning>,
+}
+
+fn parse_release_index_ttl_seconds(raw: &str) -> std::result::Result<u64, TtlParseError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(TtlParseError::Empty);
+    }
+    if trimmed.starts_with('-') {
+        return Err(TtlParseError::Negative);
+    }
+    trimmed
+        .parse::<u64>()
+        .map_err(|_| TtlParseError::NotInteger)
 }
 
 fn unix_epoch_seconds() -> u64 {
@@ -476,6 +636,33 @@ mod tests {
     fn normalize_version_prefixes_when_missing() {
         assert_eq!(normalize_version("22.1.0"), "v22.1.0");
         assert_eq!(normalize_version("v22.1.0"), "v22.1.0");
+    }
+
+    #[test]
+    fn release_index_ttl_parser_accepts_zero_and_positive_values() {
+        assert_eq!(parse_release_index_ttl_seconds("0"), Ok(0));
+        assert_eq!(parse_release_index_ttl_seconds("600"), Ok(600));
+        assert_eq!(parse_release_index_ttl_seconds(" 300 "), Ok(300));
+    }
+
+    #[test]
+    fn release_index_ttl_parser_categorizes_invalid_values_without_exposing_raw_value() {
+        assert_eq!(
+            parse_release_index_ttl_seconds(""),
+            Err(TtlParseError::Empty)
+        );
+        assert_eq!(
+            parse_release_index_ttl_seconds("   "),
+            Err(TtlParseError::Empty)
+        );
+        assert_eq!(
+            parse_release_index_ttl_seconds("-1"),
+            Err(TtlParseError::Negative)
+        );
+        assert_eq!(
+            parse_release_index_ttl_seconds("abc"),
+            Err(TtlParseError::NotInteger)
+        );
     }
 
     #[test]
@@ -595,6 +782,45 @@ mod tests {
         let cache_file = dir.path().join("release-index.json");
         let server = MockServer::start();
         let index_url = server.url("/index.json");
+        let fetched_at_epoch_seconds = unix_epoch_seconds() - 120;
+        let stale_payload = ReleaseIndexCachePayload {
+            schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
+            index_url: index_url.clone(),
+            fetched_at_epoch_seconds,
+            entries: vec![ReleaseEntry {
+                version: "v22.11.0".to_string(),
+                lts: serde_json::Value::String("Jod".to_string()),
+            }],
+        };
+        fs::write(&cache_file, serde_json::to_vec(&stale_payload).unwrap()).unwrap();
+
+        let index_mock = server.mock(|when, then| {
+            when.method(GET).path("/index.json");
+            then.status(500);
+        });
+
+        let client = ReleaseIndexClient::with_urls(
+            cache_file,
+            Duration::from_secs(60),
+            index_url,
+            server.url("/release"),
+        )
+        .unwrap();
+
+        let fetched = client.fetch_index().unwrap();
+        assert_eq!(fetched[0].version, "v22.11.0");
+        index_mock.assert_calls(MAX_RETRIES);
+    }
+
+    #[test]
+    fn channel_resolution_reports_stale_cache_fallback_diagnostics() {
+        let dir = tempdir().unwrap();
+        let cache_file = dir.path().join("release-index.json");
+        let server = MockServer::start();
+        let index_url = server
+            .url("/index.json")
+            .replacen("http://", "http://user:secret@", 1)
+            + "?token=secret#fragment";
         let stale_payload = ReleaseIndexCachePayload {
             schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
             index_url: index_url.clone(),
@@ -619,8 +845,19 @@ mod tests {
         )
         .unwrap();
 
-        let fetched = client.fetch_index().unwrap();
-        assert_eq!(fetched[0].version, "v22.11.0");
+        let resolved = client
+            .resolve_channel_with_diagnostics(NodeupChannel::Lts)
+            .unwrap();
+        let diagnostic = resolved.release_index.expect("stale diagnostic");
+        assert_eq!(resolved.version, "v22.11.0");
+        assert_eq!(diagnostic.cache_state, "stale-fallback");
+        assert_eq!(diagnostic.fallback_reason, "refresh-failed");
+        assert_eq!(diagnostic.selector, "lts");
+        assert_eq!(diagnostic.selected_version, "v22.11.0");
+        assert!(diagnostic.cache_age_seconds > diagnostic.ttl_seconds);
+        assert!(!diagnostic.source_url.contains("user:secret"));
+        assert!(!diagnostic.source_url.contains("token=secret"));
+        assert!(!diagnostic.source_url.contains("#fragment"));
         index_mock.assert_calls(MAX_RETRIES);
     }
 
@@ -659,6 +896,75 @@ mod tests {
         let fetched = client.fetch_index().unwrap();
         assert_eq!(fetched[0].version, "v24.14.0");
         index_mock.assert_calls(1);
+    }
+
+    #[test]
+    fn schema_mismatch_is_not_used_as_stale_fallback_after_refresh_failure() {
+        let dir = tempdir().unwrap();
+        let cache_file = dir.path().join("release-index.json");
+        let server = MockServer::start();
+        let index_url = server.url("/index.json");
+        let stale_payload = ReleaseIndexCachePayload {
+            schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION + 1,
+            index_url: index_url.clone(),
+            fetched_at_epoch_seconds: 1,
+            entries: vec![ReleaseEntry {
+                version: "v20.0.0".to_string(),
+                lts: serde_json::Value::Bool(false),
+            }],
+        };
+        fs::write(&cache_file, serde_json::to_vec(&stale_payload).unwrap()).unwrap();
+
+        let index_mock = server.mock(|when, then| {
+            when.method(GET).path("/index.json");
+            then.status(500);
+        });
+
+        let client = ReleaseIndexClient::with_urls(
+            cache_file,
+            Duration::from_secs(60),
+            index_url,
+            server.url("/release"),
+        )
+        .unwrap();
+
+        let error = client.fetch_index().unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Network);
+        index_mock.assert_calls(MAX_RETRIES);
+    }
+
+    #[test]
+    fn source_url_mismatch_is_not_used_as_stale_fallback_after_refresh_failure() {
+        let dir = tempdir().unwrap();
+        let cache_file = dir.path().join("release-index.json");
+        let server = MockServer::start();
+        let stale_payload = ReleaseIndexCachePayload {
+            schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
+            index_url: "https://old-mirror.example/index.json".to_string(),
+            fetched_at_epoch_seconds: 1,
+            entries: vec![ReleaseEntry {
+                version: "v20.0.0".to_string(),
+                lts: serde_json::Value::Bool(false),
+            }],
+        };
+        fs::write(&cache_file, serde_json::to_vec(&stale_payload).unwrap()).unwrap();
+
+        let index_mock = server.mock(|when, then| {
+            when.method(GET).path("/index.json");
+            then.status(500);
+        });
+
+        let client = ReleaseIndexClient::with_urls(
+            cache_file,
+            Duration::from_secs(60),
+            server.url("/index.json"),
+            server.url("/release"),
+        )
+        .unwrap();
+
+        let error = client.fetch_index().unwrap_err();
+        assert_eq!(error.kind, ErrorKind::Network);
+        index_mock.assert_calls(MAX_RETRIES);
     }
 
     #[test]
