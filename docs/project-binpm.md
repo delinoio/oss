@@ -55,6 +55,8 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `binpm update` and `binpm remove` must print the selected local or global scope before mutation and support `--dry-run` previews that leave manifests, lockfiles, package records, cache references, and executables unchanged. `--global` remains an explicit scope override even inside a project and does not currently require an interactive confirmation prompt.
 - `binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, `binpm outdated`, and `binpm cache key` must not mutate manifests, lockfiles, package records, cache entries, or executables.
 - `binpm remove` must clean project-local package records when they exist so removed tools are not reported as installed.
+- `binpm env --shell` supports `bash`, `zsh`, `fish`, and `powershell`; `PowerShell` is accepted case-insensitively, and `cmd` is accepted only to return an explicit deferred-shell diagnostic.
+- Global install output and `binpm doctor` must guide users to add `~/.binpm/bin` to `PATH` when it is absent, while keeping shell profile modification opt-in only. The guidance must not imply that project-local `.binpm/bin` entries should be persisted in shell profiles.
 
 ## Change Policy
 - Update this index and `docs/crates-binpm-foundation.md` together when CLI shape, local manifest or lockfile format, target selection, storage layout, cache behavior, security behavior, or heuristic scoring changes.

@@ -678,6 +678,8 @@ fn doctor() -> Result<i32> {
     let manifest_path = project_root.join(MANIFEST_FILE);
     let lockfile_path = project_root.join(LOCKFILE_FILE);
     let home = binpm_home()?;
+    let global_bin = home.join("bin");
+    let global_bin_on_path = path_contains_entry(&global_bin);
 
     info!(
         command = "doctor",
@@ -686,12 +688,19 @@ fn doctor() -> Result<i32> {
         manifest_path = %manifest_path.display(),
         lockfile_path = %lockfile_path.display(),
         binpm_home = %home.display(),
+        global_bin = %global_bin.display(),
+        global_bin_on_path,
         "Prepared doctor inspection"
     );
     println!("binpm doctor");
     println!("manifest: {}", path_state(&manifest_path));
     println!("lockfile: {}", path_state(&lockfile_path));
     println!("global_home: {}", home.display());
+    println!("global_bin: {}", global_bin.display());
+    println!("global_bin_on_path: {}", yes_no(global_bin_on_path));
+    if !global_bin_on_path {
+        print_global_path_setup_guidance(&global_bin);
+    }
     Ok(0)
 }
 
@@ -875,6 +884,9 @@ fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32
         return Err(error);
     }
     println!("installed {cmd} {}", record.installed_path);
+    if !path_contains_entry(&scope_paths.bin) {
+        print_global_path_setup_guidance(&scope_paths.bin);
+    }
     Ok(0)
 }
 
@@ -3918,6 +3930,12 @@ fn init(args: InitArgs) -> Result<i32> {
 }
 
 fn env_cmd(args: EnvArgs) -> Result<i32> {
+    if matches!(args.shell, Shell::Cmd) {
+        return Err(BinpmError::UnsupportedShell {
+            shell: args.shell.as_str().to_string(),
+        });
+    }
+
     let project_root = project_root()?;
     let home = binpm_home()?;
     let global_bin = home.join("bin");
@@ -3941,17 +3959,30 @@ fn print_env(shell: Shell, global_bin: &Path, local_bin: &Path) {
     let local = shell_quote(shell, local_bin);
     match shell {
         Shell::Bash | Shell::Zsh => {
-            println!("export PATH={local}:{global}${{PATH:+:$PATH}}");
+            println!("# Global bin: persist this line in shell profiles");
+            println!("export PATH={global}${{PATH:+:$PATH}}");
+            println!("# Project-local bin: use for the current project/session only");
+            println!("export PATH={local}${{PATH:+:$PATH}}");
         }
         Shell::Fish => {
-            println!("set -gx PATH {local} {global} $PATH");
+            println!("# Global bin: persist this line in shell profiles");
+            println!("set -gx PATH {global} $PATH");
+            println!("# Project-local bin: use for the current project/session only");
+            println!("set -gx PATH {local} $PATH");
         }
         Shell::Powershell => {
+            println!("# Global bin: persist this line in shell profiles");
             println!(
-                "$env:PATH = {local} + [System.IO.Path]::PathSeparator + {global} + $(if \
-                 ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} else {{ '' }})"
+                "$env:PATH = {global} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
+                 $env:PATH }} else {{ '' }})"
+            );
+            println!("# Project-local bin: use for the current project/session only");
+            println!(
+                "$env:PATH = {local} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
+                 $env:PATH }} else {{ '' }})"
             );
         }
+        Shell::Cmd => unreachable!("cmd shell is explicitly deferred before rendering"),
     }
 }
 
@@ -3961,6 +3992,7 @@ fn shell_quote(shell: Shell, path: &Path) -> String {
         Shell::Bash | Shell::Zsh => posix_single_quote(&raw),
         Shell::Fish => fish_single_quote(&raw),
         Shell::Powershell => powershell_single_quote(&raw),
+        Shell::Cmd => unreachable!("cmd shell is explicitly deferred before quoting"),
     }
 }
 
@@ -3970,6 +4002,7 @@ fn shell_path(shell: Shell, raw: &str) -> String {
             windows_path_for_posix_shell(raw).unwrap_or_else(|| raw.to_owned())
         }
         Shell::Fish | Shell::Powershell => raw.to_owned(),
+        Shell::Cmd => unreachable!("cmd shell is explicitly deferred before path rendering"),
     }
 }
 
@@ -4176,6 +4209,44 @@ fn path_state(path: &Path) -> &'static str {
     } else {
         "missing"
     }
+}
+
+fn path_contains_entry(entry: &Path) -> bool {
+    env::var_os("PATH")
+        .map(|path| env::split_paths(&path).any(|candidate| paths_equivalent(&candidate, entry)))
+        .unwrap_or(false)
+}
+
+fn paths_equivalent(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
+}
+
+fn print_global_path_setup_guidance(global_bin: &Path) {
+    println!("path_setup: {} is not on PATH", global_bin.display());
+    println!(
+        "path_setup: run `binpm env --shell <bash|zsh|fish|powershell>` to print PATH setup \
+         commands"
+    );
+    println!(
+        "path_setup: profile changes are opt-in; persist only the global bin line in shell \
+         profiles"
+    );
+    println!("path_setup: the project-local PATH line is for the current project/session only");
 }
 
 #[cfg(test)]
