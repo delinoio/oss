@@ -88,6 +88,10 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
     }
 
     let package_spec = plan.package_spec.as_deref().unwrap_or("none");
+    let package_spec_pinned = plan
+        .package_spec_pinned()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "none".to_string());
     let package_json_path = plan
         .package_json_path
         .as_ref()
@@ -100,11 +104,16 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
         runtime = %resolved.runtime_id(),
         mode = plan.mode.as_str(),
         package_spec,
+        package_spec_pinned,
         package_json_path = %package_json_path,
         reason = plan.reason.as_str(),
         executable = %plan.executable.display(),
         "Dispatching managed alias"
     );
+
+    if let Some(notice) = plan.npm_exec_human_notice() {
+        eprintln!("{notice}");
+    }
 
     let exit_code = run_command(
         &plan.executable,

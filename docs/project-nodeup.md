@@ -25,14 +25,17 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Linked runtime resolution must validate that the selected `node` executable is runnable, including Unix executable-bit checks and Windows `node.exe` naming behavior.
 - Linked runtime command availability diagnostics must distinguish the minimum `node` link requirement from per-shim availability for `node`, `npm`, `npx`, `yarn`, and `pnpm`, and expose checked paths, linked runtime identity, install-on-demand eligibility, and PATH/PATHEXT guidance in human and JSON output.
 - `nodeup run` missing-version errors must keep installation opt-in with `--install`, while managed alias dispatch may install a missing selected version runtime on demand. Human and JSON diagnostics must make that distinction explicit.
-- `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic.
+- `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic: supported values are exact `yarn@<semver>` or `pnpm@<semver>` strings only, and invalid values must report the failed part plus JSON diagnostics.
+- `yarn` and `pnpm` npm-exec delegation must be visible in human output, JSON output, and planning logs, including whether the package spec is pinned or an unpinned fallback.
 - `nodeup self uninstall` cleanup boundaries are data/cache/config only; binary, shims, and shell profile/PATH cleanup must remain manual and visible in human and JSON output.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.
+- Invalid shell completion subcommand scopes must be rejected with hints that point back to the nearest valid top-level scope.
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.
 - `nodeup show color` must remain available as the color diagnostic command for human stdout, human stderr, and log color decisions.
 - `--output json` must render both application-level errors and clap parser failures as JSON error envelopes on stderr, except raw completion script output remains unwrapped on success.
 - `nodeup toolchain install` and `nodeup toolchain uninstall` require at least one runtime selector at the parser layer.
 - `nodeup toolchain install` accepts only exact-version and channel selectors; linked-name selectors must be rejected before linked-runtime lookup so the error is deterministic whether or not the linked name exists.
+- `nodeup toolchain uninstall` removes exact installed versions only and must fail with `conflict` before mutation when an exact-version global default or directory override references a requested runtime; human output must name each blocking reference type and path with follow-up commands, and JSON error envelopes must include deterministic blocker diagnostics.
 - Release automation must publish both standalone prebuilt binaries and archive assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, plus Sigstore bundle sidecars (`*.sigstore.json`) for each artifact and `SHA256SUMS`.
 - Direct installers must verify `SHA256SUMS` entries and Sigstore bundle sidecars, require `cosign`, and only support bundle-enabled releases.
 - Direct installers must preflight missing `cosign` before release lookup or artifact download, explain OS-specific setup, and keep missing-prerequisite failures distinct from checksum or Sigstore verification failures.

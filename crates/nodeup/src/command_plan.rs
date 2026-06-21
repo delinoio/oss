@@ -5,13 +5,13 @@ use std::{
 };
 
 use semver::Version;
-use serde::Deserialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use tracing::info;
 
 use crate::{
     command_diagnostics::RuntimeCommandAvailability,
-    errors::{NodeupError, Result},
+    errors::{ErrorDiagnostics, NodeupError, Result},
     resolver::ResolvedRuntime,
     store::Store,
 };
@@ -58,12 +58,82 @@ impl DelegatedCommandReason {
 
 #[derive(Debug, Clone)]
 pub struct DelegatedCommandPlan {
+    pub requested_command: String,
     pub executable: PathBuf,
     pub args: Vec<OsString>,
     pub mode: DelegatedCommandMode,
     pub package_spec: Option<String>,
     pub package_json_path: Option<PathBuf>,
     pub reason: DelegatedCommandReason,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DelegatedCommandPlanDiagnostics {
+    pub requested_command: String,
+    pub mode: String,
+    pub reason: String,
+    pub executable_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_spec: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_spec_pinned: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_json_path: Option<String>,
+}
+
+impl DelegatedCommandPlan {
+    pub fn diagnostics(&self) -> DelegatedCommandPlanDiagnostics {
+        DelegatedCommandPlanDiagnostics {
+            requested_command: self.requested_command.clone(),
+            mode: self.mode.as_str().to_string(),
+            reason: self.reason.as_str().to_string(),
+            executable_path: self.executable.to_string_lossy().to_string(),
+            package_spec: self.package_spec.clone(),
+            package_spec_pinned: self.package_spec_pinned(),
+            package_json_path: self
+                .package_json_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+        }
+    }
+
+    pub fn package_spec_pinned(&self) -> Option<bool> {
+        match self.reason {
+            DelegatedCommandReason::PackageManagerPinned => Some(true),
+            DelegatedCommandReason::PackageJsonMissingFieldFallbackNpmExec
+            | DelegatedCommandReason::PackageJsonNotFoundFallbackNpmExec => Some(false),
+            DelegatedCommandReason::NonPackageManagerCommand
+            | DelegatedCommandReason::PackageJsonMissingFieldDirect
+            | DelegatedCommandReason::PackageJsonNotFoundDirect => None,
+        }
+    }
+
+    pub fn npm_exec_human_notice(&self) -> Option<String> {
+        if self.mode != DelegatedCommandMode::NpmExec {
+            return None;
+        }
+
+        let package_spec = self.package_spec.as_deref().unwrap_or("<unknown>");
+        let pinned = match self.package_spec_pinned() {
+            Some(true) => "pinned",
+            Some(false) => "unpinned fallback; add exact packageManager for reproducible projects",
+            None => "unknown pin state",
+        };
+        let package_json = self
+            .package_json_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "none".to_string());
+
+        Some(format!(
+            "nodeup: {} will run via npm exec using package {} ({pinned}; \
+             package_json={package_json}; npm={}; reason={})",
+            self.requested_command,
+            package_spec,
+            self.executable.display(),
+            self.reason.as_str()
+        ))
+    }
 }
 
 pub fn plan_delegated_command(
@@ -119,6 +189,7 @@ pub fn plan_delegated_command(
                     DelegatedCommandReason::PackageJsonNotFoundDirect
                 };
                 DelegatedCommandPlan {
+                    requested_command: delegated_command.to_string(),
                     executable: direct_executable,
                     args: delegated_args.to_vec(),
                     mode: DelegatedCommandMode::Direct,
@@ -147,6 +218,7 @@ pub fn plan_delegated_command(
         }
     } else {
         DelegatedCommandPlan {
+            requested_command: delegated_command.to_string(),
             executable: resolved.executable_path(store, delegated_command),
             args: delegated_args.to_vec(),
             mode: DelegatedCommandMode::Direct,
@@ -207,6 +279,7 @@ fn build_npm_exec_plan(
     args.extend(delegated_args.iter().cloned());
 
     Ok(DelegatedCommandPlan {
+        requested_command: manager.as_str().to_string(),
         executable: npm_executable,
         args,
         mode: DelegatedCommandMode::NpmExec,
@@ -236,6 +309,10 @@ fn log_command_plan(
         package_spec,
         package_json_path = %package_json_path,
         reason = plan.reason.as_str(),
+        package_spec_pinned = plan
+            .package_spec_pinned()
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "none".to_string()),
         executable = %plan.executable.display(),
         args_len = plan.args.len(),
         "Planned delegated command execution"
@@ -282,38 +359,142 @@ struct ConfiguredPackageManager {
 impl ConfiguredPackageManager {
     fn parse(raw: &str, package_json_path: &Path) -> Result<Self> {
         let raw = raw.trim();
-        let (manager_raw, version_raw) = raw.split_once('@').ok_or_else(|| {
-            NodeupError::invalid_input_with_hint(
+
+        let separator_count = raw.matches('@').count();
+        if separator_count == 0 && matches!(raw, "yarn" | "pnpm") {
+            return Err(package_manager_invalid_input(
                 format!(
-                    "Invalid packageManager value '{raw}' in {}",
+                    "Missing packageManager version for manager '{raw}' in {}",
                     package_json_path.display()
                 ),
-                "Use `<manager>@<exact-semver>` with manager `yarn` or `pnpm` (for example \
-                 `yarn@4.13.0` or `pnpm@10.32.1`).",
-            )
-        })?;
+                format!("Use an exact value such as `{raw}@<major>.<minor>.<patch>`."),
+                package_manager_diagnostics(PackageManagerDiagnosticsInput {
+                    package_json_path,
+                    raw_value: Some(raw),
+                    received_type: None,
+                    failed_part: "version",
+                    problem: "missing-version",
+                    manager: Some(raw),
+                    version: None,
+                    correction: json!(format!("{raw}@<major>.<minor>.<patch>")),
+                }),
+            ));
+        }
+
+        if separator_count != 1 {
+            return Err(package_manager_invalid_input(
+                format!(
+                    "Invalid packageManager separator in {} (value={raw})",
+                    package_json_path.display()
+                ),
+                "Use exactly one `@` separator in `<manager>@<exact-semver>`, for example \
+                 `yarn@4.13.0` or `pnpm@10.32.1`.",
+                package_manager_diagnostics(PackageManagerDiagnosticsInput {
+                    package_json_path,
+                    raw_value: Some(raw),
+                    received_type: None,
+                    failed_part: "separator",
+                    problem: "malformed-separator",
+                    manager: None,
+                    version: None,
+                    correction: json!(["yarn@4.13.0", "pnpm@10.32.1"]),
+                }),
+            ));
+        }
+
+        let (manager_raw, version_raw) = raw
+            .split_once('@')
+            .expect("validated exactly one packageManager separator");
+
+        if manager_raw.is_empty() {
+            return Err(package_manager_invalid_input(
+                format!(
+                    "Invalid packageManager manager in {} (value={raw})",
+                    package_json_path.display()
+                ),
+                "Set packageManager to `yarn@<exact-semver>` or `pnpm@<exact-semver>`.",
+                package_manager_diagnostics(PackageManagerDiagnosticsInput {
+                    package_json_path,
+                    raw_value: Some(raw),
+                    received_type: None,
+                    failed_part: "manager",
+                    problem: "missing-manager",
+                    manager: None,
+                    version: Some(version_raw),
+                    correction: json!(["yarn@4.13.0", "pnpm@10.32.1"]),
+                }),
+            ));
+        }
+
+        if version_raw.is_empty() {
+            return Err(package_manager_invalid_input(
+                format!(
+                    "Missing packageManager version for manager '{manager_raw}' in {}",
+                    package_json_path.display()
+                ),
+                format!("Use an exact value such as `{manager_raw}@<major>.<minor>.<patch>`."),
+                package_manager_diagnostics(PackageManagerDiagnosticsInput {
+                    package_json_path,
+                    raw_value: Some(raw),
+                    received_type: None,
+                    failed_part: "version",
+                    problem: "missing-version",
+                    manager: Some(manager_raw),
+                    version: None,
+                    correction: json!(format!("{manager_raw}@<major>.<minor>.<patch>")),
+                }),
+            ));
+        }
 
         let manager = match manager_raw {
             "yarn" => SupportedPackageManager::Yarn,
             "pnpm" => SupportedPackageManager::Pnpm,
             _ => {
-                return Err(NodeupError::invalid_input_with_hint(
+                return Err(package_manager_invalid_input(
                     format!(
-                        "Unsupported packageManager '{manager_raw}' in {}",
+                        "Unsupported packageManager manager '{manager_raw}' in {}",
                         package_json_path.display()
                     ),
                     "Use `yarn@<exact-semver>` or `pnpm@<exact-semver>`.",
+                    package_manager_diagnostics(PackageManagerDiagnosticsInput {
+                        package_json_path,
+                        raw_value: Some(raw),
+                        received_type: None,
+                        failed_part: "manager",
+                        problem: "unsupported-manager",
+                        manager: Some(manager_raw),
+                        version: Some(version_raw),
+                        correction: json!(["yarn@4.13.0", "pnpm@10.32.1"]),
+                    }),
                 ));
             }
         };
 
         let version = Version::parse(version_raw).map_err(|error| {
-            NodeupError::invalid_input_with_hint(
+            package_manager_invalid_input(
                 format!(
                     "Invalid packageManager version '{version_raw}' in {}: {error}",
                     package_json_path.display()
                 ),
-                "Use an exact semantic version (for example `yarn@4.13.0` or `pnpm@10.32.1`).",
+                format!(
+                    "Use an exact `{manager_raw}@<major>.<minor>.<patch>` value, for example \
+                     `{manager_raw}@10.32.1`."
+                ),
+                {
+                    let mut diagnostics =
+                        package_manager_diagnostics(PackageManagerDiagnosticsInput {
+                            package_json_path,
+                            raw_value: Some(raw),
+                            received_type: None,
+                            failed_part: "version",
+                            problem: "non-exact-semver",
+                            manager: Some(manager_raw),
+                            version: Some(version_raw),
+                            correction: json!(format!("{manager_raw}@<major>.<minor>.<patch>")),
+                        });
+                    diagnostics.insert("semver_error".to_string(), json!(error.to_string()));
+                    diagnostics
+                },
             )
         })?;
 
@@ -373,13 +554,23 @@ fn discover_package_manager(cwd: &Path) -> Result<PackageManagerDiscovery> {
 
     let configured = if let Some(raw_value) = manifest.package_manager {
         let raw = raw_value.as_str().ok_or_else(|| {
-            NodeupError::invalid_input_with_hint(
+            package_manager_invalid_input(
                 format!(
                     "Invalid packageManager value type in {}: expected string, received {}",
                     package_json_path.display(),
                     json_type_label(&raw_value),
                 ),
                 "Set packageManager to a string like `yarn@4.13.0` or `pnpm@10.32.1`.",
+                package_manager_diagnostics(PackageManagerDiagnosticsInput {
+                    package_json_path: &package_json_path,
+                    raw_value: None,
+                    received_type: Some(json_type_label(&raw_value)),
+                    failed_part: "value",
+                    problem: "non-string",
+                    manager: None,
+                    version: None,
+                    correction: json!("<manager>@<exact-semver>"),
+                }),
             )
         })?;
         Some(ConfiguredPackageManager::parse(raw, &package_json_path)?)
@@ -416,6 +607,57 @@ fn json_type_label(value: &Value) -> &'static str {
         Value::Array(_) => "array",
         Value::Object(_) => "object",
     }
+}
+
+fn package_manager_invalid_input(
+    cause: impl Into<String>,
+    hint: impl Into<String>,
+    diagnostics: ErrorDiagnostics,
+) -> NodeupError {
+    NodeupError::with_hint_and_diagnostics(
+        crate::errors::ErrorKind::InvalidInput,
+        cause,
+        hint,
+        diagnostics,
+    )
+}
+
+struct PackageManagerDiagnosticsInput<'a> {
+    package_json_path: &'a Path,
+    raw_value: Option<&'a str>,
+    received_type: Option<&'a str>,
+    failed_part: &'a str,
+    problem: &'a str,
+    manager: Option<&'a str>,
+    version: Option<&'a str>,
+    correction: Value,
+}
+
+fn package_manager_diagnostics(input: PackageManagerDiagnosticsInput<'_>) -> ErrorDiagnostics {
+    let mut diagnostics = ErrorDiagnostics::new();
+    diagnostics.insert("diagnostic".to_string(), json!("package-manager-invalid"));
+    diagnostics.insert(
+        "package_json_path".to_string(),
+        json!(input.package_json_path.display().to_string()),
+    );
+    diagnostics.insert("expected".to_string(), json!("<manager>@<exact-semver>"));
+    diagnostics.insert("supported_managers".to_string(), json!(["yarn", "pnpm"]));
+    diagnostics.insert("failed_part".to_string(), json!(input.failed_part));
+    diagnostics.insert("problem".to_string(), json!(input.problem));
+    diagnostics.insert("correction".to_string(), input.correction);
+    if let Some(raw_value) = input.raw_value {
+        diagnostics.insert("package_manager".to_string(), json!(raw_value));
+    }
+    if let Some(received_type) = input.received_type {
+        diagnostics.insert("received_type".to_string(), json!(received_type));
+    }
+    if let Some(manager) = input.manager {
+        diagnostics.insert("manager".to_string(), json!(manager));
+    }
+    if let Some(version) = input.version {
+        diagnostics.insert("version".to_string(), json!(version));
+    }
+    diagnostics
 }
 
 #[cfg(test)]
@@ -568,6 +810,30 @@ mod tests {
             .expect_err("invalid package manager version");
 
         assert_eq!(error.kind, crate::errors::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn package_manager_rejects_missing_versions_with_version_diagnostics() {
+        let (store, runtime_dir) = setup_store("missing-version");
+        fs::write(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n").expect("write npm");
+
+        let project_dir = runtime_dir.join("workspace");
+        fs::create_dir_all(&project_dir).expect("create project dir");
+        fs::write(
+            project_dir.join("package.json"),
+            r#"{"packageManager":"pnpm"}"#,
+        )
+        .expect("write package.json");
+
+        let runtime = linked_runtime(&runtime_dir, "linked");
+        let error = plan_delegated_command(&runtime, &store, "pnpm", &[], &project_dir)
+            .expect_err("missing package manager version");
+
+        assert_eq!(error.kind, crate::errors::ErrorKind::InvalidInput);
+        let diagnostics = error.diagnostics.expect("diagnostics");
+        assert_eq!(diagnostics["failed_part"], "version");
+        assert_eq!(diagnostics["problem"], "missing-version");
+        assert_eq!(diagnostics["manager"], "pnpm");
     }
 
     #[test]

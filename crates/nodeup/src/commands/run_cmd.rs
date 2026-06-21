@@ -6,7 +6,7 @@ use tracing::info;
 use crate::{
     cli::{OutputColorMode, OutputFormat},
     command_diagnostics::RuntimeCommandAvailability,
-    command_plan::{plan_delegated_command, DelegatedCommandMode},
+    command_plan::{plan_delegated_command, DelegatedCommandMode, DelegatedCommandPlanDiagnostics},
     commands::print_output,
     errors::{NodeupError, Result},
     process::{run_command, DelegatedStdioPolicy},
@@ -22,6 +22,7 @@ struct RunResponse {
     runtime: String,
     command: String,
     exit_code: i32,
+    planning: DelegatedCommandPlanDiagnostics,
     #[serde(skip_serializing_if = "Option::is_none")]
     release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
@@ -160,6 +161,10 @@ pub fn execute(
     }
 
     let package_spec = plan.package_spec.as_deref().unwrap_or("none");
+    let package_spec_pinned = plan
+        .package_spec_pinned()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "none".to_string());
     let package_json_path = plan
         .package_json_path
         .as_ref()
@@ -174,11 +179,19 @@ pub fn execute(
         delegated_command,
         mode = plan.mode.as_str(),
         package_spec,
+        package_spec_pinned,
         package_json_path = %package_json_path,
         reason = plan.reason.as_str(),
         args_len = delegated_args.len(),
         "Running delegated command"
     );
+
+    let npm_exec_notice = plan.npm_exec_human_notice();
+    if output == OutputFormat::Human {
+        if let Some(notice) = npm_exec_notice.as_deref() {
+            eprintln!("{notice}");
+        }
+    }
 
     let stdio_policy = match output {
         OutputFormat::Human => DelegatedStdioPolicy::Inherit,
@@ -196,6 +209,7 @@ pub fn execute(
         runtime: resolved.runtime_id(),
         command: delegated_command.clone(),
         exit_code,
+        planning: plan.diagnostics(),
         release_index,
     };
     let human = append_release_index_human_note(

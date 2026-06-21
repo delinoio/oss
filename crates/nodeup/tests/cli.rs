@@ -447,9 +447,9 @@ fn json_parser_errors_emit_error_envelopes() {
 
     let unexpected_extra_arg = env
         .command()
-        .args(["--output", "json", "completions", "bash", "show", "extra"])
+        .args(["--output", "json", "show", "home", "extra"])
         .output()
-        .expect("nodeup --output json completions extra argument");
+        .expect("nodeup --output json show home extra argument");
     assert_json_parser_error(unexpected_extra_arg, "unexpected argument 'extra'");
 }
 
@@ -1199,11 +1199,35 @@ fn uninstall_blocks_default_selector_with_mixed_version_spelling() {
 
     env.command().args(["default", "22.1.0"]).assert().success();
 
-    env.command()
-        .args(["toolchain", "uninstall", "v22.1.0"])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains("used as the default runtime"));
+    let output = env
+        .command()
+        .args(["--output", "json", "toolchain", "uninstall", "v22.1.0"])
+        .output()
+        .expect("uninstall default blocker");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "conflict");
+    assert_eq!(
+        payload["diagnostics"]["blocked_versions"],
+        serde_json::json!(["v22.1.0"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["reference_type"],
+        "global-default"
+    );
+    assert_eq!(payload["diagnostics"]["blockers"][0]["runtime"], "v22.1.0");
+    assert_eq!(payload["diagnostics"]["blockers"][0]["selector"], "22.1.0");
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["path"],
+        env.config_root.join("settings.toml").to_str().unwrap()
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["change_command"],
+        "nodeup default <runtime>"
+    );
 }
 
 #[test]
@@ -1235,12 +1259,82 @@ fn uninstall_blocks_override_selector_with_mixed_version_spelling() {
         .assert()
         .success();
 
+    let output = env
+        .command()
+        .args(["--output", "json", "toolchain", "uninstall", "v22.1.0"])
+        .output()
+        .expect("uninstall override blocker");
+
+    assert_eq!(output.status.code(), Some(6));
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["reference_type"],
+        "directory-override"
+    );
+    assert_eq!(payload["diagnostics"]["blockers"][0]["runtime"], "v22.1.0");
+    assert_eq!(payload["diagnostics"]["blockers"][0]["selector"], "v22.1.0");
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["path"],
+        project_dir.to_str().unwrap()
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["clear_command"],
+        format!("nodeup override unset --path {}", project_dir.display())
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["change_command"],
+        format!(
+            "nodeup override set <runtime> --path {}",
+            project_dir.display()
+        )
+    );
+}
+
+#[test]
+#[serial]
+fn uninstall_reports_all_default_and_override_blockers_with_follow_up_commands() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-combined-blockers");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    env.command().args(["default", "22.1.0"]).assert().success();
     env.command()
-        .args(["toolchain", "uninstall", "v22.1.0"])
+        .args([
+            "override",
+            "set",
+            "v22.1.0",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    env.command()
+        .args(["toolchain", "uninstall", "22.1.0"])
         .assert()
         .failure()
+        .code(6)
+        .stderr(predicates::str::contains("global-default path="))
+        .stderr(predicates::str::contains("directory-override path="))
+        .stderr(predicates::str::contains("nodeup default <runtime>"))
+        .stderr(predicates::str::contains(format!(
+            "nodeup override unset --path {}",
+            project_dir.display()
+        )))
         .stderr(predicates::str::contains(
-            "referenced by a directory override",
+            "nodeup toolchain uninstall v22.1.0",
         ));
 }
 
@@ -1313,7 +1407,8 @@ fn uninstall_is_atomic_when_later_target_conflicts_with_default() {
         .args(["toolchain", "uninstall", "22.1.0", "24.0.0"])
         .assert()
         .failure()
-        .stderr(predicates::str::contains("used as the default runtime"));
+        .stderr(predicates::str::contains("global-default path="))
+        .stderr(predicates::str::contains("nodeup default <runtime>"));
 
     assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
     assert!(env.data_root.join("toolchains").join("v24.0.0").exists());
@@ -1346,6 +1441,67 @@ fn uninstall_is_atomic_when_any_target_is_not_installed() {
         .stderr(predicates::str::contains(
             "Runtime v24.0.0 is not installed",
         ));
+
+    assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn uninstall_reports_reference_blockers_before_missing_targets() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "uninstall",
+            "22.1.0",
+            "24.0.0",
+        ])
+        .output()
+        .expect("uninstall blocked runtime with missing later target");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "conflict");
+    assert_eq!(
+        payload["diagnostics"]["blocked_versions"],
+        serde_json::json!(["v22.1.0"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["reference_type"],
+        "global-default"
+    );
+    assert_eq!(payload["diagnostics"]["blockers"][0]["runtime"], "v22.1.0");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Cannot uninstall v22.1.0"));
+    assert!(!payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Runtime v24.0.0 is not installed"));
 
     assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
 }
@@ -1966,6 +2122,39 @@ fn json_completions_success_outputs_raw_script() {
 
 #[test]
 #[serial]
+fn completions_accepts_global_output_after_shell() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "--output", "json"])
+        .output()
+        .expect("completions bash --output json");
+
+    assert!(output.status.success());
+    assert!(!output.stdout.is_empty());
+    assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completions_accepts_help_after_shell() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "--help"])
+        .output()
+        .expect("completions bash --help");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Generate shell completion scripts"));
+}
+
+#[test]
+#[serial]
 fn completions_accepts_valid_top_level_scope() {
     let env = TestEnv::new();
 
@@ -1978,6 +2167,39 @@ fn completions_accepts_valid_top_level_scope() {
     assert!(output.status.success());
     assert!(!output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completions_accepts_global_output_after_scope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "shim", "--output", "json"])
+        .output()
+        .expect("completions bash shim --output json");
+
+    assert!(output.status.success());
+    assert!(!output.stdout.is_empty());
+    assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completions_accepts_help_after_scope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "shim", "--help"])
+        .output()
+        .expect("completions bash shim --help");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Generate shell completion scripts"));
 }
 
 #[test]
@@ -2024,6 +2246,126 @@ fn json_completions_invalid_scope_emits_invalid_input_error_envelope() {
         .as_str()
         .unwrap()
         .contains("Unsupported command scope"));
+    assert_eq!(
+        payload["diagnostics"]["allowed_scope_category"],
+        "top-level-command"
+    );
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "invalid-scope");
+}
+
+#[test]
+#[serial]
+fn completions_subcommand_scope_suggests_top_level_scope() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["completions", "bash", "toolchain", "install"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "Unsupported command scope 'toolchain install'",
+        ))
+        .stderr(predicates::str::contains(
+            "Only top-level command scopes are supported",
+        ))
+        .stderr(predicates::str::contains(
+            "nodeup completions bash toolchain",
+        ));
+}
+
+#[test]
+#[serial]
+fn json_completions_subcommand_scope_emits_scope_diagnostics() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "completions", "zsh", "override", "set"])
+        .output()
+        .expect("completions --output json invalid subcommand scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope 'override set'"));
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "override set");
+    assert_eq!(
+        payload["diagnostics"]["allowed_scope_category"],
+        "top-level-command"
+    );
+    assert_eq!(payload["diagnostics"]["suggested_scope"], "override");
+    assert!(payload["diagnostics"]["allowed_scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|scope| scope == "override"));
+}
+
+#[test]
+#[serial]
+fn json_completions_subcommand_scope_captures_option_like_tokens() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "completions",
+            "bash",
+            "override",
+            "set",
+            "--path",
+        ])
+        .output()
+        .expect("completions --output json invalid option-like scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope 'override set --path'"));
+    assert_eq!(
+        payload["diagnostics"]["rejected_scope"],
+        "override set --path"
+    );
+    assert_eq!(payload["diagnostics"]["suggested_scope"], "override");
+}
+
+#[test]
+#[serial]
+fn json_completions_escaped_help_scope_is_rejected() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "completions", "bash", "--", "--help"])
+        .output()
+        .expect("completions --output json escaped help scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope '--help'"));
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "--help");
 }
 
 #[test]
@@ -4614,6 +4956,29 @@ fn toolchain_uninstall_linked_runtime_selector_points_to_unlink() {
 
 #[test]
 #[serial]
+fn toolchain_uninstall_channel_selector_rejection_stays_distinct_from_reference_blockers() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "toolchain", "uninstall", "lts"])
+        .output()
+        .expect("uninstall channel selector");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert!(payload["diagnostics"].is_null());
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("only supports exact version selectors"));
+}
+
+#[test]
+#[serial]
 fn toolchain_link_missing_path_returns_not_found() {
     let env = TestEnv::new();
     let missing = env.root.join("missing-linked-runtime");
@@ -5662,7 +6027,10 @@ fn which_yarn_uses_runtime_npm_path_in_npm_exec_mode() {
 
     let expected = fs::canonicalize(runtime_dir.join("bin").join("npm")).unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.trim(), expected.to_string_lossy());
+    assert!(stdout.contains(expected.to_string_lossy().as_ref()));
+    assert!(stdout.contains("yarn will run via npm exec"));
+    assert!(stdout.contains("@yarnpkg/cli-dist@4.13.0"));
+    assert!(stdout.contains("pinned"));
 }
 
 #[test]
@@ -5698,6 +6066,171 @@ fn run_package_manager_mismatch_returns_conflict() {
         .stderr(predicates::str::contains(
             "does not match packageManager 'pnpm@10.32.1'",
         ));
+}
+
+#[test]
+#[serial]
+fn package_manager_range_json_error_identifies_failed_version_part() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho run-node\n"),
+                ("npm", "#!/bin/sh\n"),
+            ],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-invalid-package-manager-range");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"invalid-range","packageManager":"pnpm@10.x"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args([
+            "--output",
+            "json",
+            "run",
+            "--install",
+            "22.1.0",
+            "pnpm",
+            "--version",
+        ])
+        .output()
+        .expect("invalid packageManager range");
+    assert!(!output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert_eq!(
+        payload["diagnostics"]["diagnostic"],
+        "package-manager-invalid"
+    );
+    assert_eq!(payload["diagnostics"]["failed_part"], "version");
+    assert_eq!(payload["diagnostics"]["problem"], "non-exact-semver");
+    assert_eq!(payload["diagnostics"]["manager"], "pnpm");
+    assert_eq!(payload["diagnostics"]["version"], "10.x");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("pnpm@<major>.<minor>.<patch>"));
+}
+
+#[test]
+#[serial]
+fn unsupported_package_manager_json_error_identifies_manager_part() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho run-node\n"),
+                ("npm", "#!/bin/sh\n"),
+            ],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-invalid-package-manager-npm");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"invalid-npm","packageManager":"npm@10.0.0"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args([
+            "--output",
+            "json",
+            "run",
+            "--install",
+            "22.1.0",
+            "yarn",
+            "--version",
+        ])
+        .output()
+        .expect("unsupported packageManager manager");
+    assert!(!output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["diagnostics"]["failed_part"], "manager");
+    assert_eq!(payload["diagnostics"]["problem"], "unsupported-manager");
+    assert_eq!(payload["diagnostics"]["manager"], "npm");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported packageManager manager 'npm'"));
+}
+
+#[test]
+#[serial]
+fn non_string_package_manager_json_error_identifies_expected_shape() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho run-node\n"),
+                ("npm", "#!/bin/sh\n"),
+            ],
+        ),
+        None,
+    );
+
+    let project_dir = env.root.join("project-invalid-package-manager-type");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"invalid-type","packageManager":10}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args([
+            "--output",
+            "json",
+            "run",
+            "--install",
+            "22.1.0",
+            "pnpm",
+            "--version",
+        ])
+        .output()
+        .expect("non-string packageManager");
+    assert!(!output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["diagnostics"]["failed_part"], "value");
+    assert_eq!(payload["diagnostics"]["problem"], "non-string");
+    assert_eq!(payload["diagnostics"]["received_type"], "number");
+    assert_eq!(
+        payload["diagnostics"]["expected"],
+        "<manager>@<exact-semver>"
+    );
 }
 
 #[test]
@@ -5767,6 +6300,9 @@ fn run_yarn_falls_back_to_npm_exec_when_package_manager_field_is_missing_and_bin
         .success()
         .stdout(predicates::str::contains(
             "npm-argv:exec --yes --package @yarnpkg/cli-dist -- yarn --version",
+        ))
+        .stderr(predicates::str::contains(
+            "unpinned fallback; add exact packageManager",
         ));
 }
 
@@ -5812,5 +6348,65 @@ fn which_pnpm_uses_runtime_npm_path_in_npm_exec_mode() {
 
     let expected = fs::canonicalize(runtime_dir.join("bin").join("npm")).unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.trim(), expected.to_string_lossy());
+    assert!(stdout.contains(expected.to_string_lossy().as_ref()));
+    assert!(stdout.contains("pnpm will run via npm exec"));
+    assert!(stdout.contains("pnpm@10.32.1"));
+    assert!(stdout.contains("pinned"));
+}
+
+#[test]
+#[serial]
+fn which_pnpm_json_exposes_npm_exec_planning_fields() {
+    let env = TestEnv::new();
+    let runtime_dir = env
+        .root
+        .join("linked-runtime-which-pnpm-json-package-manager");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+    fs::write(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n").unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-pnpm-json-package-manager",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-pnpm-json-package-manager"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-which-pnpm-json-package-manager");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"which-pnpm-json","packageManager":"pnpm@10.32.1"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args(["--output", "json", "which", "pnpm"])
+        .output()
+        .expect("which pnpm json with packageManager");
+    assert!(output.status.success());
+
+    let expected = fs::canonicalize(runtime_dir.join("bin").join("npm")).unwrap();
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["requested_command"], "pnpm");
+    assert_eq!(
+        payload["executable_path"].as_str().unwrap(),
+        expected.to_string_lossy()
+    );
+    assert_eq!(payload["mode"], "npm-exec");
+    assert_eq!(payload["reason"], "package-manager-pinned");
+    assert_eq!(payload["package_spec"], "pnpm@10.32.1");
+    assert_eq!(payload["package_spec_pinned"], true);
+    assert_eq!(payload["planning"]["mode"], "npm-exec");
+    assert_eq!(payload["planning"]["package_spec"], "pnpm@10.32.1");
 }
