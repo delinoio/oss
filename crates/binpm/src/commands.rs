@@ -530,10 +530,7 @@ fn update(args: UpdateArgs) -> Result<i32> {
         "Prepared update request"
     );
     match select_scope(args.scope.scope())? {
-        Scope::Local if frozen_lockfile => Err(BinpmError::FrozenLockfile {
-            path: require_manifest_root()?.join(LOCKFILE_FILE),
-        }),
-        Scope::Local => install_local_manifest(false, args.require_verified, &args.cmd),
+        Scope::Local => install_local_manifest(frozen_lockfile, args.require_verified, &args.cmd),
         Scope::Global => Err(BinpmError::NotImplemented {
             command: "update global",
         }),
@@ -1413,7 +1410,6 @@ fn install_local_from_lock(
     }
     validate_provider_digest_evidence(&record)?;
     validate_locked_record_artifact(&lockfile_path, cmd, &record, &target, tool)?;
-    validate_locked_record_current_release(&lockfile_path, cmd, &record)?;
     let home = binpm_home()?;
     let cache_paths = CachePaths::new(&home);
     let scope_paths = ScopePaths::local(root.to_path_buf());
@@ -1433,7 +1429,8 @@ fn install_local_from_lock(
     };
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
         let repair_result = (|| {
-            let download_url = locked_record_download_url(&record)?;
+            let resolved = locked_record_resolved_asset(&record, &target)?;
+            let download_url = resolved.decision.download_url.clone();
             let bytes = download_asset(&download_url)?;
             let actual = format!("{:x}", Sha256::digest(&bytes));
             if actual != record.sha256 {
@@ -1443,36 +1440,6 @@ fn install_local_from_lock(
                     actual,
                 });
             }
-            let resolved = ResolvedAsset {
-                source: SourceSpec::from_str(
-                    &record
-                        .requested_version
-                        .as_ref()
-                        .map(|version| format!("{}@{version}", record.source))
-                        .unwrap_or_else(|| record.source.clone()),
-                )?,
-                release_tag: record.release_tag.clone(),
-                target: target.clone(),
-                decision: crate::assets::CandidateDecision {
-                    asset_name: record.asset_name.clone(),
-                    canonical_url: record.asset_url.clone(),
-                    download_url,
-                    kind: crate::assets::classify_artifact(&record.asset_name, false),
-                    detected_os: Some(record.target_os),
-                    detected_arch: Some(record.target_arch),
-                    detected_libc: Some(record.target_libc),
-                    score: None,
-                    eligible: true,
-                    recognized_pattern: true,
-                    rejection_reason: None,
-                },
-                archive_format: record.archive_format,
-                selected_binary: record.selected_binary.clone(),
-                provider_digest_sha256: None,
-                checksum_source: record.checksum_source,
-                signature_available: record.signature_available,
-                signature_verified: record.signature_verified,
-            };
             populate_cache_from_bytes(&cache_paths, &resolved, &bytes)?;
             Ok(())
         })();
@@ -1486,36 +1453,7 @@ fn install_local_from_lock(
     }
 
     let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
-    let mut resolved_for_install = ResolvedAsset {
-        source: SourceSpec::from_str(
-            &record
-                .requested_version
-                .as_ref()
-                .map(|version| format!("{}@{version}", record.source))
-                .unwrap_or_else(|| record.source.clone()),
-        )?,
-        release_tag: record.release_tag.clone(),
-        target: target.clone(),
-        decision: crate::assets::CandidateDecision {
-            asset_name: record.asset_name.clone(),
-            canonical_url: record.asset_url.clone(),
-            download_url: locked_record_download_url(&record)?,
-            kind: crate::assets::classify_artifact(&record.asset_name, false),
-            detected_os: Some(record.target_os),
-            detected_arch: Some(record.target_arch),
-            detected_libc: Some(record.target_libc),
-            score: None,
-            eligible: true,
-            recognized_pattern: true,
-            rejection_reason: None,
-        },
-        archive_format: record.archive_format,
-        selected_binary: record.selected_binary.clone(),
-        provider_digest_sha256: record.provider_digest_sha256.clone(),
-        checksum_source: record.checksum_source,
-        signature_available: record.signature_available,
-        signature_verified: record.signature_verified,
-    };
+    let mut resolved_for_install = locked_record_resolved_asset(&record, &target)?;
     if let Err(error) = install_selected_executable(
         &cache_paths.asset_path(&record.sha256),
         &installed_path,
@@ -1560,6 +1498,44 @@ fn install_local_from_lock(
         populated_cache_entry,
         deferred_cache_hit: None,
         cache_metadata_snapshot,
+    })
+}
+
+fn locked_record_resolved_asset(
+    record: &PackageRecord,
+    target: &HostTarget,
+) -> Result<ResolvedAsset> {
+    let source = SourceSpec::from_str(
+        &record
+            .requested_version
+            .as_ref()
+            .map(|version| format!("{}@{version}", record.source))
+            .unwrap_or_else(|| record.source.clone()),
+    )?;
+    validate_download_url(&record.asset_url)?;
+    Ok(ResolvedAsset {
+        source,
+        release_tag: record.release_tag.clone(),
+        target: target.clone(),
+        decision: crate::assets::CandidateDecision {
+            asset_name: record.asset_name.clone(),
+            canonical_url: record.asset_url.clone(),
+            download_url: record.asset_url.clone(),
+            kind: crate::assets::classify_artifact(&record.asset_name, false),
+            detected_os: Some(record.target_os),
+            detected_arch: Some(record.target_arch),
+            detected_libc: Some(record.target_libc),
+            score: None,
+            eligible: true,
+            recognized_pattern: true,
+            rejection_reason: None,
+        },
+        archive_format: record.archive_format,
+        selected_binary: record.selected_binary.clone(),
+        provider_digest_sha256: record.provider_digest_sha256.clone(),
+        checksum_source: record.checksum_source,
+        signature_available: record.signature_available,
+        signature_verified: record.signature_verified,
     })
 }
 
@@ -1734,58 +1710,6 @@ fn record_matches_current_provider_digest(record: &PackageRecord, assets: &[Rele
         Some(current_digest) => current_digest == record.sha256,
         None => record.checksum_source != ChecksumSource::GitHubDigest,
     }
-}
-
-fn locked_record_download_url(record: &PackageRecord) -> Result<String> {
-    let spec = locked_release_lookup_spec(record)?;
-    let client = client_for_source(&spec)?;
-    let selection = client.resolve_release(&spec)?;
-    let asset = selection
-        .release
-        .assets
-        .iter()
-        .find(|asset| asset.name == record.asset_name)
-        .ok_or_else(|| BinpmError::AssetNotFound {
-            package: record.package_spec.clone(),
-            target: HostTarget {
-                os: record.target_os,
-                arch: record.target_arch,
-                libc: record.target_libc,
-            }
-            .key(),
-        })?;
-    if record.source_provider == crate::contract::SourceProvider::GitLab && asset.source_archive {
-        return Err(BinpmError::AssetNotFound {
-            package: record.package_spec.clone(),
-            target: HostTarget {
-                os: record.target_os,
-                arch: record.target_arch,
-                libc: record.target_libc,
-            }
-            .key(),
-        });
-    }
-    if record.source_provider == crate::contract::SourceProvider::GitLab
-        && !gitlab_https_eligible(asset)
-    {
-        let diagnostic_url = asset
-            .provider_url
-            .as_deref()
-            .unwrap_or(&asset.url)
-            .split(['?', '#'])
-            .next()
-            .unwrap_or(&asset.url)
-            .to_string();
-        return Err(BinpmError::UnsafeUrl {
-            url: diagnostic_url,
-            message: "gitlab asset link is not HTTPS eligible".to_string(),
-        });
-    }
-    Ok(asset
-        .provider_url
-        .as_deref()
-        .unwrap_or(&asset.url)
-        .to_string())
 }
 
 fn locked_release_lookup_spec(record: &PackageRecord) -> Result<SourceSpec> {
