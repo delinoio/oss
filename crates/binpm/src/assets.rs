@@ -641,7 +641,7 @@ fn detect_target(name: &str) -> TargetSignal {
         signal.os = Some(TargetOs::Windows);
     }
 
-    for token in &tokens {
+    for (index, token) in tokens.iter().enumerate() {
         if signal.os.is_none() {
             signal.os = os_alias(token);
         }
@@ -651,7 +651,7 @@ fn detect_target(name: &str) -> TargetSignal {
         if signal.libc.is_none() {
             signal.libc = libc_alias(token);
         }
-        if signal.cpu_feature.is_none() {
+        if signal.cpu_feature.is_none() && cpu_feature_token_has_target_context(&tokens, index) {
             signal.cpu_feature = cpu_feature_alias(token);
         }
     }
@@ -742,6 +742,15 @@ fn cpu_feature_alias(token: &str) -> Option<CpuFeatureVariant> {
         "modern" => Some(CpuFeatureVariant::Modern),
         _ => None,
     }
+}
+
+fn cpu_feature_token_has_target_context(tokens: &[&str], index: usize) -> bool {
+    if cpu_feature_alias(tokens[index]).is_none() {
+        return false;
+    }
+    tokens.iter().take(index).any(|token| {
+        os_alias(token).is_some() || arch_alias(token).is_some() || libc_alias(token).is_some()
+    })
 }
 
 fn is_source_archive_name(lower: &str) -> bool {
@@ -1255,6 +1264,19 @@ mod tests {
             .rejection_reason
             .as_deref()
             .is_some_and(|reason| reason.contains("CPU feature variant `modern`")));
+    }
+
+    #[test]
+    fn modern_product_name_token_is_not_rejected_as_cpu_feature() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let decisions = score_assets(
+            SourceProvider::GitHub,
+            &host,
+            &[asset("modern-tool-linux-x64.tar.gz")],
+        );
+
+        assert_eq!(decisions[0].cpu_feature, None);
+        assert!(decisions[0].eligible);
     }
 
     #[test]

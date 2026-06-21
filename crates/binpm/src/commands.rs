@@ -24,8 +24,8 @@ use crate::{
         InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs, VerifyArgs,
     },
     contract::{
-        validate_version_selector, ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec,
-        TargetArch, TargetLibc, TargetOs, VerificationState,
+        normalize_source_input, validate_version_selector, ArchiveFormat, ChecksumSource,
+        HostTarget, Scope, SourceSpec, TargetArch, TargetLibc, TargetOs, VerificationState,
     },
     error::{BinpmError, Result},
     release::{
@@ -348,7 +348,7 @@ fn install(args: InstallArgs) -> Result<i32> {
     let frozen_lockfile = args.lockfile.frozen_lockfile();
 
     if let Some(source) = &args.source {
-        let spec = SourceSpec::from_str(source)?;
+        let spec = normalize_source_input(source)?;
         let scope = source_install_scope(requested_scope);
         info!(
             command = "install",
@@ -385,7 +385,7 @@ fn install(args: InstallArgs) -> Result<i32> {
 }
 
 fn add(args: AddArgs) -> Result<i32> {
-    let spec = SourceSpec::from_str(&args.source)?;
+    let spec = normalize_source_input(&args.source)?;
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     info!(
         command = "add",
@@ -477,7 +477,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
 
     if let Some(source) = &args.package {
-        let spec = SourceSpec::from_str(source)?;
+        let spec = normalize_source_input(source)?;
         info!(
             command = "x",
             resolved_command = %cmd,
@@ -1179,10 +1179,10 @@ fn parse_source_argument(raw: &str) -> Result<Option<SourceSpec>> {
         return SourceSpec::from_str(raw).map(Some);
     }
     if raw.starts_with("https://") || raw.starts_with("http://") {
-        return SourceSpec::from_str(raw).map(Some);
+        return normalize_source_input(raw).map(Some);
     }
     if raw.split('/').count() == 2 && raw.split('/').all(|segment| !segment.is_empty()) {
-        return SourceSpec::from_str(raw).map(Some);
+        return normalize_source_input(raw).map(Some);
     }
 
     Ok(None)
@@ -6936,6 +6936,15 @@ mod tests {
             .expect_err("versioned manifest source");
 
         assert!(error.to_string().contains("must be versionless"));
+    }
+
+    #[test]
+    fn manifest_source_rejects_shorthand_sources() {
+        for raw in ["owner/tool", "https://github.com/owner/tool"] {
+            let error = parse_manifest_source(raw).expect_err("manifest shorthand");
+
+            assert!(matches!(error, BinpmError::InvalidSourceSpec { .. }));
+        }
     }
 
     #[test]
