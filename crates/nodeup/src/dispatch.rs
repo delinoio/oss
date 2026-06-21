@@ -7,6 +7,7 @@ use crate::{
     errors::{NodeupError, Result},
     process::{run_command, DelegatedStdioPolicy},
     resolver::ResolvedRuntimeTarget,
+    types::PlatformTarget,
     NodeupApp,
 };
 
@@ -19,6 +20,8 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
     let Some(alias) = crate::types::ManagedAlias::from_argv0(&argv0) else {
         return Ok(None);
     };
+
+    PlatformTarget::ensure_supported_host("shim dispatch")?;
 
     let delegated_args = args.collect::<Vec<OsString>>();
     let cwd = std::env::current_dir()?;

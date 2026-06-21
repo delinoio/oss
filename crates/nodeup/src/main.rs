@@ -78,6 +78,7 @@ fn clap_error_envelope(error: &clap::Error) -> NodeupErrorEnvelope {
         kind: ErrorKind::InvalidInput,
         message: error.to_string().trim().to_string(),
         exit_code: error.exit_code(),
+        diagnostics: None,
     }
 }
 
