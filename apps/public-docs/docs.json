@@ -4,6 +4,12 @@
   "colors": {
     "primary": "#0F766E"
   },
+  "redirects": [
+    {
+      "source": "/nodeup",
+      "destination": "https://nodeup.delino.io"
+    }
+  ],
   "navigation": {
     "tabs": [
       {
