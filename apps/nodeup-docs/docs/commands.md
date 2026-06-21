@@ -94,6 +94,14 @@ nodeup show home
 
 Prints the effective `data_root`, `cache_root`, and `config_root`.
 
+## show color
+
+```bash
+nodeup show color
+```
+
+Prints effective color decisions for human stdout, human stderr, and logs. JSON output includes `human_stdout`, `human_stderr`, and `logs` objects with the effective mode, source, enabled state, `NO_COLOR` state, and ignored invalid color environment values when present.
+
 ## update
 
 ```bash

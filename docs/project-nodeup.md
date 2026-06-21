@@ -21,6 +21,7 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.
+- `nodeup show color` must remain available as the color diagnostic command for human stdout, human stderr, and log color decisions.
 - `--output json` must render both application-level errors and clap parser failures as JSON error envelopes on stderr, except raw completion script output remains unwrapped on success.
 - `nodeup toolchain install` and `nodeup toolchain uninstall` require at least one runtime selector at the parser layer.
 - `nodeup toolchain install` accepts only exact-version and channel selectors; linked-name selectors must be rejected before linked-runtime lookup so the error is deterministic whether or not the linked name exists.
