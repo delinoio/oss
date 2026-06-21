@@ -45,6 +45,7 @@
 - Keep cache cleanup behavior separate from uninstall behavior: cache pruning and cleaning must not remove package records or executable links/copies under `~/.binpm/bin`.
 - Keep `binpm cache key` read-only; it must not download, install, or populate cache entries.
 - Keep source identifiers aligned with the documented enum contract: `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
+- Keep source version selectors exact-tag-only: omitted `@version` selects latest stable, while `@latest`, semver range-like selectors, channel selectors, and major-version pins are rejected before manifest or lockfile persistence.
 - Keep GitLab release selection stable by excluding upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
 - Keep GitLab release asset link selection HTTPS-only before candidate scoring and download, including final redirect targets.
 - Keep GitLab generated `assets.sources` source archives out of installable asset scoring.

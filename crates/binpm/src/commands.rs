@@ -441,17 +441,20 @@ fn remove(args: RemoveArgs) -> Result<i32> {
 }
 
 fn info_cmd(args: InfoArgs) -> Result<i32> {
-    if let Ok(spec) = SourceSpec::from_str(&args.cmd_or_source) {
-        debug!(
-            command = "info",
-            source_provider = spec.provider.as_str(),
-            source_host = spec.host,
-            source_path = spec.path,
-            source_version = spec.version.as_deref().unwrap_or(""),
-            "Parsed info argument as source"
-        );
-        log_read_only_scope("info", args.scope.scope());
-        return print_source_info(&spec);
+    match parse_source_argument(&args.cmd_or_source)? {
+        Some(spec) => {
+            debug!(
+                command = "info",
+                source_provider = spec.provider.as_str(),
+                source_host = spec.host,
+                source_path = spec.path,
+                source_version = spec.version.as_deref().unwrap_or(""),
+                "Parsed info argument as source"
+            );
+            log_read_only_scope("info", args.scope.scope());
+            return print_source_info(&spec);
+        }
+        None => {}
     }
     log_read_only_scope("info", args.scope.scope());
     let scope = select_scope(args.scope.scope())?;
@@ -564,28 +567,31 @@ fn doctor() -> Result<i32> {
 }
 
 fn explain(args: ExplainArgs) -> Result<i32> {
-    if let Ok(spec) = SourceSpec::from_str(&args.cmd_or_source) {
-        let target = HostTarget::current()?;
-        info!(
-            command = "explain",
-            read_only = true,
-            selected_scope = args.scope.scope().as_str(),
-            source_provider = spec.provider.as_str(),
-            source_host = spec.host,
-            source_path = spec.path,
-            source_version = spec.version.as_deref().unwrap_or(""),
-            target = target.key(),
-            "Prepared source explanation"
-        );
-        return explain_source(spec, target);
-    } else {
-        info!(
-            command = "explain",
-            read_only = true,
-            selected_scope = args.scope.scope().as_str(),
-            local_cmd = args.cmd_or_source,
-            "Prepared local command explanation"
-        );
+    match parse_source_argument(&args.cmd_or_source)? {
+        Some(spec) => {
+            let target = HostTarget::current()?;
+            info!(
+                command = "explain",
+                read_only = true,
+                selected_scope = args.scope.scope().as_str(),
+                source_provider = spec.provider.as_str(),
+                source_host = spec.host,
+                source_path = spec.path,
+                source_version = spec.version.as_deref().unwrap_or(""),
+                target = target.key(),
+                "Prepared source explanation"
+            );
+            return explain_source(spec, target);
+        }
+        None => {
+            info!(
+                command = "explain",
+                read_only = true,
+                selected_scope = args.scope.scope().as_str(),
+                local_cmd = args.cmd_or_source,
+                "Prepared local command explanation"
+            );
+        }
     }
     let scope = select_scope(args.scope.scope())?;
     let paths = match scope {
@@ -611,6 +617,14 @@ fn explain(args: ExplainArgs) -> Result<i32> {
     println!("checksum_source: {}", record.checksum_source.as_str());
     println!("verification: {}", verification_state(&record));
     Ok(0)
+}
+
+fn parse_source_argument(raw: &str) -> Result<Option<SourceSpec>> {
+    if raw.starts_with("github:") || raw.starts_with("gitlab:") {
+        return SourceSpec::from_str(raw).map(Some);
+    }
+
+    Ok(None)
 }
 
 fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
