@@ -29,10 +29,15 @@ Tag contract:
 `binpm`:
 
 ```bash
+NODEUP_BINPM_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/nodeup-binpm"
+mkdir -p "$NODEUP_BINPM_HOME"
+cd "$NODEUP_BINPM_HOME"
 binpm init
 binpm add nodeup github:delinoio/oss@nodeup@v<semver>
 binpm env --shell <shell>
 ```
+
+Use the dedicated `NODEUP_BINPM_HOME` directory so binpm's local manifest and `nodeup` binary do not modify whichever project directory you started from.
 
 Package manager:
 
