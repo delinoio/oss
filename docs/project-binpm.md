@@ -30,7 +30,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - Versionless installs must resolve to the latest stable release exposed by the source provider; GitHub sources must exclude draft and prerelease releases, and GitLab sources must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
 - Explicit source versions are exact release tag requests. `@latest`, SemVer range-like selectors, channel selectors, and major-version pins are rejected with diagnostics that point users to either omit `@version` for latest stable or use an exact release tag.
 - Binary selection must be deterministic and target-aware across operating system, CPU architecture, and libc or ABI environment.
-- Source-form `binpm explain <source>` may perform read-only provider release lookup and must print source parsing, provider API URL, release selection, target normalization, asset candidate scoring, selected asset, and rejection reasons without mutating manifests, lockfiles, package records, cache entries, or executables.
+- Source-form `binpm explain <source>` may perform read-only provider release lookup and must print source parsing, provider API URL, release selection, target normalization, asset candidate scoring, selected asset, rejection reasons, actionable remediation summaries, and target override snippets without mutating manifests, lockfiles, package records, cache entries, or executables.
 - Current-host target detection must fail clearly for unsupported operating systems or CPU architectures instead of mapping them to a supported fallback target.
 - The asset selection heuristic must remain fully documented in `docs/crates-binpm-foundation.md` before implementation changes alter scoring behavior.
 - `~/.binpm` remains the canonical global home directory for globally installed binaries, package records, cache entries, and temporary extraction state.
@@ -42,7 +42,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - Project-local tooling must use `binpm.toml` at the repository root as the committed local tool manifest.
 - Project-local tooling must use `binpm.lock` at the repository root as the committed deterministic resolution record for release tags, target-specific assets, selected binaries, checksums, and installed paths.
 - Committed lockfiles must store sanitized canonical asset URLs only, never credential-bearing or expiring download URLs.
-- Local target-specific asset overrides must live under `[tools.<cmd>.targets.<target-key>]` and must preserve deterministic lockfile output.
+- Local target-specific asset overrides must live under `[tools.<cmd>.targets.<target-key>]`, must use canonical target keys, and must preserve deterministic lockfile output. Diagnostic snippets must never include credential-bearing URLs, runtime cache paths, or other transient machine-local fields.
 - Local command names must be executable basenames and must not contain path separators or relative path components.
 - `binpm add <cmd> <source> --bin <upstream-binary>` must persist the selected upstream binary in `binpm.toml`; `binpm x --package <source> --bin <upstream-binary> CMD [args...]` must use that selected upstream binary for one-off execution while installing it under `CMD`.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`; other project-local binpm runtime state must stay under `$repoRoot/.binpm`.

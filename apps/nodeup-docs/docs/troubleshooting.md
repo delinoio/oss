@@ -153,6 +153,15 @@ Check precedence:
 3. `NO_COLOR`
 4. terminal detection
 
+Inspect the effective decisions:
+
+```bash
+nodeup show color
+nodeup --output json show color
+```
+
+The diagnostic separates human stdout, human stderr, and log color. Invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values are ignored, and the diagnostic reports the ignored value.
+
 Force plain output:
 
 ```bash

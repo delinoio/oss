@@ -38,6 +38,10 @@ impl ArtifactKind {
             Self::Unknown => "unknown",
         }
     }
+
+    pub fn is_installable(self) -> bool {
+        matches!(self, Self::Archive(_) | Self::BareExecutable)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -361,7 +365,7 @@ fn score_asset(
     }
 
     let Some(score) = target_score(target, &target_signal) else {
-        decision.rejection_reason = Some("asset target does not match host target".to_string());
+        decision.rejection_reason = Some(target_rejection_reason(target, &target_signal));
         log_candidate(target, &decision);
         return decision;
     };
@@ -429,6 +433,28 @@ fn target_score(target: &HostTarget, signal: &TargetSignal) -> Option<i32> {
     }
 
     Some(score)
+}
+
+fn target_rejection_reason(target: &HostTarget, signal: &TargetSignal) -> String {
+    if target.os == TargetOs::Linux
+        && target.libc == TargetLibc::Musl
+        && signal.os == Some(TargetOs::Linux)
+        && signal.arch == Some(target.arch)
+        && signal.libc.is_none()
+    {
+        return "linux musl target requires an explicit libc signal; rename the asset with musl, \
+                static, portable, universal, or any, or add a target override if this binary is \
+                known to be compatible"
+            .to_string();
+    }
+
+    if target.arch == TargetArch::Armv7 && signal.os == Some(target.os) && signal.arch.is_none() {
+        return "armv7 target requires an explicit architecture token such as armv7, armv7l, or \
+                armhf"
+            .to_string();
+    }
+
+    "asset target does not match host target".to_string()
 }
 
 fn compare_candidates(left: &CandidateDecision, right: &CandidateDecision) -> Ordering {
@@ -541,7 +567,7 @@ fn arch_alias(token: &str) -> Option<TargetArch> {
         "x86_64" | "amd64" | "x64" => Some(TargetArch::X86_64),
         "aarch64" | "arm64" => Some(TargetArch::Aarch64),
         "i686" | "i386" | "x86" | "ia32" | "386" => Some(TargetArch::I686),
-        "armv7" => Some(TargetArch::Armv7),
+        "armv7" | "armv7l" | "armhf" => Some(TargetArch::Armv7),
         _ => None,
     }
 }
@@ -898,7 +924,11 @@ mod tests {
         assert!(!decisions[0].eligible);
         assert_eq!(
             decisions[0].rejection_reason.as_deref(),
-            Some("asset target does not match host target")
+            Some(
+                "linux musl target requires an explicit libc signal; rename the asset with musl, \
+                 static, portable, universal, or any, or add a target override if this binary is \
+                 known to be compatible"
+            )
         );
     }
 
@@ -938,6 +968,7 @@ mod tests {
     fn recognizes_cargo_dist_and_goreleaser_and_bun_deno_patterns() {
         let linux = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
         let darwin = target(TargetOs::Darwin, TargetArch::Aarch64, TargetLibc::Any);
+        let armv7 = target(TargetOs::Linux, TargetArch::Armv7, TargetLibc::Gnu);
 
         assert!(select_asset(
             SourceProvider::GitHub,
@@ -961,6 +992,24 @@ mod tests {
             SourceProvider::GitHub,
             &linux,
             &[asset("deno-x86_64-unknown-linux-gnu.zip")]
+        )
+        .is_some());
+        assert!(select_asset(
+            SourceProvider::GitHub,
+            &armv7,
+            &[asset("tool_1.2.3_Linux_armv7.tar.gz")]
+        )
+        .is_some());
+        assert!(select_asset(
+            SourceProvider::GitHub,
+            &armv7,
+            &[asset("tool-linux-armv7l.tar.gz")]
+        )
+        .is_some());
+        assert!(select_asset(
+            SourceProvider::GitHub,
+            &armv7,
+            &[asset("tool-linux-armhf.tar.gz")]
         )
         .is_some());
     }
