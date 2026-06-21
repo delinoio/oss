@@ -328,6 +328,7 @@ fn uninstall(
     );
 
     let mut blockers = Vec::new();
+    let mut missing_version = None;
     for version in &unique_versions {
         blockers.extend(runtime_reference_blockers(
             version,
@@ -335,12 +336,8 @@ fn uninstall(
             &overrides.entries,
             app,
         ));
-        if !app.store.is_installed(version) {
-            return Err(NodeupError::not_found_with_hint(
-                format!("Runtime {version} is not installed"),
-                "List installed runtimes with `nodeup toolchain list` and retry with an installed \
-                 version.",
-            ));
+        if missing_version.is_none() && !app.store.is_installed(version) {
+            missing_version = Some(version.clone());
         }
     }
 
@@ -353,6 +350,14 @@ fn uninstall(
                 .then_with(|| left.selector.cmp(&right.selector))
         });
         return Err(runtime_reference_blockers_error(blockers));
+    }
+
+    if let Some(version) = missing_version {
+        return Err(NodeupError::not_found_with_hint(
+            format!("Runtime {version} is not installed"),
+            "List installed runtimes with `nodeup toolchain list` and retry with an installed \
+             version.",
+        ));
     }
 
     for version in &unique_versions {

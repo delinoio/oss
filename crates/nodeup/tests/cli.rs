@@ -1395,6 +1395,67 @@ fn uninstall_is_atomic_when_any_target_is_not_installed() {
 
 #[test]
 #[serial]
+fn uninstall_reports_reference_blockers_before_missing_targets() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "uninstall",
+            "22.1.0",
+            "24.0.0",
+        ])
+        .output()
+        .expect("uninstall blocked runtime with missing later target");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "conflict");
+    assert_eq!(
+        payload["diagnostics"]["blocked_versions"],
+        serde_json::json!(["v22.1.0"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["blockers"][0]["reference_type"],
+        "global-default"
+    );
+    assert_eq!(payload["diagnostics"]["blockers"][0]["runtime"], "v22.1.0");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Cannot uninstall v22.1.0"));
+    assert!(!payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Runtime v24.0.0 is not installed"));
+
+    assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
 fn uninstall_deduplicates_canonical_duplicate_targets() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);
