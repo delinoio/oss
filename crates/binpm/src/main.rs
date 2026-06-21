@@ -42,13 +42,20 @@ fn frozen_lockfile_command_context(command: &Command) -> FrozenLockfileCommandCo
                 mode: args.lockfile.frozen_lockfile_mode(),
             }
         }
+        Command::Install(args) if !args.scope.global => {
+            FrozenLockfileCommandContext::InstallLocal {
+                require_verified: args.require_verified,
+                mode: args.lockfile.frozen_lockfile_mode(),
+            }
+        }
         Command::Install(args) => FrozenLockfileCommandContext::Other {
             mode: args.lockfile.frozen_lockfile_mode(),
         },
         Command::Exec(args) => FrozenLockfileCommandContext::Exec {
             mode: args.lockfile.frozen_lockfile_mode(),
         },
-        Command::Update(args) if args.scope.local => FrozenLockfileCommandContext::UpdateLocal {
+        Command::Update(args) if !args.scope.global => FrozenLockfileCommandContext::UpdateLocal {
+            cmds: args.cmd.clone(),
             require_verified: args.require_verified,
             mode: args.lockfile.frozen_lockfile_mode(),
         },
