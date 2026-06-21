@@ -33,7 +33,8 @@
 ## Security
 - Published content must not expose internal-only secrets, unpublished release credentials, or private CI environment details.
 - Installation guidance must preserve the Nodeup direct-installer verification contract for `SHA256SUMS` and Sigstore bundle sidecars.
-- Direct-installer guidance must provide remote copy-paste POSIX and PowerShell commands using stable first-party `delinoio/oss` raw GitHub URLs, keep canonical in-repo script paths visible for maintainer workflows, and present `cosign` as a required prerequisite.
+- Direct-installer guidance must provide remote copy-paste POSIX and PowerShell commands using stable first-party `delinoio/oss` raw GitHub URLs, keep canonical in-repo script paths visible for maintainer workflows, present `cosign` as a required prerequisite before direct installer commands, and distinguish missing prerequisite failures from verification failures.
+- Installation, release, and troubleshooting guidance must explain that Nodeup `cargo-binstall` support uses first-party release assets only and does not enable `quick-install` or `compile` fallback strategies.
 - Cloudflare Pages deployment credentials must remain managed by CI or hosting configuration, not checked into the repository.
 
 ## Logging

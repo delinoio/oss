@@ -10,6 +10,7 @@ use tempfile::NamedTempFile;
 use toml::{value::Table, Value};
 use tracing::{info, warn};
 
+use super::shim_cmd;
 use crate::{
     cli::{OutputColorMode, OutputFormat, SelfCommand},
     commands::print_output,
@@ -153,6 +154,27 @@ struct SelfUninstallResponse {
     action: SelfAction,
     status: SelfUninstallOutcome,
     removed_paths: Vec<String>,
+    cleanup_boundaries: Vec<SelfUninstallCleanupBoundary>,
+    remaining_manual_steps: Vec<String>,
+    likely_leftover_paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SelfUninstallCleanupBoundary {
+    category: &'static str,
+    cleanup: &'static str,
+    paths: Vec<String>,
+}
+
+struct SelfUninstallRoot {
+    category: &'static str,
+    path: PathBuf,
+    bootstrap_child: Option<std::ffi::OsString>,
+}
+
+struct SelfUninstallTarget {
+    category: &'static str,
+    path: PathBuf,
 }
 
 #[derive(Debug, Serialize)]
@@ -237,51 +259,43 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
     let action = SelfAction::Uninstall;
 
     let mut deletion_targets = Vec::new();
-    for (path, bootstrap_child) in [
-        (
-            &app.paths.data_root,
-            app.paths
-                .toolchains_dir
-                .file_name()
-                .map(|value| value.to_os_string()),
-        ),
-        (
-            &app.paths.cache_root,
-            app.paths
-                .downloads_dir
-                .file_name()
-                .map(|value| value.to_os_string()),
-        ),
-        (&app.paths.config_root, None),
-    ] {
+    for root in uninstall_roots(app) {
         let normalized_path =
-            normalize_target_path(path).map_err(|error| log_failure(action, error))?;
+            normalize_target_path(&root.path).map_err(|error| log_failure(action, error))?;
         ensure_safe_uninstall_path(&normalized_path).map_err(|error| log_failure(action, error))?;
+        ensure_uninstall_path_excludes_running_binary(&normalized_path)
+            .map_err(|error| log_failure(action, error))?;
 
         let has_artifacts = if normalized_path.exists() {
-            path_has_artifacts(&normalized_path, bootstrap_child.as_deref())
+            path_has_artifacts(&normalized_path, root.bootstrap_child.as_deref())
                 .map_err(|error| log_failure(action, error))?
         } else {
             false
         };
 
         if has_artifacts {
-            deletion_targets.push(normalized_path);
+            deletion_targets.push(SelfUninstallTarget {
+                category: root.category,
+                path: normalized_path,
+            });
         }
     }
 
     let mut removed_paths = Vec::new();
+    let mut removed_targets = Vec::new();
+    let preserved_paths = preserved_uninstall_paths(app);
     for target in deletion_targets {
-        fs::remove_dir_all(&target).map_err(|error| {
+        remove_uninstall_target(&target.path, &preserved_paths).map_err(|error| {
             log_failure(
                 action,
                 self_internal(format!(
                     "Failed to remove uninstall target {}: {error}",
-                    target.display()
+                    target.path.display()
                 )),
             )
         })?;
-        removed_paths.push(target.display().to_string());
+        removed_paths.push(target.path.display().to_string());
+        removed_targets.push(target);
     }
 
     let status = if removed_paths.is_empty() {
@@ -299,16 +313,22 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
         "Processed self uninstall"
     );
 
+    let likely_leftover_paths = likely_leftover_paths(app);
+    let remaining_manual_steps = remaining_manual_steps(&likely_leftover_paths);
     let response = SelfUninstallResponse {
         action,
         status,
+        cleanup_boundaries: cleanup_boundaries(&removed_targets, &likely_leftover_paths),
         removed_paths,
+        remaining_manual_steps,
+        likely_leftover_paths,
     };
 
     let human = format!(
-        "Self uninstall status: {} (removed paths: {})",
+        "Self uninstall status: {} | removed paths: {} | manual steps: {}",
         status.as_str(),
-        response.removed_paths.len()
+        human_list(&response.removed_paths),
+        human_list(&response.remaining_manual_steps)
     );
     print_output(output, color, &human, &response)?;
 
@@ -501,6 +521,14 @@ fn normalize_target_path(path: &Path) -> Result<PathBuf> {
     Ok(absolute)
 }
 
+fn absolute_target_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+
+    Ok(std::env::current_dir()?.join(path))
+}
+
 fn ensure_safe_uninstall_path(path: &Path) -> Result<()> {
     if path.parent().is_none() {
         return Err(self_invalid_input(format!(
@@ -517,6 +545,28 @@ fn ensure_safe_uninstall_path(path: &Path) -> Result<()> {
     if !owned_by_nodeup {
         return Err(self_invalid_input(format!(
             "Refusing to uninstall non-nodeup-owned path: {}",
+            path.display()
+        )));
+    }
+
+    Ok(())
+}
+
+fn ensure_uninstall_path_excludes_running_binary(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let current_exe = env::current_exe().map_err(|error| {
+        self_internal(format!(
+            "Failed to resolve current executable path before uninstall: {error}"
+        ))
+    })?;
+    let current_exe = normalize_target_path(&current_exe)?;
+
+    if current_exe.starts_with(path) {
+        return Err(self_invalid_input(format!(
+            "Refusing to uninstall path containing the running nodeup binary: {}",
             path.display()
         )));
     }
@@ -562,6 +612,340 @@ fn directory_is_empty(path: &Path) -> Result<bool> {
     }
 
     Ok(true)
+}
+
+fn remove_uninstall_target(path: &Path, preserved_paths: &[PathBuf]) -> std::io::Result<()> {
+    let preserved_descendants: Vec<&Path> = preserved_paths
+        .iter()
+        .map(PathBuf::as_path)
+        .filter(|preserved| preserved.starts_with(path))
+        .collect();
+
+    if preserved_descendants.is_empty() {
+        return fs::remove_dir_all(path);
+    }
+
+    remove_path_preserving(path, &preserved_descendants)
+}
+
+fn remove_path_preserving(path: &Path, preserved_dirs: &[&Path]) -> std::io::Result<()> {
+    if preserved_dirs
+        .iter()
+        .any(|preserved| paths_equal(path, preserved))
+    {
+        return Ok(());
+    }
+
+    if preserved_dirs
+        .iter()
+        .any(|preserved| preserved.starts_with(path))
+    {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            remove_path_preserving(&entry.path(), preserved_dirs)?;
+        }
+        return Ok(());
+    }
+
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+            fs::remove_dir_all(path)
+        }
+        Ok(_) => fs::remove_file(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn paths_equal(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
+fn human_list(values: &[String]) -> String {
+    if values.is_empty() {
+        "<none>".to_string()
+    } else {
+        values.join("; ")
+    }
+}
+
+fn cleanup_boundaries(
+    removed_targets: &[SelfUninstallTarget],
+    likely_leftover_paths: &[String],
+) -> Vec<SelfUninstallCleanupBoundary> {
+    vec![
+        SelfUninstallCleanupBoundary {
+            category: "data",
+            cleanup: "removed-when-nodeup-owned-and-populated",
+            paths: boundary_paths("data", removed_targets),
+        },
+        SelfUninstallCleanupBoundary {
+            category: "cache",
+            cleanup: "removed-when-nodeup-owned-and-populated",
+            paths: boundary_paths("cache", removed_targets),
+        },
+        SelfUninstallCleanupBoundary {
+            category: "config",
+            cleanup: "removed-when-nodeup-owned-and-populated",
+            paths: boundary_paths("config", removed_targets),
+        },
+        SelfUninstallCleanupBoundary {
+            category: "binary",
+            cleanup: "manual",
+            paths: likely_leftover_paths
+                .iter()
+                .filter(|path| !is_likely_shim_path(path))
+                .cloned()
+                .collect(),
+        },
+        SelfUninstallCleanupBoundary {
+            category: "shims",
+            cleanup: "manual",
+            paths: likely_leftover_paths
+                .iter()
+                .filter(|path| is_likely_shim_path(path))
+                .cloned()
+                .collect(),
+        },
+        SelfUninstallCleanupBoundary {
+            category: "shell-profile-path",
+            cleanup: "manual",
+            paths: Vec::new(),
+        },
+    ]
+}
+
+fn boundary_paths(category: &'static str, removed_targets: &[SelfUninstallTarget]) -> Vec<String> {
+    removed_targets
+        .iter()
+        .filter(|target| target.category == category)
+        .map(|target| target.path.display().to_string())
+        .collect()
+}
+
+fn uninstall_roots(app: &NodeupApp) -> [SelfUninstallRoot; 3] {
+    [
+        SelfUninstallRoot {
+            category: "data",
+            path: app.paths.data_root.clone(),
+            bootstrap_child: app
+                .paths
+                .toolchains_dir
+                .file_name()
+                .map(|value| value.to_os_string()),
+        },
+        SelfUninstallRoot {
+            category: "cache",
+            path: app.paths.cache_root.clone(),
+            bootstrap_child: app
+                .paths
+                .downloads_dir
+                .file_name()
+                .map(|value| value.to_os_string()),
+        },
+        SelfUninstallRoot {
+            category: "config",
+            path: app.paths.config_root.clone(),
+            bootstrap_child: None,
+        },
+    ]
+}
+
+fn likely_leftover_paths(app: &NodeupApp) -> Vec<String> {
+    let mut paths = Vec::new();
+
+    if let Ok(path) = resolve_target_binary_path() {
+        if path.exists() {
+            paths.push(path.display().to_string());
+        }
+    }
+
+    for shim_dir in leftover_shim_directories(app) {
+        for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
+            for candidate in [
+                shim_dir.join(alias),
+                shim_dir.join(format!("{alias}.exe")),
+                shim_dir.join(format!(".{alias}.exe.nodeup-shim")),
+            ] {
+                if shim_cmd::is_nodeup_owned_shim_path(&candidate)
+                    || shim_cmd::is_nodeup_copy_marker_path(&candidate)
+                {
+                    paths.push(candidate.display().to_string());
+                }
+            }
+        }
+    }
+
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn preserved_uninstall_paths(app: &NodeupApp) -> Vec<PathBuf> {
+    let mut paths = existing_shim_directories(app);
+    if let Ok(path) = resolve_target_binary_path() {
+        if path.exists() {
+            if let Ok(path) = absolute_target_path(&path) {
+                paths.push(path);
+            }
+        }
+    }
+
+    paths.into_iter().fold(Vec::new(), |mut unique, path| {
+        if !unique.iter().any(|existing| existing == &path) {
+            unique.push(path);
+        }
+        unique
+    })
+}
+
+fn existing_shim_directories(app: &NodeupApp) -> Vec<PathBuf> {
+    let mut paths = shim_directories();
+    for root in known_nodeup_roots(app) {
+        collect_managed_shim_dirs(&root, &mut paths);
+    }
+
+    paths
+        .into_iter()
+        .filter(|path| path.exists())
+        .filter_map(|path| absolute_target_path(&path).ok())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .fold(Vec::new(), |mut unique, path| {
+            if !unique.iter().any(|existing| existing == &path) {
+                unique.push(path);
+            }
+            unique
+        })
+}
+
+fn collect_managed_shim_dirs(path: &Path, paths: &mut Vec<PathBuf>) {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return;
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return;
+    }
+
+    if directory_contains_nodeup_shim(path) {
+        paths.push(path.to_path_buf());
+    }
+
+    let Ok(entries) = fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        collect_managed_shim_dirs(&entry.path(), paths);
+    }
+}
+
+fn directory_contains_nodeup_shim(path: &Path) -> bool {
+    ["node", "npm", "npx", "yarn", "pnpm"].iter().any(|alias| {
+        [
+            path.join(alias),
+            path.join(format!("{alias}.exe")),
+            path.join(format!(".{alias}.exe.nodeup-shim")),
+        ]
+        .into_iter()
+        .any(|candidate| {
+            shim_cmd::is_nodeup_owned_shim_path(&candidate)
+                || shim_cmd::is_nodeup_copy_marker_path(&candidate)
+        })
+    })
+}
+
+fn known_nodeup_roots(app: &NodeupApp) -> Vec<PathBuf> {
+    [
+        Some(app.paths.data_root.clone()),
+        Some(app.paths.cache_root.clone()),
+        Some(app.paths.config_root.clone()),
+        env::var_os("NODEUP_DATA_HOME").map(PathBuf::from),
+        env::var_os("NODEUP_CACHE_HOME").map(PathBuf::from),
+        env::var_os("NODEUP_CONFIG_HOME").map(PathBuf::from),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(|path| absolute_target_path(&path).ok())
+    .fold(Vec::new(), |mut unique, path| {
+        if !unique.iter().any(|existing| existing == &path) {
+            unique.push(path);
+        }
+        unique
+    })
+}
+
+fn leftover_shim_directories(app: &NodeupApp) -> Vec<PathBuf> {
+    let mut paths = existing_shim_directories(app);
+    paths.extend(shim_directories());
+    paths
+        .into_iter()
+        .filter_map(|path| absolute_target_path(&path).ok().or(Some(path)))
+        .collect()
+}
+
+fn shim_directories() -> Vec<PathBuf> {
+    let mut paths = vec![default_shim_dir(), legacy_shim_dir()];
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn remaining_manual_steps(likely_leftover_paths: &[String]) -> Vec<String> {
+    let mut steps = vec![
+        "Remove the nodeup binary from its installation directory if it is no longer needed."
+            .to_string(),
+        "Remove managed shim files created by `nodeup shim setup` if they are no longer needed."
+            .to_string(),
+        "Remove the Nodeup shim directory from shell profile files or the user PATH manually."
+            .to_string(),
+    ];
+
+    if !likely_leftover_paths.is_empty() {
+        steps.push(format!(
+            "Review likely leftover paths: {}",
+            likely_leftover_paths.join(", ")
+        ));
+    }
+
+    steps
+}
+
+fn default_shim_dir() -> PathBuf {
+    if let Some(dir) = env::var_os("NODEUP_SHIM_DIR") {
+        return PathBuf::from(dir);
+    }
+
+    home_dir().join(".local").join("bin")
+}
+
+fn legacy_shim_dir() -> PathBuf {
+    home_dir()
+        .join(".local")
+        .join("share")
+        .join("nodeup")
+        .join("shims")
+}
+
+fn home_dir() -> PathBuf {
+    env::var_os("HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("USERPROFILE").map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn is_likely_shim_path(path: &str) -> bool {
+    ["node", "npm", "npx", "yarn", "pnpm"].iter().any(|alias| {
+        path.ends_with(alias)
+            || path.ends_with(&format!("{alias}.exe"))
+            || path.ends_with(&format!(".{alias}.exe.nodeup-shim"))
+    })
 }
 
 fn migrate_settings_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {

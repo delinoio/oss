@@ -21,7 +21,13 @@ Package manager:
 
 Direct installers:
 
-Install `cosign` first and leave it on `PATH`; the installers require it to verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`).
+Install `cosign` first and leave it on `PATH`; the installers require it to verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`). Missing `cosign` is reported before release artifact download as a prerequisite failure. Use Homebrew or `cargo-binstall` instead if you do not want to manage that prerequisite directly.
+
+```bash
+brew install cosign
+```
+
+On Linux without Homebrew, follow the Sigstore cosign installation guide. On Windows, use `winget install sigstore.cosign` or `scoop install cosign`.
 
 macOS and Linux:
 
@@ -69,6 +75,17 @@ Canonical in-repo installer paths for maintainer workflows:
 cargo binstall nodeup --no-confirm
 ```
 
+`cargo-binstall` resolves first-party GitHub Release assets only:
+
+- `nodeup-linux-amd64.tar.gz`
+- `nodeup-linux-arm64.tar.gz`
+- `nodeup-darwin-amd64.tar.gz`
+- `nodeup-darwin-arm64.tar.gz`
+- `nodeup-windows-amd64.zip`
+- `nodeup-windows-arm64.zip`
+
+Third-party quick-install and compile fallback strategies are disabled. Unsupported hosts or missing release assets fail instead of compiling from source; use Homebrew, the direct installer with `cosign`, or a supported x64/arm64 host with a complete Nodeup release.
+
 GitHub Actions:
 
 ```yaml
@@ -111,6 +128,7 @@ $env:Path = "$HOME\.local\bin;$env:Path"
 - `nodeup override unset [--path <path>] [--nonexistent]`
 - `nodeup which [--runtime <runtime>] <command>`
 - `nodeup run [--install] <runtime> <command>...`
+- `nodeup shim setup [--dir <path>]`
 - `nodeup self update`
 - `nodeup self uninstall`
 - `nodeup self upgrade-data`
@@ -167,6 +185,23 @@ Fallback rules when `packageManager` is absent:
   - `yarn` -> `@yarnpkg/cli-dist`
   - `pnpm` -> `pnpm`
 
+## Managed Shims
+
+`nodeup shim setup` creates or repairs managed aliases for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
+
+- Default shim directory: `NODEUP_SHIM_DIR`, otherwise `$HOME/.local/bin`
+- macOS/Linux: symlink aliases
+- Windows: copied `.exe` aliases
+- JSON output includes `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, and per-alias `shims`
+
+Re-run the command after moving the Nodeup binary or when an alias is stale.
+
+## Self Uninstall Boundary
+
+`nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only. It does not remove the running binary, managed shims, shell profile entries, or user PATH values.
+
+JSON output includes `removed_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
+
 ## Output and Logging
 
 - Global output mode: `--output human|json` (default: `human`)
@@ -214,7 +249,7 @@ Scope filtering:
 
 - `nodeup completions <shell>` generates completions for all top-level commands.
 - `nodeup completions <shell> <command>` accepts only top-level command scopes:
-  - `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `self`, `completions`
+  - `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `shim`, `self`, `completions`
   - invalid scopes fail with `invalid-input`.
 
 ## Testing Strategy

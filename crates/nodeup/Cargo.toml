@@ -8,6 +8,8 @@ readme = "README.md"
 repository = "https://github.com/delinoio/oss"
 
 [package.metadata.binstall]
+# Nodeup intentionally installs only signed, first-party GitHub Release assets.
+# Do not enable cargo-binstall quick-install or compile fallback strategies.
 disabled-strategies = ["quick-install", "compile"]
 
 [package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
