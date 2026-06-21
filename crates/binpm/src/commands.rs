@@ -13,12 +13,10 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
-#[cfg(test)]
-use crate::assets::ArtifactKind;
 use crate::{
     assets::{
         discover_archive_binary, gitlab_https_eligible, select_asset, target_archive_candidates,
-        ArchiveMember, BinaryDiscovery,
+        ArchiveMember, ArtifactKind, BinaryDiscovery, CandidateDecision,
     },
     cli::{
         AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
@@ -1063,6 +1061,21 @@ fn explain(args: ExplainArgs, output: OutputMode) -> Result<i32> {
     println!("archive_format: {}", record.archive_format.as_str());
     println!("checksum_source: {}", record.checksum_source.as_str());
     println!("verification: {}", verification_state(&record).as_str());
+    println!("override_snippet:");
+    println!(
+        "{}",
+        target_override_snippet(
+            &args.cmd_or_source,
+            &HostTarget {
+                os: record.target_os,
+                arch: record.target_arch,
+                libc: record.target_libc,
+            },
+            &record.asset_name,
+            &record.selected_binary,
+            Some(record.checksum_source),
+        )
+    );
     Ok(0)
 }
 
@@ -1135,16 +1148,176 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
             for decision in selection.decisions {
                 println!("{}", decision.explain_line());
             }
+            println!("override_snippet:");
+            println!(
+                "{}",
+                target_override_snippet(
+                    repo_name(&spec),
+                    &target,
+                    &selection.selected.asset_name,
+                    &override_snippet_bin(&spec, &selection.selected),
+                    None,
+                )
+            );
         }
         None => {
             println!("selected_asset: <none>");
-            for decision in all_decisions {
+            for decision in &all_decisions {
                 println!("{}", decision.explain_line());
+            }
+            for line in release_diagnostic_lines(&all_decisions, &target) {
+                println!("{line}");
+            }
+            if let Some(candidate) = override_snippet_candidate(&all_decisions) {
+                println!("override_snippet:");
+                println!(
+                    "{}",
+                    target_override_snippet(
+                        repo_name(&spec),
+                        &target,
+                        &candidate.asset_name,
+                        &override_snippet_bin(&spec, candidate),
+                        None,
+                    )
+                );
             }
         }
     }
 
     Ok(0)
+}
+
+fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget) -> Vec<String> {
+    if decisions.is_empty() {
+        return vec![
+            "diagnostic: release has no downloadable assets for binpm to score".to_string(),
+        ];
+    }
+
+    let installable_count = decisions
+        .iter()
+        .filter(|decision| decision.kind.is_installable())
+        .count();
+    let desktop_packages = decisions
+        .iter()
+        .filter(|decision| decision.kind == ArtifactKind::DesktopPackage)
+        .map(|decision| decision.asset_name.as_str())
+        .collect::<Vec<_>>();
+    let sidecars = decisions
+        .iter()
+        .filter(|decision| decision.kind == ArtifactKind::Sidecar)
+        .map(|decision| decision.asset_name.as_str())
+        .collect::<Vec<_>>();
+
+    let mut lines = Vec::new();
+    if installable_count == 0 && !desktop_packages.is_empty() {
+        lines.push(format!(
+            "diagnostic: release only provides unsupported desktop or system installer packages \
+             for target {}; binpm v1 installs portable archives or bare executables by default",
+            target.key()
+        ));
+        lines.push(format!(
+            "unsupported_installers: {}",
+            desktop_packages.join(", ")
+        ));
+        lines.push(
+            "remediation: ask upstream for a portable archive or bare executable asset; installer \
+             package installation is not enabled by default"
+                .to_string(),
+        );
+    }
+
+    if installable_count == 0 && !sidecars.is_empty() && !desktop_packages.is_empty() {
+        lines.push(format!("sidecar_assets: {}", sidecars.join(", ")));
+    }
+
+    if decisions.iter().any(|decision| {
+        decision.rejection_reason.as_deref().is_some_and(|reason| {
+            reason.contains("linux musl target requires an explicit libc signal")
+        })
+    }) {
+        lines.push(
+            "remediation: Linux musl releases should include musl, static, portable, universal, \
+             or any in compatible asset names; use the override snippet only when you have \
+             verified compatibility"
+                .to_string(),
+        );
+    }
+
+    lines
+}
+
+fn override_snippet_candidate(decisions: &[CandidateDecision]) -> Option<&CandidateDecision> {
+    decisions.iter().find(|decision| {
+        decision.kind.is_installable()
+            && decision.rejection_reason.as_deref().is_some_and(|reason| {
+                reason.contains("linux musl target requires an explicit libc signal")
+            })
+    })
+}
+
+fn override_snippet_bin(spec: &SourceSpec, decision: &CandidateDecision) -> String {
+    match decision.kind {
+        ArtifactKind::BareExecutable => decision.asset_name.clone(),
+        ArtifactKind::Archive(_) => repo_name(spec).to_string(),
+        _ => repo_name(spec).to_string(),
+    }
+}
+
+fn target_override_snippet(
+    cmd: &str,
+    target: &HostTarget,
+    asset: &str,
+    bin: &str,
+    checksum_source: Option<ChecksumSource>,
+) -> String {
+    let mut snippet = format!(
+        "[tools.{}.targets.{}]\nasset = {}\nbin = {}",
+        toml_key_segment(cmd),
+        target.key(),
+        toml_string(asset),
+        toml_string(bin)
+    );
+    if checksum_source == Some(ChecksumSource::GitHubDigest) {
+        snippet.push_str(&format!(
+            "\nchecksum_source = {}",
+            toml_string(ChecksumSource::GitHubDigest.as_str())
+        ));
+    }
+    snippet
+}
+
+fn toml_key_segment(key: &str) -> String {
+    if key
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
+        && !key.is_empty()
+    {
+        key.to_string()
+    } else {
+        toml_string(key)
+    }
+}
+
+fn toml_string(value: &str) -> String {
+    let mut escaped = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '\u{08}' => escaped.push_str("\\b"),
+            '\t' => escaped.push_str("\\t"),
+            '\n' => escaped.push_str("\\n"),
+            '\u{0c}' => escaped.push_str("\\f"),
+            '\r' => escaped.push_str("\\r"),
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            character if character.is_control() => {
+                escaped.push_str(&format!("\\u{:04X}", character as u32));
+            }
+            character => escaped.push(character),
+        }
+    }
+    escaped.push('"');
+    escaped
 }
 
 fn print_source_info(spec: &SourceSpec, output: OutputMode) -> Result<i32> {
@@ -4975,13 +5148,14 @@ mod tests {
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        normalize_bin_selection, parse_manifest_source, parse_manifest_tool_source,
-        project_root_from, read_archive_selected_binary, record_matches_current_provider_digest,
+        normalize_bin_selection, override_snippet_candidate, parse_manifest_source,
+        parse_manifest_tool_source, project_root_from, read_archive_selected_binary,
+        record_matches_current_provider_digest, release_diagnostic_lines,
         remove_global_tool_from_paths, remove_local_manifest_orphans,
         require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
         sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
         shell_path, shell_quote, snapshot_cache_metadata, source_install_scope,
-        update_manifest_tool_source, validate_locked_record_artifact,
+        target_override_snippet, update_manifest_tool_source, validate_locked_record_artifact,
         validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
         validate_package_record_metadata, validate_package_record_source_identity,
         validate_provider_digest_evidence, validate_selected_manifest_entries,
@@ -7154,6 +7328,129 @@ mod tests {
             "tool-x86_64-unknown-linux-gnu.tar.gz"
         );
         assert!(matches!(selection.selected.kind, ArtifactKind::Archive(_)));
+    }
+
+    #[test]
+    fn explain_diagnostics_distinguish_installer_only_releases() {
+        let target = linux_target();
+        let assets = [
+            ReleaseAsset {
+                name: "Tool-1.0.0.dmg".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/Tool.dmg".to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+            ReleaseAsset {
+                name: "Tool-1.0.0.msi".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/Tool.msi".to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+        ];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(override_snippet_candidate(&decisions).is_none());
+        let lines = release_diagnostic_lines(&decisions, &target);
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("release only provides unsupported")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("Tool-1.0.0.dmg, Tool-1.0.0.msi")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("portable archive or bare executable")));
+    }
+
+    #[test]
+    fn explain_diagnostics_suggest_musl_override_for_missing_libc_assets() {
+        let target = HostTarget {
+            os: TargetOs::Linux,
+            arch: TargetArch::X86_64,
+            libc: TargetLibc::Musl,
+        };
+        let assets = [ReleaseAsset {
+            name: "tool-linux-x64.tar.gz".to_string(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64.tar.gz"
+                .to_string(),
+            provider_url: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+        }];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(decisions.iter().all(|decision| !decision.eligible));
+        assert_eq!(
+            override_snippet_candidate(&decisions).map(|decision| decision.asset_name.as_str()),
+            Some("tool-linux-x64.tar.gz")
+        );
+        let lines = release_diagnostic_lines(&decisions, &target);
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("Linux musl releases should include")));
+    }
+
+    #[test]
+    fn explain_diagnostics_do_not_suggest_override_for_incompatible_target_assets() {
+        let target = HostTarget {
+            os: TargetOs::Darwin,
+            arch: TargetArch::Aarch64,
+            libc: TargetLibc::Any,
+        };
+        let assets = [ReleaseAsset {
+            name: "tool-linux-x64.tar.gz".to_string(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64.tar.gz"
+                .to_string(),
+            provider_url: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+        }];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(decisions.iter().all(|decision| !decision.eligible));
+        assert!(decisions.iter().any(|decision| {
+            decision.rejection_reason.as_deref() == Some("asset target does not match host target")
+        }));
+        assert!(override_snippet_candidate(&decisions).is_none());
+    }
+
+    #[test]
+    fn target_override_snippet_uses_canonical_key_and_toml_escaped_fields() {
+        let target = linux_target();
+        let snippet = target_override_snippet(
+            "tool.name",
+            &target,
+            "tool-linux-x64.tar.gz",
+            "bin/tool \"quoted\"",
+            Some(ChecksumSource::Local),
+        );
+
+        assert!(snippet.starts_with("[tools.\"tool.name\".targets.linux-x86_64-gnu]"));
+        assert!(snippet.contains("asset = \"tool-linux-x64.tar.gz\""));
+        assert!(snippet.contains("bin = \"bin/tool \\\"quoted\\\"\""));
+        assert!(!snippet.contains("checksum_source"));
+        toml::from_str::<toml::Value>(&snippet).expect("valid TOML snippet");
+    }
+
+    #[test]
+    fn target_override_snippet_keeps_manifest_accepted_checksum_source() {
+        let target = linux_target();
+        let snippet = target_override_snippet(
+            "tool",
+            &target,
+            "tool-linux-x64.tar.gz",
+            "tool",
+            Some(ChecksumSource::GitHubDigest),
+        );
+
+        assert!(snippet.contains("checksum_source = \"github-digest\""));
+        toml::from_str::<toml::Value>(&snippet).expect("valid TOML snippet");
     }
 
     #[test]

@@ -10,6 +10,7 @@ This page summarizes stable Nodeup contracts. For command syntax, see [Command R
 - `package.json` `packageManager` support is strict for `yarn` and `pnpm`.
 - Shell completions are deterministic for supported shells and top-level command scopes.
 - Human output color precedence is `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
+- `nodeup show color` reports effective human stdout, human stderr, and log color decisions.
 - JSON output never contains ANSI styling.
 
 ## Supported Hosts

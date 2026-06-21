@@ -5,6 +5,8 @@ use crate::{
     cli::{OutputColorMode, OutputFormat, ShowCommand},
     commands::print_output,
     errors::{NodeupError, Result},
+    logging::{self, LogColorDecision},
+    output_style::{self, OutputColorDecision},
     release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
     NodeupApp,
@@ -26,6 +28,59 @@ struct HomeResponse {
     config_root: String,
 }
 
+#[derive(Debug, Serialize)]
+struct ColorDiagnosticsResponse {
+    human_stdout: HumanColorDiagnostics,
+    human_stderr: HumanColorDiagnostics,
+    logs: LogColorDiagnostics,
+}
+
+#[derive(Debug, Serialize)]
+struct HumanColorDiagnostics {
+    enabled: bool,
+    mode: String,
+    source: String,
+    stream: String,
+    is_terminal: bool,
+    no_color_present: bool,
+    ignored_nodeup_color: Option<String>,
+}
+
+impl From<OutputColorDecision> for HumanColorDiagnostics {
+    fn from(decision: OutputColorDecision) -> Self {
+        Self {
+            enabled: decision.enabled,
+            mode: decision.mode.as_str().to_string(),
+            source: decision.source.to_string(),
+            stream: decision.stream.to_string(),
+            is_terminal: decision.is_terminal,
+            no_color_present: decision.no_color_present,
+            ignored_nodeup_color: decision.ignored_nodeup_color,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct LogColorDiagnostics {
+    enabled: bool,
+    mode: String,
+    source: String,
+    no_color_present: bool,
+    ignored_nodeup_log_color: Option<String>,
+}
+
+impl From<LogColorDecision> for LogColorDiagnostics {
+    fn from(decision: LogColorDecision) -> Self {
+        Self {
+            enabled: decision.enabled,
+            mode: decision.mode.to_string(),
+            source: decision.source.to_string(),
+            no_color_present: decision.no_color_present,
+            ignored_nodeup_log_color: decision.ignored_nodeup_log_color,
+        }
+    }
+}
+
 pub fn execute(
     command: ShowCommand,
     output: OutputFormat,
@@ -35,6 +90,7 @@ pub fn execute(
     match command {
         ShowCommand::ActiveRuntime => show_active_runtime(output, color, app),
         ShowCommand::Home => show_home(output, color, app),
+        ShowCommand::Color => show_color(output, color),
     }
 }
 
@@ -100,6 +156,44 @@ fn show_active_runtime(
 
     print_output(output, color, &human, &response)?;
     Ok(0)
+}
+
+fn show_color(output: OutputFormat, color: Option<OutputColorMode>) -> Result<i32> {
+    let response = ColorDiagnosticsResponse {
+        human_stdout: output_style::stdout_color_decision(color).into(),
+        human_stderr: output_style::stderr_color_decision(color).into(),
+        logs: logging::log_color_decision().into(),
+    };
+    let human = format!(
+        "nodeup color decisions:\nhuman_stdout: enabled={} mode={} source={} terminal={} \
+         no_color={} ignored_nodeup_color={}\nhuman_stderr: enabled={} mode={} source={} \
+         terminal={} no_color={} ignored_nodeup_color={}\nlogs: enabled={} mode={} source={} \
+         no_color={} ignored_nodeup_log_color={}",
+        response.human_stdout.enabled,
+        response.human_stdout.mode,
+        response.human_stdout.source,
+        response.human_stdout.is_terminal,
+        response.human_stdout.no_color_present,
+        optional_env_value(response.human_stdout.ignored_nodeup_color.as_deref()),
+        response.human_stderr.enabled,
+        response.human_stderr.mode,
+        response.human_stderr.source,
+        response.human_stderr.is_terminal,
+        response.human_stderr.no_color_present,
+        optional_env_value(response.human_stderr.ignored_nodeup_color.as_deref()),
+        response.logs.enabled,
+        response.logs.mode,
+        response.logs.source,
+        response.logs.no_color_present,
+        optional_env_value(response.logs.ignored_nodeup_log_color.as_deref()),
+    );
+
+    print_output(output, color, &human, &response)?;
+    Ok(0)
+}
+
+fn optional_env_value(value: Option<&str>) -> &str {
+    value.unwrap_or("none")
 }
 
 fn append_release_index_human_note(
