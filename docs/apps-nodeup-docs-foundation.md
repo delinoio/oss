@@ -23,7 +23,7 @@
 - Local production preview uses fixed port `46251`.
 - The production output directory is `doc_build`.
 - The default theme must expose a visible GitHub repository link to `https://github.com/delinoio/oss`, including the top-level GitHub social link and the document-page footer repository link.
-- Content must stay aligned with the Nodeup project and crate contracts, especially installation and verification flows, release verification, supported host targets, command behavior, linked-runtime lifecycle and executable validation, runtime resolution precedence, shim behavior, shell completions, package-manager resolution, human/JSON output contracts, parser-error envelope behavior, and color-control precedence.
+- Content must stay aligned with the Nodeup project and crate contracts, especially installation and verification flows, release verification, supported host targets, command behavior, linked-runtime lifecycle and executable validation, runtime resolution precedence, shim behavior, shell completions and invalid subcommand-scope guidance, package-manager resolution, human/JSON output contracts, parser-error envelope behavior, and color-control precedence.
 
 ## Storage
 - Source documentation is versioned in-repo under `apps/nodeup-docs/docs`.

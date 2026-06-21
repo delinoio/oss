@@ -22,6 +22,7 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Linked runtime resolution must validate that the selected `node` executable is runnable, including Unix executable-bit checks and Windows `node.exe` naming behavior.
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.
+- Invalid shell completion subcommand scopes must be rejected with hints that point back to the nearest valid top-level scope.
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.
 - `nodeup show color` must remain available as the color diagnostic command for human stdout, human stderr, and log color decisions.
 - `--output json` must render both application-level errors and clap parser failures as JSON error envelopes on stderr, except raw completion script output remains unwrapped on success.

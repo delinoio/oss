@@ -47,9 +47,7 @@ pub fn execute(cli: Cli, app: &NodeupApp) -> Result<i32> {
             command,
         } => run_cmd::execute(install, &runtime, &command, cli.output, cli.color, app),
         Command::SelfCmd { command } => self_cmd::execute(command, cli.output, cli.color, app),
-        Command::Completions { shell, command } => {
-            skeleton::completions(&shell, command.as_deref())
-        }
+        Command::Completions { shell, command } => skeleton::completions(&shell, &command),
     }
 }
 
@@ -205,7 +203,8 @@ fn command_invocation_metadata(
             arg_shape: json!({
                 "output": output,
                 "shell": shell,
-                "command_scope_provided": command.is_some()
+                "command_scope_provided": !command.is_empty(),
+                "command_scope_token_count": command.len()
             }),
         },
     }
@@ -471,14 +470,15 @@ mod tests {
             (
                 Command::Completions {
                     shell: "zsh".to_string(),
-                    command: Some("run".to_string()),
+                    command: vec!["run".to_string()],
                 },
                 OutputFormat::Human,
                 "nodeup.completions",
                 json!({
                     "output": "human",
                     "shell": "zsh",
-                    "command_scope_provided": true
+                    "command_scope_provided": true,
+                    "command_scope_token_count": 1
                 }),
             ),
         ];

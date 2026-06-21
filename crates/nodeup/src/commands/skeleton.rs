@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{collections::BTreeMap, io::Write};
 
 use clap::CommandFactory;
 use clap_complete::{generate, Shell};
@@ -6,8 +6,11 @@ use tracing::info;
 
 use crate::{
     cli::Cli,
-    errors::{NodeupError, Result},
+    errors::{ErrorKind, NodeupError, Result},
 };
+
+const SUPPORTED_SCOPE_LIST: &str =
+    "toolchain, default, show, update, check, override, which, run, self, completions";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompletionShell {
@@ -72,26 +75,30 @@ enum CompletionScope {
 }
 
 impl CompletionScope {
-    fn parse(raw: &str) -> Result<Self> {
-        match raw.trim() {
-            "toolchain" => Ok(Self::Toolchain),
-            "default" => Ok(Self::Default),
-            "show" => Ok(Self::Show),
-            "update" => Ok(Self::Update),
-            "check" => Ok(Self::Check),
-            "override" => Ok(Self::Override),
-            "which" => Ok(Self::Which),
-            "run" => Ok(Self::Run),
-            "self" => Ok(Self::SelfCmd),
-            "completions" => Ok(Self::Completions),
-            _ => Err(NodeupError::invalid_input_with_hint(
-                format!(
-                    "Unsupported command scope '{raw}'. Supported top-level commands: toolchain, \
-                     default, show, update, check, override, which, run, self, completions"
-                ),
-                "Pass a valid top-level command name as the optional scope.",
-            )),
+    fn parse(tokens: &[String], shell: CompletionShell) -> Result<Option<Self>> {
+        let Some(first) = tokens.first() else {
+            return Ok(None);
+        };
+
+        let parsed = match first.trim() {
+            "toolchain" => Self::Toolchain,
+            "default" => Self::Default,
+            "show" => Self::Show,
+            "update" => Self::Update,
+            "check" => Self::Check,
+            "override" => Self::Override,
+            "which" => Self::Which,
+            "run" => Self::Run,
+            "self" => Self::SelfCmd,
+            "completions" => Self::Completions,
+            _ => return Err(unsupported_scope_error(tokens, shell, None)),
+        };
+
+        if tokens.len() > 1 {
+            return Err(unsupported_scope_error(tokens, shell, Some(parsed)));
         }
+
+        Ok(Some(parsed))
     }
 
     fn as_str(self) -> &'static str {
@@ -110,24 +117,26 @@ impl CompletionScope {
     }
 }
 
-pub fn completions(shell: &str, command: Option<&str>) -> Result<i32> {
-    let scope_label = command.unwrap_or("<all-commands>");
+pub fn completions(shell: &str, command_scope_tokens: &[String]) -> Result<i32> {
+    let scope_label = if command_scope_tokens.is_empty() {
+        "<all-commands>".to_string()
+    } else {
+        command_scope_tokens.join(" ")
+    };
 
     let parsed_shell = CompletionShell::parse(shell).inspect_err(|error| {
-        log_generation_failure(shell, scope_label, "invalid-shell", error);
+        log_generation_failure(shell, &scope_label, "invalid-shell", error);
     })?;
 
-    let parsed_scope = command
-        .map(CompletionScope::parse)
-        .transpose()
-        .inspect_err(|error| {
-            log_generation_failure(parsed_shell.as_str(), scope_label, "invalid-scope", error);
+    let parsed_scope =
+        CompletionScope::parse(command_scope_tokens, parsed_shell).inspect_err(|error| {
+            log_generation_failure(parsed_shell.as_str(), &scope_label, "invalid-scope", error);
         })?;
 
     let script = generate_completion_script(parsed_shell, parsed_scope).inspect_err(|error| {
         log_generation_failure(
             parsed_shell.as_str(),
-            scope_label,
+            &scope_label,
             "generation-failed",
             error,
         );
@@ -141,7 +150,7 @@ pub fn completions(shell: &str, command: Option<&str>) -> Result<i32> {
         );
         log_generation_failure(
             parsed_shell.as_str(),
-            scope_label,
+            &scope_label,
             "stdout-write-failed",
             &nodeup_error,
         );
@@ -154,7 +163,7 @@ pub fn completions(shell: &str, command: Option<&str>) -> Result<i32> {
         );
         log_generation_failure(
             parsed_shell.as_str(),
-            scope_label,
+            &scope_label,
             "stdout-flush-failed",
             &nodeup_error,
         );
@@ -165,7 +174,7 @@ pub fn completions(shell: &str, command: Option<&str>) -> Result<i32> {
         command_path = "nodeup.completions",
         action = "generate",
         shell = parsed_shell.as_str(),
-        scope = scope_label,
+        scope = scope_label.as_str(),
         scope_present = parsed_scope.is_some(),
         outcome = "generated",
         "Generated completion script"
@@ -209,6 +218,70 @@ fn apply_scope(root: &mut clap::Command, scope: CompletionScope) -> Result<()> {
     });
 
     Ok(())
+}
+
+fn unsupported_scope_error(
+    tokens: &[String],
+    shell: CompletionShell,
+    suggested_scope: Option<CompletionScope>,
+) -> NodeupError {
+    let rejected_scope = tokens.join(" ");
+    let mut diagnostics = BTreeMap::new();
+    diagnostics.insert(
+        "rejected_scope".to_string(),
+        serde_json::Value::String(rejected_scope.clone()),
+    );
+    diagnostics.insert(
+        "allowed_scope_category".to_string(),
+        serde_json::Value::String("top-level-command".to_string()),
+    );
+    diagnostics.insert(
+        "allowed_scopes".to_string(),
+        serde_json::Value::Array(
+            [
+                "toolchain",
+                "default",
+                "show",
+                "update",
+                "check",
+                "override",
+                "which",
+                "run",
+                "self",
+                "completions",
+            ]
+            .into_iter()
+            .map(|scope| serde_json::Value::String(scope.to_string()))
+            .collect(),
+        ),
+    );
+
+    let hint = if let Some(scope) = suggested_scope {
+        let suggested_scope = scope.as_str();
+        diagnostics.insert(
+            "suggested_scope".to_string(),
+            serde_json::Value::String(suggested_scope.to_string()),
+        );
+        format!(
+            "Only top-level command scopes are supported; use `nodeup completions {shell} \
+             {suggested_scope}` instead.",
+            shell = shell.as_str()
+        )
+    } else {
+        "Pass one of the supported top-level command scopes: ".to_string()
+            + SUPPORTED_SCOPE_LIST
+            + "."
+    };
+
+    NodeupError::with_hint_and_diagnostics(
+        ErrorKind::InvalidInput,
+        format!(
+            "Unsupported command scope '{rejected_scope}'. Supported top-level commands: \
+             {SUPPORTED_SCOPE_LIST}"
+        ),
+        hint,
+        diagnostics,
+    )
 }
 
 fn log_generation_failure(shell: &str, scope: &str, reason: &str, error: &NodeupError) {
