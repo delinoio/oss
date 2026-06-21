@@ -432,8 +432,14 @@ fn add(args: AddArgs) -> Result<i32> {
     );
     let root = require_manifest_root_or_creation_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
+    let mut declared = BTreeSet::new();
     for declaration in &declarations {
         validate_command_name(&declaration.cmd)?;
+        if !declared.insert(declaration.cmd.clone()) {
+            return Err(BinpmError::DuplicateAddDeclaration {
+                cmd: declaration.cmd.clone(),
+            });
+        }
     }
     let manifest_existed = path_exists_or_unreadable(&manifest_path);
     let mut manifest = if manifest_existed {
@@ -445,7 +451,11 @@ fn add(args: AddArgs) -> Result<i32> {
         }
     };
     let prior_manifest = manifest.clone();
-    let current_target = HostTarget::current()?;
+    let current_target = if args.manifest_only {
+        None
+    } else {
+        Some(HostTarget::current()?)
+    };
     let mut selected = Vec::with_capacity(declarations.len());
     for declaration in &declarations {
         let manifest_tool = manifest.tools.get(&declaration.cmd).cloned();
@@ -453,7 +463,7 @@ fn add(args: AddArgs) -> Result<i32> {
             manifest_tool,
             &spec,
             declaration.bin.clone(),
-            Some(&current_target),
+            current_target.as_ref(),
         );
         manifest
             .tools
@@ -527,11 +537,15 @@ fn add(args: AddArgs) -> Result<i32> {
         .iter()
         .try_for_each(|completed| commit_deferred_cache_hit(&cache_paths, &completed.install))
     {
-        rollback_completed_local_installs_ref(&root, &completed, &cache_paths)?;
+        let rollback_error =
+            rollback_completed_local_installs_ref(&root, &completed, &cache_paths).err();
         if manifest_existed {
             let _ = write_manifest(&manifest_path, &prior_manifest);
         } else {
             let _ = remove_path_if_exists(&manifest_path);
+        }
+        if let Some(rollback_error) = rollback_error {
+            return Err(rollback_error);
         }
         return Err(error);
     }

@@ -228,6 +228,37 @@ bin = "bin/foo"
 }
 
 #[test]
+fn add_rejects_duplicate_additional_command_declarations() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "foo",
+            "github:owner/tools@v1.2.3",
+            "--bin",
+            "bin/foo",
+            "--also",
+            "foo=bin/other",
+            "--manifest-only",
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Duplicate local command declaration `foo`",
+        ));
+
+    assert!(!temp_dir.path().join("binpm.toml").exists());
+    assert!(!temp_dir.path().join("binpm.lock").exists());
+    assert!(!temp_dir.path().join(".binpm").exists());
+}
+
+#[test]
 fn package_shortcut_without_command_keeps_source_explicit() {
     let mut command = binpm();
 
