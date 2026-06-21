@@ -119,13 +119,16 @@ pub enum BinpmError {
     #[error("Archive `{asset}` does not contain an executable binary.")]
     ArchiveBinaryNotFound { asset: String },
     #[error(
-        "Archive `{asset}` contains multiple plausible executables: {}. Set `bin` in binpm.toml to disambiguate.",
-        candidates.join(", ")
+        "{}",
+        ambiguous_archive_binaries_message(asset, candidates, suggestions)
     )]
     AmbiguousArchiveBinaries {
         asset: String,
         candidates: Vec<String>,
+        suggestions: Vec<String>,
     },
+    #[error("Invalid binary selection `{bin}`: binary selection must not be empty.")]
+    InvalidBinSelection { bin: String },
     #[error("Archive `{asset}` does not contain selected binary `{member}`.")]
     ArchiveMemberNotFound { asset: String, member: String },
     #[error("Unsafe archive member path `{path}` in `{asset}`: {message}")]
@@ -199,6 +202,7 @@ impl BinpmError {
             Self::InvalidSourceSpec { .. }
             | Self::InvalidTargetKey { .. }
             | Self::InvalidCommandName { .. }
+            | Self::InvalidBinSelection { .. }
             | Self::UnsupportedTargetComponent { .. }
             | Self::UnsupportedShell { .. }
             | Self::ReleaseNotFound { .. }
@@ -244,4 +248,23 @@ impl BinpmError {
             Self::Execute { .. } => 1,
         }
     }
+}
+
+fn ambiguous_archive_binaries_message(
+    asset: &str,
+    candidates: &[String],
+    suggestions: &[String],
+) -> String {
+    let mut message = format!(
+        "Archive `{asset}` contains multiple plausible executables: {}.",
+        candidates.join(", ")
+    );
+    if suggestions.is_empty() {
+        message.push_str(" Retry with `--bin <candidate>` or set `bin` in binpm.toml.");
+    } else {
+        message.push_str(" Retry with ");
+        message.push_str(&suggestions.join(" or "));
+        message.push('.');
+    }
+    message
 }

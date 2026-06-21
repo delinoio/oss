@@ -136,49 +136,21 @@ pub fn update(
             }
             RuntimeSelector::Version(version) => {
                 let current = format!("v{version}");
-                let next = latest_newer_version(app, &current)?;
-                if let Some(next_version) = next {
-                    let report = app
-                        .installer
-                        .ensure_installed(&next_version, &app.releases)?;
-                    let status = if report.state == InstallState::AlreadyInstalled {
-                        "already-up-to-date"
-                    } else {
-                        "updated"
-                    };
-                    updates.push(UpdateEntry {
-                        selector,
-                        previous_runtime: Some(current),
-                        updated_runtime: Some(report.version),
-                        status: status.to_string(),
-                    });
-                    if let Some(entry) = updates.last() {
-                        info!(
-                            command_path = "nodeup.update.version",
-                            selector = %entry.selector,
-                            previous_runtime = ?entry.previous_runtime,
-                            updated_runtime = ?entry.updated_runtime,
-                            status = %entry.status,
-                            "Processed explicit version update selector"
-                        );
-                    }
-                } else {
-                    updates.push(UpdateEntry {
-                        selector,
-                        previous_runtime: Some(current.clone()),
-                        updated_runtime: Some(current),
-                        status: "already-up-to-date".to_string(),
-                    });
-                    if let Some(entry) = updates.last() {
-                        info!(
-                            command_path = "nodeup.update.version",
-                            selector = %entry.selector,
-                            previous_runtime = ?entry.previous_runtime,
-                            updated_runtime = ?entry.updated_runtime,
-                            status = %entry.status,
-                            "Processed explicit version update selector"
-                        );
-                    }
+                updates.push(UpdateEntry {
+                    selector,
+                    previous_runtime: Some(current.clone()),
+                    updated_runtime: Some(current),
+                    status: "skipped-exact-version".to_string(),
+                });
+                if let Some(entry) = updates.last() {
+                    info!(
+                        command_path = "nodeup.update.version",
+                        selector = %entry.selector,
+                        previous_runtime = ?entry.previous_runtime,
+                        updated_runtime = ?entry.updated_runtime,
+                        status = %entry.status,
+                        "Skipped immutable exact-version update selector"
+                    );
                 }
             }
         }

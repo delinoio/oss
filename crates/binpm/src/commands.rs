@@ -102,9 +102,11 @@ fn install(args: InstallArgs) -> Result<i32> {
 
 fn add(args: AddArgs) -> Result<i32> {
     let spec = SourceSpec::from_str(&args.source)?;
+    let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     info!(
         command = "add",
         local_cmd = args.cmd,
+        selected_bin = explicit_bin.as_deref().unwrap_or(""),
         source_provider = spec.provider.as_str(),
         source_host = spec.host,
         source_path = spec.path,
@@ -128,15 +130,23 @@ fn add(args: AddArgs) -> Result<i32> {
     };
     let prior_manifest = manifest.clone();
     let manifest_tool = manifest.tools.get(&args.cmd).cloned();
-    let next_manifest_tool = update_manifest_tool_source(manifest_tool.clone(), &spec);
-    manifest.tools.insert(args.cmd.clone(), next_manifest_tool);
+    let current_target = HostTarget::current()?;
+    let next_manifest_tool = update_manifest_tool_source(
+        manifest_tool.clone(),
+        &spec,
+        explicit_bin,
+        Some(&current_target),
+    );
+    manifest
+        .tools
+        .insert(args.cmd.clone(), next_manifest_tool.clone());
     ensure_no_selected_install_path_collisions(&manifest, std::slice::from_ref(&args.cmd))?;
     let prior_state = capture_local_tool_state(&root, &args.cmd)?;
     let install = install_local_tool(
         &root,
         &args.cmd,
         &spec,
-        manifest_tool.as_ref(),
+        Some(&next_manifest_tool),
         args.lockfile.frozen_lockfile(),
         args.require_verified,
     )?;
@@ -180,6 +190,7 @@ fn source_install_scope(requested_scope: Scope) -> Scope {
 fn exec(args: ExecArgs) -> Result<i32> {
     let cmd = args.cmd().to_string_lossy().to_string();
     let forwarded_arg_count = args.args().len();
+    let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
 
     if let Some(source) = &args.package {
         let spec = SourceSpec::from_str(source)?;
@@ -187,6 +198,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
             command = "x",
             resolved_command = %cmd,
             explicit_package = true,
+            selected_bin = explicit_bin.as_deref().unwrap_or(""),
             source_provider = spec.provider.as_str(),
             source_host = spec.host,
             source_path = spec.path,
@@ -198,7 +210,9 @@ fn exec(args: ExecArgs) -> Result<i32> {
         let home = binpm_home()?;
         let install_root = home.join("tmp").join("x").join(format!(
             "{:x}",
-            Sha256::digest(format!("{source}:{cmd}").as_bytes())
+            Sha256::digest(
+                format!("{source}:{cmd}:{}", explicit_bin.as_deref().unwrap_or("")).as_bytes()
+            )
         ));
         let scope_paths = ScopePaths {
             root: install_root.clone(),
@@ -210,7 +224,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
         let tool = ManifestTool {
             source: spec.source_without_version(),
             version: spec.version.clone(),
-            bin: Some(cmd.clone()),
+            bin: Some(explicit_bin.clone().unwrap_or_else(|| cmd.clone())),
             targets: BTreeMap::new(),
         };
         let install = install_resolved(
@@ -888,17 +902,17 @@ fn install_local_source(
     let mut manifest = read_manifest(&manifest_path)?;
     let prior_manifest = manifest.clone();
     let manifest_tool = manifest.tools.get(&cmd).cloned();
-    manifest.tools.insert(
-        cmd.clone(),
-        update_manifest_tool_source(manifest_tool.clone(), &spec),
-    );
+    let next_manifest_tool = update_manifest_tool_source(manifest_tool.clone(), &spec, None, None);
+    manifest
+        .tools
+        .insert(cmd.clone(), next_manifest_tool.clone());
     ensure_no_selected_install_path_collisions(&manifest, std::slice::from_ref(&cmd))?;
     let prior_state = capture_local_tool_state(&root, &cmd)?;
     let install = install_local_tool(
         &root,
         &cmd,
         &spec,
-        manifest_tool.as_ref(),
+        Some(&next_manifest_tool),
         frozen_lockfile,
         require_verified,
     )?;
@@ -1418,7 +1432,10 @@ fn install_resolved(
                 &installed_path,
                 &mut resolved,
                 selected_binary,
-            )?;
+            )
+            .map_err(|error| {
+                add_binary_retry_suggestions(error, cmd, spec, local_root.is_some())
+            })?;
             let record = package_record_from_resolved(
                 cmd,
                 &resolved,
@@ -1472,6 +1489,7 @@ fn install_resolved(
         &mut resolved,
         selected_binary,
     ) {
+        let error = add_binary_retry_suggestions(error, cmd, spec, local_root.is_some());
         if populated_cache_entry {
             remove_unreferenced_cache_entry(cache_paths, &sha256, local_root)?;
         } else if let Some(snapshot) = &cache_metadata_snapshot {
@@ -1492,6 +1510,68 @@ fn install_resolved(
         deferred_cache_hit: None,
         cache_metadata_snapshot,
     })
+}
+
+fn add_binary_retry_suggestions(
+    error: BinpmError,
+    cmd: &str,
+    spec: &SourceSpec,
+    include_add: bool,
+) -> BinpmError {
+    match error {
+        BinpmError::AmbiguousArchiveBinaries {
+            asset,
+            candidates,
+            suggestions,
+        } if suggestions.is_empty() => BinpmError::AmbiguousArchiveBinaries {
+            asset,
+            suggestions: binary_retry_suggestions(cmd, spec, &candidates, include_add),
+            candidates,
+        },
+        error => error,
+    }
+}
+
+fn binary_retry_suggestions(
+    cmd: &str,
+    spec: &SourceSpec,
+    candidates: &[String],
+    include_add: bool,
+) -> Vec<String> {
+    candidates
+        .iter()
+        .flat_map(|candidate| {
+            let mut suggestions = Vec::new();
+            if include_add {
+                suggestions.push(format!(
+                    "`binpm add {} {} --bin {}`",
+                    cli_quote(cmd),
+                    cli_quote(&spec.to_string()),
+                    cli_quote(candidate)
+                ));
+            }
+            suggestions.push(format!(
+                "`binpm x --package {} --bin {} {}`",
+                cli_quote(&spec.to_string()),
+                cli_quote(candidate),
+                cli_quote(cmd)
+            ));
+            suggestions
+        })
+        .collect()
+}
+
+fn cli_quote(raw: &str) -> String {
+    if !raw.is_empty()
+        && raw.chars().all(|character| {
+            character.is_ascii_alphanumeric()
+                || matches!(character, '-' | '_' | '.' | '/' | ':' | '@')
+        })
+    {
+        raw.to_string()
+    } else {
+        posix_single_quote(raw)
+    }
 }
 
 fn install_local_from_lock(
@@ -2331,6 +2411,7 @@ fn select_archive_member(
                     return Err(BinpmError::AmbiguousArchiveBinaries {
                         asset: asset_name.to_string(),
                         candidates: matches,
+                        suggestions: Vec::new(),
                     })
                 }
             }
@@ -2342,6 +2423,7 @@ fn select_archive_member(
                 return Err(BinpmError::AmbiguousArchiveBinaries {
                     asset: asset_name.to_string(),
                     candidates,
+                    suggestions: Vec::new(),
                 })
             }
             BinaryDiscovery::NotFound => {
@@ -2456,10 +2538,39 @@ fn manifest_tool_from_source(spec: &SourceSpec) -> ManifestTool {
     }
 }
 
-fn update_manifest_tool_source(tool: Option<ManifestTool>, spec: &SourceSpec) -> ManifestTool {
+fn normalize_bin_selection(bin: Option<&str>) -> Result<Option<String>> {
+    match bin {
+        Some(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                Err(BinpmError::InvalidBinSelection {
+                    bin: raw.to_string(),
+                })
+            } else {
+                Ok(Some(trimmed.to_string()))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
+fn update_manifest_tool_source(
+    tool: Option<ManifestTool>,
+    spec: &SourceSpec,
+    explicit_bin: Option<String>,
+    current_target: Option<&HostTarget>,
+) -> ManifestTool {
     let mut tool = tool.unwrap_or_else(|| manifest_tool_from_source(spec));
     tool.source = spec.source_without_version();
     tool.version = spec.version.clone();
+    if let Some(bin) = explicit_bin {
+        tool.bin = Some(bin.clone());
+        if let Some(current_target) = current_target {
+            if let Some(override_target) = tool.targets.get_mut(&current_target.key()) {
+                override_target.bin = bin;
+            }
+        }
+    }
     tool
 }
 
@@ -4162,11 +4273,12 @@ mod tests {
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        parse_manifest_source, project_root_from, read_archive_selected_binary,
-        record_matches_current_provider_digest, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
-        restore_runtime_tool_state, select_manifest_asset, selected_asset_display_url, shell_path,
-        shell_quote, snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
+        normalize_bin_selection, parse_manifest_source, project_root_from,
+        read_archive_selected_binary, record_matches_current_provider_digest,
+        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
+        select_manifest_asset, selected_asset_display_url, shell_path, shell_quote,
+        snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
         validate_locked_record_artifact, validate_locked_record_current_asset,
         validate_locked_record_current_provider_digest, validate_package_record_metadata,
         validate_package_record_source_identity, validate_provider_digest_evidence,
@@ -4520,7 +4632,7 @@ mod tests {
             targets: targets.clone(),
         };
 
-        let updated = update_manifest_tool_source(Some(existing), &spec);
+        let updated = update_manifest_tool_source(Some(existing), &spec, None, None);
 
         assert_eq!(updated.source, "github:owner/new-tool");
         assert_eq!(updated.version.as_deref(), Some("2.0.0"));
@@ -4529,6 +4641,92 @@ mod tests {
             updated.targets.keys().collect::<Vec<_>>(),
             targets.keys().collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn manifest_tool_source_update_persists_explicit_bin() {
+        let spec = SourceSpec::from_str("github:owner/new-tool@2.0.0").expect("source");
+        let existing = ManifestTool {
+            source: "github:owner/old-tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("old-bin".to_string()),
+            targets: BTreeMap::new(),
+        };
+
+        let updated = update_manifest_tool_source(
+            Some(existing),
+            &spec,
+            Some("dist/new-bin".to_string()),
+            None,
+        );
+
+        assert_eq!(updated.source, "github:owner/new-tool");
+        assert_eq!(updated.version.as_deref(), Some("2.0.0"));
+        assert_eq!(updated.bin.as_deref(), Some("dist/new-bin"));
+    }
+
+    #[test]
+    fn manifest_tool_source_update_persists_explicit_bin_to_current_target_override() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/new-tool@2.0.0").expect("source");
+        let existing = ManifestTool {
+            source: "github:owner/old-tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("old-bin".to_string()),
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "custom-asset".to_string(),
+                    bin: "old-target-bin".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+
+        let updated = update_manifest_tool_source(
+            Some(existing),
+            &spec,
+            Some("dist/new-bin".to_string()),
+            Some(&target),
+        );
+
+        assert_eq!(updated.bin.as_deref(), Some("dist/new-bin"));
+        assert_eq!(updated.targets[&target.key()].bin, "dist/new-bin");
+    }
+
+    #[test]
+    fn bin_selection_normalization_rejects_empty_values() {
+        assert_eq!(
+            normalize_bin_selection(Some("  bin/tool  "))
+                .expect("normalized bin")
+                .as_deref(),
+            Some("bin/tool")
+        );
+        assert!(matches!(
+            normalize_bin_selection(Some("  ")),
+            Err(BinpmError::InvalidBinSelection { .. })
+        ));
+    }
+
+    #[test]
+    fn ambiguity_errors_include_candidates_and_retry_suggestions() {
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source");
+        let error = super::add_binary_retry_suggestions(
+            BinpmError::AmbiguousArchiveBinaries {
+                asset: "tool-linux.tar.gz".to_string(),
+                candidates: vec!["bin/alpha".to_string(), "bin/beta".to_string()],
+                suggestions: Vec::new(),
+            },
+            "tool",
+            &spec,
+            true,
+        );
+        let message = error.to_string();
+
+        assert!(message.contains("bin/alpha"));
+        assert!(message.contains("bin/beta"));
+        assert!(message.contains("binpm add tool github:owner/tool@1.0.0 --bin bin/alpha"));
+        assert!(message.contains("binpm x --package github:owner/tool@1.0.0 --bin bin/beta tool"));
     }
 
     #[test]
@@ -4877,7 +5075,7 @@ mod tests {
             )]),
         };
 
-        let updated = update_manifest_tool_source(Some(existing), &spec);
+        let updated = update_manifest_tool_source(Some(existing), &spec, None, None);
 
         assert_eq!(updated.source, "github:owner/tool");
         assert_eq!(updated.version.as_deref(), Some("2.0.0"));
