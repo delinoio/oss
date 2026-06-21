@@ -229,7 +229,7 @@ signature_verified = false
 
 ## Logging
 - Use structured `tracing` logs for manifest discovery, lockfile parsing, release lookup, target normalization, asset candidate scoring, checksum discovery, download, extraction, binary discovery, install finalization, and `binpm x` command execution.
-- The initial skeleton uses `BINPM_LOG` as the binpm-specific `tracing_subscriber` env filter, defaults to `binpm=off`, and supports `BINPM_LOG_COLOR` plus `NO_COLOR` for ANSI color control.
+- The initial skeleton uses `BINPM_LOG` as the binpm-specific `tracing_subscriber` env filter, defaults to `binpm=warn`, and supports `BINPM_LOG_COLOR` plus `NO_COLOR` for ANSI color control.
 - Candidate scoring logs must include normalized package spec, source provider, source host, release tag, asset name, detected OS, detected architecture, detected libc/ABI, artifact kind, score, and rejection reason when applicable.
 - Download and cache logs must include sanitized URL origin, asset name, byte count when known, cache hit or miss state, cache key, cache path, cache action, cache validation source, cache reused state, cache eviction state, retry attempt, and final outcome.
 - Install logs must include package spec, release tag, selected asset, selected archive member or bare executable, installed path, manifest path, lockfile path when local, and whether the install is global or project-local.
