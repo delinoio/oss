@@ -40,6 +40,7 @@
 - `public-docs` must remain Mintlify-based unless a documented architecture decision changes it.
 - `public-docs` is an existing documented exception to the default Rsbuild/Rspress-style static-site toolchain and Cloudflare Pages deployment preference.
 - Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/apps-public-docs-foundation.md`.
+- Current public-docs top-level product page IDs are `cargo-mono`, `derun`, and `with-watch`; Nodeup documentation is published through `apps/nodeup-docs`, not `apps/public-docs`.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
 
 ### nodeup-docs Rules
