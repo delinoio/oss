@@ -152,6 +152,9 @@ fn setup(
     let mut plans = Vec::new();
     for alias in MANAGED_ALIASES {
         let path = shim_path(&shim_dir, alias, method);
+        if matches!(method, ShimMethod::Copy) {
+            preflight_windows_alias_conflicts(&path)?;
+        }
         let action = plan_shim(&path, &nodeup_binary, method)?;
         plans.push(ShimPlan {
             alias,
@@ -279,6 +282,50 @@ fn plan_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(ShimPlanAction::Create),
         Err(error) => Err(error.into()),
     }
+}
+
+fn preflight_windows_alias_conflicts(path: &Path) -> Result<()> {
+    for candidate in windows_alias_conflict_paths(path) {
+        if candidate.exists() {
+            return Err(shim_conflict(format!(
+                "Refusing to create Windows .exe shim because another command name already \
+                 exists: {}",
+                candidate.display()
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn windows_alias_conflict_paths(path: &Path) -> Vec<PathBuf> {
+    let Some(stem) = path.file_stem().and_then(|value| value.to_str()) else {
+        return Vec::new();
+    };
+
+    windows_command_extensions()
+        .into_iter()
+        .map(|extension| path.with_file_name(format!("{stem}.{extension}")))
+        .collect()
+}
+
+fn windows_command_extensions() -> Vec<String> {
+    let pathext = env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    let mut extensions = Vec::new();
+
+    for value in pathext.split(';') {
+        let extension = value.trim().trim_start_matches('.');
+        if extension.is_empty() || extension.eq_ignore_ascii_case("exe") {
+            continue;
+        }
+
+        let extension = extension.to_ascii_lowercase();
+        if !extensions.contains(&extension) {
+            extensions.push(extension);
+        }
+    }
+
+    extensions
 }
 
 fn apply_shim_plan(

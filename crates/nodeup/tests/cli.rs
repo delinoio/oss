@@ -1854,6 +1854,43 @@ fn self_uninstall_reports_default_setup_shim_leftovers() {
 
 #[test]
 #[serial]
+fn self_uninstall_preserves_configured_shim_dir_inside_removed_root() {
+    let env = TestEnv::new();
+    let shim_dir = env.data_root.join("shims");
+    let binary_path = env.root.join("bin").join("nodeup");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+    fs::write(env.data_root.join("data-marker.txt"), "data").unwrap();
+
+    #[cfg(unix)]
+    let shim_path = {
+        let shim_path = shim_dir.join("node");
+        std::os::unix::fs::symlink(&binary_path, &shim_path).unwrap();
+        shim_path
+    };
+    #[cfg(not(unix))]
+    let shim_path = {
+        let shim_path = shim_dir.join("node.exe");
+        fs::write(&shim_path, "shim").unwrap();
+        fs::write(shim_dir.join(".node.exe.nodeup-shim"), "nodeup shim copy\n").unwrap();
+        shim_path
+    };
+
+    env.command()
+        .env("NODEUP_SHIM_DIR", &shim_dir)
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(shim_path.to_str().unwrap()));
+
+    assert!(shim_path.exists() || fs::symlink_metadata(&shim_path).is_ok());
+    assert!(!env.data_root.join("data-marker.txt").exists());
+}
+
+#[test]
+#[serial]
 fn self_uninstall_ignores_unowned_default_shim_leftovers() {
     let env = TestEnv::new();
     let shim_dir = env.root.join(".local").join("bin");
@@ -2352,6 +2389,29 @@ fn shim_setup_preflights_windows_conflicts_before_creating_aliases() {
         ));
 
     assert!(!shim_dir.join("node.exe").exists());
+    assert_eq!(fs::read_to_string(existing_npm).unwrap(), "existing-npm");
+}
+
+#[test]
+#[serial]
+fn shim_setup_refuses_windows_pathext_alias_conflicts() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-pathext");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let existing_npm = shim_dir.join("npm.cmd");
+    fs::write(&existing_npm, "existing-npm").unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to create Windows .exe shim because another command name already exists",
+        ));
+
+    assert!(!shim_dir.join("node.exe").exists());
+    assert!(!shim_dir.join("npm.exe").exists());
     assert_eq!(fs::read_to_string(existing_npm).unwrap(), "existing-npm");
 }
 

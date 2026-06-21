@@ -283,8 +283,9 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
 
     let mut removed_paths = Vec::new();
     let mut removed_targets = Vec::new();
+    let preserved_shim_dirs = existing_shim_directories();
     for target in deletion_targets {
-        fs::remove_dir_all(&target.path).map_err(|error| {
+        remove_uninstall_target(&target.path, &preserved_shim_dirs).map_err(|error| {
             log_failure(
                 action,
                 self_internal(format!(
@@ -605,6 +606,60 @@ fn directory_is_empty(path: &Path) -> Result<bool> {
     Ok(true)
 }
 
+fn remove_uninstall_target(path: &Path, preserved_dirs: &[PathBuf]) -> std::io::Result<()> {
+    let preserved_descendants: Vec<&Path> = preserved_dirs
+        .iter()
+        .map(PathBuf::as_path)
+        .filter(|preserved| preserved.starts_with(path))
+        .collect();
+
+    if preserved_descendants.is_empty() {
+        return fs::remove_dir_all(path);
+    }
+
+    remove_path_preserving(path, &preserved_descendants)
+}
+
+fn remove_path_preserving(path: &Path, preserved_dirs: &[&Path]) -> std::io::Result<()> {
+    if preserved_dirs
+        .iter()
+        .any(|preserved| paths_equal(path, preserved))
+    {
+        return Ok(());
+    }
+
+    if preserved_dirs
+        .iter()
+        .any(|preserved| preserved.starts_with(path))
+    {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            remove_path_preserving(&entry.path(), preserved_dirs)?;
+        }
+        return Ok(());
+    }
+
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {
+            fs::remove_dir_all(path)
+        }
+        Ok(_) => fs::remove_file(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn paths_equal(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
 fn human_list(values: &[String]) -> String {
     if values.is_empty() {
         "<none>".to_string()
@@ -704,21 +759,37 @@ fn likely_leftover_paths() -> Vec<String> {
         }
     }
 
-    let shim_dir = default_shim_dir();
-    for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
-        for candidate in [
-            shim_dir.join(alias),
-            shim_dir.join(format!("{alias}.exe")),
-            shim_dir.join(format!(".{alias}.exe.nodeup-shim")),
-        ] {
-            if shim_cmd::is_nodeup_owned_shim_path(&candidate)
-                || shim_cmd::is_nodeup_copy_marker_path(&candidate)
-            {
-                paths.push(candidate.display().to_string());
+    for shim_dir in shim_directories() {
+        for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
+            for candidate in [
+                shim_dir.join(alias),
+                shim_dir.join(format!("{alias}.exe")),
+                shim_dir.join(format!(".{alias}.exe.nodeup-shim")),
+            ] {
+                if shim_cmd::is_nodeup_owned_shim_path(&candidate)
+                    || shim_cmd::is_nodeup_copy_marker_path(&candidate)
+                {
+                    paths.push(candidate.display().to_string());
+                }
             }
         }
     }
 
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn existing_shim_directories() -> Vec<PathBuf> {
+    shim_directories()
+        .into_iter()
+        .filter(|path| path.exists())
+        .filter_map(|path| normalize_target_path(&path).ok())
+        .collect()
+}
+
+fn shim_directories() -> Vec<PathBuf> {
+    let mut paths = vec![default_shim_dir(), legacy_shim_dir()];
     paths.sort();
     paths.dedup();
     paths
@@ -750,6 +821,14 @@ fn default_shim_dir() -> PathBuf {
     }
 
     home_dir().join(".local").join("bin")
+}
+
+fn legacy_shim_dir() -> PathBuf {
+    home_dir()
+        .join(".local")
+        .join("share")
+        .join("nodeup")
+        .join("shims")
 }
 
 fn home_dir() -> PathBuf {
