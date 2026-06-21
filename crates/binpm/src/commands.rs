@@ -134,6 +134,7 @@ struct OutdatedOutput {
 #[derive(Debug, Serialize)]
 struct OutdatedToolOutput {
     cmd: String,
+    source: String,
     current: String,
     latest: String,
     outdated: bool,
@@ -849,11 +850,16 @@ fn outdated(args: ScopedArgs, output: OutputMode) -> Result<i32> {
                     .release
                     .tag;
                 let is_outdated = current != latest;
+                let source = spec.source_without_version();
                 if !output.is_json() && current != latest {
-                    println!("{cmd} {current} -> {latest}");
+                    println!(
+                        "{}",
+                        format_outdated_tool_line(&cmd, &current, &latest, &source)
+                    );
                 }
                 tools.push(OutdatedToolOutput {
                     cmd,
+                    source,
                     current,
                     latest,
                     outdated: is_outdated,
@@ -871,10 +877,19 @@ fn outdated(args: ScopedArgs, output: OutputMode) -> Result<i32> {
                     .tag;
                 let is_outdated = record.release_tag != latest;
                 if !output.is_json() && record.release_tag != latest {
-                    println!("{cmd} {} -> {latest}", record.release_tag);
+                    println!(
+                        "{}",
+                        format_outdated_tool_line(
+                            &cmd,
+                            &record.release_tag,
+                            &latest,
+                            &record.source
+                        )
+                    );
                 }
                 tools.push(OutdatedToolOutput {
                     cmd,
+                    source: record.source,
                     current: record.release_tag,
                     latest,
                     outdated: is_outdated,
@@ -894,6 +909,10 @@ fn outdated(args: ScopedArgs, output: OutputMode) -> Result<i32> {
     }
     println!("checked {checked}");
     Ok(0)
+}
+
+fn format_outdated_tool_line(cmd: &str, current: &str, latest: &str, source: &str) -> String {
+    format!("{cmd} {current} -> {latest} ({source})")
 }
 
 fn update(args: UpdateArgs) -> Result<i32> {
@@ -5636,9 +5655,9 @@ mod tests {
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
         download_asset_name, download_initial_capacity,
         ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
-        github_sha256_digest, has_current_cache_record, has_local_runtime_or_lock_state,
-        install_local_from_lock, install_path_collision_key, is_retryable_status,
-        local_runtime_lock_records, local_tool_execution_ready,
+        format_outdated_tool_line, github_sha256_digest, has_current_cache_record,
+        has_local_runtime_or_lock_state, install_local_from_lock, install_path_collision_key,
+        is_retryable_status, local_runtime_lock_records, local_tool_execution_ready,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
@@ -5657,7 +5676,7 @@ mod tests {
         validate_provider_digest_evidence, validate_selected_manifest_entries, verify_check_output,
         verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
         zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, OutputMode, RuntimeToolState,
+        InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -5722,6 +5741,28 @@ mod tests {
             source_archive: false,
             final_url_https: None,
         }
+    }
+
+    #[test]
+    fn outdated_human_row_includes_reinstall_source() {
+        assert_eq!(
+            format_outdated_tool_line("tool", "1.0.0", "1.1.0", "github:owner/tool"),
+            "tool 1.0.0 -> 1.1.0 (github:owner/tool)"
+        );
+    }
+
+    #[test]
+    fn outdated_json_tool_includes_reinstall_source() {
+        let payload = serde_json::to_value(OutdatedToolOutput {
+            cmd: "tool".to_string(),
+            source: "github:owner/tool".to_string(),
+            current: "1.0.0".to_string(),
+            latest: "1.1.0".to_string(),
+            outdated: true,
+        })
+        .expect("serialize outdated tool");
+
+        assert_eq!(payload["source"], "github:owner/tool");
     }
 
     #[test]

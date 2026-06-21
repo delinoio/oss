@@ -19,7 +19,7 @@ Use `binpm add <cmd> <source> --bin <upstream-binary>` when the release archive 
 
 Commands that support both local and global scope default to local when a local `binpm.toml` is discovered. Otherwise they default to global. `--local` and `--global` are explicit overrides.
 
-Global update is pending implementation. `binpm update --global`, including `--dry-run`, fails with a workaround: run `binpm outdated --global` to find stale global tools, then reinstall each one with `binpm install <source>`. Use `binpm update --local` for project tools.
+Global update is pending implementation. `binpm update --global`, including `--dry-run`, fails with a workaround: run `binpm outdated --global` to find stale global tools and their sources, then reinstall each one with `binpm install <source>`. Use `binpm update --local` for project tools.
 
 ## Execution
 
@@ -42,7 +42,7 @@ binpm info <cmd-or-source> [--local|--global]
 binpm outdated [--local|--global]
 ```
 
-`binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, and `binpm outdated` inspect state without changing manifests, lockfiles, cached assets, or installed executables.
+`binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, and `binpm outdated` inspect state without changing manifests, lockfiles, cached assets, or installed executables. `binpm outdated` includes each tool source in stale human rows and JSON tool entries so global tools can be reinstalled from the reported source.
 
 ## Environment
 
