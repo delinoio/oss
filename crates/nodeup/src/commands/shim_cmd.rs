@@ -273,11 +273,13 @@ fn plan_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
                 )));
             }
 
+            let has_copy_marker = has_regular_copy_marker(path)?;
+
             if same_file_content(path, nodeup_binary)? {
                 return Ok(ShimPlanAction::Keep);
             }
 
-            if copy_marker_path(path).is_file() {
+            if has_copy_marker {
                 return Ok(ShimPlanAction::Repair);
             }
 
@@ -470,6 +472,23 @@ fn copy_marker_path(path: &Path) -> PathBuf {
     path.with_file_name(format!(".{file_name}.nodeup-shim"))
 }
 
+fn has_regular_copy_marker(path: &Path) -> Result<bool> {
+    let marker = copy_marker_path(path);
+    match fs::symlink_metadata(&marker) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(shim_conflict(format!(
+            "Refusing to use symlink Windows shim ownership marker: {}",
+            marker.display()
+        ))),
+        Ok(metadata) if metadata.is_file() => Ok(true),
+        Ok(_) => Err(shim_conflict(format!(
+            "Refusing to use non-file Windows shim ownership marker: {}",
+            marker.display()
+        ))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
 pub(super) fn is_nodeup_owned_shim_path(path: &Path) -> bool {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -481,16 +500,13 @@ pub(super) fn is_nodeup_owned_shim_path(path: &Path) -> bool {
             };
             looks_like_nodeup_binary_path(&existing_target, &nodeup_binary)
         }
-        Ok(metadata) if metadata.is_file() => {
-            let marker = copy_marker_path(path);
-            marker.is_file()
-        }
+        Ok(metadata) if metadata.is_file() => has_regular_copy_marker(path).unwrap_or(false),
         Ok(_) | Err(_) => false,
     }
 }
 
 pub(super) fn is_nodeup_copy_marker_path(path: &Path) -> bool {
-    path.is_file()
+    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
         && path
             .file_name()
             .and_then(|value| value.to_str())
@@ -498,6 +514,7 @@ pub(super) fn is_nodeup_copy_marker_path(path: &Path) -> bool {
 }
 
 fn write_copy_marker(path: &Path) -> Result<()> {
+    has_regular_copy_marker(path)?;
     fs::write(copy_marker_path(path), b"nodeup shim copy\n")?;
     Ok(())
 }

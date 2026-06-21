@@ -2527,7 +2527,7 @@ fn shim_setup_creates_all_aliases_and_reports_path_guidance() {
             ])
             .assert()
             .success()
-            .stdout(predicates::str::contains("PowerShell"));
+            .stdout(predicates::str::contains("$env:Path ="));
 
         for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
             assert!(shim_dir.join(format!("{alias}.exe")).is_file());
@@ -2825,6 +2825,37 @@ fn shim_setup_repairs_marked_windows_copy_alias() {
 
     assert_eq!(fs::read(node).unwrap(), original);
     assert!(marker.is_file());
+}
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn shim_setup_refuses_symlinked_windows_copy_marker() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-marker-symlink");
+    let node = shim_dir.join("node.exe");
+    let marker = shim_dir.join(".node.exe.nodeup-shim");
+    let external_marker_target = env.root.join("external-marker");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::write(&node, "old-nodeup-copy").unwrap();
+    fs::write(&external_marker_target, "external-marker").unwrap();
+    std::os::unix::fs::symlink(&external_marker_target, &marker).unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to use symlink Windows shim ownership marker",
+        ));
+
+    assert_eq!(fs::read_to_string(&node).unwrap(), "old-nodeup-copy");
+    assert_eq!(
+        fs::read_to_string(&external_marker_target).unwrap(),
+        "external-marker"
+    );
+    assert_eq!(fs::read_link(marker).unwrap(), external_marker_target);
 }
 
 #[test]
