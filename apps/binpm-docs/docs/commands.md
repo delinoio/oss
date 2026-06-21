@@ -1,6 +1,6 @@
 # Commands
 
-binpm exposes a clap-based command surface. Diagnostic commands must stay read-only unless the crate contract documents a mutation.
+binpm provides commands for global installs, project-local tools, one-off execution, diagnostics, environment setup, and cache management.
 
 ## Global and Local Install
 
@@ -16,7 +16,7 @@ binpm remove <cmd> [--local|--global]
 
 Use `binpm add <cmd> <source> --bin <upstream-binary>` when the release archive contains multiple executables or when the upstream executable name differs from the local command name. The selected binary is persisted in `binpm.toml`.
 
-Commands that support both local and global scope default to local when a local `binpm.toml` is discovered. Otherwise they default to global. `--local` and `--global` are explicit overrides. Global update is not implemented yet; use local `binpm update` for project tools.
+Commands that support both local and global scope default to local when a local `binpm.toml` is discovered. Otherwise they default to global. `--local` and `--global` are explicit overrides.
 
 ## Execution
 
@@ -39,7 +39,7 @@ binpm info <cmd-or-source> [--local|--global]
 binpm outdated [--local|--global]
 ```
 
-`binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, and `binpm outdated` must not mutate manifests, lockfiles, package records, cache entries, or executables.
+`binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, and `binpm outdated` inspect state without changing manifests, lockfiles, cached assets, or installed executables.
 
 ## Environment
 
@@ -60,4 +60,4 @@ binpm cache prune
 binpm cache clean
 ```
 
-`binpm cache key` is read-only. `binpm cache prune` and `binpm cache clean` must preserve installed package records and executable entries.
+`binpm cache key` is read-only. `binpm cache prune` and `binpm cache clean` remove cached assets without uninstalling tools or removing executables.

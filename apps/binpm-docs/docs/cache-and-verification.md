@@ -4,7 +4,7 @@
 
 ## Cache Reuse
 
-Cache reuse must be validated with the strongest available integrity source:
+Cache reuse is validated with the strongest available integrity source:
 
 - Provider asset digest.
 - Upstream checksum sidecar.
@@ -12,20 +12,20 @@ Cache reuse must be validated with the strongest available integrity source:
 - Successfully verified signature under a documented trust policy.
 - Locally recorded SHA-256 metadata when stronger upstream material is unavailable.
 
-Cache hits must be revalidated before extraction or install finalization. If cache revalidation fails, binpm must discard the corrupted entry and redownload the asset.
+Cache hits are revalidated before extraction or install finalization. If cache revalidation fails, binpm discards the corrupted entry and redownloads the asset.
 
 ## Cache Commands
 
-`binpm cache list` reports cached assets and whether installed package manifests reference each entry.
+`binpm cache list` reports cached assets.
 
-`binpm cache prune` removes only entries not referenced by installed package manifests or the user-level local-project cache reference index.
+`binpm cache prune` removes cached assets that are no longer needed by installed tools.
 
-`binpm cache clean` removes cache entries while preserving installed package records and executable links or copies under `~/.binpm/bin`.
+`binpm cache clean` removes cached assets while preserving installed tools and executable links or copies under `~/.binpm/bin`.
 
-`binpm cache key` prints a stable CI cache key derived from the current target and `binpm.lock`; it must not download, install, modify package records, or populate cache entries.
+`binpm cache key` prints a stable CI cache key derived from the current target and `binpm.lock`; it does not download, install, or populate cache entries.
 
 ## Verification
 
-Installs without upstream checksum material or successfully verified signature material are allowed in v1 only with an explicit warning and locally recorded SHA-256 metadata.
+Installs without upstream checksum material or successfully verified signature material continue with an explicit warning and locally recorded SHA-256 metadata.
 
-`--require-verified` and `binpm verify --require-verified` must fail when no trusted provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature is available.
+`--require-verified` and `binpm verify --require-verified` fail when no trusted provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature is available.

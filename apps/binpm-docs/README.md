@@ -29,10 +29,10 @@ The production URL is deployment metadata; docs content must come from repositor
 - `rspress.config.ts`: Rspress site configuration and navigation.
 - `scripts/validate-clean-urls.mjs`: Production build validator for stable clean URL routes and links.
 - `docs/index.md`: binpm docs landing page.
-- `docs/installation.md`: Installation scope and current implementation status.
+- `docs/installation.md`: Installation scope, supported release assets, PATH setup, and verification boundary.
 - `docs/getting-started.md`: First-use guide for existing documented behavior.
 - `docs/commands.md`: Command surface overview.
 - `docs/local-tooling.md`: `binpm.toml`, `binpm.lock`, local bin paths, and frozen-lockfile behavior.
-- `docs/cache-and-verification.md`: Cache, checksum, and verification contracts.
-- `docs/troubleshooting.md`: Common diagnostics and validation commands.
-- `docs/reference.md`: Stable source, route, storage, and validation reference.
+- `docs/cache-and-verification.md`: Cache, checksum, and verification behavior.
+- `docs/troubleshooting.md`: Common diagnostic and verification commands.
+- `docs/reference.md`: Stable source and target reference.
