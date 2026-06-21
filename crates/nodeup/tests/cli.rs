@@ -3119,6 +3119,46 @@ fn color_diagnostics_reports_nodeup_log_color_overrides_no_color() {
 
 #[test]
 #[serial]
+fn color_diagnostics_preserves_auto_log_color_mode() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env_remove("NO_COLOR")
+        .env("NODEUP_LOG_COLOR", "auto")
+        .args(["--output", "json", "show", "color"])
+        .output()
+        .expect("show color with NODEUP_LOG_COLOR=auto");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["logs"]["enabled"], true);
+    assert_eq!(payload["logs"]["mode"], "auto");
+    assert_eq!(payload["logs"]["source"], "NODEUP_LOG_COLOR");
+}
+
+#[test]
+#[serial]
+fn color_diagnostics_preserves_auto_log_color_mode_with_no_color() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NO_COLOR", "1")
+        .env("NODEUP_LOG_COLOR", "auto")
+        .args(["--output", "json", "show", "color"])
+        .output()
+        .expect("show color with NODEUP_LOG_COLOR=auto and NO_COLOR");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["logs"]["enabled"], false);
+    assert_eq!(payload["logs"]["mode"], "auto");
+    assert_eq!(payload["logs"]["source"], "NODEUP_LOG_COLOR");
+}
+
+#[test]
+#[serial]
 fn color_diagnostics_reports_invalid_color_env_values() {
     let env = TestEnv::new();
 

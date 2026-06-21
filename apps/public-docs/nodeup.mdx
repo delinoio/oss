@@ -109,6 +109,9 @@ Human output color control:
 - `NODEUP_COLOR=auto|always|never` controls the same behavior via environment.
 - Precedence is `--color` > `NODEUP_COLOR` > `NO_COLOR` > `auto`.
 - `auto` enables color only when each output stream is attached to a terminal.
+- `nodeup show color` reports effective human stdout, human stderr, and log color decisions for troubleshooting.
+- `NODEUP_LOG_COLOR=always|auto|never` controls log ANSI styling, defaults to colored logs, and honors `NO_COLOR` when unset or set to `auto`.
+- Invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values are ignored and reported by `nodeup show color`.
 - `--output json` and `completions` output are always emitted without ANSI styling.
 
 ## Shell completions

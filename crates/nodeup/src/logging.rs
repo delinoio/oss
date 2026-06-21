@@ -58,7 +58,7 @@ pub fn log_color_decision() -> LogColorDecision {
     let (mode, source) = resolve_log_color_mode(parsed_log_color, no_color_present);
 
     LogColorDecision {
-        enabled: mode == LogColorMode::Always,
+        enabled: resolve_log_color_enabled_for_mode(parsed_log_color, no_color_present),
         mode: mode.as_str(),
         source,
         no_color_present,
@@ -87,13 +87,7 @@ fn resolve_log_color_mode(
     match nodeup_log_color {
         Some(LogColorMode::Always) => (LogColorMode::Always, NODEUP_LOG_COLOR_ENV),
         Some(LogColorMode::Never) => (LogColorMode::Never, NODEUP_LOG_COLOR_ENV),
-        Some(LogColorMode::Auto) => {
-            if no_color_present {
-                (LogColorMode::Never, NO_COLOR_ENV)
-            } else {
-                (LogColorMode::Always, NODEUP_LOG_COLOR_ENV)
-            }
-        }
+        Some(LogColorMode::Auto) => (LogColorMode::Auto, NODEUP_LOG_COLOR_ENV),
         None => {
             if no_color_present {
                 (LogColorMode::Never, NO_COLOR_ENV)
@@ -101,6 +95,17 @@ fn resolve_log_color_mode(
                 (LogColorMode::Always, "default")
             }
         }
+    }
+}
+
+fn resolve_log_color_enabled_for_mode(
+    nodeup_log_color: Option<LogColorMode>,
+    no_color_present: bool,
+) -> bool {
+    match nodeup_log_color {
+        Some(LogColorMode::Always) => true,
+        Some(LogColorMode::Never) => false,
+        Some(LogColorMode::Auto) | None => !no_color_present,
     }
 }
 
