@@ -654,7 +654,11 @@ fn likely_leftover_paths() -> Vec<String> {
 
     let shim_dir = default_shim_dir();
     for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
-        for candidate in [shim_dir.join(alias), shim_dir.join(format!("{alias}.exe"))] {
+        for candidate in [
+            shim_dir.join(alias),
+            shim_dir.join(format!("{alias}.exe")),
+            shim_dir.join(format!(".{alias}.exe.nodeup-shim")),
+        ] {
             if candidate.exists() || fs::symlink_metadata(&candidate).is_ok() {
                 paths.push(candidate.display().to_string());
             }
@@ -691,11 +695,7 @@ fn default_shim_dir() -> PathBuf {
         return PathBuf::from(dir);
     }
 
-    home_dir()
-        .join(".local")
-        .join("share")
-        .join("nodeup")
-        .join("shims")
+    home_dir().join(".local").join("bin")
 }
 
 fn home_dir() -> PathBuf {
@@ -706,9 +706,11 @@ fn home_dir() -> PathBuf {
 }
 
 fn is_likely_shim_path(path: &str) -> bool {
-    ["node", "npm", "npx", "yarn", "pnpm"]
-        .iter()
-        .any(|alias| path.ends_with(alias) || path.ends_with(&format!("{alias}.exe")))
+    ["node", "npm", "npx", "yarn", "pnpm"].iter().any(|alias| {
+        path.ends_with(alias)
+            || path.ends_with(&format!("{alias}.exe"))
+            || path.ends_with(&format!(".{alias}.exe.nodeup-shim"))
+    })
 }
 
 fn migrate_settings_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {

@@ -1817,6 +1817,26 @@ fn self_uninstall_reports_cleanup_boundaries_and_manual_steps() {
 
 #[test]
 #[serial]
+fn self_uninstall_reports_default_setup_shim_leftovers() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join(".local").join("bin");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::write(shim_dir.join("node"), "shim").unwrap();
+
+    env.command()
+        .env("HOME", &env.root)
+        .args(["--output", "json", "self", "uninstall"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            shim_dir.join("node").to_str().unwrap(),
+        ));
+
+    assert!(shim_dir.join("node").exists());
+}
+
+#[test]
+#[serial]
 fn self_uninstall_rejects_non_nodeup_owned_paths() {
     let env = TestEnv::new();
     let unsafe_root = env.root.join("unsafe-home");
@@ -1944,6 +1964,26 @@ fn shim_setup_creates_all_aliases_and_reports_path_guidance() {
 
 #[test]
 #[serial]
+#[cfg(unix)]
+fn shim_setup_escapes_posix_path_guidance() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-$(touch pwn)'quoted");
+    let shim_dir_text = shim_dir.to_str().unwrap();
+    let expected = format!(
+        "export PATH='{}':\"$PATH\"",
+        shim_dir_text.replace('\'', "'\"'\"'")
+    );
+
+    env.command()
+        .env("PATH", env.root.join("empty-path"))
+        .args(["shim", "setup", "--dir", shim_dir_text])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(expected));
+}
+
+#[test]
+#[serial]
 fn shim_setup_is_idempotent_for_existing_valid_aliases() {
     let env = TestEnv::new();
     let shim_dir = env.root.join("nodeup-shims-idempotent");
@@ -2028,6 +2068,32 @@ fn shim_setup_refuses_unrelated_symlink_alias() {
 
 #[test]
 #[serial]
+#[cfg(unix)]
+fn shim_setup_preflights_conflicts_before_creating_aliases() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-preflight");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let existing_target = env.root.join("npm");
+    fs::write(&existing_target, "existing-npm").unwrap();
+    std::os::unix::fs::symlink(&existing_target, shim_dir.join("npm")).unwrap();
+
+    env.command()
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to replace non-nodeup shim target",
+        ));
+
+    assert!(!shim_dir.join("node").exists());
+    assert_eq!(
+        fs::read_link(shim_dir.join("npm")).unwrap(),
+        existing_target
+    );
+}
+
+#[test]
+#[serial]
 fn shim_setup_uses_copy_mode_for_windows_hosts() {
     let env = TestEnv::new();
     let shim_dir = env.root.join("nodeup-shims-windows");
@@ -2071,6 +2137,65 @@ fn shim_setup_refuses_existing_windows_executable() {
         ));
 
     assert_eq!(fs::read_to_string(existing_node).unwrap(), "existing-node");
+}
+
+#[test]
+#[serial]
+fn shim_setup_repairs_marked_windows_copy_alias() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-repair");
+    let node = shim_dir.join("node.exe");
+    let marker = shim_dir.join(".node.exe.nodeup-shim");
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .success();
+
+    assert!(marker.is_file());
+    let original = fs::read(&node).unwrap();
+    fs::write(&node, "old-nodeup-copy").unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"status\": \"repaired\""))
+        .stdout(predicates::str::contains("\"alias\": \"node\""));
+
+    assert_eq!(fs::read(node).unwrap(), original);
+    assert!(marker.is_file());
+}
+
+#[test]
+#[serial]
+fn shim_setup_preflights_windows_conflicts_before_creating_aliases() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-preflight");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let existing_npm = shim_dir.join("npm.exe");
+    fs::write(&existing_npm, "existing-npm").unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to replace existing shim target with different content",
+        ));
+
+    assert!(!shim_dir.join("node.exe").exists());
+    assert_eq!(fs::read_to_string(existing_npm).unwrap(), "existing-npm");
 }
 
 #[test]

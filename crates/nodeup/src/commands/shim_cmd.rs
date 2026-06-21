@@ -104,6 +104,19 @@ struct ShimSetupResponse {
     shims: Vec<ShimEntry>,
 }
 
+struct ShimPlan {
+    alias: ManagedAlias,
+    path: PathBuf,
+    action: ShimPlanAction,
+}
+
+#[derive(Clone, Copy)]
+enum ShimPlanAction {
+    Create,
+    Repair,
+    Keep,
+}
+
 pub fn execute(
     command: ShimCommand,
     output: OutputFormat,
@@ -136,13 +149,23 @@ fn setup(
         ShimMethod::Symlink
     };
 
-    let mut shims = Vec::new();
+    let mut plans = Vec::new();
     for alias in MANAGED_ALIASES {
         let path = shim_path(&shim_dir, alias, method);
-        let status = ensure_shim(&path, &nodeup_binary, method)?;
+        let action = plan_shim(&path, &nodeup_binary, method)?;
+        plans.push(ShimPlan {
+            alias,
+            path,
+            action,
+        });
+    }
+
+    let mut shims = Vec::new();
+    for plan in plans {
+        let status = apply_shim_plan(&plan.path, &nodeup_binary, method, plan.action)?;
         shims.push(ShimEntry {
-            alias: alias.as_str(),
-            path: path.display().to_string(),
+            alias: plan.alias.as_str(),
+            path: plan.path.display().to_string(),
             status,
             method,
         });
@@ -191,20 +214,20 @@ fn setup(
     Ok(0)
 }
 
-fn ensure_shim(path: &Path, nodeup_binary: &Path, method: ShimMethod) -> Result<ShimEntryStatus> {
+fn plan_shim(path: &Path, nodeup_binary: &Path, method: ShimMethod) -> Result<ShimPlanAction> {
     match method {
-        ShimMethod::Symlink => ensure_symlink(path, nodeup_binary),
-        ShimMethod::Copy => ensure_copy(path, nodeup_binary),
+        ShimMethod::Symlink => plan_symlink(path, nodeup_binary),
+        ShimMethod::Copy => plan_copy(path, nodeup_binary),
     }
 }
 
-fn ensure_symlink(path: &Path, nodeup_binary: &Path) -> Result<ShimEntryStatus> {
+fn plan_symlink(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if metadata.file_type().is_symlink() {
                 let existing_target = fs::read_link(path)?;
                 if existing_target == nodeup_binary {
-                    return Ok(ShimEntryStatus::Existing);
+                    return Ok(ShimPlanAction::Keep);
                 }
                 if !looks_like_nodeup_binary_path(&existing_target, nodeup_binary) {
                     return Err(shim_conflict(format!(
@@ -213,13 +236,11 @@ fn ensure_symlink(path: &Path, nodeup_binary: &Path) -> Result<ShimEntryStatus> 
                         existing_target.display()
                     )));
                 }
-                fs::remove_file(path)?;
-                create_symlink(nodeup_binary, path)?;
-                return Ok(ShimEntryStatus::Repaired);
+                return Ok(ShimPlanAction::Repair);
             }
 
             if metadata.is_file() && same_file_content(path, nodeup_binary)? {
-                return Ok(ShimEntryStatus::Existing);
+                return Ok(ShimPlanAction::Keep);
             }
 
             Err(shim_conflict(format!(
@@ -227,15 +248,12 @@ fn ensure_symlink(path: &Path, nodeup_binary: &Path) -> Result<ShimEntryStatus> 
                 path.display()
             )))
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            create_symlink(nodeup_binary, path)?;
-            Ok(ShimEntryStatus::Created)
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(ShimPlanAction::Create),
         Err(error) => Err(error.into()),
     }
 }
 
-fn ensure_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimEntryStatus> {
+fn plan_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
     match fs::metadata(path) {
         Ok(metadata) => {
             if !metadata.is_file() {
@@ -246,7 +264,11 @@ fn ensure_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimEntryStatus> {
             }
 
             if same_file_content(path, nodeup_binary)? {
-                return Ok(ShimEntryStatus::Existing);
+                return Ok(ShimPlanAction::Keep);
+            }
+
+            if copy_marker_path(path).is_file() {
+                return Ok(ShimPlanAction::Repair);
             }
 
             Err(shim_conflict(format!(
@@ -254,11 +276,38 @@ fn ensure_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimEntryStatus> {
                 path.display()
             )))
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            fs::copy(nodeup_binary, path)?;
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(ShimPlanAction::Create),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn apply_shim_plan(
+    path: &Path,
+    nodeup_binary: &Path,
+    method: ShimMethod,
+    action: ShimPlanAction,
+) -> Result<ShimEntryStatus> {
+    match (method, action) {
+        (_, ShimPlanAction::Keep) => Ok(ShimEntryStatus::Existing),
+        (ShimMethod::Symlink, ShimPlanAction::Create) => {
+            create_symlink(nodeup_binary, path)?;
             Ok(ShimEntryStatus::Created)
         }
-        Err(error) => Err(error.into()),
+        (ShimMethod::Symlink, ShimPlanAction::Repair) => {
+            fs::remove_file(path)?;
+            create_symlink(nodeup_binary, path)?;
+            Ok(ShimEntryStatus::Repaired)
+        }
+        (ShimMethod::Copy, ShimPlanAction::Create) => {
+            fs::copy(nodeup_binary, path)?;
+            write_copy_marker(path)?;
+            Ok(ShimEntryStatus::Created)
+        }
+        (ShimMethod::Copy, ShimPlanAction::Repair) => {
+            fs::copy(nodeup_binary, path)?;
+            write_copy_marker(path)?;
+            Ok(ShimEntryStatus::Repaired)
+        }
     }
 }
 
@@ -333,12 +382,15 @@ fn paths_equal(left: &Path, right: &Path) -> bool {
 fn path_instruction(dir: &Path) -> String {
     if host_is_windows() {
         format!(
-            "$env:Path = \"{};$env:Path\"; add the same directory to the user PATH for future \
+            "$env:Path = '{};' + $env:Path; add the same directory to the user PATH for future \
              PowerShell sessions.",
-            dir.display()
+            escape_powershell_single_quoted(&dir.display().to_string())
         )
     } else {
-        format!("export PATH=\"{}:$PATH\"", dir.display())
+        format!(
+            "export PATH={}:\"$PATH\"",
+            shell_single_quote(&dir.display().to_string())
+        )
     }
 }
 
@@ -351,6 +403,19 @@ fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
 
 fn same_file_content(left: &Path, right: &Path) -> Result<bool> {
     Ok(fs::read(left)? == fs::read(right)?)
+}
+
+fn copy_marker_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("shim");
+    path.with_file_name(format!(".{file_name}.nodeup-shim"))
+}
+
+fn write_copy_marker(path: &Path) -> Result<()> {
+    fs::write(copy_marker_path(path), b"nodeup shim copy\n")?;
+    Ok(())
 }
 
 fn looks_like_nodeup_binary_path(existing_target: &Path, nodeup_binary: &Path) -> bool {
@@ -374,6 +439,14 @@ fn home_dir() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| env::var_os("USERPROFILE").map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn escape_powershell_single_quoted(value: &str) -> String {
+    value.replace('\'', "''")
 }
 
 fn shim_internal(cause: impl Into<String>) -> NodeupError {
