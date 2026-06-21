@@ -161,6 +161,12 @@ pub fn runtime_executable_path(runtime_root: &Path, command: &str) -> PathBuf {
     bin_dir.join(runtime_primary_executable_name(command))
 }
 
+pub fn runtime_primary_executable_path(runtime_root: &Path, command: &str) -> PathBuf {
+    runtime_root
+        .join("bin")
+        .join(runtime_primary_executable_name(command))
+}
+
 pub fn runtime_executable_is_runnable(path: &Path) -> bool {
     if !path.is_file() {
         return false;

@@ -942,6 +942,32 @@ fn toolchain_link_accepts_windows_node_exe_when_platform_is_forced() {
 
 #[test]
 #[serial]
+fn toolchain_link_rejects_windows_extensionless_node_when_platform_is_forced() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-windows-node");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho wrong-shape\n");
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args([
+            "toolchain",
+            "link",
+            "linked-windows-node",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "Linked runtime path must contain a node executable under `bin/`",
+        ))
+        .stderr(predicates::str::contains("<path>/bin/node.exe"));
+}
+
+#[test]
+#[serial]
 fn toolchain_unlink_removes_record_without_deleting_external_runtime() {
     let env = TestEnv::new();
     let runtime_dir = env.root.join("linked-runtime-unlink");
@@ -2391,6 +2417,55 @@ fn shim_dispatch_uses_argv0_alias() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("shim-ok"));
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn shim_dispatch_rejects_linked_runtime_node_without_executable_bit() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-shim-not-executable");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+
+    let delegated = runtime_bin.join("node");
+    write_runtime_executable(&delegated, "#!/bin/sh\necho should-not-run\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-shim-not-executable",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let mut permissions = fs::metadata(&delegated).unwrap().permissions();
+    permissions.set_mode(0o644);
+    fs::set_permissions(&delegated, permissions).unwrap();
+
+    env.command()
+        .args(["default", "linked-shim-not-executable"])
+        .assert()
+        .success();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("node");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .output()
+        .expect("run shim binary with non-executable linked node");
+
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Managed alias 'node' exists but is not runnable"));
+    assert!(stderr.contains("executable bit is set"));
+    assert!(!stderr.contains("should-not-run"));
 }
 
 #[test]

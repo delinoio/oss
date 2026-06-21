@@ -10,7 +10,7 @@ use crate::{
     release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
     selectors::{is_reserved_channel_selector_token, is_valid_linked_name, RuntimeSelector},
-    store::{runtime_executable_is_runnable, runtime_executable_path},
+    store::{runtime_executable_is_runnable, runtime_primary_executable_path},
     types::PlatformTarget,
     NodeupApp,
 };
@@ -457,7 +457,7 @@ fn link(
     }
 
     let absolute = fs::canonicalize(&runtime_path)?;
-    let node_executable = runtime_executable_path(&absolute, "node");
+    let node_executable = runtime_primary_executable_path(&absolute, "node");
     if !node_executable.exists() {
         info!(
             command_path = "nodeup.toolchain.link",
