@@ -207,6 +207,24 @@ Runs a delegated command with an explicit runtime selector. Missing version runt
 
 In human mode, delegated stdio is inherited. If `yarn` or `pnpm` runs through npm-exec, Nodeup prints a planning notice to stderr before delegation so stdout remains owned by the delegated command. In JSON mode, delegated stdout is routed to stderr so stdout can contain the final JSON response with `runtime`, `command`, `exit_code`, and `planning`.
 
+## shim setup
+
+```bash
+nodeup shim setup [--dir <path>]
+```
+
+Creates or repairs managed executable-name dispatch shims for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
+
+- Without `--dir`, Nodeup uses `NODEUP_SHIM_DIR` when set, otherwise `$HOME/.local/bin`.
+- macOS and Linux use symlinks named `node`, `npm`, `npx`, `yarn`, and `pnpm`.
+- Windows uses copied executables named `node.exe`, `npm.exe`, `npx.exe`, `yarn.exe`, and `pnpm.exe`.
+- Re-running the command reports existing valid shims as `existing`.
+- Existing unrelated commands are reported as conflicts and are not replaced.
+- Stale Nodeup symlinks are repaired.
+- Non-Nodeup files and different existing Windows executables are refused instead of being overwritten.
+
+JSON output includes `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, and `shims`. Each shim entry includes `alias`, `path`, `status`, and `method`.
+
 ## self update
 
 ```bash
@@ -225,7 +243,16 @@ nodeup self uninstall
 
 Removes Nodeup-owned data, cache, and config roots when they contain artifacts. It refuses unsafe paths that are not clearly Nodeup-owned.
 
-JSON output includes `action`, `status`, and `removed_paths`.
+Cleanup boundaries:
+
+- Data: removed when the data root is Nodeup-owned and populated.
+- Cache: removed when the cache root is Nodeup-owned and populated.
+- Config: removed when the config root is Nodeup-owned and populated.
+- Binary: manual; Nodeup does not delete the running binary.
+- Shims: manual; Nodeup does not delete aliases created by `nodeup shim setup`.
+- Shell profile/PATH: manual; Nodeup does not edit shell profile files or the user PATH.
+
+Human output includes removed paths and remaining manual steps. JSON output includes `action`, `status`, `removed_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
 
 ## self upgrade-data
 

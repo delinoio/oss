@@ -92,6 +92,21 @@ install_via_package_manager() {
   return 1
 }
 
+require_cosign() {
+  if command -v cosign >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "[install.nodeup] missing required prerequisite: cosign" >&2
+  echo "[install.nodeup] direct installs require cosign before artifact download so SHA256SUMS and Sigstore bundle sidecars can be verified" >&2
+  echo "[install.nodeup] install cosign and retry:" >&2
+  echo "[install.nodeup]   macOS: brew install cosign" >&2
+  echo "[install.nodeup]   Linux: brew install cosign, or follow https://docs.sigstore.dev/cosign/system_config/installation/" >&2
+  echo "[install.nodeup]   Windows: winget install sigstore.cosign, or scoop install cosign" >&2
+  echo "[install.nodeup] alternate install paths: brew install delinoio/tap/nodeup, or cargo binstall nodeup --no-confirm" >&2
+  exit 1
+}
+
 download_bundle() {
   local base_url="$1"
   local artifact="$2"
@@ -107,16 +122,17 @@ download_bundle() {
 verify_bundle() {
   local artifact="$1"
 
-  if ! command -v cosign >/dev/null 2>&1; then
-    echo "[install.nodeup] cosign is required for direct install verification" >&2
-    exit 1
-  fi
+  require_cosign
 
-  cosign verify-blob \
+  if ! cosign verify-blob \
     --bundle "${artifact}.sigstore.json" \
     --certificate-identity-regexp "$workflow_identity" \
     --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-    "$artifact"
+    "$artifact"; then
+    echo "[install.nodeup] Sigstore bundle verification failed for ${artifact}" >&2
+    echo "[install.nodeup] this is a verification failure, not a missing-prerequisite failure" >&2
+    exit 1
+  fi
 }
 
 detect_direct_platform() {
@@ -173,6 +189,8 @@ install_direct() {
   platform="$(detect_direct_platform)" || exit 1
   local os="${platform%% *}"
   local arch="${platform##* }"
+
+  require_cosign
 
   local tag
   tag="$(resolve_tag)"

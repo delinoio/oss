@@ -138,14 +138,15 @@ enum ProjectId {
 
 - `binpm.toml` is the committed project-local tool declaration file.
 - `binpm.lock` is the committed deterministic project-local resolution file and must keep target-specific records.
-- `binpm init` manifest creation must target the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory.
+- `binpm init` manifest creation must target the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory. It must print the resolved full manifest destination before creation or overwrite refusal and print a clear created-manifest line after successful creation. No explicit current-directory or alternate-root flag is contracted.
 - `binpm.lock` must not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata.
 - `binpm.lock` must store sanitized canonical asset URLs only, never query strings, fragments, credential-bearing URLs, or expiring signed download URLs.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`.
 - `binpm add <cmd> <source> --bin <upstream-binary>` must persist the upstream binary selection in `binpm.toml`, and `binpm x --package <source> --bin <upstream-binary> <cmd>` must use that upstream binary for one-off execution.
 - Local `binpm remove` must clean project-local package records when they exist.
 - Local target-specific asset overrides must use `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.
-- Local `binpm install`, `binpm update`, and `binpm x` must honor `--frozen-lockfile`; `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch. Documented execution aliases `binpm exec` and `binpm run` must share `binpm x` lockfile and command execution behavior while `binpm x` remains canonical.
+- Local `binpm install`, `binpm update`, and `binpm x` must honor `--frozen-lockfile`; `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch. Frozen commands must fail when they would need to create or modify `binpm.lock`, except empty-manifest local updates that require no lockfile changes must succeed without creating `binpm.lock`. Documented execution aliases `binpm exec` and `binpm run` must share `binpm x` lockfile and command execution behavior while `binpm x` remains canonical.
+- Frozen local install and `x` may restore missing `.binpm/bin` executables and `.binpm/packages` package records from existing target lock records when cache bytes match the locked SHA-256. If cache repair needs a download, it may use only the lockfile's persisted sanitized asset URL, must validate the recorded SHA-256 before installing or populating cache, and must not require provider release-list pagination.
 - `binpm verify --require-verified` must fail when no provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature under a documented trust policy is available.
 - `binpm update` and `binpm remove` must print selected local/global scope before mutation and support `--dry-run` previews that do not mutate manifests, lockfiles, package records, cache references, or executables.
 - `--no-confirm` is a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
@@ -166,6 +167,11 @@ enum ProjectId {
 - The canonical production URL for `apps/nodeup-docs` is `https://nodeup.delino.io`.
 - `apps/nodeup-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-nodeup.md` and `docs/apps-nodeup-docs-foundation.md` document a replacement.
 - `apps/nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
+
+### nodeup Shim and Self Cleanup Contract
+
+- `nodeup shim setup` is the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.
+- `nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only; binary, managed shims, and shell profile/PATH cleanup remain manual and must be reported in human and JSON output.
 
 ### Thenv Component Contract
 
