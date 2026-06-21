@@ -169,7 +169,7 @@ struct VerifyOutput {
 struct VerifyCheckOutput {
     cmd: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    target: Option<String>,
+    target: Option<HostTarget>,
     checksum_source: ChecksumSource,
     verification: VerificationState,
 }
@@ -221,6 +221,8 @@ enum ExplainOutput {
         release_decision: String,
         selected_asset: Option<SelectedAssetOutput>,
         candidates: Vec<CandidateOutput>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        release_diagnostics: Vec<ReleaseDiagnosticOutput>,
     },
     Package {
         command: &'static str,
@@ -243,6 +245,29 @@ struct CandidateOutput {
     eligible: bool,
     recognized_pattern: bool,
     rejection_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ReleaseDiagnosticOutput {
+    kind: ReleaseDiagnosticKind,
+    target: HostTarget,
+    message: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    unsupported_installers: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    sidecar_assets: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remediation: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+enum ReleaseDiagnosticKind {
+    #[serde(rename = "no-downloadable-assets")]
+    NoDownloadableAssets,
+    #[serde(rename = "unsupported-installers")]
+    UnsupportedInstallers,
+    #[serde(rename = "target-scoring-remediation")]
+    TargetScoringRemediation,
 }
 
 #[derive(Debug, Serialize)]
@@ -1122,7 +1147,7 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
             host: spec.host.clone(),
             path: spec.path.clone(),
             requested_version: spec.version.clone(),
-            target,
+            target: target.clone(),
             release_api,
             release: selection.release.tag,
             release_decision: selection.decision,
@@ -1131,6 +1156,7 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
                 .map(|selection| selected_asset_output(&selection.selected))
                 .transpose()?,
             candidates: all_decisions.iter().map(candidate_output).collect(),
+            release_diagnostics: release_diagnostics(&all_decisions, &target),
         });
     }
 
@@ -1204,10 +1230,43 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
 }
 
 fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget) -> Vec<String> {
+    release_diagnostics(decisions, target)
+        .into_iter()
+        .flat_map(|diagnostic| {
+            let mut lines = vec![format!("diagnostic: {}", diagnostic.message)];
+            if !diagnostic.unsupported_installers.is_empty() {
+                lines.push(format!(
+                    "unsupported_installers: {}",
+                    diagnostic.unsupported_installers.join(", ")
+                ));
+            }
+            if !diagnostic.sidecar_assets.is_empty() {
+                lines.push(format!(
+                    "sidecar_assets: {}",
+                    diagnostic.sidecar_assets.join(", ")
+                ));
+            }
+            if let Some(remediation) = diagnostic.remediation {
+                lines.push(format!("remediation: {remediation}"));
+            }
+            lines
+        })
+        .collect()
+}
+
+fn release_diagnostics(
+    decisions: &[CandidateDecision],
+    target: &HostTarget,
+) -> Vec<ReleaseDiagnosticOutput> {
     if decisions.is_empty() {
-        return vec![
-            "diagnostic: release has no downloadable assets for binpm to score".to_string(),
-        ];
+        return vec![ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::NoDownloadableAssets,
+            target: target.clone(),
+            message: "release has no downloadable assets for binpm to score".to_string(),
+            unsupported_installers: Vec::new(),
+            sidecar_assets: Vec::new(),
+            remediation: None,
+        }];
     }
 
     let installable_count = decisions
@@ -1225,26 +1284,34 @@ fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget
         .map(|decision| decision.asset_name.as_str())
         .collect::<Vec<_>>();
 
-    let mut lines = Vec::new();
+    let mut diagnostics = Vec::new();
     if installable_count == 0 && !desktop_packages.is_empty() {
-        lines.push(format!(
-            "diagnostic: release only provides unsupported desktop or system installer packages \
-             for target {}; binpm v1 installs portable archives or bare executables by default",
-            target.key()
-        ));
-        lines.push(format!(
-            "unsupported_installers: {}",
-            desktop_packages.join(", ")
-        ));
-        lines.push(
-            "remediation: ask upstream for a portable archive or bare executable asset; installer \
-             package installation is not enabled by default"
-                .to_string(),
-        );
-    }
-
-    if installable_count == 0 && !sidecars.is_empty() && !desktop_packages.is_empty() {
-        lines.push(format!("sidecar_assets: {}", sidecars.join(", ")));
+        diagnostics.push(ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::UnsupportedInstallers,
+            target: target.clone(),
+            message: format!(
+                "release only provides unsupported desktop or system installer packages for \
+                 target {}; binpm v1 installs portable archives or bare executables by default",
+                target.key()
+            ),
+            unsupported_installers: desktop_packages
+                .iter()
+                .map(|asset_name| (*asset_name).to_string())
+                .collect(),
+            sidecar_assets: if sidecars.is_empty() {
+                Vec::new()
+            } else {
+                sidecars
+                    .iter()
+                    .map(|asset_name| (*asset_name).to_string())
+                    .collect()
+            },
+            remediation: Some(
+                "ask upstream for a portable archive or bare executable asset; installer package \
+                 installation is not enabled by default"
+                    .to_string(),
+            ),
+        });
     }
 
     if decisions.iter().any(|decision| {
@@ -1252,15 +1319,23 @@ fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget
             reason.contains("linux musl target requires an explicit libc signal")
         })
     }) {
-        lines.push(
-            "remediation: Linux musl releases should include musl, static, portable, universal, \
-             or any in compatible asset names; use the override snippet only when you have \
-             verified compatibility"
+        diagnostics.push(ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::TargetScoringRemediation,
+            target: target.clone(),
+            message: "target-specific release assets need clearer libc compatibility signals"
                 .to_string(),
-        );
+            unsupported_installers: Vec::new(),
+            sidecar_assets: Vec::new(),
+            remediation: Some(
+                "Linux musl releases should include musl, static, portable, universal, or any in \
+                 compatible asset names; use the override snippet only when you have verified \
+                 compatibility"
+                    .to_string(),
+            ),
+        });
     }
 
-    lines
+    diagnostics
 }
 
 fn override_snippet_candidate(decisions: &[CandidateDecision]) -> Option<&CandidateDecision> {
@@ -3291,7 +3366,7 @@ fn print_json(value: &impl Serialize) -> Result<i32> {
 
 fn verify_check_output(
     cmd: String,
-    target: Option<String>,
+    target: Option<HostTarget>,
     record: &PackageRecord,
 ) -> VerifyCheckOutput {
     VerifyCheckOutput {
@@ -4795,7 +4870,7 @@ fn verify_lockfile_records(
             locked.insert(cmd.clone());
             checks.push(verify_check_output(
                 cmd.clone(),
-                Some(target_key.clone()),
+                Some(target.clone()),
                 &record,
             ));
             if !output.is_json() {
@@ -5187,17 +5262,18 @@ mod tests {
         normalize_bin_selection, override_snippet_candidate, package_record_output,
         parse_manifest_source, parse_manifest_tool_source, project_root_from,
         read_archive_selected_binary, record_matches_current_provider_digest,
-        release_diagnostic_lines, remove_global_tool_from_paths, remove_local_manifest_orphans,
-        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
-        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
-        shell_path, shell_quote, snapshot_cache_metadata, source_install_scope,
-        target_override_snippet, update_manifest_tool_source, validate_locked_record_artifact,
-        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries, verify_check_output,
-        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
-        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, OutputMode, RuntimeToolState,
+        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
+        remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
+        restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
+        selected_asset_display_url, shell_path, shell_quote, snapshot_cache_metadata,
+        source_install_scope, target_override_snippet, update_manifest_tool_source,
+        validate_locked_record_artifact, validate_locked_record_current_asset,
+        validate_locked_record_current_provider_digest, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verify_check_output, verify_installed_binary_contents,
+        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_regular,
+        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, OutputMode, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -6162,14 +6238,13 @@ mod tests {
         let mut record = package_record();
         mark_github_verified(&mut record);
 
-        let check = verify_check_output(
-            "tool".to_string(),
-            Some("linux-x86_64-gnu".to_string()),
-            &record,
-        );
+        let check = verify_check_output("tool".to_string(), Some(linux_target()), &record);
 
         assert_eq!(check.cmd, "tool");
-        assert_eq!(check.target.as_deref(), Some("linux-x86_64-gnu"));
+        let target = check.target.expect("target");
+        assert_eq!(target.os, TargetOs::Linux);
+        assert_eq!(target.arch, TargetArch::X86_64);
+        assert_eq!(target.libc, TargetLibc::Gnu);
         assert_eq!(check.checksum_source, ChecksumSource::GitHubDigest);
         assert_eq!(check.verification, VerificationState::Verified);
     }
@@ -7434,6 +7509,43 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line.contains("portable archive or bare executable")));
+    }
+
+    #[test]
+    fn explain_json_diagnostics_preserve_installer_remediation() {
+        let target = linux_target();
+        let assets = [
+            ReleaseAsset {
+                name: "Tool-1.0.0.dmg".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/Tool.dmg".to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+            ReleaseAsset {
+                name: "Tool-1.0.0.msi".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/Tool.msi".to_string(),
+                provider_url: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+        ];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+        let diagnostics = release_diagnostics(&decisions, &target);
+        let payload = serde_json::to_value(&diagnostics[0]).expect("serialize diagnostic");
+
+        assert_eq!(payload["kind"], "unsupported-installers");
+        assert_eq!(payload["target"]["os"], "linux");
+        assert_eq!(payload["target"]["arch"], "x86_64");
+        assert_eq!(payload["target"]["libc"], "gnu");
+        assert_eq!(payload["unsupported_installers"][0], "Tool-1.0.0.dmg");
+        assert_eq!(payload["unsupported_installers"][1], "Tool-1.0.0.msi");
+        assert!(payload["remediation"]
+            .as_str()
+            .expect("remediation")
+            .contains("portable archive or bare executable"));
     }
 
     #[test]
