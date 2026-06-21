@@ -47,6 +47,7 @@
 - `docs/project-<id>.md`: Canonical project index docs (ownership + domain-doc index + cross-domain invariants).
 - `docs/<domain>-<project-or-component>-<contract>.md`: Canonical domain contract docs (`apps`, `cmds`, `servers`, `crates`, `protos`, `packages`).
 - `docs/project-binpm.md`: binpm binary package manager project index.
+- `docs/apps-binpm-docs-foundation.md`: binpm Rspress documentation app, route, validation, and Cloudflare Pages deployment contract.
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
 - `docs/project-nodeup.md`: Node.js version manager project index.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
@@ -87,7 +88,7 @@ enum ProjectId {
 ### Project Domain Ownership
 
 - `nodeup` -> `crates/nodeup`, `apps/nodeup-docs`
-- `binpm` -> `crates/binpm`
+- `binpm` -> `crates/binpm`, `apps/binpm-docs`
 - `with-watch` -> `crates/with-watch`
 - `cargo-mono` -> `crates/cargo-mono`
 - `derun` -> `cmds/derun`
