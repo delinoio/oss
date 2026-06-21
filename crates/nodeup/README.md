@@ -21,7 +21,13 @@ Package manager:
 
 Direct installers:
 
-Install `cosign` first and leave it on `PATH`; the installers require it to verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`).
+Install `cosign` first and leave it on `PATH`; the installers require it to verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`). Missing `cosign` is reported before release artifact download as a prerequisite failure. Use Homebrew or `cargo-binstall` instead if you do not want to manage that prerequisite directly.
+
+```bash
+brew install cosign
+```
+
+On Linux without Homebrew, follow the Sigstore cosign installation guide. On Windows, use `winget install sigstore.cosign` or `scoop install cosign`.
 
 macOS and Linux:
 
@@ -68,6 +74,17 @@ Canonical in-repo installer paths for maintainer workflows:
 ```bash
 cargo binstall nodeup --no-confirm
 ```
+
+`cargo-binstall` resolves first-party GitHub Release assets only:
+
+- `nodeup-linux-amd64.tar.gz`
+- `nodeup-linux-arm64.tar.gz`
+- `nodeup-darwin-amd64.tar.gz`
+- `nodeup-darwin-arm64.tar.gz`
+- `nodeup-windows-amd64.zip`
+- `nodeup-windows-arm64.zip`
+
+Third-party quick-install and compile fallback strategies are disabled. Unsupported hosts or missing release assets fail instead of compiling from source; use Homebrew, the direct installer with `cosign`, or a supported x64/arm64 host with a complete Nodeup release.
 
 GitHub Actions:
 

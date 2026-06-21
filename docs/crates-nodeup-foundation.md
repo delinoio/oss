@@ -27,9 +27,10 @@
 - Unsupported host failures must use `unsupported-platform`, include the supported pairs `macos/x64`, `macos/arm64`, `linux/x64`, `linux/arm64`, `windows/x64`, and `windows/arm64`, and guide users to an x64/arm64 host or supported CI image.
 - Homebrew installation must consume prebuilt release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - Direct install scripts must verify release artifacts with `SHA256SUMS` and Sigstore bundle sidecars (`<artifact>.sigstore.json`) via `cosign verify-blob --bundle`.
+- Direct install scripts must fail before release lookup or artifact download when `cosign` is missing, describe the missing prerequisite with OS-specific setup guidance, and keep that message distinct from checksum mismatch or Sigstore verification failure.
 - Direct installers must remain available at `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1`.
 - Public direct-installer docs must keep remote POSIX and PowerShell examples on first-party `delinoio/oss` raw GitHub URLs for those same scripts; third-party installer URLs and verification-disabling examples are out of scope.
-- `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies.
+- `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies; docs must explain that unsupported hosts and missing first-party assets fail instead of using source compilation or third-party binary fallback.
 - Runtime archive selection must remain enum-driven: `tar.xz` for `darwin/*` and `linux/*`, `zip` for `windows/*`.
 - Windows runtime archives that unpack without a top-level directory must be normalized into the stable `bin/` runtime layout used by nodeup execution and linking flows.
 - Linked runtime validation must require a runnable `node` command during `toolchain link` and active-runtime availability checks.
