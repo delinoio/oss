@@ -26,6 +26,7 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - `yarn` and `pnpm` npm-exec delegation must be visible in human output, JSON output, and planning logs, including whether the package spec is pinned or an unpinned fallback.
 - `nodeup self uninstall` cleanup boundaries are data/cache/config only; binary, shims, and shell profile/PATH cleanup must remain manual and visible in human and JSON output.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.
+- Invalid shell completion subcommand scopes must be rejected with hints that point back to the nearest valid top-level scope.
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.
 - `nodeup show color` must remain available as the color diagnostic command for human stdout, human stderr, and log color decisions.
 - `--output json` must render both application-level errors and clap parser failures as JSON error envelopes on stderr, except raw completion script output remains unwrapped on success.

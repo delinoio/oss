@@ -57,7 +57,8 @@ fn run() -> Result<i32, RunError> {
         return Ok(exit_code);
     }
 
-    let cli = Cli::try_parse().map_err(RunError::Clap)?;
+    let cli = Cli::try_parse_from(normalized_management_args(std::env::args_os()))
+        .map_err(RunError::Clap)?;
     commands::execute(cli, &app).map_err(RunError::Nodeup)
 }
 
@@ -120,6 +121,107 @@ where
     }
 
     management_output_preferences_from_management_args(args)
+}
+
+fn normalized_management_args<I>(args: I) -> Vec<OsString>
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let args = args.into_iter().collect::<Vec<_>>();
+    let Some(command_index) = management_subcommand_index(&args) else {
+        return args;
+    };
+
+    if args[command_index] == "completions" {
+        return normalize_completion_global_flags(args, command_index);
+    }
+
+    args
+}
+
+fn management_subcommand_index(args: &[OsString]) -> Option<usize> {
+    let mut output_value_expected = false;
+    let mut color_value_expected = false;
+
+    for (index, arg) in args.iter().enumerate().skip(1) {
+        let Some(arg) = arg.to_str() else {
+            output_value_expected = false;
+            color_value_expected = false;
+            continue;
+        };
+
+        if output_value_expected {
+            output_value_expected = false;
+            continue;
+        }
+
+        if color_value_expected {
+            color_value_expected = false;
+            continue;
+        }
+
+        if arg == "--output" {
+            output_value_expected = true;
+            continue;
+        }
+
+        if arg == "--color" {
+            color_value_expected = true;
+            continue;
+        }
+
+        if arg.starts_with('-') {
+            continue;
+        }
+
+        return Some(index);
+    }
+
+    None
+}
+
+fn normalize_completion_global_flags(args: Vec<OsString>, command_index: usize) -> Vec<OsString> {
+    let mut normalized = args[..=command_index].to_vec();
+    let mut global_flags = Vec::new();
+    let mut positional_args = Vec::new();
+    let mut iter = args.into_iter().skip(command_index + 1).peekable();
+
+    while let Some(arg) = iter.next() {
+        let Some(raw_arg) = arg.to_str() else {
+            positional_args.push(arg);
+            continue;
+        };
+
+        if matches!(raw_arg, "--help" | "-h") {
+            global_flags.push(arg);
+            continue;
+        }
+
+        if raw_arg == "--" {
+            positional_args.push(arg);
+            positional_args.extend(iter);
+            break;
+        }
+
+        if raw_arg == "--output" || raw_arg == "--color" {
+            global_flags.push(arg);
+            if let Some(value) = iter.next() {
+                global_flags.push(value);
+            }
+            continue;
+        }
+
+        if raw_arg.starts_with("--output=") || raw_arg.starts_with("--color=") {
+            global_flags.push(arg);
+            continue;
+        }
+
+        positional_args.push(arg);
+    }
+
+    normalized.extend(global_flags);
+    normalized.extend(positional_args);
+    normalized
 }
 
 fn logging_context_from_args<I>(args: I) -> logging::LoggingContext
@@ -271,6 +373,7 @@ mod tests {
 
     use super::{
         color_mode_from_args, json_error_output_requested_from_args, logging_context_from_args,
+        normalized_management_args,
     };
 
     fn os_args(args: &[&str]) -> Vec<std::ffi::OsString> {
@@ -361,6 +464,80 @@ mod tests {
             "--output",
             "json",
         ])));
+    }
+
+    #[test]
+    fn completions_global_flags_after_scope_are_normalized_before_positionals() {
+        assert_eq!(
+            normalized_management_args(os_args(&[
+                "nodeup",
+                "completions",
+                "bash",
+                "shim",
+                "--output",
+                "json",
+                "--help",
+            ])),
+            os_args(&[
+                "nodeup",
+                "completions",
+                "--output",
+                "json",
+                "--help",
+                "bash",
+                "shim",
+            ])
+        );
+    }
+
+    #[test]
+    fn completions_unknown_option_like_scope_tokens_are_not_normalized() {
+        assert_eq!(
+            normalized_management_args(os_args(&[
+                "nodeup",
+                "--output",
+                "json",
+                "completions",
+                "bash",
+                "override",
+                "set",
+                "--path",
+            ])),
+            os_args(&[
+                "nodeup",
+                "--output",
+                "json",
+                "completions",
+                "bash",
+                "override",
+                "set",
+                "--path",
+            ])
+        );
+    }
+
+    #[test]
+    fn completions_escaped_option_like_scope_tokens_are_not_normalized() {
+        assert_eq!(
+            normalized_management_args(os_args(&[
+                "nodeup",
+                "--output",
+                "json",
+                "completions",
+                "bash",
+                "--",
+                "--help",
+            ])),
+            os_args(&[
+                "nodeup",
+                "--output",
+                "json",
+                "completions",
+                "bash",
+                "--",
+                "--help",
+            ])
+        );
     }
 
     #[test]

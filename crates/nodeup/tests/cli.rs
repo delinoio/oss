@@ -447,9 +447,9 @@ fn json_parser_errors_emit_error_envelopes() {
 
     let unexpected_extra_arg = env
         .command()
-        .args(["--output", "json", "completions", "bash", "show", "extra"])
+        .args(["--output", "json", "show", "home", "extra"])
         .output()
-        .expect("nodeup --output json completions extra argument");
+        .expect("nodeup --output json show home extra argument");
     assert_json_parser_error(unexpected_extra_arg, "unexpected argument 'extra'");
 }
 
@@ -2079,6 +2079,39 @@ fn json_completions_success_outputs_raw_script() {
 
 #[test]
 #[serial]
+fn completions_accepts_global_output_after_shell() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "--output", "json"])
+        .output()
+        .expect("completions bash --output json");
+
+    assert!(output.status.success());
+    assert!(!output.stdout.is_empty());
+    assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completions_accepts_help_after_shell() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "--help"])
+        .output()
+        .expect("completions bash --help");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Generate shell completion scripts"));
+}
+
+#[test]
+#[serial]
 fn completions_accepts_valid_top_level_scope() {
     let env = TestEnv::new();
 
@@ -2091,6 +2124,39 @@ fn completions_accepts_valid_top_level_scope() {
     assert!(output.status.success());
     assert!(!output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completions_accepts_global_output_after_scope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "shim", "--output", "json"])
+        .output()
+        .expect("completions bash shim --output json");
+
+    assert!(output.status.success());
+    assert!(!output.stdout.is_empty());
+    assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completions_accepts_help_after_scope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "shim", "--help"])
+        .output()
+        .expect("completions bash shim --help");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Generate shell completion scripts"));
 }
 
 #[test]
@@ -2137,6 +2203,126 @@ fn json_completions_invalid_scope_emits_invalid_input_error_envelope() {
         .as_str()
         .unwrap()
         .contains("Unsupported command scope"));
+    assert_eq!(
+        payload["diagnostics"]["allowed_scope_category"],
+        "top-level-command"
+    );
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "invalid-scope");
+}
+
+#[test]
+#[serial]
+fn completions_subcommand_scope_suggests_top_level_scope() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["completions", "bash", "toolchain", "install"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "Unsupported command scope 'toolchain install'",
+        ))
+        .stderr(predicates::str::contains(
+            "Only top-level command scopes are supported",
+        ))
+        .stderr(predicates::str::contains(
+            "nodeup completions bash toolchain",
+        ));
+}
+
+#[test]
+#[serial]
+fn json_completions_subcommand_scope_emits_scope_diagnostics() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "completions", "zsh", "override", "set"])
+        .output()
+        .expect("completions --output json invalid subcommand scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope 'override set'"));
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "override set");
+    assert_eq!(
+        payload["diagnostics"]["allowed_scope_category"],
+        "top-level-command"
+    );
+    assert_eq!(payload["diagnostics"]["suggested_scope"], "override");
+    assert!(payload["diagnostics"]["allowed_scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|scope| scope == "override"));
+}
+
+#[test]
+#[serial]
+fn json_completions_subcommand_scope_captures_option_like_tokens() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "completions",
+            "bash",
+            "override",
+            "set",
+            "--path",
+        ])
+        .output()
+        .expect("completions --output json invalid option-like scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope 'override set --path'"));
+    assert_eq!(
+        payload["diagnostics"]["rejected_scope"],
+        "override set --path"
+    );
+    assert_eq!(payload["diagnostics"]["suggested_scope"], "override");
+}
+
+#[test]
+#[serial]
+fn json_completions_escaped_help_scope_is_rejected() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "completions", "bash", "--", "--help"])
+        .output()
+        .expect("completions --output json escaped help scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope '--help'"));
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "--help");
 }
 
 #[test]
