@@ -151,12 +151,64 @@ fn split_version<'source>(
 ) -> Result<(&'source str, Option<String>), BinpmError> {
     match remainder.split_once('@') {
         Some((source, version)) if !source.is_empty() && !version.is_empty() => {
+            validate_version_selector(raw, version)?;
             Ok((source, Some(version.to_string())))
         }
         Some(("", _)) => Err(invalid_source(raw, "source path cannot be empty")),
         Some((_, "")) => Err(invalid_source(raw, "source version cannot be empty")),
         _ => Ok((remainder, None)),
     }
+}
+
+pub(crate) fn validate_version_selector(raw: &str, version: &str) -> Result<(), BinpmError> {
+    if version == "latest" {
+        return Err(unsupported_version_selector(
+            raw,
+            "`@latest` is not supported; omit `@version` to select the latest stable release",
+        ));
+    }
+
+    if matches!(
+        version,
+        "stable" | "beta" | "alpha" | "nightly" | "canary" | "dev" | "edge" | "next"
+    ) {
+        return Err(unsupported_version_selector(
+            raw,
+            "channel selectors are not supported; use an exact release tag or omit `@version` for \
+             the latest stable release",
+        ));
+    }
+
+    if version.chars().all(|character| character.is_ascii_digit()) && version.len() <= 3 {
+        return Err(unsupported_version_selector(
+            raw,
+            "major-version pins such as `@1` are not supported; use an exact release tag such as \
+             `@v1` when the upstream release tag is literally `v1`",
+        ));
+    }
+
+    if looks_like_semver_range(version) {
+        return Err(unsupported_version_selector(
+            raw,
+            "semver ranges are not supported; use an exact release tag or omit `@version` for the \
+             latest stable release",
+        ));
+    }
+
+    Ok(())
+}
+
+fn looks_like_semver_range(version: &str) -> bool {
+    version.starts_with(['^', '~', '<', '>', '=', '*'])
+        || version.contains("||")
+        || version.contains(" - ")
+        || version
+            .split(['.', '-'])
+            .any(|segment| matches!(segment, "x" | "X" | "*"))
+}
+
+fn unsupported_version_selector(raw: &str, message: impl Into<String>) -> BinpmError {
+    invalid_source(raw, message)
 }
 
 fn path_segments<'a>(raw: &str, path: &'a str) -> Result<Vec<&'a str>, BinpmError> {
@@ -309,6 +361,7 @@ impl TargetArch {
             "i686" => Ok(Self::I686),
             "x86" if target_triple.is_some_and(is_i686_target_triple) => Ok(Self::I686),
             "arm" if target_triple.is_some_and(is_armv7_target_triple) => Ok(Self::Armv7),
+            "arm" => Err(unsupported_arm_current_architecture(target_triple)),
             raw => Err(BinpmError::UnsupportedTargetComponent {
                 component: "architecture",
                 raw: raw.to_string(),
@@ -321,7 +374,7 @@ impl TargetArch {
             "x86_64" | "amd64" | "x64" => Ok(Self::X86_64),
             "aarch64" | "arm64" => Ok(Self::Aarch64),
             "i686" | "i386" | "x86" | "ia32" => Ok(Self::I686),
-            "armv7" => Ok(Self::Armv7),
+            "armv7" | "armv7l" | "armhf" => Ok(Self::Armv7),
             _ => Err(BinpmError::UnsupportedTargetComponent {
                 component: "architecture",
                 raw: raw.to_string(),
@@ -336,6 +389,23 @@ fn is_i686_target_triple(target_triple: &str) -> bool {
 
 fn is_armv7_target_triple(target_triple: &str) -> bool {
     target_triple.starts_with("armv7")
+}
+
+fn unsupported_arm_current_architecture(target_triple: Option<&str>) -> BinpmError {
+    let raw = match target_triple {
+        Some(target_triple) => format!(
+            "arm (target triple: {target_triple}; accepted armv7 host triples must start with \
+             armv7-; accepted target names: linux-armv7-gnu, linux-armv7-musl, linux-armv7-any)"
+        ),
+        None => "arm (target triple unavailable; accepted armv7 host triples must start with \
+                 armv7-; accepted target names: linux-armv7-gnu, linux-armv7-musl, \
+                 linux-armv7-any)"
+            .to_string(),
+    };
+    BinpmError::UnsupportedTargetComponent {
+        component: "architecture",
+        raw,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -507,6 +577,58 @@ mod tests {
     }
 
     #[test]
+    fn rejects_latest_selector_with_omitted_version_hint() {
+        let error = SourceSpec::from_str("github:owner/repo@latest").expect_err("latest");
+
+        match error {
+            BinpmError::InvalidSourceSpec { raw, message } => {
+                assert_eq!(raw, "github:owner/repo@latest");
+                assert!(message.contains("`@latest` is not supported"));
+                assert!(message.contains("omit `@version`"));
+            }
+            other => panic!("expected InvalidSourceSpec, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_range_channel_and_major_pin_selectors() {
+        for (raw, expected) in [
+            ("github:owner/repo@^1", "semver ranges are not supported"),
+            ("github:owner/repo@1.x", "semver ranges are not supported"),
+            (
+                "github:owner/repo@beta",
+                "channel selectors are not supported",
+            ),
+            (
+                "github:owner/repo@1",
+                "major-version pins such as `@1` are not supported",
+            ),
+        ] {
+            match SourceSpec::from_str(raw).expect_err("unsupported selector") {
+                BinpmError::InvalidSourceSpec {
+                    raw: error_raw,
+                    message,
+                } => {
+                    assert_eq!(error_raw, raw);
+                    assert!(message.contains(expected), "{message}");
+                }
+                other => panic!("expected InvalidSourceSpec, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn preserves_exact_tag_forms_that_do_not_match_unsupported_selectors() {
+        let v1 = SourceSpec::from_str("github:owner/repo@v1").expect("v1 tag");
+        let release = SourceSpec::from_str("github:owner/repo@release-2026.06").expect("tag");
+        let numeric_date = SourceSpec::from_str("github:owner/repo@20240621").expect("tag");
+
+        assert_eq!(v1.version.as_deref(), Some("v1"));
+        assert_eq!(release.version.as_deref(), Some("release-2026.06"));
+        assert_eq!(numeric_date.version.as_deref(), Some("20240621"));
+    }
+
+    #[test]
     fn rejects_empty_source_path_segments() {
         for raw in [
             "github:/owner/repo",
@@ -551,13 +673,17 @@ mod tests {
         assert_eq!(target.arch, TargetArch::Aarch64);
         assert_eq!(target.libc, TargetLibc::Any);
         assert_eq!(target.key(), "darwin-aarch64-any");
+
+        let armv7 = HostTarget::from_str("linux-armhf-gnu").expect("armv7 alias");
+        assert_eq!(armv7.arch, TargetArch::Armv7);
+        assert_eq!(armv7.key(), "linux-armv7-gnu");
     }
 
     #[test]
     fn rejects_unsupported_current_os_without_linux_fallback() {
         let error = TargetOs::from_current("openbsd").expect_err("unsupported os");
 
-        assert_unsupported_component(error, "os", "openbsd");
+        assert_unsupported_component_raw(error, "os", "openbsd");
     }
 
     #[test]
@@ -565,14 +691,17 @@ mod tests {
         let error =
             TargetArch::from_current_cfg("riscv64", None).expect_err("unsupported architecture");
 
-        assert_unsupported_component(error, "architecture", "riscv64");
+        assert_unsupported_component_raw(error, "architecture", "riscv64");
     }
 
     #[test]
     fn rejects_ambiguous_current_arm_arch() {
         let error = TargetArch::from_current_cfg("arm", None).expect_err("ambiguous arm");
 
-        assert_unsupported_component(error, "architecture", "arm");
+        let raw = assert_unsupported_component(error, "architecture");
+        assert!(raw.contains("target triple unavailable"));
+        assert!(raw.contains("accepted armv7 host triples must start with armv7-"));
+        assert!(raw.contains("linux-armv7-gnu"));
     }
 
     #[test]
@@ -580,14 +709,17 @@ mod tests {
         let error = TargetArch::from_current_cfg("arm", Some("arm-unknown-linux-gnueabihf"))
             .expect_err("ambiguous arm eabihf");
 
-        assert_unsupported_component(error, "architecture", "arm");
+        let raw = assert_unsupported_component(error, "architecture");
+        assert!(raw.contains("target triple: arm-unknown-linux-gnueabihf"));
+        assert!(raw.contains("accepted armv7 host triples must start with armv7-"));
+        assert!(raw.contains("linux-armv7-musl"));
     }
 
     #[test]
     fn rejects_ambiguous_current_x86_arch() {
         let error = TargetArch::from_current_cfg("x86", None).expect_err("ambiguous x86");
 
-        assert_unsupported_component(error, "architecture", "x86");
+        assert_unsupported_component_raw(error, "architecture", "x86");
     }
 
     #[test]
@@ -595,7 +727,7 @@ mod tests {
         let error = TargetArch::from_current_cfg("x86", Some("i586-unknown-linux-gnu"))
             .expect_err("unsupported x86 target");
 
-        assert_unsupported_component(error, "architecture", "x86");
+        assert_unsupported_component_raw(error, "architecture", "x86");
     }
 
     #[test]
@@ -664,15 +796,20 @@ mod tests {
         }
     }
 
-    fn assert_unsupported_component(
+    fn assert_unsupported_component_raw(
         error: BinpmError,
         expected_component: &str,
         expected_raw: &str,
     ) {
+        let raw = assert_unsupported_component(error, expected_component);
+        assert_eq!(raw, expected_raw);
+    }
+
+    fn assert_unsupported_component(error: BinpmError, expected_component: &str) -> String {
         match error {
             BinpmError::UnsupportedTargetComponent { component, raw } => {
                 assert_eq!(component, expected_component);
-                assert_eq!(raw, expected_raw);
+                raw
             }
             other => panic!("expected UnsupportedTargetComponent, got {other:?}"),
         }

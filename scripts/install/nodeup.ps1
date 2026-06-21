@@ -10,6 +10,8 @@ $ErrorActionPreference = "Stop"
 $Repo = "delinoio/oss"
 $TagPrefix = "nodeup@v"
 $WorkflowIdentityPattern = "^https://github.com/delinoio/oss/.github/workflows/release-nodeup.yml@"
+$SupportedPlatforms = "macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64"
+$UnsupportedPlatformHint = "Use an x64/arm64 host or a supported CI image: macOS x64/arm64, Linux x64/arm64, or Windows x64/arm64."
 
 function Resolve-LatestTag {
   $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=200"
@@ -56,7 +58,7 @@ function Download-Bundle {
   )
 
   try {
-    Invoke-WebRequest -Uri "$BaseUrl/$AssetName.sigstore.json" -OutFile $BundlePath
+    Invoke-WebRequest -Uri "$BaseUrl/$AssetName.sigstore.json" -OutFile $BundlePath -UseBasicParsing
   }
   catch {
     throw "[install.nodeup] direct installs require releases published with Sigstore bundle sidecars"
@@ -83,15 +85,48 @@ function Verify-Bundle {
   }
 }
 
-function Install-Direct {
-  $tag = Resolve-Tag
-  $baseUrl = "https://github.com/$Repo/releases/download/$tag"
-  $architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+function Get-DirectPlatform {
+  $architecture = if ($env:NODEUP_INSTALL_TEST_ARCHITECTURE) {
+    $env:NODEUP_INSTALL_TEST_ARCHITECTURE.ToLowerInvariant()
+  }
+  else {
+    [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+  }
+
   $assetArch = switch ($architecture) {
     "x64" { "amd64" }
+    "x86_64" { "amd64" }
+    "amd64" { "amd64" }
     "arm64" { "arm64" }
-    default { throw "[install.nodeup] unsupported Windows architecture: $architecture" }
+    "aarch64" { "arm64" }
+    "x86" {
+      throw "[install.nodeup] unsupported host platform for direct installation: os=windows, arch=$architecture. Supported platforms: $SupportedPlatforms; x86 hosts are unsupported. Hint: $UnsupportedPlatformHint"
+    }
+    "i386" {
+      throw "[install.nodeup] unsupported host platform for direct installation: os=windows, arch=$architecture. Supported platforms: $SupportedPlatforms; x86 hosts are unsupported. Hint: $UnsupportedPlatformHint"
+    }
+    "i686" {
+      throw "[install.nodeup] unsupported host platform for direct installation: os=windows, arch=$architecture. Supported platforms: $SupportedPlatforms; x86 hosts are unsupported. Hint: $UnsupportedPlatformHint"
+    }
+    "ia32" {
+      throw "[install.nodeup] unsupported host platform for direct installation: os=windows, arch=$architecture. Supported platforms: $SupportedPlatforms; x86 hosts are unsupported. Hint: $UnsupportedPlatformHint"
+    }
+    default {
+      throw "[install.nodeup] unsupported host platform for direct installation: os=windows, arch=$architecture. Supported platforms: $SupportedPlatforms; x86 hosts are unsupported. Hint: $UnsupportedPlatformHint"
+    }
   }
+
+  return @{
+    AssetArch = $assetArch
+    Architecture = $architecture
+  }
+}
+
+function Install-Direct {
+  $platform = Get-DirectPlatform
+  $tag = Resolve-Tag
+  $baseUrl = "https://github.com/$Repo/releases/download/$tag"
+  $assetArch = $platform.AssetArch
   $assetName = "nodeup-windows-$assetArch.zip"
 
   $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("nodeup-install-" + [System.Guid]::NewGuid().ToString("N"))
@@ -103,8 +138,8 @@ function Install-Direct {
     $bundlePath = "$assetPath.sigstore.json"
 
     Write-Host "[install.nodeup] downloading $assetName"
-    Invoke-WebRequest -Uri "$baseUrl/$assetName" -OutFile $assetPath
-    Invoke-WebRequest -Uri "$baseUrl/SHA256SUMS" -OutFile $sumsPath
+    Invoke-WebRequest -Uri "$baseUrl/$assetName" -OutFile $assetPath -UseBasicParsing
+    Invoke-WebRequest -Uri "$baseUrl/SHA256SUMS" -OutFile $sumsPath -UseBasicParsing
     Download-Bundle -BaseUrl $baseUrl -AssetName $assetName -BundlePath $bundlePath
 
     Verify-Checksum -FilePath $assetPath -Sha256SumsPath $sumsPath -AssetName $assetName

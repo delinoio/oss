@@ -20,9 +20,12 @@
 - Tracked exact-version selectors must be stored and processed by their canonical `v<semver>` identity, so `22.1.0` and `v22.1.0` are the same tracked selector.
 - `nodeup update` treats exact-version selectors as immutable pins and reports them with `skipped-exact-version` rather than installing or reporting a newer runtime for that selector.
 - Host support must include `macOS`, `Linux`, and `Windows` x64/arm64, while x86 hosts remain unsupported.
+- Direct installers, runtime installation, and shim dispatch must detect unsupported x86 hosts before release asset download or delegated command planning.
+- Unsupported host failures must use `unsupported-platform`, include the supported pairs `macos/x64`, `macos/arm64`, `linux/x64`, `linux/arm64`, `windows/x64`, and `windows/arm64`, and guide users to an x64/arm64 host or supported CI image.
 - Homebrew installation must consume prebuilt release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - Direct install scripts must verify release artifacts with `SHA256SUMS` and Sigstore bundle sidecars (`<artifact>.sigstore.json`) via `cosign verify-blob --bundle`.
 - Direct installers must remain available at `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1`.
+- Public direct-installer docs must keep remote POSIX and PowerShell examples on first-party `delinoio/oss` raw GitHub URLs for those same scripts; third-party installer URLs and verification-disabling examples are out of scope.
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies.
 - Runtime archive selection must remain enum-driven: `tar.xz` for `darwin/*` and `linux/*`, `zip` for `windows/*`.
 - Windows runtime archives that unpack without a top-level directory must be normalized into the stable `bin/` runtime layout used by nodeup execution and linking flows.
@@ -35,9 +38,11 @@
 - `toolchain install` must reject linked-name selectors before linked-runtime lookup; the error kind must be `invalid-input` whether or not a linked runtime by that name exists.
 - Human output styling must support `--color auto|always|never` and `NODEUP_COLOR=auto|always|never`.
 - Human output color precedence must remain `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
+- `nodeup show color` must report effective color decisions for human stdout, human stderr, and logs, including ignored invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values.
 - User-facing `NodeupError` messages must follow the format `<cause>. Hint: <next action>`.
 - `NodeupError` cause text should include deterministic key-value diagnostics when available (for example `selector`, `runtime`, `path`, `url`, `status`, `attempt`).
-- JSON error envelopes must keep the stable shape `kind`, `message`, and `exit_code` while allowing message text improvements.
+- JSON error envelopes must keep the stable fields `kind`, `message`, and `exit_code` while allowing optional structured `diagnostics`.
+- Unsupported platform JSON diagnostics must be deterministic and include `os`, `architecture`, `platform_source`, optional `forced_platform`, and `supported_platforms`.
 - In `--output json` mode, clap parser failures must emit JSON error envelopes on stderr with no ANSI styling; without `--output json`, parser failures must keep clap's native human output.
 - ANSI styling must never be injected into `--output json` payloads on stdout/stderr.
 - `completions` must generate raw shell completion scripts for `bash`, `zsh`, `fish`, `powershell`, and `elvish`.
@@ -70,12 +75,13 @@
 - Release signing outputs must include `SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json` sidecars; legacy `.sig`/`.pem` sidecars are out of scope for direct installation.
 - Homebrew release automation must render the prebuilt formula from release asset URLs and push tap updates directly to `delinoio/homebrew-tap` `main` with a dedicated tap-write credential.
 - Install docs that choose to describe direct-install flows must keep Bash, PowerShell, `cargo-binstall`, and GitHub Actions usage aligned with the installer scripts and manifest metadata.
+- Direct-install documentation must make `cosign` a prerequisite before remote installer commands and must describe missing `cosign` as a prerequisite failure rather than a verification bypass opportunity.
 - `apps/public-docs` is not required to surface repo-local direct-installer script examples.
 - Completion coverage must include successful script generation, invalid shell/scope validation, and JSON-mode raw output behavior.
-- Output color coverage must include flag/env precedence, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
+- Output color coverage must include flag/env precedence, diagnostic reporting, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
 - Parser-error coverage must include human clap output and JSON envelopes for root, nested subcommand, required argument, conflicting flag, unknown command, and unexpected extra argument failures.
 - `packageManager` coverage must include strict parsing, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, and npm-exec fallback behavior.
-- Runtime install coverage must include `linux-arm64`, `windows-x64`, and `windows-arm64` archive selection and extraction behavior.
+- Runtime install coverage must include `linux-arm64`, `windows-x64`, and `windows-arm64` archive selection and extraction behavior plus unsupported x86 CLI override failures.
 
 ## Dependencies and Integrations
 - Integrates with filesystem runtime shims and remote distribution channels.

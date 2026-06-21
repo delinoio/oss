@@ -40,7 +40,10 @@
 - `public-docs` must remain Mintlify-based unless a documented architecture decision changes it.
 - `public-docs` is an existing documented exception to the default Rsbuild/Rspress-style static-site toolchain and Cloudflare Pages deployment preference.
 - Mintlify page IDs and navigation in `apps/public-docs/docs.json` must stay aligned with `docs/apps-public-docs-foundation.md`.
-- Current public-docs top-level product page IDs are `cargo-mono`, `derun`, and `with-watch`; Nodeup documentation is published through `apps/nodeup-docs`, not `apps/public-docs`.
+- Current public-docs in-site top-level product page IDs are `cargo-mono`, `derun`, and `with-watch`.
+- Nodeup and binpm are major public projects exposed from `apps/public-docs` through external top-level navigation links: Nodeup points to `https://nodeup.delino.io` and binpm points to `https://binpm.delino.io`.
+- The legacy `/nodeup` public-docs route must remain a lightweight handoff page to `https://nodeup.delino.io` for compatibility with previously shared URLs.
+- Do not add or restore in-site `nodeup` or `binpm` guide routes under `apps/public-docs`; their public documentation is owned by `apps/nodeup-docs` and `apps/binpm-docs`.
 - When user-facing documentation behavior changes, update related `apps/public-docs` pages in the same change set.
 
 ### nodeup-docs Rules
@@ -50,6 +53,7 @@
 - `nodeup-docs` canonical production URL is `https://nodeup.delino.io`.
 - Rspress routes and navigation in `apps/nodeup-docs/rspress.config.ts` must stay aligned with `docs/apps-nodeup-docs-foundation.md`.
 - Stable `nodeup-docs` route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
+- Nodeup direct-installer guidance must include copy-pasteable remote POSIX and PowerShell commands that use first-party `delinoio/oss` raw GitHub URLs, keep `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1` visible for maintainer workflows, and present `cosign` as a required prerequisite.
 - When Nodeup user-facing runtime, release, installer, shim, completion, package-manager, or color-control behavior changes, update related `apps/nodeup-docs` pages in the same change set.
 
 ### Testing and Validation

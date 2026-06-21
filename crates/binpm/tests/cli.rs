@@ -649,6 +649,32 @@ fn install_rejects_empty_source_version() {
 }
 
 #[test]
+fn explain_rejects_latest_selector_with_omitted_version_hint() {
+    let mut command = binpm();
+
+    command
+        .args(["explain", "github:owner/repo@latest"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("`@latest` is not supported"))
+        .stderr(predicate::str::contains("omit `@version`"));
+}
+
+#[test]
+fn explain_rejects_semver_range_selector_with_exact_tag_hint() {
+    let mut command = binpm();
+
+    command
+        .args(["explain", "github:owner/repo@^1"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("semver ranges are not supported"))
+        .stderr(predicate::str::contains("use an exact release tag"));
+}
+
+#[test]
 fn local_remove_rejects_corrupt_package_record_with_unsafe_installed_path() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");

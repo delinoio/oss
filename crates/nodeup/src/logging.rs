@@ -1,7 +1,7 @@
 use tracing_subscriber::EnvFilter;
 
-const NODEUP_LOG_COLOR_ENV: &str = "NODEUP_LOG_COLOR";
-const NO_COLOR_ENV: &str = "NO_COLOR";
+pub const NODEUP_LOG_COLOR_ENV: &str = "NODEUP_LOG_COLOR";
+const NO_COLOR_ENV: &str = crate::output_style::NO_COLOR_ENV;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoggingContext {
@@ -40,6 +40,32 @@ fn log_color_enabled() -> bool {
     )
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogColorDecision {
+    pub enabled: bool,
+    pub mode: &'static str,
+    pub source: &'static str,
+    pub no_color_present: bool,
+    pub ignored_nodeup_log_color: Option<String>,
+}
+
+pub fn log_color_decision() -> LogColorDecision {
+    let raw_log_color = std::env::var(NODEUP_LOG_COLOR_ENV).ok();
+    let parsed_log_color = raw_log_color.as_deref().and_then(parse_log_color_mode);
+    let ignored_nodeup_log_color =
+        raw_log_color.filter(|value| parse_log_color_mode(value).is_none());
+    let no_color_present = std::env::var_os(NO_COLOR_ENV).is_some();
+    let (mode, source) = resolve_log_color_mode(parsed_log_color, no_color_present);
+
+    LogColorDecision {
+        enabled: resolve_log_color_enabled_for_mode(parsed_log_color, no_color_present),
+        mode: mode.as_str(),
+        source,
+        no_color_present,
+        ignored_nodeup_log_color,
+    }
+}
+
 fn resolve_log_color_enabled(nodeup_log_color: Option<&str>, no_color: Option<&str>) -> bool {
     match nodeup_log_color.and_then(parse_log_color_mode) {
         Some(LogColorMode::Always) => return true,
@@ -54,11 +80,50 @@ fn resolve_log_color_enabled(nodeup_log_color: Option<&str>, no_color: Option<&s
     true
 }
 
+fn resolve_log_color_mode(
+    nodeup_log_color: Option<LogColorMode>,
+    no_color_present: bool,
+) -> (LogColorMode, &'static str) {
+    match nodeup_log_color {
+        Some(LogColorMode::Always) => (LogColorMode::Always, NODEUP_LOG_COLOR_ENV),
+        Some(LogColorMode::Never) => (LogColorMode::Never, NODEUP_LOG_COLOR_ENV),
+        Some(LogColorMode::Auto) => (LogColorMode::Auto, NODEUP_LOG_COLOR_ENV),
+        None => {
+            if no_color_present {
+                (LogColorMode::Never, NO_COLOR_ENV)
+            } else {
+                (LogColorMode::Always, "default")
+            }
+        }
+    }
+}
+
+fn resolve_log_color_enabled_for_mode(
+    nodeup_log_color: Option<LogColorMode>,
+    no_color_present: bool,
+) -> bool {
+    match nodeup_log_color {
+        Some(LogColorMode::Always) => true,
+        Some(LogColorMode::Never) => false,
+        Some(LogColorMode::Auto) | None => !no_color_present,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LogColorMode {
     Auto,
     Always,
     Never,
+}
+
+impl LogColorMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Always => "always",
+            Self::Never => "never",
+        }
+    }
 }
 
 fn parse_log_color_mode(raw: &str) -> Option<LogColorMode> {

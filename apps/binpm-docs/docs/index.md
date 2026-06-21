@@ -23,3 +23,5 @@ gitlab:<host>/<namespace...>/<project>[@version]
 ```
 
 Direct URLs, registries, and package-manager backends are not accepted source specs.
+
+Explicit source versions must be exact release tags. Omit `@version` to select the latest stable release. `@latest`, SemVer range-like selectors, channel selectors such as `@beta`, and numeric major-version pins such as `@1` are rejected before manifest or lockfile writes.

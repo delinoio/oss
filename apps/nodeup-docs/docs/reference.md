@@ -10,6 +10,7 @@ This page summarizes stable Nodeup contracts. For command syntax, see [Command R
 - `package.json` `packageManager` support is strict for `yarn` and `pnpm`.
 - Shell completions are deterministic for supported shells and top-level command scopes.
 - Human output color precedence is `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
+- `nodeup show color` reports effective human stdout, human stderr, and log color decisions.
 - JSON output never contains ANSI styling.
 
 ## Supported Hosts
@@ -23,7 +24,7 @@ Nodeup supports runtime installation and shim dispatch on:
 - `windows/amd64`
 - `windows/arm64`
 
-x86 hosts are unsupported.
+x86 hosts are unsupported. Direct installers, runtime installation, and shim dispatch report unsupported hosts before selecting missing assets or planning delegated commands. JSON failures use `kind: "unsupported-platform"` and include `os`, `architecture`, `platform_source`, optional `forced_platform`, and the supported platform list.
 
 ## Route Map
 

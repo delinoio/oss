@@ -2347,14 +2347,91 @@ fn checksum_mismatch_fails_install() {
 #[serial]
 fn unsupported_platform_is_reported() {
     let env = TestEnv::new();
-    env.register_index(&[("22.1.0", Some("Jod"))]);
 
     let mut cmd = env.command();
     cmd.env("NODEUP_FORCE_PLATFORM", "windows-x86")
         .args(["toolchain", "install", "22.1.0"])
         .assert()
+        .code(3)
         .failure()
-        .stderr(predicates::str::contains("supports macOS/Linux/Windows"));
+        .stderr(predicates::str::contains("Unsupported host platform"))
+        .stderr(predicates::str::contains("Windows x64"))
+        .stderr(predicates::str::contains("x86 hosts are unsupported"))
+        .stderr(predicates::str::contains(
+            "Use an x64/arm64 host or a supported CI image",
+        ));
+}
+
+#[test]
+#[serial]
+fn unsupported_platform_json_includes_deterministic_diagnostics() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NODEUP_FORCE_PLATFORM", "linux-x86")
+        .args(["--output", "json", "toolchain", "install", "22.1.0"])
+        .output()
+        .expect("unsupported platform json error");
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "unsupported-platform");
+    assert_eq!(payload["exit_code"], 3);
+    assert_eq!(payload["diagnostics"]["os"], "linux");
+    assert_eq!(payload["diagnostics"]["architecture"], "x86");
+    assert_eq!(
+        payload["diagnostics"]["platform_source"],
+        "NODEUP_FORCE_PLATFORM"
+    );
+    assert_eq!(payload["diagnostics"]["forced_platform"], "linux-x86");
+    assert_eq!(
+        payload["diagnostics"]["supported_platforms"],
+        serde_json::json!([
+            "macos/x64",
+            "macos/arm64",
+            "linux/x64",
+            "linux/arm64",
+            "windows/x64",
+            "windows/arm64"
+        ])
+    );
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn shim_dispatch_rejects_unsupported_x86_before_resolution() {
+    let env = TestEnv::new();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        r#"schema_version = 1
+default_selector = "22.1.0"
+tracked_selectors = []
+
+[linked_runtimes]
+"#,
+    )
+    .unwrap();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("node");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .env("NODEUP_FORCE_PLATFORM", "windows-x86")
+        .output()
+        .expect("run shim binary on unsupported x86 platform");
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Unsupported host platform for shim dispatch"));
+    assert!(stderr.contains("forced_platform=windows-x86"));
+    assert!(stderr.contains("x86 hosts are unsupported"));
 }
 
 #[test]
@@ -3622,6 +3699,165 @@ fn json_output_stays_parseable_with_invalid_release_index_ttl() {
     assert!(output.stderr.is_empty());
     let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(payload["data_root"].is_string());
+}
+
+#[test]
+#[serial]
+fn color_diagnostics_reports_no_color_for_human_output_and_logs() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env_remove("NODEUP_LOG_COLOR")
+        .env("NO_COLOR", "1")
+        .args(["--output", "json", "show", "color"])
+        .output()
+        .expect("show color with NO_COLOR");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("\u{1b}["));
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["human_stdout"]["enabled"], false);
+    assert_eq!(payload["human_stdout"]["source"], "NO_COLOR");
+    assert_eq!(payload["human_stderr"]["enabled"], false);
+    assert_eq!(payload["human_stderr"]["source"], "NO_COLOR");
+    assert_eq!(payload["logs"]["enabled"], false);
+    assert_eq!(payload["logs"]["source"], "NO_COLOR");
+}
+
+#[test]
+#[serial]
+fn color_diagnostics_reports_nodeup_color_overrides_no_color() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env_remove("NODEUP_LOG_COLOR")
+        .env("NO_COLOR", "1")
+        .env("NODEUP_COLOR", "always")
+        .args(["--output", "json", "show", "color"])
+        .output()
+        .expect("show color with NODEUP_COLOR and NO_COLOR");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["human_stdout"]["enabled"], true);
+    assert_eq!(payload["human_stdout"]["source"], "NODEUP_COLOR");
+    assert_eq!(payload["human_stderr"]["enabled"], true);
+    assert_eq!(payload["human_stderr"]["source"], "NODEUP_COLOR");
+    assert_eq!(payload["logs"]["enabled"], false);
+    assert_eq!(payload["logs"]["source"], "NO_COLOR");
+}
+
+#[test]
+#[serial]
+fn color_diagnostics_reports_nodeup_log_color_overrides_no_color() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NO_COLOR", "1")
+        .env("NODEUP_LOG_COLOR", "always")
+        .args(["--output", "json", "show", "color"])
+        .output()
+        .expect("show color with NODEUP_LOG_COLOR and NO_COLOR");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["human_stdout"]["enabled"], false);
+    assert_eq!(payload["human_stdout"]["source"], "NO_COLOR");
+    assert_eq!(payload["human_stderr"]["enabled"], false);
+    assert_eq!(payload["human_stderr"]["source"], "NO_COLOR");
+    assert_eq!(payload["logs"]["enabled"], true);
+    assert_eq!(payload["logs"]["source"], "NODEUP_LOG_COLOR");
+}
+
+#[test]
+#[serial]
+fn color_diagnostics_preserves_auto_log_color_mode() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env_remove("NO_COLOR")
+        .env("NODEUP_LOG_COLOR", "auto")
+        .args(["--output", "json", "show", "color"])
+        .output()
+        .expect("show color with NODEUP_LOG_COLOR=auto");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["logs"]["enabled"], true);
+    assert_eq!(payload["logs"]["mode"], "auto");
+    assert_eq!(payload["logs"]["source"], "NODEUP_LOG_COLOR");
+}
+
+#[test]
+#[serial]
+fn color_diagnostics_preserves_auto_log_color_mode_with_no_color() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NO_COLOR", "1")
+        .env("NODEUP_LOG_COLOR", "auto")
+        .args(["--output", "json", "show", "color"])
+        .output()
+        .expect("show color with NODEUP_LOG_COLOR=auto and NO_COLOR");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["logs"]["enabled"], false);
+    assert_eq!(payload["logs"]["mode"], "auto");
+    assert_eq!(payload["logs"]["source"], "NODEUP_LOG_COLOR");
+}
+
+#[test]
+#[serial]
+fn color_diagnostics_reports_invalid_color_env_values() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NO_COLOR", "1")
+        .env("NODEUP_COLOR", "sometimes")
+        .env("NODEUP_LOG_COLOR", "maybe")
+        .args(["--output", "json", "show", "color"])
+        .output()
+        .expect("show color with invalid color env values");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["human_stdout"]["enabled"], false);
+    assert_eq!(payload["human_stdout"]["source"], "NO_COLOR");
+    assert_eq!(payload["human_stdout"]["ignored_nodeup_color"], "sometimes");
+    assert_eq!(payload["human_stderr"]["ignored_nodeup_color"], "sometimes");
+    assert_eq!(payload["logs"]["enabled"], false);
+    assert_eq!(payload["logs"]["source"], "NO_COLOR");
+    assert_eq!(payload["logs"]["ignored_nodeup_log_color"], "maybe");
+}
+
+#[test]
+#[serial]
+fn color_diagnostics_json_output_stays_plain_when_log_color_is_forced() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NODEUP_LOG_COLOR", "always")
+        .args(["--output", "json", "show", "color"])
+        .output()
+        .expect("show color json with forced log color");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("\u{1b}["));
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["logs"]["enabled"], true);
+    assert_eq!(payload["logs"]["source"], "NODEUP_LOG_COLOR");
 }
 
 #[test]

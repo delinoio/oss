@@ -6,6 +6,8 @@
 - `github:<host>/owner/repo[@version]`
 - `gitlab:<host>/<namespace...>/<project>[@version]`
 
+`@version` is an exact release tag request. Omit it to select the latest stable release. `@latest`, SemVer range-like selectors, channel selectors such as `@beta`, and numeric major-version pins such as `@1` are rejected with diagnostics.
+
 ## Target Model
 
 binpm resolves release assets against the current host target:

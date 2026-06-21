@@ -66,7 +66,19 @@ Invalid examples:
 
 ## Install Fails on Unsupported Host
 
-Nodeup supports macOS, Linux, and Windows x64/arm64 hosts. x86 hosts are unsupported.
+Nodeup supports macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64 hosts. x86 hosts are unsupported.
+
+Direct installers fail before release lookup or asset download. Runtime installation and shim dispatch fail with `unsupported-platform` before archive download or delegated command planning.
+
+Fix: use an x64/arm64 host or a supported CI image.
+
+JSON errors include deterministic diagnostics:
+
+- `os`
+- `architecture`
+- `platform_source`
+- `forced_platform`, when `NODEUP_FORCE_PLATFORM` is set
+- `supported_platforms`
 
 For local platform testing, maintainers can use `NODEUP_FORCE_PLATFORM` with values such as `linux-arm64`, `windows-x64`, or `windows-arm64`.
 
@@ -140,6 +152,15 @@ Check precedence:
 2. `NODEUP_COLOR`
 3. `NO_COLOR`
 4. terminal detection
+
+Inspect the effective decisions:
+
+```bash
+nodeup show color
+nodeup --output json show color
+```
+
+The diagnostic separates human stdout, human stderr, and log color. Invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values are ignored, and the diagnostic reports the ignored value.
 
 Force plain output:
 

@@ -29,6 +29,14 @@
         ]
       },
       {
+        "tab": "Nodeup",
+        "href": "https://nodeup.delino.io"
+      },
+      {
+        "tab": "binpm",
+        "href": "https://binpm.delino.io"
+      },
+      {
         "tab": "Derun",
         "groups": [
           {
