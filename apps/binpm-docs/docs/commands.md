@@ -1,6 +1,6 @@
 # Commands
 
-binpm exposes a clap-based command surface. Diagnostic commands must stay read-only unless the crate contract documents a mutation.
+binpm provides commands for global installs, project-local tools, one-off execution, diagnostics, environment setup, and cache management.
 
 ## Global and Local Install
 
@@ -39,7 +39,7 @@ binpm info <cmd-or-source> [--local|--global]
 binpm outdated [--local|--global]
 ```
 
-`binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, and `binpm outdated` must not mutate manifests, lockfiles, package records, cache entries, or executables.
+`binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, and `binpm outdated` inspect state without changing manifests, lockfiles, cached assets, or installed executables.
 
 ## Environment
 
@@ -60,4 +60,4 @@ binpm cache prune
 binpm cache clean
 ```
 
-`binpm cache key` is read-only. `binpm cache prune` and `binpm cache clean` must preserve installed package records and executable entries.
+`binpm cache key` is read-only. `binpm cache prune` and `binpm cache clean` remove cached assets without uninstalling tools or removing executables.
