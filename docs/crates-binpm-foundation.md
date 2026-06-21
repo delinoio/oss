@@ -36,10 +36,9 @@
 - When `@version` is omitted, `binpm` must select the latest stable release exposed by the source provider:
   - GitHub sources must ignore draft and prerelease releases.
   - GitLab sources must list releases in descending `released_at` order and choose the first release whose `released_at` is not in the future, whose API response does not set `upcoming_release = true`, and whose normalized tag does not contain a SemVer prerelease segment such as `-alpha`, `-beta`, `-pre`, `-preview`, `-rc`, or another hyphenated prerelease identifier.
-- Explicit versions may be written with or without a leading `v`; release tag matching must try the exact input first, then the opposite `v` prefix form.
 - Version selectors are intentionally exact-tag-only in v1:
   - `github:owner/repo` selects the latest stable release.
-  - `github:owner/repo@14.1.1` and `github:owner/repo@v14.1.1` request an exact release tag, with the opposite `v` prefix form tried as a fallback during release matching.
+  - `github:owner/repo@14.1.1` and `github:owner/repo@v14.1.1` request exact release tags; `@14.1.1` must not match a `v14.1.1` release tag, and `@v14.1.1` must not match a `14.1.1` release tag.
   - `@latest` is rejected with a hint to omit `@version` for latest-stable selection.
   - SemVer range-like selectors such as `@^1`, `@~1.2`, `@>=1.0.0`, `@1.x`, `@1.*`, and `@1 || @2` are rejected with a hint to use an exact release tag or omit `@version`.
   - Channel selectors such as `@stable`, `@beta`, `@alpha`, `@nightly`, `@canary`, `@dev`, `@edge`, and `@next` are rejected with a hint to use an exact release tag or omit `@version`.
