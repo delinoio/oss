@@ -28,6 +28,10 @@ pub struct RuntimeCommandAvailability {
     pub selected_path: String,
     pub direct_executable_exists: bool,
     pub direct_executable_runnable: bool,
+    pub managed_shim_available: bool,
+    pub availability_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delegated_executable_path: Option<String>,
     pub install_on_demand_eligible: bool,
     pub install_on_demand_scope: String,
     pub path_precedence_guidance: &'static str,
@@ -49,6 +53,11 @@ impl RuntimeCommandAvailability {
         let selected_path = selected_existing_or_primary(&checked_path_values);
         let direct_executable_exists = selected_path.exists();
         let direct_executable_runnable = runtime_executable_is_runnable(&selected_path);
+        let npm_exec_fallback = npm_exec_fallback_for_command(
+            runtime_root.as_deref(),
+            command,
+            direct_executable_exists,
+        );
         let (linked_runtime_name, linked_runtime_path) = linked_runtime_details(resolved);
 
         Self {
@@ -63,6 +72,12 @@ impl RuntimeCommandAvailability {
             selected_path: selected_path.display().to_string(),
             direct_executable_exists,
             direct_executable_runnable,
+            managed_shim_available: direct_executable_runnable || npm_exec_fallback.is_some(),
+            availability_mode: availability_mode(direct_executable_runnable, &npm_exec_fallback)
+                .to_string(),
+            delegated_executable_path: npm_exec_fallback
+                .as_ref()
+                .map(|path| path.display().to_string()),
             install_on_demand_eligible,
             install_on_demand_scope: install_on_demand_scope.into(),
             path_precedence_guidance: PATH_PRECEDENCE_GUIDANCE,
@@ -79,6 +94,8 @@ impl RuntimeCommandAvailability {
         let selected_path = selected_existing_or_primary(&checked_path_values);
         let direct_executable_exists = selected_path.exists();
         let direct_executable_runnable = runtime_executable_is_runnable(&selected_path);
+        let npm_exec_fallback =
+            npm_exec_fallback_for_command(Some(runtime_root), command, direct_executable_exists);
 
         Self {
             command: command.to_string(),
@@ -92,6 +109,12 @@ impl RuntimeCommandAvailability {
             selected_path: selected_path.display().to_string(),
             direct_executable_exists,
             direct_executable_runnable,
+            managed_shim_available: direct_executable_runnable || npm_exec_fallback.is_some(),
+            availability_mode: availability_mode(direct_executable_runnable, &npm_exec_fallback)
+                .to_string(),
+            delegated_executable_path: npm_exec_fallback
+                .as_ref()
+                .map(|path| path.display().to_string()),
             install_on_demand_eligible,
             install_on_demand_scope: "linked-runtime".to_string(),
             path_precedence_guidance: PATH_PRECEDENCE_GUIDANCE,
@@ -124,6 +147,20 @@ impl RuntimeCommandAvailability {
             "direct_executable_runnable".to_string(),
             json!(self.direct_executable_runnable),
         );
+        diagnostics.insert(
+            "managed_shim_available".to_string(),
+            json!(self.managed_shim_available),
+        );
+        diagnostics.insert(
+            "availability_mode".to_string(),
+            json!(self.availability_mode),
+        );
+        if let Some(delegated_executable_path) = self.delegated_executable_path {
+            diagnostics.insert(
+                "delegated_executable_path".to_string(),
+                json!(delegated_executable_path),
+            );
+        }
         diagnostics.insert(
             "install_on_demand_eligible".to_string(),
             json!(self.install_on_demand_eligible),
@@ -163,7 +200,9 @@ pub fn render_availability_matrix(availability: &[RuntimeCommandAvailability]) -
         .iter()
         .map(|entry| {
             let status = if entry.direct_executable_runnable {
-                "available"
+                "available (direct)"
+            } else if entry.availability_mode == "npm-exec" {
+                "available (via npm exec)"
             } else if entry.direct_executable_exists {
                 "not runnable"
             } else {
@@ -203,4 +242,32 @@ fn selected_existing_or_primary(candidates: &[PathBuf]) -> PathBuf {
         .cloned()
         .or_else(|| candidates.first().cloned())
         .unwrap_or_else(|| PathBuf::from("<none>"))
+}
+
+fn npm_exec_fallback_for_command(
+    runtime_root: Option<&Path>,
+    command: &str,
+    direct_executable_exists: bool,
+) -> Option<PathBuf> {
+    if direct_executable_exists || !matches!(command, "yarn" | "pnpm") {
+        return None;
+    }
+
+    let npm_path =
+        selected_existing_or_primary(&runtime_executable_candidate_paths(runtime_root?, "npm"));
+
+    runtime_executable_is_runnable(&npm_path).then_some(npm_path)
+}
+
+fn availability_mode(
+    direct_executable_runnable: bool,
+    npm_exec_fallback: &Option<PathBuf>,
+) -> &'static str {
+    if direct_executable_runnable {
+        "direct"
+    } else if npm_exec_fallback.is_some() {
+        "npm-exec"
+    } else {
+        "unavailable"
+    }
 }

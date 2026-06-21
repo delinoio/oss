@@ -117,10 +117,49 @@ where
     };
 
     if ManagedAlias::from_argv0(argv0.as_os_str()).is_some() {
-        return ManagementOutputPreferences::default();
+        return managed_alias_output_preferences_from_args(args);
     }
 
     management_output_preferences_from_management_args(args)
+}
+
+fn managed_alias_output_preferences_from_args<I>(args: I) -> ManagementOutputPreferences
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let mut output_preferences = ManagementOutputPreferences::default();
+    let mut output_value_expected = false;
+
+    for arg in args {
+        let Some(arg) = arg.to_str() else {
+            output_value_expected = false;
+            continue;
+        };
+
+        if output_value_expected {
+            apply_output_value(arg, &mut output_preferences.json_error_output_requested);
+            output_value_expected = false;
+            continue;
+        }
+
+        if arg == "--output" {
+            output_value_expected = true;
+            continue;
+        }
+
+        if let Some(value) = arg.strip_prefix("--output=") {
+            apply_output_value(value, &mut output_preferences.json_error_output_requested);
+            continue;
+        }
+
+        if arg.starts_with('-') {
+            continue;
+        }
+
+        break;
+    }
+
+    output_preferences
 }
 
 fn normalized_management_args<I>(args: I) -> Vec<OsString>
@@ -400,9 +439,25 @@ mod tests {
     }
 
     #[test]
-    fn managed_alias_invocation_ignores_json_output_flags() {
-        assert!(!json_error_output_requested_from_args(os_args(&[
+    fn managed_alias_invocation_detects_json_output_flags_before_delegated_args() {
+        assert!(json_error_output_requested_from_args(os_args(&[
             "node", "--output", "json",
+        ])));
+
+        assert!(json_error_output_requested_from_args(os_args(&[
+            "node",
+            "--output=json",
+        ])));
+    }
+
+    #[test]
+    fn managed_alias_invocation_ignores_json_output_flags_after_delegated_args() {
+        assert!(!json_error_output_requested_from_args(os_args(&[
+            "node",
+            "-e",
+            "console.log(1)",
+            "--output",
+            "json",
         ])));
     }
 

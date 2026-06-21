@@ -1125,6 +1125,41 @@ fn toolchain_link_json_reports_managed_shim_command_availability() {
         .unwrap()
         .iter()
         .any(|path| path_string_ends_with_components(path.as_str().unwrap(), &["bin", "npm"])));
+
+    let yarn = commands
+        .iter()
+        .find(|entry| entry["command"] == "yarn")
+        .expect("yarn availability entry");
+    assert_eq!(yarn["direct_executable_exists"], false);
+    assert_eq!(yarn["managed_shim_available"], true);
+    assert_eq!(yarn["availability_mode"], "npm-exec");
+    assert!(path_string_ends_with_components(
+        yarn["delegated_executable_path"].as_str().unwrap(),
+        &["bin", "npm"]
+    ));
+}
+
+#[test]
+#[serial]
+fn toolchain_link_human_reports_npm_exec_backed_managed_shims_available() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-human-command-availability");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+    write_runtime_executable(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-human-command-availability",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("yarn: available (via npm exec)"))
+        .stdout(predicates::str::contains("pnpm: available (via npm exec)"));
 }
 
 #[test]
@@ -4147,6 +4182,54 @@ fn shim_dispatch_uses_argv0_alias() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("shim-ok"));
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn shim_dispatch_json_output_emits_missing_command_diagnostics() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-shim-json-missing-command");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-shim-json-missing-command",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-shim-json-missing-command"])
+        .assert()
+        .success();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("npm");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .args(["--output", "json"])
+        .output()
+        .expect("run npm shim with json output");
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+    assert_eq!(payload["diagnostics"]["command"], "npm");
+    assert_eq!(
+        payload["diagnostics"]["linked_runtime_name"],
+        "linked-shim-json-missing-command"
+    );
+    assert_eq!(payload["diagnostics"]["direct_executable_exists"], false);
+    assert_eq!(payload["diagnostics"]["managed_shim_available"], false);
+    assert_eq!(payload["diagnostics"]["availability_mode"], "unavailable");
 }
 
 #[cfg(unix)]
