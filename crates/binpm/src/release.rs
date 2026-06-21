@@ -509,7 +509,7 @@ fn classify_release_lookup_status(
     headers: &header::HeaderMap,
 ) -> Option<ReleaseLookupDiagnosticKind> {
     if status == StatusCode::TOO_MANY_REQUESTS
-        || (status.is_client_error() || status.is_server_error()) && rate_limit_exhausted(headers)
+        || (status.is_client_error() || status.is_server_error()) && rate_limit_indicated(headers)
     {
         return Some(ReleaseLookupDiagnosticKind::RateLimited);
     }
@@ -529,9 +529,10 @@ fn classify_release_lookup_status(
     }
 }
 
-fn rate_limit_exhausted(headers: &header::HeaderMap) -> bool {
+fn rate_limit_indicated(headers: &header::HeaderMap) -> bool {
     header_is_zero(headers, "x-ratelimit-remaining")
         || header_is_zero(headers, "ratelimit-remaining")
+        || headers.contains_key(header::RETRY_AFTER)
 }
 
 fn header_is_zero(headers: &header::HeaderMap, name: &'static str) -> bool {
@@ -1307,6 +1308,15 @@ mod tests {
                 true,
                 &header::HeaderMap::new()
             ),
+            Some(ReleaseLookupDiagnosticKind::RateLimited)
+        );
+        headers.insert(
+            "x-ratelimit-remaining",
+            header::HeaderValue::from_static("10"),
+        );
+        headers.insert(header::RETRY_AFTER, header::HeaderValue::from_static("30"));
+        assert_eq!(
+            classify_release_lookup_status(StatusCode::FORBIDDEN, true, &headers),
             Some(ReleaseLookupDiagnosticKind::RateLimited)
         );
         assert_eq!(
