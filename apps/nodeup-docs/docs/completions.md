@@ -39,10 +39,17 @@ Supported command scopes:
 - `override`
 - `which`
 - `run`
+- `shim`
 - `self`
 - `completions`
 
-Subcommand scopes are not accepted. Unsupported scopes fail with `invalid-input`.
+Subcommand scopes are not accepted. Use the parent top-level command instead:
+
+```bash
+nodeup completions bash toolchain
+```
+
+For example, `nodeup completions bash toolchain install` fails with `invalid-input` and points back to `nodeup completions bash toolchain`.
 
 ## Output Contract
 

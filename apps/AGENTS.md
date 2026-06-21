@@ -56,7 +56,8 @@
 - Rspress routes and navigation in `apps/nodeup-docs/rspress.config.ts` must stay aligned with `docs/apps-nodeup-docs-foundation.md`.
 - `nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
 - Stable `nodeup-docs` route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
-- Nodeup direct-installer guidance must include copy-pasteable remote POSIX and PowerShell commands that use first-party `delinoio/oss` raw GitHub URLs, keep `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1` visible for maintainer workflows, and present `cosign` as a required prerequisite.
+- Nodeup direct-installer guidance must include copy-pasteable remote POSIX and PowerShell commands that use first-party `delinoio/oss` raw GitHub URLs, keep `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1` visible for maintainer workflows, present `cosign` as a required prerequisite before installer commands, and distinguish missing-prerequisite failures from checksum or Sigstore verification failures.
+- Nodeup installation, release, and troubleshooting guidance must explain that `cargo-binstall` uses first-party release assets only and does not enable `quick-install` or `compile` fallback strategies.
 - When Nodeup user-facing runtime, release, installer, shim, completion, package-manager, or color-control behavior changes, update related `apps/nodeup-docs` pages in the same change set.
 
 ### Testing and Validation

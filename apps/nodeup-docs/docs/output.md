@@ -76,6 +76,19 @@ The final payload is:
 
 The Nodeup process exits with the delegated command's exit code.
 
+## Self Uninstall Output
+
+`nodeup self uninstall` reports what it removed and what remains manual.
+
+Stable JSON fields:
+
+- `removed_paths`
+- `cleanup_boundaries`
+- `remaining_manual_steps`
+- `likely_leftover_paths`
+
+The command removes Nodeup-owned data, cache, and config roots only. Binary removal, managed shim cleanup, and shell profile or PATH edits are always manual.
+
 ## Completion Output
 
 `nodeup completions` always writes raw shell script text to stdout. It does not wrap output in JSON, even when `--output json` is supplied.

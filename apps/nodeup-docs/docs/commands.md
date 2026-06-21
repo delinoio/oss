@@ -48,7 +48,21 @@ nodeup toolchain uninstall <version>...
 
 Removes exact installed versions only. At least one version selector is required. Channels and linked runtime names are rejected. Use `nodeup toolchain unlink <name>` for linked runtime records. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
 
-JSON output is the removed version list.
+When removal is blocked, human output reports each blocking reference type and path:
+
+- `global-default` points to the settings file that stores the global default.
+- `directory-override` points to the override directory path.
+
+Clear or change the reference, then retry:
+
+```bash
+nodeup default <runtime>
+nodeup override unset --path <path>
+nodeup override set <runtime> --path <path>
+nodeup toolchain uninstall <version>
+```
+
+Successful JSON output is the removed version list. Blocked JSON errors include `diagnostics.blocked_versions` and `diagnostics.blockers`; each blocker includes `reference_type`, `runtime`, `selector`, `path`, `clear_command`, and `change_command`.
 
 ## toolchain link
 
@@ -182,9 +196,22 @@ nodeup which [--runtime <runtime>] <command>
 
 Prints the executable path Nodeup would run. `--runtime` is an explicit selector and overrides directory/default resolution.
 
-For `yarn` and `pnpm`, `which` uses package-manager planning. In npm-exec mode, the resolved executable path is the selected runtime's `npm` executable.
+For `yarn` and `pnpm`, `which` uses package-manager planning. In direct mode it prints the selected runtime's package-manager executable. In npm-exec mode it prints the selected runtime's `npm` executable and labels that `npm exec` will invoke the requested package manager with the selected package spec.
 
-JSON output includes `runtime`, `command`, and `executable_path`.
+JSON output includes `runtime`, `command`, `requested_command`, `executable_path`, `mode`, `reason`, optional `package_spec`, optional `package_spec_pinned`, optional `package_json_path`, and a nested `planning` object with the same stable planning diagnostics.
+
+Direct-mode human output stays path-only:
+
+```text
+/home/me/.nodeup/data/toolchains/v22.1.0/bin/yarn
+```
+
+npm-exec-mode human output includes the `npm` path plus the package-manager plan:
+
+```text
+/home/me/.nodeup/data/toolchains/v22.1.0/bin/npm
+nodeup: yarn will run via npm exec using package @yarnpkg/cli-dist@4.13.0 (pinned; package_json=/repo/package.json; npm=/home/me/.nodeup/data/toolchains/v22.1.0/bin/npm; reason=package-manager-pinned)
+```
 
 ## run
 
@@ -194,7 +221,25 @@ nodeup run [--install] <runtime> <command> [args...]
 
 Runs a delegated command with an explicit runtime selector. Missing version runtimes fail unless `--install` is provided.
 
-In human mode, delegated stdio is inherited. In JSON mode, delegated stdout is routed to stderr so stdout can contain the final JSON response with `runtime`, `command`, and `exit_code`.
+In human mode, delegated stdio is inherited. If `yarn` or `pnpm` runs through npm-exec, Nodeup prints a planning notice to stderr before delegation so stdout remains owned by the delegated command. In JSON mode, delegated stdout is routed to stderr so stdout can contain the final JSON response with `runtime`, `command`, `exit_code`, and `planning`.
+
+## shim setup
+
+```bash
+nodeup shim setup [--dir <path>]
+```
+
+Creates or repairs managed executable-name dispatch shims for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
+
+- Without `--dir`, Nodeup uses `NODEUP_SHIM_DIR` when set, otherwise `$HOME/.local/bin`.
+- macOS and Linux use symlinks named `node`, `npm`, `npx`, `yarn`, and `pnpm`.
+- Windows uses copied executables named `node.exe`, `npm.exe`, `npx.exe`, `yarn.exe`, and `pnpm.exe`.
+- Re-running the command reports existing valid shims as `existing`.
+- Existing unrelated commands are reported as conflicts and are not replaced.
+- Stale Nodeup symlinks are repaired.
+- Non-Nodeup files and different existing Windows executables are refused instead of being overwritten.
+
+JSON output includes `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, and `shims`. Each shim entry includes `alias`, `path`, `status`, and `method`.
 
 ## self update
 
@@ -214,7 +259,16 @@ nodeup self uninstall
 
 Removes Nodeup-owned data, cache, and config roots when they contain artifacts. It refuses unsafe paths that are not clearly Nodeup-owned.
 
-JSON output includes `action`, `status`, and `removed_paths`.
+Cleanup boundaries:
+
+- Data: removed when the data root is Nodeup-owned and populated.
+- Cache: removed when the cache root is Nodeup-owned and populated.
+- Config: removed when the config root is Nodeup-owned and populated.
+- Binary: manual; Nodeup does not delete the running binary.
+- Shims: manual; Nodeup does not delete aliases created by `nodeup shim setup`.
+- Shell profile/PATH: manual; Nodeup does not edit shell profile files or the user PATH.
+
+Human output includes removed paths and remaining manual steps. JSON output includes `action`, `status`, `removed_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
 
 ## self upgrade-data
 

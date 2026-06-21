@@ -34,6 +34,8 @@ pub enum BinpmError {
     InvalidTargetKey { raw: String },
     #[error("Invalid command name `{cmd}`: command names must be executable basenames.")]
     InvalidCommandName { cmd: String },
+    #[error("Duplicate local command declaration `{cmd}` in binpm add arguments.")]
+    DuplicateAddDeclaration { cmd: String },
     #[error(
         "Tool `{cmd}` and `{other_cmd}` both install to `{}` on this target.",
         path.display()
@@ -263,6 +265,7 @@ impl BinpmError {
             Self::InvalidSourceSpec { .. }
             | Self::InvalidTargetKey { .. }
             | Self::InvalidCommandName { .. }
+            | Self::DuplicateAddDeclaration { .. }
             | Self::InvalidBinSelection { .. }
             | Self::UnsupportedTargetComponent { .. }
             | Self::UnsupportedShell { .. }

@@ -107,6 +107,15 @@ pub struct InstallArgs {
     /// Optional source spec. Omit to sync the local binpm.toml manifest.
     pub source: Option<String>,
 
+    /// Command name to expose for a global source install.
+    #[arg(long = "as", value_name = "CMD", requires = "source")]
+    pub alias: Option<String>,
+
+    /// Upstream executable name or archive member path to install for a
+    /// global source install.
+    #[arg(long, value_name = "BIN", requires = "source")]
+    pub bin: Option<String>,
+
     #[command(flatten)]
     pub scope: ScopeArgs,
 
@@ -133,8 +142,17 @@ pub struct AddArgs {
     #[arg(long, value_name = "BIN")]
     pub bin: Option<String>,
 
+    /// Additional local command declaration using the same source. Use
+    /// CMD=BIN to expose CMD from an upstream binary or archive member.
+    #[arg(long = "also", value_name = "CMD=BIN")]
+    pub also: Vec<String>,
+
     #[command(flatten)]
     pub lockfile: LockfileArgs,
+
+    /// Update only binpm.toml; do not resolve, install, or write binpm.lock.
+    #[arg(long, alias = "no-install")]
+    pub manifest_only: bool,
 
     /// Fail unless upstream digest, checksum, or verified signature material is
     /// available.
@@ -160,20 +178,28 @@ pub struct ExecArgs {
     #[command(flatten)]
     pub lockfile: LockfileArgs,
 
-    /// Command to execute followed by arguments forwarded to it.
-    #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
+    /// Command to execute followed by arguments forwarded to it. May be
+    /// omitted with --package for the safe one-off package shortcut.
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub command: Vec<OsString>,
 }
 
 impl ExecArgs {
-    pub fn cmd(&self) -> &OsStr {
-        self.command
-            .first()
-            .expect("clap requires at least one x command argument")
-            .as_os_str()
+    pub fn cmd(&self) -> Option<&OsStr> {
+        match self.command.first() {
+            Some(separator) if separator == OsStr::new("--") => None,
+            Some(cmd) => Some(cmd.as_os_str()),
+            None => None,
+        }
     }
 
     pub fn args(&self) -> &[OsString] {
+        if self.command.is_empty() {
+            return &[];
+        }
+        if self.command.first() == Some(&OsString::from("--")) {
+            return &self.command[1..];
+        }
         match self.command.get(1) {
             Some(separator) if separator == OsStr::new("--") => &self.command[2..],
             _ => &self.command[1..],
@@ -191,20 +217,21 @@ pub struct CacheArgs {
 pub enum CacheCommand {
     /// List cache entries.
     List,
-    /// Remove only cache entries not referenced by installed package records.
+    /// Remove stale project refs, then cache entries not referenced by records
+    /// or refs.
     Prune {
         /// Bypass future confirmation prompts for scripting.
         #[arg(long)]
         no_confirm: bool,
     },
-    /// Remove all cache entries while preserving installed package records and
+    /// Remove cache asset entries while preserving refs, package records, and
     /// bins.
     Clean {
         /// Bypass future confirmation prompts for scripting.
         #[arg(long)]
         no_confirm: bool,
     },
-    /// Print a read-only CI cache key for the current target and lockfile.
+    /// Print a read-only CI cache key and lockfile status.
     Key,
 }
 
@@ -425,7 +452,7 @@ mod tests {
         match cli.command {
             Command::Exec(exec) => {
                 assert_eq!(exec.package.as_deref(), Some("github:BurntSushi/ripgrep"));
-                assert_eq!(exec.cmd(), OsStr::new("rg"));
+                assert_eq!(exec.cmd(), Some(OsStr::new("rg")));
                 assert_eq!(
                     exec.args(),
                     vec![
@@ -445,7 +472,7 @@ mod tests {
 
         match cli.command {
             Command::Exec(exec) => {
-                assert_eq!(exec.cmd(), OsStr::new("rg"));
+                assert_eq!(exec.cmd(), Some(OsStr::new("rg")));
                 assert_eq!(exec.args(), vec![OsString::from("--help")]);
             }
             other => panic!("unexpected command: {other:?}"),
@@ -468,7 +495,7 @@ mod tests {
         match cli.command {
             Command::Exec(exec) => {
                 assert_eq!(exec.package.as_deref(), Some("github:BurntSushi/ripgrep"));
-                assert_eq!(exec.cmd(), OsStr::new("rg"));
+                assert_eq!(exec.cmd(), Some(OsStr::new("rg")));
                 assert_eq!(
                     exec.args(),
                     vec![OsString::from("--package"), OsString::from("literal")]
@@ -498,7 +525,7 @@ mod tests {
                 Command::Exec(exec) => {
                     assert_eq!(exec.package.as_deref(), Some("github:BurntSushi/ripgrep"));
                     assert!(exec.lockfile.no_frozen_lockfile);
-                    assert_eq!(exec.cmd(), OsStr::new("rg"));
+                    assert_eq!(exec.cmd(), Some(OsStr::new("rg")));
                     assert_eq!(
                         exec.args(),
                         vec![OsString::from("--package"), OsString::from("literal")]
@@ -506,6 +533,67 @@ mod tests {
                 }
                 other => panic!("unexpected command for {alias}: {other:?}"),
             }
+        }
+    }
+
+    #[test]
+    fn parses_global_install_alias_and_binary_selection() {
+        let cli = Cli::parse_from([
+            "binpm",
+            "install",
+            "github:owner/repo",
+            "--as",
+            "tool",
+            "--bin",
+            "bin/tool",
+        ]);
+
+        match cli.command {
+            Command::Install(args) => {
+                assert_eq!(args.source.as_deref(), Some("github:owner/repo"));
+                assert_eq!(args.alias.as_deref(), Some("tool"));
+                assert_eq!(args.bin.as_deref(), Some("bin/tool"));
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_manifest_only_add_with_additional_declarations() {
+        let cli = Cli::parse_from([
+            "binpm",
+            "add",
+            "foo",
+            "github:owner/tools",
+            "--bin",
+            "bin/foo",
+            "--also",
+            "bar=bin/bar",
+            "--manifest-only",
+        ]);
+
+        match cli.command {
+            Command::Add(args) => {
+                assert_eq!(args.cmd, "foo");
+                assert_eq!(args.bin.as_deref(), Some("bin/foo"));
+                assert_eq!(args.also, vec!["bar=bin/bar"]);
+                assert!(args.manifest_only);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_package_shortcut_without_command() {
+        let cli = Cli::parse_from(["binpm", "x", "--package", "github:owner/tool"]);
+
+        match cli.command {
+            Command::Exec(exec) => {
+                assert_eq!(exec.package.as_deref(), Some("github:owner/tool"));
+                assert_eq!(exec.cmd(), None);
+                assert!(exec.args().is_empty());
+            }
+            other => panic!("unexpected command: {other:?}"),
         }
     }
 
