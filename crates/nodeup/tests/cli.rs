@@ -2238,6 +2238,43 @@ fn self_uninstall_preserves_configured_shim_dir_inside_removed_root() {
     assert!(!env.data_root.join("data-marker.txt").exists());
 }
 
+#[cfg(unix)]
+#[test]
+#[serial]
+fn self_uninstall_preserves_configured_symlinked_shim_dir_inside_removed_root() {
+    let env = TestEnv::new();
+    let real_shim_dir = env.root.join("real-shims");
+    let shim_dir = env.data_root.join("linked-shims");
+    let binary_path = env.root.join("bin").join("nodeup");
+    fs::create_dir_all(&real_shim_dir).unwrap();
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+    fs::write(env.data_root.join("data-marker.txt"), "data").unwrap();
+    std::os::unix::fs::symlink(&real_shim_dir, &shim_dir).unwrap();
+
+    let shim_path = shim_dir.join("node");
+    std::os::unix::fs::symlink(&binary_path, real_shim_dir.join("node")).unwrap();
+
+    let output = env
+        .command()
+        .env("NODEUP_SHIM_DIR", &shim_dir)
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves configured symlinked shim dir");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == shim_path.to_str().unwrap()));
+    assert!(fs::symlink_metadata(&shim_dir).is_ok());
+    assert!(fs::symlink_metadata(&shim_path).is_ok());
+    assert!(!env.data_root.join("data-marker.txt").exists());
+}
+
 #[test]
 #[serial]
 fn self_uninstall_preserves_custom_managed_shim_dir_inside_removed_root() {
@@ -2280,15 +2317,79 @@ fn self_uninstall_preserves_custom_managed_shim_dir_inside_removed_root() {
 
 #[test]
 #[serial]
+fn self_uninstall_preserves_custom_managed_shim_dir_under_default_data_root() {
+    let env = TestEnv::new();
+    let data_root = env.root.join(".local").join("share").join("nodeup");
+    let shim_dir = data_root.join("my-shims");
+    fs::create_dir_all(&data_root).unwrap();
+    fs::write(data_root.join("data-marker.txt"), "data").unwrap();
+
+    Command::new(assert_cmd::cargo::cargo_bin!("nodeup"))
+        .env("HOME", &env.root)
+        .env("NODEUP_INDEX_URL", &env.index_url)
+        .env("NODEUP_DOWNLOAD_BASE_URL", &env.download_base_url)
+        .env("NODEUP_FORCE_PLATFORM", "linux-x64")
+        .env("NODEUP_LOG_COLOR", "never")
+        .env("RUST_LOG", "off")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let node_shim = if cfg!(windows) {
+        shim_dir.join("node.exe")
+    } else {
+        shim_dir.join("node")
+    };
+
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("nodeup"))
+        .env("HOME", &env.root)
+        .env("NODEUP_INDEX_URL", &env.index_url)
+        .env("NODEUP_DOWNLOAD_BASE_URL", &env.download_base_url)
+        .env("NODEUP_FORCE_PLATFORM", "linux-x64")
+        .env("NODEUP_LOG_COLOR", "never")
+        .env("RUST_LOG", "off")
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves default-root custom managed shim dir");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == node_shim.to_str().unwrap()));
+    assert!(payload["removed_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == data_root.to_str().unwrap()));
+    assert!(node_shim.exists() || fs::symlink_metadata(&node_shim).is_ok());
+    assert!(!data_root.join("data-marker.txt").exists());
+}
+
+#[test]
+#[serial]
 fn self_uninstall_reports_renamed_binary_cleanup_boundary() {
     let env = TestEnv::new();
     let binary_path = env.root.join("bin").join("nodeup-linux-amd64");
+    let shim_dir = env.root.join("nodeup-shims-leftover");
     fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::create_dir_all(&shim_dir).unwrap();
     fs::write(&binary_path, "nodeup").unwrap();
     fs::write(env.config_root.join("config-marker.txt"), "config").unwrap();
+    #[cfg(unix)]
+    let shim_path = {
+        let shim_path = shim_dir.join("node");
+        std::os::unix::fs::symlink(&binary_path, &shim_path).unwrap();
+        Some(shim_path)
+    };
+    #[cfg(not(unix))]
+    let shim_path: Option<PathBuf> = None;
 
     let output = env
         .command()
+        .env("NODEUP_SHIM_DIR", &shim_dir)
         .env("NODEUP_SELF_BIN_PATH", &binary_path)
         .args(["--output", "json", "self", "uninstall"])
         .output()
@@ -2307,6 +2408,13 @@ fn self_uninstall_reports_renamed_binary_cleanup_boundary() {
         .unwrap()
         .iter()
         .any(|path| path == binary_path.to_str().unwrap()));
+    if let Some(shim_path) = shim_path {
+        assert!(payload["likely_leftover_paths"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|path| path == shim_path.to_str().unwrap()));
+    }
     assert!(binary_path.exists());
 }
 
@@ -2340,6 +2448,37 @@ fn self_uninstall_preserves_configured_binary_inside_removed_root() {
         .iter()
         .any(|path| path == binary_path.to_str().unwrap()));
     assert!(binary_path.exists());
+    assert!(!env.data_root.join("data-marker.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn self_uninstall_preserves_configured_binary_symlink_inside_removed_root() {
+    let env = TestEnv::new();
+    let real_binary_path = env.root.join("bin").join("nodeup-linux-amd64");
+    let binary_path = env.data_root.join("bin").join("nodeup");
+    fs::create_dir_all(real_binary_path.parent().unwrap()).unwrap();
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&real_binary_path, "nodeup").unwrap();
+    std::os::unix::fs::symlink(&real_binary_path, &binary_path).unwrap();
+    fs::write(env.data_root.join("data-marker.txt"), "data").unwrap();
+
+    let output = env
+        .command()
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves configured binary symlink");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == binary_path.to_str().unwrap()));
+    assert!(fs::symlink_metadata(&binary_path).is_ok());
     assert!(!env.data_root.join("data-marker.txt").exists());
 }
 

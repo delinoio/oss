@@ -15,6 +15,7 @@ use crate::{
 };
 
 const NODEUP_SHIM_DIR: &str = "NODEUP_SHIM_DIR";
+const NODEUP_SELF_BIN_PATH: &str = "NODEUP_SELF_BIN_PATH";
 const MANAGED_ALIASES: [ManagedAlias; 5] = [
     ManagedAlias::Node,
     ManagedAlias::Npm,
@@ -495,7 +496,7 @@ pub(super) fn is_nodeup_owned_shim_path(path: &Path) -> bool {
             let Ok(existing_target) = fs::read_link(path) else {
                 return false;
             };
-            let Ok(nodeup_binary) = env::current_exe() else {
+            let Some(nodeup_binary) = configured_nodeup_binary_path() else {
                 return false;
             };
             looks_like_nodeup_binary_path(&existing_target, &nodeup_binary)
@@ -524,6 +525,12 @@ fn looks_like_nodeup_binary_path(existing_target: &Path, nodeup_binary: &Path) -
         .file_name()
         .zip(nodeup_binary.file_name())
         .is_some_and(|(existing, expected)| existing == expected)
+}
+
+fn configured_nodeup_binary_path() -> Option<PathBuf> {
+    env::var_os(NODEUP_SELF_BIN_PATH)
+        .map(PathBuf::from)
+        .or_else(|| env::current_exe().ok())
 }
 
 fn host_is_windows() -> bool {

@@ -283,7 +283,7 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
 
     let mut removed_paths = Vec::new();
     let mut removed_targets = Vec::new();
-    let preserved_paths = preserved_uninstall_paths();
+    let preserved_paths = preserved_uninstall_paths(app);
     for target in deletion_targets {
         remove_uninstall_target(&target.path, &preserved_paths).map_err(|error| {
             log_failure(
@@ -313,7 +313,7 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
         "Processed self uninstall"
     );
 
-    let likely_leftover_paths = likely_leftover_paths();
+    let likely_leftover_paths = likely_leftover_paths(app);
     let remaining_manual_steps = remaining_manual_steps(&likely_leftover_paths);
     let response = SelfUninstallResponse {
         action,
@@ -519,6 +519,14 @@ fn normalize_target_path(path: &Path) -> Result<PathBuf> {
     }
 
     Ok(absolute)
+}
+
+fn absolute_target_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+
+    Ok(std::env::current_dir()?.join(path))
 }
 
 fn ensure_safe_uninstall_path(path: &Path) -> Result<()> {
@@ -750,7 +758,7 @@ fn uninstall_roots(app: &NodeupApp) -> [SelfUninstallRoot; 3] {
     ]
 }
 
-fn likely_leftover_paths() -> Vec<String> {
+fn likely_leftover_paths(app: &NodeupApp) -> Vec<String> {
     let mut paths = Vec::new();
 
     if let Ok(path) = resolve_target_binary_path() {
@@ -759,7 +767,7 @@ fn likely_leftover_paths() -> Vec<String> {
         }
     }
 
-    for shim_dir in leftover_shim_directories() {
+    for shim_dir in leftover_shim_directories(app) {
         for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
             for candidate in [
                 shim_dir.join(alias),
@@ -780,38 +788,38 @@ fn likely_leftover_paths() -> Vec<String> {
     paths
 }
 
-fn preserved_uninstall_paths() -> Vec<PathBuf> {
-    let mut paths = existing_shim_directories();
+fn preserved_uninstall_paths(app: &NodeupApp) -> Vec<PathBuf> {
+    let mut paths = existing_shim_directories(app);
     if let Ok(path) = resolve_target_binary_path() {
         if path.exists() {
-            if let Ok(path) = normalize_target_path(&path) {
+            if let Ok(path) = absolute_target_path(&path) {
                 paths.push(path);
             }
         }
     }
 
     paths.into_iter().fold(Vec::new(), |mut unique, path| {
-        if !unique.iter().any(|existing| paths_equal(existing, &path)) {
+        if !unique.iter().any(|existing| existing == &path) {
             unique.push(path);
         }
         unique
     })
 }
 
-fn existing_shim_directories() -> Vec<PathBuf> {
+fn existing_shim_directories(app: &NodeupApp) -> Vec<PathBuf> {
     let mut paths = shim_directories();
-    for root in known_nodeup_roots() {
+    for root in known_nodeup_roots(app) {
         collect_managed_shim_dirs(&root, &mut paths);
     }
 
     paths
         .into_iter()
         .filter(|path| path.exists())
-        .filter_map(|path| normalize_target_path(&path).ok())
+        .filter_map(|path| absolute_target_path(&path).ok())
         .collect::<Vec<_>>()
         .into_iter()
         .fold(Vec::new(), |mut unique, path| {
-            if !unique.iter().any(|existing| paths_equal(existing, &path)) {
+            if !unique.iter().any(|existing| existing == &path) {
                 unique.push(path);
             }
             unique
@@ -853,24 +861,32 @@ fn directory_contains_nodeup_shim(path: &Path) -> bool {
     })
 }
 
-fn known_nodeup_roots() -> Vec<PathBuf> {
+fn known_nodeup_roots(app: &NodeupApp) -> Vec<PathBuf> {
     [
-        env::var_os("NODEUP_DATA_HOME"),
-        env::var_os("NODEUP_CACHE_HOME"),
-        env::var_os("NODEUP_CONFIG_HOME"),
+        Some(app.paths.data_root.clone()),
+        Some(app.paths.cache_root.clone()),
+        Some(app.paths.config_root.clone()),
+        env::var_os("NODEUP_DATA_HOME").map(PathBuf::from),
+        env::var_os("NODEUP_CACHE_HOME").map(PathBuf::from),
+        env::var_os("NODEUP_CONFIG_HOME").map(PathBuf::from),
     ]
     .into_iter()
     .flatten()
-    .map(PathBuf::from)
-    .collect()
+    .filter_map(|path| absolute_target_path(&path).ok())
+    .fold(Vec::new(), |mut unique, path| {
+        if !unique.iter().any(|existing| existing == &path) {
+            unique.push(path);
+        }
+        unique
+    })
 }
 
-fn leftover_shim_directories() -> Vec<PathBuf> {
-    let mut paths = existing_shim_directories();
+fn leftover_shim_directories(app: &NodeupApp) -> Vec<PathBuf> {
+    let mut paths = existing_shim_directories(app);
     paths.extend(shim_directories());
     paths
         .into_iter()
-        .filter_map(|path| normalize_target_path(&path).ok().or(Some(path)))
+        .filter_map(|path| absolute_target_path(&path).ok().or(Some(path)))
         .collect()
 }
 
