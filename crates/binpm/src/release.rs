@@ -350,7 +350,11 @@ fn provider_auth_for_source_with(
 }
 
 fn provider_token_env_candidates(provider: SourceProvider, host: &str) -> Vec<String> {
-    let normalized_host = normalized_host_env_suffix(host);
+    let normalized_host = match (provider, host) {
+        (SourceProvider::GitHub, "github.com") => "GITHUB_COM".to_string(),
+        (SourceProvider::GitLab, "gitlab.com") => "GITLAB_COM".to_string(),
+        _ => normalized_host_env_suffix(host),
+    };
     match provider {
         SourceProvider::GitHub => {
             let mut candidates = vec![format!("{GITHUB_TOKEN_ENV}_{normalized_host}")];
@@ -372,15 +376,14 @@ fn provider_token_env_candidates(provider: SourceProvider, host: &str) -> Vec<St
 }
 
 fn normalized_host_env_suffix(host: &str) -> String {
-    host.chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character.to_ascii_uppercase()
-            } else {
-                '_'
-            }
-        })
-        .collect()
+    host.bytes().fold(String::new(), |mut suffix, byte| {
+        if byte.is_ascii_alphanumeric() {
+            suffix.push(byte.to_ascii_uppercase() as char);
+        } else {
+            suffix.push_str(&format!("_{byte:02X}_"));
+        }
+        suffix
+    })
 }
 
 fn releases_page_url(url: &str) -> String {
@@ -499,7 +502,9 @@ fn classify_release_lookup_status(
     authenticated: bool,
     headers: &header::HeaderMap,
 ) -> Option<ReleaseLookupDiagnosticKind> {
-    if status == StatusCode::TOO_MANY_REQUESTS || rate_limit_exhausted(headers) {
+    if status == StatusCode::TOO_MANY_REQUESTS
+        || (status.is_client_error() || status.is_server_error()) && rate_limit_exhausted(headers)
+    {
         return Some(ReleaseLookupDiagnosticKind::RateLimited);
     }
 
@@ -1024,7 +1029,7 @@ mod tests {
         );
         assert_eq!(
             provider_token_env_candidates(SourceProvider::GitHub, "ghe.example.com"),
-            ["BINPM_GITHUB_TOKEN_GHE_EXAMPLE_COM"]
+            ["BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM"]
         );
         assert_eq!(
             provider_token_env_candidates(SourceProvider::GitLab, "gitlab.com"),
@@ -1036,7 +1041,11 @@ mod tests {
         );
         assert_eq!(
             provider_token_env_candidates(SourceProvider::GitLab, "gitlab.example.com"),
-            ["BINPM_GITLAB_TOKEN_GITLAB_EXAMPLE_COM"]
+            ["BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM"]
+        );
+        assert_ne!(
+            provider_token_env_candidates(SourceProvider::GitHub, "ghe.example.com"),
+            provider_token_env_candidates(SourceProvider::GitHub, "ghe-example.com")
         );
     }
 
@@ -1068,12 +1077,26 @@ mod tests {
     }
 
     #[test]
+    fn provider_auth_does_not_reuse_colliding_host_tokens() {
+        let source: SourceSpec = "github:ghe-example.com/owner/repo".parse().expect("source");
+        let auth = provider_auth_for_source_with(&source, |name| match name {
+            "BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM" => Some("wrong-host-token".to_string()),
+            "BINPM_GITHUB_TOKEN_GHE_2D_EXAMPLE_2E_COM" => Some("right-host-token".to_string()),
+            _ => None,
+        })
+        .expect("auth");
+
+        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GHE_2D_EXAMPLE_2E_COM");
+        assert_eq!(auth.header_value, "Bearer right-host-token");
+    }
+
+    #[test]
     fn gitlab_provider_auth_uses_private_token_header() {
         let source: SourceSpec = "gitlab:gitlab.example.com/group/tool"
             .parse()
             .expect("source");
         let auth = provider_auth_for_source_with(&source, |name| match name {
-            "BINPM_GITLAB_TOKEN_GITLAB_EXAMPLE_COM" => Some("self-managed-token".to_string()),
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM" => Some("self-managed-token".to_string()),
             _ => None,
         })
         .expect("auth");
@@ -1086,7 +1109,7 @@ mod tests {
         .build()
         .expect("request");
 
-        assert_eq!(auth.env_var, "BINPM_GITLAB_TOKEN_GITLAB_EXAMPLE_COM");
+        assert_eq!(auth.env_var, "BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM");
         assert_eq!(
             request
                 .headers()
@@ -1154,6 +1177,10 @@ mod tests {
                 &header::HeaderMap::new()
             ),
             Some(ReleaseLookupDiagnosticKind::RateLimited)
+        );
+        assert_eq!(
+            classify_release_lookup_status(StatusCode::OK, false, &headers),
+            None
         );
     }
 
