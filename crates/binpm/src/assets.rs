@@ -177,7 +177,7 @@ pub fn select_asset(
 pub fn discover_archive_binary(repo_name: &str, members: &[ArchiveMember]) -> BinaryDiscovery {
     let mut candidates = members
         .iter()
-        .filter(|member| member.executable || member.path.to_ascii_lowercase().ends_with(".exe"))
+        .filter(|member| member.executable)
         .map(|member| member.path.clone())
         .collect::<Vec<_>>();
     candidates.sort();

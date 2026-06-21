@@ -252,6 +252,9 @@ fn exec(args: ExecArgs) -> Result<i32> {
         .clone();
     let mut spec = parse_manifest_source(&tool.source)?;
     spec.version = tool.version.clone();
+    if local_tool_execution_ready(&root, &cmd, &spec, Some(&tool))? {
+        return execute_command(&cmd, args.args(), &[ScopePaths::local(root).bin]);
+    }
     let prior_state = capture_local_tool_state(&root, &cmd)?;
     let install = install_local_tool(
         &root,
@@ -1016,6 +1019,61 @@ fn install_local_tool(
         deferred_cache_hit: install.deferred_cache_hit,
         cache_metadata_snapshot: install.cache_metadata_snapshot,
     })
+}
+
+fn local_tool_execution_ready(
+    root: &Path,
+    cmd: &str,
+    spec: &SourceSpec,
+    tool: Option<&ManifestTool>,
+) -> Result<bool> {
+    let target = HostTarget::current()?;
+    let lockfile_path = root.join(LOCKFILE_FILE);
+    let lockfile = read_lockfile(&lockfile_path)?;
+    let Some(locked_tool) = lockfile.tools.get(cmd) else {
+        return Ok(false);
+    };
+    if locked_tool.source != spec.source_without_version()
+        || lock_targets_conflict_with_manifest(&lockfile_path, root, cmd, spec, tool, locked_tool)
+    {
+        return Ok(false);
+    }
+
+    let Some(lock_record) = locked_tool.targets.get(&target.key()) else {
+        return Ok(false);
+    };
+    if lock_record.requested_version != spec.version {
+        return Ok(false);
+    }
+    if assert_lock_record_matches_source_and_target(&lockfile_path, cmd, spec, &target, lock_record)
+        .is_err()
+        || assert_lock_matches_manifest_tool(root, cmd, tool, &target, lock_record).is_err()
+    {
+        return Ok(false);
+    }
+
+    let paths = ScopePaths::local(root.to_path_buf());
+    let runtime_record = match read_package_record(&package_record_path(&paths, cmd)) {
+        Ok(record) => record,
+        Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
+            return Ok(false)
+        }
+        Err(error) => return Err(error),
+    };
+    if assert_runtime_record_matches_lock(root, cmd, lock_record, &runtime_record).is_err() {
+        return Ok(false);
+    }
+
+    let installed_path = validate_installed_binary_path(&paths, cmd, &runtime_record)?;
+    match require_regular_managed_file(&installed_path) {
+        Ok(()) => {}
+        Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
+            return Ok(false)
+        }
+        Err(error) => return Err(error),
+    }
+    require_executable_managed_file(&installed_path)?;
+    Ok(true)
 }
 
 struct InstalledPackage {
@@ -1855,6 +1913,7 @@ fn install_selected_executable(
                 format,
                 &resolved.decision.asset_name,
                 repo,
+                &resolved.target,
                 selected_binary.as_deref(),
             )?;
             resolved.selected_binary = selected_binary
@@ -1879,6 +1938,7 @@ fn read_archive_selected_binary(
     format: ArchiveFormat,
     asset_name: &str,
     repo_name: &str,
+    target: &HostTarget,
     explicit_binary: Option<&str>,
 ) -> Result<SelectedArchiveBinary> {
     let bytes = fs::read(archive_path).map_err(|source| BinpmError::ReadFile {
@@ -1888,11 +1948,11 @@ fn read_archive_selected_binary(
     match format {
         ArchiveFormat::TarGz | ArchiveFormat::Tgz => {
             let decoder = flate2::read::GzDecoder::new(Cursor::new(bytes));
-            read_tar_selected_binary(decoder, asset_name, repo_name, explicit_binary)
+            read_tar_selected_binary(decoder, asset_name, repo_name, target, explicit_binary)
         }
         ArchiveFormat::TarXz | ArchiveFormat::Txz => {
             let decoder = xz2::read::XzDecoder::new(Cursor::new(bytes));
-            read_tar_selected_binary(decoder, asset_name, repo_name, explicit_binary)
+            read_tar_selected_binary(decoder, asset_name, repo_name, target, explicit_binary)
         }
         ArchiveFormat::TarZst => {
             let decoder =
@@ -1902,11 +1962,15 @@ fn read_archive_selected_binary(
                         message: error.to_string(),
                     }
                 })?;
-            read_tar_selected_binary(decoder, asset_name, repo_name, explicit_binary)
+            read_tar_selected_binary(decoder, asset_name, repo_name, target, explicit_binary)
         }
-        ArchiveFormat::Zip => {
-            read_zip_selected_binary(Cursor::new(bytes), asset_name, repo_name, explicit_binary)
-        }
+        ArchiveFormat::Zip => read_zip_selected_binary(
+            Cursor::new(bytes),
+            asset_name,
+            repo_name,
+            target,
+            explicit_binary,
+        ),
         ArchiveFormat::BareExecutable => unreachable!("bare executable is not an archive"),
     }
 }
@@ -1915,6 +1979,7 @@ fn read_tar_selected_binary<R: Read>(
     reader: R,
     asset_name: &str,
     repo_name: &str,
+    target: &HostTarget,
     explicit_binary: Option<&str>,
 ) -> Result<SelectedArchiveBinary> {
     let mut archive = tar::Archive::new(reader);
@@ -1954,7 +2019,7 @@ fn read_tar_selected_binary<R: Read>(
             .mode()
             .map(|mode| mode & 0o111 != 0)
             .unwrap_or(false)
-            || path.to_ascii_lowercase().ends_with(".exe");
+            || archive_exe_is_executable(&path, target);
         let mut bytes = Vec::new();
         entry
             .read_to_end(&mut bytes)
@@ -1962,6 +2027,9 @@ fn read_tar_selected_binary<R: Read>(
                 asset: asset_name.to_string(),
                 message: error.to_string(),
             })?;
+        if member_bytes.contains_key(&path) {
+            return Err(duplicate_archive_member(asset_name, &path));
+        }
         members.push(ArchiveMember {
             path: path.clone(),
             executable,
@@ -1981,6 +2049,7 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
     reader: R,
     asset_name: &str,
     repo_name: &str,
+    target: &HostTarget,
     explicit_binary: Option<&str>,
 ) -> Result<SelectedArchiveBinary> {
     let mut archive =
@@ -2012,13 +2081,16 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
             .unix_mode()
             .map(|mode| mode & 0o111 != 0)
             .unwrap_or(false)
-            || path.to_ascii_lowercase().ends_with(".exe");
+            || archive_exe_is_executable(&path, target);
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)
             .map_err(|error| BinpmError::ArchiveExtraction {
                 asset: asset_name.to_string(),
                 message: error.to_string(),
             })?;
+        if member_bytes.contains_key(&path) {
+            return Err(duplicate_archive_member(asset_name, &path));
+        }
         members.push(ArchiveMember {
             path: path.clone(),
             executable,
@@ -2042,6 +2114,18 @@ fn zip_file_is_symlink(unix_mode: Option<u32>) -> bool {
         .unwrap_or(false)
 }
 
+fn archive_exe_is_executable(path: &str, target: &HostTarget) -> bool {
+    target.os == TargetOs::Windows && path.to_ascii_lowercase().ends_with(".exe")
+}
+
+fn duplicate_archive_member(asset_name: &str, path: &str) -> BinpmError {
+    BinpmError::UnsafeArchivePath {
+        asset: asset_name.to_string(),
+        path: path.to_string(),
+        message: "duplicate archive member path is not allowed".to_string(),
+    }
+}
+
 fn select_archive_member(
     asset_name: &str,
     repo_name: &str,
@@ -2058,17 +2142,27 @@ fn select_archive_member(
             });
         }
         let explicit_path = validate_archive_member_path(asset_name, Path::new(explicit_binary))?;
-        if member_bytes.contains_key(&explicit_path) {
+        if members
+            .iter()
+            .any(|member| member.path == explicit_path && member.executable)
+        {
             explicit_path
         } else {
             let matches = members
                 .iter()
-                .filter(|member| archive_basename(&member.path) == explicit_binary)
+                .filter(|member| {
+                    member.executable && archive_basename(&member.path) == explicit_binary
+                })
                 .map(|member| member.path.clone())
                 .collect::<Vec<_>>();
             match matches.as_slice() {
                 [path] => path.clone(),
-                [] => explicit_path,
+                [] => {
+                    return Err(BinpmError::ArchiveMemberNotFound {
+                        asset: asset_name.to_string(),
+                        member: explicit_path,
+                    })
+                }
                 _ => {
                     return Err(BinpmError::AmbiguousArchiveBinaries {
                         asset: asset_name.to_string(),
@@ -3211,6 +3305,11 @@ fn verify_installed_binary_contents(
         record.archive_format,
         &record.asset_name,
         repo_name(&spec),
+        &HostTarget {
+            os: record.target_os,
+            arch: record.target_arch,
+            libc: record.target_libc,
+        },
         Some(&record.selected_binary),
     )?;
     let installed_bytes = fs::read(installed_path).map_err(|source| BinpmError::ReadFile {
@@ -3879,6 +3978,7 @@ mod tests {
             ArchiveFormat::TarGz,
             "tool.tar.gz",
             "tool",
+            &linux_target(),
             None,
         )
         .expect("selected binary");
@@ -3898,12 +3998,86 @@ mod tests {
             ArchiveFormat::Zip,
             "tool.zip",
             "tool",
+            &linux_target(),
             None,
         )
         .expect_err("unsafe archive path");
 
         assert!(matches!(error, BinpmError::UnsafeArchivePath { .. }));
         assert!(error.to_string().contains("parent-directory traversal"));
+    }
+
+    #[test]
+    fn archive_extraction_rejects_duplicate_member_paths() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[
+                ("./pkg/tool", b"first".as_slice(), 0o755),
+                ("pkg/tool", b"second".as_slice(), 0o755),
+            ],
+        );
+
+        let error = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect_err("duplicate archive path");
+
+        assert!(matches!(error, BinpmError::UnsafeArchivePath { .. }));
+        assert!(error.to_string().contains("duplicate archive member path"));
+    }
+
+    #[test]
+    fn archive_extraction_requires_explicit_member_to_be_executable() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[
+                ("pkg/tool", b"config".as_slice(), 0o644),
+                ("pkg/helper", b"#!/bin/sh\nexit 0\n".as_slice(), 0o755),
+            ],
+        );
+
+        let error = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            Some("pkg/tool"),
+        )
+        .expect_err("non-executable explicit member");
+
+        assert!(matches!(error, BinpmError::ArchiveMemberNotFound { .. }));
+    }
+
+    #[test]
+    fn archive_extraction_ignores_exe_candidates_on_non_windows_targets() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[("pkg/tool.exe", b"windows".as_slice(), 0o644)],
+        );
+
+        let error = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect_err("windows exe is not a linux executable candidate");
+
+        assert!(matches!(error, BinpmError::ArchiveBinaryNotFound { .. }));
     }
 
     #[test]
