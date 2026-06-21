@@ -7333,7 +7333,10 @@ mod tests {
         let error = remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new(), true)
             .expect_err("frozen orphan cleanup is rejected");
 
-        assert!(error.to_string().contains("Frozen lockfile"));
+        assert!(matches!(
+            error,
+            BinpmError::FrozenLockfileOrphanCleanup { .. }
+        ));
         let lockfile = crate::storage::read_lockfile(&temp_dir.path().join(LOCKFILE_FILE))
             .expect("read lockfile");
         assert!(lockfile.tools.contains_key("tool"));
@@ -8460,7 +8463,7 @@ mod tests {
         )
         .expect_err("locked format mismatch rejected");
 
-        assert!(error.to_string().contains("Frozen lockfile"));
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
     }
 
     #[test]
