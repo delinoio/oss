@@ -6,7 +6,7 @@ This page is published at https://nodeup.delino.io/installation.
 
 ## binpm
 
-Use [binpm](https://binpm.delino.io) to install Nodeup from the first-party `delinoio/oss` release asset for a pinned Nodeup release tag:
+Install binpm by following the [binpm installation docs](https://binpm.delino.io/installation). Use a dedicated Nodeup binpm home so `binpm add` does not modify an unrelated project manifest.
 
 macOS and Linux (bash/zsh):
 
@@ -16,7 +16,7 @@ mkdir -p "$NODEUP_BINPM_HOME"
 cd "$NODEUP_BINPM_HOME"
 [ -f binpm.toml ] || binpm init
 binpm add nodeup github:delinoio/oss@nodeup@v<semver>
-binpm env --shell <shell>
+eval "$(binpm env --shell bash)"
 ```
 
 Windows PowerShell:
@@ -27,10 +27,10 @@ New-Item -ItemType Directory -Force -Path $env:NODEUP_BINPM_HOME | Out-Null
 Set-Location $env:NODEUP_BINPM_HOME
 if (-not (Test-Path -LiteralPath "binpm.toml")) { binpm init }
 binpm add nodeup github:delinoio/oss@nodeup@v<semver>
-binpm env --shell powershell
+binpm env --shell powershell | Invoke-Expression
 ```
 
-Replace `<semver>` with the Nodeup release version to install. Nodeup release tags use `nodeup@v<semver>`. The `NODEUP_BINPM_HOME` directory keeps binpm's local manifest and `nodeup` binary out of unrelated project worktrees. In bash or zsh, replace `<shell>` with `bash` or `zsh`. Apply the printed environment command before verifying the install.
+Replace `<semver>` with the Nodeup release version to install. Nodeup release tags use `nodeup@v<semver>`.
 
 ## Homebrew
 
