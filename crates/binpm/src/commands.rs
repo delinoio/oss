@@ -168,6 +168,8 @@ struct VerifyOutput {
 #[derive(Debug, Serialize)]
 struct VerifyCheckOutput {
     cmd: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target: Option<String>,
     checksum_source: ChecksumSource,
     verification: VerificationState,
 }
@@ -743,7 +745,7 @@ fn info_cmd(args: InfoArgs, output: OutputMode) -> Result<i32> {
             command: "info",
             scope,
             cmd: args.cmd_or_source,
-            record: package_record_output(&record),
+            record: package_record_output(&record)?,
         });
     }
     print_package_record_info(&args.cmd_or_source, &record);
@@ -1056,7 +1058,7 @@ fn explain(args: ExplainArgs, output: OutputMode) -> Result<i32> {
             command: "explain",
             scope,
             cmd: args.cmd_or_source,
-            record: package_record_output(&record),
+            record: package_record_output(&record)?,
             override_snippet,
         });
     }
@@ -3287,6 +3289,19 @@ fn print_json(value: &impl Serialize) -> Result<i32> {
     Ok(0)
 }
 
+fn verify_check_output(
+    cmd: String,
+    target: Option<String>,
+    record: &PackageRecord,
+) -> VerifyCheckOutput {
+    VerifyCheckOutput {
+        cmd,
+        target,
+        checksum_source: record.checksum_source,
+        verification: verification_state(record),
+    }
+}
+
 fn list_installed_tool(cmd: String, record: PackageRecord) -> ListToolOutput {
     let verification = verification_state(&record);
     ListToolOutput {
@@ -3327,8 +3342,8 @@ fn print_list_tool(row: &ListToolOutput, output: OutputMode) {
     }
 }
 
-fn package_record_output(record: &PackageRecord) -> PackageRecordOutput {
-    PackageRecordOutput {
+fn package_record_output(record: &PackageRecord) -> Result<PackageRecordOutput> {
+    Ok(PackageRecordOutput {
         package_spec: record.package_spec.clone(),
         source: record.source.clone(),
         source_provider: record.source_provider,
@@ -3337,7 +3352,7 @@ fn package_record_output(record: &PackageRecord) -> PackageRecordOutput {
         requested_version: record.requested_version.clone(),
         release_tag: record.release_tag.clone(),
         asset_name: record.asset_name.clone(),
-        asset_url: record.asset_url.clone(),
+        asset_url: sanitize_persisted_url(&record.asset_url)?,
         target: HostTarget {
             os: record.target_os,
             arch: record.target_arch,
@@ -3353,7 +3368,7 @@ fn package_record_output(record: &PackageRecord) -> PackageRecordOutput {
         verification: verification_state(record),
         signature_available: record.signature_available,
         signature_verified: record.signature_verified,
-    }
+    })
 }
 
 fn selected_asset_output(
@@ -4396,7 +4411,7 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
         let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
         local_runtime_locks =
             local_runtime_lock_records(&manifest, &lockfile, &HostTarget::current()?)?;
-        let (lock_checked, lock_commands) = verify_lockfile_records(
+        let (lock_checked, lock_commands, lock_checks) = verify_lockfile_records(
             &root.join(LOCKFILE_FILE),
             lockfile,
             Some((&manifest, root.as_path())),
@@ -4405,6 +4420,7 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
         )?;
         checked += lock_checked;
         locked = lock_commands;
+        checks.extend(lock_checks);
     }
     for (cmd, record) in list_package_records(&paths)? {
         validate_command_name(&cmd)?;
@@ -4435,11 +4451,7 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
         require_regular_managed_file(&installed_path)?;
         require_executable_managed_file(&installed_path)?;
         verify_installed_binary_contents(&cache_paths, &record, &installed_path)?;
-        checks.push(VerifyCheckOutput {
-            cmd: cmd.clone(),
-            checksum_source: record.checksum_source,
-            verification: verification_state(&record),
-        });
+        checks.push(verify_check_output(cmd.clone(), None, &record));
         if !output.is_json() {
             println!("{cmd} verified {}", record.checksum_source.as_str());
         }
@@ -4690,9 +4702,10 @@ fn verify_lockfile_records(
     manifest: Option<(&Manifest, &Path)>,
     require_verified: bool,
     output: OutputMode,
-) -> Result<(usize, BTreeSet<String>)> {
+) -> Result<(usize, BTreeSet<String>, Vec<VerifyCheckOutput>)> {
     let mut checked = 0usize;
     let mut locked = BTreeSet::new();
+    let mut checks = Vec::new();
     if let Some((manifest, root)) = manifest {
         for (cmd, manifest_tool) in &manifest.tools {
             validate_command_name(cmd)?;
@@ -4780,6 +4793,11 @@ fn verify_lockfile_records(
             validate_provider_digest_evidence(&record)?;
             validate_locked_record_current_release(lockfile_path, &cmd, &record)?;
             locked.insert(cmd.clone());
+            checks.push(verify_check_output(
+                cmd.clone(),
+                Some(target_key.clone()),
+                &record,
+            ));
             if !output.is_json() {
                 println!(
                     "{cmd} lock verified {target_key} {}",
@@ -4789,7 +4807,7 @@ fn verify_lockfile_records(
             checked += 1;
         }
     }
-    Ok((checked, locked))
+    Ok((checked, locked, checks))
 }
 
 fn init(args: InitArgs) -> Result<i32> {
@@ -5166,17 +5184,17 @@ mod tests {
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        normalize_bin_selection, override_snippet_candidate, parse_manifest_source,
-        parse_manifest_tool_source, project_root_from, read_archive_selected_binary,
-        record_matches_current_provider_digest, release_diagnostic_lines,
-        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        normalize_bin_selection, override_snippet_candidate, package_record_output,
+        parse_manifest_source, parse_manifest_tool_source, project_root_from,
+        read_archive_selected_binary, record_matches_current_provider_digest,
+        release_diagnostic_lines, remove_global_tool_from_paths, remove_local_manifest_orphans,
         require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
         sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
         shell_path, shell_quote, snapshot_cache_metadata, source_install_scope,
         target_override_snippet, update_manifest_tool_source, validate_locked_record_artifact,
         validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
         validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries,
+        validate_provider_digest_evidence, validate_selected_manifest_entries, verify_check_output,
         verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
         zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
         InstalledPathSnapshot, LocalRemoveState, OutputMode, RuntimeToolState,
@@ -5186,7 +5204,7 @@ mod tests {
         cli::Shell,
         contract::{
             ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceProvider, SourceSpec,
-            TargetArch, TargetLibc, TargetOs,
+            TargetArch, TargetLibc, TargetOs, VerificationState,
         },
         error::BinpmError,
         release::ReleaseAsset,
@@ -6137,6 +6155,23 @@ mod tests {
         .expect_err("unverified target is rejected");
 
         assert!(error.to_string().contains("github:owner/tool@1.0.0"));
+    }
+
+    #[test]
+    fn json_lockfile_verify_check_reports_target_record() {
+        let mut record = package_record();
+        mark_github_verified(&mut record);
+
+        let check = verify_check_output(
+            "tool".to_string(),
+            Some("linux-x86_64-gnu".to_string()),
+            &record,
+        );
+
+        assert_eq!(check.cmd, "tool");
+        assert_eq!(check.target.as_deref(), Some("linux-x86_64-gnu"));
+        assert_eq!(check.checksum_source, ChecksumSource::GitHubDigest);
+        assert_eq!(check.verification, VerificationState::Verified);
     }
 
     #[test]
@@ -7508,6 +7543,19 @@ mod tests {
 
         assert!(error.to_string().contains("credentials"));
         assert!(!error.to_string().contains("token"));
+    }
+
+    #[test]
+    fn package_record_json_rejects_unsafe_persisted_asset_url() {
+        let mut record = package_record();
+        record.asset_url =
+            "https://github.com/owner/tool/releases/download/1.0.0/tool?token=secret#frag"
+                .to_string();
+
+        let error = package_record_output(&record).expect_err("unsafe persisted URL");
+
+        assert!(error.to_string().contains("must not include query"));
+        assert!(!error.to_string().contains("secret"));
     }
 
     #[test]

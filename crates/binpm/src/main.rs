@@ -8,7 +8,9 @@ fn main() {
         Err(error) => exit_with_parse_error(error, parse_json),
     };
     let json = cli.json;
-    logging::init_logging(cli.log_verbosity());
+    if !json {
+        logging::init_logging(cli.log_verbosity());
+    }
 
     match run_cli(cli) {
         Ok(code) => std::process::exit(code),

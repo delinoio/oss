@@ -646,13 +646,14 @@ signature_verified = false
 }
 
 #[test]
-fn verify_json_failure_emits_parseable_error_envelope() {
+fn verbose_verify_json_failure_emits_parseable_error_envelope() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
     let output = binpm()
         .current_dir(temp_dir.path())
         .env("BINPM_HOME", &home)
-        .args(["verify", "--local", "--json"])
+        .env("BINPM_LOG", "binpm=info")
+        .args(["--verbose", "verify", "--local", "--json"])
         .output()
         .expect("verify --json");
 
