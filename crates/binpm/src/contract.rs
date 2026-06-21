@@ -151,12 +151,64 @@ fn split_version<'source>(
 ) -> Result<(&'source str, Option<String>), BinpmError> {
     match remainder.split_once('@') {
         Some((source, version)) if !source.is_empty() && !version.is_empty() => {
+            validate_version_selector(raw, version)?;
             Ok((source, Some(version.to_string())))
         }
         Some(("", _)) => Err(invalid_source(raw, "source path cannot be empty")),
         Some((_, "")) => Err(invalid_source(raw, "source version cannot be empty")),
         _ => Ok((remainder, None)),
     }
+}
+
+pub(crate) fn validate_version_selector(raw: &str, version: &str) -> Result<(), BinpmError> {
+    if version == "latest" {
+        return Err(unsupported_version_selector(
+            raw,
+            "`@latest` is not supported; omit `@version` to select the latest stable release",
+        ));
+    }
+
+    if matches!(
+        version,
+        "stable" | "beta" | "alpha" | "nightly" | "canary" | "dev" | "edge" | "next"
+    ) {
+        return Err(unsupported_version_selector(
+            raw,
+            "channel selectors are not supported; use an exact release tag or omit `@version` for \
+             the latest stable release",
+        ));
+    }
+
+    if version.chars().all(|character| character.is_ascii_digit()) && version.len() <= 3 {
+        return Err(unsupported_version_selector(
+            raw,
+            "major-version pins such as `@1` are not supported; use an exact release tag such as \
+             `@v1` when the upstream release tag is literally `v1`",
+        ));
+    }
+
+    if looks_like_semver_range(version) {
+        return Err(unsupported_version_selector(
+            raw,
+            "semver ranges are not supported; use an exact release tag or omit `@version` for the \
+             latest stable release",
+        ));
+    }
+
+    Ok(())
+}
+
+fn looks_like_semver_range(version: &str) -> bool {
+    version.starts_with(['^', '~', '<', '>', '=', '*'])
+        || version.contains("||")
+        || version.contains(" - ")
+        || version
+            .split(['.', '-'])
+            .any(|segment| matches!(segment, "x" | "X" | "*"))
+}
+
+fn unsupported_version_selector(raw: &str, message: impl Into<String>) -> BinpmError {
+    invalid_source(raw, message)
 }
 
 fn path_segments<'a>(raw: &str, path: &'a str) -> Result<Vec<&'a str>, BinpmError> {
@@ -522,6 +574,58 @@ mod tests {
         assert_eq!(spec.host, "github.com");
         assert_eq!(spec.path, "owner/repo");
         assert_eq!(spec.version.as_deref(), Some("tool@v1.0.0"));
+    }
+
+    #[test]
+    fn rejects_latest_selector_with_omitted_version_hint() {
+        let error = SourceSpec::from_str("github:owner/repo@latest").expect_err("latest");
+
+        match error {
+            BinpmError::InvalidSourceSpec { raw, message } => {
+                assert_eq!(raw, "github:owner/repo@latest");
+                assert!(message.contains("`@latest` is not supported"));
+                assert!(message.contains("omit `@version`"));
+            }
+            other => panic!("expected InvalidSourceSpec, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_range_channel_and_major_pin_selectors() {
+        for (raw, expected) in [
+            ("github:owner/repo@^1", "semver ranges are not supported"),
+            ("github:owner/repo@1.x", "semver ranges are not supported"),
+            (
+                "github:owner/repo@beta",
+                "channel selectors are not supported",
+            ),
+            (
+                "github:owner/repo@1",
+                "major-version pins such as `@1` are not supported",
+            ),
+        ] {
+            match SourceSpec::from_str(raw).expect_err("unsupported selector") {
+                BinpmError::InvalidSourceSpec {
+                    raw: error_raw,
+                    message,
+                } => {
+                    assert_eq!(error_raw, raw);
+                    assert!(message.contains(expected), "{message}");
+                }
+                other => panic!("expected InvalidSourceSpec, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn preserves_exact_tag_forms_that_do_not_match_unsupported_selectors() {
+        let v1 = SourceSpec::from_str("github:owner/repo@v1").expect("v1 tag");
+        let release = SourceSpec::from_str("github:owner/repo@release-2026.06").expect("tag");
+        let numeric_date = SourceSpec::from_str("github:owner/repo@20240621").expect("tag");
+
+        assert_eq!(v1.version.as_deref(), Some("v1"));
+        assert_eq!(release.version.as_deref(), Some("release-2026.06"));
+        assert_eq!(numeric_date.version.as_deref(), Some("20240621"));
     }
 
     #[test]

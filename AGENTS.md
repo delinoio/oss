@@ -126,6 +126,7 @@ enum ProjectId {
 ### binpm Source Contract
 
 - Stable `binpm` source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
+- `binpm` source versions are exact release tag requests only; omitted `@version` selects latest stable, while `@latest`, semver range-like selectors, channel selectors, and major-version pins must be rejected before manifest or lockfile persistence.
 - GitLab versionless installs must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
 - GitLab release asset links must use HTTPS link URLs and HTTPS final redirect targets before candidate scoring or download.
 - GitLab generated `assets.sources` source archives must not be selected as installable assets.

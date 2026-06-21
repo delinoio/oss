@@ -37,7 +37,13 @@
 - When `@version` is omitted, `binpm` must select the latest stable release exposed by the source provider:
   - GitHub sources must ignore draft and prerelease releases.
   - GitLab sources must list releases in descending `released_at` order and choose the first release whose `released_at` is not in the future, whose API response does not set `upcoming_release = true`, and whose normalized tag does not contain a SemVer prerelease segment such as `-alpha`, `-beta`, `-pre`, `-preview`, `-rc`, or another hyphenated prerelease identifier.
-- Explicit versions may be written with or without a leading `v`; release tag matching must try the exact input first, then the opposite `v` prefix form.
+- Version selectors are intentionally exact-tag-only in v1:
+  - `github:owner/repo` selects the latest stable release.
+  - `github:owner/repo@14.1.1` and `github:owner/repo@v14.1.1` request exact release tags; `@14.1.1` must not match a `v14.1.1` release tag, and `@v14.1.1` must not match a `14.1.1` release tag.
+  - `@latest` is rejected with a hint to omit `@version` for latest-stable selection.
+  - SemVer range-like selectors such as `@^1`, `@~1.2`, `@>=1.0.0`, `@1.x`, `@1.*`, and `@1 || @2` are rejected with a hint to use an exact release tag or omit `@version`.
+  - Channel selectors such as `@stable`, `@beta`, `@alpha`, `@nightly`, `@canary`, `@dev`, `@edge`, and `@next` are rejected with a hint to use an exact release tag or omit `@version`.
+  - Major-version pins such as `@1` are rejected with a hint to use an exact release tag; if the upstream release tag is literally `v1`, users may request `@v1`.
 - Commands with both local and global scope must default to local when a local `binpm.toml` is discovered; otherwise they must default to global. Such commands must document `--local` and `--global` overrides.
 - Scoped mutating commands must print the selected local or global scope before mutation. `binpm update` and `binpm remove` must support `--dry-run` previews that validate the selected tools, print the selected scope and planned file/runtime changes, and then exit without mutating manifests, lockfiles, package records, cache references, or executables.
 - `--frozen-lockfile` on local `binpm install`, `binpm update`, and `binpm x` must fail when the command would need to create or modify `binpm.lock`; `CI=true` must enable this behavior by default, and `--no-frozen-lockfile` is the explicit local-development escape hatch.
@@ -108,6 +114,7 @@
 - `binpm.toml` is the committed local tool declaration file. It must use TOML, `version = 1`, and `[tools.<cmd>]` tables keyed by the local command name.
 - In `binpm.toml`, each tool entry must include `source = "<source-without-version>"`, may include `version = "<release>"`, and may include `bin = "<upstream-binary-name-or-archive-member>"` when the executable selected from the release differs from the local command name or needs explicit disambiguation.
 - `binpm add <cmd> <source>` must persist the package source without the version suffix in `source`; when a version is supplied, it must persist that value in `version`; when `--bin` is supplied, it must persist that value in `bin`.
+- Unsupported selector aliases, ranges, channels, and major-version pins must be rejected before manifest or lockfile writes so `binpm.toml` and `binpm.lock` remain deterministic exact-source records.
 - Target-specific manifest overrides must use `[tools.<cmd>.targets.<target-key>]` tables. Each override must include `asset = "<release-asset-name>"`, `bin = "<asset-member-or-bare-binary>"`, and may include `checksum_source = "<checksum-source>"` when the automatic checksum source must be overridden.
 - Override snippets emitted by diagnostics must use canonical target keys, TOML-escaped command keys and string values, exact release asset names from inspected release metadata, and exact selected binary paths when the local package record already knows them. Source-form explain must not include credential-bearing URLs, query strings, fragments, expiring download URLs, absolute cache paths, or other transient machine-local fields in snippets. When source-form explain has not downloaded an archive and therefore cannot inspect archive members, the snippet may use the repository command name as the `bin` value and the user must adjust it if the archive member differs.
 - Multi-binary releases must keep the existing `[tools.<cmd>]` model: each local command has its own declaration, while multiple commands may share the same source, release asset, cache entry, and package bytes.
