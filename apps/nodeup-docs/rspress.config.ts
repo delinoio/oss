@@ -89,7 +89,7 @@ export default defineConfig({
     ],
     footer: {
       message:
-        'Nodeup documentation is maintained in the <a href="https://github.com/delinoio/oss">Delino OSS repository</a>.',
+        'Nodeup documentation for installing, running, and troubleshooting Nodeup is maintained in the <a href="https://github.com/delinoio/oss">Delino OSS repository</a>.',
     },
   },
 });
