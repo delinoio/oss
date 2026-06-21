@@ -2,8 +2,6 @@
 
 Nodeup is distributed as first-party release artifacts. Install flows are designed for macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64 hosts.
 
-This page is published at https://nodeup.delino.io/installation.
-
 ## binpm
 
 Install binpm by following the [binpm installation docs](https://binpm.delino.io/installation). Use a dedicated Nodeup binpm home so `binpm add` does not modify an unrelated project manifest.
@@ -49,25 +47,20 @@ The Homebrew formula uses prebuilt Nodeup release archives for:
 
 ## Direct Installers
 
-The repository maintains direct installers at:
-
-- `scripts/install/nodeup.sh`
-- `scripts/install/nodeup.ps1`
-
-Direct installers verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`) with `cosign`. They support bundle-enabled releases only.
+Direct installers download the matching Nodeup release artifact for your host. In direct mode, they verify the artifact against `SHA256SUMS` and Sigstore verification material with `cosign`, so `cosign` must be installed first.
 
 Direct installers detect unsupported x86 hosts before resolving release tags or downloading assets. Use an x64/arm64 host or a supported CI image when an installer reports an unsupported host.
 
-macOS and Linux:
+After downloading the shell installer, run:
 
 ```bash
-./scripts/install/nodeup.sh --version latest --method direct
+sh nodeup.sh --version latest --method direct
 ```
 
-Windows PowerShell:
+After downloading the PowerShell installer, run:
 
 ```powershell
-./scripts/install/nodeup.ps1 -Version latest -Method direct
+.\nodeup.ps1 -Version latest -Method direct
 ```
 
 Direct installers place the binary in `~/.local/bin` by default and do not modify your shell `PATH`. Add that directory before verifying the install, or pass `--install-dir` / `-InstallDir` with a directory already on `PATH`.
@@ -126,7 +119,7 @@ Nodeup runtime installation and shim dispatch support:
 | Windows | x64 | `node-v<version>-win-x64.zip` |
 | Windows | arm64 | `node-v<version>-win-arm64.zip` |
 
-x86 hosts are unsupported. Runtime installation and shim dispatch fail with `unsupported-platform` before archive download or delegated command planning. JSON errors include deterministic diagnostics: `os`, `architecture`, `platform_source`, optional `forced_platform`, and `supported_platforms`.
+x86 hosts are unsupported. Runtime installation and shim dispatch fail with `unsupported-platform` before archive download or delegated command planning. JSON errors include deterministic diagnostics: `os`, `architecture`, `platform_source`, and `supported_platforms`.
 
 ## Local Directories
 
