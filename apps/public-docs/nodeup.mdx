@@ -28,7 +28,7 @@ Tag contract:
 
 `binpm`:
 
-macOS and Linux:
+macOS and Linux (bash/zsh):
 
 ```bash
 NODEUP_BINPM_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/nodeup-binpm"
@@ -50,7 +50,7 @@ binpm add nodeup github:delinoio/oss@nodeup@v<semver>
 binpm env --shell powershell
 ```
 
-Use the dedicated `NODEUP_BINPM_HOME` directory so binpm's local manifest and `nodeup` binary do not modify whichever project directory you started from. In POSIX shells, replace `<shell>` with `bash`, `zsh`, or `fish`. Apply the printed environment command before running `nodeup`.
+Use the dedicated `NODEUP_BINPM_HOME` directory so binpm's local manifest and `nodeup` binary do not modify whichever project directory you started from. In bash or zsh, replace `<shell>` with `bash` or `zsh`. Apply the printed environment command before running `nodeup`.
 
 Package manager:
 
