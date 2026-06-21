@@ -17,7 +17,7 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 ## Cross-Domain Invariants
 - Stable channel naming and runtime dispatch semantics must be preserved.
 - Shim behavior must remain deterministic across supported operating systems.
-- `nodeup shim setup` is the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.
+- `nodeup shim setup` is the stable idempotent setup/repair command for Nodeup-managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims, and must not replace unrelated existing commands.
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic.
 - `nodeup self uninstall` cleanup boundaries are data/cache/config only; binary, shims, and shell profile/PATH cleanup must remain manual and visible in human and JSON output.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.

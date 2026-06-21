@@ -16,8 +16,8 @@
 - Channel and command identifiers must remain stable and documented.
 - Binary entrypoints must force-link `swc_malloc` allocator policy, while the library target remains allocator-agnostic for downstream consumers.
 - Shim dispatch behavior must remain deterministic by executable name (`node`, `npm`, `npx`, `yarn`, `pnpm`).
-- `nodeup shim setup [--dir <path>]` must create or repair all managed shims idempotently.
-- Shim setup must default to `NODEUP_SHIM_DIR` when set, otherwise `$HOME/.local/share/nodeup/shims`.
+- `nodeup shim setup [--dir <path>]` must create or repair Nodeup-managed shims idempotently without replacing unrelated existing commands.
+- Shim setup must default to `NODEUP_SHIM_DIR` when set, otherwise `$HOME/.local/bin`.
 - Shim setup must emit PATH guidance when the shim directory is not active on `PATH`.
 - macOS and Linux shim setup must use symlinks; Windows shim setup must use copied `.exe` aliases because symlink privileges are not guaranteed.
 - Install/update command surfaces must preserve backward-compatible flags and outputs.

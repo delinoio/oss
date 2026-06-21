@@ -178,12 +178,13 @@ nodeup shim setup [--dir <path>]
 
 Creates or repairs managed executable-name dispatch shims for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
 
-- Without `--dir`, Nodeup uses `NODEUP_SHIM_DIR` when set, otherwise `$HOME/.local/share/nodeup/shims`.
+- Without `--dir`, Nodeup uses `NODEUP_SHIM_DIR` when set, otherwise `$HOME/.local/bin`.
 - macOS and Linux use symlinks named `node`, `npm`, `npx`, `yarn`, and `pnpm`.
 - Windows uses copied executables named `node.exe`, `npm.exe`, `npx.exe`, `yarn.exe`, and `pnpm.exe`.
 - Re-running the command reports existing valid shims as `existing`.
-- Stale symlinks or stale Windows copies are repaired.
-- Non-Nodeup files are refused instead of being overwritten.
+- Existing unrelated commands are reported as conflicts and are not replaced.
+- Stale Nodeup symlinks are repaired.
+- Non-Nodeup files and different existing Windows executables are refused instead of being overwritten.
 
 JSON output includes `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, and `shims`. Each shim entry includes `alias`, `path`, `status`, and `method`.
 

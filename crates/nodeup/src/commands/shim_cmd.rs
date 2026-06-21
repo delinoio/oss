@@ -206,6 +206,13 @@ fn ensure_symlink(path: &Path, nodeup_binary: &Path) -> Result<ShimEntryStatus> 
                 if existing_target == nodeup_binary {
                     return Ok(ShimEntryStatus::Existing);
                 }
+                if !looks_like_nodeup_binary_path(&existing_target, nodeup_binary) {
+                    return Err(shim_conflict(format!(
+                        "Refusing to replace non-nodeup shim target: {} -> {}",
+                        path.display(),
+                        existing_target.display()
+                    )));
+                }
                 fs::remove_file(path)?;
                 create_symlink(nodeup_binary, path)?;
                 return Ok(ShimEntryStatus::Repaired);
@@ -242,8 +249,10 @@ fn ensure_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimEntryStatus> {
                 return Ok(ShimEntryStatus::Existing);
             }
 
-            fs::copy(nodeup_binary, path)?;
-            Ok(ShimEntryStatus::Repaired)
+            Err(shim_conflict(format!(
+                "Refusing to replace existing shim target with different content: {}",
+                path.display()
+            )))
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             fs::copy(nodeup_binary, path)?;
@@ -293,11 +302,7 @@ fn resolve_shim_dir(requested_dir: Option<&str>) -> PathBuf {
         return PathBuf::from(dir);
     }
 
-    home_dir()
-        .join(".local")
-        .join("share")
-        .join("nodeup")
-        .join("shims")
+    home_dir().join(".local").join("bin")
 }
 
 fn shim_path(shim_dir: &Path, alias: ManagedAlias, method: ShimMethod) -> PathBuf {
@@ -346,6 +351,13 @@ fn normalize_existing_path(path: &Path) -> Result<PathBuf> {
 
 fn same_file_content(left: &Path, right: &Path) -> Result<bool> {
     Ok(fs::read(left)? == fs::read(right)?)
+}
+
+fn looks_like_nodeup_binary_path(existing_target: &Path, nodeup_binary: &Path) -> bool {
+    existing_target
+        .file_name()
+        .zip(nodeup_binary.file_name())
+        .is_some_and(|(existing, expected)| existing == expected)
 }
 
 fn host_is_windows() -> bool {

@@ -1728,11 +1728,42 @@ fn shim_setup_creates_all_aliases_and_reports_path_guidance() {
         .assert()
         .success()
         .stdout(predicates::str::contains("\"status\": \"created\""))
-        .stdout(predicates::str::contains("\"path_active\": false"))
-        .stdout(predicates::str::contains("export PATH="));
+        .stdout(predicates::str::contains("\"path_active\": false"));
 
-    for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
-        assert!(fs::symlink_metadata(shim_dir.join(alias)).is_ok());
+    if cfg!(windows) {
+        env.command()
+            .args([
+                "--output",
+                "json",
+                "shim",
+                "setup",
+                "--dir",
+                shim_dir.to_str().unwrap(),
+            ])
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("PowerShell"));
+
+        for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
+            assert!(shim_dir.join(format!("{alias}.exe")).is_file());
+        }
+    } else {
+        env.command()
+            .args([
+                "--output",
+                "json",
+                "shim",
+                "setup",
+                "--dir",
+                shim_dir.to_str().unwrap(),
+            ])
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("export PATH="));
+
+        for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
+            assert!(fs::symlink_metadata(shim_dir.join(alias)).is_ok());
+        }
     }
 }
 
@@ -1771,7 +1802,9 @@ fn shim_setup_repairs_stale_symlink_alias() {
     let env = TestEnv::new();
     let shim_dir = env.root.join("nodeup-shims-repair");
     fs::create_dir_all(&shim_dir).unwrap();
-    let stale_target = env.root.join("old-nodeup");
+    let stale_target_dir = env.root.join("old-nodeup-bin");
+    fs::create_dir_all(&stale_target_dir).unwrap();
+    let stale_target = stale_target_dir.join("nodeup");
     fs::write(&stale_target, "old").unwrap();
     std::os::unix::fs::symlink(&stale_target, shim_dir.join("node")).unwrap();
 
@@ -1791,6 +1824,31 @@ fn shim_setup_repairs_stale_symlink_alias() {
 
     let repaired_target = fs::read_link(shim_dir.join("node")).unwrap();
     assert_ne!(repaired_target, stale_target);
+}
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn shim_setup_refuses_unrelated_symlink_alias() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-conflict");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let existing_target = env.root.join("node");
+    fs::write(&existing_target, "existing-node").unwrap();
+    std::os::unix::fs::symlink(&existing_target, shim_dir.join("node")).unwrap();
+
+    env.command()
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to replace non-nodeup shim target",
+        ));
+
+    assert_eq!(
+        fs::read_link(shim_dir.join("node")).unwrap(),
+        existing_target
+    );
 }
 
 #[test]
@@ -1817,6 +1875,27 @@ fn shim_setup_uses_copy_mode_for_windows_hosts() {
     for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
         assert!(shim_dir.join(format!("{alias}.exe")).is_file());
     }
+}
+
+#[test]
+#[serial]
+fn shim_setup_refuses_existing_windows_executable() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-conflict");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let existing_node = shim_dir.join("node.exe");
+    fs::write(&existing_node, "existing-node").unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to replace existing shim target with different content",
+        ));
+
+    assert_eq!(fs::read_to_string(existing_node).unwrap(), "existing-node");
 }
 
 #[test]

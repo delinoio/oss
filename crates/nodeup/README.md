@@ -108,7 +108,7 @@ Fallback rules when `packageManager` is absent:
 
 `nodeup shim setup` creates or repairs managed aliases for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
 
-- Default shim directory: `NODEUP_SHIM_DIR`, otherwise `$HOME/.local/share/nodeup/shims`
+- Default shim directory: `NODEUP_SHIM_DIR`, otherwise `$HOME/.local/bin`
 - macOS/Linux: symlink aliases
 - Windows: copied `.exe` aliases
 - JSON output includes `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, and per-alias `shims`

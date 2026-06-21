@@ -79,8 +79,8 @@ nodeup shim setup
 
 The command creates or repairs all managed aliases in the default shim directory:
 
-- macOS and Linux: `$HOME/.local/share/nodeup/shims`
-- Windows: `$HOME\.local\share\nodeup\shims`
+- macOS and Linux: `$HOME/.local/bin`
+- Windows: `$HOME\.local\bin`
 
 If that directory is not already on `PATH`, human output includes the exact shell command for the current session. Add the same directory to your shell profile or user PATH for future sessions.
 

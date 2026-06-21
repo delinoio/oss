@@ -31,8 +31,8 @@ nodeup shim setup
 
 Default shim directory:
 
-- macOS and Linux: `$HOME/.local/share/nodeup/shims`
-- Windows: `$HOME\.local\share\nodeup\shims`
+- macOS and Linux: `$HOME/.local/bin`
+- Windows: `$HOME\.local\bin`
 
 Use `NODEUP_SHIM_DIR` or `--dir <path>` to choose another directory:
 
@@ -45,8 +45,9 @@ The command is idempotent:
 
 - Missing shims are created.
 - Existing valid shims are reported as `existing`.
-- Stale symlinks or stale Windows copies are repaired.
-- Ambiguous non-Nodeup files are refused instead of overwritten.
+- Existing unrelated commands are reported as conflicts and are not replaced.
+- Stale Nodeup symlinks are repaired.
+- Ambiguous non-Nodeup files and different existing Windows executables are refused instead of overwritten.
 
 If the shim directory is not active on `PATH`, human and JSON output include a `path_instruction` value for the current session. Add the shim directory to your shell profile or user PATH for future sessions.
 
