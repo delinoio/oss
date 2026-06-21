@@ -134,11 +134,7 @@ pub enum Command {
         /// Target shell (for example: `bash`, `zsh`, or `fish`).
         shell: String,
         /// Optional command scope for completion generation.
-        #[arg(
-            value_name = "COMMAND",
-            trailing_var_arg = true,
-            allow_hyphen_values = true
-        )]
+        #[arg(value_name = "COMMAND", allow_hyphen_values = true)]
         command: Vec<String>,
     },
 }

@@ -1923,6 +1923,39 @@ fn json_completions_success_outputs_raw_script() {
 
 #[test]
 #[serial]
+fn completions_accepts_global_output_after_shell() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "--output", "json"])
+        .output()
+        .expect("completions bash --output json");
+
+    assert!(output.status.success());
+    assert!(!output.stdout.is_empty());
+    assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completions_accepts_help_after_shell() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "--help"])
+        .output()
+        .expect("completions bash --help");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("Generate shell completion scripts"));
+}
+
+#[test]
+#[serial]
 fn completions_accepts_valid_top_level_scope() {
     let env = TestEnv::new();
 
