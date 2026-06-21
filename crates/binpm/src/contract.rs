@@ -196,8 +196,9 @@ fn parse_github_url_shorthand(trimmed: &str) -> Result<Option<SourceSpec>, Binpm
 
     let version = match segments.as_slice() {
         [_, _, "releases", "tag", tag] | [_, _, "releases", "download", tag, ..] => {
-            validate_version_selector(&sanitized_raw, tag)?;
-            Some((*tag).to_string())
+            let tag = percent_decode_path_segment(&sanitized_raw, tag)?;
+            validate_version_selector(&sanitized_raw, &tag)?;
+            Some(tag)
         }
         _ => None,
     };
@@ -243,6 +244,48 @@ fn sanitize_unparsed_url_like_input(raw: &str) -> String {
         &authority[credentials_end + 1..],
         &without_query[authority_end..]
     )
+}
+
+fn percent_decode_path_segment(raw: &str, segment: &str) -> Result<String, BinpmError> {
+    let bytes = segment.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            let Some(high) = hex_value(bytes[index + 1]) else {
+                decoded.push(bytes[index]);
+                index += 1;
+                continue;
+            };
+            let Some(low) = hex_value(bytes[index + 2]) else {
+                decoded.push(bytes[index]);
+                index += 1;
+                continue;
+            };
+            decoded.push((high << 4) | low);
+            index += 3;
+            continue;
+        }
+
+        decoded.push(bytes[index]);
+        index += 1;
+    }
+
+    String::from_utf8(decoded).map_err(|_| {
+        invalid_source(
+            raw,
+            "GitHub release URL shorthand tags must be valid UTF-8 after percent decoding",
+        )
+    })
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        _ => None,
+    }
 }
 
 fn parse_github_owner_repo_shorthand(
@@ -779,6 +822,19 @@ mod tests {
         assert_eq!(url.path, "BurntSushi/ripgrep");
         assert_eq!(url.version.as_deref(), Some("14.1.1"));
         assert_eq!(url.to_string(), "github:BurntSushi/ripgrep@14.1.1");
+    }
+
+    #[test]
+    fn normalizes_github_release_url_shorthand_with_encoded_tag() {
+        let url = normalize_source_input(
+            "https://github.com/owner/tool/releases/download/nightly%2F2026-06-21/tool.tar.gz",
+        )
+        .expect("GitHub release URL shorthand");
+
+        assert_eq!(url.host, "github.com");
+        assert_eq!(url.path, "owner/tool");
+        assert_eq!(url.version.as_deref(), Some("nightly/2026-06-21"));
+        assert_eq!(url.to_string(), "github:owner/tool@nightly/2026-06-21");
     }
 
     #[test]
