@@ -11,6 +11,20 @@ binpm explain rg --local
 
 Explaining a source may contact the source provider for release information, but it does not change manifests, lockfiles, cached assets, or installed executables.
 
+GitHub.com shorthand input such as `BurntSushi/ripgrep` or `https://github.com/BurntSushi/ripgrep` is normalized to `github:BurntSushi/ripgrep`. If you paste a GitLab URL, rewrite it as `gitlab:<host>/<namespace...>/<project>`; direct URL installs are not a binpm source backend.
+
+## Fix GitLab HTTPS Rejections
+
+GitLab assets are scored only after binpm verifies that the release link URL, any direct asset URL, and the final redirect target are HTTPS. `binpm explain` distinguishes those rejection reasons before target scoring.
+
+If every matching GitLab asset is rejected for HTTPS, update the GitLab release link to use HTTPS or publish a secure direct asset URL. Redirect diagnostics show only the origin, so query strings, credentials, and tokens are not echoed.
+
+## Resolve CPU Feature Variants
+
+Some projects publish CPU feature variants such as `baseline` and `modern`. binpm treats these as CPU feature signals, not architecture names.
+
+Automatic selection prefers baseline-compatible assets. A `modern` asset is rejected unless binpm has explicit host CPU capability support or you add a target override after verifying compatibility.
+
 ## Resolve Binary Ambiguity
 
 When an archive contains multiple plausible executables, the error lists candidate archive members and includes retry commands.

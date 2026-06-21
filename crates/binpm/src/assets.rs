@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
@@ -24,6 +25,30 @@ pub enum ArtifactKind {
     PackageMetadata,
     #[serde(rename = "unknown")]
     Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CpuFeatureVariant {
+    #[serde(rename = "baseline")]
+    Baseline,
+    #[serde(rename = "modern")]
+    Modern,
+}
+
+impl CpuFeatureVariant {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Baseline => "baseline",
+            Self::Modern => "modern",
+        }
+    }
+
+    fn score_adjustment(self) -> i32 {
+        match self {
+            Self::Baseline => 4,
+            Self::Modern => -4,
+        }
+    }
 }
 
 impl ArtifactKind {
@@ -55,6 +80,7 @@ pub struct CandidateDecision {
     pub detected_os: Option<TargetOs>,
     pub detected_arch: Option<TargetArch>,
     pub detected_libc: Option<TargetLibc>,
+    pub cpu_feature: Option<CpuFeatureVariant>,
     pub score: Option<i32>,
     pub eligible: bool,
     pub recognized_pattern: bool,
@@ -64,8 +90,12 @@ pub struct CandidateDecision {
 impl CandidateDecision {
     pub fn explain_line(&self) -> String {
         if self.eligible {
+            let cpu_feature = self
+                .cpu_feature
+                .map(|variant| format!(" cpu_feature={}", variant.as_str()))
+                .unwrap_or_default();
             format!(
-                "candidate {} kind={} score={} target={}/{}/{}",
+                "candidate {} kind={} score={} target={}/{}/{}{}",
                 self.asset_name,
                 self.kind.as_str(),
                 self.score.unwrap_or_default(),
@@ -75,7 +105,8 @@ impl CandidateDecision {
                     .unwrap_or("unknown"),
                 self.detected_libc
                     .map(TargetLibc::as_str)
-                    .unwrap_or("unknown")
+                    .unwrap_or("unknown"),
+                cpu_feature
             )
         } else {
             format!(
@@ -335,6 +366,9 @@ fn archive_member_target_score(target: &HostTarget, path: &str) -> Option<i32> {
     if signal.recognized_pattern {
         score += 5;
     }
+    if let Some(cpu_feature) = signal.cpu_feature {
+        score += cpu_feature.score_adjustment();
+    }
     Some(score)
 }
 
@@ -371,14 +405,27 @@ fn score_asset(
         detected_os: target_signal.os,
         detected_arch: target_signal.arch,
         detected_libc: target_signal.libc,
+        cpu_feature: target_signal.cpu_feature,
         score: None,
         eligible: false,
         recognized_pattern: target_signal.recognized_pattern,
         rejection_reason: None,
     };
 
-    if provider == SourceProvider::GitLab && !gitlab_https_eligible(asset) {
-        decision.rejection_reason = Some("gitlab asset link is not HTTPS eligible".to_string());
+    if provider == SourceProvider::GitLab {
+        if let Some(reason) = gitlab_https_rejection_reason(asset) {
+            decision.rejection_reason = Some(reason);
+            log_candidate(target, &decision);
+            return decision;
+        }
+    }
+
+    if target_signal.cpu_feature == Some(CpuFeatureVariant::Modern) {
+        decision.rejection_reason = Some(
+            "CPU feature variant `modern` requires explicit host capability selection; baseline \
+             or unspecified assets are preferred by default"
+                .to_string(),
+        );
         log_candidate(target, &decision);
         return decision;
     }
@@ -426,13 +473,64 @@ fn score_asset(
 }
 
 pub(crate) fn gitlab_https_eligible(asset: &ReleaseAsset) -> bool {
-    is_https_url(&asset.url)
-        && asset
-            .provider_url
+    gitlab_https_rejection_reason(asset).is_none()
+}
+
+pub(crate) fn gitlab_https_rejection_reason(asset: &ReleaseAsset) -> Option<String> {
+    if !is_https_url(&asset.url) {
+        return Some(format!(
+            "gitlab asset link URL is not HTTPS: {}; configure the GitLab release link to use \
+             HTTPS or a secure direct asset URL",
+            sanitized_origin(&asset.url)
+        ));
+    }
+
+    if let Some(provider_url) = &asset.provider_url {
+        if !is_https_url(provider_url) {
+            return Some(format!(
+                "gitlab direct asset URL is not HTTPS: {}; configure the GitLab release link to \
+                 use HTTPS or omit the insecure direct asset URL",
+                sanitized_origin(provider_url)
+            ));
+        }
+    }
+
+    if asset.final_url_https == Some(false) {
+        let target = asset
+            .final_url
             .as_deref()
-            .map(is_https_url)
-            .unwrap_or(true)
-        && asset.final_url_https.unwrap_or(true)
+            .map(sanitized_origin)
+            .unwrap_or_else(|| "unknown redirect target".to_string());
+        return Some(format!(
+            "gitlab asset redirect target is not HTTPS: {target}; configure the GitLab release \
+             link to redirect to HTTPS"
+        ));
+    }
+
+    None
+}
+
+pub(crate) fn gitlab_https_diagnostic_url(asset: &ReleaseAsset) -> String {
+    if asset.final_url_https == Some(false) {
+        if let Some(final_url) = &asset.final_url {
+            return sanitized_origin(final_url);
+        }
+    }
+    let url = asset.provider_url.as_deref().unwrap_or(&asset.url);
+    sanitized_origin(url)
+}
+
+fn sanitized_origin(raw: &str) -> String {
+    let Ok(parsed) = Url::parse(raw) else {
+        return raw.split(['?', '#']).next().unwrap_or(raw).to_string();
+    };
+    let Some(host) = parsed.host_str() else {
+        return format!("{}:", parsed.scheme());
+    };
+    match parsed.port() {
+        Some(port) => format!("{}://{}:{}", parsed.scheme(), host, port),
+        None => format!("{}://{}", parsed.scheme(), host),
+    }
 }
 
 fn is_https_url(url: &str) -> bool {
@@ -480,6 +578,9 @@ fn target_score(target: &HostTarget, signal: &TargetSignal) -> Option<i32> {
     if signal.recognized_pattern {
         score += 5;
     }
+    if let Some(cpu_feature) = signal.cpu_feature {
+        score += cpu_feature.score_adjustment();
+    }
 
     Some(score)
 }
@@ -521,6 +622,7 @@ struct TargetSignal {
     os: Option<TargetOs>,
     arch: Option<TargetArch>,
     libc: Option<TargetLibc>,
+    cpu_feature: Option<CpuFeatureVariant>,
     recognized_pattern: bool,
     universal_macos: bool,
 }
@@ -548,6 +650,9 @@ fn detect_target(name: &str) -> TargetSignal {
         }
         if signal.libc.is_none() {
             signal.libc = libc_alias(token);
+        }
+        if signal.cpu_feature.is_none() {
+            signal.cpu_feature = cpu_feature_alias(token);
         }
     }
 
@@ -627,6 +732,14 @@ fn libc_alias(token: &str) -> Option<TargetLibc> {
         "musl" | "alpine" => Some(TargetLibc::Musl),
         "msvc" => Some(TargetLibc::Msvc),
         "static" | "portable" | "universal" | "any" => Some(TargetLibc::Any),
+        _ => None,
+    }
+}
+
+fn cpu_feature_alias(token: &str) -> Option<CpuFeatureVariant> {
+    match token {
+        "baseline" => Some(CpuFeatureVariant::Baseline),
+        "modern" => Some(CpuFeatureVariant::Modern),
         _ => None,
     }
 }
@@ -775,7 +888,7 @@ fn normalized_binary_name(name: &str) -> String {
 mod tests {
     use super::{
         classify_artifact, discover_archive_binary, score_assets, select_asset, ArchiveMember,
-        ArtifactKind, BinaryDiscovery,
+        ArtifactKind, BinaryDiscovery, CpuFeatureVariant,
     };
     use crate::{
         contract::{ArchiveFormat, HostTarget, SourceProvider, TargetArch, TargetLibc, TargetOs},
@@ -793,6 +906,7 @@ mod tests {
             digest: None,
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }
     }
 
@@ -1089,20 +1203,58 @@ mod tests {
         direct.provider_url = Some("http://gitlab.example.com/direct.zip".to_string());
         let mut redirected = asset("tool-x86_64-unknown-linux-gnu.tgz");
         redirected.final_url_https = Some(false);
+        redirected.final_url = Some("http://cdn.example.com/tool.tgz?token=secret".to_string());
         let decisions = score_assets(SourceProvider::GitLab, &host, &[link, direct]);
 
         assert!(decisions.iter().all(|decision| !decision.eligible));
-        assert!(decisions
-            .iter()
-            .all(|decision| decision.rejection_reason.as_deref()
-                == Some("gitlab asset link is not HTTPS eligible")));
+        assert!(decisions.iter().any(|decision| {
+            decision
+                .rejection_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("gitlab asset link URL is not HTTPS"))
+        }));
+        assert!(decisions.iter().any(|decision| {
+            decision
+                .rejection_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("gitlab direct asset URL is not HTTPS"))
+        }));
 
         let redirected_decisions = score_assets(SourceProvider::GitLab, &host, &[redirected]);
         assert!(!redirected_decisions[0].eligible);
-        assert_eq!(
-            redirected_decisions[0].rejection_reason.as_deref(),
-            Some("gitlab asset link is not HTTPS eligible")
+        let reason = redirected_decisions[0]
+            .rejection_reason
+            .as_deref()
+            .expect("redirect rejection reason");
+        assert!(reason.contains("gitlab asset redirect target is not HTTPS"));
+        assert!(reason.contains("http://cdn.example.com"));
+        assert!(!reason.contains("secret"));
+    }
+
+    #[test]
+    fn cpu_feature_variants_prefer_baseline_and_reject_modern_by_default() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let decisions = score_assets(
+            SourceProvider::GitHub,
+            &host,
+            &[
+                asset("bun-linux-x64-modern.zip"),
+                asset("bun-linux-x64-baseline.zip"),
+            ],
         );
+
+        assert_eq!(decisions[0].asset_name, "bun-linux-x64-baseline.zip");
+        assert_eq!(decisions[0].cpu_feature, Some(CpuFeatureVariant::Baseline));
+        let modern = decisions
+            .iter()
+            .find(|decision| decision.asset_name == "bun-linux-x64-modern.zip")
+            .expect("modern decision");
+        assert_eq!(modern.cpu_feature, Some(CpuFeatureVariant::Modern));
+        assert!(!modern.eligible);
+        assert!(modern
+            .rejection_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("CPU feature variant `modern`")));
     }
 
     #[test]
