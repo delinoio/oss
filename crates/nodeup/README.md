@@ -54,6 +54,8 @@ finally {
 }
 ```
 
+These commands fetch the current first-party installer scripts from `delinoio/oss`. For reproducible automation, pin the same raw URL paths to a reviewed commit or repository tag instead of `refs/heads/main`, and replace `latest` with an explicit Nodeup semver.
+
 Canonical in-repo installer paths for maintainer workflows:
 
 - `scripts/install/nodeup.sh`
