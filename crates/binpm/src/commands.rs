@@ -1178,10 +1178,12 @@ fn parse_source_argument(raw: &str) -> Result<Option<SourceSpec>> {
     if raw.starts_with("github:") || raw.starts_with("gitlab:") {
         return SourceSpec::from_str(raw).map(Some);
     }
-    if raw.starts_with("https://") || raw.starts_with("http://") {
+    let raw_lower = raw.to_ascii_lowercase();
+    if raw_lower.starts_with("https://") || raw_lower.starts_with("http://") {
         return normalize_source_input(raw).map(Some);
     }
-    if raw.split('/').count() == 2 && raw.split('/').all(|segment| !segment.is_empty()) {
+    let path = raw.split_once('@').map_or(raw, |(path, _)| path);
+    if path.split('/').count() == 2 && path.split('/').all(|segment| !segment.is_empty()) {
         return normalize_source_input(raw).map(Some);
     }
 
@@ -5723,8 +5725,8 @@ mod tests {
         manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         normalize_bin_selection, override_snippet_candidate, package_record_output,
-        parse_manifest_source, parse_manifest_tool_source, project_root_from,
-        read_archive_selected_binary, record_matches_current_provider_digest,
+        parse_manifest_source, parse_manifest_tool_source, parse_source_argument,
+        project_root_from, read_archive_selected_binary, record_matches_current_provider_digest,
         release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
         remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
         restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
@@ -5784,6 +5786,18 @@ mod tests {
                 decision: "test release".to_string(),
             })
         }
+    }
+
+    #[test]
+    fn read_only_source_argument_accepts_shorthand_with_slash_bearing_tag() {
+        let spec = parse_source_argument("owner/tool@nightly/2026-06-21")
+            .expect("parse source argument")
+            .expect("source spec");
+
+        assert_eq!(spec.provider, SourceProvider::GitHub);
+        assert_eq!(spec.host, "github.com");
+        assert_eq!(spec.path, "owner/tool");
+        assert_eq!(spec.version.as_deref(), Some("nightly/2026-06-21"));
     }
 
     fn release_asset_from_record(record: &PackageRecord) -> ReleaseAsset {

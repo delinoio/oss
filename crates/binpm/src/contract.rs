@@ -109,7 +109,8 @@ pub(crate) fn normalize_source_input(raw: &str) -> Result<SourceSpec, BinpmError
 }
 
 fn parse_github_url_shorthand(trimmed: &str) -> Result<Option<SourceSpec>, BinpmError> {
-    if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
+    let lower = trimmed.to_ascii_lowercase();
+    if !(lower.starts_with("https://") || lower.starts_with("http://")) {
         return Ok(None);
     }
 
@@ -130,11 +131,12 @@ fn parse_github_url_shorthand(trimmed: &str) -> Result<Option<SourceSpec>, Binpm
             .unwrap_or(&segments);
         if project_segments.len() >= 2 && project_segments.iter().all(|segment| !segment.is_empty())
         {
+            let hint_path = gitlab_project_hint_path(project_segments);
             return Err(invalid_source(
                 &sanitized_raw,
                 format!(
                     "GitLab URL shorthands are not accepted; use `gitlab:gitlab.com/{}`",
-                    project_segments.join("/")
+                    hint_path
                 ),
             ));
         }
@@ -209,6 +211,18 @@ fn parse_github_url_shorthand(trimmed: &str) -> Result<Option<SourceSpec>, Binpm
         path: format!("{owner}/{repo}"),
         version,
     }))
+}
+
+fn gitlab_project_hint_path(project_segments: &[&str]) -> String {
+    let Some((project, namespace)) = project_segments.split_last() else {
+        return String::new();
+    };
+    namespace
+        .iter()
+        .copied()
+        .chain(std::iter::once(strip_git_suffix(project)))
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn sanitize_source_url(parsed: &Url) -> String {
@@ -838,6 +852,16 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_uppercase_scheme_url_shorthand_without_echoing_credentials() {
+        let spec = normalize_source_input("HTTPS://user:secret@github.com/owner/tool?token=secret")
+            .expect("uppercase URL shorthand");
+
+        assert_eq!(spec.host, "github.com");
+        assert_eq!(spec.path, "owner/tool");
+        assert_eq!(spec.version, None);
+    }
+
+    #[test]
     fn canonical_source_parser_rejects_shorthands() {
         for raw in [
             "BurntSushi/ripgrep",
@@ -888,6 +912,19 @@ mod tests {
                 assert_eq!(raw, "http://github.com/owner/tool");
                 assert!(message.contains("must use HTTPS"));
                 assert!(message.contains("github:owner/repo"));
+            }
+            other => panic!("expected InvalidSourceSpec, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn gitlab_url_shorthand_hint_strips_clone_suffix() {
+        match normalize_source_input("https://gitlab.com/group/tool.git")
+            .expect_err("gitlab clone URL")
+        {
+            BinpmError::InvalidSourceSpec { message, .. } => {
+                assert!(message.contains("gitlab:gitlab.com/group/tool"));
+                assert!(!message.contains("gitlab:gitlab.com/group/tool.git"));
             }
             other => panic!("expected InvalidSourceSpec, got {other:?}"),
         }

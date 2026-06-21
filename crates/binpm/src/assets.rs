@@ -765,6 +765,9 @@ fn cpu_feature_token_has_target_context(tokens: &[&str], index: usize) -> bool {
     if cpu_feature_alias(tokens[index]).is_none() {
         return false;
     }
+    if index == 0 {
+        return false;
+    }
     let has_target_context = |token: &str| {
         os_alias(token).is_some() || arch_alias(token).is_some() || libc_alias(token).is_some()
     };
@@ -1338,6 +1341,19 @@ mod tests {
             SourceProvider::GitHub,
             &host,
             &[asset("modern-tool-linux-x64.tar.gz")],
+        );
+
+        assert_eq!(decisions[0].cpu_feature, None);
+        assert!(decisions[0].eligible);
+    }
+
+    #[test]
+    fn modern_product_name_before_target_suffix_is_not_rejected_as_cpu_feature() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let decisions = score_assets(
+            SourceProvider::GitHub,
+            &host,
+            &[asset("modern-linux-x64.tar.gz")],
         );
 
         assert_eq!(decisions[0].cpu_feature, None);
