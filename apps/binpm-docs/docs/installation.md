@@ -2,24 +2,6 @@
 
 binpm is implemented as a Rust CLI under `crates/binpm`. It must not require Node.js, npm, pnpm, yarn, or Bun to install native binary tools.
 
-Install the binpm CLI from the repository source:
-
-```bash
-cargo install --git https://github.com/delinoio/oss --package binpm
-```
-
-The command installs `binpm` into Cargo's binary directory. Make sure that directory is on `PATH` before running binpm:
-
-```bash
-export PATH="$HOME/.cargo/bin:$PATH"
-```
-
-Windows PowerShell:
-
-```powershell
-$env:Path = "$HOME\.cargo\bin;$env:Path"
-```
-
 ## Current Scope
 
 The documentation app records the user-facing contract for existing and planned binpm behavior. It does not add new runtime installation paths or release automation.
