@@ -43,10 +43,17 @@
 - `yarn`/`pnpm` delegated execution must honor nearest `package.json` `packageManager` when present.
 - `packageManager` parsing contract is strict: `<manager>@<exact-semver>` with manager limited to `yarn|pnpm`.
 - `packageManager` manager-command mismatch must fail with `conflict`; malformed values must fail with `invalid-input`.
+- Invalid `packageManager` errors must identify the failed part (`value`, `separator`, `manager`, or `version`), name the problem (`non-string`, `malformed-separator`, `missing-manager`, `missing-version`, `unsupported-manager`, or `non-exact-semver`), and include actionable examples. JSON errors must keep `kind`, `message`, and `exit_code` and add deterministic `diagnostics` fields such as `package_json_path`, `expected`, `supported_managers`, `failed_part`, `problem`, optional `manager`, optional `version`, optional `received_type`, and `correction`.
 - `packageManager`-aware execution must use runtime `npm exec` (Corepack is out of scope).
-- `which yarn|pnpm` in npm-exec mode must resolve to the runtime `npm` executable path.
+- `yarn`/`pnpm` npm-exec planning must be visible in human output, JSON output, and structured planning logs. Diagnostics must include requested command, mode, reason, executable path, package spec, package JSON path when known, and whether the package spec is pinned.
+- When `packageManager` is absent and no direct runtime package-manager binary exists, unpinned npm-exec fallback specs (`@yarnpkg/cli-dist` or `pnpm`) must be surfaced and must recommend adding an exact `packageManager` value for reproducibility.
+- `which yarn|pnpm` in npm-exec mode must resolve to the runtime `npm` executable path and must label that path as npm-exec delegation rather than a direct package-manager binary.
 - `toolchain install` and `toolchain uninstall` runtime selector lists are required command-line arguments.
 - `toolchain install` must reject linked-name selectors before linked-runtime lookup; the error kind must be `invalid-input` whether or not a linked runtime by that name exists.
+- `toolchain uninstall` must remove exact installed versions only; channel selectors and linked-name selectors must fail with `invalid-input` before reference-blocker checks.
+- `toolchain uninstall` must fail atomically with `conflict` when any requested exact runtime is referenced by an exact-version global default or exact-version directory override.
+- `toolchain uninstall` reference-blocker conflicts must report each blocking reference type (`global-default` or `directory-override`), the blocking path, selector, runtime, and follow-up commands for changing the default or unsetting/updating the override.
+- `toolchain uninstall` JSON error diagnostics must include deterministic `blocked_versions` and `blockers` fields so scripts do not parse prose.
 - Human output styling must support `--color auto|always|never` and `NODEUP_COLOR=auto|always|never`.
 - Human output color precedence must remain `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
 - `nodeup show color` must report effective color decisions for human stdout, human stderr, and logs, including ignored invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values.
@@ -62,6 +69,7 @@
 - ANSI styling must never be injected into `--output json` payloads on stdout/stderr.
 - `completions` must generate raw shell completion scripts for `bash`, `zsh`, `fish`, `powershell`, and `elvish`.
 - `completions <shell> [command]` command scope must accept only top-level command identifiers and fail with `invalid-input` for unsupported scopes.
+- Invalid completion subcommand scopes such as `toolchain install` must suggest the valid top-level scope, for example `nodeup completions bash toolchain`, and JSON errors must include deterministic `rejected_scope`, `allowed_scope_category`, `allowed_scopes`, and optional `suggested_scope` diagnostics.
 - Top-level completion scopes must include `shim`.
 - `completions` output must remain raw script text on stdout even when `--output json` is requested.
 
@@ -81,7 +89,7 @@
 - Use structured `tracing` logs for install, resolve, and dispatch flows.
 - Default log filters must remain `nodeup=warn` for managed alias dispatch, `nodeup=warn` for human management commands, and `nodeup=off` for JSON management commands unless `RUST_LOG` explicitly overrides them.
 - Include resolution source, requested channel, selected version, result state, release-index cache fallback state, and sanitized URL diagnostics.
-- Delegated command planning logs must include `mode=direct|npm-exec`, `package_spec`, `package_json_path`, and `reason`.
+- Delegated command planning logs must include `mode=direct|npm-exec`, `package_spec`, `package_spec_pinned`, `package_json_path`, and `reason`.
 - Completion generation logs must include shell, command scope, and `generated|failed` outcome state.
 
 ## Build and Test
@@ -97,11 +105,12 @@
 - Completion coverage must include successful script generation, invalid shell/scope validation, and JSON-mode raw output behavior.
 - Output color coverage must include flag/env precedence, diagnostic reporting, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
 - Parser-error coverage must include human clap output and JSON envelopes for root, nested subcommand, required argument, conflicting flag, unknown command, and unexpected extra argument failures.
-- `packageManager` coverage must include strict parsing, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, and npm-exec fallback behavior.
+- `packageManager` coverage must include strict parsing diagnostics, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, pinned npm-exec planning output, unpinned npm-exec fallback output, and `which` npm-exec JSON fields.
 - Runtime install coverage must include `linux-arm64`, `windows-x64`, and `windows-arm64` archive selection and extraction behavior plus unsupported x86 CLI override failures.
 - Shim setup coverage must include fresh setup, idempotent reruns, stale shim repair, and Windows copy mode.
 - Self uninstall coverage must include removed path reporting and manual cleanup fields for binary, shims, and shell profile/PATH boundaries.
 - Linked runtime coverage must include unlink success without external directory deletion, missing-link `not-found` errors, default/override unlink conflicts, Unix executable-bit validation, and Windows `node.exe` name selection.
+- Runtime uninstall coverage must include default reference blockers, directory override reference blockers, combined default-and-override blockers, JSON blocker diagnostics, and distinct channel-selector rejection.
 
 ## Dependencies and Integrations
 - Integrates with filesystem runtime shims and remote distribution channels.

@@ -148,6 +148,8 @@ struct DoctorOutput {
     manifest: PathState,
     lockfile_path: String,
     lockfile: PathState,
+    local_bin: String,
+    local_bin_on_path: bool,
     global_home: String,
     global_bin: String,
     global_bin_on_path: bool,
@@ -343,13 +345,21 @@ pub fn run(cli: Cli) -> Result<i32> {
 fn install(args: InstallArgs) -> Result<i32> {
     let requested_scope = args.scope.scope();
     let frozen_lockfile = args.lockfile.frozen_lockfile();
+    let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
 
     if let Some(source) = &args.source {
         let spec = SourceSpec::from_str(source)?;
         let scope = source_install_scope(requested_scope);
+        let alias = args
+            .alias
+            .clone()
+            .unwrap_or_else(|| repo_name(&spec).to_string());
+        validate_command_name(&alias)?;
         info!(
             command = "install",
             scope = scope.as_str(),
+            install_alias = alias,
+            selected_bin = explicit_bin.as_deref().unwrap_or(""),
             frozen_lockfile,
             require_verified = args.require_verified,
             no_confirm = args.no_confirm,
@@ -360,10 +370,25 @@ fn install(args: InstallArgs) -> Result<i32> {
             "Prepared source install request"
         );
         if scope == Scope::Local {
+            if args.alias.is_some() || explicit_bin.is_some() {
+                return install_local_source_as(
+                    spec,
+                    &alias,
+                    explicit_bin,
+                    frozen_lockfile,
+                    args.require_verified,
+                );
+            }
             return install_local_source(spec, frozen_lockfile, args.require_verified);
         }
-        install_global_source(spec, args.require_verified)
+        install_global_source(spec, &alias, explicit_bin, args.require_verified)
     } else {
+        if args.alias.is_some() || explicit_bin.is_some() {
+            return Err(BinpmError::InvalidSourceSpec {
+                raw: "install".to_string(),
+                message: "`--as` and `--bin` require an explicit source".to_string(),
+            });
+        }
         if requested_scope == Scope::Global {
             return Err(BinpmError::NotImplemented {
                 command: "install --global without a source",
@@ -384,10 +409,19 @@ fn install(args: InstallArgs) -> Result<i32> {
 fn add(args: AddArgs) -> Result<i32> {
     let spec = SourceSpec::from_str(&args.source)?;
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
+    let additional = parse_additional_declarations(&args.also)?;
+    let mut declarations = Vec::with_capacity(1 + additional.len());
+    declarations.push(AddDeclaration {
+        cmd: args.cmd.clone(),
+        bin: explicit_bin.clone(),
+    });
+    declarations.extend(additional);
     info!(
         command = "add",
         local_cmd = args.cmd,
         selected_bin = explicit_bin.as_deref().unwrap_or(""),
+        declaration_count = declarations.len(),
+        manifest_only = args.manifest_only,
         source_provider = spec.provider.as_str(),
         source_host = spec.host,
         source_path = spec.path,
@@ -399,7 +433,15 @@ fn add(args: AddArgs) -> Result<i32> {
     );
     let root = require_manifest_root_or_creation_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
-    validate_command_name(&args.cmd)?;
+    let mut declared = BTreeSet::new();
+    for declaration in &declarations {
+        validate_command_name(&declaration.cmd)?;
+        if !declared.insert(declaration.cmd.clone()) {
+            return Err(BinpmError::DuplicateAddDeclaration {
+                cmd: declaration.cmd.clone(),
+            });
+        }
+    }
     let manifest_existed = path_exists_or_unreadable(&manifest_path);
     let mut manifest = if manifest_existed {
         read_manifest(&manifest_path)?
@@ -410,54 +452,111 @@ fn add(args: AddArgs) -> Result<i32> {
         }
     };
     let prior_manifest = manifest.clone();
-    let manifest_tool = manifest.tools.get(&args.cmd).cloned();
-    let current_target = HostTarget::current()?;
-    let next_manifest_tool = update_manifest_tool_source(
-        manifest_tool.clone(),
-        &spec,
-        explicit_bin,
-        Some(&current_target),
-    );
-    manifest
-        .tools
-        .insert(args.cmd.clone(), next_manifest_tool.clone());
-    ensure_no_selected_install_path_collisions(&manifest, std::slice::from_ref(&args.cmd))?;
-    let prior_state = capture_local_tool_state(&root, &args.cmd)?;
-    let install = install_local_tool(
-        &root,
-        &args.cmd,
-        &spec,
-        Some(&next_manifest_tool),
-        args.lockfile.frozen_lockfile(),
-        args.require_verified,
-    )?;
-    let record = install.record.clone();
+    let current_target = if args.manifest_only {
+        None
+    } else {
+        Some(HostTarget::current()?)
+    };
+    let mut selected = Vec::with_capacity(declarations.len());
+    for declaration in &declarations {
+        let manifest_tool = manifest.tools.get(&declaration.cmd).cloned();
+        let next_manifest_tool = update_manifest_tool_source(
+            manifest_tool,
+            &spec,
+            declaration.bin.clone(),
+            current_target.as_ref(),
+        );
+        manifest
+            .tools
+            .insert(declaration.cmd.clone(), next_manifest_tool);
+        selected.push(declaration.cmd.clone());
+    }
+    ensure_no_selected_install_path_collisions(&manifest, &selected)?;
+    if args.manifest_only {
+        write_manifest(&manifest_path, &manifest)?;
+        println!("declared {}", selected.join(", "));
+        println!("manifest-only: wrote {}", manifest_path.display());
+        println!(
+            "manifest-only: did not update {}",
+            root.join(LOCKFILE_FILE).display()
+        );
+        println!(
+            "manifest-only: did not install executables under {}",
+            ScopePaths::local(root).bin.display()
+        );
+        println!("next: run `binpm install` to resolve, lock, and install declared tools");
+        return Ok(0);
+    }
+    let mut completed = Vec::new();
+    for cmd in &selected {
+        let tool = manifest
+            .tools
+            .get(cmd)
+            .expect("selected command was inserted into manifest")
+            .clone();
+        let prior_state = match capture_local_tool_state(&root, cmd) {
+            Ok(prior_state) => prior_state,
+            Err(error) => {
+                rollback_completed_local_installs(
+                    &root,
+                    completed,
+                    &CachePaths::new(&binpm_home()?),
+                )?;
+                return Err(error);
+            }
+        };
+        let install = match install_local_tool(
+            &root,
+            cmd,
+            &spec,
+            Some(&tool),
+            args.lockfile.frozen_lockfile(),
+            args.require_verified,
+        ) {
+            Ok(install) => install,
+            Err(error) => {
+                rollback_completed_local_installs(
+                    &root,
+                    completed,
+                    &CachePaths::new(&binpm_home()?),
+                )?;
+                return Err(error);
+            }
+        };
+        completed.push(CompletedLocalInstall {
+            cmd: cmd.clone(),
+            install,
+            prior_state,
+        });
+    }
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
-        rollback_local_install_state(&root, &args.cmd, &record, prior_state);
-        cleanup_failed_install_cache(
-            &CachePaths::new(&binpm_home()?),
-            &record.sha256,
-            Some(&root),
-            &install,
-        )?;
+        rollback_completed_local_installs(&root, completed, &CachePaths::new(&binpm_home()?))?;
         return Err(error);
     }
-    if let Err(error) = commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install) {
-        rollback_local_install_state(&root, &args.cmd, &record, prior_state);
+    let cache_paths = CachePaths::new(&binpm_home()?);
+    if let Err(error) = completed
+        .iter()
+        .try_for_each(|completed| commit_deferred_cache_hit(&cache_paths, &completed.install))
+    {
+        let rollback_error =
+            rollback_completed_local_installs_ref(&root, &completed, &cache_paths).err();
         if manifest_existed {
             let _ = write_manifest(&manifest_path, &prior_manifest);
         } else {
             let _ = remove_path_if_exists(&manifest_path);
         }
-        cleanup_failed_install_cache(
-            &CachePaths::new(&binpm_home()?),
-            &record.sha256,
-            Some(&root),
-            &install,
-        )?;
+        if let Some(rollback_error) = rollback_error {
+            return Err(rollback_error);
+        }
         return Err(error);
     }
-    println!("added {}", args.cmd);
+    println!("added {}", selected.join(", "));
+    for cmd in &selected {
+        println!("run: binpm x {cmd}");
+    }
+    println!(
+        "path: use `binpm env --shell <bash|zsh|fish|powershell>` for opt-in direct shell access"
+    );
     Ok(0)
 }
 
@@ -469,9 +568,15 @@ fn source_install_scope(requested_scope: Scope) -> Scope {
 }
 
 fn exec(args: ExecArgs) -> Result<i32> {
-    let cmd = args.cmd().to_string_lossy().to_string();
-    let forwarded_arg_count = args.args().len();
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
+    let cmd = match args.cmd() {
+        Some(cmd) => cmd.to_string_lossy().to_string(),
+        None if args.package.is_some() => {
+            package_shortcut_command(args.package.as_deref(), explicit_bin.as_deref())?
+        }
+        None => return Err(BinpmError::InvalidCommandName { cmd: String::new() }),
+    };
+    let forwarded_arg_count = args.args().len();
 
     if let Some(source) = &args.package {
         let spec = SourceSpec::from_str(source)?;
@@ -505,7 +610,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
         let tool = ManifestTool {
             source: spec.source_without_version(),
             version: spec.version.clone(),
-            bin: Some(explicit_bin.clone().unwrap_or_else(|| cmd.clone())),
+            bin: explicit_bin.clone(),
             targets: BTreeMap::new(),
         };
         let install = install_resolved(
@@ -513,7 +618,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
             &cache_paths,
             &cmd,
             &spec,
-            Some(&tool),
+            explicit_bin.as_ref().map(|_| &tool),
             false,
             None,
         )?;
@@ -565,6 +670,19 @@ fn exec(args: ExecArgs) -> Result<i32> {
         return Err(error);
     }
     execute_command(&cmd, args.args(), &[ScopePaths::local(root).bin])
+}
+
+fn package_shortcut_command(source: Option<&str>, explicit_bin: Option<&str>) -> Result<String> {
+    if let Some(bin) = explicit_bin {
+        let basename = bin.rsplit('/').next().unwrap_or(bin);
+        validate_command_name(basename)?;
+        return Ok(basename.to_string());
+    }
+    let source = source.ok_or_else(|| BinpmError::InvalidCommandName { cmd: String::new() })?;
+    let spec = SourceSpec::from_str(source)?;
+    let cmd = repo_name(&spec).to_string();
+    validate_command_name(&cmd)?;
+    Ok(cmd)
 }
 
 fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
@@ -1053,8 +1171,10 @@ fn doctor(output: OutputMode) -> Result<i32> {
     let project_root = project_root()?;
     let manifest_path = project_root.join(MANIFEST_FILE);
     let lockfile_path = project_root.join(LOCKFILE_FILE);
+    let local_bin = project_root.join(".binpm").join("bin");
     let home = binpm_home()?;
     let global_bin = home.join("bin");
+    let local_bin_on_path = path_contains_entry(&local_bin);
     let global_bin_on_path = path_contains_entry(&global_bin);
     let cache_paths = CachePaths::new(&home);
     let cache_ref_scan = scan_cache_references(&cache_paths)?;
@@ -1066,6 +1186,8 @@ fn doctor(output: OutputMode) -> Result<i32> {
         manifest_path = %manifest_path.display(),
         lockfile_path = %lockfile_path.display(),
         binpm_home = %home.display(),
+        local_bin = %local_bin.display(),
+        local_bin_on_path,
         global_bin = %global_bin.display(),
         global_bin_on_path,
         stale_cache_refs = cache_ref_scan.stale_count(),
@@ -1080,6 +1202,8 @@ fn doctor(output: OutputMode) -> Result<i32> {
             manifest: json_path_state(&manifest_path),
             lockfile_path: lockfile_path.display().to_string(),
             lockfile: json_path_state(&lockfile_path),
+            local_bin: local_bin.display().to_string(),
+            local_bin_on_path,
             global_home: home.display().to_string(),
             global_bin: global_bin.display().to_string(),
             global_bin_on_path,
@@ -1090,6 +1214,8 @@ fn doctor(output: OutputMode) -> Result<i32> {
     println!("binpm doctor");
     println!("manifest: {}", path_state(&manifest_path));
     println!("lockfile: {}", path_state(&lockfile_path));
+    println!("local_bin: {}", local_bin.display());
+    println!("local_bin_on_path: {}", yes_no(local_bin_on_path));
     println!("global_home: {}", home.display());
     println!("global_bin: {}", global_bin.display());
     println!("global_bin_on_path: {}", yes_no(global_bin_on_path));
@@ -1552,28 +1678,38 @@ fn release_api_url(spec: &SourceSpec) -> String {
     }
 }
 
-fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32> {
-    let cmd = repo_name(&spec).to_string();
-    validate_command_name(&cmd)?;
+fn install_global_source(
+    spec: SourceSpec,
+    cmd: &str,
+    explicit_bin: Option<String>,
+    require_verified: bool,
+) -> Result<i32> {
+    validate_command_name(cmd)?;
     let home = binpm_home()?;
     let scope_paths = ScopePaths::global(home.clone());
     let cache_paths = CachePaths::new(&home);
-    let prior_state = capture_runtime_tool_state(&scope_paths, &cmd)?;
+    let prior_state = capture_runtime_tool_state(&scope_paths, cmd)?;
+    let tool = ManifestTool {
+        source: spec.source_without_version(),
+        version: spec.version.clone(),
+        bin: explicit_bin,
+        targets: BTreeMap::new(),
+    };
     let install = install_resolved(
         &scope_paths,
         &cache_paths,
-        &cmd,
+        cmd,
         &spec,
-        None,
+        Some(&tool),
         require_verified,
         None,
     )?;
     let record = install.record.clone();
-    if let Err(error) = write_package_record(&scope_paths, &cmd, &record)
+    if let Err(error) = write_package_record(&scope_paths, cmd, &record)
         .and_then(|_| commit_deferred_cache_hit(&cache_paths, &install))
     {
-        let rollback_result = rollback_failed_install(&scope_paths, &cmd, &record);
-        restore_runtime_tool_state(&scope_paths, &cmd, prior_state);
+        let rollback_result = rollback_failed_install(&scope_paths, cmd, &record);
+        restore_runtime_tool_state(&scope_paths, cmd, prior_state);
         let cache_cleanup_result =
             cleanup_failed_install_cache(&cache_paths, &record.sha256, None, &install);
         rollback_result?;
@@ -1635,6 +1771,65 @@ fn install_local_source(
         )?;
         return Err(error);
     }
+    Ok(0)
+}
+
+fn install_local_source_as(
+    spec: SourceSpec,
+    cmd: &str,
+    explicit_bin: Option<String>,
+    frozen_lockfile: bool,
+    require_verified: bool,
+) -> Result<i32> {
+    let root = require_manifest_root()?;
+    validate_command_name(cmd)?;
+    let manifest_path = root.join(MANIFEST_FILE);
+    let mut manifest = read_manifest(&manifest_path)?;
+    let prior_manifest = manifest.clone();
+    let manifest_tool = manifest.tools.get(cmd).cloned();
+    let next_manifest_tool = update_manifest_tool_source(
+        manifest_tool,
+        &spec,
+        explicit_bin,
+        Some(&HostTarget::current()?),
+    );
+    manifest
+        .tools
+        .insert(cmd.to_string(), next_manifest_tool.clone());
+    ensure_no_selected_install_path_collisions(&manifest, &[cmd.to_string()])?;
+    let prior_state = capture_local_tool_state(&root, cmd)?;
+    let install = install_local_tool(
+        &root,
+        cmd,
+        &spec,
+        Some(&next_manifest_tool),
+        frozen_lockfile,
+        require_verified,
+    )?;
+    let record = install.record.clone();
+    if let Err(error) = write_manifest(&manifest_path, &manifest) {
+        rollback_local_install_state(&root, cmd, &record, prior_state);
+        cleanup_failed_install_cache(
+            &CachePaths::new(&binpm_home()?),
+            &record.sha256,
+            Some(&root),
+            &install,
+        )?;
+        return Err(error);
+    }
+    if let Err(error) = commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install) {
+        rollback_local_install_state(&root, cmd, &record, prior_state);
+        let _ = write_manifest(&manifest_path, &prior_manifest);
+        cleanup_failed_install_cache(
+            &CachePaths::new(&binpm_home()?),
+            &record.sha256,
+            Some(&root),
+            &install,
+        )?;
+        return Err(error);
+    }
+    println!("added {cmd}");
+    println!("run: binpm x {cmd}");
     Ok(0)
 }
 
@@ -3530,6 +3725,28 @@ fn normalize_bin_selection(bin: Option<&str>) -> Result<Option<String>> {
         }
         None => Ok(None),
     }
+}
+
+#[derive(Debug)]
+struct AddDeclaration {
+    cmd: String,
+    bin: Option<String>,
+}
+
+fn parse_additional_declarations(raw: &[String]) -> Result<Vec<AddDeclaration>> {
+    raw.iter()
+        .map(|value| {
+            let (cmd, bin) = value
+                .split_once('=')
+                .ok_or_else(|| BinpmError::InvalidBinSelection { bin: value.clone() })?;
+            validate_command_name(cmd)?;
+            let bin = normalize_bin_selection(Some(bin))?;
+            Ok(AddDeclaration {
+                cmd: cmd.to_string(),
+                bin,
+            })
+        })
+        .collect()
 }
 
 fn update_manifest_tool_source(
