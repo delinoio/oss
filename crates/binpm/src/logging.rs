@@ -3,7 +3,7 @@ use tracing_subscriber::EnvFilter;
 const BINPM_LOG_ENV: &str = "BINPM_LOG";
 const BINPM_LOG_COLOR_ENV: &str = "BINPM_LOG_COLOR";
 const NO_COLOR_ENV: &str = "NO_COLOR";
-const DEFAULT_LOG_FILTER: &str = "binpm=off";
+const DEFAULT_LOG_FILTER: &str = "binpm=warn";
 
 pub fn init_logging() {
     let env_filter = resolve_env_filter_from_environment();
@@ -68,7 +68,7 @@ mod tests {
     use super::{resolve_env_filter, resolve_log_color_enabled, DEFAULT_LOG_FILTER};
 
     #[test]
-    fn default_filter_disables_binpm_logs() {
+    fn default_filter_enables_warning_level_binpm_logs() {
         assert_eq!(resolve_env_filter(None).to_string(), DEFAULT_LOG_FILTER);
     }
 
