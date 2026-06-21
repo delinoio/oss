@@ -92,7 +92,7 @@ The canonical in-repo installer paths remain:
 From a repository checkout, maintainers can run the scripts directly:
 
 ```bash
-./scripts/install/nodeup.sh --version latest --method direct
+bash ./scripts/install/nodeup.sh --version latest --method direct
 ```
 
 ```powershell
