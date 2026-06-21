@@ -27,6 +27,7 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - `--output json` must render both application-level errors and clap parser failures as JSON error envelopes on stderr, except raw completion script output remains unwrapped on success.
 - `nodeup toolchain install` and `nodeup toolchain uninstall` require at least one runtime selector at the parser layer.
 - `nodeup toolchain install` accepts only exact-version and channel selectors; linked-name selectors must be rejected before linked-runtime lookup so the error is deterministic whether or not the linked name exists.
+- `nodeup toolchain uninstall` removes exact installed versions only and must fail with `conflict` before mutation when an exact-version global default or directory override references a requested runtime; human output must name each blocking reference type and path with follow-up commands, and JSON error envelopes must include deterministic blocker diagnostics.
 - Release automation must publish both standalone prebuilt binaries and archive assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, plus Sigstore bundle sidecars (`*.sigstore.json`) for each artifact and `SHA256SUMS`.
 - Direct installers must verify `SHA256SUMS` entries and Sigstore bundle sidecars, require `cosign`, and only support bundle-enabled releases.
 - Direct installers must remain available at `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1`.

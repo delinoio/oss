@@ -1,12 +1,13 @@
 use std::{collections::HashSet, fs, path::PathBuf};
 
 use serde::Serialize;
+use serde_json::json;
 use tracing::info;
 
 use crate::{
     cli::{OutputColorMode, OutputFormat, ToolchainCommand, ToolchainListDetail},
     commands::print_output,
-    errors::{NodeupError, Result},
+    errors::{ErrorDiagnostics, ErrorKind, NodeupError, Result},
     release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
     selectors::{is_reserved_channel_selector_token, is_valid_linked_name, RuntimeSelector},
@@ -28,6 +29,32 @@ struct ToolchainInstallResult {
     status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     release_index: Option<ReleaseIndexResolutionDiagnostic>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum RuntimeReferenceBlockerKind {
+    GlobalDefault,
+    DirectoryOverride,
+}
+
+impl RuntimeReferenceBlockerKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::GlobalDefault => "global-default",
+            Self::DirectoryOverride => "directory-override",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct RuntimeReferenceBlocker {
+    reference_type: RuntimeReferenceBlockerKind,
+    runtime: String,
+    selector: String,
+    path: String,
+    clear_command: String,
+    change_command: String,
 }
 
 pub fn execute(
@@ -300,31 +327,14 @@ fn uninstall(
         "Completed uninstall preflight target parsing"
     );
 
+    let mut blockers = Vec::new();
     for version in &unique_versions {
-        if settings
-            .default_selector
-            .as_ref()
-            .is_some_and(|default| selector_references_version(default, version))
-        {
-            return Err(NodeupError::conflict_with_hint(
-                format!("Cannot uninstall {version}; it is used as the default runtime"),
-                "Set a different default first with `nodeup default <runtime>`, then retry \
-                 uninstall.",
-            ));
-        }
-
-        if overrides
-            .entries
-            .iter()
-            .any(|entry| selector_references_version(&entry.selector, version))
-        {
-            return Err(NodeupError::conflict_with_hint(
-                format!("Cannot uninstall {version}; it is referenced by a directory override"),
-                "Update or remove the blocking override with `nodeup override set <runtime> \
-                 --path <path>` or `nodeup override unset --path <path>`.",
-            ));
-        }
-
+        blockers.extend(runtime_reference_blockers(
+            version,
+            settings.default_selector.as_deref(),
+            &overrides.entries,
+            app,
+        ));
         if !app.store.is_installed(version) {
             return Err(NodeupError::not_found_with_hint(
                 format!("Runtime {version} is not installed"),
@@ -332,6 +342,17 @@ fn uninstall(
                  version.",
             ));
         }
+    }
+
+    if !blockers.is_empty() {
+        blockers.sort_by(|left, right| {
+            left.runtime
+                .cmp(&right.runtime)
+                .then_with(|| left.reference_type.cmp(&right.reference_type))
+                .then_with(|| left.path.cmp(&right.path))
+                .then_with(|| left.selector.cmp(&right.selector))
+        });
+        return Err(runtime_reference_blockers_error(blockers));
     }
 
     for version in &unique_versions {
@@ -365,6 +386,122 @@ fn uninstall(
 fn selector_references_version(selector: &str, target_version: &str) -> bool {
     canonical_version_selector(selector)
         .is_some_and(|canonical_selector_version| canonical_selector_version == target_version)
+}
+
+fn runtime_reference_blockers(
+    version: &str,
+    default_selector: Option<&str>,
+    overrides: &[crate::overrides::OverrideEntry],
+    app: &NodeupApp,
+) -> Vec<RuntimeReferenceBlocker> {
+    let mut blockers = Vec::new();
+
+    if let Some(default) = default_selector {
+        if selector_references_version(default, version) {
+            blockers.push(RuntimeReferenceBlocker {
+                reference_type: RuntimeReferenceBlockerKind::GlobalDefault,
+                runtime: version.to_string(),
+                selector: default.to_string(),
+                path: app.store.paths().settings_file.display().to_string(),
+                clear_command: "nodeup default <runtime>".to_string(),
+                change_command: "nodeup default <runtime>".to_string(),
+            });
+        }
+    }
+
+    for entry in overrides {
+        if selector_references_version(&entry.selector, version) {
+            blockers.push(RuntimeReferenceBlocker {
+                reference_type: RuntimeReferenceBlockerKind::DirectoryOverride,
+                runtime: version.to_string(),
+                selector: entry.selector.clone(),
+                path: entry.path.clone(),
+                clear_command: format!("nodeup override unset --path {}", shell_quote(&entry.path)),
+                change_command: format!(
+                    "nodeup override set <runtime> --path {}",
+                    shell_quote(&entry.path)
+                ),
+            });
+        }
+    }
+
+    blockers
+}
+
+fn runtime_reference_blockers_error(blockers: Vec<RuntimeReferenceBlocker>) -> NodeupError {
+    let blocked_version_list = blockers
+        .iter()
+        .map(|blocker| blocker.runtime.as_str())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let blocked_versions = blocked_version_list.join(", ");
+    let blocker_summary = blockers
+        .iter()
+        .map(|blocker| {
+            format!(
+                "{} path={} selector={}",
+                blocker.reference_type.as_str(),
+                blocker.path,
+                blocker.selector
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let follow_up_commands = blockers
+        .iter()
+        .map(|blocker| match blocker.reference_type {
+            RuntimeReferenceBlockerKind::GlobalDefault => "`nodeup default <runtime>`".to_string(),
+            RuntimeReferenceBlockerKind::DirectoryOverride => {
+                format!(
+                    "`{}` or `{}`",
+                    blocker.clear_command, blocker.change_command
+                )
+            }
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let retry_commands = blockers
+        .iter()
+        .map(|blocker| format!("nodeup toolchain uninstall {}", blocker.runtime))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    let mut diagnostics = ErrorDiagnostics::new();
+    diagnostics.insert("blocked_versions".to_string(), json!(blocked_version_list));
+    diagnostics.insert("blockers".to_string(), json!(blockers));
+
+    NodeupError::with_hint_and_diagnostics(
+        ErrorKind::Conflict,
+        format!(
+            "Cannot uninstall {blocked_versions}; referenced by blocking runtime selectors \
+             ({blocker_summary})"
+        ),
+        format!(
+            "Clear or change the blocking references first with {}, then retry with {}.",
+            follow_up_commands.join(", "),
+            retry_commands
+                .iter()
+                .map(|command| format!("`{command}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        diagnostics,
+    )
+}
+
+fn shell_quote(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-'))
+    {
+        return value.to_string();
+    }
+
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn selector_references_linked_name(selector: &str, target_name: &str) -> bool {

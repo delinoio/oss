@@ -41,6 +41,10 @@
 - `which yarn|pnpm` in npm-exec mode must resolve to the runtime `npm` executable path.
 - `toolchain install` and `toolchain uninstall` runtime selector lists are required command-line arguments.
 - `toolchain install` must reject linked-name selectors before linked-runtime lookup; the error kind must be `invalid-input` whether or not a linked runtime by that name exists.
+- `toolchain uninstall` must remove exact installed versions only; channel selectors and linked-name selectors must fail with `invalid-input` before reference-blocker checks.
+- `toolchain uninstall` must fail atomically with `conflict` when any requested exact runtime is referenced by an exact-version global default or exact-version directory override.
+- `toolchain uninstall` reference-blocker conflicts must report each blocking reference type (`global-default` or `directory-override`), the blocking path, selector, runtime, and follow-up commands for changing the default or unsetting/updating the override.
+- `toolchain uninstall` JSON error diagnostics must include deterministic `blocked_versions` and `blockers` fields so scripts do not parse prose.
 - Human output styling must support `--color auto|always|never` and `NODEUP_COLOR=auto|always|never`.
 - Human output color precedence must remain `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
 - `nodeup show color` must report effective color decisions for human stdout, human stderr, and logs, including ignored invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values.
@@ -89,6 +93,7 @@
 - `packageManager` coverage must include strict parsing, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, and npm-exec fallback behavior.
 - Runtime install coverage must include `linux-arm64`, `windows-x64`, and `windows-arm64` archive selection and extraction behavior plus unsupported x86 CLI override failures.
 - Linked runtime coverage must include unlink success without external directory deletion, missing-link `not-found` errors, default/override unlink conflicts, Unix executable-bit validation, and Windows `node.exe` name selection.
+- Runtime uninstall coverage must include default reference blockers, directory override reference blockers, combined default-and-override blockers, JSON blocker diagnostics, and distinct channel-selector rejection.
 
 ## Dependencies and Integrations
 - Integrates with filesystem runtime shims and remote distribution channels.

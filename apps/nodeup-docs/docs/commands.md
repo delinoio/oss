@@ -46,7 +46,21 @@ nodeup toolchain uninstall <version>...
 
 Removes exact installed versions only. At least one version selector is required. Channels and linked runtime names are rejected. Use `nodeup toolchain unlink <name>` for linked runtime records. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
 
-JSON output is the removed version list.
+When removal is blocked, human output reports each blocking reference type and path:
+
+- `global-default` points to the settings file that stores the global default.
+- `directory-override` points to the override directory path.
+
+Clear or change the reference, then retry:
+
+```bash
+nodeup default <runtime>
+nodeup override unset --path <path>
+nodeup override set <runtime> --path <path>
+nodeup toolchain uninstall <version>
+```
+
+Successful JSON output is the removed version list. Blocked JSON errors include `diagnostics.blocked_versions` and `diagnostics.blockers`; each blocker includes `reference_type`, `runtime`, `selector`, `path`, `clear_command`, and `change_command`.
 
 ## toolchain link
 
