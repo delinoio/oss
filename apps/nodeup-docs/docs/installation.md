@@ -49,6 +49,20 @@ The Homebrew formula uses prebuilt Nodeup release archives for:
 
 Direct installers are for users who want a release artifact without Homebrew or `cargo-binstall`. Install `cosign` first and leave it on `PATH`; the installers require it to verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`) with `cosign verify-blob --bundle`. Missing `cosign` is a prerequisite failure, not a reason to disable verification. If you do not want to manage that prerequisite directly, use Homebrew or `cargo-binstall` instead.
 
+Install `cosign`:
+
+```bash
+brew install cosign
+```
+
+On Linux without Homebrew, follow the [Sigstore cosign installation guide](https://docs.sigstore.dev/cosign/system_config/installation/). On Windows, use:
+
+```powershell
+winget install sigstore.cosign
+# or
+scoop install cosign
+```
+
 macOS and Linux:
 
 ```bash
@@ -123,7 +137,16 @@ $env:Path = "$HOME\.local\bin;$env:Path"
 cargo binstall nodeup --no-confirm
 ```
 
-Nodeup's `cargo-binstall` metadata resolves first-party GitHub Release assets only. Third-party quick-install and compile fallback strategies are disabled by contract.
+Nodeup's `cargo-binstall` metadata resolves first-party GitHub Release assets only:
+
+- `nodeup-linux-amd64.tar.gz`
+- `nodeup-linux-arm64.tar.gz`
+- `nodeup-darwin-amd64.tar.gz`
+- `nodeup-darwin-arm64.tar.gz`
+- `nodeup-windows-amd64.zip`
+- `nodeup-windows-arm64.zip`
+
+Third-party quick-install and compile fallback strategies are disabled by contract. If the current host is unsupported or the matching first-party asset is missing from a release, `cargo-binstall` should fail instead of compiling from source or downloading a community-provided binary. Use Homebrew on macOS/Linux, the direct installer with `cosign`, or a supported x64/arm64 host with a complete Nodeup release.
 
 ## GitHub Actions
 

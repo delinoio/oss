@@ -30,7 +30,22 @@ Direct installers verify:
 1. The selected artifact's `SHA256SUMS` entry.
 2. The artifact's Sigstore bundle with `cosign`.
 
-Direct installers require `cosign` and support bundle-enabled releases only. If verification material is missing or verification fails, installation stops before the binary is installed.
+Direct installers require `cosign` and support bundle-enabled releases only. Missing `cosign` is reported as a prerequisite failure before artifact download. If verification material is missing or verification fails, installation stops before the binary is installed with a distinct verification or release-material error.
+
+## cargo-binstall Asset Contract
+
+`cargo-binstall` uses the same first-party release assets listed above. Nodeup disables `quick-install` and `compile` fallback strategies so installation never silently switches to third-party binary discovery or a source build when a prebuilt asset is unavailable.
+
+Supported `cargo-binstall` assets are:
+
+- `nodeup-linux-amd64.tar.gz`
+- `nodeup-linux-arm64.tar.gz`
+- `nodeup-darwin-amd64.tar.gz`
+- `nodeup-darwin-arm64.tar.gz`
+- `nodeup-windows-amd64.zip`
+- `nodeup-windows-arm64.zip`
+
+If a host is unsupported or a release is missing the expected asset, use Homebrew on macOS/Linux, the direct installer with `cosign`, or a supported x64/arm64 host with a complete Nodeup release.
 
 ## Runtime Download Artifacts
 

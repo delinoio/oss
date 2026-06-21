@@ -18,10 +18,13 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Stable channel naming and runtime dispatch semantics must be preserved.
 - Exact-version runtime selectors are immutable pins for `nodeup update`; they are canonicalized to `v<semver>` when tracked and are semantically deduplicated with non-`v` inputs.
 - Shim behavior must remain deterministic across supported operating systems.
+- `nodeup shim setup` is the stable idempotent setup/repair command for Nodeup-managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims, and must not replace unrelated existing commands.
+- Windows copied shims must use adjacent Nodeup ownership markers so stale Nodeup copies can be repaired without replacing unrelated executables.
 - Linked runtime lifecycle commands must preserve external runtime directories: `toolchain link` registers settings records and `toolchain unlink` removes those records only.
 - Linked runtime resolution must validate that the selected `node` executable is runnable, including Unix executable-bit checks and Windows `node.exe` naming behavior.
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic: supported values are exact `yarn@<semver>` or `pnpm@<semver>` strings only, and invalid values must report the failed part plus JSON diagnostics.
 - `yarn` and `pnpm` npm-exec delegation must be visible in human output, JSON output, and planning logs, including whether the package spec is pinned or an unpinned fallback.
+- `nodeup self uninstall` cleanup boundaries are data/cache/config only; binary, shims, and shell profile/PATH cleanup must remain manual and visible in human and JSON output.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.
 - `nodeup show color` must remain available as the color diagnostic command for human stdout, human stderr, and log color decisions.
@@ -30,10 +33,11 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - `nodeup toolchain install` accepts only exact-version and channel selectors; linked-name selectors must be rejected before linked-runtime lookup so the error is deterministic whether or not the linked name exists.
 - Release automation must publish both standalone prebuilt binaries and archive assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, plus Sigstore bundle sidecars (`*.sigstore.json`) for each artifact and `SHA256SUMS`.
 - Direct installers must verify `SHA256SUMS` entries and Sigstore bundle sidecars, require `cosign`, and only support bundle-enabled releases.
+- Direct installers must preflight missing `cosign` before release lookup or artifact download, explain OS-specific setup, and keep missing-prerequisite failures distinct from checksum or Sigstore verification failures.
 - Direct installers must remain available at `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1`.
 - Public direct-installer documentation must include copy-pasteable remote commands for POSIX shells and PowerShell that fetch the installer from first-party `delinoio/oss` raw GitHub URLs, while also preserving the canonical in-repo script paths for maintainer workflows.
 - Remote direct-installer examples must use `https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.sh` and `https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.ps1` for current public docs, or a tag/commit-pinned equivalent of those same first-party paths when reproducibility is required.
-- `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable third-party quick-install and compile fallback strategies.
+- `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable third-party quick-install and compile fallback strategies; install and troubleshooting docs must explain that unsupported hosts or missing first-party assets do not fall back to source compilation.
 - Homebrew installation must use prebuilt `nodeup` release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - `nodeup` runtime installation and shim dispatch must support `macOS`, `Linux`, and `Windows` x64/arm64 hosts while leaving x86 hosts out of scope; unsupported hosts must fail with `unsupported-platform`, deterministic platform diagnostics, the supported OS/architecture pairs, and the next action to use an x64/arm64 host or supported CI image.
 - `apps/nodeup-docs` must use the repository-default Rspress/Rsbuild-family static documentation toolchain and Cloudflare Pages deployment contract unless this project index and `docs/apps-nodeup-docs-foundation.md` document a replacement.

@@ -73,41 +73,21 @@ Runtime resolution for normal dispatch is explicit selector, then nearest direct
 
 When the same binary is linked or copied as `node`, `npm`, `npx`, `yarn`, or `pnpm`, Nodeup detects the executable name and dispatches to the active runtime:
 
-macOS and Linux:
-
 ```bash
-shim_dir="$HOME/.local/share/nodeup/shims"
-mkdir -p "$shim_dir"
-
-for alias in node npm npx yarn pnpm; do
-  target="$shim_dir/$alias"
-  if [ -e "$target" ] && [ ! -L "$target" ]; then
-    printf 'Refusing to replace %s\n' "$target" >&2
-    exit 1
-  fi
-  ln -sfn "$(command -v nodeup)" "$target"
-done
-
-export PATH="$shim_dir:$PATH"
+nodeup shim setup
 ```
 
-Windows PowerShell:
+The command creates or repairs all managed aliases in the default shim directory:
 
-```powershell
-$ShimDir = Join-Path $HOME ".local\share\nodeup\shims"
-New-Item -ItemType Directory -Force -Path $ShimDir | Out-Null
-$Nodeup = (Get-Command nodeup).Source
+- macOS and Linux: `$HOME/.local/bin`
+- Windows: `$HOME\.local\bin`
 
-foreach ($Alias in "node", "npm", "npx", "yarn", "pnpm") {
-  $Target = Join-Path $ShimDir "$Alias.exe"
-  if (Test-Path $Target) {
-    Write-Error "Refusing to replace $Target"
-    exit 1
-  }
-  Copy-Item $Nodeup $Target
-}
+If that directory is not already on `PATH`, human output includes the exact shell command for the current session. Add the same directory to your shell profile or user PATH for future sessions.
 
-$env:PATH = "$ShimDir;$env:PATH"
+Use a custom shim directory when needed:
+
+```bash
+nodeup shim setup --dir "$HOME/.local/bin"
 ```
 
 ```bash
