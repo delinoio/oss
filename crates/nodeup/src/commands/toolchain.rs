@@ -10,7 +10,10 @@ use crate::{
     errors::{ErrorDiagnostics, ErrorKind, NodeupError, Result},
     release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
-    selectors::{is_reserved_channel_selector_token, is_valid_linked_name, RuntimeSelector},
+    selectors::{
+        is_case_variant_of_reserved_channel_selector, is_reserved_channel_selector_token,
+        is_valid_linked_name, RuntimeSelector,
+    },
     store::{runtime_executable_is_runnable, runtime_primary_executable_path},
     types::PlatformTarget,
     NodeupApp,
@@ -25,6 +28,10 @@ struct ToolchainListResponse {
 #[derive(Debug, Serialize)]
 struct ToolchainInstallResult {
     selector: String,
+    selector_kind: String,
+    canonical_selector: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector_alias_of: Option<String>,
     runtime: String,
     status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -235,6 +242,9 @@ fn install(
 
         results.push(ToolchainInstallResult {
             selector: runtime.clone(),
+            selector_kind: selector.kind().as_str().to_string(),
+            canonical_selector: selector.canonical_id(),
+            selector_alias_of: selector.alias_of(),
             runtime: report.version,
             status: status.to_string(),
             release_index,
@@ -510,10 +520,11 @@ fn shell_quote(value: &str) -> String {
 }
 
 fn selector_references_linked_name(selector: &str, target_name: &str) -> bool {
-    matches!(
-        RuntimeSelector::parse(selector).ok(),
-        Some(RuntimeSelector::LinkedName(name)) if name == target_name
-    )
+    match RuntimeSelector::parse(selector).ok() {
+        Some(RuntimeSelector::LinkedName(name)) => name == target_name,
+        Some(_) => false,
+        None => selector == target_name,
+    }
 }
 
 fn canonical_version_selector(selector: &str) -> Option<String> {
@@ -558,6 +569,22 @@ fn link(
             format!("Invalid linked runtime name: {name}"),
             "Reserved channel selectors (`lts`, `current`, `latest`) cannot be used as linked \
              runtime names.",
+        ));
+    }
+
+    if is_case_variant_of_reserved_channel_selector(name) {
+        info!(
+            command_path = "nodeup.toolchain.link",
+            linked_name = %name,
+            requested_path = %path,
+            validation = false,
+            reason = "reserved-linked-name-case-variant",
+            "Rejected linked runtime"
+        );
+        return Err(NodeupError::invalid_input_with_hint(
+            format!("Invalid linked runtime name: {name}"),
+            "Linked runtime names are case-sensitive, but names that differ from reserved channel \
+             selectors (`lts`, `current`, `latest`) only by case are not allowed.",
         ));
     }
 
@@ -661,6 +688,8 @@ fn link(
     let message = format!("Linked runtime '{name}' -> {}", absolute.display());
     let response = serde_json::json!({
         "name": name,
+        "selector_kind": "linked-runtime",
+        "canonical_selector": name,
         "path": absolute,
         "status": "linked"
     });

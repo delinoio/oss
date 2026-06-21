@@ -10,10 +10,12 @@ Nodeup resolves a runtime selector to either an installed Node.js version or a l
 | `v22.1.0` | Exact semantic version |
 | `lts` | First LTS entry from the Node.js release index |
 | `current` | First entry from the Node.js release index |
-| `latest` | First entry from the Node.js release index |
+| `latest` | Alias of `current`; resolves to the first entry from the Node.js release index |
 | `work-node` | Linked runtime name |
 
-Linked runtime names must match `[A-Za-z0-9][A-Za-z0-9_-]*`. Reserved channel names are exact lowercase values.
+Use `current` in examples and automation when you want the newest release-index entry. `latest` remains supported for compatibility and reports `canonical_selector: "current"` in JSON output.
+
+Linked runtime names must match `[A-Za-z0-9][A-Za-z0-9_-]*`. Selector names are case-sensitive, but linked names that differ from reserved channels only by case, such as `LTS`, `Current`, or `LATEST`, are rejected to avoid confusing them with `lts`, `current`, and `latest`.
 
 ## Precedence
 
@@ -53,6 +55,12 @@ nodeup default
 ```
 
 When a saved default no longer resolves, `nodeup default` still reports the saved selector and includes a resolution error in JSON output.
+
+JSON selector-bearing responses include:
+
+- `selector_kind`: `exact-version`, `channel`, or `linked-runtime`
+- `canonical_selector`: the semantic selector identity used for tracking and alias reporting
+- `selector_alias_of`: present when a selector is an alias, currently `latest` -> `current`
 
 ## Installed and Linked Targets
 

@@ -25,7 +25,10 @@
 - Linked runtime command identifiers are `toolchain link` for registration and `toolchain unlink` for record removal.
 - `toolchain unlink <name>...` must remove only nodeup settings records and tracked selectors; it must not delete files from external runtime directories.
 - `toolchain unlink` must fail with `conflict` when the linked runtime name is referenced by the global default selector or a directory override.
+- Runtime selector kinds exposed in JSON are `exact-version`, `channel`, and `linked-runtime`.
+- `current` is the canonical selector for the newest Node.js release-index entry; `latest` is a supported alias of `current` and must report alias metadata in JSON selector-bearing output.
 - Tracked exact-version selectors must be stored and processed by their canonical `v<semver>` identity, so `22.1.0` and `v22.1.0` are the same tracked selector.
+- Tracked channel aliases must be stored and processed by canonical selector identity, so `latest` and `current` are one tracked selector, `current`.
 - `nodeup update` treats exact-version selectors as immutable pins and reports them with `skipped-exact-version` rather than installing or reporting a newer runtime for that selector.
 - Host support must include `macOS`, `Linux`, and `Windows` x64/arm64, while x86 hosts remain unsupported.
 - Direct installers, runtime installation, and shim dispatch must detect unsupported x86 hosts before release asset download or delegated command planning.
@@ -39,6 +42,8 @@
 - Runtime archive selection must remain enum-driven: `tar.xz` for `darwin/*` and `linux/*`, `zip` for `windows/*`.
 - Windows runtime archives that unpack without a top-level directory must be normalized into the stable `bin/` runtime layout used by nodeup execution and linking flows.
 - Linked runtime validation must require a runnable `node` command during `toolchain link` and active-runtime availability checks.
+- Linked runtime names are case-sensitive, but names that differ from reserved channel selectors only by case, such as `LTS`, `Current`, or `LATEST`, must be rejected with `invalid-input`.
+- Legacy settings and overrides that already contain reserved-channel case variants as linked runtime selectors must remain removable and must continue to report linked-runtime metadata in JSON output.
 - Unix linked-runtime validation must require an executable permission bit on `bin/node`; Windows platform behavior must select `bin/node.exe` for `node`.
 - `yarn`/`pnpm` delegated execution must honor nearest `package.json` `packageManager` when present.
 - `packageManager` parsing contract is strict: `<manager>@<exact-semver>` with manager limited to `yarn|pnpm`.

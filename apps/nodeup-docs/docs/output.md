@@ -47,6 +47,16 @@ ANSI styling is never injected into JSON stdout or stderr payloads.
 
 Without `--output json`, command-line parser failures keep clap's native human help and error formatting.
 
+## Selector Metadata
+
+JSON payloads that report runtime selectors include selector metadata for automation:
+
+- `selector_kind`: `exact-version`, `channel`, or `linked-runtime`
+- `canonical_selector`: the canonical selector identity used for tracking and alias reporting
+- `selector_alias_of`: present only for aliases, currently `latest` as an alias of `current`
+
+Exact versions canonicalize to `v<semver>`. `current` and `latest` both resolve to the newest release-index entry, but `current` is the canonical selector.
+
 ## Delegated Commands in JSON Mode
 
 `nodeup run --output json ...` keeps stdout reserved for the final Nodeup response. Delegated command stdout is routed to stderr in JSON mode.
