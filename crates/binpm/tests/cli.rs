@@ -1217,6 +1217,86 @@ version = "1.0.0"
 }
 
 #[test]
+fn frozen_local_install_identifies_missing_tool_record() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(project.join("binpm.lock"), "version = 1\n").expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["install", "--local", "--frozen-lockfile", "--json"])
+        .output()
+        .expect("install --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["reason"],
+        "missing_lockfile_record"
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["record"],
+        "tools.tool target record"
+    );
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("record `tools.tool target record`"));
+}
+
+#[test]
+fn ci_frozen_local_install_distinguishes_orphan_cleanup() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("CI", "true")
+        .args(["install", "--local", "--json"])
+        .output()
+        .expect("install --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["reason"],
+        "orphan_lockfile_record"
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["record"],
+        "orphaned lockfile or package record"
+    );
+}
+
+#[test]
 fn frozen_add_reports_add_specific_recovery_with_quoted_command() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -1404,6 +1484,7 @@ signature_verified = false
             "update",
             "--local",
             "tool;echo pwn",
+            "--require-verified",
             "--frozen-lockfile",
             "--json",
         ])
@@ -1414,12 +1495,14 @@ signature_verified = false
     let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
     assert_eq!(
         payload["error"]["diagnostic"]["safest_next_command"],
-        "binpm update --local 'tool;echo pwn'"
+        "binpm update --local 'tool;echo pwn' --require-verified"
     );
     assert!(payload["error"]["message"]
         .as_str()
         .expect("message")
-        .contains("Safest next command: `binpm update --local 'tool;echo pwn'`"));
+        .contains(
+            "Safest next command: `binpm update --local 'tool;echo pwn' --require-verified`"
+        ));
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]

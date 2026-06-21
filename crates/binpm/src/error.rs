@@ -20,6 +20,10 @@ pub enum FrozenLockfileCommandContext {
         require_verified: bool,
         mode: Option<&'static str>,
     },
+    UpdateLocal {
+        require_verified: bool,
+        mode: Option<&'static str>,
+    },
     Exec {
         mode: Option<&'static str>,
     },
@@ -175,6 +179,10 @@ pub enum BinpmError {
     },
     #[error("{}", frozen_lockfile_message(path))]
     FrozenLockfile { path: PathBuf },
+    #[error("{}", missing_lockfile_record_message(path, cmd))]
+    FrozenLockfileMissingRecord { path: PathBuf, cmd: String },
+    #[error("{}", orphan_lockfile_cleanup_message(path))]
+    FrozenLockfileOrphanCleanup { path: PathBuf },
     #[error("{}", stale_lockfile_message(path, cmd))]
     StaleLockfile { path: PathBuf, cmd: String },
     #[error("Package record for `{cmd}` has inconsistent source identity.")]
@@ -290,7 +298,7 @@ impl BinpmError {
         match self {
             Self::FrozenLockfile { path } => {
                 let reason = frozen_lockfile_reason(path);
-                let safest_next_command = frozen_lockfile_safest_next_command();
+                let safest_next_command = frozen_lockfile_safest_next_command(None);
                 Some(serde_json::json!({
                     "kind": "frozen_lockfile",
                     "mode": frozen_lockfile_mode_label(),
@@ -303,6 +311,31 @@ impl BinpmError {
                     "local_development_escape_hatch": "--no-frozen-lockfile"
                 }))
             }
+            Self::FrozenLockfileMissingRecord { path, cmd } => {
+                let safest_next_command = frozen_lockfile_safest_next_command(Some(cmd));
+                Some(serde_json::json!({
+                    "kind": "frozen_lockfile",
+                    "mode": frozen_lockfile_mode_label(),
+                    "reason": "missing_lockfile_record",
+                    "file": path.display().to_string(),
+                    "record": format!("tools.{cmd} target record"),
+                    "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
+                    "would_change": path.display().to_string(),
+                    "safest_next_command": safest_next_command,
+                    "local_development_escape_hatch": "--no-frozen-lockfile"
+                }))
+            }
+            Self::FrozenLockfileOrphanCleanup { path } => Some(serde_json::json!({
+                "kind": "frozen_lockfile",
+                "mode": frozen_lockfile_mode_label(),
+                "reason": "orphan_lockfile_record",
+                "file": path.display().to_string(),
+                "record": "orphaned lockfile or package record",
+                "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
+                "would_change": path.display().to_string(),
+                "safest_next_command": frozen_lockfile_safest_next_command(None),
+                "local_development_escape_hatch": "--no-frozen-lockfile"
+            })),
             Self::StaleLockfile { path, cmd } => frozen_lockfile_mode().map(|mode| {
                 serde_json::json!({
                     "kind": "frozen_lockfile",
@@ -312,7 +345,7 @@ impl BinpmError {
                     "record": format!("tools.{cmd} target record"),
                     "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
                     "would_change": path.display().to_string(),
-                    "safest_next_command": format!("binpm update --local {}", cli_quote(cmd)),
+                    "safest_next_command": frozen_update_local_command(cmd),
                     "local_development_escape_hatch": "--no-frozen-lockfile"
                 })
             }),
@@ -352,6 +385,8 @@ impl BinpmError {
             | Self::DownloadStream { .. }
             | Self::ReleasePaginationLoop { .. } => 1,
             Self::FrozenLockfile { .. }
+            | Self::FrozenLockfileMissingRecord { .. }
+            | Self::FrozenLockfileOrphanCleanup { .. }
             | Self::StaleLockfile { .. }
             | Self::StalePackageRecord { .. }
             | Self::MissingManifest { .. }
@@ -380,7 +415,7 @@ impl BinpmError {
 
 fn frozen_lockfile_message(path: &std::path::Path) -> String {
     let reason = frozen_lockfile_reason(path);
-    let safest_next_command = frozen_lockfile_safest_next_command();
+    let safest_next_command = frozen_lockfile_safest_next_command(None);
     let commit_target = frozen_lockfile_commit_target();
     let mut message = format!(
         "Frozen lockfile failure: mode `{}`; reason `{reason}`; file `{}`; record `{}`; would \
@@ -400,8 +435,40 @@ fn frozen_lockfile_message(path: &std::path::Path) -> String {
     message
 }
 
+fn missing_lockfile_record_message(path: &std::path::Path, cmd: &str) -> String {
+    let safest_next_command = frozen_lockfile_safest_next_command(Some(cmd));
+    let mut message = format!(
+        "Frozen lockfile failure: mode `{}`; reason `missing_lockfile_record`; file `{}`; record \
+         `tools.{cmd} target record`; would change `{}`. Safest next command: \
+         `{safest_next_command}`, then commit `binpm.lock`. For local development only, retry \
+         with `--no-frozen-lockfile`.",
+        frozen_lockfile_mode_label(),
+        path.display(),
+        path.display()
+    );
+    if frozen_lockfile_on_demand_install_attempt() {
+        message.push_str(
+            " On-demand install attempt: `binpm x` needed to sync a missing executable or package \
+             record before running.",
+        );
+    }
+    message
+}
+
+fn orphan_lockfile_cleanup_message(path: &std::path::Path) -> String {
+    format!(
+        "Frozen lockfile failure: mode `{}`; reason `orphan_lockfile_record`; file `{}`; record \
+         `orphaned lockfile or package record`; would change `{}`. Safest next command: `{}`, \
+         then commit `binpm.lock`. For local development only, retry with `--no-frozen-lockfile`.",
+        frozen_lockfile_mode_label(),
+        path.display(),
+        path.display(),
+        frozen_lockfile_safest_next_command(None)
+    )
+}
+
 fn stale_lockfile_message(path: &std::path::Path, cmd: &str) -> String {
-    let command = format!("binpm update --local {}", cli_quote(cmd));
+    let command = frozen_update_local_command(cmd);
     let mut message = format!(
         "Frozen lockfile failure: mode `{}`; reason `stale_lockfile_record`; file `{}`; record \
          `tools.{cmd} target record`; would change `{}`. Safest next command: `{command}`, then \
@@ -439,6 +506,7 @@ fn frozen_lockfile_mode() -> Option<&'static str> {
     match FROZEN_LOCKFILE_CONTEXT.get() {
         Some(FrozenLockfileCommandContext::Add { mode, .. })
         | Some(FrozenLockfileCommandContext::InstallLocalSource { mode, .. })
+        | Some(FrozenLockfileCommandContext::UpdateLocal { mode, .. })
         | Some(FrozenLockfileCommandContext::Exec { mode })
         | Some(FrozenLockfileCommandContext::Other { mode }) => *mode,
         Some(FrozenLockfileCommandContext::NotFrozen) | None => None,
@@ -456,7 +524,7 @@ fn frozen_lockfile_on_demand_install_attempt() -> bool {
     )
 }
 
-fn frozen_lockfile_safest_next_command() -> String {
+fn frozen_lockfile_safest_next_command(cmd: Option<&str>) -> String {
     match FROZEN_LOCKFILE_CONTEXT.get() {
         Some(FrozenLockfileCommandContext::Add {
             cmd,
@@ -481,6 +549,9 @@ fn frozen_lockfile_safest_next_command() -> String {
             parts.push("--no-frozen-lockfile".to_string());
             parts.join(" ")
         }
+        Some(FrozenLockfileCommandContext::UpdateLocal { .. }) if cmd.is_some() => {
+            frozen_update_local_command(cmd.expect("checked command is present"))
+        }
         Some(FrozenLockfileCommandContext::InstallLocalSource {
             source,
             require_verified,
@@ -500,6 +571,25 @@ fn frozen_lockfile_safest_next_command() -> String {
         }
         _ => "binpm install --local".to_string(),
     }
+}
+
+fn frozen_update_local_command(cmd: &str) -> String {
+    let mut parts = vec![
+        "binpm".to_string(),
+        "update".to_string(),
+        "--local".to_string(),
+        cli_quote(cmd),
+    ];
+    if matches!(
+        FROZEN_LOCKFILE_CONTEXT.get(),
+        Some(FrozenLockfileCommandContext::UpdateLocal {
+            require_verified: true,
+            ..
+        })
+    ) {
+        parts.push("--require-verified".to_string());
+    }
+    parts.join(" ")
 }
 
 fn frozen_lockfile_commit_target() -> &'static str {

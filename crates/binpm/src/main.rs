@@ -48,6 +48,10 @@ fn frozen_lockfile_command_context(command: &Command) -> FrozenLockfileCommandCo
         Command::Exec(args) => FrozenLockfileCommandContext::Exec {
             mode: args.lockfile.frozen_lockfile_mode(),
         },
+        Command::Update(args) if args.scope.local => FrozenLockfileCommandContext::UpdateLocal {
+            require_verified: args.require_verified,
+            mode: args.lockfile.frozen_lockfile_mode(),
+        },
         Command::Update(args) => FrozenLockfileCommandContext::Other {
             mode: args.lockfile.frozen_lockfile_mode(),
         },
