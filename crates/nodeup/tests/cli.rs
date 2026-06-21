@@ -2036,6 +2036,42 @@ fn json_completions_subcommand_scope_emits_scope_diagnostics() {
 
 #[test]
 #[serial]
+fn json_completions_subcommand_scope_captures_option_like_tokens() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "completions",
+            "bash",
+            "override",
+            "set",
+            "--path",
+        ])
+        .output()
+        .expect("completions --output json invalid option-like scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope 'override set --path'"));
+    assert_eq!(
+        payload["diagnostics"]["rejected_scope"],
+        "override set --path"
+    );
+    assert_eq!(payload["diagnostics"]["suggested_scope"], "override");
+}
+
+#[test]
+#[serial]
 fn json_startup_failure_emits_stderr_error_envelope() {
     let env = TestEnv::new();
     let invalid_data_home = env.root.join("invalid-data-home");
