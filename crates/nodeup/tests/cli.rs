@@ -1623,6 +1623,61 @@ tracked_selectors = ["linked-active-not-executable"]
 
 #[test]
 #[serial]
+fn windows_node_availability_rejects_extensionless_linked_runtime_node() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-windows-extensionless-node");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho wrong-shape\n");
+
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            r#"schema_version = 1
+default_selector = "linked-windows-extensionless-node"
+tracked_selectors = ["linked-windows-extensionless-node"]
+
+[linked_runtimes]
+"linked-windows-extensionless-node" = "{}"
+"#,
+            runtime_dir.display()
+        ),
+    )
+    .unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["show", "active-runtime"])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicates::str::contains(
+            "Command 'node' does not exist for runtime linked-windows-extensionless-node",
+        ));
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["which", "node"])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicates::str::contains(
+            "Command 'node' does not exist for runtime linked-windows-extensionless-node",
+        ));
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["run", "linked-windows-extensionless-node", "node"])
+        .assert()
+        .failure()
+        .code(5)
+        .stderr(predicates::str::contains(
+            "Command 'node' is not available in runtime linked-windows-extensionless-node",
+        ));
+}
+
+#[test]
+#[serial]
 fn override_resolution_logs_hit_with_fallback_reason() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);

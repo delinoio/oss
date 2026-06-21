@@ -193,6 +193,10 @@ fn executable_permission_is_set(path: &Path) -> bool {
 
 fn runtime_executable_candidates(command: &str) -> Vec<String> {
     let primary = runtime_primary_executable_name(command);
+    if command == "node" && runtime_host_is_windows() {
+        return vec![primary];
+    }
+
     if primary == command {
         vec![primary]
     } else {
