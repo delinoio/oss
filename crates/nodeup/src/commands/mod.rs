@@ -2,6 +2,7 @@ mod default_cmd;
 mod override_cmd;
 mod run_cmd;
 mod self_cmd;
+mod shim_cmd;
 mod show;
 mod skeleton;
 mod toolchain;
@@ -14,14 +15,14 @@ use tracing::info;
 
 use crate::{
     cli::{
-        Cli, Command, OutputColorMode, OutputFormat, OverrideCommand, SelfCommand, ShowCommand,
-        ToolchainCommand, ToolchainListDetail,
+        Cli, Command, OutputColorMode, OutputFormat, OverrideCommand, SelfCommand, ShimCommand,
+        ShowCommand, ToolchainCommand, ToolchainListDetail,
     },
     errors::Result,
     output_style,
     types::{
-        NodeupCommand, NodeupOverrideCommand, NodeupSelfCommand, NodeupShowCommand,
-        NodeupToolchainCommand,
+        NodeupCommand, NodeupOverrideCommand, NodeupSelfCommand, NodeupShimCommand,
+        NodeupShowCommand, NodeupToolchainCommand,
     },
     NodeupApp,
 };
@@ -46,6 +47,7 @@ pub fn execute(cli: Cli, app: &NodeupApp) -> Result<i32> {
             runtime,
             command,
         } => run_cmd::execute(install, &runtime, &command, cli.output, cli.color, app),
+        Command::Shim { command } => shim_cmd::execute(command, cli.output, cli.color, app),
         Command::SelfCmd { command } => self_cmd::execute(command, cli.output, cli.color, app),
         Command::Completions { shell, command } => {
             skeleton::completions(&shell, command.as_deref())
@@ -190,6 +192,18 @@ fn command_invocation_metadata(
                 "delegated_argv_len": command.len()
             }),
         },
+        Command::Shim { command } => {
+            let subcommand = shim_command(command);
+            CommandInvocationMetadata {
+                command_path: shim_command_path(subcommand),
+                arg_shape: match command {
+                    ShimCommand::Setup { dir } => json!({
+                        "output": output,
+                        "dir_provided": dir.is_some()
+                    }),
+                },
+            }
+        }
         Command::SelfCmd { command } => {
             let subcommand = self_command(command);
             CommandInvocationMetadata {
@@ -283,6 +297,18 @@ fn self_command_path(command: NodeupSelfCommand) -> &'static str {
         NodeupSelfCommand::Update => "nodeup.self.update",
         NodeupSelfCommand::Uninstall => "nodeup.self.uninstall",
         NodeupSelfCommand::UpgradeData => "nodeup.self.upgrade-data",
+    }
+}
+
+fn shim_command(command: &ShimCommand) -> NodeupShimCommand {
+    match command {
+        ShimCommand::Setup { .. } => NodeupShimCommand::Setup,
+    }
+}
+
+fn shim_command_path(command: NodeupShimCommand) -> &'static str {
+    match command {
+        NodeupShimCommand::Setup => "nodeup.shim.setup",
     }
 }
 
@@ -458,6 +484,19 @@ mod tests {
                     "install": true,
                     "runtime_provided": true,
                     "delegated_argv_len": 2
+                }),
+            ),
+            (
+                Command::Shim {
+                    command: ShimCommand::Setup {
+                        dir: Some("/tmp/nodeup-shims".to_string()),
+                    },
+                },
+                OutputFormat::Human,
+                "nodeup.shim.setup",
+                json!({
+                    "output": "human",
+                    "dir_provided": true
                 }),
             ),
             (

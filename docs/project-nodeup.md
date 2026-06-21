@@ -18,9 +18,12 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Stable channel naming and runtime dispatch semantics must be preserved.
 - Exact-version runtime selectors are immutable pins for `nodeup update`; they are canonicalized to `v<semver>` when tracked and are semantically deduplicated with non-`v` inputs.
 - Shim behavior must remain deterministic across supported operating systems.
+- `nodeup shim setup` is the stable idempotent setup/repair command for Nodeup-managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims, and must not replace unrelated existing commands.
+- Windows copied shims must use adjacent Nodeup ownership markers so stale Nodeup copies can be repaired without replacing unrelated executables.
 - Linked runtime lifecycle commands must preserve external runtime directories: `toolchain link` registers settings records and `toolchain unlink` removes those records only.
 - Linked runtime resolution must validate that the selected `node` executable is runnable, including Unix executable-bit checks and Windows `node.exe` naming behavior.
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic.
+- `nodeup self uninstall` cleanup boundaries are data/cache/config only; binary, shims, and shell profile/PATH cleanup must remain manual and visible in human and JSON output.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.
 - `nodeup show color` must remain available as the color diagnostic command for human stdout, human stderr, and log color decisions.

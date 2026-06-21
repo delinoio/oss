@@ -128,6 +128,7 @@ $env:Path = "$HOME\.local\bin;$env:Path"
 - `nodeup override unset [--path <path>] [--nonexistent]`
 - `nodeup which [--runtime <runtime>] <command>`
 - `nodeup run [--install] <runtime> <command>...`
+- `nodeup shim setup [--dir <path>]`
 - `nodeup self update`
 - `nodeup self uninstall`
 - `nodeup self upgrade-data`
@@ -184,6 +185,23 @@ Fallback rules when `packageManager` is absent:
   - `yarn` -> `@yarnpkg/cli-dist`
   - `pnpm` -> `pnpm`
 
+## Managed Shims
+
+`nodeup shim setup` creates or repairs managed aliases for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
+
+- Default shim directory: `NODEUP_SHIM_DIR`, otherwise `$HOME/.local/bin`
+- macOS/Linux: symlink aliases
+- Windows: copied `.exe` aliases
+- JSON output includes `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, and per-alias `shims`
+
+Re-run the command after moving the Nodeup binary or when an alias is stale.
+
+## Self Uninstall Boundary
+
+`nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only. It does not remove the running binary, managed shims, shell profile entries, or user PATH values.
+
+JSON output includes `removed_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
+
 ## Output and Logging
 
 - Global output mode: `--output human|json` (default: `human`)
@@ -231,7 +249,7 @@ Scope filtering:
 
 - `nodeup completions <shell>` generates completions for all top-level commands.
 - `nodeup completions <shell> <command>` accepts only top-level command scopes:
-  - `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `self`, `completions`
+  - `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `shim`, `self`, `completions`
   - invalid scopes fail with `invalid-input`.
 
 ## Testing Strategy

@@ -20,11 +20,13 @@ Cache hits are revalidated before extraction or install finalization. If cache r
 
 `binpm cache list` reports cached assets.
 
-`binpm cache prune` removes cached assets that are no longer needed by installed tools.
+`binpm cache prune` removes stale structured local-project cache references, then removes cached assets that are no longer needed by installed tools or active project references. Legacy plain-text project references remain preserving until a future install or removal rewrites them.
 
-`binpm cache clean` removes cached assets while preserving installed tools and executable links or copies under `~/.binpm/bin`.
+`binpm cache clean` removes cached asset entries under `~/.binpm/cache/sha256`. It preserves the project-reference index under `~/.binpm/cache/refs`, installed package records, and executable links or copies under `~/.binpm/bin`; command output states those removed and preserved boundaries.
 
-`binpm cache key` prints a stable CI cache key derived from the current target and `binpm.lock`; it does not download, install, or populate cache entries.
+`binpm cache key` prints a stable CI cache key derived from the current target and `binpm.lock`; it does not download, install, or populate cache entries. When `binpm.lock` is absent, human output warns that the empty lockfile digest is used. `binpm cache key --json` reports the same key with `lockfile` status.
+
+`binpm doctor` reports stale and legacy cache-reference counts without repairing them. Run `binpm cache prune` to remove stale structured references and then prune unreferenced cache entries.
 
 ## Verification
 

@@ -121,7 +121,10 @@ enum ProjectId {
 - `binpm` cache reuse must be validated with the strongest available integrity source: provider asset digest, upstream checksum material, successfully verified signature, or locally recorded SHA-256 metadata.
 - Cache management and diagnostic command identifiers are `list`, `prune`, `clean`, and `key` under `binpm cache`.
 - `binpm cache prune` and `binpm cache clean` must not remove installed package records or executable links/copies under `~/.binpm/bin`.
+- `binpm cache clean` must state the removed cache asset boundary and the preserved `~/.binpm/cache/refs`, package-record, and executable boundaries.
+- `binpm cache prune` must remove stale structured local-project cache references before asset pruning while preserving active and legacy references.
 - `binpm cache key` must be read-only and must not download, install, or populate cache entries.
+- `binpm cache key` must warn or expose structured status when `binpm.lock` is absent.
 
 ### binpm Source Contract
 
@@ -167,6 +170,11 @@ enum ProjectId {
 - The canonical production URL for `apps/nodeup-docs` is `https://nodeup.delino.io`.
 - `apps/nodeup-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-nodeup.md` and `docs/apps-nodeup-docs-foundation.md` document a replacement.
 - `apps/nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
+
+### nodeup Shim and Self Cleanup Contract
+
+- `nodeup shim setup` is the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.
+- `nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only; binary, managed shims, and shell profile/PATH cleanup remain manual and must be reported in human and JSON output.
 
 ### Thenv Component Contract
 

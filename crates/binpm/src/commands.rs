@@ -40,7 +40,8 @@ use crate::{
         read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
         referenced_cache_keys, reject_symlinked_cache_entry, remove_cache_ref,
         remove_installed_binary, remove_package_record, remove_path_if_exists,
-        require_regular_managed_file, require_verified_regular_cache_asset, sanitize_persisted_url,
+        remove_stale_cache_refs, require_regular_managed_file,
+        require_verified_regular_cache_asset, sanitize_persisted_url, scan_cache_references,
         validate_command_name, validate_download_url, validate_installed_binary_path,
         validate_sha256_digest, write_cache_ref, write_lockfile, write_manifest,
         write_package_record, CachePaths, LockTool, Manifest, ManifestTool, PackageRecord,
@@ -150,9 +151,11 @@ struct DoctorOutput {
     global_home: String,
     global_bin: String,
     global_bin_on_path: bool,
+    stale_cache_refs: usize,
+    legacy_cache_refs: usize,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 enum PathState {
     #[serde(rename = "present")]
     Present,
@@ -176,6 +179,18 @@ struct VerifyCheckOutput {
     target: Option<HostTarget>,
     checksum_source: ChecksumSource,
     verification: VerificationState,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheKeyOutput {
+    command: &'static str,
+    cache_key: String,
+    target: HostTarget,
+    target_key: String,
+    lockfile_path: String,
+    lockfile: PathState,
+    lockfile_digest: String,
+    read_only: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -625,10 +640,14 @@ fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
             let cache_paths = CachePaths::new(&home);
             let global_paths = ScopePaths::global(home);
             let local_paths = manifest_project_root()?.map(ScopePaths::local);
+            let scan = scan_cache_references(&cache_paths)?;
+            let stale_refs_removed = remove_stale_cache_refs(&cache_paths, &scan.stale_refs)?;
             let referenced =
                 referenced_cache_keys(&global_paths, local_paths.as_ref(), &cache_paths)?;
             let removed = prune_cache(&cache_paths, &referenced)?;
-            println!("pruned {removed}");
+            println!("pruned cache entries: {removed}");
+            println!("removed stale local-project cache refs: {stale_refs_removed}");
+            println!("preserved referenced cache entries, package records, and executable links");
             Ok(0)
         }
         CacheCommand::Clean { .. } => {
@@ -639,17 +658,22 @@ fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
             );
             let paths = CachePaths::new(&binpm_home()?);
             let removed = clean_cache(&paths)?;
-            println!("cleaned {removed}");
+            println!("removed cache entries: {removed}");
+            println!("removed: {}", paths.root.join("sha256").display());
+            println!("preserved: {}", paths.refs.display());
+            println!("preserved: {}", paths.home.join("packages").display());
+            println!("preserved: {}", paths.home.join("bin").display());
             Ok(0)
         }
-        CacheCommand::Key => cache_key(),
+        CacheCommand::Key => cache_key(output),
     }
 }
 
-fn cache_key() -> Result<i32> {
+fn cache_key(output: OutputMode) -> Result<i32> {
     let project_root = project_root()?;
     let lockfile_path = project_root.join(LOCKFILE_FILE);
     let target = HostTarget::current()?;
+    let lockfile = json_path_state(&lockfile_path);
     let digest = lockfile_digest(&lockfile_path)?;
     let target_key = target.key();
     let cache_key = format!("binpm-v1-{target_key}-{digest}");
@@ -661,6 +685,24 @@ fn cache_key() -> Result<i32> {
         lockfile_path = %lockfile_path.display(),
         "Computed binpm cache key"
     );
+    if output.is_json() {
+        return print_json(&CacheKeyOutput {
+            command: "cache key",
+            cache_key,
+            target,
+            target_key,
+            lockfile_path: lockfile_path.display().to_string(),
+            lockfile,
+            lockfile_digest: digest,
+            read_only: true,
+        });
+    }
+    if lockfile == PathState::Missing {
+        eprintln!(
+            "warning: {} is missing; cache key uses the empty lockfile digest",
+            lockfile_path.display()
+        );
+    }
     println!("{cache_key}");
     Ok(0)
 }
@@ -998,6 +1040,8 @@ fn doctor(output: OutputMode) -> Result<i32> {
     let home = binpm_home()?;
     let global_bin = home.join("bin");
     let global_bin_on_path = path_contains_entry(&global_bin);
+    let cache_paths = CachePaths::new(&home);
+    let cache_ref_scan = scan_cache_references(&cache_paths)?;
 
     info!(
         command = "doctor",
@@ -1008,6 +1052,8 @@ fn doctor(output: OutputMode) -> Result<i32> {
         binpm_home = %home.display(),
         global_bin = %global_bin.display(),
         global_bin_on_path,
+        stale_cache_refs = cache_ref_scan.stale_count(),
+        legacy_cache_refs = cache_ref_scan.legacy_refs,
         "Prepared doctor inspection"
     );
     if output.is_json() {
@@ -1021,6 +1067,8 @@ fn doctor(output: OutputMode) -> Result<i32> {
             global_home: home.display().to_string(),
             global_bin: global_bin.display().to_string(),
             global_bin_on_path,
+            stale_cache_refs: cache_ref_scan.stale_count(),
+            legacy_cache_refs: cache_ref_scan.legacy_refs,
         });
     }
     println!("binpm doctor");
@@ -1029,6 +1077,8 @@ fn doctor(output: OutputMode) -> Result<i32> {
     println!("global_home: {}", home.display());
     println!("global_bin: {}", global_bin.display());
     println!("global_bin_on_path: {}", yes_no(global_bin_on_path));
+    println!("stale_cache_refs: {}", cache_ref_scan.stale_count());
+    println!("legacy_cache_refs: {}", cache_ref_scan.legacy_refs);
     if !global_bin_on_path {
         print_global_path_setup_guidance(&global_bin);
     }
