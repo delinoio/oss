@@ -1,16 +1,22 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
-    io::ErrorKind,
+    env, fs,
+    io::{Cursor, ErrorKind, Read},
     path::{Path, PathBuf},
+    process::Command as ProcessCommand,
     str::FromStr,
 };
 
 use sha2::{Digest, Sha256};
 use tracing::{debug, info};
 
+#[cfg(test)]
+use crate::assets::ArtifactKind;
 use crate::{
-    assets::{gitlab_https_eligible, select_asset, ArtifactKind},
+    assets::{
+        discover_archive_binary, gitlab_https_eligible, select_asset, target_archive_candidates,
+        ArchiveMember, BinaryDiscovery,
+    },
     cli::{
         AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
         InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs, VerifyArgs,
@@ -20,11 +26,12 @@ use crate::{
     release::{client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset},
     storage::{
         archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
-        install_bare_executable, installed_filename, list_package_records, managed_installed_path,
-        package_record_from_resolved, package_record_path, populate_cache_from_bytes, prune_cache,
-        read_cache_records, read_lockfile, read_manifest, read_package_record,
-        record_verified_cache_hit, referenced_cache_keys, reject_symlinked_cache_entry,
-        remove_cache_ref, remove_installed_binary, remove_package_record, remove_path_if_exists,
+        install_bare_executable, install_executable_bytes, installed_filename,
+        list_package_records, managed_installed_path, package_record_from_resolved,
+        package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
+        read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
+        referenced_cache_keys, reject_symlinked_cache_entry, remove_cache_ref,
+        remove_installed_binary, remove_package_record, remove_path_if_exists,
         require_regular_managed_file, require_verified_regular_cache_asset, sanitize_persisted_url,
         validate_command_name, validate_download_url, validate_installed_binary_path,
         validate_sha256_digest, write_cache_ref, write_lockfile, write_manifest,
@@ -171,14 +178,14 @@ fn source_install_scope(requested_scope: Scope) -> Scope {
 }
 
 fn exec(args: ExecArgs) -> Result<i32> {
-    let resolved_command = args.cmd().to_string_lossy();
+    let cmd = args.cmd().to_string_lossy().to_string();
     let forwarded_arg_count = args.args().len();
 
     if let Some(source) = &args.package {
         let spec = SourceSpec::from_str(source)?;
         info!(
             command = "x",
-            resolved_command = %resolved_command,
+            resolved_command = %cmd,
             explicit_package = true,
             source_provider = spec.provider.as_str(),
             source_host = spec.host,
@@ -188,10 +195,43 @@ fn exec(args: ExecArgs) -> Result<i32> {
             frozen_lockfile = args.lockfile.frozen_lockfile(),
             "Prepared explicit-package execution request"
         );
+        let home = binpm_home()?;
+        let install_root = home.join("tmp").join("x").join(format!(
+            "{:x}",
+            Sha256::digest(format!("{source}:{cmd}").as_bytes())
+        ));
+        let scope_paths = ScopePaths {
+            root: install_root.clone(),
+            bin: install_root.join("bin"),
+            packages: install_root.join("packages"),
+            tmp: install_root.join("tmp"),
+        };
+        let cache_paths = CachePaths::new(&home);
+        let tool = ManifestTool {
+            source: spec.source_without_version(),
+            version: spec.version.clone(),
+            bin: Some(cmd.clone()),
+            targets: BTreeMap::new(),
+        };
+        let install = install_resolved(
+            &scope_paths,
+            &cache_paths,
+            &cmd,
+            &spec,
+            Some(&tool),
+            false,
+            None,
+        )?;
+        commit_deferred_cache_hit(&cache_paths, &install)?;
+        let mut path_entries = vec![scope_paths.bin];
+        if let Some(root) = manifest_project_root()? {
+            path_entries.push(ScopePaths::local(root).bin);
+        }
+        return execute_command(&cmd, args.args(), &path_entries);
     } else {
         info!(
             command = "x",
-            resolved_command = %resolved_command,
+            resolved_command = %cmd,
             explicit_package = false,
             forwarded_arg_count,
             frozen_lockfile = args.lockfile.frozen_lockfile(),
@@ -199,7 +239,38 @@ fn exec(args: ExecArgs) -> Result<i32> {
         );
     }
 
-    not_implemented("x")
+    validate_command_name(&cmd)?;
+    let root = require_manifest_root()?;
+    let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
+    let tool = manifest
+        .tools
+        .get(&cmd)
+        .ok_or_else(|| BinpmError::ExecToolMissing {
+            cmd: cmd.clone(),
+            manifest: root.join(MANIFEST_FILE),
+        })?
+        .clone();
+    let mut spec = parse_manifest_source(&tool.source)?;
+    spec.version = tool.version.clone();
+    if local_tool_execution_ready(&root, &cmd, &spec, Some(&tool))? {
+        return execute_command(&cmd, args.args(), &[ScopePaths::local(root).bin]);
+    }
+    let prior_state = capture_local_tool_state(&root, &cmd)?;
+    let install = install_local_tool(
+        &root,
+        &cmd,
+        &spec,
+        Some(&tool),
+        args.lockfile.frozen_lockfile(),
+        false,
+    )?;
+    let cache_paths = CachePaths::new(&binpm_home()?);
+    if let Err(error) = commit_deferred_cache_hit(&cache_paths, &install) {
+        rollback_local_install_state(&root, &cmd, &install.record, prior_state);
+        cleanup_failed_install_cache(&cache_paths, &install.record.sha256, Some(&root), &install)?;
+        return Err(error);
+    }
+    execute_command(&cmd, args.args(), &[ScopePaths::local(root).bin])
 }
 
 fn cache(command: CacheCommand) -> Result<i32> {
@@ -379,14 +450,72 @@ fn info_cmd(args: InfoArgs) -> Result<i32> {
             source_version = spec.version.as_deref().unwrap_or(""),
             "Parsed info argument as source"
         );
+        log_read_only_scope("info", args.scope.scope());
+        return print_source_info(&spec);
     }
     log_read_only_scope("info", args.scope.scope());
-    not_implemented("info")
+    let scope = select_scope(args.scope.scope())?;
+    let paths = match scope {
+        Scope::Local => ScopePaths::local(require_manifest_root()?),
+        Scope::Global => ScopePaths::global(binpm_home()?),
+        Scope::Auto => unreachable!("select_scope never returns auto"),
+    };
+    validate_command_name(&args.cmd_or_source)?;
+    let record = read_package_record(&package_record_path(&paths, &args.cmd_or_source))?;
+    print_package_record_info(&args.cmd_or_source, &record);
+    Ok(0)
 }
 
 fn outdated(args: ScopedArgs) -> Result<i32> {
-    log_read_only_scope("outdated", args.scope.scope());
-    not_implemented("outdated")
+    let scope = select_scope(args.scope.scope())?;
+    log_read_only_scope("outdated", scope);
+    let mut checked = 0usize;
+    match scope {
+        Scope::Local => {
+            let root = require_manifest_root()?;
+            let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
+            let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
+            let target_key = HostTarget::current()?.key();
+            for (cmd, tool) in manifest.tools {
+                validate_command_name(&cmd)?;
+                let mut spec = parse_manifest_source(&tool.source)?;
+                spec.version = tool.version.clone();
+                let current = lockfile
+                    .tools
+                    .get(&cmd)
+                    .and_then(|tool| tool.targets.get(&target_key))
+                    .map(|record| record.release_tag.clone())
+                    .unwrap_or_else(|| "<not-installed>".to_string());
+                let mut latest_spec = spec.clone();
+                latest_spec.version = None;
+                let latest = client_for_source(&latest_spec)?
+                    .resolve_release(&latest_spec)?
+                    .release
+                    .tag;
+                if current != latest {
+                    println!("{cmd} {current} -> {latest}");
+                }
+                checked += 1;
+            }
+        }
+        Scope::Global => {
+            for (cmd, record) in list_package_records(&ScopePaths::global(binpm_home()?))? {
+                let mut spec = SourceSpec::from_str(&record.source)?;
+                spec.version = None;
+                let latest = client_for_source(&spec)?
+                    .resolve_release(&spec)?
+                    .release
+                    .tag;
+                if record.release_tag != latest {
+                    println!("{cmd} {} -> {latest}", record.release_tag);
+                }
+                checked += 1;
+            }
+        }
+        Scope::Auto => unreachable!("select_scope never returns auto"),
+    }
+    println!("checked {checked}");
+    Ok(0)
 }
 
 fn update(args: UpdateArgs) -> Result<i32> {
@@ -458,7 +587,30 @@ fn explain(args: ExplainArgs) -> Result<i32> {
             "Prepared local command explanation"
         );
     }
-    not_implemented("explain")
+    let scope = select_scope(args.scope.scope())?;
+    let paths = match scope {
+        Scope::Local => ScopePaths::local(require_manifest_root()?),
+        Scope::Global => ScopePaths::global(binpm_home()?),
+        Scope::Auto => unreachable!("select_scope never returns auto"),
+    };
+    validate_command_name(&args.cmd_or_source)?;
+    let record = read_package_record(&package_record_path(&paths, &args.cmd_or_source))?;
+    println!("binpm explain");
+    println!("cmd: {}", args.cmd_or_source);
+    println!("source: {}", record.source);
+    println!("release: {}", record.release_tag);
+    println!(
+        "target: {}-{}-{}",
+        record.target_os.as_str(),
+        record.target_arch.as_str(),
+        record.target_libc.as_str()
+    );
+    println!("selected_asset: {}", record.asset_name);
+    println!("selected_binary: {}", record.selected_binary);
+    println!("archive_format: {}", record.archive_format.as_str());
+    println!("checksum_source: {}", record.checksum_source.as_str());
+    println!("verification: {}", verification_state(&record));
+    Ok(0)
 }
 
 fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
@@ -506,6 +658,49 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
     }
 
     Ok(0)
+}
+
+fn print_source_info(spec: &SourceSpec) -> Result<i32> {
+    let target = HostTarget::current()?;
+    let selection = client_for_source(spec)?.resolve_release(spec)?;
+    println!("binpm info");
+    println!("source: {spec}");
+    println!("normalized_source: {}", spec.source_without_version());
+    println!("provider: {}", spec.provider.as_str());
+    println!("host: {}", spec.host);
+    println!("path: {}", spec.path);
+    println!("release: {}", selection.release.tag);
+    println!("target: {}", target.key());
+    match select_asset(spec.provider, &target, &selection.release.assets) {
+        Some(selection) => {
+            println!("selected_asset: {}", selection.selected.asset_name);
+            println!(
+                "selected_asset_url: {}",
+                selected_asset_display_url(&selection.selected)?
+            );
+            println!(
+                "archive_format: {}",
+                archive_format(selection.selected.kind)
+                    .map(ArchiveFormat::as_str)
+                    .unwrap_or("unknown")
+            );
+        }
+        None => println!("selected_asset: <none>"),
+    }
+    Ok(0)
+}
+
+fn print_package_record_info(cmd: &str, record: &PackageRecord) {
+    println!("binpm info");
+    println!("cmd: {cmd}");
+    println!("source: {}", record.source);
+    println!("package_spec: {}", record.package_spec);
+    println!("release: {}", record.release_tag);
+    println!("selected_asset: {}", record.asset_name);
+    println!("selected_binary: {}", record.selected_binary);
+    println!("installed_path: {}", record.installed_path);
+    println!("checksum_source: {}", record.checksum_source.as_str());
+    println!("verification: {}", verification_state(record));
 }
 
 fn selected_asset_display_url(decision: &crate::assets::CandidateDecision) -> Result<String> {
@@ -826,6 +1021,65 @@ fn install_local_tool(
     })
 }
 
+fn local_tool_execution_ready(
+    root: &Path,
+    cmd: &str,
+    spec: &SourceSpec,
+    tool: Option<&ManifestTool>,
+) -> Result<bool> {
+    let target = HostTarget::current()?;
+    let lockfile_path = root.join(LOCKFILE_FILE);
+    let lockfile = read_lockfile(&lockfile_path)?;
+    let Some(locked_tool) = lockfile.tools.get(cmd) else {
+        return Ok(false);
+    };
+    if locked_tool.source != spec.source_without_version()
+        || lock_targets_conflict_with_manifest(&lockfile_path, root, cmd, spec, tool, locked_tool)
+    {
+        return Ok(false);
+    }
+
+    let Some(lock_record) = locked_tool.targets.get(&target.key()) else {
+        return Ok(false);
+    };
+    if lock_record.requested_version != spec.version {
+        return Ok(false);
+    }
+    if assert_lock_record_matches_source_and_target(&lockfile_path, cmd, spec, &target, lock_record)
+        .is_err()
+        || assert_lock_matches_manifest_tool(root, cmd, tool, &target, lock_record).is_err()
+    {
+        return Ok(false);
+    }
+
+    let paths = ScopePaths::local(root.to_path_buf());
+    let runtime_record = match read_package_record(&package_record_path(&paths, cmd)) {
+        Ok(record) => record,
+        Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
+            return Ok(false)
+        }
+        Err(error) => return Err(error),
+    };
+    if assert_runtime_record_matches_lock(root, cmd, lock_record, &runtime_record).is_err() {
+        return Ok(false);
+    }
+
+    let installed_path = validate_installed_binary_path(&paths, cmd, &runtime_record)?;
+    match require_regular_managed_file(&installed_path) {
+        Ok(()) => {}
+        Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
+            return Ok(false)
+        }
+        Err(error) => return Err(error),
+    }
+    match require_executable_managed_file(&installed_path) {
+        Ok(()) => {}
+        Err(BinpmError::UnsafeManagedFile { .. }) => return Ok(false),
+        Err(error) => return Err(error),
+    }
+    Ok(true)
+}
+
 struct InstalledPackage {
     record: PackageRecord,
     populated_cache_entry: bool,
@@ -1009,7 +1263,7 @@ fn install_resolved(
     local_root: Option<&Path>,
 ) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
-    let resolved = resolve_asset(spec, tool)?;
+    let mut resolved = resolve_asset(spec, tool)?;
     if require_verified && !resolved.checksum_source.is_upstream_verified() {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
@@ -1022,26 +1276,27 @@ fn install_resolved(
             spec
         );
     }
-    if resolved.archive_format != ArchiveFormat::BareExecutable {
-        return Err(BinpmError::ArchiveExtractionNotImplemented {
-            asset: resolved.decision.asset_name,
-        });
-    }
     ensure_no_package_record_install_path_collision(scope_paths, cmd, resolved.target.os)?;
-    if let Some(expected) = &resolved.provider_digest_sha256 {
-        let cache_asset = cache_paths.asset_path(expected);
-        reject_symlinked_cache_entry(cache_paths, expected)?;
-        if cache_asset_is_verified_regular(&cache_asset, expected)? {
+    if let Some(expected) = resolved.provider_digest_sha256.clone() {
+        let cache_asset = cache_paths.asset_path(&expected);
+        reject_symlinked_cache_entry(cache_paths, &expected)?;
+        if cache_asset_is_verified_regular(&cache_asset, &expected)? {
             let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
+            let selected_binary = selected_binary_override(tool, &resolved.target)?;
+            install_selected_executable(
+                &cache_asset,
+                &installed_path,
+                &mut resolved,
+                selected_binary,
+            )?;
             let record = package_record_from_resolved(
                 cmd,
                 &resolved,
-                expected.clone(),
+                expected,
                 &cache_asset,
                 &installed_path,
                 true,
             )?;
-            install_bare_executable(&cache_asset, &installed_path)?;
             return Ok(InstalledPackage {
                 record,
                 populated_cache_entry: false,
@@ -1080,7 +1335,13 @@ fn install_resolved(
     };
     let populated_cache_entry = !had_verified_cache_entry;
     let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
-    if let Err(error) = install_bare_executable(&cache_asset, &installed_path) {
+    let selected_binary = selected_binary_override(tool, &resolved.target)?;
+    if let Err(error) = install_selected_executable(
+        &cache_asset,
+        &installed_path,
+        &mut resolved,
+        selected_binary,
+    ) {
         if populated_cache_entry {
             remove_unreferenced_cache_entry(cache_paths, &sha256, local_root)?;
         } else if let Some(snapshot) = &cache_metadata_snapshot {
@@ -1153,12 +1414,6 @@ fn install_local_from_lock(
     validate_provider_digest_evidence(&record)?;
     validate_locked_record_artifact(&lockfile_path, cmd, &record, &target, tool)?;
     validate_locked_record_current_release(&lockfile_path, cmd, &record)?;
-    if record.archive_format != ArchiveFormat::BareExecutable {
-        return Err(BinpmError::ArchiveExtractionNotImplemented {
-            asset: record.asset_name,
-        });
-    }
-
     let home = binpm_home()?;
     let cache_paths = CachePaths::new(&home);
     let scope_paths = ScopePaths::local(root.to_path_buf());
@@ -1202,7 +1457,7 @@ fn install_local_from_lock(
                     asset_name: record.asset_name.clone(),
                     canonical_url: record.asset_url.clone(),
                     download_url,
-                    kind: ArtifactKind::BareExecutable,
+                    kind: crate::assets::classify_artifact(&record.asset_name, false),
                     detected_os: Some(record.target_os),
                     detected_arch: Some(record.target_arch),
                     detected_libc: Some(record.target_libc),
@@ -1231,9 +1486,42 @@ fn install_local_from_lock(
     }
 
     let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
-    if let Err(error) =
-        install_bare_executable(&cache_paths.asset_path(&record.sha256), &installed_path)
-    {
+    let mut resolved_for_install = ResolvedAsset {
+        source: SourceSpec::from_str(
+            &record
+                .requested_version
+                .as_ref()
+                .map(|version| format!("{}@{version}", record.source))
+                .unwrap_or_else(|| record.source.clone()),
+        )?,
+        release_tag: record.release_tag.clone(),
+        target: target.clone(),
+        decision: crate::assets::CandidateDecision {
+            asset_name: record.asset_name.clone(),
+            canonical_url: record.asset_url.clone(),
+            download_url: locked_record_download_url(&record)?,
+            kind: crate::assets::classify_artifact(&record.asset_name, false),
+            detected_os: Some(record.target_os),
+            detected_arch: Some(record.target_arch),
+            detected_libc: Some(record.target_libc),
+            score: None,
+            eligible: true,
+            recognized_pattern: true,
+            rejection_reason: None,
+        },
+        archive_format: record.archive_format,
+        selected_binary: record.selected_binary.clone(),
+        provider_digest_sha256: record.provider_digest_sha256.clone(),
+        checksum_source: record.checksum_source,
+        signature_available: record.signature_available,
+        signature_verified: record.signature_verified,
+    };
+    if let Err(error) = install_selected_executable(
+        &cache_paths.asset_path(&record.sha256),
+        &installed_path,
+        &mut resolved_for_install,
+        Some(record.selected_binary.clone()),
+    ) {
         let install = InstalledPackage {
             record: record.clone(),
             populated_cache_entry,
@@ -1337,11 +1625,6 @@ fn validate_locked_record_artifact(
             target: target.key(),
         });
     };
-    if format != ArchiveFormat::BareExecutable {
-        return Err(BinpmError::ArchiveExtractionNotImplemented {
-            asset: record.asset_name.clone(),
-        });
-    }
     if format != record.archive_format {
         return Err(BinpmError::StaleLockfile {
             path: lockfile_path.to_path_buf(),
@@ -1472,8 +1755,14 @@ fn locked_record_download_url(record: &PackageRecord) -> Result<String> {
             .key(),
         })?;
     if record.source_provider == crate::contract::SourceProvider::GitLab && asset.source_archive {
-        return Err(BinpmError::ArchiveExtractionNotImplemented {
-            asset: record.asset_name.clone(),
+        return Err(BinpmError::AssetNotFound {
+            package: record.package_spec.clone(),
+            target: HostTarget {
+                os: record.target_os,
+                arch: record.target_arch,
+                libc: record.target_libc,
+            }
+            .key(),
         });
     }
     if record.source_provider == crate::contract::SourceProvider::GitLab
@@ -1525,7 +1814,7 @@ fn assert_lock_matches_manifest_tool(
             }
         }
         if record.asset_name != override_target.asset
-            || record.selected_binary != override_target.bin
+            || !manifest_bin_matches_record(&override_target.bin, &record.selected_binary)
         {
             return Err(BinpmError::StaleLockfile {
                 path: root.join(LOCKFILE_FILE),
@@ -1535,7 +1824,7 @@ fn assert_lock_matches_manifest_tool(
         return Ok(());
     }
     if let Some(bin) = tool.and_then(|tool| tool.bin.as_ref()) {
-        if record.selected_binary != *bin {
+        if !manifest_bin_matches_record(bin, &record.selected_binary) {
             return Err(BinpmError::StaleLockfile {
                 path: root.join(LOCKFILE_FILE),
                 cmd: cmd.to_string(),
@@ -1543,6 +1832,11 @@ fn assert_lock_matches_manifest_tool(
         }
     }
     Ok(())
+}
+
+fn manifest_bin_matches_record(manifest_bin: &str, record_selected_binary: &str) -> bool {
+    record_selected_binary == manifest_bin
+        || archive_basename(record_selected_binary) == manifest_bin
 }
 
 fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<ResolvedAsset> {
@@ -1555,12 +1849,12 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
             package: spec.to_string(),
             target: target.key(),
         })?;
-    let selected_binary = match manifest_target_override(tool, &target)?
-        .map(|override_target| override_target.bin.as_str())
-        .or_else(|| tool.and_then(|tool| tool.bin.as_deref()))
-    {
-        Some(bin) => bin.to_string(),
-        None => decision.asset_name.clone(),
+    let selected_binary = match selected_binary_override(tool, &target)? {
+        Some(bin) => bin,
+        None if matches!(archive_format, ArchiveFormat::BareExecutable) => {
+            decision.asset_name.clone()
+        }
+        None => String::new(),
     };
     let provider_digest_sha256 = release
         .assets
@@ -1588,6 +1882,414 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         signature_available: false,
         signature_verified: false,
     })
+}
+
+fn selected_binary_override(
+    tool: Option<&ManifestTool>,
+    target: &HostTarget,
+) -> Result<Option<String>> {
+    Ok(manifest_target_override(tool, target)?
+        .map(|override_target| override_target.bin.clone())
+        .or_else(|| tool.and_then(|tool| tool.bin.clone())))
+}
+
+fn install_selected_executable(
+    cache_asset: &Path,
+    installed_path: &Path,
+    resolved: &mut ResolvedAsset,
+    selected_binary: Option<String>,
+) -> Result<()> {
+    match resolved.archive_format {
+        ArchiveFormat::BareExecutable => {
+            resolved.selected_binary = selected_binary
+                .unwrap_or_else(|| resolved.selected_binary.clone())
+                .trim()
+                .to_string();
+            if resolved.selected_binary.is_empty() {
+                resolved.selected_binary = resolved.decision.asset_name.clone();
+            }
+            install_bare_executable(cache_asset, installed_path)
+        }
+        format => {
+            let repo = repo_name(&resolved.source);
+            let selected = read_archive_selected_binary(
+                cache_asset,
+                format,
+                &resolved.decision.asset_name,
+                repo,
+                &resolved.target,
+                selected_binary.as_deref(),
+            )?;
+            resolved.selected_binary = selected_binary
+                .as_deref()
+                .map(str::trim)
+                .filter(|bin| !bin.is_empty())
+                .unwrap_or(&selected.path)
+                .to_string();
+            install_executable_bytes(installed_path, &selected.bytes)
+        }
+    }
+}
+
+#[derive(Debug)]
+struct SelectedArchiveBinary {
+    path: String,
+    bytes: Vec<u8>,
+}
+
+fn read_archive_selected_binary(
+    archive_path: &Path,
+    format: ArchiveFormat,
+    asset_name: &str,
+    repo_name: &str,
+    target: &HostTarget,
+    explicit_binary: Option<&str>,
+) -> Result<SelectedArchiveBinary> {
+    let bytes = fs::read(archive_path).map_err(|source| BinpmError::ReadFile {
+        path: archive_path.to_path_buf(),
+        source,
+    })?;
+    match format {
+        ArchiveFormat::TarGz | ArchiveFormat::Tgz => {
+            let decoder = flate2::read::GzDecoder::new(Cursor::new(bytes));
+            read_tar_selected_binary(decoder, asset_name, repo_name, target, explicit_binary)
+        }
+        ArchiveFormat::TarXz | ArchiveFormat::Txz => {
+            let decoder = xz2::read::XzDecoder::new(Cursor::new(bytes));
+            read_tar_selected_binary(decoder, asset_name, repo_name, target, explicit_binary)
+        }
+        ArchiveFormat::TarZst => {
+            let decoder =
+                zstd::stream::read::Decoder::new(Cursor::new(bytes)).map_err(|error| {
+                    BinpmError::ArchiveExtraction {
+                        asset: asset_name.to_string(),
+                        message: error.to_string(),
+                    }
+                })?;
+            read_tar_selected_binary(decoder, asset_name, repo_name, target, explicit_binary)
+        }
+        ArchiveFormat::Zip => read_zip_selected_binary(
+            Cursor::new(bytes),
+            asset_name,
+            repo_name,
+            target,
+            explicit_binary,
+        ),
+        ArchiveFormat::BareExecutable => unreachable!("bare executable is not an archive"),
+    }
+}
+
+fn read_tar_selected_binary<R: Read>(
+    reader: R,
+    asset_name: &str,
+    repo_name: &str,
+    target: &HostTarget,
+    explicit_binary: Option<&str>,
+) -> Result<SelectedArchiveBinary> {
+    let mut archive = tar::Archive::new(reader);
+    let mut members = Vec::new();
+    let mut member_bytes = BTreeMap::new();
+    for entry in archive
+        .entries()
+        .map_err(|error| BinpmError::ArchiveExtraction {
+            asset: asset_name.to_string(),
+            message: error.to_string(),
+        })?
+    {
+        let mut entry = entry.map_err(|error| BinpmError::ArchiveExtraction {
+            asset: asset_name.to_string(),
+            message: error.to_string(),
+        })?;
+        let entry_type = entry.header().entry_type();
+        if !entry_type.is_file() {
+            if entry_type.is_symlink() || entry_type.is_hard_link() {
+                let path = entry
+                    .path()
+                    .map_err(|error| BinpmError::ArchiveExtraction {
+                        asset: asset_name.to_string(),
+                        message: error.to_string(),
+                    })?;
+                let path = validate_archive_member_path(asset_name, &path)?;
+                return Err(BinpmError::UnsafeArchivePath {
+                    asset: asset_name.to_string(),
+                    path,
+                    message: "symlinks and hard links are not installable".to_string(),
+                });
+            }
+            continue;
+        }
+        let path = entry
+            .path()
+            .map_err(|error| BinpmError::ArchiveExtraction {
+                asset: asset_name.to_string(),
+                message: error.to_string(),
+            })?;
+        let path = validate_archive_member_path(asset_name, &path)?;
+        let executable = entry
+            .header()
+            .mode()
+            .map(|mode| mode & 0o111 != 0)
+            .unwrap_or(false)
+            || archive_exe_is_executable(&path, target);
+        let mut bytes = Vec::new();
+        entry
+            .read_to_end(&mut bytes)
+            .map_err(|error| BinpmError::ArchiveExtraction {
+                asset: asset_name.to_string(),
+                message: error.to_string(),
+            })?;
+        if member_bytes.contains_key(&path) {
+            return Err(duplicate_archive_member(asset_name, &path));
+        }
+        members.push(ArchiveMember {
+            path: path.clone(),
+            executable,
+        });
+        member_bytes.insert(path, bytes);
+    }
+    select_archive_member(
+        asset_name,
+        repo_name,
+        target,
+        explicit_binary,
+        members,
+        member_bytes,
+    )
+}
+
+fn read_zip_selected_binary<R: Read + std::io::Seek>(
+    reader: R,
+    asset_name: &str,
+    repo_name: &str,
+    target: &HostTarget,
+    explicit_binary: Option<&str>,
+) -> Result<SelectedArchiveBinary> {
+    let mut archive =
+        zip::ZipArchive::new(reader).map_err(|error| BinpmError::ArchiveExtraction {
+            asset: asset_name.to_string(),
+            message: error.to_string(),
+        })?;
+    let mut members = Vec::new();
+    let mut member_bytes = BTreeMap::new();
+    for index in 0..archive.len() {
+        let mut file = archive
+            .by_index(index)
+            .map_err(|error| BinpmError::ArchiveExtraction {
+                asset: asset_name.to_string(),
+                message: error.to_string(),
+            })?;
+        let path = validate_archive_member_path(asset_name, Path::new(file.name()))?;
+        if file.is_dir() {
+            continue;
+        }
+        if zip_file_is_symlink(file.unix_mode()) {
+            return Err(BinpmError::UnsafeArchivePath {
+                asset: asset_name.to_string(),
+                path,
+                message: "symlinks and hard links are not installable".to_string(),
+            });
+        }
+        if !zip_file_is_regular(file.unix_mode()) {
+            return Err(BinpmError::UnsafeArchivePath {
+                asset: asset_name.to_string(),
+                path,
+                message: "non-regular zip entries are not installable".to_string(),
+            });
+        }
+        let executable = file
+            .unix_mode()
+            .map(|mode| mode & 0o111 != 0)
+            .unwrap_or(false)
+            || archive_exe_is_executable(&path, target);
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|error| BinpmError::ArchiveExtraction {
+                asset: asset_name.to_string(),
+                message: error.to_string(),
+            })?;
+        if member_bytes.contains_key(&path) {
+            return Err(duplicate_archive_member(asset_name, &path));
+        }
+        members.push(ArchiveMember {
+            path: path.clone(),
+            executable,
+        });
+        member_bytes.insert(path, bytes);
+    }
+    select_archive_member(
+        asset_name,
+        repo_name,
+        target,
+        explicit_binary,
+        members,
+        member_bytes,
+    )
+}
+
+fn zip_file_is_symlink(unix_mode: Option<u32>) -> bool {
+    const UNIX_FILE_TYPE_MASK: u32 = 0o170000;
+    const UNIX_SYMLINK_TYPE: u32 = 0o120000;
+    unix_mode
+        .map(|mode| mode & UNIX_FILE_TYPE_MASK == UNIX_SYMLINK_TYPE)
+        .unwrap_or(false)
+}
+
+fn zip_file_is_regular(unix_mode: Option<u32>) -> bool {
+    const UNIX_FILE_TYPE_MASK: u32 = 0o170000;
+    const UNIX_REGULAR_TYPE: u32 = 0o100000;
+    unix_mode
+        .map(|mode| {
+            let file_type = mode & UNIX_FILE_TYPE_MASK;
+            file_type == 0 || file_type == UNIX_REGULAR_TYPE
+        })
+        .unwrap_or(true)
+}
+
+fn archive_exe_is_executable(path: &str, target: &HostTarget) -> bool {
+    target.os == TargetOs::Windows && path.to_ascii_lowercase().ends_with(".exe")
+}
+
+fn duplicate_archive_member(asset_name: &str, path: &str) -> BinpmError {
+    BinpmError::UnsafeArchivePath {
+        asset: asset_name.to_string(),
+        path: path.to_string(),
+        message: "duplicate archive member path is not allowed".to_string(),
+    }
+}
+
+fn select_archive_member(
+    asset_name: &str,
+    repo_name: &str,
+    target: &HostTarget,
+    explicit_binary: Option<&str>,
+    members: Vec<ArchiveMember>,
+    mut member_bytes: BTreeMap<String, Vec<u8>>,
+) -> Result<SelectedArchiveBinary> {
+    let selected_path = if let Some(explicit_binary) = explicit_binary {
+        let explicit_binary = explicit_binary.trim();
+        if explicit_binary.is_empty() {
+            return Err(BinpmError::ArchiveMemberNotFound {
+                asset: asset_name.to_string(),
+                member: explicit_binary.to_string(),
+            });
+        }
+        let explicit_path = validate_archive_member_path(asset_name, Path::new(explicit_binary))?;
+        if members
+            .iter()
+            .any(|member| member.path == explicit_path && member.executable)
+        {
+            explicit_path
+        } else {
+            let matches = members
+                .iter()
+                .filter(|member| {
+                    member.executable
+                        && archive_binary_name_matches(target, &member.path, explicit_binary)
+                })
+                .map(|member| member.path.clone())
+                .collect::<Vec<_>>();
+            let matches = target_archive_candidates(target, matches);
+            match matches.as_slice() {
+                [path] => path.clone(),
+                [] => {
+                    return Err(BinpmError::ArchiveMemberNotFound {
+                        asset: asset_name.to_string(),
+                        member: explicit_path,
+                    })
+                }
+                _ => {
+                    return Err(BinpmError::AmbiguousArchiveBinaries {
+                        asset: asset_name.to_string(),
+                        candidates: matches,
+                    })
+                }
+            }
+        }
+    } else {
+        match discover_archive_binary(repo_name, target, &members) {
+            BinaryDiscovery::Selected(path) => path,
+            BinaryDiscovery::Ambiguous(candidates) => {
+                return Err(BinpmError::AmbiguousArchiveBinaries {
+                    asset: asset_name.to_string(),
+                    candidates,
+                })
+            }
+            BinaryDiscovery::NotFound => {
+                return Err(BinpmError::ArchiveBinaryNotFound {
+                    asset: asset_name.to_string(),
+                })
+            }
+        }
+    };
+    let bytes =
+        member_bytes
+            .remove(&selected_path)
+            .ok_or_else(|| BinpmError::ArchiveMemberNotFound {
+                asset: asset_name.to_string(),
+                member: selected_path.clone(),
+            })?;
+    Ok(SelectedArchiveBinary {
+        path: selected_path,
+        bytes,
+    })
+}
+
+fn archive_basename(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+fn archive_binary_name_matches(target: &HostTarget, path: &str, expected: &str) -> bool {
+    let basename = archive_basename(path);
+    if basename == expected {
+        return true;
+    }
+    if target.os != TargetOs::Windows {
+        return false;
+    }
+    basename.eq_ignore_ascii_case(expected)
+        || basename
+            .to_ascii_lowercase()
+            .strip_suffix(".exe")
+            .is_some_and(|stripped| stripped.eq_ignore_ascii_case(expected))
+}
+
+fn validate_archive_member_path(asset_name: &str, path: &Path) -> Result<String> {
+    if path.is_absolute() {
+        return Err(BinpmError::UnsafeArchivePath {
+            asset: asset_name.to_string(),
+            path: path.display().to_string(),
+            message: "absolute paths are not allowed".to_string(),
+        });
+    }
+    let mut parts = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::Normal(part) => parts.push(part.to_string_lossy().into_owned()),
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                return Err(BinpmError::UnsafeArchivePath {
+                    asset: asset_name.to_string(),
+                    path: path.display().to_string(),
+                    message: "parent-directory traversal is not allowed".to_string(),
+                })
+            }
+            _ => {
+                return Err(BinpmError::UnsafeArchivePath {
+                    asset: asset_name.to_string(),
+                    path: path.display().to_string(),
+                    message: "path component is not safe".to_string(),
+                })
+            }
+        }
+    }
+    if parts.is_empty() {
+        return Err(BinpmError::UnsafeArchivePath {
+            asset: asset_name.to_string(),
+            path: path.display().to_string(),
+            message: "empty archive member paths are not allowed".to_string(),
+        });
+    }
+    Ok(parts.join("/"))
 }
 
 fn github_sha256_digest(raw: Option<&str>) -> Option<String> {
@@ -2320,6 +3022,71 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
         .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))
 }
 
+fn execute_command(
+    cmd: &str,
+    args: &[std::ffi::OsString],
+    path_entries: &[PathBuf],
+) -> Result<i32> {
+    let path = prepend_path_entries(path_entries)?;
+    let executable = resolve_managed_executable(cmd, path_entries);
+    info!(
+        command = "x",
+        resolved_command = cmd,
+        path_entry_count = path_entries.len(),
+        forwarded_arg_count = args.len(),
+        "Executing binpm-managed command"
+    );
+    let status = ProcessCommand::new(&executable)
+        .args(args)
+        .env("PATH", path)
+        .status()
+        .map_err(|source| BinpmError::Execute {
+            cmd: cmd.to_string(),
+            source,
+        })?;
+    Ok(status.code().unwrap_or(1))
+}
+
+fn resolve_managed_executable(cmd: &str, path_entries: &[PathBuf]) -> PathBuf {
+    let filename = current_platform_installed_filename(cmd);
+    path_entries
+        .iter()
+        .map(|entry| entry.join(&filename))
+        .find(|candidate| {
+            candidate
+                .symlink_metadata()
+                .map(|metadata| metadata.is_file())
+                .unwrap_or(false)
+        })
+        .unwrap_or_else(|| {
+            path_entries
+                .first()
+                .map(|entry| entry.join(filename))
+                .unwrap_or_else(|| PathBuf::from(cmd))
+        })
+}
+
+fn current_platform_installed_filename(cmd: &str) -> String {
+    #[cfg(windows)]
+    {
+        installed_filename(cmd, TargetOs::Windows)
+    }
+    #[cfg(not(windows))]
+    {
+        installed_filename(cmd, TargetOs::Linux)
+    }
+}
+
+fn prepend_path_entries(entries: &[PathBuf]) -> Result<std::ffi::OsString> {
+    let existing = env::var_os("PATH").unwrap_or_default();
+    let mut paths = entries.to_vec();
+    paths.extend(env::split_paths(&existing));
+    env::join_paths(paths).map_err(|error| BinpmError::UnsafeUrl {
+        url: "<PATH>".to_string(),
+        message: error.to_string(),
+    })
+}
+
 fn remove_local_tool(cmd: &str) -> Result<i32> {
     let root = require_manifest_root()?;
     validate_command_name(cmd)?;
@@ -2553,7 +3320,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
         let installed_path = validate_installed_binary_path(&paths, &cmd, &record)?;
         require_regular_managed_file(&installed_path)?;
         require_executable_managed_file(&installed_path)?;
-        crate::storage::verify_sha256(&installed_path, &record.sha256)?;
+        verify_installed_binary_contents(&cache_paths, &record, &installed_path)?;
         println!("{cmd} verified {}", record.checksum_source.as_str());
         if !locked.contains(&cmd) {
             checked += 1;
@@ -2564,6 +3331,48 @@ fn verify(args: VerifyArgs) -> Result<i32> {
     }
     println!("checked {checked}");
     Ok(0)
+}
+
+fn verify_installed_binary_contents(
+    cache_paths: &CachePaths,
+    record: &PackageRecord,
+    installed_path: &Path,
+) -> Result<()> {
+    if record.archive_format == ArchiveFormat::BareExecutable {
+        return crate::storage::verify_sha256(installed_path, &record.sha256);
+    }
+
+    let spec = SourceSpec::from_str(
+        &record
+            .requested_version
+            .as_ref()
+            .map(|version| format!("{}@{version}", record.source))
+            .unwrap_or_else(|| record.source.clone()),
+    )?;
+    let selected = read_archive_selected_binary(
+        &cache_paths.asset_path(&record.sha256),
+        record.archive_format,
+        &record.asset_name,
+        repo_name(&spec),
+        &HostTarget {
+            os: record.target_os,
+            arch: record.target_arch,
+            libc: record.target_libc,
+        },
+        Some(&record.selected_binary),
+    )?;
+    let installed_bytes = fs::read(installed_path).map_err(|source| BinpmError::ReadFile {
+        path: installed_path.to_path_buf(),
+        source,
+    })?;
+    if installed_bytes != selected.bytes {
+        return Err(BinpmError::DigestMismatch {
+            path: installed_path.to_path_buf(),
+            expected: format!("{:x}", Sha256::digest(&selected.bytes)),
+            actual: format!("{:x}", Sha256::digest(&installed_bytes)),
+        });
+    }
+    Ok(())
 }
 
 fn validate_package_record_source_identity(cmd: &str, record: &PackageRecord) -> Result<()> {
@@ -2987,10 +3796,6 @@ fn log_read_only_scope(command: &'static str, scope: Scope) {
     );
 }
 
-fn not_implemented(command: &'static str) -> Result<i32> {
-    Err(BinpmError::NotImplemented { command })
-}
-
 fn lockfile_digest(path: &Path) -> Result<String> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
@@ -3149,6 +3954,7 @@ mod tests {
     use std::{
         collections::BTreeMap,
         fs,
+        io::Write,
         path::{Path, PathBuf},
         str::FromStr,
     };
@@ -3160,23 +3966,25 @@ mod tests {
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
-        ensure_no_package_record_install_path_collision, github_sha256_digest,
+        ensure_no_package_record_install_path_collision, execute_command, github_sha256_digest,
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
-        install_path_collision_key, local_runtime_lock_records,
+        install_path_collision_key, local_runtime_lock_records, local_tool_execution_ready,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        parse_manifest_source, project_root_from, record_matches_current_provider_digest,
-        remove_global_tool_from_paths, remove_local_manifest_orphans,
-        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
-        select_manifest_asset, selected_asset_display_url, shell_path, shell_quote,
-        snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
+        parse_manifest_source, project_root_from, read_archive_selected_binary,
+        record_matches_current_provider_digest, remove_global_tool_from_paths,
+        remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
+        restore_runtime_tool_state, select_manifest_asset, selected_asset_display_url, shell_path,
+        shell_quote, snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
         validate_locked_record_artifact, validate_locked_record_current_asset,
         validate_locked_record_current_provider_digest, validate_package_record_metadata,
         validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verify_lockfile_records, verify_runtime_cache_bytes,
-        ArtifactKind, InstalledPackage, InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
+        validate_selected_manifest_entries, verify_installed_binary_contents,
+        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_regular,
+        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -3201,6 +4009,307 @@ mod tests {
         assert_eq!(source_install_scope(Scope::Auto), Scope::Global);
         assert_eq!(source_install_scope(Scope::Global), Scope::Global);
         assert_eq!(source_install_scope(Scope::Local), Scope::Local);
+    }
+
+    #[test]
+    fn archive_extraction_discovers_nested_repo_binary() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.tar.gz");
+        write_tar_gz(
+            &archive_path,
+            &[
+                ("tool-1.0.0/README.md", b"docs".as_slice(), 0o644),
+                ("tool-1.0.0/tool", b"#!/bin/sh\nexit 0\n".as_slice(), 0o755),
+            ],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::TarGz,
+            "tool.tar.gz",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected binary");
+
+        assert_eq!(selected.path, "tool-1.0.0/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\nexit 0\n");
+    }
+
+    #[test]
+    fn archive_extraction_skips_root_tar_directory_entry() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.tar.gz");
+        let file = fs::File::create(&archive_path).expect("create archive");
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        let mut directory_header = tar::Header::new_gnu();
+        directory_header.set_entry_type(tar::EntryType::Directory);
+        directory_header.set_size(0);
+        directory_header.set_mode(0o755);
+        directory_header.set_cksum();
+        builder
+            .append_data(&mut directory_header, ".", std::io::empty())
+            .expect("append root directory entry");
+        let mut file_header = tar::Header::new_gnu();
+        let bytes = b"#!/bin/sh\nexit 0\n";
+        file_header.set_size(bytes.len() as u64);
+        file_header.set_mode(0o755);
+        file_header.set_cksum();
+        builder
+            .append_data(&mut file_header, "tool", bytes.as_slice())
+            .expect("append executable entry");
+        builder.finish().expect("finish tar");
+        let encoder = builder.into_inner().expect("finish gzip stream");
+        encoder.finish().expect("finish gzip file");
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::TarGz,
+            "tool.tar.gz",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected binary");
+
+        assert_eq!(selected.path, "tool");
+        assert_eq!(selected.bytes, bytes);
+    }
+
+    #[test]
+    fn archive_extraction_rejects_parent_directory_traversal() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(&archive_path, &[("../tool", b"bad".as_slice(), 0o755)]);
+
+        let error = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect_err("unsafe archive path");
+
+        assert!(matches!(error, BinpmError::UnsafeArchivePath { .. }));
+        assert!(error.to_string().contains("parent-directory traversal"));
+    }
+
+    #[test]
+    fn archive_extraction_rejects_duplicate_member_paths() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[
+                ("./pkg/tool", b"first".as_slice(), 0o755),
+                ("pkg/tool", b"second".as_slice(), 0o755),
+            ],
+        );
+
+        let error = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect_err("duplicate archive path");
+
+        assert!(matches!(error, BinpmError::UnsafeArchivePath { .. }));
+        assert!(error.to_string().contains("duplicate archive member path"));
+    }
+
+    #[test]
+    fn archive_extraction_requires_explicit_member_to_be_executable() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[
+                ("pkg/tool", b"config".as_slice(), 0o644),
+                ("pkg/helper", b"#!/bin/sh\nexit 0\n".as_slice(), 0o755),
+            ],
+        );
+
+        let error = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            Some("pkg/tool"),
+        )
+        .expect_err("non-executable explicit member");
+
+        assert!(matches!(error, BinpmError::ArchiveMemberNotFound { .. }));
+    }
+
+    #[test]
+    fn archive_extraction_ignores_exe_candidates_on_non_windows_targets() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[("pkg/tool.exe", b"windows".as_slice(), 0o644)],
+        );
+
+        let error = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect_err("windows exe is not a linux executable candidate");
+
+        assert!(matches!(error, BinpmError::ArchiveBinaryNotFound { .. }));
+    }
+
+    #[test]
+    fn archive_extraction_matches_explicit_windows_binary_without_exe_suffix() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[("pkg/tool.exe", b"windows".as_slice(), 0o100644)],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &HostTarget {
+                os: TargetOs::Windows,
+                arch: TargetArch::X86_64,
+                libc: TargetLibc::Msvc,
+            },
+            Some("tool"),
+        )
+        .expect("selected windows exe");
+
+        assert_eq!(selected.path, "pkg/tool.exe");
+        assert_eq!(selected.bytes, b"windows");
+    }
+
+    #[test]
+    fn archive_extraction_filters_explicit_basename_matches_by_target() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[
+                ("bin/darwin/bar", b"darwin".as_slice(), 0o100755),
+                ("bin/linux/bar", b"linux".as_slice(), 0o100755),
+            ],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            Some("bar"),
+        )
+        .expect("selected target-matching explicit binary");
+
+        assert_eq!(selected.path, "bin/linux/bar");
+        assert_eq!(selected.bytes, b"linux");
+    }
+
+    #[test]
+    fn zip_symlink_detection_checks_unix_file_type_bits() {
+        assert!(zip_file_is_symlink(Some(0o120777)));
+        assert!(!zip_file_is_symlink(Some(0o100755)));
+        assert!(!zip_file_is_symlink(Some(0o755)));
+        assert!(!zip_file_is_symlink(None));
+    }
+
+    #[test]
+    fn zip_regular_file_detection_rejects_non_regular_file_type_bits() {
+        assert!(zip_file_is_regular(Some(0o100755)));
+        assert!(zip_file_is_regular(Some(0o755)));
+        assert!(zip_file_is_regular(None));
+        assert!(!zip_file_is_regular(Some(0o010755)));
+        assert!(!zip_file_is_regular(Some(0o020755)));
+        assert!(!zip_file_is_regular(Some(0o120777)));
+    }
+
+    #[test]
+    fn package_record_verify_checks_archive_installed_member_bytes() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(&temp_dir.path().join("home"));
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(
+            &archive_path,
+            &[("pkg/bin/tool", b"#!/bin/sh\nexit 0\n".as_slice(), 0o755)],
+        );
+        let archive_bytes = fs::read(&archive_path).expect("read archive");
+        let sha256 = format!("{:x}", Sha256::digest(&archive_bytes));
+        fs::create_dir_all(cache.entry_dir(&sha256)).expect("cache entry");
+        fs::write(cache.asset_path(&sha256), archive_bytes).expect("cache asset");
+
+        let installed_path = temp_dir.path().join("tool");
+        fs::write(&installed_path, b"#!/bin/sh\nexit 1\n").expect("bad installed binary");
+        let mut record = package_record();
+        record.sha256 = sha256;
+        record.archive_format = ArchiveFormat::Zip;
+        record.asset_name = "tool.zip".to_string();
+        record.selected_binary = "tool".to_string();
+
+        let error = verify_installed_binary_contents(&cache, &record, &installed_path)
+            .expect_err("installed bytes differ from archive member");
+        assert!(matches!(error, BinpmError::DigestMismatch { .. }));
+
+        fs::write(&installed_path, b"#!/bin/sh\nexit 0\n").expect("good installed binary");
+        verify_installed_binary_contents(&cache, &record, &installed_path)
+            .expect("installed archive member matches");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execution_prepends_path_forwards_args_and_preserves_current_directory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let bin_dir = temp_dir.path().join("bin");
+        let work_dir = temp_dir.path().join("work");
+        let output_path = temp_dir.path().join("out.txt");
+        fs::create_dir_all(&bin_dir).expect("create bin");
+        fs::create_dir_all(&work_dir).expect("create work");
+        let script = bin_dir.join("probe");
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nprintf 'pwd=%s\\nargs=%s|%s\\n' \"$PWD\" \"$1\" \"$2\" > '{}'\n",
+                output_path.display()
+            ),
+        )
+        .expect("write script");
+        let mut permissions = fs::metadata(&script).expect("metadata").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&script, permissions).expect("chmod");
+        let prior_cwd = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(&work_dir).expect("set cwd");
+
+        let result = execute_command(
+            "probe",
+            &["--flag".into(), "value with spaces".into()],
+            std::slice::from_ref(&bin_dir),
+        );
+
+        std::env::set_current_dir(prior_cwd).expect("restore cwd");
+        assert_eq!(result.expect("execute probe"), 0);
+        let output = fs::read_to_string(output_path).expect("read output");
+        assert!(output.contains(&format!("pwd={}", work_dir.display())));
+        assert!(output.contains("args=--flag|value with spaces"));
     }
 
     #[test]
@@ -4943,7 +6052,7 @@ mod tests {
     }
 
     #[test]
-    fn frozen_lock_reclassifies_locked_asset_names() {
+    fn frozen_lock_rejects_reclassified_asset_format_mismatch() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let target = linux_target();
         let mut record = package_record();
@@ -4956,11 +6065,9 @@ mod tests {
             &target,
             None,
         )
-        .expect_err("locked archive rejected");
+        .expect_err("locked format mismatch rejected");
 
-        assert!(error
-            .to_string()
-            .contains("Archive extraction is not implemented"));
+        assert!(error.to_string().contains("Frozen lockfile"));
     }
 
     #[test]
@@ -5804,6 +6911,55 @@ mod tests {
         require_executable_managed_file(&installed_path).expect("executable install");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn local_tool_execution_ready_treats_non_executable_binary_as_stale() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        let target = HostTarget::current().expect("current target");
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("local scope dirs");
+        let installed_path = managed_installed_path(&paths, "tool", target.os);
+        fs::write(&installed_path, b"#!/bin/sh\nexit 0\n").expect("write installed file");
+        let mut permissions = fs::metadata(&installed_path)
+            .expect("metadata")
+            .permissions();
+        permissions.set_mode(0o644);
+        fs::set_permissions(&installed_path, permissions).expect("chmod non-executable");
+
+        let mut lock_record = package_record();
+        lock_record.target_os = target.os;
+        lock_record.target_arch = target.arch;
+        lock_record.target_libc = target.libc;
+        lock_record.installed_path = deterministic_installed_path("tool", target.os);
+        let mut runtime_record = lock_record.clone();
+        runtime_record.installed_path = installed_path.display().to_string();
+        write_lockfile(
+            &root.join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([(target.key(), lock_record)]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+        write_package_record(&paths, "tool", &runtime_record).expect("write runtime record");
+        let mut spec = SourceSpec::from_str("github:owner/tool").expect("parse source");
+        spec.version = Some("1.0.0".to_string());
+
+        assert!(
+            !local_tool_execution_ready(root, "tool", &spec, None).expect("readiness check"),
+            "non-executable managed binaries should be repaired by local x"
+        );
+    }
+
     #[test]
     fn project_root_uses_nearest_git_ancestor() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -6044,6 +7200,37 @@ mod tests {
             signature_available: false,
             signature_verified: false,
         }
+    }
+
+    fn write_tar_gz(path: &Path, entries: &[(&str, &[u8], u32)]) {
+        let file = fs::File::create(path).expect("create archive");
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+        for (name, bytes, mode) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(*mode);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, *name, *bytes)
+                .expect("append archive entry");
+        }
+        builder.finish().expect("finish tar");
+        let encoder = builder.into_inner().expect("finish gzip stream");
+        encoder.finish().expect("finish gzip file");
+    }
+
+    fn write_zip(path: &Path, entries: &[(&str, &[u8], u32)]) {
+        let file = fs::File::create(path).expect("create zip");
+        let mut writer = zip::ZipWriter::new(file);
+        for (name, bytes, mode) in entries {
+            let options = zip::write::SimpleFileOptions::default()
+                .unix_permissions(*mode)
+                .compression_method(zip::CompressionMethod::Deflated);
+            writer.start_file(*name, options).expect("start zip entry");
+            writer.write_all(bytes).expect("write zip entry");
+        }
+        writer.finish().expect("finish zip");
     }
 
     fn mark_github_verified(record: &mut PackageRecord) {

@@ -174,10 +174,14 @@ pub fn select_asset(
     })
 }
 
-pub fn discover_archive_binary(repo_name: &str, members: &[ArchiveMember]) -> BinaryDiscovery {
+pub fn discover_archive_binary(
+    repo_name: &str,
+    target: &HostTarget,
+    members: &[ArchiveMember],
+) -> BinaryDiscovery {
     let mut candidates = members
         .iter()
-        .filter(|member| member.executable || member.path.to_ascii_lowercase().ends_with(".exe"))
+        .filter(|member| member.executable)
         .map(|member| member.path.clone())
         .collect::<Vec<_>>();
     candidates.sort();
@@ -187,6 +191,25 @@ pub fn discover_archive_binary(repo_name: &str, members: &[ArchiveMember]) -> Bi
     }
 
     let normalized_repo = normalized_binary_name(repo_name);
+    let raw_matching_repo = candidates
+        .iter()
+        .filter(|candidate| normalized_binary_name(basename(candidate)) == normalized_repo)
+        .cloned()
+        .collect::<Vec<_>>();
+    let matching_repo = target_archive_candidates(target, raw_matching_repo.clone());
+
+    match matching_repo.len() {
+        1 => return BinaryDiscovery::Selected(matching_repo[0].clone()),
+        len if len > 1 => return BinaryDiscovery::Ambiguous(matching_repo),
+        _ if !raw_matching_repo.is_empty() => return BinaryDiscovery::NotFound,
+        _ => {}
+    }
+
+    let candidates = target_archive_candidates(target, candidates);
+    if candidates.is_empty() {
+        return BinaryDiscovery::NotFound;
+    }
+
     let matching_repo = candidates
         .iter()
         .filter(|candidate| normalized_binary_name(basename(candidate)) == normalized_repo)
@@ -199,6 +222,65 @@ pub fn discover_archive_binary(repo_name: &str, members: &[ArchiveMember]) -> Bi
         _ if candidates.len() == 1 => BinaryDiscovery::Selected(candidates[0].clone()),
         _ => BinaryDiscovery::Ambiguous(candidates),
     }
+}
+
+pub(crate) fn target_archive_candidates(
+    target: &HostTarget,
+    candidates: Vec<String>,
+) -> Vec<String> {
+    let mut scored = candidates
+        .into_iter()
+        .filter_map(|candidate| {
+            archive_member_target_score(target, &candidate).map(|score| (score, candidate))
+        })
+        .collect::<Vec<_>>();
+    scored.sort_by(|(left_score, left_path), (right_score, right_path)| {
+        right_score
+            .cmp(left_score)
+            .then_with(|| left_path.cmp(right_path))
+    });
+    match scored.first().map(|(score, _)| *score) {
+        Some(best_score) if best_score > 0 => scored
+            .into_iter()
+            .filter_map(|(score, path)| (score == best_score).then_some(path))
+            .collect(),
+        Some(_) => scored.into_iter().map(|(_, path)| path).collect(),
+        None => Vec::new(),
+    }
+}
+
+fn archive_member_target_score(target: &HostTarget, path: &str) -> Option<i32> {
+    let signal = detect_target(path);
+    if signal.os.is_none() && signal.arch.is_none() && signal.libc.is_none() {
+        return Some(0);
+    }
+    if signal.os.is_some() {
+        return target_score(target, &signal);
+    }
+
+    let mut score = 0;
+    if let Some(arch) = signal.arch {
+        if arch != target.arch {
+            return None;
+        }
+        score += 80;
+    }
+    match (target.os, target.libc, signal.libc) {
+        (TargetOs::Linux, TargetLibc::Gnu, Some(TargetLibc::Gnu)) => score += 50,
+        (TargetOs::Linux, TargetLibc::Gnu, Some(TargetLibc::Any)) => score += 45,
+        (TargetOs::Linux, TargetLibc::Musl, Some(TargetLibc::Musl)) => score += 50,
+        (TargetOs::Linux, TargetLibc::Musl, Some(TargetLibc::Any)) => score += 45,
+        (TargetOs::Linux, _, Some(asset_libc)) if asset_libc == target.libc => score += 50,
+        (TargetOs::Linux, _, Some(TargetLibc::Any)) => score += 45,
+        (_, _, Some(TargetLibc::Any)) => score += 10,
+        (_, _, Some(asset_libc)) if asset_libc == target.libc => score += 10,
+        (_, _, None) => {}
+        _ => return None,
+    }
+    if signal.recognized_pattern {
+        score += 5;
+    }
+    Some(score)
 }
 
 fn score_asset(
@@ -897,9 +979,11 @@ mod tests {
 
     #[test]
     fn archive_binary_discovery_prefers_repo_name_and_reports_ambiguity() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
         assert_eq!(
             discover_archive_binary(
                 "tool",
+                &host,
                 &[
                     member("pkg/bin/helper", true),
                     member("pkg/bin/tool", true),
@@ -911,12 +995,48 @@ mod tests {
         assert_eq!(
             discover_archive_binary(
                 "tool",
+                &host,
                 &[member("pkg/bin/alpha", true), member("pkg/bin/beta", true)],
             ),
             BinaryDiscovery::Ambiguous(vec![
                 "pkg/bin/alpha".to_string(),
                 "pkg/bin/beta".to_string()
             ])
+        );
+    }
+
+    #[test]
+    fn archive_binary_discovery_prefers_target_matching_members() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[
+                    member("bin/darwin/tool", true),
+                    member("bin/linux/tool", true),
+                ],
+            ),
+            BinaryDiscovery::Selected("bin/linux/tool".to_string())
+        );
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[
+                    member("bin/linux-arm64/tool", true),
+                    member("bin/linux-x64/tool", true),
+                ],
+            ),
+            BinaryDiscovery::Selected("bin/linux-x64/tool".to_string())
+        );
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[member("bin/linux/helper", true), member("pkg/tool", true),],
+            ),
+            BinaryDiscovery::Selected("pkg/tool".to_string())
         );
     }
 }

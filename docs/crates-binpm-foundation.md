@@ -3,7 +3,7 @@
 ## Scope
 - Project/component: `binpm` crate foundation contract
 - Canonical path: `crates/binpm`
-- Implementation status: runtime implementation has begun with a Rust CLI, clap command surface, typed contract foundations, source parsing, provider release lookup clients, source-form explain diagnostics, deterministic asset candidate scoring, TOML-backed local manifest and lockfile records, global and project-local package records, global cache metadata, sanitized persisted URLs, SHA-256 cache verification, atomic file writes, structured tracing setup, centralized errors, README, and tests
+- Implementation status: runtime implementation has begun with a Rust CLI, clap command surface, typed contract foundations, source parsing, provider release lookup clients, source-form and local-command explain diagnostics, deterministic asset candidate scoring, release asset download, archive extraction for documented formats, TOML-backed local manifest and lockfile records, global and project-local package records, global cache metadata, sanitized persisted URLs, SHA-256 cache verification, atomic file writes, structured tracing setup, centralized errors, README, and tests
 
 ## Runtime and Language
 - Runtime: Rust CLI
@@ -22,7 +22,7 @@
   - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories.
   - `binpm doctor` may report manifest, lockfile, and global home state without mutation.
   - `binpm cache key` may print a deterministic key for the current target and project-root `binpm.lock`, using an empty lockfile digest when the file is absent.
-- Current install finalization supports bare executable assets end to end. Archive assets are classified and selected by the asset scoring layer, but archive extraction and archive member installation still fail explicitly until the extraction implementation lands.
+- Current install finalization supports bare executable assets and documented archive assets end to end. Archive extraction is implemented for `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip`, and installs only the selected executable member.
 - Canonical global install command: `binpm install <source>`.
 - Canonical local declaration command: `binpm add <cmd> <source>`.
 - Canonical local sync command: `binpm install`.
@@ -52,7 +52,7 @@
 - `binpm update [cmd...] [--local|--global]` must update selected tools or all tools in scope to the latest stable release allowed by their source declarations; local updates must update `binpm.lock` and installed project-local executables.
 - `binpm doctor` must inspect manifest discovery, lockfile readability, package records, cache state, installed executable records, PATH visibility, and provider configuration without mutating state.
 - `binpm explain <cmd-or-source> [--local|--global]` must explain source parsing, release selection, target normalization, asset candidate scoring, binary discovery, and verification decisions without mutating state.
-- Source-form `binpm explain <source>` may perform read-only GitHub or GitLab release API lookup and must print the normalized source, provider API URL, release decision, normalized target, selected asset when one is eligible, candidate scores, and rejection reasons. Local command explanation may remain not implemented until manifest and lockfile resolution is implemented.
+- Source-form `binpm explain <source>` may perform read-only GitHub or GitLab release API lookup and must print the normalized source, provider API URL, release decision, normalized target, selected asset when one is eligible, candidate scores, and rejection reasons. Local command explanation must inspect existing package records and print source, release, target, selected asset, selected binary, archive format, checksum source, and verification state without installing new bytes.
 - `binpm verify [--local|--global] [--require-verified]` must validate lockfile records, package records, cache bytes, and installed executable records without mutating state.
 - `binpm init` must create a minimal `binpm.toml` with `version = 1` at the project root when one does not already exist; it must not install tools by default.
 - `binpm env --shell <shell>` must print shell-specific environment commands for adding binpm-managed binary directories to `PATH`; it must not modify shell profiles by default.
@@ -89,9 +89,9 @@
   - Checksum, signature, provenance, and metadata files such as `.sha256`, `.sha512`, `SHA256SUMS`, `checksums.txt`, `.sig`, `.asc`, `.minisig`, `.sigstore.json`, `.sbom.json`, `dist-manifest.json`, and `latest.json`.
   - Package formulas and package-manager metadata such as `.rb`, `.json` manifests, npm package tarballs, and Homebrew formula assets.
 - Desktop or system package formats are de-prioritized and must not be installed by default in v1: `.deb`, `.rpm`, `.apk`, `.pkg.tar.zst`, `.dmg`, `.msi`, `.pkg`, `.AppImage`, `.flatpak`, `.snap`.
-- Archive extraction must locate one or more executable files by executable permission, Windows `.exe` suffix, expected package name, and target-aware filename tokens.
+- Archive extraction must locate one or more executable files by executable permission, Windows `.exe` suffix, expected package name, and target-aware filename tokens. Explicit manifest `bin` values may name an exact archive member path or a unique member basename.
 - If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates.
-- The current foundation implements binary discovery as a deterministic member-list heuristic used by tests; full archive extraction and install finalization remain separate implementation work.
+- The current foundation implements binary discovery as a deterministic member-list heuristic and uses it during archive extraction and install finalization.
 
 ## Local Manifest and Lockfile
 - The local project root is the nearest ancestor containing `binpm.toml`; commands that create `binpm.toml` must use the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory.
@@ -249,7 +249,7 @@ signature_verified = false
 - Integrates with GitHub Releases through the GitHub API and release asset downloads.
 - Integrates with GitHub Enterprise Releases through explicit-host GitHub source specs.
 - Integrates with GitLab Releases and release asset links through explicit-host GitLab source specs.
-- Depends on archive extraction support for common release formats.
+- Depends on built-in archive extraction support for `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip`.
 - May integrate with checksum and signature tooling later, but v1 must work without Node.js or language-specific package managers.
 - Uses npm `npx` and `npm exec` only as behavioral references for PATH-based command execution and argument forwarding.
 - Does not integrate with npm, pnpm, yarn, Bun, Cargo install, cargo-binstall, Homebrew, apt, rpm, or system package managers as install backends in v1.
