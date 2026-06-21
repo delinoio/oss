@@ -81,7 +81,7 @@ export default defineConfig({
       ],
     },
     footer: {
-      message: "Nodeup documentation is maintained in the Delino OSS monorepo.",
+      message: "Nodeup documentation for installing, running, and troubleshooting Nodeup.",
     },
   },
 });
