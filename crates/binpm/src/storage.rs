@@ -431,8 +431,17 @@ fn read_cache_record_entries(paths: &CachePaths) -> Result<Vec<(PathBuf, CacheRe
     let mut records = Vec::new();
     for dir in cache_entry_dirs(paths)? {
         let path = dir.join("record.toml");
-        if path.exists() {
-            records.push((dir, read_toml::<CacheRecord>(&path)?));
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.is_file() => {
+                records.push((dir, read_toml::<CacheRecord>(&path)?));
+            }
+            Ok(_) => {
+                return Err(BinpmError::UnsafeManagedFile { path });
+            }
+            Err(source) if source.kind() == ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(BinpmError::ReadFile { path, source });
+            }
         }
     }
     records.sort_by(|left, right| left.1.cache_key.cmp(&right.1.cache_key));
@@ -949,6 +958,7 @@ fn read_cache_ref_keys(cache: &CachePaths) -> Result<BTreeSet<String>> {
         if path.extension().and_then(|extension| extension.to_str()) != Some("ref") {
             continue;
         }
+        require_regular_managed_file(&path)?;
         let key = fs::read_to_string(&path).map_err(|source| BinpmError::ReadFile {
             path: path.clone(),
             source,
@@ -1068,7 +1078,7 @@ fn reject_symlinked_managed_directory(path: &Path) -> Result<()> {
     }
 }
 
-fn require_regular_managed_file(path: &Path) -> Result<()> {
+pub fn require_regular_managed_file(path: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(path).map_err(|source| BinpmError::ReadFile {
         path: path.to_path_buf(),
         source,
@@ -1226,13 +1236,14 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::{
-        atomic_write_bytes, clean_cache, install_bare_executable, list_package_records,
+        atomic_write_bytes, cache_key, clean_cache, install_bare_executable, list_package_records,
         managed_installed_path, populate_cache_from_bytes, prune_cache, read_cache_records,
         read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
         referenced_cache_keys, remove_cache_ref, remove_installed_binary, remove_package_record,
         sanitize_persisted_url, validate_command_name, validate_download_url,
         validate_sha256_digest, verify_sha256, write_cache_ref, write_lockfile, write_manifest,
-        CachePaths, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset, ScopePaths,
+        CachePaths, CacheRecord, LockTool, Lockfile, Manifest, PackageRecord, ResolvedAsset,
+        ScopePaths,
     };
     use crate::{
         assets::{ArtifactKind, CandidateDecision},
@@ -1521,6 +1532,28 @@ mod tests {
             .expect("missing cache records")
             .is_empty());
         assert!(!cache.root.join("sha256").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_cache_records_rejects_symlinked_metadata_file() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        let sha = "abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123";
+        std::fs::create_dir_all(cache.entry_dir(sha)).expect("cache entry");
+        let outside_record = outside.path().join("record.toml");
+        std::fs::write(
+            &outside_record,
+            toml::to_string(&cache_record(sha)).expect("record"),
+        )
+        .expect("outside record");
+        std::os::unix::fs::symlink(&outside_record, cache.metadata_path(sha))
+            .expect("symlink metadata");
+
+        let error = read_cache_records(&cache).expect_err("symlinked metadata");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
     }
 
     #[test]
@@ -1909,6 +1942,23 @@ created_at = "2026-01-01T00:00:00Z"
 
     #[cfg(unix)]
     #[test]
+    fn referenced_cache_keys_rejects_symlinked_ref_file() {
+        let home = tempfile::tempdir().expect("home");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(home.path());
+        let paths = ScopePaths::global(home.path().join("global"));
+        std::fs::create_dir_all(&cache.refs).expect("refs");
+        let outside_ref = outside.path().join("tool.ref");
+        std::fs::write(&outside_ref, "sha256:outside").expect("outside ref");
+        std::os::unix::fs::symlink(&outside_ref, cache.refs.join("tool.ref")).expect("symlink ref");
+
+        let error = referenced_cache_keys(&paths, None, &cache).expect_err("symlinked ref file");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn remove_cache_ref_rejects_symlinked_refs_before_deleting_ref() {
         let home = tempfile::tempdir().expect("home");
         let outside = tempfile::tempdir().expect("outside");
@@ -2281,6 +2331,25 @@ created_at = "2026-01-01T00:00:00Z"
             installed_at: None,
             signature_available: false,
             signature_verified: false,
+        }
+    }
+
+    fn cache_record(sha256: &str) -> CacheRecord {
+        CacheRecord {
+            version: 1,
+            cache_key: cache_key(sha256),
+            source_provider: SourceProvider::GitHub,
+            source_host: "github.com".to_string(),
+            source_path: "owner/tool".to_string(),
+            release_tag: "1.0.0".to_string(),
+            asset_name: "tool-linux-x64".to_string(),
+            asset_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
+                .to_string(),
+            byte_size: Some(11),
+            sha256: sha256.to_string(),
+            checksum_source: ChecksumSource::Local,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            last_used_at: None,
         }
     }
 }

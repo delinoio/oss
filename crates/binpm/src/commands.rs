@@ -25,11 +25,11 @@ use crate::{
         read_cache_records, read_lockfile, read_manifest, read_package_record,
         record_verified_cache_hit, referenced_cache_keys, reject_symlinked_cache_entry,
         remove_cache_ref, remove_installed_binary, remove_package_record, remove_path_if_exists,
-        require_verified_regular_cache_asset, sanitize_persisted_url, validate_command_name,
-        validate_download_url, validate_installed_binary_path, validate_sha256_digest,
-        write_cache_ref, write_lockfile, write_manifest, write_package_record, CachePaths,
-        LockTool, Manifest, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths, LOCKFILE_FILE,
-        MANIFEST_FILE,
+        require_regular_managed_file, require_verified_regular_cache_asset, sanitize_persisted_url,
+        validate_command_name, validate_download_url, validate_installed_binary_path,
+        validate_sha256_digest, write_cache_ref, write_lockfile, write_manifest,
+        write_package_record, CachePaths, LockTool, Manifest, ManifestTool, PackageRecord,
+        ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
 
@@ -842,6 +842,7 @@ struct CompletedLocalInstall {
 #[derive(Debug, Clone)]
 struct CacheMetadataSnapshot {
     sha256: String,
+    asset_bytes: Option<Vec<u8>>,
     bytes: Option<Vec<u8>>,
 }
 
@@ -856,6 +857,24 @@ fn snapshot_cache_metadata(
     cache_paths: &CachePaths,
     sha256: &str,
 ) -> Result<CacheMetadataSnapshot> {
+    let asset_path = cache_paths.asset_path(sha256);
+    let asset_bytes =
+        match fs::symlink_metadata(&asset_path) {
+            Ok(metadata) if metadata.is_file() => Some(fs::read(&asset_path).map_err(
+                |source| BinpmError::ReadFile {
+                    path: asset_path.clone(),
+                    source,
+                },
+            )?),
+            Ok(_) => None,
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => None,
+            Err(source) => {
+                return Err(BinpmError::ReadFile {
+                    path: asset_path,
+                    source,
+                })
+            }
+        };
     let path = cache_paths.metadata_path(sha256);
     let bytes = match fs::read(&path) {
         Ok(bytes) => Some(bytes),
@@ -864,6 +883,7 @@ fn snapshot_cache_metadata(
     };
     Ok(CacheMetadataSnapshot {
         sha256: sha256.to_string(),
+        asset_bytes,
         bytes,
     })
 }
@@ -872,6 +892,11 @@ fn restore_cache_metadata(
     cache_paths: &CachePaths,
     snapshot: &CacheMetadataSnapshot,
 ) -> Result<()> {
+    let asset_path = cache_paths.asset_path(&snapshot.sha256);
+    match &snapshot.asset_bytes {
+        Some(bytes) => crate::storage::atomic_write_bytes(&asset_path, bytes)?,
+        None => remove_path_if_exists(&asset_path)?,
+    }
     let path = cache_paths.metadata_path(&snapshot.sha256);
     match &snapshot.bytes {
         Some(bytes) => crate::storage::atomic_write_bytes(&path, bytes),
@@ -1032,8 +1057,9 @@ fn install_resolved(
     let bytes = download_asset(&resolved.decision.download_url)?;
     let sha256 = format!("{:x}", Sha256::digest(&bytes));
     let cache_asset = cache_paths.asset_path(&sha256);
+    let had_existing_cache_entry = cache_asset.symlink_metadata().is_ok();
     let had_verified_cache_entry = cache_asset_is_verified_regular(&cache_asset, &sha256)?;
-    let cache_metadata_snapshot = if had_verified_cache_entry {
+    let cache_metadata_snapshot = if had_existing_cache_entry {
         Some(snapshot_cache_metadata(cache_paths, &sha256)?)
     } else {
         None
@@ -2487,6 +2513,7 @@ fn verify(args: VerifyArgs) -> Result<i32> {
         validate_package_record_metadata(&cache_paths, &record)?;
         verify_runtime_cache_bytes(&cache_paths, &record)?;
         let installed_path = validate_installed_binary_path(&paths, &cmd, &record)?;
+        require_regular_managed_file(&installed_path)?;
         crate::storage::verify_sha256(&installed_path, &record.sha256)?;
         println!("{cmd} verified {}", record.checksum_source.as_str());
         if !locked.contains(&cmd) {
@@ -2558,6 +2585,7 @@ fn validate_package_record_metadata(
 }
 
 fn verify_runtime_cache_bytes(cache_paths: &CachePaths, record: &PackageRecord) -> Result<()> {
+    reject_symlinked_cache_entry(cache_paths, &record.sha256)?;
     require_verified_regular_cache_asset(&cache_paths.asset_path(&record.sha256), &record.sha256)
 }
 
@@ -3105,7 +3133,8 @@ mod tests {
         error::BinpmError,
         release::ReleaseAsset,
         storage::{
-            read_cache_records, write_cache_record, write_lockfile, write_manifest,
+            managed_installed_path, read_cache_records, require_regular_managed_file,
+            validate_installed_binary_path, write_cache_record, write_lockfile, write_manifest,
             write_package_record, CachePaths, CacheRecord, LockTool, Lockfile, Manifest,
             ManifestTargetOverride, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths,
             LOCKFILE_FILE, MANIFEST_FILE,
@@ -5344,6 +5373,37 @@ mod tests {
     }
 
     #[test]
+    fn failed_install_cleanup_restores_corrupted_existing_cache_asset() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        cache.ensure().expect("cache paths");
+        let expected_bytes = b"expected tool";
+        let corrupted_bytes = b"corrupted tool";
+        let sha256 = format!("{:x}", Sha256::digest(expected_bytes));
+        fs::create_dir_all(cache.entry_dir(&sha256)).expect("cache entry dir");
+        fs::write(cache.asset_path(&sha256), corrupted_bytes).expect("corrupt cache asset");
+        let snapshot = snapshot_cache_metadata(&cache, &sha256).expect("cache snapshot");
+        fs::write(cache.asset_path(&sha256), expected_bytes).expect("repair cache asset");
+        write_cache_record(&cache, &cache_record(&sha256)).expect("rewritten cache record");
+        let mut record = package_record();
+        record.sha256 = sha256.clone();
+        let install = InstalledPackage {
+            record,
+            populated_cache_entry: false,
+            deferred_cache_hit: None,
+            cache_metadata_snapshot: Some(snapshot),
+        };
+
+        cleanup_failed_install_cache(&cache, &sha256, None, &install).expect("cleanup cache");
+
+        assert_eq!(
+            fs::read(cache.asset_path(&sha256)).expect("cache asset"),
+            corrupted_bytes
+        );
+        assert!(!cache.metadata_path(&sha256).exists());
+    }
+
+    #[test]
     fn current_cache_record_requires_matching_cache_key() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let cache = CachePaths::new(temp_dir.path());
@@ -5453,6 +5513,50 @@ mod tests {
         record.sha256 = sha256;
 
         let error = verify_runtime_cache_bytes(&cache, &record).expect_err("symlinked asset");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn package_record_verify_rejects_symlinked_cache_digest_dir() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let outside = tempfile::tempdir().expect("outside");
+        let bytes = b"expected bytes";
+        let sha256 = format!("{:x}", Sha256::digest(bytes));
+        std::fs::create_dir_all(cache.root.join("sha256")).expect("sha256 root");
+        std::fs::write(outside.path().join("asset"), bytes).expect("outside asset");
+        std::os::unix::fs::symlink(outside.path(), cache.entry_dir(&sha256))
+            .expect("symlink digest dir");
+        let mut record = package_record();
+        record.sha256 = sha256;
+
+        let error = verify_runtime_cache_bytes(&cache, &record).expect_err("symlinked digest dir");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn package_record_verify_rejects_symlinked_installed_executable() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        std::fs::create_dir_all(&paths.bin).expect("bin dir");
+        let bytes = b"expected bytes";
+        let sha256 = format!("{:x}", Sha256::digest(bytes));
+        let outside_asset = outside.path().join("tool");
+        std::fs::write(&outside_asset, bytes).expect("outside executable");
+        let installed_path = managed_installed_path(&paths, "tool", TargetOs::Linux);
+        std::os::unix::fs::symlink(&outside_asset, &installed_path).expect("symlink executable");
+        let mut record = package_record();
+        record.sha256 = sha256;
+        record.installed_path = installed_path.display().to_string();
+
+        let installed_path =
+            validate_installed_binary_path(&paths, "tool", &record).expect("installed path");
+        let error = require_regular_managed_file(&installed_path).expect_err("symlinked install");
 
         assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
     }
