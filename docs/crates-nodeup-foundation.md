@@ -54,7 +54,7 @@
 - `completions <shell> [command]` command scope must accept only top-level command identifiers and fail with `invalid-input` for unsupported scopes.
 - `completions` output must remain raw script text on stdout even when `--output json` is requested.
 - Script-safe stdout guidance must map structured automation to `--output json`, newline-delimited runtime lists to setting `RUST_LOG=off` before `nodeup toolchain list --quiet`, completion redirection to setting `RUST_LOG=off` before `nodeup completions <shell> >file`, and log-free human output to setting `RUST_LOG=off` before `nodeup <command>`.
-- Tracing logs must be written to stderr when enabled so stdout remains reserved for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts. Management `--output json` keeps tracing logs off so JSON stdout and stderr payloads remain parseable.
+- Tracing logs must be written to stderr when enabled so stdout remains reserved for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts. Management `--output json` keeps tracing logs off by default so JSON stdout and stderr payloads remain parseable unless `RUST_LOG` explicitly enables tracing.
 
 ## Storage
 - Maintains local version metadata, installation roots, and shim state.

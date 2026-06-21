@@ -1930,7 +1930,7 @@ fn json_show_active_runtime_failure_remains_parseable_without_rust_log_env() {
 
 #[test]
 #[serial]
-fn json_show_active_runtime_failure_remains_parseable_with_rust_log_env() {
+fn json_show_active_runtime_failure_honors_rust_log_env() {
     let env = TestEnv::new();
 
     let output = env
@@ -1943,9 +1943,12 @@ fn json_show_active_runtime_failure_remains_parseable_with_rust_log_env() {
     assert_eq!(output.status.code(), Some(5));
     assert!(output.stdout.is_empty());
 
-    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
-    assert_eq!(payload["kind"], "not-found");
-    assert_eq!(payload["exit_code"], 5);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("command_path: \"nodeup.show.active-runtime\""));
+    assert!(
+        stderr.contains("\"kind\":\"not-found\"") || stderr.contains("\"kind\": \"not-found\"")
+    );
+    assert!(stderr.contains("\"exit_code\":5") || stderr.contains("\"exit_code\": 5"));
 }
 
 #[test]
