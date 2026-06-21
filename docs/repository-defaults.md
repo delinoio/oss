@@ -1,7 +1,7 @@
 # Repository Defaults
 
 ## Purpose
-This document defines default technology choices for new repository work when a more specific project or domain contract does not already choose a different approach.
+This document defines default technology choices and repository workflow defaults for new repository work when a more specific project or domain contract does not already choose a different approach.
 
 ## Default Technology Choices
 - New persisted entities should use UUID v7 identifiers by default. Use another identifier shape only when there is a documented compatibility, storage, protocol, or product reason.
@@ -15,6 +15,11 @@ This document defines default technology choices for new repository work when a 
 - Project index docs must record deviations from these defaults in `Cross-Domain Invariants` or `Change Policy`.
 - Domain contract docs must record deviations in the relevant `Runtime and Language`, `Storage`, `Security`, `Build and Test`, or `Dependencies and Integrations` sections.
 - Repository and domain `AGENTS.md` files must stay aligned with this document when these defaults change.
+
+## Repository Workflow Defaults
+- Newly created pull requests must use Conventional Commit-style titles with a required scope: `<type>(<scope>): <description>`.
+- Pull request title scopes should use stable lowercase project, component, domain, or tooling identifiers from repository contracts when one applies.
+- Pull request titles must not omit the scope and must not use bracket-style project prefixes.
 
 ## References
 - `docs/README.md`
