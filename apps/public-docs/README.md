@@ -20,7 +20,8 @@ pnpm --filter public-docs test
 - `getting-started.mdx`: Local setup and contribution flow.
 - `projects-overview.mdx`: High-level public project catalog.
 - `documentation-lifecycle.mdx`: Rules for updating internal and public docs together.
-- `nodeup.mdx`: Public project guide for `nodeup`.
 - `cargo-mono.mdx`: Public project guide for `cargo-mono`.
 - `derun.mdx`: Public project guide for `derun`.
 - `with-watch.mdx`: Public project guide for `with-watch`.
+
+Nodeup is intentionally not published through this Mintlify app. Its dedicated documentation app is `apps/nodeup-docs` at `https://nodeup.delino.io`.

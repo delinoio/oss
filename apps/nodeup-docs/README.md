@@ -2,6 +2,8 @@
 
 Rspress-based documentation app for the `nodeup` project.
 
+Production URL: https://nodeup.delino.io
+
 ## Commands
 
 Run from repository root:
