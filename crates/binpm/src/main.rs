@@ -1,6 +1,6 @@
 use binpm::{
     cli::{Cli, Command},
-    error::{set_frozen_lockfile_command_context, BinpmError, FrozenLockfileCommandContext},
+    error::{set_frozen_lockfile_context, BinpmError, FrozenLockfileCommandContext},
     logging, run_cli,
 };
 use swc_malloc as _;
@@ -15,7 +15,7 @@ fn main() {
     if !json {
         logging::init_logging(cli.log_verbosity());
     }
-    set_frozen_lockfile_command_context(frozen_lockfile_command_context(&cli.command));
+    set_frozen_lockfile_context(frozen_lockfile_command_context(&cli.command));
 
     match run_cli(cli) {
         Ok(code) => std::process::exit(code),
@@ -28,9 +28,30 @@ fn frozen_lockfile_command_context(command: &Command) -> FrozenLockfileCommandCo
         Command::Add(args) => FrozenLockfileCommandContext::Add {
             cmd: args.cmd.clone(),
             source: args.source.clone(),
+            bin: args.bin.clone(),
+            require_verified: args.require_verified,
+            mode: args.lockfile.frozen_lockfile_mode(),
         },
-        Command::Exec(_) => FrozenLockfileCommandContext::Exec,
-        _ => FrozenLockfileCommandContext::Other,
+        Command::Install(args) if args.scope.local && args.source.is_some() => {
+            FrozenLockfileCommandContext::InstallLocalSource {
+                source: args
+                    .source
+                    .clone()
+                    .expect("checked source is present for local source install"),
+                require_verified: args.require_verified,
+                mode: args.lockfile.frozen_lockfile_mode(),
+            }
+        }
+        Command::Install(args) => FrozenLockfileCommandContext::Other {
+            mode: args.lockfile.frozen_lockfile_mode(),
+        },
+        Command::Exec(args) => FrozenLockfileCommandContext::Exec {
+            mode: args.lockfile.frozen_lockfile_mode(),
+        },
+        Command::Update(args) => FrozenLockfileCommandContext::Other {
+            mode: args.lockfile.frozen_lockfile_mode(),
+        },
+        _ => FrozenLockfileCommandContext::NotFrozen,
     }
 }
 

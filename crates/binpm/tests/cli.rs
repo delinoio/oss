@@ -785,6 +785,71 @@ signature_verified = false
 }
 
 #[test]
+fn verify_local_json_stale_lockfile_omits_frozen_diagnostic() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/new-tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+
+[tools.tool.targets.linux-x86_64-gnu]
+package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux"
+installed_path = ".binpm/bin/tool"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+checksum_source = "local"
+provider_digest_sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+signature_available = false
+signature_verified = false
+"#,
+    )
+    .expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["verify", "--local", "--json"])
+        .output()
+        .expect("verify --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert!(payload["error"].get("diagnostic").is_none());
+    assert!(!payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("\"safest_next_command\""));
+}
+
+#[test]
 fn parse_error_with_json_flag_emits_parseable_error_envelope() {
     let output = binpm()
         .args(["explain", "--json"])
@@ -1182,6 +1247,104 @@ fn frozen_add_reports_add_specific_recovery_with_quoted_command() {
         .as_str()
         .expect("message")
         .contains("then commit `binpm.toml` and `binpm.lock`"));
+}
+
+#[test]
+fn frozen_add_recovery_preserves_manifest_affecting_flags() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "tool",
+            "github:owner/tool",
+            "--bin",
+            "actual",
+            "--require-verified",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("add --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm add tool github:owner/tool --bin actual --require-verified --no-frozen-lockfile"
+    );
+}
+
+#[test]
+fn frozen_local_source_install_reports_source_specific_recovery() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "github:owner/tool",
+            "--local",
+            "--require-verified",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("install --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm install github:owner/tool --local --require-verified --no-frozen-lockfile"
+    );
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("then commit `binpm.toml` and `binpm.lock`"));
+}
+
+#[test]
+fn ci_x_ignores_forwarded_frozen_lockfile_when_reporting_mode() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("CI", "true")
+        .args(["--json", "x", "tool", "--frozen-lockfile"])
+        .output()
+        .expect("x --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["diagnostic"]["mode"], "CI=true");
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
