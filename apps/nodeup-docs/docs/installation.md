@@ -58,7 +58,9 @@ macOS and Linux:
   installer_url="https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.sh"
   tmp_dir="$(mktemp -d)"
   trap 'rm -rf "$tmp_dir"' EXIT
-  curl -fsSL "$installer_url" -o "$tmp_dir/nodeup.sh"
+  if ! curl -fsSL "$installer_url" -o "$tmp_dir/nodeup.sh"; then
+    exit 1
+  fi
   bash "$tmp_dir/nodeup.sh" --version latest --method direct
 )
 ```
