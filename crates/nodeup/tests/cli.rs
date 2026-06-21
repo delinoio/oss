@@ -2999,6 +2999,28 @@ fn shim_setup_refuses_symlinked_windows_copy_marker() {
 
 #[test]
 #[serial]
+fn shim_setup_preflights_invalid_windows_copy_marker_before_create() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-marker-dir");
+    let node = shim_dir.join("node.exe");
+    let marker = shim_dir.join(".node.exe.nodeup-shim");
+    fs::create_dir_all(&marker).unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to use non-file Windows shim ownership marker",
+        ));
+
+    assert!(!node.exists());
+    assert!(marker.is_dir());
+}
+
+#[test]
+#[serial]
 fn shim_setup_backfills_marker_for_existing_windows_copy_alias() {
     let env = TestEnv::new();
     let shim_dir = env.root.join("nodeup-shims-windows-backfill");

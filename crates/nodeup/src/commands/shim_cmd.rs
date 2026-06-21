@@ -289,7 +289,10 @@ fn plan_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
                 path.display()
             )))
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(ShimPlanAction::Create),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            has_regular_copy_marker(path)?;
+            Ok(ShimPlanAction::Create)
+        }
         Err(error) => Err(error.into()),
     }
 }
