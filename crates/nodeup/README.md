@@ -181,6 +181,7 @@ Scope filtering:
 
 - Unit tests cover selectors, resolver, release index cache behavior, logging mode selection, and installer helpers.
 - CLI integration tests cover command contracts, JSON error envelopes, selector precedence, override lifecycle, update/check branches, self-management commands, alias dispatch (`node`, `npm`, `npx`, `yarn`, `pnpm`), and `packageManager`-aware execution planning.
+- `nodeup update` treats exact-version selectors as immutable pins, reports `skipped-exact-version`, and canonicalizes tracked exact selectors such as `22.1.0` and `v22.1.0` to one `v<semver>` entry.
 
 Run locally from repository root:
 
@@ -207,4 +208,4 @@ cargo test
 
 - Project index: [`docs/project-nodeup.md`](../../docs/project-nodeup.md)
 - Runtime contract: [`docs/crates-nodeup-foundation.md`](../../docs/crates-nodeup-foundation.md)
-- Public guide: [`apps/public-docs/nodeup.mdx`](../../apps/public-docs/nodeup.mdx)
+- Dedicated docs app: [`apps/nodeup-docs`](../../apps/nodeup-docs) (`https://nodeup.delino.io`)
