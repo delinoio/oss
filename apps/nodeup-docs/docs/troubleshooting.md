@@ -48,6 +48,16 @@ nodeup toolchain unlink <name>
 
 If unlinking reports `conflict`, change the default runtime or remove/update the blocking directory override first.
 
+## Shims Are Missing or Stale
+
+Repair managed aliases:
+
+```bash
+nodeup shim setup
+```
+
+If output includes a PATH instruction, run it for the current session and add the shim directory to your shell profile or user PATH for future sessions. On Windows, Nodeup uses copied `.exe` aliases, so rerun `nodeup shim setup` after moving or replacing `nodeup.exe`.
+
 ## packageManager Conflict
 
 If `package.json` says `pnpm@10.32.1`, running `yarn` fails with `conflict`.
@@ -86,6 +96,52 @@ JSON errors include deterministic diagnostics:
 - `architecture`
 - `platform_source`
 - `supported_platforms`
+
+## Direct Installer Reports Missing cosign
+
+Symptom:
+
+```text
+[install.nodeup] missing required prerequisite: cosign
+```
+
+Direct installers require `cosign` before release artifact download because Nodeup verifies `SHA256SUMS` entries and Sigstore bundle sidecars. This is a missing-prerequisite failure, not a signature verification failure and not a reason to disable verification.
+
+Fix: install `cosign`, keep it on `PATH`, and rerun the installer.
+
+```bash
+brew install cosign
+```
+
+On Linux without Homebrew, follow the [Sigstore cosign installation guide](https://docs.sigstore.dev/cosign/system_config/installation/). On Windows:
+
+```powershell
+winget install sigstore.cosign
+# or
+scoop install cosign
+```
+
+Alternate install paths are Homebrew on macOS/Linux or `cargo binstall nodeup --no-confirm` on supported hosts with published first-party assets.
+
+## Direct Installer Verification Fails
+
+Symptom:
+
+```text
+[install.nodeup] Sigstore bundle verification failed
+```
+
+This means `cosign` was available, but the downloaded artifact did not verify against the published Sigstore bundle and the expected GitHub Actions release workflow identity. Retry only after confirming you are using a bundle-enabled Nodeup release from `delinoio/oss`. Do not bypass verification.
+
+## cargo-binstall Cannot Find an Asset
+
+Nodeup's `cargo-binstall` metadata points only at first-party GitHub Release assets for macOS, Linux, and Windows x64/arm64 hosts. It disables `quick-install` and `compile`, so unsupported hosts or releases missing the matching asset fail instead of compiling from source or using third-party binaries.
+
+Fix:
+
+1. Confirm the host is macOS x64/arm64, Linux x64/arm64, or Windows x64/arm64.
+2. Confirm the Nodeup release includes the matching `nodeup-<os>-<arch>.tar.gz` or `nodeup-windows-<arch>.zip` asset.
+3. Use Homebrew on macOS/Linux or the direct installer with `cosign` when `cargo-binstall` is not the right path.
 
 ## Checksum Mismatch
 

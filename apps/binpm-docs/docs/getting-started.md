@@ -8,7 +8,9 @@ binpm add rg github:BurntSushi/ripgrep@14.1.1
 binpm x rg --version
 ```
 
-`binpm init` creates `binpm.toml` with `version = 1` when a manifest does not already exist. It does not install tools by default.
+`binpm init` creates `binpm.toml` with `version = 1` when a manifest does not already exist. It prints the resolved full destination path before creation and prints the created manifest path after success. It does not install tools by default.
+
+When you run `binpm init` from a nested directory, manifest creation uses the current Git worktree root when one is available. Outside Git, it uses the nearest ancestor that already contains `binpm.toml`, or the current directory when no ancestor manifest exists. There is no current-directory override flag in the current contract.
 
 `binpm add <cmd> <source>` declares a local command, installs the selected executable into `<project>/.binpm/bin`, and updates `binpm.lock`.
 

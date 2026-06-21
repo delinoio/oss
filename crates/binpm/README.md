@@ -14,6 +14,13 @@ Host-specific token variables take precedence, and enterprise or self-managed
 hosts only use their host-specific token variable. Tokens and authorization
 headers are never logged or persisted.
 
+Cache commands keep asset cleanup separate from uninstall behavior:
+`binpm cache clean` removes global cache asset entries while preserving cache
+references, package records, and executable links or copies, and `binpm cache
+prune` repairs stale structured project references before pruning unreferenced
+assets. `binpm cache key` remains read-only and reports missing lockfiles
+explicitly.
+
 Use `-v`/`--verbose` for info-level tracing diagnostics and `--debug` for
 debug-level tracing diagnostics. `BINPM_LOG` remains supported when no CLI
 verbosity flag is provided; CLI verbosity flags take precedence.
