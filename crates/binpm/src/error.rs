@@ -35,6 +35,8 @@ pub enum BinpmError {
     ReleaseHttpClient(#[source] reqwest::Error),
     #[error("Failed to look up release metadata: {0}")]
     ReleaseLookup(#[source] reqwest::Error),
+    #[error("Release asset `{url}` returned unexpected HTTP status {status}.")]
+    ReleaseAssetStatus { url: String, status: u16 },
     #[error("Failed to stream release asset `{url}`: {source}")]
     DownloadStream {
         url: String,
@@ -198,6 +200,7 @@ impl BinpmError {
         matches!(
             self,
             Self::ReleaseLookup(_)
+                | Self::ReleaseAssetStatus { .. }
                 | Self::DownloadStream { .. }
                 | Self::ReleaseNotFound { .. }
                 | Self::AssetNotFound { .. }
@@ -234,6 +237,7 @@ impl BinpmError {
             | Self::InvalidGlobalHome { .. }
             | Self::ReleaseHttpClient(_)
             | Self::ReleaseLookup(_)
+            | Self::ReleaseAssetStatus { .. }
             | Self::DownloadStream { .. }
             | Self::ReleasePaginationLoop { .. } => 1,
             Self::FrozenLockfile { .. }

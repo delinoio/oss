@@ -47,6 +47,7 @@ const DOWNLOAD_RETRY_BASE_DELAY: Duration = Duration::from_millis(200);
 const DOWNLOAD_PROGRESS_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
 const DOWNLOAD_PROGRESS_STEP_BYTES: u64 = 5 * 1024 * 1024;
 const DOWNLOAD_PROGRESS_INTERVAL: Duration = Duration::from_secs(2);
+const DOWNLOAD_INITIAL_CAPACITY_LIMIT: usize = 8 * 1024 * 1024;
 
 pub fn run(cli: Cli) -> Result<i32> {
     match cli.command {
@@ -3188,14 +3189,13 @@ fn download_asset_attempt(
     let final_url = sanitize_download_diagnostic_url(response.url().as_str());
     let status = response.status();
     if !status.is_success() {
-        let error = response
-            .error_for_status()
-            .expect_err("non-success status must produce an error")
-            .without_url();
-        if is_retryable_status(status) {
-            return Err(BinpmError::ReleaseLookup(error));
+        if let Some(error) = response.error_for_status_ref().err() {
+            return Err(BinpmError::ReleaseLookup(error.without_url()));
         }
-        return Err(BinpmError::ReleaseLookup(error));
+        return Err(BinpmError::ReleaseAssetStatus {
+            url: final_url,
+            status: status.as_u16(),
+        });
     }
 
     let total_bytes = response.content_length();
@@ -3209,8 +3209,7 @@ fn download_asset_attempt(
         );
     }
 
-    let mut bytes =
-        Vec::with_capacity(total_bytes.unwrap_or_default().min(usize::MAX as u64) as usize);
+    let mut bytes = Vec::with_capacity(download_initial_capacity(total_bytes));
     let mut buffer = [0u8; 64 * 1024];
     let mut downloaded = 0u64;
     let mut next_progress_at = DOWNLOAD_PROGRESS_STEP_BYTES;
@@ -3292,6 +3291,12 @@ fn download_progress_enabled(total_bytes: Option<u64>) -> bool {
         && total_bytes
             .map(|bytes| bytes >= DOWNLOAD_PROGRESS_THRESHOLD_BYTES)
             .unwrap_or(true)
+}
+
+fn download_initial_capacity(total_bytes: Option<u64>) -> usize {
+    total_bytes
+        .map(|bytes| bytes.min(DOWNLOAD_INITIAL_CAPACITY_LIMIT as u64) as usize)
+        .unwrap_or_default()
 }
 
 fn format_download_progress(downloaded: u64, total: Option<u64>) -> String {
@@ -4283,10 +4288,11 @@ mod tests {
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
-        download_asset_name, ensure_no_package_record_install_path_collision, execute_command,
-        format_download_progress, github_sha256_digest, has_current_cache_record,
-        has_local_runtime_or_lock_state, install_local_from_lock, install_path_collision_key,
-        is_retryable_status, local_runtime_lock_records, local_tool_execution_ready,
+        download_asset_name, download_initial_capacity,
+        ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
+        github_sha256_digest, has_current_cache_record, has_local_runtime_or_lock_state,
+        install_local_from_lock, install_path_collision_key, is_retryable_status,
+        local_runtime_lock_records, local_tool_execution_ready,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
@@ -4351,6 +4357,16 @@ mod tests {
         assert_eq!(
             format_download_progress(5 * 1024 * 1024, Some(10 * 1024 * 1024)),
             "5.0 MiB/10.0 MiB"
+        );
+    }
+
+    #[test]
+    fn download_initial_capacity_caps_untrusted_content_length() {
+        assert_eq!(download_initial_capacity(None), 0);
+        assert_eq!(download_initial_capacity(Some(128 * 1024)), 128 * 1024);
+        assert_eq!(
+            download_initial_capacity(Some(128 * 1024 * 1024)),
+            8 * 1024 * 1024
         );
     }
 
