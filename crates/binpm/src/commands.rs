@@ -28,7 +28,9 @@ use crate::{
         TargetOs,
     },
     error::{BinpmError, Result},
-    release::{client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset},
+    release::{
+        client_for_source, GitHubReleaseClient, GitLabReleaseClient, ProviderAuth, ReleaseAsset,
+    },
     storage::{
         archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
         install_bare_executable, install_executable_bytes, installed_filename,
@@ -1473,7 +1475,11 @@ fn install_resolved(
             });
         }
     }
-    let bytes = download_asset(&resolved.decision.download_url)?;
+    let bytes = download_asset(
+        &resolved.decision.download_url,
+        resolved.decision.download_auth.as_ref(),
+        resolved.decision.download_accept,
+    )?;
     let sha256 = format!("{:x}", Sha256::digest(&bytes));
     let cache_asset = cache_paths.asset_path(&sha256);
     let had_existing_cache_entry = cache_asset.symlink_metadata().is_ok();
@@ -1664,8 +1670,12 @@ fn install_local_from_lock(
     };
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
         let repair_result = (|| {
-            let download_url = locked_record_download_url(&record)?;
-            let bytes = download_asset(&download_url)?;
+            let download_request = locked_record_download_request(&record)?;
+            let bytes = download_asset(
+                &download_request.url,
+                download_request.auth.as_ref(),
+                download_request.accept,
+            )?;
             let actual = format!("{:x}", Sha256::digest(&bytes));
             if actual != record.sha256 {
                 return Err(BinpmError::DigestMismatch {
@@ -1687,7 +1697,9 @@ fn install_local_from_lock(
                 decision: crate::assets::CandidateDecision {
                     asset_name: record.asset_name.clone(),
                     canonical_url: record.asset_url.clone(),
-                    download_url,
+                    download_url: download_request.url,
+                    download_auth: download_request.auth,
+                    download_accept: download_request.accept,
                     kind: crate::assets::classify_artifact(&record.asset_name, false),
                     detected_os: Some(record.target_os),
                     detected_arch: Some(record.target_arch),
@@ -1716,6 +1728,7 @@ fn install_local_from_lock(
         populated_cache_entry = cache_metadata_snapshot.is_none();
     }
 
+    let install_download_request = locked_record_download_request(&record)?;
     let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
     let mut resolved_for_install = ResolvedAsset {
         source: SourceSpec::from_str(
@@ -1730,7 +1743,9 @@ fn install_local_from_lock(
         decision: crate::assets::CandidateDecision {
             asset_name: record.asset_name.clone(),
             canonical_url: record.asset_url.clone(),
-            download_url: locked_record_download_url(&record)?,
+            download_url: install_download_request.url,
+            download_auth: install_download_request.auth,
+            download_accept: install_download_request.accept,
             kind: crate::assets::classify_artifact(&record.asset_name, false),
             detected_os: Some(record.target_os),
             detected_arch: Some(record.target_arch),
@@ -1873,6 +1888,9 @@ fn validate_locked_record_artifact(
                 name: record.asset_name.clone(),
                 url: record.asset_url.clone(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -1967,7 +1985,13 @@ fn record_matches_current_provider_digest(record: &PackageRecord, assets: &[Rele
     }
 }
 
-fn locked_record_download_url(record: &PackageRecord) -> Result<String> {
+struct DownloadRequest {
+    url: String,
+    auth: Option<ProviderAuth>,
+    accept: Option<&'static str>,
+}
+
+fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
     let spec = locked_release_lookup_spec(record)?;
     let client = client_for_source(&spec)?;
     let selection = client.resolve_release(&spec)?;
@@ -2012,11 +2036,16 @@ fn locked_record_download_url(record: &PackageRecord) -> Result<String> {
             message: "gitlab asset link is not HTTPS eligible".to_string(),
         });
     }
-    Ok(asset
-        .provider_url
-        .as_deref()
-        .unwrap_or(&asset.url)
-        .to_string())
+    Ok(DownloadRequest {
+        url: asset
+            .download_url
+            .as_deref()
+            .or(asset.provider_url.as_deref())
+            .unwrap_or(&asset.url)
+            .to_string(),
+        auth: asset.download_auth.clone(),
+        accept: asset.download_accept,
+    })
 }
 
 fn locked_release_lookup_spec(record: &PackageRecord) -> Result<SourceSpec> {
@@ -2700,10 +2729,13 @@ fn select_manifest_asset(
                 .unwrap_or(&asset.url)
                 .to_string(),
             download_url: asset
-                .provider_url
+                .download_url
                 .as_deref()
+                .or(asset.provider_url.as_deref())
                 .unwrap_or(&asset.url)
                 .to_string(),
+            download_auth: asset.download_auth.clone(),
+            download_accept: asset.download_accept,
             kind,
             detected_os: Some(target.os),
             detected_arch: Some(target.arch),
@@ -2718,9 +2750,8 @@ fn select_manifest_asset(
     let selection =
         select_asset(spec.provider, target, assets).ok_or_else(|| BinpmError::AssetNotFound {
             package: spec.to_string(),
-            target: target_key.clone(),
+            target: target_key,
         })?;
-
     Ok(selection.selected)
 }
 
@@ -3263,7 +3294,11 @@ fn restore_executable_symlink(path: &Path, target: &Path) -> Result<()> {
     })
 }
 
-fn download_asset(url: &str) -> Result<Vec<u8>> {
+fn download_asset(
+    url: &str,
+    auth: Option<&ProviderAuth>,
+    accept: Option<&'static str>,
+) -> Result<Vec<u8>> {
     validate_download_url(url)?;
     let sanitized_url = sanitize_download_diagnostic_url(url);
     let asset_name = download_asset_name(&sanitized_url);
@@ -3275,21 +3310,21 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
     );
     let client = reqwest::blocking::Client::builder()
         .user_agent(concat!("binpm/", env!("CARGO_PKG_VERSION")))
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if let Err(error) = validate_download_url(attempt.url().as_str()) {
-                attempt.error(error)
-            } else if attempt.previous().len() >= 10 {
-                attempt.error("too many redirects while downloading release asset")
-            } else {
-                attempt.follow()
-            }
-        }))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(BinpmError::ReleaseHttpClient)?;
 
     let mut last_error = None;
     for attempt in 1..=DOWNLOAD_RETRY_ATTEMPTS {
-        match download_asset_attempt(&client, url, attempt, &sanitized_url, &asset_name) {
+        match download_asset_attempt(
+            &client,
+            url,
+            auth,
+            accept,
+            attempt,
+            &sanitized_url,
+            &asset_name,
+        ) {
             Ok(bytes) => return Ok(bytes),
             Err(error)
                 if attempt < DOWNLOAD_RETRY_ATTEMPTS && is_retryable_download_error(&error) =>
@@ -3322,15 +3357,62 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
 fn download_asset_attempt(
     client: &reqwest::blocking::Client,
     url: &str,
+    auth: Option<&ProviderAuth>,
+    accept: Option<&'static str>,
     attempt: usize,
     sanitized_url: &str,
     asset_name: &str,
 ) -> Result<Vec<u8>> {
-    let mut response = client
-        .get(url)
-        .send()
-        .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
-    validate_download_url(response.url().as_str())?;
+    let origin = reqwest::Url::parse(url).expect("download URL was already validated");
+    let mut current_url = url.to_string();
+    let mut visited_urls = BTreeSet::new();
+    let mut redirects = 0usize;
+    let mut response = loop {
+        if !visited_urls.insert(current_url.clone()) {
+            return Err(BinpmError::UnsafeUrl {
+                url: sanitize_download_diagnostic_url(&current_url),
+                message: "release asset redirect loop detected".to_string(),
+            });
+        }
+        let current = reqwest::Url::parse(&current_url).map_err(|_| BinpmError::UnsafeUrl {
+            url: sanitize_download_diagnostic_url(&current_url),
+            message: "persisted release asset URLs must be valid https URLs".to_string(),
+        })?;
+        validate_download_url(current.as_str())?;
+        let mut request = client.get(current.as_str());
+        if let Some(accept) = accept {
+            request = request.header(reqwest::header::ACCEPT, accept);
+        }
+        if let Some(auth) = auth.filter(|_| same_download_origin(&origin, &current)) {
+            request = request.header(auth.header_name, auth.header_value.as_str());
+        }
+
+        let response = request
+            .send()
+            .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
+        validate_download_url(response.url().as_str())?;
+        let status = response.status();
+        if !status.is_redirection() {
+            break response;
+        }
+        let Some(next_url) = response
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|location| location.to_str().ok())
+            .and_then(|location| response.url().join(location).ok())
+            .map(|location| location.to_string())
+        else {
+            break response;
+        };
+        redirects += 1;
+        if redirects > 10 {
+            return Err(BinpmError::UnsafeUrl {
+                url: sanitize_download_diagnostic_url(&next_url),
+                message: "release asset redirect chain exceeded limit".to_string(),
+            });
+        }
+        current_url = next_url;
+    };
     let final_url = sanitize_download_diagnostic_url(response.url().as_str());
     let status = response.status();
     if !status.is_success() {
@@ -3404,6 +3486,12 @@ fn download_asset_attempt(
         "Downloaded release asset"
     );
     Ok(bytes)
+}
+
+fn same_download_origin(left: &reqwest::Url, right: &reqwest::Url) -> bool {
+    left.scheme() == right.scheme()
+        && left.host_str() == right.host_str()
+        && left.port_or_known_default() == right.port_or_known_default()
 }
 
 fn is_retryable_download_error(error: &BinpmError) -> bool {
@@ -6521,6 +6609,9 @@ mod tests {
                 "https://gitlab.com/owner/tool/-/releases/v1/downloads/tool-linux?token=secret"
                     .to_string(),
             ),
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: Some(false),
@@ -6543,6 +6634,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6552,6 +6646,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6581,6 +6678,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6590,6 +6690,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6617,6 +6720,9 @@ mod tests {
             name: "tool-linux-x64".to_string(),
             url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64".to_string(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: None,
@@ -6636,6 +6742,9 @@ mod tests {
             name: "tool-x86_64-unknown-linux-gnu.tar.gz".to_string(),
             url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz".to_string(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: None,
@@ -6657,6 +6766,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6666,6 +6778,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6687,6 +6802,8 @@ mod tests {
             asset_name: "tool".to_string(),
             canonical_url: "https://token@example.com/tool".to_string(),
             download_url: "https://token@example.com/tool".to_string(),
+            download_auth: None,
+            download_accept: None,
             kind: ArtifactKind::BareExecutable,
             detected_os: Some(TargetOs::Linux),
             detected_arch: Some(TargetArch::X86_64),
@@ -6802,6 +6919,9 @@ mod tests {
                 name: record.asset_name.clone(),
                 url: record.asset_url.clone(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6811,6 +6931,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool-x86_64-unknown-linux-gnu"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6838,6 +6961,9 @@ mod tests {
             url: "https://github.com/owner/tool/releases/download/1.0.0/renamed-tool-linux"
                 .to_string(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: None,
@@ -6864,6 +6990,9 @@ mod tests {
             name: record.asset_name.clone(),
             url: record.asset_url.clone(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: Some(format!("sha256:{changed_digest}")),
             source_archive: false,
             final_url_https: None,
@@ -6889,6 +7018,9 @@ mod tests {
             name: record.asset_name.clone(),
             url: record.asset_url.clone(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: Some(format!("sha256:{changed_digest}")),
             source_archive: false,
             final_url_https: None,
@@ -6913,6 +7045,9 @@ mod tests {
             name: record.asset_name.clone(),
             url: record.asset_url.clone(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: Some(format!("sha256:{}", record.sha256)),
             source_archive: false,
             final_url_https: None,
@@ -6929,6 +7064,9 @@ mod tests {
             name: record.asset_name.clone(),
             url: record.asset_url.clone(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: None,
@@ -6944,6 +7082,9 @@ mod tests {
             name: record.asset_name.clone(),
             url: record.asset_url.clone(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: Some(format!("sha256:{}", record.sha256)),
             source_archive: false,
             final_url_https: None,
@@ -7856,6 +7997,8 @@ mod tests {
                     .to_string(),
                 download_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
                     .to_string(),
+                download_auth: None,
+                download_accept: None,
                 kind: ArtifactKind::BareExecutable,
                 detected_os: Some(TargetOs::Linux),
                 detected_arch: Some(TargetArch::X86_64),

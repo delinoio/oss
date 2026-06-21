@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, env};
+use std::{collections::BTreeSet, env, fmt};
 
 use chrono::{DateTime, Utc};
 use reqwest::{
@@ -21,12 +21,24 @@ const GITHUB_TOKEN_ENV: &str = "BINPM_GITHUB_TOKEN";
 const GITHUB_TOKEN_ENV_LEGACY: &str = "GITHUB_TOKEN";
 const GITLAB_TOKEN_ENV: &str = "BINPM_GITLAB_TOKEN";
 const GITLAB_TOKEN_ENV_LEGACY: &str = "GITLAB_TOKEN";
+pub(crate) const GITHUB_ASSET_DOWNLOAD_ACCEPT: &str = "application/octet-stream";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ProviderAuth {
-    header_name: &'static str,
-    header_value: String,
-    env_var: String,
+#[derive(Clone, PartialEq, Eq)]
+pub struct ProviderAuth {
+    pub(crate) header_name: &'static str,
+    pub(crate) header_value: String,
+    pub(crate) env_var: String,
+}
+
+impl fmt::Debug for ProviderAuth {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderAuth")
+            .field("header_name", &self.header_name)
+            .field("header_value", &"<redacted>")
+            .field("env_var", &self.env_var)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,6 +55,9 @@ pub struct ReleaseAsset {
     pub name: String,
     pub url: String,
     pub provider_url: Option<String>,
+    pub download_url: Option<String>,
+    pub download_auth: Option<ProviderAuth>,
+    pub download_accept: Option<&'static str>,
     pub digest: Option<String>,
     pub source_archive: bool,
     pub final_url_https: Option<bool>,
@@ -139,6 +154,9 @@ impl ReleaseClient for GitHubReleaseClient {
                             name: asset.name,
                             url: asset.browser_download_url,
                             provider_url: None,
+                            download_url: auth.as_ref().map(|_| asset.url.clone()),
+                            download_auth: auth.clone(),
+                            download_accept: auth.as_ref().map(|_| GITHUB_ASSET_DOWNLOAD_ACCEPT),
                             digest: asset.digest,
                             source_archive: false,
                             final_url_https: None,
@@ -195,7 +213,7 @@ impl ReleaseClient for GitLabReleaseClient {
         let mut releases =
             fetch_paginated_json::<GitLabRelease>(&self.http, source, &url, None, auth.as_ref())?
                 .into_iter()
-                .map(|release| release.into_release(self.now))
+                .map(|release| release.into_release_with_auth(self.now, auth.as_ref()))
                 .collect::<Vec<_>>();
 
         sort_gitlab_releases(&mut releases);
@@ -639,6 +657,7 @@ struct GitHubRelease {
 
 #[derive(Debug, Deserialize)]
 struct GitHubAsset {
+    url: String,
     name: String,
     browser_download_url: String,
     digest: Option<String>,
@@ -655,7 +674,12 @@ struct GitLabRelease {
 }
 
 impl GitLabRelease {
+    #[cfg(test)]
     fn into_release(self, now: DateTime<Utc>) -> Release {
+        self.into_release_with_auth(now, None)
+    }
+
+    fn into_release_with_auth(self, now: DateTime<Utc>, auth: Option<&ProviderAuth>) -> Release {
         let mut stable = true;
         let mut reason = None;
 
@@ -693,6 +717,9 @@ impl GitLabRelease {
                     name: gitlab_link_asset_name(&link),
                     url: link.url,
                     provider_url: link.direct_asset_url,
+                    download_url: None,
+                    download_auth: auth.cloned(),
+                    download_accept: None,
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
@@ -701,6 +728,9 @@ impl GitLabRelease {
                     name: source.format,
                     url: source.url,
                     provider_url: None,
+                    download_url: None,
+                    download_auth: auth.cloned(),
+                    download_accept: None,
                     digest: None,
                     source_archive: true,
                     final_url_https: None,
@@ -823,14 +853,15 @@ fn verify_gitlab_asset_redirects(releases: &mut [Release]) -> Result<()> {
             }
             crate::storage::validate_download_url(url)?;
 
-            let final_url = match resolve_gitlab_asset_redirect_url(&http, url) {
-                Ok(final_url) => final_url,
-                Err(BinpmError::ReleaseLookup(_)) => {
-                    asset.final_url_https = Some(false);
-                    continue;
-                }
-                Err(error) => return Err(error),
-            };
+            let final_url =
+                match resolve_gitlab_asset_redirect_url(&http, url, asset.download_auth.as_ref()) {
+                    Ok(final_url) => final_url,
+                    Err(BinpmError::ReleaseLookup(_)) => {
+                        asset.final_url_https = Some(false);
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
             let final_url_https = is_https_url(&final_url);
             debug!(
                 release_tag = release.tag,
@@ -847,7 +878,12 @@ fn verify_gitlab_asset_redirects(releases: &mut [Release]) -> Result<()> {
     Ok(())
 }
 
-fn resolve_gitlab_asset_redirect_url(http: &Client, url: &str) -> Result<String> {
+fn resolve_gitlab_asset_redirect_url(
+    http: &Client,
+    url: &str,
+    auth: Option<&ProviderAuth>,
+) -> Result<String> {
+    let origin = Url::parse(url).expect("GitLab asset URL was already validated");
     let mut current_url = url.to_string();
     let mut visited_urls = BTreeSet::new();
 
@@ -862,8 +898,16 @@ fn resolve_gitlab_asset_redirect_url(http: &Client, url: &str) -> Result<String>
         }
         crate::storage::validate_download_url(&current_url)?;
 
-        let response = http
-            .head(&current_url)
+        let current = Url::parse(&current_url).map_err(|error| BinpmError::UnsafeUrl {
+            url: sanitize_url(&current_url),
+            message: format!("invalid release asset redirect URL: {error}"),
+        })?;
+        let mut request = http.head(current.as_str());
+        if let Some(auth) = auth.filter(|_| same_origin(&origin, &current)) {
+            request = request.header(auth.header_name, auth.header_value.as_str());
+        }
+
+        let response = request
             .send()
             .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?
             .error_for_status()
@@ -884,6 +928,12 @@ fn resolve_gitlab_asset_redirect_url(http: &Client, url: &str) -> Result<String>
         url: sanitize_url(&current_url),
         message: "release asset redirect chain exceeded limit".to_string(),
     })
+}
+
+fn same_origin(left: &Url, right: &Url) -> bool {
+    left.scheme() == right.scheme()
+        && left.host_str() == right.host_str()
+        && left.port_or_known_default() == right.port_or_known_default()
 }
 
 fn is_https_url(url: &str) -> bool {
@@ -1114,6 +1164,45 @@ mod tests {
     }
 
     #[test]
+    fn gitlab_release_assets_keep_provider_auth_for_downloads_and_probes() {
+        let source: SourceSpec = "gitlab:gitlab.example.com/group/tool"
+            .parse()
+            .expect("source");
+        let auth = provider_auth_for_source_with(&source, |name| match name {
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM" => Some("self-managed-token".to_string()),
+            _ => None,
+        })
+        .expect("auth");
+        let release = GitLabRelease {
+            tag_name: "v1.0.0".to_string(),
+            released_at: None,
+            upcoming_release: false,
+            assets: super::GitLabAssets {
+                links: vec![super::GitLabLink {
+                    name: "linux amd64".to_string(),
+                    url: "https://gitlab.example.com/group/tool/-/releases/v1/downloads/tool-linux-amd64.tar.gz".to_string(),
+                    direct_asset_url: Some(
+                        "https://gitlab.example.com/group/tool/-/releases/v1/downloads/tool-linux-amd64.tar.gz".to_string(),
+                    ),
+                }],
+                sources: Vec::new(),
+            },
+        }
+        .into_release_with_auth(
+            Utc.with_ymd_and_hms(2026, 6, 19, 0, 0, 0).unwrap(),
+            Some(&auth),
+        );
+
+        assert_eq!(
+            release.assets[0]
+                .download_auth
+                .as_ref()
+                .map(|auth| (auth.header_name, auth.header_value.as_str())),
+            Some(("PRIVATE-TOKEN", "self-managed-token"))
+        );
+    }
+
+    #[test]
     fn release_lookup_diagnostic_distinguishes_missing_auth_and_permissions() {
         let source: SourceSpec = "github:owner/private".parse().expect("source");
         let headers = header::HeaderMap::new();
@@ -1310,6 +1399,9 @@ mod tests {
                 name: "source".to_string(),
                 url: "https://example.com/source.tar.gz".to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: true,
                 final_url_https: None,
@@ -1334,6 +1426,9 @@ mod tests {
                     name: "tool-x86_64-unknown-linux-gnu.tar.gz.sha256".to_string(),
                     url: "https://127.0.0.1:9/tool.tar.gz.sha256".to_string(),
                     provider_url: None,
+                    download_url: None,
+                    download_auth: None,
+                    download_accept: None,
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
@@ -1342,6 +1437,9 @@ mod tests {
                     name: "tool.dmg".to_string(),
                     url: "https://127.0.0.1:9/tool.dmg".to_string(),
                     provider_url: None,
+                    download_url: None,
+                    download_auth: None,
+                    download_accept: None,
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
@@ -1350,6 +1448,9 @@ mod tests {
                     name: "latest.json".to_string(),
                     url: "https://127.0.0.1:9/latest.json".to_string(),
                     provider_url: None,
+                    download_url: None,
+                    download_auth: None,
+                    download_accept: None,
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
@@ -1377,6 +1478,9 @@ mod tests {
                 name: "tool-x86_64-unknown-linux-gnu".to_string(),
                 url: "https://token@127.0.0.1:9/tool".to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -1400,6 +1504,9 @@ mod tests {
                 name: "tool-x86_64-unknown-linux-gnu".to_string(),
                 url: "https://127.0.0.1:9/tool".to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
