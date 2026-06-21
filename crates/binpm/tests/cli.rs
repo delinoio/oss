@@ -508,7 +508,10 @@ fn doctor_json_reports_path_states() {
     assert_eq!(payload["manifest"], "present");
     assert_eq!(payload["lockfile"], "missing");
     assert_eq!(payload["global_home"], home.display().to_string());
-    assert_eq!(payload["global_bin"], home.join("bin").display().to_string());
+    assert_eq!(
+        payload["global_bin"],
+        home.join("bin").display().to_string()
+    );
     assert_eq!(payload["global_bin_on_path"], false);
 }
 
