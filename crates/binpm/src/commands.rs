@@ -5675,7 +5675,8 @@ mod tests {
         std::env::set_current_dir(prior_cwd).expect("restore cwd");
         assert_eq!(result.expect("execute probe"), 0);
         let output = fs::read_to_string(output_path).expect("read output");
-        assert!(output.contains(&format!("pwd={}", work_dir.display())));
+        let expected_work_dir = work_dir.canonicalize().unwrap_or_else(|_| work_dir.clone());
+        assert!(output.contains(&format!("pwd={}", expected_work_dir.display())));
         assert!(output.contains("args=--flag|value with spaces"));
     }
 
@@ -7251,6 +7252,14 @@ mod tests {
     fn global_remove_preserves_darwin_case_insensitive_path_owned_by_remaining_record() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
+        paths.ensure().expect("create paths");
+        let case_probe = paths.packages.join("case-probe");
+        std::fs::write(&case_probe, "probe").expect("write case probe");
+        let case_insensitive_records = paths.packages.join("CASE-PROBE").exists();
+        std::fs::remove_file(&case_probe).expect("remove case probe");
+        if case_insensitive_records {
+            return;
+        }
         let mut removed = package_record();
         removed.target_os = TargetOs::Darwin;
         removed.installed_path = paths.bin.join("foo").display().to_string();

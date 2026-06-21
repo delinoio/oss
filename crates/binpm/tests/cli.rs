@@ -942,7 +942,11 @@ source = "github:owner/tool-exe"
     fs::write(project.join(".binpm").join("bin").join("tool"), "tool").expect("write tool");
     let tool_path = project.join(".binpm").join("bin").join("tool");
     let tool_exe_path = project.join(".binpm").join("bin").join("tool.exe");
+    let canonical_tool_path = tool_path.canonicalize().expect("canonical tool path");
     fs::write(&tool_exe_path, "tool exe").expect("write tool.exe");
+    let canonical_tool_exe_path = tool_exe_path
+        .canonicalize()
+        .expect("canonical tool.exe path");
     fs::write(
         project.join(".binpm").join("packages").join("tool.toml"),
         format!(
@@ -966,7 +970,7 @@ checksum_source = "local"
 signature_available = false
 signature_verified = false
 "#,
-            tool_path.display()
+            canonical_tool_path.display()
         ),
     )
     .expect("write tool package record");
@@ -996,7 +1000,7 @@ checksum_source = "local"
 signature_available = false
 signature_verified = false
 "#,
-            tool_exe_path.display()
+            canonical_tool_exe_path.display()
         ),
     )
     .expect("write tool.exe package record");

@@ -57,6 +57,10 @@ export default defineConfig({
               link: "/cache-and-verification",
             },
             {
+              text: "Releases",
+              link: "/releases",
+            },
+            {
               text: "Troubleshooting",
               link: "/troubleshooting",
             },

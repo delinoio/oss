@@ -8,6 +8,7 @@ const documentedRouteIds = [
   "/commands",
   "/local-tooling",
   "/cache-and-verification",
+  "/releases",
   "/troubleshooting",
   "/reference",
 ];
