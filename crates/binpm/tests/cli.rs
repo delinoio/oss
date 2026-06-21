@@ -210,7 +210,10 @@ fn global_update_reports_pending_workaround() {
         .stdout(predicate::str::contains("update scope: global"))
         .stderr(predicate::str::contains("pending implementation"))
         .stderr(predicate::str::contains("binpm outdated --global"))
-        .stderr(predicate::str::contains("binpm install <source>"))
+        .stderr(predicate::str::contains("binpm info --global <cmd>"))
+        .stderr(predicate::str::contains(
+            "binpm install <source> --as <cmd> --bin <selected_binary>",
+        ))
         .stderr(predicate::str::contains("binpm update --local"));
 }
 

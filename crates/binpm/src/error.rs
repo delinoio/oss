@@ -30,8 +30,9 @@ pub enum BinpmError {
     NotImplemented { command: &'static str },
     #[error(
         "`binpm update --global` is pending implementation. Workaround: run `binpm outdated \
-         --global` to find stale global tools, then reinstall each one with `binpm install \
-         <source>`. Use `binpm update --local` for project tools."
+         --global` to find stale global tools, inspect each one with `binpm info --global <cmd>`, \
+         then reinstall with `binpm install <source> --as <cmd> --bin <selected_binary>`. Use \
+         `binpm update --local` for project tools."
     )]
     GlobalUpdatePending,
     #[error("Invalid source spec `{raw}`: {message}")]
