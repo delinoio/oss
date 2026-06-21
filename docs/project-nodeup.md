@@ -16,6 +16,7 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 
 ## Cross-Domain Invariants
 - Stable channel naming and runtime dispatch semantics must be preserved.
+- Exact-version runtime selectors are immutable pins for `nodeup update`; they are canonicalized to `v<semver>` when tracked and are semantically deduplicated with non-`v` inputs.
 - Shim behavior must remain deterministic across supported operating systems.
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.

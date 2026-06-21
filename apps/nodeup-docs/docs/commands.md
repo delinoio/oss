@@ -106,7 +106,9 @@ Behavior by selector:
 
 - Linked runtime names are skipped with `skipped-linked-runtime`.
 - Channels resolve to the current channel version and install it if needed.
-- Exact versions install a newer available version when the release index contains one.
+- Exact versions are immutable pins. They are skipped with `skipped-exact-version`, and `previous_runtime` and `updated_runtime` both report the pinned runtime.
+
+Tracked exact versions are canonicalized and deduplicated by semantic version. For example, tracking both `22.1.0` and `v22.1.0` results in one tracked selector, `v22.1.0`.
 
 JSON output is an array with `selector`, `previous_runtime`, `updated_runtime`, and `status`.
 
