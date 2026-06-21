@@ -240,7 +240,10 @@ signature_verified = false
 
 ## Logging
 - Use structured `tracing` logs for manifest discovery, lockfile parsing, release lookup, target normalization, asset candidate scoring, checksum discovery, download, extraction, binary discovery, install finalization, and `binpm x` command execution.
-- The initial skeleton uses `BINPM_LOG` as the binpm-specific `tracing_subscriber` env filter, defaults to `binpm=warn`, and supports `BINPM_LOG_COLOR` plus `NO_COLOR` for ANSI color control.
+- `binpm -v` and `binpm --verbose` are stable global flags that set the binpm tracing filter to `binpm=info`.
+- `binpm --debug` is a stable global flag that sets the binpm tracing filter to `binpm=debug`.
+- `BINPM_LOG` remains supported as the binpm-specific `tracing_subscriber` env filter when no CLI verbosity flag is present. Deterministic precedence is: `--debug`, then `-v`/`--verbose`, then non-empty `BINPM_LOG`, then the default `binpm=warn`.
+- Tracing color is controlled independently by `BINPM_LOG_COLOR` and `NO_COLOR`; verbosity flags must not change ANSI color policy.
 - Candidate scoring logs must include normalized package spec, source provider, source host, release tag, asset name, detected OS, detected architecture, detected libc/ABI, artifact kind, score, and rejection reason when applicable.
 - Download and cache logs must include sanitized URL origin, asset name, byte count when known, cache hit or miss state, cache key, cache path, cache action, cache validation source, cache reused state, cache eviction state, retry attempt, and final outcome.
 - Install logs must include package spec, release tag, selected asset, selected archive member or bare executable, installed path, manifest path, lockfile path when local, and whether the install is global or project-local.
@@ -248,6 +251,13 @@ signature_verified = false
 - `binpm x` logs must include local project root when present, resolved command, explicit package spec when used, PATH entries added by binpm, install-on-demand state, process exit status, and whether command resolution came from `binpm.toml` or `--package`.
 - Diagnostic command logs for `doctor`, `explain`, `verify`, and `cache key` must include enough structured context to distinguish read-only inspection from mutating install or update flows.
 - Human CLI output may be concise, but debug logs must be sufficient to reconstruct why a candidate won or lost.
+- Failures in release lookup, asset selection, download streaming, or verification must mention `--verbose` or `--debug` when structured diagnostics are likely to help.
+
+## Download Progress
+- Interactive installs must show human-facing progress on stderr for large or unknown-size release asset downloads. Progress output may be concise, but it must reassure users that the download is active and include a human-readable byte count when available.
+- Non-interactive output, including redirected stderr and `CI=true`, must not emit periodic progress lines so scripts and CI logs stay stable.
+- Retry messages for retryable download failures must explain which asset is being retried and the retry attempt, but must never include credentials, query strings, fragments, or expiring signed URL parameters.
+- Download logs and progress diagnostics must use sanitized URLs that remove query strings and fragments and redact URL userinfo before display.
 
 ## Build and Test
 - Local validation for binpm runtime changes must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.
