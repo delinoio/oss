@@ -2044,7 +2044,7 @@ fn read_tar_selected_binary<R: Read>(
         members.push(ArchiveMember {
             path: path.clone(),
             executable,
-            missing_executable_metadata: !executable && target.os != TargetOs::Windows,
+            missing_executable_metadata: false,
         });
         member_bytes.insert(path, bytes);
     }
@@ -2097,11 +2097,13 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
                 message: "non-regular zip entries are not installable".to_string(),
             });
         }
-        let has_executable_mode = file
-            .unix_mode()
-            .map(|mode| mode & 0o111 != 0)
-            .unwrap_or(false);
+        let unix_mode = file.unix_mode();
+        let has_executable_mode = unix_mode.map(|mode| mode & 0o111 != 0).unwrap_or(false);
         let executable = has_executable_mode || archive_exe_is_executable(&path, target);
+        let missing_executable_metadata = unix_mode.is_none()
+            && !executable
+            && target.os != TargetOs::Windows
+            && !path.to_ascii_lowercase().ends_with(".exe");
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)
             .map_err(|error| BinpmError::ArchiveExtraction {
@@ -2114,7 +2116,7 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
         members.push(ArchiveMember {
             path: path.clone(),
             executable,
-            missing_executable_metadata: !executable && target.os != TargetOs::Windows,
+            missing_executable_metadata,
         });
         member_bytes.insert(path, bytes);
     }
@@ -2176,16 +2178,16 @@ fn select_archive_member(
             });
         }
         let explicit_path = validate_archive_member_path(asset_name, Path::new(explicit_binary))?;
-        if members
-            .iter()
-            .any(|member| member.path == explicit_path && member.executable)
-        {
+        if members.iter().any(|member| {
+            member.path == explicit_path
+                && (member.executable || member.missing_executable_metadata)
+        }) {
             explicit_path
         } else {
             let matches = members
                 .iter()
                 .filter(|member| {
-                    member.executable
+                    (member.executable || member.missing_executable_metadata)
                         && archive_binary_name_matches(target, &member.path, explicit_binary)
                 })
                 .map(|member| member.path.clone())
@@ -4152,6 +4154,51 @@ mod tests {
     }
 
     #[test]
+    fn archive_extraction_does_not_recover_explicitly_non_executable_zip_entry() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(&archive_path, &[("pkg/tool", b"config".as_slice(), 0o644)]);
+
+        let error = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect_err("explicitly non-executable zip entry is not recovered");
+
+        assert!(matches!(error, BinpmError::ArchiveBinaryNotFound { .. }));
+    }
+
+    #[test]
+    fn archive_extraction_recovers_explicit_member_without_unix_permissions() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("pkg/foo", b"#!/bin/sh\necho foo\n".as_slice()),
+                ("pkg/bar", b"#!/bin/sh\necho bar\n".as_slice()),
+            ],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            Some("pkg/foo"),
+        )
+        .expect("explicit missing-metadata member is recovered");
+
+        assert_eq!(selected.path, "pkg/foo");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho foo\n");
+    }
+
+    #[test]
     fn zip_extraction_recovers_missing_executable_metadata_for_unambiguous_binary() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let archive_path = temp_dir.path().join("tool.zip");
@@ -4223,9 +4270,9 @@ mod tests {
     fn archive_extraction_ignores_exe_candidates_on_non_windows_targets() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let archive_path = temp_dir.path().join("tool.zip");
-        write_zip(
+        write_zip_without_unix_permissions(
             &archive_path,
-            &[("pkg/tool.exe", b"windows".as_slice(), 0o644)],
+            &[("pkg/tool.exe", b"windows".as_slice())],
         );
 
         let error = read_archive_selected_binary(
@@ -7313,6 +7360,19 @@ mod tests {
             writer.write_all(bytes).expect("write zip entry");
         }
         writer.finish().expect("finish zip");
+
+        let mut bytes = fs::read(path).expect("read zip for metadata patch");
+        let mut index = 0;
+        while index + 46 <= bytes.len() {
+            if bytes[index..].starts_with(&[0x50, 0x4b, 0x01, 0x02]) {
+                bytes[index + 5] = 0;
+                bytes[index + 38..index + 42].copy_from_slice(&0u32.to_le_bytes());
+                index += 46;
+            } else {
+                index += 1;
+            }
+        }
+        fs::write(path, bytes).expect("write zip metadata patch");
     }
 
     fn mark_github_verified(record: &mut PackageRecord) {

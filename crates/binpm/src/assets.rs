@@ -195,7 +195,7 @@ pub fn discover_archive_binary(
         .iter()
         .filter(|member| {
             member.missing_executable_metadata
-                && recoverable_archive_binary_name(repo_name, &member.path)
+                && recoverable_archive_binary_name(repo_name, target, &member.path)
         })
         .map(|member| member.path.clone())
         .collect::<Vec<_>>();
@@ -252,8 +252,12 @@ fn discover_archive_binary_from_candidates(
     }
 }
 
-fn recoverable_archive_binary_name(repo_name: &str, path: &str) -> bool {
-    normalized_binary_name(basename(path)) == normalized_binary_name(repo_name)
+fn recoverable_archive_binary_name(repo_name: &str, target: &HostTarget, path: &str) -> bool {
+    let basename = basename(path);
+    if target.os != TargetOs::Windows && basename.to_ascii_lowercase().ends_with(".exe") {
+        return false;
+    }
+    normalized_binary_name(basename) == normalized_binary_name(repo_name)
 }
 
 pub(crate) fn target_archive_candidates(
@@ -1117,6 +1121,15 @@ mod tests {
                     member("linux-x64/LICENSE", false)
                 ],
             ),
+            BinaryDiscovery::NotFound
+        );
+    }
+
+    #[test]
+    fn archive_binary_discovery_does_not_recover_windows_exe_on_posix_target() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        assert_eq!(
+            discover_archive_binary("tool", &host, &[member("pkg/tool.exe", false)]),
             BinaryDiscovery::NotFound
         );
     }
