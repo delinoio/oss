@@ -1,6 +1,36 @@
 # Installation
 
-Nodeup is distributed as first-party release artifacts. Install flows are designed for supported macOS, Linux, and Windows x64/arm64 hosts.
+Nodeup is distributed as first-party release artifacts. Install flows are designed for macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64 hosts.
+
+This page is published at https://nodeup.delino.io/installation.
+
+## binpm
+
+Use [binpm](https://binpm.delino.io) to install Nodeup from the first-party `delinoio/oss` release asset for a pinned Nodeup release tag:
+
+macOS and Linux (bash/zsh):
+
+```bash
+NODEUP_BINPM_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/nodeup-binpm"
+mkdir -p "$NODEUP_BINPM_HOME"
+cd "$NODEUP_BINPM_HOME"
+[ -f binpm.toml ] || binpm init
+binpm add nodeup github:delinoio/oss@nodeup@v<semver>
+binpm env --shell <shell>
+```
+
+Windows PowerShell:
+
+```powershell
+$env:NODEUP_BINPM_HOME = Join-Path ${env:LOCALAPPDATA} "nodeup-binpm"
+New-Item -ItemType Directory -Force -Path $env:NODEUP_BINPM_HOME | Out-Null
+Set-Location $env:NODEUP_BINPM_HOME
+if (-not (Test-Path -LiteralPath "binpm.toml")) { binpm init }
+binpm add nodeup github:delinoio/oss@nodeup@v<semver>
+binpm env --shell powershell
+```
+
+Replace `<semver>` with the Nodeup release version to install. Nodeup release tags use `nodeup@v<semver>`. The `NODEUP_BINPM_HOME` directory keeps binpm's local manifest and `nodeup` binary out of unrelated project worktrees. In bash or zsh, replace `<shell>` with `bash` or `zsh`. Apply the printed environment command before verifying the install.
 
 ## Homebrew
 
@@ -25,6 +55,8 @@ The repository maintains direct installers at:
 - `scripts/install/nodeup.ps1`
 
 Direct installers verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`) with `cosign`. They support bundle-enabled releases only.
+
+Direct installers detect unsupported x86 hosts before resolving release tags or downloading assets. Use an x64/arm64 host or a supported CI image when an installer reports an unsupported host.
 
 macOS and Linux:
 
@@ -94,7 +126,7 @@ Nodeup runtime installation and shim dispatch support:
 | Windows | x64 | `node-v<version>-win-x64.zip` |
 | Windows | arm64 | `node-v<version>-win-arm64.zip` |
 
-x86 hosts are unsupported.
+x86 hosts are unsupported. Runtime installation and shim dispatch fail with `unsupported-platform` before archive download or delegated command planning. JSON errors include deterministic diagnostics: `os`, `architecture`, `platform_source`, optional `forced_platform`, and `supported_platforms`.
 
 ## Local Directories
 
@@ -116,3 +148,4 @@ Mirror overrides:
 - `NODEUP_DOWNLOAD_BASE_URL`
 
 The release index cache TTL defaults to 600 seconds and can be changed with `NODEUP_RELEASE_INDEX_TTL_SECONDS`.
+The value must be a non-negative integer number of seconds. Invalid values such as an empty string, `-1`, or `abc` keep the 600-second fallback and emit a safe diagnostic category without exposing the raw value.

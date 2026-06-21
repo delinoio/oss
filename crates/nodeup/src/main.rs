@@ -4,7 +4,7 @@ use clap::Parser;
 use nodeup::{
     cli::{Cli, OutputColorMode},
     commands, dispatch,
-    errors::NodeupError,
+    errors::{ErrorKind, NodeupError, NodeupErrorEnvelope},
     logging, output_style,
     types::ManagedAlias,
     NodeupApp,
@@ -19,16 +19,10 @@ fn main() {
 
     match run() {
         Ok(code) => std::process::exit(code),
-        Err(error) => {
+        Err(RunError::Nodeup(error)) => {
             if json_error_output_requested {
                 let envelope = error.json_envelope();
-                match serde_json::to_string(&envelope) {
-                    Ok(payload) => eprintln!("{payload}"),
-                    Err(serialize_error) => eprintln!(
-                        "nodeup error: {} (failed to serialize JSON error payload: {})",
-                        error.message, serialize_error
-                    ),
-                }
+                emit_json_error_envelope(&envelope, &error.message);
             } else {
                 eprintln!(
                     "{}",
@@ -37,18 +31,65 @@ fn main() {
             }
             std::process::exit(error.exit_code());
         }
+        Err(RunError::Clap(error)) => {
+            if matches!(
+                error.kind(),
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion
+            ) {
+                error.exit();
+            }
+
+            if json_error_output_requested {
+                let envelope = clap_error_envelope(&error);
+                emit_json_error_envelope(&envelope, &envelope.message);
+                std::process::exit(envelope.exit_code);
+            }
+
+            error.exit();
+        }
     }
 }
 
-fn run() -> Result<i32, NodeupError> {
+fn run() -> Result<i32, RunError> {
     let app = NodeupApp::new()?;
 
     if let Some(exit_code) = dispatch::dispatch_managed_alias_if_needed(&app)? {
         return Ok(exit_code);
     }
 
-    let cli = Cli::parse();
-    commands::execute(cli, &app)
+    let cli = Cli::try_parse().map_err(RunError::Clap)?;
+    commands::execute(cli, &app).map_err(RunError::Nodeup)
+}
+
+#[derive(Debug)]
+enum RunError {
+    Nodeup(NodeupError),
+    Clap(clap::Error),
+}
+
+impl From<NodeupError> for RunError {
+    fn from(value: NodeupError) -> Self {
+        Self::Nodeup(value)
+    }
+}
+
+fn clap_error_envelope(error: &clap::Error) -> NodeupErrorEnvelope {
+    NodeupErrorEnvelope {
+        kind: ErrorKind::InvalidInput,
+        message: error.to_string().trim().to_string(),
+        exit_code: error.exit_code(),
+        diagnostics: None,
+    }
+}
+
+fn emit_json_error_envelope(envelope: &NodeupErrorEnvelope, fallback_message: &str) {
+    match serde_json::to_string(envelope) {
+        Ok(payload) => eprintln!("{payload}"),
+        Err(serialize_error) => eprintln!(
+            "nodeup error: {} (failed to serialize JSON error payload: {})",
+            fallback_message, serialize_error
+        ),
+    }
 }
 
 fn logging_context() -> logging::LoggingContext {

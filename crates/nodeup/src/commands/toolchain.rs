@@ -7,9 +7,11 @@ use crate::{
     cli::{OutputColorMode, OutputFormat, ToolchainCommand, ToolchainListDetail},
     commands::print_output,
     errors::{NodeupError, Result},
+    release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
     selectors::{is_reserved_channel_selector_token, is_valid_linked_name, RuntimeSelector},
     store::runtime_executable_path,
+    types::PlatformTarget,
     NodeupApp,
 };
 
@@ -24,6 +26,8 @@ struct ToolchainInstallResult {
     selector: String,
     runtime: String,
     status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
 
 pub fn execute(
@@ -148,11 +152,27 @@ fn install(
         ));
     }
 
+    PlatformTarget::ensure_supported_host("runtime installation")?;
+
     let mut results = Vec::new();
     for runtime in runtimes {
-        let resolved = app
-            .resolver
-            .resolve_selector_with_source(runtime, crate::types::RuntimeSelectorSource::Explicit)?;
+        let selector = RuntimeSelector::parse(runtime)?;
+        if matches!(selector, RuntimeSelector::LinkedName(_)) {
+            return Err(NodeupError::invalid_input_with_hint(
+                format!(
+                    "`toolchain install` only supports semantic version or channel selectors \
+                     (selector={runtime})"
+                ),
+                "Use selectors like `22.1.0`, `v22.1.0`, `lts`, `current`, or `latest`. Linked \
+                 runtimes are added with `nodeup toolchain link <name> <path>`.",
+            ));
+        }
+
+        let resolved = app.resolver.resolve_selector_with_source(
+            &selector.stable_id(),
+            crate::types::RuntimeSelectorSource::Explicit,
+        )?;
+        let release_index = app.resolver.release_index_diagnostic();
 
         let version = match resolved.target {
             ResolvedRuntimeTarget::Version { version } => version,
@@ -189,13 +209,39 @@ fn install(
             selector: runtime.clone(),
             runtime: report.version,
             status: status.to_string(),
+            release_index,
         });
     }
 
-    let human = format!("Installed/verified {} runtime(s)", results.len());
+    let human = append_release_index_human_notes(
+        format!("Installed/verified {} runtime(s)", results.len()),
+        results
+            .iter()
+            .filter_map(|result| result.release_index.as_ref()),
+    );
     print_output(output, color, &human, &results)?;
 
     Ok(0)
+}
+
+fn append_release_index_human_notes<'a>(
+    human: String,
+    diagnostics: impl Iterator<Item = &'a ReleaseIndexResolutionDiagnostic>,
+) -> String {
+    let notes = diagnostics
+        .map(|diagnostic| {
+            format!(
+                "{}->{} stale cache age={}s",
+                diagnostic.selector, diagnostic.selected_version, diagnostic.cache_age_seconds
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if notes.is_empty() {
+        human
+    } else {
+        format!("{human} (release index: {})", notes.join(", "))
+    }
 }
 
 fn uninstall(

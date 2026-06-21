@@ -7,6 +7,7 @@ use std::{
 
 use assert_cmd::Command;
 use httpmock::{Method::GET, MockServer};
+use predicates::prelude::PredicateBooleanExt;
 use serde_json::Value;
 use serial_test::serial;
 use sha2::{Digest, Sha256};
@@ -173,6 +174,17 @@ fn normalize(version: &str) -> String {
     }
 }
 
+fn tracked_selectors_from_settings(settings_file: &Path) -> Vec<String> {
+    let content = fs::read_to_string(settings_file).unwrap();
+    let value = content.parse::<toml::Value>().unwrap();
+    value["tracked_selectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|selector| selector.as_str().unwrap().to_string())
+        .collect()
+}
+
 fn make_archive(version: &str, target: &str, scripts: &[(&str, &str)]) -> Vec<u8> {
     let version = normalize(version);
     let root_name = format!("node-{version}-{target}");
@@ -219,6 +231,22 @@ fn make_windows_zip(files: &[(&str, &str)]) -> Vec<u8> {
 
 fn make_npm_argv_script(prefix: &str) -> String {
     format!("#!/bin/sh\necho {prefix}:$*\n")
+}
+
+fn assert_json_parser_error(output: std::process::Output, expected_message: &str) {
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("\u{1b}["));
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains(expected_message));
 }
 
 #[test]
@@ -277,6 +305,153 @@ fn help_lists_nested_subcommand_descriptions() {
         .stdout(predicates::str::contains(
             "Remove a runtime override for a directory",
         ));
+}
+
+#[test]
+#[serial]
+fn install_and_uninstall_help_show_required_runtime_arguments() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "install", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Usage: nodeup toolchain install [OPTIONS] <RUNTIMES>...",
+        ))
+        .stdout(predicates::str::contains(
+            "<RUNTIMES>...  Runtime selectors to install",
+        ));
+
+    env.command()
+        .args(["toolchain", "uninstall", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Usage: nodeup toolchain uninstall [OPTIONS] <RUNTIMES>...",
+        ))
+        .stdout(predicates::str::contains(
+            "<RUNTIMES>...  Installed runtime selectors to remove",
+        ));
+}
+
+#[test]
+#[serial]
+fn human_parser_errors_keep_clap_formatting() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "list", "--quiet", "--verbose"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "error: the argument '--quiet' cannot be used with '--verbose'",
+        ))
+        .stderr(predicates::str::contains(
+            "Usage: nodeup toolchain list --quiet",
+        ))
+        .stderr(predicates::str::contains("nodeup error:").not());
+}
+
+#[test]
+#[serial]
+fn json_parser_errors_emit_error_envelopes() {
+    let env = TestEnv::new();
+
+    let root_missing = env
+        .command()
+        .args(["--output", "json"])
+        .output()
+        .expect("nodeup --output json without subcommand");
+    assert_json_parser_error(root_missing, "requires a subcommand");
+
+    let conflicting_flags = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "list",
+            "--quiet",
+            "--verbose",
+        ])
+        .output()
+        .expect("nodeup --output json toolchain list conflict");
+    assert_json_parser_error(conflicting_flags, "cannot be used with '--verbose'");
+
+    let missing_nested_arg = env
+        .command()
+        .args(["--output", "json", "toolchain", "link", "local-node"])
+        .output()
+        .expect("nodeup --output json toolchain link missing path");
+    assert_json_parser_error(missing_nested_arg, "required arguments were not provided");
+
+    let missing_install_runtime = env
+        .command()
+        .args(["--output", "json", "toolchain", "install"])
+        .output()
+        .expect("nodeup --output json toolchain install missing runtime");
+    assert_json_parser_error(
+        missing_install_runtime,
+        "required arguments were not provided",
+    );
+
+    let missing_uninstall_runtime = env
+        .command()
+        .args(["--output", "json", "toolchain", "uninstall"])
+        .output()
+        .expect("nodeup --output json toolchain uninstall missing runtime");
+    assert_json_parser_error(
+        missing_uninstall_runtime,
+        "required arguments were not provided",
+    );
+
+    let unknown_command = env
+        .command()
+        .args(["--output", "json", "unknown-command"])
+        .output()
+        .expect("nodeup --output json unknown command");
+    assert_json_parser_error(unknown_command, "unrecognized subcommand");
+
+    let unexpected_extra_arg = env
+        .command()
+        .args(["--output", "json", "completions", "bash", "show", "extra"])
+        .output()
+        .expect("nodeup --output json completions extra argument");
+    assert_json_parser_error(unexpected_extra_arg, "unexpected argument 'extra'");
+}
+
+#[test]
+#[serial]
+fn json_output_help_still_uses_clap_help_output() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["--output", "json", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Rustup-like Node.js version manager",
+        ))
+        .stdout(predicates::str::contains(
+            "Usage: nodeup [OPTIONS] <COMMAND>",
+        ))
+        .stderr(predicates::str::is_empty());
+}
+
+#[test]
+#[serial]
+fn delegated_run_arguments_do_not_request_json_parser_errors() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["run", "lts", "node", "--output", "json"])
+        .assert()
+        .failure()
+        .code(4)
+        .stderr(predicates::str::contains("nodeup error:"))
+        .stderr(predicates::str::contains("Release index request failed"));
 }
 
 #[test]
@@ -2073,12 +2248,21 @@ fn check_and_update_detect_newer_version() {
         .args(["--output", "json", "update", "22.1.0"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("\"status\": \"updated\""));
+        .stdout(predicates::str::contains(
+            "\"status\": \"skipped-exact-version\"",
+        ));
+
+    env.command()
+        .args(["toolchain", "list", "--quiet"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("v22.1.0"))
+        .stdout(predicates::str::contains("v22.2.0").not());
 }
 
 #[test]
 #[serial]
-fn update_reports_already_up_to_date_when_latest_is_already_installed() {
+fn update_reports_skipped_exact_version_when_latest_is_already_installed() {
     let env = TestEnv::new();
     env.register_index(&[("22.2.0", Some("Jod")), ("22.1.0", Some("Jod"))]);
     env.register_release(
@@ -2104,7 +2288,7 @@ fn update_reports_already_up_to_date_when_latest_is_already_installed() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "\"status\": \"already-up-to-date\"",
+            "\"status\": \"skipped-exact-version\"",
         ));
 }
 
@@ -2163,14 +2347,91 @@ fn checksum_mismatch_fails_install() {
 #[serial]
 fn unsupported_platform_is_reported() {
     let env = TestEnv::new();
-    env.register_index(&[("22.1.0", Some("Jod"))]);
 
     let mut cmd = env.command();
     cmd.env("NODEUP_FORCE_PLATFORM", "windows-x86")
         .args(["toolchain", "install", "22.1.0"])
         .assert()
+        .code(3)
         .failure()
-        .stderr(predicates::str::contains("supports macOS/Linux/Windows"));
+        .stderr(predicates::str::contains("Unsupported host platform"))
+        .stderr(predicates::str::contains("Windows x64"))
+        .stderr(predicates::str::contains("x86 hosts are unsupported"))
+        .stderr(predicates::str::contains(
+            "Use an x64/arm64 host or a supported CI image",
+        ));
+}
+
+#[test]
+#[serial]
+fn unsupported_platform_json_includes_deterministic_diagnostics() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NODEUP_FORCE_PLATFORM", "linux-x86")
+        .args(["--output", "json", "toolchain", "install", "22.1.0"])
+        .output()
+        .expect("unsupported platform json error");
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "unsupported-platform");
+    assert_eq!(payload["exit_code"], 3);
+    assert_eq!(payload["diagnostics"]["os"], "linux");
+    assert_eq!(payload["diagnostics"]["architecture"], "x86");
+    assert_eq!(
+        payload["diagnostics"]["platform_source"],
+        "NODEUP_FORCE_PLATFORM"
+    );
+    assert_eq!(payload["diagnostics"]["forced_platform"], "linux-x86");
+    assert_eq!(
+        payload["diagnostics"]["supported_platforms"],
+        serde_json::json!([
+            "macos/x64",
+            "macos/arm64",
+            "linux/x64",
+            "linux/arm64",
+            "windows/x64",
+            "windows/arm64"
+        ])
+    );
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn shim_dispatch_rejects_unsupported_x86_before_resolution() {
+    let env = TestEnv::new();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        r#"schema_version = 1
+default_selector = "22.1.0"
+tracked_selectors = []
+
+[linked_runtimes]
+"#,
+    )
+    .unwrap();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("node");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .env("NODEUP_FORCE_PLATFORM", "windows-x86")
+        .output()
+        .expect("run shim binary on unsupported x86 platform");
+
+    assert_eq!(output.status.code(), Some(3));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Unsupported host platform for shim dispatch"));
+    assert!(stderr.contains("forced_platform=windows-x86"));
+    assert!(stderr.contains("x86 hosts are unsupported"));
 }
 
 #[test]
@@ -2309,6 +2570,114 @@ fn which_resolves_command_path_from_default_selector() {
         .join("node");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(stdout.trim(), expected.to_string_lossy());
+}
+
+#[test]
+#[serial]
+fn which_json_reports_stale_release_index_cache_fallback_for_channel_selector() {
+    let env = TestEnv::new();
+    let runtime_bin = env
+        .data_root
+        .join("toolchains")
+        .join("v22.11.0")
+        .join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho stale-cache\n").unwrap();
+    fs::write(
+        env.cache_root.join("release-index.json"),
+        serde_json::json!({
+            "schema_version": 1,
+            "index_url": env.index_url,
+            "fetched_at_epoch_seconds": 1,
+            "entries": [
+                { "version": "v22.11.0", "lts": "Jod" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let index_mock = env.server.mock(|when, then| {
+        when.method(GET).path("/download/release/index.json");
+        then.status(500);
+    });
+
+    let output = env
+        .command()
+        .args(["--output", "json", "which", "--runtime", "lts", "node"])
+        .output()
+        .expect("which --runtime lts with stale release index fallback");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["runtime"], "v22.11.0");
+    assert_eq!(payload["release_index"]["cache_state"], "stale-fallback");
+    assert_eq!(
+        payload["release_index"]["fallback_reason"],
+        "refresh-failed"
+    );
+    assert_eq!(payload["release_index"]["selector"], "lts");
+    assert_eq!(payload["release_index"]["selected_version"], "v22.11.0");
+    assert!(payload["release_index"]["cache_age_seconds"]
+        .as_u64()
+        .is_some_and(|age| age > 600));
+    assert_eq!(payload["release_index"]["ttl_seconds"], 600);
+    assert!(payload["release_index"]["source_url"]
+        .as_str()
+        .is_some_and(|url| !url.contains('?') && !url.contains('#')));
+    index_mock.assert_calls(3);
+}
+
+#[test]
+#[serial]
+fn which_human_output_stays_path_only_with_stale_release_index_cache_fallback() {
+    let env = TestEnv::new();
+    let runtime_bin = env
+        .data_root
+        .join("toolchains")
+        .join("v22.11.0")
+        .join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho stale-cache\n").unwrap();
+    fs::write(
+        env.cache_root.join("release-index.json"),
+        serde_json::json!({
+            "schema_version": 1,
+            "index_url": env.index_url,
+            "fetched_at_epoch_seconds": 1,
+            "entries": [
+                { "version": "v22.11.0", "lts": "Jod" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let index_mock = env.server.mock(|when, then| {
+        when.method(GET).path("/download/release/index.json");
+        then.status(500);
+    });
+
+    let output = env
+        .command()
+        .args(["which", "--runtime", "lts", "node"])
+        .output()
+        .expect("which --runtime lts with stale release index fallback");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let expected = env
+        .data_root
+        .join("toolchains")
+        .join("v22.11.0")
+        .join("bin")
+        .join("node");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("{}\n", expected.display())
+    );
+    index_mock.assert_calls(3);
 }
 
 #[test]
@@ -2735,7 +3104,10 @@ fn toolchain_install_requires_at_least_one_runtime_selector() {
         .failure()
         .code(2)
         .stderr(predicates::str::contains(
-            "Missing runtime selector for `nodeup toolchain install`",
+            "required arguments were not provided",
+        ))
+        .stderr(predicates::str::contains(
+            "Usage: nodeup toolchain install <RUNTIMES>...",
         ));
 }
 
@@ -2770,6 +3142,22 @@ fn toolchain_install_rejects_linked_runtime_selector() {
 
 #[test]
 #[serial]
+fn toolchain_install_rejects_missing_linked_runtime_selector_before_lookup() {
+    let env = TestEnv::new();
+
+    env.command()
+        .args(["toolchain", "install", "ghost-linked"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "`toolchain install` only supports semantic version or channel selectors",
+        ))
+        .stderr(predicates::str::contains("Linked runtime 'ghost-linked'").not());
+}
+
+#[test]
+#[serial]
 fn toolchain_uninstall_requires_at_least_one_runtime_selector() {
     let env = TestEnv::new();
 
@@ -2779,7 +3167,10 @@ fn toolchain_uninstall_requires_at_least_one_runtime_selector() {
         .failure()
         .code(2)
         .stderr(predicates::str::contains(
-            "Missing runtime selector for `nodeup toolchain uninstall`",
+            "required arguments were not provided",
+        ))
+        .stderr(predicates::str::contains(
+            "Usage: nodeup toolchain uninstall <RUNTIMES>...",
         ));
 }
 
@@ -2929,6 +3320,233 @@ fn update_channel_selector_reports_updated_status() {
 
 #[test]
 #[serial]
+fn tracked_exact_selectors_are_canonicalized_across_install_and_override() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", Some("Krypton")), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("dedupe-install-override");
+    fs::create_dir_all(&project_dir).unwrap();
+    env.command()
+        .args([
+            "override",
+            "set",
+            "22.1.0",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert_eq!(
+        tracked_selectors_from_settings(&env.config_root.join("settings.toml")),
+        vec!["v22.1.0"]
+    );
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update deduplicated exact selectors");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["status"], "skipped-exact-version");
+    assert_eq!(entries[0]["previous_runtime"], "v22.1.0");
+    assert_eq!(entries[0]["updated_runtime"], "v22.1.0");
+}
+
+#[test]
+#[serial]
+fn tracked_exact_selectors_are_canonicalized_across_install_and_default() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", Some("Krypton")), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "v22.1.0"])
+        .assert()
+        .success();
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    assert_eq!(
+        tracked_selectors_from_settings(&env.config_root.join("settings.toml")),
+        vec!["v22.1.0"]
+    );
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update deduplicated default exact selector");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["status"], "skipped-exact-version");
+
+    env.command()
+        .args(["--output", "json", "show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"runtime\": \"v22.1.0\""));
+}
+
+#[test]
+#[serial]
+fn update_deduplicates_existing_semantic_exact_selectors() {
+    let env = TestEnv::new();
+    let settings_file = env.config_root.join("settings.toml");
+    fs::write(
+        &settings_file,
+        r#"schema_version = 1
+tracked_selectors = ["22.1.0", "v22.1.0"]
+
+[linked_runtimes]
+"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update existing duplicate exact selectors");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["status"], "skipped-exact-version");
+    assert_eq!(entries[0]["previous_runtime"], "v22.1.0");
+    assert_eq!(entries[0]["updated_runtime"], "v22.1.0");
+}
+
+#[test]
+#[serial]
+fn update_exact_default_reports_noop_and_keeps_resolution_pinned() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", Some("Krypton")), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update exact default");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["status"], "skipped-exact-version");
+    assert_eq!(entries[0]["previous_runtime"], "v22.1.0");
+    assert_eq!(entries[0]["updated_runtime"], "v22.1.0");
+
+    env.command()
+        .args(["--output", "json", "show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"runtime\": \"v22.1.0\""));
+
+    env.command()
+        .args(["toolchain", "list", "--quiet"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("v22.1.0"))
+        .stdout(predicates::str::contains("v24.0.0").not());
+}
+
+#[test]
+#[serial]
+fn update_exact_override_reports_noop_and_keeps_resolution_pinned() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", Some("Krypton")), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+    let project_dir = env.root.join("exact-override-noop");
+    fs::create_dir_all(&project_dir).unwrap();
+    env.command()
+        .current_dir(&project_dir)
+        .args(["override", "set", "22.1.0"])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args(["--output", "json", "update"])
+        .output()
+        .expect("update exact override");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["selector"], "v22.1.0");
+    assert_eq!(entries[0]["status"], "skipped-exact-version");
+
+    env.command()
+        .current_dir(&project_dir)
+        .args(["--output", "json", "show", "active-runtime"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"runtime\": \"v22.1.0\""));
+
+    env.command()
+        .args(["toolchain", "list", "--quiet"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("v22.1.0"))
+        .stdout(predicates::str::contains("v24.0.0").not());
+}
+
+#[test]
+#[serial]
 fn check_with_no_installed_runtimes_returns_empty_payload() {
     let env = TestEnv::new();
 
@@ -3046,6 +3664,45 @@ fn json_output_does_not_include_ansi_when_color_is_forced() {
 
 #[test]
 #[serial]
+fn invalid_release_index_ttl_does_not_log_for_commands_without_release_index() {
+    let env = TestEnv::new();
+    let output = env
+        .command()
+        .env("RUST_LOG", "nodeup=warn")
+        .env("NODEUP_RELEASE_INDEX_TTL_SECONDS", "abc")
+        .args(["show", "home"])
+        .output()
+        .expect("show home with invalid release index ttl");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup home:"));
+    assert!(!stdout.contains("Invalid release index TTL value"));
+    assert!(!stdout.contains("invalid_value_category"));
+    assert!(!stdout.contains("fallback_seconds"));
+    assert!(!stdout.contains("env_value"));
+    assert!(!stdout.contains("abc"));
+}
+
+#[test]
+#[serial]
+fn json_output_stays_parseable_with_invalid_release_index_ttl() {
+    let env = TestEnv::new();
+    let output = env
+        .command()
+        .env("NODEUP_RELEASE_INDEX_TTL_SECONDS", "-1")
+        .args(["--output", "json", "show", "home"])
+        .output()
+        .expect("show home json with invalid release index ttl");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["data_root"].is_string());
+}
+
+#[test]
+#[serial]
 fn completions_output_stays_raw_without_ansi_when_color_is_forced() {
     let env = TestEnv::new();
 
@@ -3059,6 +3716,27 @@ fn completions_output_stays_raw_without_ansi_when_color_is_forced() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("nodeup"));
     assert!(!stdout.contains("\u{1b}["));
+}
+
+#[test]
+#[serial]
+fn completions_output_stays_raw_with_invalid_release_index_ttl() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("RUST_LOG", "nodeup=warn")
+        .env("NODEUP_RELEASE_INDEX_TTL_SECONDS", "abc")
+        .args(["completions", "bash"])
+        .output()
+        .expect("bash completions with invalid release index ttl");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup"));
+    assert!(!stdout.contains("Invalid release index TTL value"));
+    assert!(!stdout.contains("invalid_value_category"));
+    assert!(!stdout.contains("abc"));
 }
 
 #[test]

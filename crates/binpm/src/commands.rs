@@ -1,14 +1,16 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
-    io::{Cursor, ErrorKind, Read},
+    io::{Cursor, ErrorKind, IsTerminal, Read, Write},
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
     str::FromStr,
+    thread,
+    time::{Duration, Instant},
 };
 
 use sha2::{Digest, Sha256};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 #[cfg(test)]
 use crate::assets::ArtifactKind;
@@ -21,7 +23,10 @@ use crate::{
         AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
         InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs, VerifyArgs,
     },
-    contract::{ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec, TargetOs},
+    contract::{
+        validate_version_selector, ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec,
+        TargetOs,
+    },
     error::{BinpmError, Result},
     release::{client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset},
     storage::{
@@ -39,6 +44,13 @@ use crate::{
         ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
+
+const DOWNLOAD_RETRY_ATTEMPTS: usize = 3;
+const DOWNLOAD_RETRY_BASE_DELAY: Duration = Duration::from_millis(200);
+const DOWNLOAD_PROGRESS_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
+const DOWNLOAD_PROGRESS_STEP_BYTES: u64 = 5 * 1024 * 1024;
+const DOWNLOAD_PROGRESS_INTERVAL: Duration = Duration::from_secs(2);
+const DOWNLOAD_INITIAL_CAPACITY_LIMIT: usize = 8 * 1024 * 1024;
 
 pub fn run(cli: Cli) -> Result<i32> {
     match cli.command {
@@ -102,9 +114,11 @@ fn install(args: InstallArgs) -> Result<i32> {
 
 fn add(args: AddArgs) -> Result<i32> {
     let spec = SourceSpec::from_str(&args.source)?;
+    let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     info!(
         command = "add",
         local_cmd = args.cmd,
+        selected_bin = explicit_bin.as_deref().unwrap_or(""),
         source_provider = spec.provider.as_str(),
         source_host = spec.host,
         source_path = spec.path,
@@ -128,15 +142,23 @@ fn add(args: AddArgs) -> Result<i32> {
     };
     let prior_manifest = manifest.clone();
     let manifest_tool = manifest.tools.get(&args.cmd).cloned();
-    let next_manifest_tool = update_manifest_tool_source(manifest_tool.clone(), &spec);
-    manifest.tools.insert(args.cmd.clone(), next_manifest_tool);
+    let current_target = HostTarget::current()?;
+    let next_manifest_tool = update_manifest_tool_source(
+        manifest_tool.clone(),
+        &spec,
+        explicit_bin,
+        Some(&current_target),
+    );
+    manifest
+        .tools
+        .insert(args.cmd.clone(), next_manifest_tool.clone());
     ensure_no_selected_install_path_collisions(&manifest, std::slice::from_ref(&args.cmd))?;
     let prior_state = capture_local_tool_state(&root, &args.cmd)?;
     let install = install_local_tool(
         &root,
         &args.cmd,
         &spec,
-        manifest_tool.as_ref(),
+        Some(&next_manifest_tool),
         args.lockfile.frozen_lockfile(),
         args.require_verified,
     )?;
@@ -180,6 +202,7 @@ fn source_install_scope(requested_scope: Scope) -> Scope {
 fn exec(args: ExecArgs) -> Result<i32> {
     let cmd = args.cmd().to_string_lossy().to_string();
     let forwarded_arg_count = args.args().len();
+    let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
 
     if let Some(source) = &args.package {
         let spec = SourceSpec::from_str(source)?;
@@ -187,6 +210,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
             command = "x",
             resolved_command = %cmd,
             explicit_package = true,
+            selected_bin = explicit_bin.as_deref().unwrap_or(""),
             source_provider = spec.provider.as_str(),
             source_host = spec.host,
             source_path = spec.path,
@@ -198,7 +222,9 @@ fn exec(args: ExecArgs) -> Result<i32> {
         let home = binpm_home()?;
         let install_root = home.join("tmp").join("x").join(format!(
             "{:x}",
-            Sha256::digest(format!("{source}:{cmd}").as_bytes())
+            Sha256::digest(
+                format!("{source}:{cmd}:{}", explicit_bin.as_deref().unwrap_or("")).as_bytes()
+            )
         ));
         let scope_paths = ScopePaths {
             root: install_root.clone(),
@@ -210,7 +236,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
         let tool = ManifestTool {
             source: spec.source_without_version(),
             version: spec.version.clone(),
-            bin: Some(cmd.clone()),
+            bin: Some(explicit_bin.clone().unwrap_or_else(|| cmd.clone())),
             targets: BTreeMap::new(),
         };
         let install = install_resolved(
@@ -250,8 +276,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
             manifest: root.join(MANIFEST_FILE),
         })?
         .clone();
-    let mut spec = parse_manifest_source(&tool.source)?;
-    spec.version = tool.version.clone();
+    let spec = parse_manifest_tool_source(&tool)?;
     if local_tool_execution_ready(&root, &cmd, &spec, Some(&tool))? {
         return execute_command(&cmd, args.args(), &[ScopePaths::local(root).bin]);
     }
@@ -429,10 +454,15 @@ fn remove(args: RemoveArgs) -> Result<i32> {
         command = "remove",
         selected_scope = args.scope.scope().as_str(),
         local_cmd = args.cmd,
+        dry_run = args.dry_run,
         no_confirm = args.no_confirm,
         "Prepared remove request"
     );
     let scope = select_scope(args.scope.scope())?;
+    print_selected_mutation_scope("remove", scope);
+    if args.dry_run {
+        return preview_remove(scope, &args.cmd);
+    }
     match scope {
         Scope::Local => remove_local_tool(&args.cmd),
         Scope::Global => remove_global_tool(&args.cmd),
@@ -441,7 +471,7 @@ fn remove(args: RemoveArgs) -> Result<i32> {
 }
 
 fn info_cmd(args: InfoArgs) -> Result<i32> {
-    if let Ok(spec) = SourceSpec::from_str(&args.cmd_or_source) {
+    if let Some(spec) = parse_source_argument(&args.cmd_or_source)? {
         debug!(
             command = "info",
             source_provider = spec.provider.as_str(),
@@ -453,6 +483,7 @@ fn info_cmd(args: InfoArgs) -> Result<i32> {
         log_read_only_scope("info", args.scope.scope());
         return print_source_info(&spec);
     }
+
     log_read_only_scope("info", args.scope.scope());
     let scope = select_scope(args.scope.scope())?;
     let paths = match scope {
@@ -478,8 +509,7 @@ fn outdated(args: ScopedArgs) -> Result<i32> {
             let target_key = HostTarget::current()?.key();
             for (cmd, tool) in manifest.tools {
                 validate_command_name(&cmd)?;
-                let mut spec = parse_manifest_source(&tool.source)?;
-                spec.version = tool.version.clone();
+                let spec = parse_manifest_tool_source(&tool)?;
                 let current = lockfile
                     .tools
                     .get(&cmd)
@@ -526,10 +556,17 @@ fn update(args: UpdateArgs) -> Result<i32> {
         selected_count = args.cmd.len(),
         frozen_lockfile,
         require_verified = args.require_verified,
+        dry_run = args.dry_run,
         no_confirm = args.no_confirm,
         "Prepared update request"
     );
-    match select_scope(args.scope.scope())? {
+    let scope = select_scope(args.scope.scope())?;
+    print_selected_mutation_scope("update", scope);
+    if args.dry_run {
+        return preview_update(scope, &args.cmd);
+    }
+    print_update_plan(scope, &args.cmd)?;
+    match scope {
         Scope::Local if frozen_lockfile => Err(BinpmError::FrozenLockfile {
             path: require_manifest_root()?.join(LOCKFILE_FILE),
         }),
@@ -541,11 +578,119 @@ fn update(args: UpdateArgs) -> Result<i32> {
     }
 }
 
+fn print_selected_mutation_scope(command: &str, scope: Scope) {
+    println!("{command} scope: {}", scope.as_str());
+}
+
+fn preview_remove(scope: Scope, cmd: &str) -> Result<i32> {
+    validate_command_name(cmd)?;
+    match scope {
+        Scope::Local => {
+            let root = require_manifest_root()?;
+            let manifest_path = root.join(MANIFEST_FILE);
+            let manifest = read_manifest(&manifest_path)?;
+            let prior_state = capture_local_remove_state(&root, cmd)?;
+            if !manifest.tools.contains_key(cmd)
+                && !has_local_runtime_or_lock_state(cmd, &prior_state)
+            {
+                return Err(BinpmError::MissingTool {
+                    cmd: cmd.to_string(),
+                    manifest: manifest_path,
+                });
+            }
+            println!("would remove {cmd} from local scope");
+            println!("would update {}", root.join(MANIFEST_FILE).display());
+            println!("would update {}", root.join(LOCKFILE_FILE).display());
+            println!("would clean {}", ScopePaths::local(root).root.display());
+        }
+        Scope::Global => {
+            let paths = ScopePaths::global(binpm_home()?);
+            read_package_record(&package_record_path(&paths, cmd))?;
+            println!("would remove {cmd} from global scope");
+            println!("would update {}", paths.packages.display());
+            println!("would update {}", paths.bin.display());
+        }
+        Scope::Auto => unreachable!("select_scope never returns auto"),
+    }
+    println!("dry run: no changes made");
+    Ok(0)
+}
+
+fn preview_update(scope: Scope, selected: &[String]) -> Result<i32> {
+    print_update_plan(scope, selected)?;
+    println!("dry run: no changes made");
+    Ok(0)
+}
+
+fn print_update_plan(scope: Scope, selected: &[String]) -> Result<()> {
+    match scope {
+        Scope::Local => print_local_update_plan(selected),
+        Scope::Global => print_global_update_plan(selected),
+        Scope::Auto => unreachable!("select_scope never returns auto"),
+    }
+}
+
+fn print_local_update_plan(selected: &[String]) -> Result<()> {
+    let root = require_manifest_root()?;
+    let manifest_path = root.join(MANIFEST_FILE);
+    let manifest = read_manifest(&manifest_path)?;
+    for cmd in selected {
+        validate_command_name(cmd)?;
+        if !manifest.tools.contains_key(cmd) {
+            return Err(BinpmError::MissingTool {
+                cmd: cmd.clone(),
+                manifest: manifest_path.clone(),
+            });
+        }
+    }
+    validate_selected_manifest_entries(&manifest, selected)?;
+    ensure_no_selected_install_path_collisions(&manifest, selected)?;
+
+    let planned: Vec<_> = manifest
+        .tools
+        .iter()
+        .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
+        .collect();
+    println!("planned updates: {}", planned.len());
+    for (cmd, tool) in planned {
+        let version = tool.version.as_deref().unwrap_or("<latest>");
+        println!("would update {cmd} from {} {version}", tool.source);
+    }
+    println!("would update {}", root.join(LOCKFILE_FILE).display());
+    println!("would update {}", ScopePaths::local(root).bin.display());
+    Ok(())
+}
+
+fn print_global_update_plan(selected: &[String]) -> Result<()> {
+    let paths = ScopePaths::global(binpm_home()?);
+    let records = list_package_records(&paths)?;
+    for cmd in selected {
+        validate_command_name(cmd)?;
+        read_package_record(&package_record_path(&paths, cmd))?;
+    }
+    let planned: Vec<_> = records
+        .iter()
+        .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
+        .collect();
+    println!("planned updates: {}", planned.len());
+    for (cmd, record) in planned {
+        println!(
+            "would update {cmd} from {} {}",
+            record.source, record.release_tag
+        );
+    }
+    println!("would update {}", paths.packages.display());
+    println!("would update {}", paths.bin.display());
+    Ok(())
+}
+
 fn doctor() -> Result<i32> {
     let project_root = project_root()?;
     let manifest_path = project_root.join(MANIFEST_FILE);
     let lockfile_path = project_root.join(LOCKFILE_FILE);
     let home = binpm_home()?;
+    let global_bin = home.join("bin");
+    let global_bin_on_path = path_contains_entry(&global_bin);
 
     info!(
         command = "doctor",
@@ -554,38 +699,48 @@ fn doctor() -> Result<i32> {
         manifest_path = %manifest_path.display(),
         lockfile_path = %lockfile_path.display(),
         binpm_home = %home.display(),
+        global_bin = %global_bin.display(),
+        global_bin_on_path,
         "Prepared doctor inspection"
     );
     println!("binpm doctor");
     println!("manifest: {}", path_state(&manifest_path));
     println!("lockfile: {}", path_state(&lockfile_path));
     println!("global_home: {}", home.display());
+    println!("global_bin: {}", global_bin.display());
+    println!("global_bin_on_path: {}", yes_no(global_bin_on_path));
+    if !global_bin_on_path {
+        print_global_path_setup_guidance(&global_bin);
+    }
     Ok(0)
 }
 
 fn explain(args: ExplainArgs) -> Result<i32> {
-    if let Ok(spec) = SourceSpec::from_str(&args.cmd_or_source) {
-        let target = HostTarget::current()?;
-        info!(
-            command = "explain",
-            read_only = true,
-            selected_scope = args.scope.scope().as_str(),
-            source_provider = spec.provider.as_str(),
-            source_host = spec.host,
-            source_path = spec.path,
-            source_version = spec.version.as_deref().unwrap_or(""),
-            target = target.key(),
-            "Prepared source explanation"
-        );
-        return explain_source(spec, target);
-    } else {
-        info!(
-            command = "explain",
-            read_only = true,
-            selected_scope = args.scope.scope().as_str(),
-            local_cmd = args.cmd_or_source,
-            "Prepared local command explanation"
-        );
+    match parse_source_argument(&args.cmd_or_source)? {
+        Some(spec) => {
+            let target = HostTarget::current()?;
+            info!(
+                command = "explain",
+                read_only = true,
+                selected_scope = args.scope.scope().as_str(),
+                source_provider = spec.provider.as_str(),
+                source_host = spec.host,
+                source_path = spec.path,
+                source_version = spec.version.as_deref().unwrap_or(""),
+                target = target.key(),
+                "Prepared source explanation"
+            );
+            return explain_source(spec, target);
+        }
+        None => {
+            info!(
+                command = "explain",
+                read_only = true,
+                selected_scope = args.scope.scope().as_str(),
+                local_cmd = args.cmd_or_source,
+                "Prepared local command explanation"
+            );
+        }
     }
     let scope = select_scope(args.scope.scope())?;
     let paths = match scope {
@@ -611,6 +766,14 @@ fn explain(args: ExplainArgs) -> Result<i32> {
     println!("checksum_source: {}", record.checksum_source.as_str());
     println!("verification: {}", verification_state(&record));
     Ok(0)
+}
+
+fn parse_source_argument(raw: &str) -> Result<Option<SourceSpec>> {
+    if raw.starts_with("github:") || raw.starts_with("gitlab:") {
+        return SourceSpec::from_str(raw).map(Some);
+    }
+
+    Ok(None)
 }
 
 fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
@@ -743,6 +906,9 @@ fn install_global_source(spec: SourceSpec, require_verified: bool) -> Result<i32
         return Err(error);
     }
     println!("installed {cmd} {}", record.installed_path);
+    if !path_contains_entry(&scope_paths.bin) {
+        print_global_path_setup_guidance(&scope_paths.bin);
+    }
     Ok(0)
 }
 
@@ -758,17 +924,17 @@ fn install_local_source(
     let mut manifest = read_manifest(&manifest_path)?;
     let prior_manifest = manifest.clone();
     let manifest_tool = manifest.tools.get(&cmd).cloned();
-    manifest.tools.insert(
-        cmd.clone(),
-        update_manifest_tool_source(manifest_tool.clone(), &spec),
-    );
+    let next_manifest_tool = update_manifest_tool_source(manifest_tool.clone(), &spec, None, None);
+    manifest
+        .tools
+        .insert(cmd.clone(), next_manifest_tool.clone());
     ensure_no_selected_install_path_collisions(&manifest, std::slice::from_ref(&cmd))?;
     let prior_state = capture_local_tool_state(&root, &cmd)?;
     let install = install_local_tool(
         &root,
         &cmd,
         &spec,
-        manifest_tool.as_ref(),
+        Some(&next_manifest_tool),
         frozen_lockfile,
         require_verified,
     )?;
@@ -821,8 +987,7 @@ fn install_local_manifest(
             continue;
         }
         validate_command_name(cmd)?;
-        let mut spec = parse_manifest_source(&tool.source)?;
-        spec.version = tool.version.clone();
+        let spec = parse_manifest_tool_source(tool)?;
         let prior_state = match capture_local_tool_state(&root, cmd) {
             Ok(prior_state) => prior_state,
             Err(error) => {
@@ -939,7 +1104,7 @@ fn validate_selected_manifest_entries(manifest: &Manifest, selected: &[String]) 
             continue;
         }
         validate_command_name(cmd)?;
-        parse_manifest_source(&tool.source)?;
+        parse_manifest_tool_source(tool)?;
     }
     Ok(())
 }
@@ -1288,7 +1453,10 @@ fn install_resolved(
                 &installed_path,
                 &mut resolved,
                 selected_binary,
-            )?;
+            )
+            .map_err(|error| {
+                add_binary_retry_suggestions(error, cmd, spec, local_root.is_some())
+            })?;
             let record = package_record_from_resolved(
                 cmd,
                 &resolved,
@@ -1342,6 +1510,7 @@ fn install_resolved(
         &mut resolved,
         selected_binary,
     ) {
+        let error = add_binary_retry_suggestions(error, cmd, spec, local_root.is_some());
         if populated_cache_entry {
             remove_unreferenced_cache_entry(cache_paths, &sha256, local_root)?;
         } else if let Some(snapshot) = &cache_metadata_snapshot {
@@ -1362,6 +1531,68 @@ fn install_resolved(
         deferred_cache_hit: None,
         cache_metadata_snapshot,
     })
+}
+
+fn add_binary_retry_suggestions(
+    error: BinpmError,
+    cmd: &str,
+    spec: &SourceSpec,
+    include_add: bool,
+) -> BinpmError {
+    match error {
+        BinpmError::AmbiguousArchiveBinaries {
+            asset,
+            candidates,
+            suggestions,
+        } if suggestions.is_empty() => BinpmError::AmbiguousArchiveBinaries {
+            asset,
+            suggestions: binary_retry_suggestions(cmd, spec, &candidates, include_add),
+            candidates,
+        },
+        error => error,
+    }
+}
+
+fn binary_retry_suggestions(
+    cmd: &str,
+    spec: &SourceSpec,
+    candidates: &[String],
+    include_add: bool,
+) -> Vec<String> {
+    candidates
+        .iter()
+        .flat_map(|candidate| {
+            let mut suggestions = Vec::new();
+            if include_add {
+                suggestions.push(format!(
+                    "`binpm add {} {} --bin {}`",
+                    cli_quote(cmd),
+                    cli_quote(&spec.to_string()),
+                    cli_quote(candidate)
+                ));
+            }
+            suggestions.push(format!(
+                "`binpm x --package {} --bin {} {}`",
+                cli_quote(&spec.to_string()),
+                cli_quote(candidate),
+                cli_quote(cmd)
+            ));
+            suggestions
+        })
+        .collect()
+}
+
+fn cli_quote(raw: &str) -> String {
+    if !raw.is_empty()
+        && raw.chars().all(|character| {
+            character.is_ascii_alphanumeric()
+                || matches!(character, '-' | '_' | '.' | '/' | ':' | '@')
+        })
+    {
+        raw.to_string()
+    } else {
+        posix_single_quote(raw)
+    }
 }
 
 fn install_local_from_lock(
@@ -2201,6 +2432,7 @@ fn select_archive_member(
                     return Err(BinpmError::AmbiguousArchiveBinaries {
                         asset: asset_name.to_string(),
                         candidates: matches,
+                        suggestions: Vec::new(),
                     })
                 }
             }
@@ -2212,6 +2444,7 @@ fn select_archive_member(
                 return Err(BinpmError::AmbiguousArchiveBinaries {
                     asset: asset_name.to_string(),
                     candidates,
+                    suggestions: Vec::new(),
                 })
             }
             BinaryDiscovery::NotFound => {
@@ -2317,6 +2550,16 @@ fn parse_manifest_source(raw: &str) -> Result<SourceSpec> {
     Ok(spec)
 }
 
+fn parse_manifest_tool_source(tool: &ManifestTool) -> Result<SourceSpec> {
+    let mut spec = parse_manifest_source(&tool.source)?;
+    if let Some(version) = tool.version.as_deref() {
+        let raw = format!("{}@{version}", tool.source);
+        validate_version_selector(&raw, version)?;
+    }
+    spec.version = tool.version.clone();
+    Ok(spec)
+}
+
 fn manifest_tool_from_source(spec: &SourceSpec) -> ManifestTool {
     ManifestTool {
         source: spec.source_without_version(),
@@ -2326,10 +2569,39 @@ fn manifest_tool_from_source(spec: &SourceSpec) -> ManifestTool {
     }
 }
 
-fn update_manifest_tool_source(tool: Option<ManifestTool>, spec: &SourceSpec) -> ManifestTool {
+fn normalize_bin_selection(bin: Option<&str>) -> Result<Option<String>> {
+    match bin {
+        Some(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                Err(BinpmError::InvalidBinSelection {
+                    bin: raw.to_string(),
+                })
+            } else {
+                Ok(Some(trimmed.to_string()))
+            }
+        }
+        None => Ok(None),
+    }
+}
+
+fn update_manifest_tool_source(
+    tool: Option<ManifestTool>,
+    spec: &SourceSpec,
+    explicit_bin: Option<String>,
+    current_target: Option<&HostTarget>,
+) -> ManifestTool {
     let mut tool = tool.unwrap_or_else(|| manifest_tool_from_source(spec));
     tool.source = spec.source_without_version();
     tool.version = spec.version.clone();
+    if let Some(bin) = explicit_bin {
+        tool.bin = Some(bin.clone());
+        if let Some(current_target) = current_target {
+            if let Some(override_target) = tool.targets.get_mut(&current_target.key()) {
+                override_target.bin = bin;
+            }
+        }
+    }
     tool
 }
 
@@ -2993,11 +3265,15 @@ fn restore_executable_symlink(path: &Path, target: &Path) -> Result<()> {
 
 fn download_asset(url: &str) -> Result<Vec<u8>> {
     validate_download_url(url)?;
+    let sanitized_url = sanitize_download_diagnostic_url(url);
+    let asset_name = download_asset_name(&sanitized_url);
     info!(
-        asset_url = url.split(['?', '#']).next().unwrap_or(url),
-        "Downloading release asset"
+        asset_url = %sanitized_url,
+        asset_name = %asset_name,
+        retry_attempt = 0usize,
+        "Starting release asset download"
     );
-    let response = reqwest::blocking::Client::builder()
+    let client = reqwest::blocking::Client::builder()
         .user_agent(concat!("binpm/", env!("CARGO_PKG_VERSION")))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if let Err(error) = validate_download_url(attempt.url().as_str()) {
@@ -3009,17 +3285,208 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
             }
         }))
         .build()
-        .map_err(BinpmError::ReleaseHttpClient)?
+        .map_err(BinpmError::ReleaseHttpClient)?;
+
+    let mut last_error = None;
+    for attempt in 1..=DOWNLOAD_RETRY_ATTEMPTS {
+        match download_asset_attempt(&client, url, attempt, &sanitized_url, &asset_name) {
+            Ok(bytes) => return Ok(bytes),
+            Err(error)
+                if attempt < DOWNLOAD_RETRY_ATTEMPTS && is_retryable_download_error(&error) =>
+            {
+                let delay = download_retry_delay(attempt);
+                warn!(
+                    asset_url = %sanitized_url,
+                    asset_name = %asset_name,
+                    retry_attempt = attempt,
+                    retry_delay_ms = delay.as_millis(),
+                    error = %error,
+                    "Retrying release asset download"
+                );
+                eprintln!(
+                    "binpm: retrying download of {asset_name} after a transient failure (attempt \
+                     {}/{})",
+                    attempt + 1,
+                    DOWNLOAD_RETRY_ATTEMPTS
+                );
+                thread::sleep(delay);
+                last_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_error.expect("download retry loop always returns before exhaustion"))
+}
+
+fn download_asset_attempt(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    attempt: usize,
+    sanitized_url: &str,
+    asset_name: &str,
+) -> Result<Vec<u8>> {
+    let mut response = client
         .get(url)
         .send()
-        .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?
-        .error_for_status()
         .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
     validate_download_url(response.url().as_str())?;
-    response
-        .bytes()
-        .map(|bytes| bytes.to_vec())
-        .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))
+    let final_url = sanitize_download_diagnostic_url(response.url().as_str());
+    let status = response.status();
+    if !status.is_success() {
+        if let Some(error) = response.error_for_status_ref().err() {
+            return Err(BinpmError::ReleaseLookup(error.without_url()));
+        }
+        return Err(BinpmError::ReleaseAssetStatus {
+            url: final_url,
+            status: status.as_u16(),
+        });
+    }
+
+    let total_bytes = response.content_length();
+    let show_progress = download_progress_enabled(total_bytes);
+    if show_progress {
+        eprintln!(
+            "binpm: downloading {asset_name}{}",
+            total_bytes
+                .map(|bytes| format!(" ({})", human_bytes(bytes)))
+                .unwrap_or_default()
+        );
+    }
+
+    let mut bytes = Vec::with_capacity(download_initial_capacity(total_bytes));
+    let mut buffer = [0u8; 64 * 1024];
+    let mut downloaded = 0u64;
+    let mut next_progress_at = DOWNLOAD_PROGRESS_STEP_BYTES;
+    let mut last_progress_at = Instant::now();
+
+    loop {
+        let read = response
+            .read(&mut buffer)
+            .map_err(|source| BinpmError::DownloadStream {
+                url: final_url.clone(),
+                source,
+            })?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+        downloaded += read as u64;
+
+        if show_progress
+            && (downloaded >= next_progress_at
+                || last_progress_at.elapsed() >= DOWNLOAD_PROGRESS_INTERVAL)
+        {
+            eprintln!(
+                "binpm: downloading {asset_name} {}",
+                format_download_progress(downloaded, total_bytes)
+            );
+            let _ = std::io::stderr().flush();
+            next_progress_at =
+                ((downloaded / DOWNLOAD_PROGRESS_STEP_BYTES) + 1) * DOWNLOAD_PROGRESS_STEP_BYTES;
+            last_progress_at = Instant::now();
+        }
+    }
+
+    if show_progress {
+        eprintln!(
+            "binpm: downloaded {asset_name} {}",
+            format_download_progress(downloaded, total_bytes)
+        );
+    }
+    info!(
+        asset_url = %sanitized_url,
+        final_url = %final_url,
+        asset_name = %asset_name,
+        cache_bytes = downloaded,
+        retry_attempt = attempt.saturating_sub(1),
+        outcome = "success",
+        "Downloaded release asset"
+    );
+    Ok(bytes)
+}
+
+fn is_retryable_download_error(error: &BinpmError) -> bool {
+    match error {
+        BinpmError::ReleaseLookup(source) => source
+            .status()
+            .map(is_retryable_status)
+            .unwrap_or_else(|| source.is_connect() || source.is_timeout() || source.is_body()),
+        BinpmError::DownloadStream { .. } => true,
+        _ => false,
+    }
+}
+
+fn is_retryable_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+}
+
+fn download_retry_delay(attempt: usize) -> Duration {
+    DOWNLOAD_RETRY_BASE_DELAY * attempt as u32
+}
+
+fn download_progress_enabled(total_bytes: Option<u64>) -> bool {
+    let ci = env::var("CI")
+        .map(|value| {
+            let value = value.trim().to_ascii_lowercase();
+            !(value.is_empty() || value == "0" || value == "false")
+        })
+        .unwrap_or(false);
+    !ci && std::io::stderr().is_terminal()
+        && total_bytes
+            .map(|bytes| bytes >= DOWNLOAD_PROGRESS_THRESHOLD_BYTES)
+            .unwrap_or(true)
+}
+
+fn download_initial_capacity(total_bytes: Option<u64>) -> usize {
+    total_bytes
+        .map(|bytes| bytes.min(DOWNLOAD_INITIAL_CAPACITY_LIMIT as u64) as usize)
+        .unwrap_or_default()
+}
+
+fn format_download_progress(downloaded: u64, total: Option<u64>) -> String {
+    match total {
+        Some(total) => format!("{}/{}", human_bytes(downloaded), human_bytes(total)),
+        None => human_bytes(downloaded),
+    }
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB"];
+    let mut value = bytes as f64;
+    let mut unit = 0usize;
+    while value >= 1024.0 && unit + 1 < UNITS.len() {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} {}", UNITS[unit])
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
+fn download_asset_name(sanitized_url: &str) -> String {
+    reqwest::Url::parse(sanitized_url)
+        .ok()
+        .and_then(|url| {
+            url.path_segments()
+                .and_then(|mut segments| segments.next_back().map(str::to_string))
+        })
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "release asset".to_string())
+}
+
+fn sanitize_download_diagnostic_url(url: &str) -> String {
+    let without_query = url.split(['?', '#']).next().unwrap_or(url);
+    let Ok(mut parsed) = reqwest::Url::parse(without_query) else {
+        return without_query.to_string();
+    };
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        let _ = parsed.set_username("");
+        let _ = parsed.set_password(None);
+    }
+    parsed.to_string()
 }
 
 fn execute_command(
@@ -3565,8 +4032,7 @@ fn verify_lockfile_records(
     if let Some((manifest, root)) = manifest {
         for (cmd, manifest_tool) in &manifest.tools {
             validate_command_name(cmd)?;
-            let mut spec = parse_manifest_source(&manifest_tool.source)?;
-            spec.version = manifest_tool.version.clone();
+            let spec = parse_manifest_tool_source(manifest_tool)?;
             let locked_tool = lockfile.tools.get(cmd).ok_or(BinpmError::FrozenLockfile {
                 path: lockfile_path.to_path_buf(),
             })?;
@@ -3689,6 +4155,12 @@ fn init(args: InitArgs) -> Result<i32> {
 }
 
 fn env_cmd(args: EnvArgs) -> Result<i32> {
+    if matches!(args.shell, Shell::Cmd) {
+        return Err(BinpmError::UnsupportedShell {
+            shell: args.shell.as_str().to_string(),
+        });
+    }
+
     let project_root = project_root()?;
     let home = binpm_home()?;
     let global_bin = home.join("bin");
@@ -3712,17 +4184,30 @@ fn print_env(shell: Shell, global_bin: &Path, local_bin: &Path) {
     let local = shell_quote(shell, local_bin);
     match shell {
         Shell::Bash | Shell::Zsh => {
-            println!("export PATH={local}:{global}${{PATH:+:$PATH}}");
+            println!("# Global bin: persist this line in shell profiles");
+            println!("export PATH={global}${{PATH:+:$PATH}}");
+            println!("# Project-local bin: use for the current project/session only");
+            println!("export PATH={local}${{PATH:+:$PATH}}");
         }
         Shell::Fish => {
-            println!("set -gx PATH {local} {global} $PATH");
+            println!("# Global bin: persist this line in shell profiles");
+            println!("set -gx PATH {global} $PATH");
+            println!("# Project-local bin: use for the current project/session only");
+            println!("set -gx PATH {local} $PATH");
         }
         Shell::Powershell => {
+            println!("# Global bin: persist this line in shell profiles");
             println!(
-                "$env:PATH = {local} + [System.IO.Path]::PathSeparator + {global} + $(if \
-                 ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} else {{ '' }})"
+                "$env:PATH = {global} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
+                 $env:PATH }} else {{ '' }})"
+            );
+            println!("# Project-local bin: use for the current project/session only");
+            println!(
+                "$env:PATH = {local} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
+                 $env:PATH }} else {{ '' }})"
             );
         }
+        Shell::Cmd => unreachable!("cmd shell is explicitly deferred before rendering"),
     }
 }
 
@@ -3732,6 +4217,7 @@ fn shell_quote(shell: Shell, path: &Path) -> String {
         Shell::Bash | Shell::Zsh => posix_single_quote(&raw),
         Shell::Fish => fish_single_quote(&raw),
         Shell::Powershell => powershell_single_quote(&raw),
+        Shell::Cmd => unreachable!("cmd shell is explicitly deferred before quoting"),
     }
 }
 
@@ -3741,6 +4227,7 @@ fn shell_path(shell: Shell, raw: &str) -> String {
             windows_path_for_posix_shell(raw).unwrap_or_else(|| raw.to_owned())
         }
         Shell::Fish | Shell::Powershell => raw.to_owned(),
+        Shell::Cmd => unreachable!("cmd shell is explicitly deferred before path rendering"),
     }
 }
 
@@ -3949,6 +4436,44 @@ fn path_state(path: &Path) -> &'static str {
     }
 }
 
+fn path_contains_entry(entry: &Path) -> bool {
+    env::var_os("PATH")
+        .map(|path| env::split_paths(&path).any(|candidate| paths_equivalent(&candidate, entry)))
+        .unwrap_or(false)
+}
+
+fn paths_equivalent(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
+fn yes_no(value: bool) -> &'static str {
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
+}
+
+fn print_global_path_setup_guidance(global_bin: &Path) {
+    println!("path_setup: {} is not on PATH", global_bin.display());
+    println!(
+        "path_setup: run `binpm env --shell <bash|zsh|fish|powershell>` to print PATH setup \
+         commands"
+    );
+    println!(
+        "path_setup: profile changes are opt-in; persist only the global bin line in shell \
+         profiles"
+    );
+    println!("path_setup: the project-local PATH line is for the current project/session only");
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -3966,25 +4491,28 @@ mod tests {
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
-        ensure_no_package_record_install_path_collision, execute_command, github_sha256_digest,
-        has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
-        install_path_collision_key, local_runtime_lock_records, local_tool_execution_ready,
+        download_asset_name, download_initial_capacity,
+        ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
+        github_sha256_digest, has_current_cache_record, has_local_runtime_or_lock_state,
+        install_local_from_lock, install_path_collision_key, is_retryable_status,
+        local_runtime_lock_records, local_tool_execution_ready,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        parse_manifest_source, project_root_from, read_archive_selected_binary,
-        record_matches_current_provider_digest, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
-        restore_runtime_tool_state, select_manifest_asset, selected_asset_display_url, shell_path,
-        shell_quote, snapshot_cache_metadata, source_install_scope, update_manifest_tool_source,
-        validate_locked_record_artifact, validate_locked_record_current_asset,
-        validate_locked_record_current_provider_digest, validate_package_record_metadata,
-        validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verify_installed_binary_contents,
-        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_regular,
-        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
-        LocalRemoveState, RuntimeToolState,
+        normalize_bin_selection, parse_manifest_source, parse_manifest_tool_source,
+        project_root_from, read_archive_selected_binary, record_matches_current_provider_digest,
+        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
+        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
+        shell_path, shell_quote, snapshot_cache_metadata, source_install_scope,
+        update_manifest_tool_source, validate_locked_record_artifact,
+        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries,
+        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
+        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
+        InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4009,6 +4537,48 @@ mod tests {
         assert_eq!(source_install_scope(Scope::Auto), Scope::Global);
         assert_eq!(source_install_scope(Scope::Global), Scope::Global);
         assert_eq!(source_install_scope(Scope::Local), Scope::Local);
+    }
+
+    #[test]
+    fn download_diagnostic_urls_redact_credentials_queries_and_fragments() {
+        assert_eq!(
+            sanitize_download_diagnostic_url("https://token:secret@example.com/asset?sig=secret#x"),
+            "https://example.com/asset"
+        );
+    }
+
+    #[test]
+    fn download_asset_name_uses_sanitized_path_basename() {
+        assert_eq!(
+            download_asset_name("https://example.com/releases/download/v1/tool.tar.gz"),
+            "tool.tar.gz"
+        );
+        assert_eq!(download_asset_name("not a url"), "release asset");
+    }
+
+    #[test]
+    fn download_progress_format_is_human_readable() {
+        assert_eq!(
+            format_download_progress(5 * 1024 * 1024, Some(10 * 1024 * 1024)),
+            "5.0 MiB/10.0 MiB"
+        );
+    }
+
+    #[test]
+    fn download_initial_capacity_caps_untrusted_content_length() {
+        assert_eq!(download_initial_capacity(None), 0);
+        assert_eq!(download_initial_capacity(Some(128 * 1024)), 128 * 1024);
+        assert_eq!(
+            download_initial_capacity(Some(128 * 1024 * 1024)),
+            8 * 1024 * 1024
+        );
+    }
+
+    #[test]
+    fn retryable_download_statuses_are_limited_to_rate_limits_and_server_errors() {
+        assert!(is_retryable_status(reqwest::StatusCode::TOO_MANY_REQUESTS));
+        assert!(is_retryable_status(reqwest::StatusCode::BAD_GATEWAY));
+        assert!(!is_retryable_status(reqwest::StatusCode::NOT_FOUND));
     }
 
     #[test]
@@ -4331,7 +4901,7 @@ mod tests {
             targets: targets.clone(),
         };
 
-        let updated = update_manifest_tool_source(Some(existing), &spec);
+        let updated = update_manifest_tool_source(Some(existing), &spec, None, None);
 
         assert_eq!(updated.source, "github:owner/new-tool");
         assert_eq!(updated.version.as_deref(), Some("2.0.0"));
@@ -4340,6 +4910,92 @@ mod tests {
             updated.targets.keys().collect::<Vec<_>>(),
             targets.keys().collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn manifest_tool_source_update_persists_explicit_bin() {
+        let spec = SourceSpec::from_str("github:owner/new-tool@2.0.0").expect("source");
+        let existing = ManifestTool {
+            source: "github:owner/old-tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("old-bin".to_string()),
+            targets: BTreeMap::new(),
+        };
+
+        let updated = update_manifest_tool_source(
+            Some(existing),
+            &spec,
+            Some("dist/new-bin".to_string()),
+            None,
+        );
+
+        assert_eq!(updated.source, "github:owner/new-tool");
+        assert_eq!(updated.version.as_deref(), Some("2.0.0"));
+        assert_eq!(updated.bin.as_deref(), Some("dist/new-bin"));
+    }
+
+    #[test]
+    fn manifest_tool_source_update_persists_explicit_bin_to_current_target_override() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/new-tool@2.0.0").expect("source");
+        let existing = ManifestTool {
+            source: "github:owner/old-tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("old-bin".to_string()),
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "custom-asset".to_string(),
+                    bin: "old-target-bin".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+
+        let updated = update_manifest_tool_source(
+            Some(existing),
+            &spec,
+            Some("dist/new-bin".to_string()),
+            Some(&target),
+        );
+
+        assert_eq!(updated.bin.as_deref(), Some("dist/new-bin"));
+        assert_eq!(updated.targets[&target.key()].bin, "dist/new-bin");
+    }
+
+    #[test]
+    fn bin_selection_normalization_rejects_empty_values() {
+        assert_eq!(
+            normalize_bin_selection(Some("  bin/tool  "))
+                .expect("normalized bin")
+                .as_deref(),
+            Some("bin/tool")
+        );
+        assert!(matches!(
+            normalize_bin_selection(Some("  ")),
+            Err(BinpmError::InvalidBinSelection { .. })
+        ));
+    }
+
+    #[test]
+    fn ambiguity_errors_include_candidates_and_retry_suggestions() {
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source");
+        let error = super::add_binary_retry_suggestions(
+            BinpmError::AmbiguousArchiveBinaries {
+                asset: "tool-linux.tar.gz".to_string(),
+                candidates: vec!["bin/alpha".to_string(), "bin/beta".to_string()],
+                suggestions: Vec::new(),
+            },
+            "tool",
+            &spec,
+            true,
+        );
+        let message = error.to_string();
+
+        assert!(message.contains("bin/alpha"));
+        assert!(message.contains("bin/beta"));
+        assert!(message.contains("binpm add tool github:owner/tool@1.0.0 --bin bin/alpha"));
+        assert!(message.contains("binpm x --package github:owner/tool@1.0.0 --bin bin/beta tool"));
     }
 
     #[test]
@@ -4660,6 +5316,22 @@ mod tests {
     }
 
     #[test]
+    fn manifest_version_rejects_unsupported_selectors() {
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("beta".to_string()),
+            bin: None,
+            targets: BTreeMap::new(),
+        };
+
+        let error = parse_manifest_tool_source(&tool).expect_err("unsupported selector");
+
+        assert!(error
+            .to_string()
+            .contains("channel selectors are not supported"));
+    }
+
+    #[test]
     fn source_install_manifest_entry_keeps_version_separate() {
         let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
         let tool = manifest_tool_from_source(&spec);
@@ -4688,7 +5360,7 @@ mod tests {
             )]),
         };
 
-        let updated = update_manifest_tool_source(Some(existing), &spec);
+        let updated = update_manifest_tool_source(Some(existing), &spec, None, None);
 
         assert_eq!(updated.source, "github:owner/tool");
         assert_eq!(updated.version.as_deref(), Some("2.0.0"));

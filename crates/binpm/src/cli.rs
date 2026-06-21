@@ -11,6 +11,14 @@ use crate::contract::Scope;
     about = "Install and run native command-line tools from release assets"
 )]
 pub struct Cli {
+    /// Enable info-level binpm tracing diagnostics.
+    #[arg(short = 'v', long, global = true, conflicts_with = "debug")]
+    pub verbose: bool,
+
+    /// Enable debug-level binpm tracing diagnostics.
+    #[arg(long, global = true)]
+    pub debug: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -23,6 +31,23 @@ impl Cli {
     pub fn command_for_tests() -> clap::Command {
         <Self as CommandFactory>::command()
     }
+
+    pub fn log_verbosity(&self) -> LogVerbosity {
+        if self.debug {
+            LogVerbosity::Debug
+        } else if self.verbose {
+            LogVerbosity::Verbose
+        } else {
+            LogVerbosity::Default
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogVerbosity {
+    Default,
+    Verbose,
+    Debug,
 }
 
 #[derive(Debug, Subcommand)]
@@ -31,8 +56,8 @@ pub enum Command {
     Install(InstallArgs),
     /// Declare a local tool and install it into the project bin directory.
     Add(AddArgs),
-    /// Run a local manifest command or a command from an explicit package.
-    #[command(name = "x")]
+    /// Execute a local manifest command or one-off package command.
+    #[command(name = "x", visible_aliases = ["exec", "run"])]
     Exec(ExecArgs),
     /// Inspect and manage the global release asset cache.
     Cache(CacheArgs),
@@ -86,6 +111,11 @@ pub struct AddArgs {
     pub cmd: String,
     pub source: String,
 
+    /// Upstream executable name or archive member path to install for this
+    /// local command.
+    #[arg(long, value_name = "BIN")]
+    pub bin: Option<String>,
+
     #[command(flatten)]
     pub lockfile: LockfileArgs,
 
@@ -104,6 +134,11 @@ pub struct ExecArgs {
     /// Explicit package source for one-off execution.
     #[arg(long, value_name = "SOURCE")]
     pub package: Option<String>,
+
+    /// Upstream executable name or archive member path to run from the explicit
+    /// package.
+    #[arg(long, value_name = "BIN", requires = "package")]
+    pub bin: Option<String>,
 
     #[command(flatten)]
     pub lockfile: LockfileArgs,
@@ -169,6 +204,10 @@ pub struct RemoveArgs {
     #[command(flatten)]
     pub scope: ScopeArgs,
 
+    /// Show the selected scope and planned removal without mutating state.
+    #[arg(long)]
+    pub dry_run: bool,
+
     /// Bypass future confirmation prompts for scripting.
     #[arg(long)]
     pub no_confirm: bool,
@@ -196,6 +235,10 @@ pub struct UpdateArgs {
     /// available.
     #[arg(long)]
     pub require_verified: bool,
+
+    /// Show the selected scope and planned updates without mutating state.
+    #[arg(long)]
+    pub dry_run: bool,
 
     /// Bypass future confirmation prompts for scripting.
     #[arg(long)]
@@ -230,7 +273,7 @@ pub struct InitArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct EnvArgs {
-    #[arg(long, value_enum)]
+    #[arg(long, value_enum, ignore_case = true)]
     pub shell: Shell,
 }
 
@@ -276,11 +319,14 @@ impl LockfileArgs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "lower")]
 pub enum Shell {
     Bash,
     Zsh,
     Fish,
+    #[value(alias = "pwsh")]
     Powershell,
+    Cmd,
 }
 
 impl Shell {
@@ -290,6 +336,7 @@ impl Shell {
             Self::Zsh => "zsh",
             Self::Fish => "fish",
             Self::Powershell => "powershell",
+            Self::Cmd => "cmd",
         }
     }
 }
@@ -309,8 +356,23 @@ mod tests {
         let help = command.render_long_help().to_string();
 
         for expected in [
-            "install", "add", "x", "cache", "list", "remove", "info", "outdated", "update",
-            "doctor", "explain", "verify", "init", "env",
+            "install",
+            "add",
+            "x",
+            "exec",
+            "run",
+            "Execute a local manifest command or one-off package command",
+            "cache",
+            "list",
+            "remove",
+            "info",
+            "outdated",
+            "update",
+            "doctor",
+            "explain",
+            "verify",
+            "init",
+            "env",
         ] {
             assert!(
                 help.contains(expected),
@@ -400,6 +462,37 @@ mod tests {
     }
 
     #[test]
+    fn parses_execution_aliases_with_same_forwarding_and_package_flags() {
+        for alias in ["exec", "run"] {
+            let cli = Cli::try_parse_from([
+                "binpm",
+                alias,
+                "--no-frozen-lockfile",
+                "--package",
+                "github:BurntSushi/ripgrep",
+                "rg",
+                "--",
+                "--package",
+                "literal",
+            ])
+            .unwrap_or_else(|error| panic!("parse {alias} alias: {error}"));
+
+            match cli.command {
+                Command::Exec(exec) => {
+                    assert_eq!(exec.package.as_deref(), Some("github:BurntSushi/ripgrep"));
+                    assert!(exec.lockfile.no_frozen_lockfile);
+                    assert_eq!(exec.cmd(), OsStr::new("rg"));
+                    assert_eq!(
+                        exec.args(),
+                        vec![OsString::from("--package"), OsString::from("literal")]
+                    );
+                }
+                other => panic!("unexpected command for {alias}: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
     fn scoped_args_default_to_auto() {
         let cli = Cli::parse_from(["binpm", "list"]);
 
@@ -415,6 +508,26 @@ mod tests {
 
         match cli.command {
             Command::Env(args) => assert_eq!(args.shell, Shell::Fish),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_env_powershell_case_insensitively() {
+        let cli = Cli::parse_from(["binpm", "env", "--shell", "PowerShell"]);
+
+        match cli.command {
+            Command::Env(args) => assert_eq!(args.shell, Shell::Powershell),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_env_cmd_as_deferred_shell_value() {
+        let cli = Cli::parse_from(["binpm", "env", "--shell", "cmd"]);
+
+        match cli.command {
+            Command::Env(args) => assert_eq!(args.shell, Shell::Cmd),
             other => panic!("unexpected command: {other:?}"),
         }
     }

@@ -21,7 +21,7 @@ Nodeup runtime installation and shim dispatch target:
 - Linux x64 and arm64
 - Windows x64 and arm64
 
-x86 hosts are outside the documented support scope.
+x86 hosts are unsupported. If Nodeup detects an unsupported host, use an x64/arm64 machine or a supported CI image.
 
 ## Runtime Selectors
 
@@ -37,6 +37,7 @@ nodeup toolchain link work-node /opt/node-v22
 ```
 
 Reserved channel selectors are exact and lowercase: `lts`, `current`, and `latest`.
+When exact-version selectors are tracked for update, Nodeup canonicalizes them to `v<semver>` and deduplicates semantically equivalent forms like `22.1.0` and `v22.1.0`. Exact-version selectors remain immutable pins during `nodeup update`.
 
 ## Validation Commands
 
