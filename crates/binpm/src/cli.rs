@@ -11,6 +11,14 @@ use crate::contract::Scope;
     about = "Install and run native command-line tools from release assets"
 )]
 pub struct Cli {
+    /// Enable info-level binpm tracing diagnostics.
+    #[arg(short = 'v', long, global = true, conflicts_with = "debug")]
+    pub verbose: bool,
+
+    /// Enable debug-level binpm tracing diagnostics.
+    #[arg(long, global = true)]
+    pub debug: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -23,6 +31,23 @@ impl Cli {
     pub fn command_for_tests() -> clap::Command {
         <Self as CommandFactory>::command()
     }
+
+    pub fn log_verbosity(&self) -> LogVerbosity {
+        if self.debug {
+            LogVerbosity::Debug
+        } else if self.verbose {
+            LogVerbosity::Verbose
+        } else {
+            LogVerbosity::Default
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogVerbosity {
+    Default,
+    Verbose,
+    Debug,
 }
 
 #[derive(Debug, Subcommand)]
@@ -248,7 +273,7 @@ pub struct InitArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct EnvArgs {
-    #[arg(long, value_enum)]
+    #[arg(long, value_enum, ignore_case = true)]
     pub shell: Shell,
 }
 
@@ -294,11 +319,14 @@ impl LockfileArgs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[value(rename_all = "lower")]
 pub enum Shell {
     Bash,
     Zsh,
     Fish,
+    #[value(alias = "pwsh")]
     Powershell,
+    Cmd,
 }
 
 impl Shell {
@@ -308,6 +336,7 @@ impl Shell {
             Self::Zsh => "zsh",
             Self::Fish => "fish",
             Self::Powershell => "powershell",
+            Self::Cmd => "cmd",
         }
     }
 }
@@ -479,6 +508,26 @@ mod tests {
 
         match cli.command {
             Command::Env(args) => assert_eq!(args.shell, Shell::Fish),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_env_powershell_case_insensitively() {
+        let cli = Cli::parse_from(["binpm", "env", "--shell", "PowerShell"]);
+
+        match cli.command {
+            Command::Env(args) => assert_eq!(args.shell, Shell::Powershell),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_env_cmd_as_deferred_shell_value() {
+        let cli = Cli::parse_from(["binpm", "env", "--shell", "cmd"]);
+
+        match cli.command {
+            Command::Env(args) => assert_eq!(args.shell, Shell::Cmd),
             other => panic!("unexpected command: {other:?}"),
         }
     }

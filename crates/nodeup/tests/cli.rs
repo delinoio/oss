@@ -2497,6 +2497,114 @@ fn which_resolves_command_path_from_default_selector() {
 
 #[test]
 #[serial]
+fn which_json_reports_stale_release_index_cache_fallback_for_channel_selector() {
+    let env = TestEnv::new();
+    let runtime_bin = env
+        .data_root
+        .join("toolchains")
+        .join("v22.11.0")
+        .join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho stale-cache\n").unwrap();
+    fs::write(
+        env.cache_root.join("release-index.json"),
+        serde_json::json!({
+            "schema_version": 1,
+            "index_url": env.index_url,
+            "fetched_at_epoch_seconds": 1,
+            "entries": [
+                { "version": "v22.11.0", "lts": "Jod" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let index_mock = env.server.mock(|when, then| {
+        when.method(GET).path("/download/release/index.json");
+        then.status(500);
+    });
+
+    let output = env
+        .command()
+        .args(["--output", "json", "which", "--runtime", "lts", "node"])
+        .output()
+        .expect("which --runtime lts with stale release index fallback");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["runtime"], "v22.11.0");
+    assert_eq!(payload["release_index"]["cache_state"], "stale-fallback");
+    assert_eq!(
+        payload["release_index"]["fallback_reason"],
+        "refresh-failed"
+    );
+    assert_eq!(payload["release_index"]["selector"], "lts");
+    assert_eq!(payload["release_index"]["selected_version"], "v22.11.0");
+    assert!(payload["release_index"]["cache_age_seconds"]
+        .as_u64()
+        .is_some_and(|age| age > 600));
+    assert_eq!(payload["release_index"]["ttl_seconds"], 600);
+    assert!(payload["release_index"]["source_url"]
+        .as_str()
+        .is_some_and(|url| !url.contains('?') && !url.contains('#')));
+    index_mock.assert_calls(3);
+}
+
+#[test]
+#[serial]
+fn which_human_output_stays_path_only_with_stale_release_index_cache_fallback() {
+    let env = TestEnv::new();
+    let runtime_bin = env
+        .data_root
+        .join("toolchains")
+        .join("v22.11.0")
+        .join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho stale-cache\n").unwrap();
+    fs::write(
+        env.cache_root.join("release-index.json"),
+        serde_json::json!({
+            "schema_version": 1,
+            "index_url": env.index_url,
+            "fetched_at_epoch_seconds": 1,
+            "entries": [
+                { "version": "v22.11.0", "lts": "Jod" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let index_mock = env.server.mock(|when, then| {
+        when.method(GET).path("/download/release/index.json");
+        then.status(500);
+    });
+
+    let output = env
+        .command()
+        .args(["which", "--runtime", "lts", "node"])
+        .output()
+        .expect("which --runtime lts with stale release index fallback");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let expected = env
+        .data_root
+        .join("toolchains")
+        .join("v22.11.0")
+        .join("bin")
+        .join("node");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("{}\n", expected.display())
+    );
+    index_mock.assert_calls(3);
+}
+
+#[test]
+#[serial]
 fn which_explicit_runtime_takes_precedence_over_override_and_default() {
     let env = TestEnv::new();
     let default_runtime = env.root.join("linked-runtime-which-default-priority");
@@ -3479,6 +3587,45 @@ fn json_output_does_not_include_ansi_when_color_is_forced() {
 
 #[test]
 #[serial]
+fn invalid_release_index_ttl_does_not_log_for_commands_without_release_index() {
+    let env = TestEnv::new();
+    let output = env
+        .command()
+        .env("RUST_LOG", "nodeup=warn")
+        .env("NODEUP_RELEASE_INDEX_TTL_SECONDS", "abc")
+        .args(["show", "home"])
+        .output()
+        .expect("show home with invalid release index ttl");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup home:"));
+    assert!(!stdout.contains("Invalid release index TTL value"));
+    assert!(!stdout.contains("invalid_value_category"));
+    assert!(!stdout.contains("fallback_seconds"));
+    assert!(!stdout.contains("env_value"));
+    assert!(!stdout.contains("abc"));
+}
+
+#[test]
+#[serial]
+fn json_output_stays_parseable_with_invalid_release_index_ttl() {
+    let env = TestEnv::new();
+    let output = env
+        .command()
+        .env("NODEUP_RELEASE_INDEX_TTL_SECONDS", "-1")
+        .args(["--output", "json", "show", "home"])
+        .output()
+        .expect("show home json with invalid release index ttl");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["data_root"].is_string());
+}
+
+#[test]
+#[serial]
 fn color_diagnostics_reports_no_color_for_human_output_and_logs() {
     let env = TestEnv::new();
 
@@ -3651,6 +3798,27 @@ fn completions_output_stays_raw_without_ansi_when_color_is_forced() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("nodeup"));
     assert!(!stdout.contains("\u{1b}["));
+}
+
+#[test]
+#[serial]
+fn completions_output_stays_raw_with_invalid_release_index_ttl() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("RUST_LOG", "nodeup=warn")
+        .env("NODEUP_RELEASE_INDEX_TTL_SECONDS", "abc")
+        .args(["completions", "bash"])
+        .output()
+        .expect("bash completions with invalid release index ttl");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup"));
+    assert!(!stdout.contains("Invalid release index TTL value"));
+    assert!(!stdout.contains("invalid_value_category"));
+    assert!(!stdout.contains("abc"));
 }
 
 #[test]

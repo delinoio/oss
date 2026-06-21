@@ -62,6 +62,8 @@
 - Keep `binpm update` and `binpm remove` scope reporting and `--dry-run` previews aligned with `docs/crates-binpm-foundation.md`; previews must not mutate manifests, lockfiles, package records, cache references, or executables.
 - Keep `--no-confirm` stable for script compatibility and future dangerous-operation confirmation prompts.
 - Keep `binpm x` command execution aligned with the local manifest contract: use manifest-declared tools or explicit `--package`, prepend project-local bin directories to `PATH`, and do not infer GitHub repositories from command names. `binpm exec` and `binpm run` are aliases of that same execution behavior; `binpm x` remains canonical in contracts and examples.
+- Keep `binpm env --shell` shell values explicit: support `bash`, `zsh`, `fish`, and `powershell`; accept `cmd` only to report that cmd.exe support is deferred.
+- Keep global install and doctor PATH setup guidance opt-in and non-mutating; do not edit user shell profiles from existing commands or imply project-local `.binpm/bin` entries are suitable for profile persistence.
 
 ### cargo-mono-Specific Rules
 

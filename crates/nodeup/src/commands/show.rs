@@ -7,6 +7,7 @@ use crate::{
     errors::{NodeupError, Result},
     logging::{self, LogColorDecision},
     output_style::{self, OutputColorDecision},
+    release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
     NodeupApp,
 };
@@ -16,6 +17,8 @@ struct ActiveRuntimeResponse {
     runtime: String,
     source: String,
     selector: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
 
 #[derive(Debug, Serialize)]
@@ -144,8 +147,12 @@ fn show_active_runtime(
         runtime: resolved.runtime_id(),
         source: format!("{:?}", resolved.source).to_lowercase(),
         selector: resolved.selector.stable_id(),
+        release_index: app.resolver.release_index_diagnostic(),
     };
-    let human = format!("Active runtime: {}", response.runtime);
+    let human = append_release_index_human_note(
+        format!("Active runtime: {}", response.runtime),
+        response.release_index.as_ref(),
+    );
 
     print_output(output, color, &human, &response)?;
     Ok(0)
@@ -187,6 +194,19 @@ fn show_color(output: OutputFormat, color: Option<OutputColorMode>) -> Result<i3
 
 fn optional_env_value(value: Option<&str>) -> &str {
     value.unwrap_or("none")
+}
+
+fn append_release_index_human_note(
+    human: String,
+    diagnostic: Option<&ReleaseIndexResolutionDiagnostic>,
+) -> String {
+    match diagnostic {
+        Some(diagnostic) => format!(
+            "{human} (release index: stale cache fallback, age={}s, selected={})",
+            diagnostic.cache_age_seconds, diagnostic.selected_version
+        ),
+        None => human,
+    }
 }
 
 fn show_home(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupApp) -> Result<i32> {

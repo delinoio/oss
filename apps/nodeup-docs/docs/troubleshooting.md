@@ -80,6 +80,48 @@ Fix:
 2. Retry the install.
 3. If a mirror is configured, verify `NODEUP_DOWNLOAD_BASE_URL` and `NODEUP_INDEX_URL` point to matching release data.
 
+## Stale Release Index Cache
+
+Channel selectors such as `lts`, `current`, and `latest` can use the cached Node.js release index. If the cache is expired and refresh fails, Nodeup falls back to stale cache data instead of failing channel resolution.
+
+Symptoms:
+
+```text
+release index: stale cache fallback
+```
+
+In JSON output, inspect `release_index.cache_state`, `release_index.fallback_reason`, `release_index.cache_age_seconds`, `release_index.selector`, and `release_index.selected_version`.
+
+Fix:
+
+1. Verify network access to `NODEUP_INDEX_URL` or the default Node.js release index.
+2. If a mirror is configured, verify it serves valid release-index JSON for the same source URL.
+3. Clear the cached index from the cache root shown by `nodeup show home`.
+4. Retry with a short TTL, for example `NODEUP_RELEASE_INDEX_TTL_SECONDS=0 nodeup default lts`.
+
+Invalid cache schema, mismatched source URL, invalid JSON, and future timestamps are ignored rather than used as stale fallback.
+
+## Invalid Release Index TTL
+
+`NODEUP_RELEASE_INDEX_TTL_SECONDS` must be a non-negative integer duration in seconds.
+
+Valid examples:
+
+```bash
+NODEUP_RELEASE_INDEX_TTL_SECONDS=0 nodeup default latest
+NODEUP_RELEASE_INDEX_TTL_SECONDS=300 nodeup toolchain install lts
+```
+
+Invalid examples:
+
+```bash
+NODEUP_RELEASE_INDEX_TTL_SECONDS= nodeup default lts
+NODEUP_RELEASE_INDEX_TTL_SECONDS=-1 nodeup default lts
+NODEUP_RELEASE_INDEX_TTL_SECONDS=abc nodeup default lts
+```
+
+Invalid values fall back to 600 seconds. Human/log diagnostics report only a safe invalid-value category such as `empty`, `negative`, or `not-integer`.
+
 ## JSON Output Has Log Noise
 
 Keep `RUST_LOG` unset or off:
