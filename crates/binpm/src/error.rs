@@ -1,4 +1,4 @@
-use std::{fmt, io, path::PathBuf};
+use std::{env, ffi::OsStr, fmt, io, path::PathBuf};
 
 use thiserror::Error;
 
@@ -144,9 +144,9 @@ pub enum BinpmError {
         path: PathBuf,
         version: u8,
     },
-    #[error("Frozen lockfile prevents modifying `{}`.", path.display())]
+    #[error("{}", frozen_lockfile_message(path))]
     FrozenLockfile { path: PathBuf },
-    #[error("Frozen lockfile `{}` is stale for `{cmd}`.", path.display())]
+    #[error("{}", stale_lockfile_message(path, cmd))]
     StaleLockfile { path: PathBuf, cmd: String },
     #[error("Package record for `{cmd}` has inconsistent source identity.")]
     StalePackageRecord { cmd: String },
@@ -257,6 +257,37 @@ impl BinpmError {
         )
     }
 
+    pub fn structured_diagnostic(&self) -> Option<serde_json::Value> {
+        match self {
+            Self::FrozenLockfile { path } => {
+                let reason = frozen_lockfile_reason(path);
+                Some(serde_json::json!({
+                    "kind": "frozen_lockfile",
+                    "mode": frozen_lockfile_mode(),
+                    "reason": reason,
+                    "file": path.display().to_string(),
+                    "record": frozen_lockfile_record(reason),
+                    "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
+                    "would_change": path.display().to_string(),
+                    "safest_next_command": "binpm install --local",
+                    "local_development_escape_hatch": "--no-frozen-lockfile"
+                }))
+            }
+            Self::StaleLockfile { path, cmd } => Some(serde_json::json!({
+                "kind": "frozen_lockfile",
+                "mode": frozen_lockfile_mode(),
+                "reason": "stale_lockfile_record",
+                "file": path.display().to_string(),
+                "record": format!("tools.{cmd} target record"),
+                "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
+                "would_change": path.display().to_string(),
+                "safest_next_command": format!("binpm update --local {cmd}"),
+                "local_development_escape_hatch": "--no-frozen-lockfile"
+            })),
+            _ => None,
+        }
+    }
+
     pub fn exit_code(&self) -> i32 {
         match self {
             Self::NotImplemented { .. } => 2,
@@ -313,6 +344,76 @@ impl BinpmError {
             Self::Execute { .. } => 1,
         }
     }
+}
+
+fn frozen_lockfile_message(path: &std::path::Path) -> String {
+    let reason = frozen_lockfile_reason(path);
+    let mut message = format!(
+        "Frozen lockfile failure: mode `{}`; reason `{reason}`; file `{}`; record `{}`; would \
+         change `{}`. Safest next command: `binpm install --local`, then commit `binpm.lock`. For \
+         local development only, retry with `--no-frozen-lockfile`.",
+        frozen_lockfile_mode(),
+        path.display(),
+        frozen_lockfile_record(reason),
+        path.display()
+    );
+    if frozen_lockfile_on_demand_install_attempt() {
+        message.push_str(
+            " On-demand install attempt: `binpm x` needed to sync a missing executable or package \
+             record before running.",
+        );
+    }
+    message
+}
+
+fn stale_lockfile_message(path: &std::path::Path, cmd: &str) -> String {
+    let mut message = format!(
+        "Frozen lockfile failure: mode `{}`; reason `stale_lockfile_record`; file `{}`; record \
+         `tools.{cmd} target record`; would change `{}`. Safest next command: `binpm update \
+         --local {cmd}`, then commit `binpm.lock`. For local development only, retry with \
+         `--no-frozen-lockfile`.",
+        frozen_lockfile_mode(),
+        path.display(),
+        path.display()
+    );
+    if frozen_lockfile_on_demand_install_attempt() {
+        message.push_str(
+            " On-demand install attempt: `binpm x` needed to sync a missing executable or package \
+             record before running.",
+        );
+    }
+    message
+}
+
+fn frozen_lockfile_reason(path: &std::path::Path) -> &'static str {
+    if !path.exists() {
+        "missing_lockfile"
+    } else {
+        "missing_lockfile_record"
+    }
+}
+
+fn frozen_lockfile_record(reason: &str) -> &'static str {
+    if reason == "missing_lockfile" {
+        "binpm.lock"
+    } else {
+        "target-specific tool record"
+    }
+}
+
+fn frozen_lockfile_mode() -> &'static str {
+    if env::args_os().any(|arg| arg == OsStr::new("--frozen-lockfile")) {
+        "--frozen-lockfile"
+    } else if env::var("CI").is_ok_and(|value| value == "true") {
+        "CI=true"
+    } else {
+        "frozen-lockfile"
+    }
+}
+
+fn frozen_lockfile_on_demand_install_attempt() -> bool {
+    env::args_os()
+        .any(|arg| arg == OsStr::new("x") || arg == OsStr::new("exec") || arg == OsStr::new("run"))
 }
 
 fn ambiguous_archive_binaries_message(

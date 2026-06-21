@@ -36,12 +36,15 @@ fn exit_with_parse_error(error: clap::Error, json: bool) -> ! {
 fn exit_with_error(error: BinpmError, json: bool) -> ! {
     let exit_code = error.exit_code();
     if json {
-        let payload = serde_json::json!({
+        let mut payload = serde_json::json!({
             "error": {
                 "message": error.to_string(),
                 "exit_code": exit_code,
             }
         });
+        if let Some(diagnostic) = error.structured_diagnostic() {
+            payload["error"]["diagnostic"] = diagnostic;
+        }
         eprintln!("{payload}");
     } else {
         eprintln!("binpm error: {error}");

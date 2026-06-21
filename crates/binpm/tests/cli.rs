@@ -1031,6 +1031,89 @@ version = "1.0.0"
     assert!(!project.join("binpm.lock").exists());
 }
 
+#[test]
+fn ci_frozen_local_install_reports_structured_missing_lockfile_fix() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    let mut command = binpm();
+
+    let output = command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("CI", "true")
+        .args(["install", "--local", "--json"])
+        .output()
+        .expect("install --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 2);
+    assert_eq!(payload["error"]["diagnostic"]["mode"], "CI=true");
+    assert_eq!(payload["error"]["diagnostic"]["reason"], "missing_lockfile");
+    assert_eq!(
+        payload["error"]["diagnostic"]["would_change"],
+        project.join("binpm.lock").display().to_string()
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm install --local"
+    );
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("then commit `binpm.lock`"));
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn explicit_frozen_x_reports_on_demand_install_attempt() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["x", "--frozen-lockfile", "tool"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("mode `--frozen-lockfile`"))
+        .stderr(predicate::str::contains("reason `missing_lockfile`"))
+        .stderr(predicate::str::contains(
+            "On-demand install attempt: `binpm x`",
+        ))
+        .stderr(predicate::str::contains("would change"))
+        .stderr(predicate::str::contains("--no-frozen-lockfile"));
+
+    assert!(!project.join("binpm.lock").exists());
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[test]
 fn frozen_local_install_restores_missing_runtime_from_verified_cache() {
