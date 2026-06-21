@@ -29,6 +29,7 @@
 - `binpm-docs` must use Cloudflare Pages as the default static deployment target unless the app contract documents a replacement.
 - `binpm-docs` has canonical production URL `https://binpm.delino.io`.
 - Rspress routes and navigation in `apps/binpm-docs/rspress.config.ts` must stay aligned with `docs/apps-binpm-docs-foundation.md`.
+- `binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
 - Stable `binpm-docs` route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/troubleshooting`, and `/reference`.
 - `binpm-docs` must keep Rspress clean URLs enabled and validate that stable route IDs have build output artifacts and generated internal links do not use `.html` suffixes.
 - `binpm-docs` content must remain documentation-only and must not imply new binpm runtime behavior before `docs/project-binpm.md` and `docs/crates-binpm-foundation.md` document it.
@@ -52,6 +53,7 @@
 - `nodeup-docs` must use Cloudflare Pages as the default static deployment target unless the app contract documents a replacement.
 - `nodeup-docs` canonical production URL is `https://nodeup.delino.io`.
 - Rspress routes and navigation in `apps/nodeup-docs/rspress.config.ts` must stay aligned with `docs/apps-nodeup-docs-foundation.md`.
+- `nodeup-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
 - Stable `nodeup-docs` route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
 - Nodeup direct-installer guidance must include copy-pasteable remote POSIX and PowerShell commands that use first-party `delinoio/oss` raw GitHub URLs, keep `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1` visible for maintainer workflows, and present `cosign` as a required prerequisite.
 - When Nodeup user-facing runtime, release, installer, shim, completion, package-manager, or color-control behavior changes, update related `apps/nodeup-docs` pages in the same change set.
