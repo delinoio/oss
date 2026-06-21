@@ -197,6 +197,12 @@ fn normalize_completion_global_flags(args: Vec<OsString>, command_index: usize) 
             continue;
         }
 
+        if raw_arg == "--" {
+            positional_args.push(arg);
+            positional_args.extend(iter);
+            break;
+        }
+
         if raw_arg == "--output" || raw_arg == "--color" {
             global_flags.push(arg);
             if let Some(value) = iter.next() {
@@ -506,6 +512,30 @@ mod tests {
                 "override",
                 "set",
                 "--path",
+            ])
+        );
+    }
+
+    #[test]
+    fn completions_escaped_option_like_scope_tokens_are_not_normalized() {
+        assert_eq!(
+            normalized_management_args(os_args(&[
+                "nodeup",
+                "--output",
+                "json",
+                "completions",
+                "bash",
+                "--",
+                "--help",
+            ])),
+            os_args(&[
+                "nodeup",
+                "--output",
+                "json",
+                "completions",
+                "bash",
+                "--",
+                "--help",
             ])
         );
     }

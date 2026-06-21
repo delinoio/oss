@@ -2147,6 +2147,30 @@ fn json_completions_subcommand_scope_captures_option_like_tokens() {
 
 #[test]
 #[serial]
+fn json_completions_escaped_help_scope_is_rejected() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["--output", "json", "completions", "bash", "--", "--help"])
+        .output()
+        .expect("completions --output json escaped help scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope '--help'"));
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "--help");
+}
+
+#[test]
+#[serial]
 fn json_startup_failure_emits_stderr_error_envelope() {
     let env = TestEnv::new();
     let invalid_data_home = env.root.join("invalid-data-home");
