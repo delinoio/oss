@@ -178,7 +178,9 @@ Fallback rules when `packageManager` is absent:
   - handled failures are written to stderr as JSON envelopes
     - fields: `kind`, `message`, `exit_code`
     - `message` follows `<cause>. Hint: <next action>` for actionable recovery guidance
-  - logging stays off so stdout and stderr remain parseable
+  - logging stays off so Nodeup JSON payloads remain parseable
+  - `run` redirects delegated command stdout to stderr so stdout can carry the
+    Nodeup JSON response; do not parse `run` stderr as a JSON-only stream
 - `completions` command:
   - always writes raw completion script text to stdout
   - does not wrap completion output in JSON, even when `--output json` is set
