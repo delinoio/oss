@@ -19,7 +19,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `apps/binpm-docs` is the Rspress static documentation app for `binpm`.
 - `apps/binpm-docs` must use the repository-default Rspress/Rsbuild-family static documentation toolchain and Cloudflare Pages deployment contract unless this project index and `docs/apps-binpm-docs-foundation.md` document a replacement.
 - The canonical production URL for `apps/binpm-docs` is `https://binpm.delino.io`.
-- binpm documentation routes exposed by `apps/binpm-docs` are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/troubleshooting`, and `/reference`.
+- binpm documentation routes exposed by `apps/binpm-docs` are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, and `/reference`.
 - binpm documentation content must remain documentation-only and must not expand runtime behavior, release automation, package-manager backend scope, checksum discovery, signature verification, or global update behavior without corresponding runtime contract updates.
 - binpm documentation must not infer current product behavior or page content from the live `https://binpm.delino.io` site; repository contracts remain the source of truth.
 - The runtime implementation includes clap-based command parsing, discoverable global verbosity flags, enum-backed contract foundations, structured `tracing` setup, centralized CLI error handling, README/test scaffolding, release source parsing, provider release lookup clients, deterministic release asset candidate scoring, asset downloads with interactive large-download progress, archive extraction for documented formats, TOML-backed `binpm.toml` and `binpm.lock` parsing/writing, global and project-local package records, global cache metadata, URL sanitization, SHA-256 cache validation, and atomic file writes.
@@ -52,6 +52,14 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - `binpm x` is the canonical execution command. `binpm exec` and `binpm run` are documented aliases for discoverability and must share the same argument forwarding, local lockfile, install-on-demand, `--package`, PATH, and exit-code behavior.
 - Local `install`, `update`, and `x` must honor `--frozen-lockfile`; `CI=true` enables frozen lockfile behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.
 - `binpm` must not require Node.js, npm, pnpm, yarn, or Bun to install native binary tools.
+- `binpm` release tags use `binpm@v<semver>`.
+- Release automation must publish both standalone prebuilt binaries and archive assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, plus `SHA256SUMS`, `SHA256SUMS.sigstore.json`, and Sigstore bundle sidecars (`*.sigstore.json`) for each artifact.
+- Direct installers must verify `SHA256SUMS` entries and Sigstore bundle sidecars, require `cosign`, and only support bundle-enabled releases.
+- Direct installers must remain available at `scripts/install/binpm.sh` and `scripts/install/binpm.ps1`.
+- Public direct-installer documentation must include copy-pasteable remote commands for POSIX shells and PowerShell that fetch the installer from first-party `delinoio/oss` raw GitHub URLs, while also preserving the canonical in-repo script paths for maintainer workflows.
+- Remote direct-installer examples must use `https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/binpm.sh` and `https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/binpm.ps1` for current public docs, or a tag/commit-pinned equivalent of those same first-party paths when reproducibility is required.
+- `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable third-party quick-install and compile fallback strategies.
+- Homebrew installation must use prebuilt `binpm` release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - Installs without upstream checksum material or successfully verified signature material are allowed in v1 only with an explicit warning and locally recorded SHA-256 metadata.
 - `--require-verified` and `binpm verify --require-verified` must fail unless provider digest, upstream checksum sidecar, upstream checksum manifest, or a successfully verified signature under a documented trust policy is available.
 - `--no-confirm` must remain a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
@@ -63,10 +71,11 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - Global install output and `binpm doctor` must guide users to add `~/.binpm/bin` to `PATH` when it is absent, while keeping shell profile modification opt-in only. The guidance must not imply that project-local `.binpm/bin` entries should be persisted in shell profiles.
 
 ## Change Policy
-- Update this index and `docs/crates-binpm-foundation.md` together when CLI shape, local manifest or lockfile format, target selection, storage layout, cache behavior, security behavior, or heuristic scoring changes.
+- Update this index and `docs/crates-binpm-foundation.md` together when CLI shape, local manifest or lockfile format, target selection, storage layout, cache behavior, security behavior, release distribution, installer behavior, or heuristic scoring changes.
 - Update this index and `docs/apps-binpm-docs-foundation.md` in the same change for `apps/binpm-docs` path, route, toolchain, validation, production URL, or deployment contract updates.
 - Update root `AGENTS.md`, `apps/AGENTS.md`, and `crates/AGENTS.md` when `binpm` ownership, planned path status, or repository policy boundaries change.
 - Keep `crates/binpm` as an explicit Rust workspace member while runtime implementation continues.
+- Keep `.github/workflows/release-binpm.yml`, `scripts/install/binpm.sh`, `scripts/install/binpm.ps1`, `crates/binpm/Cargo.toml`, `scripts/release/update-homebrew.sh`, and `packaging/homebrew/templates/binpm.rb.tmpl` synchronized with binpm release asset names and signing contracts.
 
 ## References
 - `docs/project-template.md`

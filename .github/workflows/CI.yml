@@ -475,6 +475,70 @@ jobs:
         if: ${{ steps.gate.outputs.run == 'true' }}
         run: pnpm --filter mpapp lint
 
+  node-binpm-docs-test:
+    name: Node binpm-docs test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Filter changed paths
+        id: filter
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            ci_workflow:
+              - .github/workflows/CI.yml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.26.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Determine whether to run
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CI_WORKFLOW_CHANGED: ${{ steps.filter.outputs.ci_workflow }}
+          WORKSPACE: binpm-docs
+        run: |
+          set -euo pipefail
+
+          run=false
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ] || [ "${CI_WORKFLOW_CHANGED}" = "true" ]; then
+            run=true
+          else
+            affected_json="$(pnpm dlx turbo@2.9.14 query affected --packages "${WORKSPACE}")"
+            printf '%s\n' "${affected_json}"
+            run="$(printf '%s' "${affected_json}" | jq -r '.data.affectedPackages.items | any(.name == env.WORKSPACE)')"
+          fi
+
+          echo "run=${run}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip (binpm-docs unaffected)
+        if: ${{ steps.gate.outputs.run != 'true' }}
+        run: |
+          echo "Skipping Node binpm-docs test: workspace unaffected"
+
+      - name: Install dependencies
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Run binpm-docs tests
+        if: ${{ steps.gate.outputs.run == 'true' }}
+        run: pnpm --filter binpm-docs test
+
   node-nodeup-docs-test:
     name: Node nodeup-docs test
     runs-on: ubuntu-latest
@@ -615,6 +679,7 @@ jobs:
       - rust-test
       - node-mpapp-test
       - node-mpapp-lint
+      - node-binpm-docs-test
       - node-nodeup-docs-test
       - node-public-docs-test
     steps:
