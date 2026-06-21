@@ -54,10 +54,16 @@ impl ToolchainListDetail {
 #[command(
     name = "nodeup",
     version,
-    about = "Rustup-like Node.js version manager"
+    about = "Rustup-like Node.js version manager",
+    after_help = "Script-safe output:\n  Use `--output json` for structured automation.\n  Use \
+                  `RUST_LOG=off nodeup toolchain list --quiet` for raw runtime identifiers.\n  \
+                  Use `RUST_LOG=off nodeup completions <shell> >file` for raw completion \
+                  scripts.\n  Logs are written to stderr and JSON mode defaults logging off \
+                  unless RUST_LOG is set."
 )]
 pub struct Cli {
-    /// Output format for command results.
+    /// Output format for command results. Use `json` for structured automation;
+    /// JSON mode defaults Nodeup logging off unless RUST_LOG is set.
     #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Human)]
     pub output: OutputFormat,
 
@@ -124,7 +130,8 @@ pub enum Command {
         #[command(subcommand)]
         command: SelfCommand,
     },
-    /// Generate shell completion scripts.
+    /// Generate shell completion scripts. Redirect with RUST_LOG=off for
+    /// script-safe raw output.
     Completions {
         /// Target shell (for example: `bash`, `zsh`, or `fish`).
         shell: String,
@@ -137,7 +144,8 @@ pub enum Command {
 pub enum ToolchainCommand {
     /// List installed runtimes.
     List {
-        /// Print compact runtime identifiers only.
+        /// Print compact runtime identifiers only. Use RUST_LOG=off for
+        /// script-safe raw lists.
         #[arg(long, conflicts_with = "verbose")]
         quiet: bool,
         /// Include runtime metadata such as resolved target paths.

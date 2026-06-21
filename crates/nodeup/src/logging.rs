@@ -25,6 +25,7 @@ pub fn init_logging(context: LoggingContext) {
         .unwrap_or_else(|_| EnvFilter::new(context.default_filter()));
     let _ = tracing_subscriber::fmt()
         .pretty()
+        .with_writer(std::io::stderr)
         .with_env_filter(env_filter)
         .with_ansi(log_color_enabled())
         .with_target(false)

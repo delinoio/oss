@@ -49,12 +49,12 @@ Subcommand scopes are not accepted. Unsupported scopes fail with `invalid-input`
 Completion output is always raw script text on stdout:
 
 ```bash
-nodeup --output json completions bash >nodeup.bash
-nodeup --output json completions zsh >_nodeup
+RUST_LOG=off nodeup completions bash >nodeup.bash
+RUST_LOG=off nodeup completions zsh >_nodeup
 ```
 
-`--output json` and `--color always` do not wrap or style completion script output.
+`--output json` and `--color always` do not wrap or style completion script output. `RUST_LOG=off` is the recommended redirection form because completion scripts are raw text, not structured command data.
 
 ## Logging
 
-Completion generation logs include shell, command scope, and whether generation succeeded or failed. Use `--output json` or `RUST_LOG=off` when redirecting completion scripts so stdout contains only the generated script.
+Completion generation logs include shell, command scope, and whether generation succeeded or failed. Logs are written to stderr when enabled. Use `RUST_LOG=off` when redirecting completion scripts so stdout contains only the generated script.

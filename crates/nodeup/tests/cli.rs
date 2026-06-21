@@ -280,6 +280,16 @@ fn help_lists_top_level_subcommand_descriptions() {
         .arg("--help")
         .assert()
         .success()
+        .stdout(predicates::str::contains("Script-safe output:"))
+        .stdout(predicates::str::contains(
+            "Use `--output json` for structured automation.",
+        ))
+        .stdout(predicates::str::contains(
+            "RUST_LOG=off nodeup toolchain list --quiet",
+        ))
+        .stdout(predicates::str::contains(
+            "RUST_LOG=off nodeup completions <shell> >file",
+        ))
         .stdout(predicates::str::contains("Manage installed runtimes"))
         .stdout(predicates::str::contains(
             "Set or show the global default runtime",
@@ -312,6 +322,22 @@ fn help_lists_nested_subcommand_descriptions() {
         .stdout(predicates::str::contains("Uninstall one or more runtimes"))
         .stdout(predicates::str::contains(
             "Link an existing local runtime directory",
+        ));
+
+    env.command()
+        .args(["toolchain", "list", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Use RUST_LOG=off for script-safe raw lists",
+        ));
+
+    env.command()
+        .args(["completions", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Redirect with RUST_LOG=off for script-safe raw output",
         ));
 
     env.command()
@@ -613,6 +639,52 @@ fn toolchain_list_quiet_prints_runtime_identifiers_only() {
         .collect::<Vec<_>>();
 
     assert_eq!(lines, vec!["v22.1.0", "linked-quiet"]);
+}
+
+#[test]
+#[serial]
+fn toolchain_list_quiet_script_examples_keep_stdout_clean() {
+    let env = TestEnv::new();
+    fs::create_dir_all(env.data_root.join("toolchains").join("v22.1.0")).unwrap();
+    fs::write(
+        env.config_root.join("settings.toml"),
+        format!(
+            r#"schema_version = 1
+tracked_selectors = []
+
+[linked_runtimes]
+linked-script = "{}"
+"#,
+            env.root.join("linked-script-runtime").display()
+        ),
+    )
+    .unwrap();
+
+    let default_logging = env
+        .command()
+        .env_remove("RUST_LOG")
+        .args(["toolchain", "list", "--quiet"])
+        .output()
+        .expect("toolchain list --quiet with default logging");
+    assert!(default_logging.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&default_logging.stdout),
+        "v22.1.0\nlinked-script\n"
+    );
+    assert!(default_logging.stderr.is_empty());
+
+    let script_safe = env
+        .command()
+        .env("RUST_LOG", "off")
+        .args(["toolchain", "list", "--quiet"])
+        .output()
+        .expect("toolchain list --quiet with RUST_LOG=off");
+    assert!(script_safe.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&script_safe.stdout),
+        "v22.1.0\nlinked-script\n"
+    );
+    assert!(script_safe.stderr.is_empty());
 }
 
 #[test]
@@ -1559,11 +1631,11 @@ fn show_active_runtime_logs_unavailable_reason_for_deleted_linked_runtime() {
         .args(["show", "active-runtime"])
         .assert()
         .failure()
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.show.active-runtime\"",
         ))
-        .stdout(predicates::str::contains("availability: false"))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains("availability: false"))
+        .stderr(predicates::str::contains(
             "reason: \"node-executable-missing\"",
         ));
 }
@@ -1709,11 +1781,11 @@ fn override_resolution_logs_hit_with_fallback_reason() {
         .args(["show", "active-runtime"])
         .assert()
         .success()
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.resolve.override\"",
         ))
-        .stdout(predicates::str::contains("matched: true"))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains("matched: true"))
+        .stderr(predicates::str::contains(
             "fallback_reason: \"override-matched\"",
         ));
 }
@@ -1727,11 +1799,11 @@ fn override_resolution_logs_miss_without_default_selector() {
         .args(["show", "active-runtime"])
         .assert()
         .failure()
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.resolve.override\"",
         ))
-        .stdout(predicates::str::contains("matched: false"))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains("matched: false"))
+        .stderr(predicates::str::contains(
             "fallback_reason: \"no-default-selector\"",
         ));
 }
@@ -1782,9 +1854,11 @@ tracked_selectors = ["invalid selector"]
     assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stdout.contains("Default runtime: invalid selector (resolution unavailable)"));
-    assert!(stdout.contains("command_path: \"nodeup.default\""));
-    assert!(stdout.contains("outcome: \"unresolved\""));
+    assert!(!stdout.contains("command_path: \"nodeup.default\""));
+    assert!(stderr.contains("command_path: \"nodeup.default\""));
+    assert!(stderr.contains("outcome: \"unresolved\""));
 }
 
 #[test]
@@ -1869,9 +1943,8 @@ fn json_show_home_remains_parseable_without_rust_log_env() {
     assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!stdout.contains("command_path:"));
-    assert!(!stderr.contains("command_path:"));
+    assert!(output.stderr.is_empty());
 
     let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert!(payload["data_root"].as_str().is_some());
@@ -1910,6 +1983,38 @@ fn json_completions_success_outputs_raw_script() {
     assert!(!output.stdout.is_empty());
     assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
     assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+}
+
+#[test]
+#[serial]
+fn completion_redirection_examples_keep_stdout_clean() {
+    let env = TestEnv::new();
+
+    let default_logging = env
+        .command()
+        .env_remove("RUST_LOG")
+        .args(["completions", "bash"])
+        .output()
+        .expect("completions bash with default logging");
+    assert!(default_logging.status.success());
+    let default_stdout = String::from_utf8_lossy(&default_logging.stdout);
+    assert!(default_stdout.contains("nodeup"));
+    assert!(!default_stdout.contains("command_path:"));
+    assert!(serde_json::from_slice::<Value>(&default_logging.stdout).is_err());
+    assert!(default_logging.stderr.is_empty());
+
+    let script_safe = env
+        .command()
+        .env("RUST_LOG", "off")
+        .args(["completions", "bash"])
+        .output()
+        .expect("RUST_LOG=off completions bash");
+    assert!(script_safe.status.success());
+    let script_safe_stdout = String::from_utf8_lossy(&script_safe.stdout);
+    assert!(script_safe_stdout.contains("nodeup"));
+    assert!(!script_safe_stdout.contains("command_path:"));
+    assert!(serde_json::from_slice::<Value>(&script_safe.stdout).is_err());
+    assert!(script_safe.stderr.is_empty());
 }
 
 #[test]
@@ -2054,11 +2159,11 @@ fn self_update_logs_action_and_outcome_status() {
         .args(["--output", "json", "self", "update"])
         .assert()
         .success()
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.self.update\"",
         ))
-        .stdout(predicates::str::contains("action: \"self update\""))
-        .stdout(predicates::str::contains("outcome: \"updated\""));
+        .stderr(predicates::str::contains("action: \"self update\""))
+        .stderr(predicates::str::contains("outcome: \"updated\""));
 }
 
 #[test]
@@ -2074,11 +2179,11 @@ fn self_uninstall_removes_artifacts_and_logs_outcome() {
         .assert()
         .success()
         .stdout(predicates::str::contains("\"status\": \"removed\""))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.self.uninstall\"",
         ))
-        .stdout(predicates::str::contains("action: \"self uninstall\""))
-        .stdout(predicates::str::contains("outcome: \"removed\""));
+        .stderr(predicates::str::contains("action: \"self uninstall\""))
+        .stderr(predicates::str::contains("outcome: \"removed\""));
 
     assert!(!env.data_root.exists());
     assert!(!env.cache_root.exists());
@@ -2210,11 +2315,11 @@ selector = "22.1.0"
         .assert()
         .success()
         .stdout(predicates::str::contains("\"status\": \"upgraded\""))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.self.upgrade-data\"",
         ))
-        .stdout(predicates::str::contains("action: \"self upgrade-data\""))
-        .stdout(predicates::str::contains("outcome: \"upgraded\""))
+        .stderr(predicates::str::contains("action: \"self upgrade-data\""))
+        .stderr(predicates::str::contains("outcome: \"upgraded\""))
         .stdout(predicates::str::contains("\"from_schema\": 0"))
         .stdout(predicates::str::contains("\"to_schema\": 1"));
 
@@ -2281,11 +2386,13 @@ fn completions_logs_action_and_outcome() {
         .args(["completions", "zsh"])
         .assert()
         .success()
-        .stdout(predicates::str::contains(
+        .stdout(predicates::str::contains("nodeup"))
+        .stdout(predicates::str::contains("command_path:").not())
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.completions\"",
         ))
-        .stdout(predicates::str::contains("action: \"generate\""))
-        .stdout(predicates::str::contains("outcome: \"generated\""));
+        .stderr(predicates::str::contains("action: \"generate\""))
+        .stderr(predicates::str::contains("outcome: \"generated\""));
 }
 
 #[cfg(unix)]
@@ -2319,11 +2426,11 @@ fn run_logs_exit_code_and_signal_details() {
         .args(["run", "linked-logs", "node"])
         .assert()
         .code(7)
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.run.process\"",
         ))
-        .stdout(predicates::str::contains("exit_code: 7"))
-        .stdout(predicates::str::contains("signal: None"));
+        .stderr(predicates::str::contains("exit_code: 7"))
+        .stderr(predicates::str::contains("signal: None"));
 }
 
 #[cfg(unix)]
@@ -2360,11 +2467,11 @@ fn run_maps_signal_termination_to_standard_exit_code() {
         .stdout(predicates::str::contains(
             "Delegated command 'node' exited with status 143",
         ))
-        .stdout(predicates::str::contains(
+        .stderr(predicates::str::contains(
             "command_path: \"nodeup.run.process\"",
         ))
-        .stdout(predicates::str::contains("exit_code: 143"))
-        .stdout(predicates::str::contains("signal: Some(15)"));
+        .stderr(predicates::str::contains("exit_code: 143"))
+        .stderr(predicates::str::contains("signal: Some(15)"));
 }
 
 #[test]

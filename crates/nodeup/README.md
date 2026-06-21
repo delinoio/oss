@@ -171,7 +171,7 @@ Fallback rules when `packageManager` is absent:
 
 - Global output mode: `--output human|json` (default: `human`)
 - `human` mode:
-  - command results and logs are written for operators
+  - command results are written to stdout for operators
   - default log filter is `nodeup=warn` for management commands
 - `json` mode:
   - success payloads are written to stdout as JSON
@@ -182,6 +182,14 @@ Fallback rules when `packageManager` is absent:
 - `completions` command:
   - always writes raw completion script text to stdout
   - does not wrap completion output in JSON, even when `--output json` is set
+- logs are written to stderr when enabled
+
+Script-safe output patterns:
+
+- Structured automation: `nodeup --output json <command>`
+- Runtime identifier loops: `RUST_LOG=off nodeup toolchain list --quiet`
+- Completion redirection: `RUST_LOG=off nodeup completions <shell> >file`
+- Human output without logs: `RUST_LOG=off nodeup <command>`
 
 Human output color control:
 
@@ -243,7 +251,7 @@ cargo test
   - verify `<path>/bin/node` exists and is executable before `toolchain link`
   - use `nodeup toolchain unlink <name>` to remove a stale linked runtime record
 - JSON parsing issues in automation:
-  - use `--output json` and keep `RUST_LOG` unset (or `off`) to avoid log noise
+  - use `--output json` and keep `RUST_LOG` unset (or `off`) to keep stdout JSON-only
 - Error troubleshooting:
   - follow the `Hint:` action in the error message first, then rerun with `RUST_LOG=nodeup=debug` when deeper diagnostics are needed
 

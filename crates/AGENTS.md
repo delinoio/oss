@@ -34,6 +34,8 @@
 - Record storage and download behavior in project docs whenever changed.
 - Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.
 - Keep unsupported x86 host handling aligned across direct installers, runtime installation, shim dispatch, JSON diagnostics, and Nodeup docs.
+- Keep Nodeup script-safe output guidance aligned across CLI help, crate README, `apps/nodeup-docs`, `docs/project-nodeup.md`, and `docs/crates-nodeup-foundation.md`: `--output json` for structured automation, `RUST_LOG=off nodeup toolchain list --quiet` for raw runtime identifiers, and `RUST_LOG=off nodeup completions <shell> >file` for completion redirection.
+- Keep Nodeup tracing logs on stderr when enabled so stdout remains parseable for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts.
 
 ### binpm-Specific Rules
 
