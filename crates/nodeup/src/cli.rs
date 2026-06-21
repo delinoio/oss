@@ -152,11 +152,13 @@ pub enum ToolchainCommand {
     /// Install one or more runtimes.
     Install {
         /// Runtime selectors to install.
+        #[arg(required = true)]
         runtimes: Vec<String>,
     },
     /// Uninstall one or more runtimes.
     Uninstall {
         /// Installed runtime selectors to remove.
+        #[arg(required = true)]
         runtimes: Vec<String>,
     },
     /// Link an existing local runtime directory.
