@@ -72,6 +72,35 @@ Invalid examples:
 { "packageManager": 10 }
 ```
 
+How Nodeup reports them:
+
+- `pnpm@10.x` fails on `failed_part: "version"` with `problem: "non-exact-semver"` and suggests `pnpm@<major>.<minor>.<patch>`.
+- `npm@10.0.0` fails on `failed_part: "manager"` with `problem: "unsupported-manager"` because only `yarn` and `pnpm` participate in package-manager dispatch.
+- `10` fails on `failed_part: "value"` with `problem: "non-string"` and reports the expected JSON string shape.
+
+JSON errors keep `kind`, `message`, and `exit_code`, and add deterministic diagnostics such as `package_json_path`, `expected`, `supported_managers`, `failed_part`, `problem`, `correction`, and type or version details when applicable.
+
+Corepack descriptors, ranges, tags, and `npm@...` values are not accepted. Use an exact string:
+
+```json
+{ "packageManager": "pnpm@10.32.1" }
+```
+
+## yarn or pnpm Uses npm exec
+
+Nodeup intentionally delegates `yarn` and `pnpm` through the selected runtime's `npm exec` when a pinned `packageManager` value is present or when no direct package-manager binary exists.
+
+Human output names the package spec and reason. JSON output includes `planning.mode`, `planning.package_spec`, `planning.package_json_path`, `planning.reason`, and `planning.package_spec_pinned`.
+
+If `packageManager` is absent and the runtime has no direct `bin/yarn` or `bin/pnpm`, Nodeup uses an unpinned fallback:
+
+- `yarn` -> `@yarnpkg/cli-dist`
+- `pnpm` -> `pnpm`
+
+Unpinned fallback versions can drift as the npm registry changes. Add an exact `packageManager` value for reproducible projects.
+
+Because npm-exec mode uses npm resolution, npm registry outages, npm authentication, proxy settings, `.npmrc`, and npm cache configuration can affect `yarn` and `pnpm` dispatch. Fix the underlying npm configuration or switch to a runtime that provides a direct package-manager binary.
+
 ## Install Fails on Unsupported Host
 
 Nodeup supports macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64 hosts. x86 hosts are unsupported.
