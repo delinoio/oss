@@ -130,8 +130,13 @@ fn add(args: AddArgs) -> Result<i32> {
     };
     let prior_manifest = manifest.clone();
     let manifest_tool = manifest.tools.get(&args.cmd).cloned();
-    let next_manifest_tool =
-        update_manifest_tool_source(manifest_tool.clone(), &spec, explicit_bin);
+    let current_target = HostTarget::current()?;
+    let next_manifest_tool = update_manifest_tool_source(
+        manifest_tool.clone(),
+        &spec,
+        explicit_bin,
+        Some(&current_target),
+    );
     manifest
         .tools
         .insert(args.cmd.clone(), next_manifest_tool.clone());
@@ -767,7 +772,7 @@ fn install_local_source(
     let mut manifest = read_manifest(&manifest_path)?;
     let prior_manifest = manifest.clone();
     let manifest_tool = manifest.tools.get(&cmd).cloned();
-    let next_manifest_tool = update_manifest_tool_source(manifest_tool.clone(), &spec, None);
+    let next_manifest_tool = update_manifest_tool_source(manifest_tool.clone(), &spec, None, None);
     manifest
         .tools
         .insert(cmd.clone(), next_manifest_tool.clone());
@@ -2423,12 +2428,18 @@ fn update_manifest_tool_source(
     tool: Option<ManifestTool>,
     spec: &SourceSpec,
     explicit_bin: Option<String>,
+    current_target: Option<&HostTarget>,
 ) -> ManifestTool {
     let mut tool = tool.unwrap_or_else(|| manifest_tool_from_source(spec));
     tool.source = spec.source_without_version();
     tool.version = spec.version.clone();
     if let Some(bin) = explicit_bin {
-        tool.bin = Some(bin);
+        tool.bin = Some(bin.clone());
+        if let Some(current_target) = current_target {
+            if let Some(override_target) = tool.targets.get_mut(&current_target.key()) {
+                override_target.bin = bin;
+            }
+        }
     }
     tool
 }
@@ -4432,7 +4443,7 @@ mod tests {
             targets: targets.clone(),
         };
 
-        let updated = update_manifest_tool_source(Some(existing), &spec, None);
+        let updated = update_manifest_tool_source(Some(existing), &spec, None, None);
 
         assert_eq!(updated.source, "github:owner/new-tool");
         assert_eq!(updated.version.as_deref(), Some("2.0.0"));
@@ -4453,12 +4464,45 @@ mod tests {
             targets: BTreeMap::new(),
         };
 
-        let updated =
-            update_manifest_tool_source(Some(existing), &spec, Some("dist/new-bin".to_string()));
+        let updated = update_manifest_tool_source(
+            Some(existing),
+            &spec,
+            Some("dist/new-bin".to_string()),
+            None,
+        );
 
         assert_eq!(updated.source, "github:owner/new-tool");
         assert_eq!(updated.version.as_deref(), Some("2.0.0"));
         assert_eq!(updated.bin.as_deref(), Some("dist/new-bin"));
+    }
+
+    #[test]
+    fn manifest_tool_source_update_persists_explicit_bin_to_current_target_override() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/new-tool@2.0.0").expect("source");
+        let existing = ManifestTool {
+            source: "github:owner/old-tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: Some("old-bin".to_string()),
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "custom-asset".to_string(),
+                    bin: "old-target-bin".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+
+        let updated = update_manifest_tool_source(
+            Some(existing),
+            &spec,
+            Some("dist/new-bin".to_string()),
+            Some(&target),
+        );
+
+        assert_eq!(updated.bin.as_deref(), Some("dist/new-bin"));
+        assert_eq!(updated.targets[&target.key()].bin, "dist/new-bin");
     }
 
     #[test]
@@ -4842,7 +4886,7 @@ mod tests {
             )]),
         };
 
-        let updated = update_manifest_tool_source(Some(existing), &spec, None);
+        let updated = update_manifest_tool_source(Some(existing), &spec, None, None);
 
         assert_eq!(updated.source, "github:owner/tool");
         assert_eq!(updated.version.as_deref(), Some("2.0.0"));
