@@ -514,6 +514,14 @@ fn classify_release_lookup_status(
         return Some(ReleaseLookupDiagnosticKind::RateLimited);
     }
 
+    if status.is_redirection() {
+        return Some(if authenticated {
+            ReleaseLookupDiagnosticKind::InsufficientPermissions
+        } else {
+            ReleaseLookupDiagnosticKind::MissingAuth
+        });
+    }
+
     match status {
         StatusCode::UNAUTHORIZED => Some(if authenticated {
             ReleaseLookupDiagnosticKind::InsufficientPermissions
@@ -1288,6 +1296,15 @@ mod tests {
             .to_string()
             .contains("BINPM_GITHUB_TOKEN_GITHUB_COM"));
         assert!(!insufficient.to_string().contains("secret-token"));
+
+        assert_eq!(
+            classify_release_lookup_status(StatusCode::FOUND, false, &headers),
+            Some(ReleaseLookupDiagnosticKind::MissingAuth)
+        );
+        assert_eq!(
+            classify_release_lookup_status(StatusCode::SEE_OTHER, true, &headers),
+            Some(ReleaseLookupDiagnosticKind::InsufficientPermissions)
+        );
     }
 
     #[test]
