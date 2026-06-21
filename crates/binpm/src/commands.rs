@@ -1650,7 +1650,7 @@ fn install_global_source(
     explicit_bin: Option<String>,
     require_verified: bool,
 ) -> Result<i32> {
-    validate_command_name(&cmd)?;
+    validate_command_name(cmd)?;
     let home = binpm_home()?;
     let scope_paths = ScopePaths::global(home.clone());
     let cache_paths = CachePaths::new(&home);
