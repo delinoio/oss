@@ -2338,13 +2338,67 @@ fn zip_central_directory_systems(bytes: &[u8]) -> Vec<u8> {
     const FILE_NAME_LENGTH_OFFSET: usize = 28;
     const EXTRA_FIELD_LENGTH_OFFSET: usize = 30;
     const FILE_COMMENT_LENGTH_OFFSET: usize = 32;
+
+    let Some(directory_bounds) = zip_central_directory_bounds(bytes) else {
+        return Vec::new();
+    };
+
+    let mut systems = Vec::new();
+    let mut index = directory_bounds.0;
+    while index + CENTRAL_DIRECTORY_HEADER_LEN <= directory_bounds.1 {
+        if !bytes[index..].starts_with(&CENTRAL_DIRECTORY_SIGNATURE) {
+            break;
+        }
+
+        let name_len = u16::from_le_bytes([
+            bytes[index + FILE_NAME_LENGTH_OFFSET],
+            bytes[index + FILE_NAME_LENGTH_OFFSET + 1],
+        ]) as usize;
+        let extra_len = u16::from_le_bytes([
+            bytes[index + EXTRA_FIELD_LENGTH_OFFSET],
+            bytes[index + EXTRA_FIELD_LENGTH_OFFSET + 1],
+        ]) as usize;
+        let comment_len = u16::from_le_bytes([
+            bytes[index + FILE_COMMENT_LENGTH_OFFSET],
+            bytes[index + FILE_COMMENT_LENGTH_OFFSET + 1],
+        ]) as usize;
+        let name_start = index + CENTRAL_DIRECTORY_HEADER_LEN;
+        let Some(name_end) = name_start.checked_add(name_len) else {
+            break;
+        };
+        let Some(next_index) = name_end
+            .checked_add(extra_len)
+            .and_then(|offset| offset.checked_add(comment_len))
+        else {
+            break;
+        };
+        if next_index > directory_bounds.1 {
+            break;
+        }
+
+        systems.push(bytes[index + VERSION_MADE_BY_SYSTEM_OFFSET]);
+        index = next_index;
+    }
+    systems
+}
+
+fn zip_central_directory_bounds(bytes: &[u8]) -> Option<(usize, usize)> {
     const END_OF_CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
     const END_OF_CENTRAL_DIRECTORY_LEN: usize = 22;
     const CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 12;
     const CENTRAL_DIRECTORY_OFFSET_OFFSET: usize = 16;
     const END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET: usize = 20;
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x06, 0x06];
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_LEN: usize = 56;
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 4;
+    const ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 40;
+    const ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET: usize = 48;
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x06, 0x07];
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_LEN: usize = 20;
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET: usize = 8;
+    const ZIP32_PLACEHOLDER: u32 = u32::MAX;
 
-    let directory_bounds = bytes
+    let eocd_index = bytes
         .len()
         .checked_sub(END_OF_CENTRAL_DIRECTORY_LEN)
         .and_then(|last_start| {
@@ -2362,71 +2416,124 @@ fn zip_central_directory_systems(bytes: &[u8]) -> Vec<u8> {
                 ]) as usize;
                 index + END_OF_CENTRAL_DIRECTORY_LEN + comment_len == bytes.len()
             })
-        })
-        .and_then(|index| {
-            let directory_size = u32::from_le_bytes([
-                bytes[index + CENTRAL_DIRECTORY_SIZE_OFFSET],
-                bytes[index + CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
-                bytes[index + CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
-                bytes[index + CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
-            ]) as usize;
-            let directory_start = u32::from_le_bytes([
-                bytes[index + CENTRAL_DIRECTORY_OFFSET_OFFSET],
-                bytes[index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 1],
-                bytes[index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 2],
-                bytes[index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 3],
-            ]) as usize;
-            let archive_offset = index
-                .checked_sub(directory_size)?
-                .checked_sub(directory_start)?;
-            let directory_start = archive_offset.checked_add(directory_start)?;
-            let directory_end = directory_start.checked_add(directory_size)?;
-            (directory_start <= index && directory_end == index)
-                .then_some((directory_start, directory_end))
-        })
-        .unwrap_or((0, bytes.len()));
+        })?;
 
-    let mut systems = Vec::new();
-    let mut index = directory_bounds.0;
-    while index + CENTRAL_DIRECTORY_HEADER_LEN <= directory_bounds.1 {
-        if !bytes[index..].starts_with(&CENTRAL_DIRECTORY_SIGNATURE) {
-            index += 1;
-            continue;
-        }
-
-        let name_len = u16::from_le_bytes([
-            bytes[index + FILE_NAME_LENGTH_OFFSET],
-            bytes[index + FILE_NAME_LENGTH_OFFSET + 1],
-        ]) as usize;
-        let extra_len = u16::from_le_bytes([
-            bytes[index + EXTRA_FIELD_LENGTH_OFFSET],
-            bytes[index + EXTRA_FIELD_LENGTH_OFFSET + 1],
-        ]) as usize;
-        let comment_len = u16::from_le_bytes([
-            bytes[index + FILE_COMMENT_LENGTH_OFFSET],
-            bytes[index + FILE_COMMENT_LENGTH_OFFSET + 1],
-        ]) as usize;
-        let name_start = index + CENTRAL_DIRECTORY_HEADER_LEN;
-        let Some(name_end) = name_start.checked_add(name_len) else {
-            index += 1;
-            continue;
-        };
-        let Some(next_index) = name_end
-            .checked_add(extra_len)
-            .and_then(|offset| offset.checked_add(comment_len))
-        else {
-            index += 1;
-            continue;
-        };
-        if next_index > directory_bounds.1 {
-            index += 1;
-            continue;
-        }
-
-        systems.push(bytes[index + VERSION_MADE_BY_SYSTEM_OFFSET]);
-        index = next_index;
+    let directory_size_32 = u32::from_le_bytes([
+        bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET],
+        bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
+        bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
+        bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
+    ]);
+    let directory_start_32 = u32::from_le_bytes([
+        bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET],
+        bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 1],
+        bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 2],
+        bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 3],
+    ]);
+    if directory_size_32 != ZIP32_PLACEHOLDER && directory_start_32 != ZIP32_PLACEHOLDER {
+        return zip_central_directory_bounds_from_values(
+            bytes,
+            eocd_index,
+            directory_size_32 as usize,
+            directory_start_32 as usize,
+        );
     }
-    systems
+
+    let locator_index = eocd_index.checked_sub(ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_LEN)?;
+    if !bytes[locator_index..].starts_with(&ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE) {
+        return None;
+    }
+    let zip64_eocd_offset = u64::from_le_bytes([
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 1],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 2],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 3],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 4],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 5],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 6],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 7],
+    ]);
+    let zip64_eocd_offset = usize::try_from(zip64_eocd_offset).ok()?;
+    let zip64_eocd_index = (0..=locator_index.saturating_sub(ZIP64_END_OF_CENTRAL_DIRECTORY_LEN))
+        .rev()
+        .find(|candidate| {
+            let candidate = *candidate;
+            if !bytes[candidate..].starts_with(&ZIP64_END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
+                return false;
+            }
+            let record_size = u64::from_le_bytes([
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 4],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 5],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 6],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 7],
+            ]);
+            let Some(record_size) = usize::try_from(record_size).ok() else {
+                return false;
+            };
+            let Some(record_end) = candidate
+                .checked_add(ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 8)
+                .and_then(|offset| offset.checked_add(record_size))
+            else {
+                return false;
+            };
+            record_end == locator_index
+                && candidate
+                    .checked_sub(zip64_eocd_offset)
+                    .is_some_and(|archive_offset| {
+                        archive_offset
+                            .checked_add(zip64_eocd_offset)
+                            .is_some_and(|offset| offset == candidate)
+                    })
+        })?;
+    let directory_size = u64::from_le_bytes([
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 4],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 5],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 6],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 7],
+    ]);
+    let directory_start = u64::from_le_bytes([
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 1],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 2],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 3],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 4],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 5],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 6],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 7],
+    ]);
+    let directory_size = usize::try_from(directory_size).ok()?;
+    let directory_start = usize::try_from(directory_start).ok()?;
+    zip_central_directory_bounds_from_values(
+        bytes,
+        zip64_eocd_index,
+        directory_size,
+        directory_start,
+    )
+}
+
+fn zip_central_directory_bounds_from_values(
+    bytes: &[u8],
+    directory_end_index: usize,
+    directory_size: usize,
+    directory_start: usize,
+) -> Option<(usize, usize)> {
+    let archive_offset = directory_end_index
+        .checked_sub(directory_size)?
+        .checked_sub(directory_start)?;
+    let directory_start = archive_offset.checked_add(directory_start)?;
+    let directory_end = directory_start.checked_add(directory_size)?;
+    (directory_start <= directory_end_index
+        && directory_end == directory_end_index
+        && directory_end <= bytes.len())
+    .then_some((directory_start, directory_end))
 }
 
 fn zip_file_has_real_unix_mode(entry_system: Option<u8>, unix_mode: Option<u32>) -> bool {
@@ -2441,7 +2548,7 @@ fn zip_file_has_real_unix_mode(entry_system: Option<u8>, unix_mode: Option<u32>)
     has_usable_unix_mode
         && entry_system
             .map(|system| system == ZIP_SYSTEM_UNIX)
-            .unwrap_or(true)
+            .unwrap_or(false)
 }
 
 fn zip_file_is_symlink(unix_mode: Option<u32>) -> bool {
@@ -4722,6 +4829,35 @@ mod tests {
             None,
         )
         .expect("selected repo binary despite false central-directory signature");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+    }
+
+    #[test]
+    fn zip_extraction_uses_zip64_bounds_before_payload_signatures() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        let mut payload = b"prefix PK\x01\x02".to_vec();
+        payload.extend([0xff; 64]);
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("pkg/README.md", payload.as_slice()),
+                ("pkg/tool", b"#!/bin/sh\necho recovered\n".as_slice()),
+            ],
+        );
+        patch_zip_to_use_zip64_central_directory_bounds(&archive_path);
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary despite ZIP64 placeholders and payload signature");
 
         assert_eq!(selected.path, "pkg/tool");
         assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
@@ -8090,6 +8226,73 @@ mod tests {
                 .saturating_add(comment_len);
         }
         fs::write(path, bytes).expect("write zip name patch");
+    }
+
+    fn patch_zip_to_use_zip64_central_directory_bounds(path: &Path) {
+        const END_OF_CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+        const END_OF_CENTRAL_DIRECTORY_LEN: usize = 22;
+        const END_OF_CENTRAL_DIRECTORY_ENTRY_COUNT_OFFSET: usize = 8;
+        const CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 12;
+        const CENTRAL_DIRECTORY_OFFSET_OFFSET: usize = 16;
+        const ZIP32_PLACEHOLDER_16: u16 = u16::MAX;
+        const ZIP32_PLACEHOLDER_32: u32 = u32::MAX;
+
+        let bytes = fs::read(path).expect("read zip for ZIP64 patch");
+        let eocd_index = bytes
+            .len()
+            .checked_sub(END_OF_CENTRAL_DIRECTORY_LEN)
+            .expect("zip has EOCD");
+        assert!(bytes[eocd_index..].starts_with(&END_OF_CENTRAL_DIRECTORY_SIGNATURE));
+        let directory_size = u32::from_le_bytes([
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
+        ]) as u64;
+        let directory_start = u32::from_le_bytes([
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 1],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 2],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 3],
+        ]) as u64;
+
+        let mut zip64_eocd = Vec::new();
+        zip64_eocd.extend_from_slice(&[0x50, 0x4b, 0x06, 0x06]);
+        zip64_eocd.extend_from_slice(&44_u64.to_le_bytes());
+        zip64_eocd.extend_from_slice(&45_u16.to_le_bytes());
+        zip64_eocd.extend_from_slice(&45_u16.to_le_bytes());
+        zip64_eocd.extend_from_slice(&0_u32.to_le_bytes());
+        zip64_eocd.extend_from_slice(&0_u32.to_le_bytes());
+        zip64_eocd.extend_from_slice(&2_u64.to_le_bytes());
+        zip64_eocd.extend_from_slice(&2_u64.to_le_bytes());
+        zip64_eocd.extend_from_slice(&directory_size.to_le_bytes());
+        zip64_eocd.extend_from_slice(&directory_start.to_le_bytes());
+
+        let mut zip64_locator = Vec::new();
+        zip64_locator.extend_from_slice(&[0x50, 0x4b, 0x06, 0x07]);
+        zip64_locator.extend_from_slice(&0_u32.to_le_bytes());
+        zip64_locator.extend_from_slice(&(eocd_index as u64).to_le_bytes());
+        zip64_locator.extend_from_slice(&1_u32.to_le_bytes());
+
+        let mut patched = bytes[..eocd_index].to_vec();
+        patched.extend_from_slice(&zip64_eocd);
+        patched.extend_from_slice(&zip64_locator);
+        patched.extend_from_slice(&bytes[eocd_index..]);
+        let new_eocd_index = patched.len() - END_OF_CENTRAL_DIRECTORY_LEN;
+        patched[new_eocd_index + END_OF_CENTRAL_DIRECTORY_ENTRY_COUNT_OFFSET
+            ..new_eocd_index + END_OF_CENTRAL_DIRECTORY_ENTRY_COUNT_OFFSET + 2]
+            .copy_from_slice(&ZIP32_PLACEHOLDER_16.to_le_bytes());
+        patched[new_eocd_index + END_OF_CENTRAL_DIRECTORY_ENTRY_COUNT_OFFSET + 2
+            ..new_eocd_index + END_OF_CENTRAL_DIRECTORY_ENTRY_COUNT_OFFSET + 4]
+            .copy_from_slice(&ZIP32_PLACEHOLDER_16.to_le_bytes());
+        patched[new_eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET
+            ..new_eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 4]
+            .copy_from_slice(&ZIP32_PLACEHOLDER_32.to_le_bytes());
+        patched[new_eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET
+            ..new_eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 4]
+            .copy_from_slice(&ZIP32_PLACEHOLDER_32.to_le_bytes());
+
+        fs::write(path, patched).expect("write ZIP64 bounds patch");
     }
 
     fn patch_zip_central_directory_external_attributes(path: &Path, system: u8, attributes: u32) {
