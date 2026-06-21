@@ -85,19 +85,6 @@ pub fn sanitize_url_text(raw: &str) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::sanitize_url_text;
-
-    #[test]
-    fn sanitize_url_text_strips_userinfo_query_and_fragment() {
-        let sanitized =
-            sanitize_url_text("https://user:token@example.test/index.json?token=secret#fragment");
-
-        assert_eq!(sanitized, "https://example.test/index.json");
-    }
-}
-
 fn reqwest_error_classification(error: &reqwest::Error) -> &'static str {
     if error.is_timeout() {
         "timeout"
@@ -323,4 +310,17 @@ pub fn with_context<E: fmt::Display>(kind: ErrorKind, context: &str, error: E) -
         format!("{context}: {error}"),
         default_hint_for_kind(kind),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_url_text;
+
+    #[test]
+    fn sanitize_url_text_strips_userinfo_query_and_fragment() {
+        let sanitized =
+            sanitize_url_text("https://user:token@example.test/index.json?token=secret#fragment");
+
+        assert_eq!(sanitized, "https://example.test/index.json");
+    }
 }
