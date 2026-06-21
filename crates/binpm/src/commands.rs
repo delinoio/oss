@@ -1360,6 +1360,8 @@ fn validate_frozen_update_versionless_current_release(
             cmd: cmd.to_string(),
         });
     }
+    validate_locked_record_current_asset(lockfile_path, cmd, record, &release.assets)?;
+    validate_locked_record_current_provider_digest(lockfile_path, cmd, record, &release.assets)?;
     Ok(())
 }
 
@@ -5112,13 +5114,14 @@ mod tests {
 
     struct StaticReleaseClient {
         tag: &'static str,
+        assets: Vec<ReleaseAsset>,
     }
 
     impl ReleaseClient for StaticReleaseClient {
         fn list_releases(&self, _source: &SourceSpec) -> Result<Vec<Release>> {
             Ok(vec![Release {
                 tag: self.tag.to_string(),
-                assets: vec![],
+                assets: self.assets.clone(),
                 stable: true,
                 released_at: None,
                 stability_reason: None,
@@ -5129,13 +5132,30 @@ mod tests {
             Ok(ReleaseSelection {
                 release: Release {
                     tag: self.tag.to_string(),
-                    assets: vec![],
+                    assets: self.assets.clone(),
                     stable: true,
                     released_at: None,
                     stability_reason: None,
                 },
                 decision: "test release".to_string(),
             })
+        }
+    }
+
+    fn release_asset_from_record(record: &PackageRecord) -> ReleaseAsset {
+        ReleaseAsset {
+            name: record.asset_name.clone(),
+            url: record.asset_url.clone(),
+            provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: record
+                .provider_digest_sha256
+                .as_ref()
+                .map(|sha256| format!("sha256:{sha256}")),
+            source_archive: false,
+            final_url_https: None,
         }
     }
 
@@ -7950,7 +7970,10 @@ mod tests {
         record.package_spec = "github:owner/tool".to_string();
         record.requested_version = None;
         record.release_tag = "1.0.0".to_string();
-        let client = StaticReleaseClient { tag: "1.1.0" };
+        let client = StaticReleaseClient {
+            tag: "1.1.0",
+            assets: vec![],
+        };
 
         let error = validate_frozen_update_versionless_current_release(
             &temp_dir.path().join("binpm.lock"),
@@ -7972,7 +7995,10 @@ mod tests {
         record.package_spec = "github:owner/tool".to_string();
         record.requested_version = None;
         record.release_tag = "1.0.0".to_string();
-        let client = StaticReleaseClient { tag: "1.0.0" };
+        let client = StaticReleaseClient {
+            tag: "1.0.0",
+            assets: vec![release_asset_from_record(&record)],
+        };
 
         validate_frozen_update_versionless_current_release(
             &temp_dir.path().join("binpm.lock"),
@@ -7985,11 +8011,72 @@ mod tests {
     }
 
     #[test]
+    fn frozen_update_rejects_versionless_lock_when_current_asset_url_changed() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source spec");
+        let mut record = package_record();
+        record.package_spec = "github:owner/tool".to_string();
+        record.requested_version = None;
+        record.release_tag = "1.0.0".to_string();
+        let mut asset = release_asset_from_record(&record);
+        asset.url =
+            "https://github.com/owner/tool/releases/download/1.0.0/new-tool-linux".to_string();
+        let client = StaticReleaseClient {
+            tag: "1.0.0",
+            assets: vec![asset],
+        };
+
+        let error = validate_frozen_update_versionless_current_release(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &record,
+            &client,
+        )
+        .expect_err("changed asset URL is stale");
+
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
+    }
+
+    #[test]
+    fn frozen_update_rejects_versionless_lock_when_current_provider_digest_changed() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source spec");
+        let mut record = package_record();
+        mark_github_verified(&mut record);
+        record.package_spec = "github:owner/tool".to_string();
+        record.requested_version = None;
+        record.release_tag = "1.0.0".to_string();
+        let mut asset = release_asset_from_record(&record);
+        asset.digest = Some(
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111".to_string(),
+        );
+        let client = StaticReleaseClient {
+            tag: "1.0.0",
+            assets: vec![asset],
+        };
+
+        let error = validate_frozen_update_versionless_current_release(
+            &temp_dir.path().join("binpm.lock"),
+            "tool",
+            &spec,
+            &record,
+            &client,
+        )
+        .expect_err("changed provider digest is stale");
+
+        assert!(matches!(error, BinpmError::StaleLockfile { .. }));
+    }
+
+    #[test]
     fn frozen_update_does_not_check_latest_for_versioned_lock() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
         let record = package_record();
-        let client = StaticReleaseClient { tag: "1.1.0" };
+        let client = StaticReleaseClient {
+            tag: "1.1.0",
+            assets: vec![],
+        };
 
         validate_frozen_update_versionless_current_release(
             &temp_dir.path().join("binpm.lock"),
