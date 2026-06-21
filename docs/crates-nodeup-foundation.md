@@ -18,6 +18,8 @@
 - Shim dispatch behavior must remain deterministic by executable name (`node`, `npm`, `npx`, `yarn`, `pnpm`).
 - Install/update command surfaces must preserve backward-compatible flags and outputs.
 - Host support must include `macOS`, `Linux`, and `Windows` x64/arm64, while x86 hosts remain unsupported.
+- Direct installers, runtime installation, and shim dispatch must detect unsupported x86 hosts before release asset download or delegated command planning.
+- Unsupported host failures must use `unsupported-platform`, include the supported pairs `macos/x64`, `macos/arm64`, `linux/x64`, `linux/arm64`, `windows/x64`, and `windows/arm64`, and guide users to an x64/arm64 host or supported CI image.
 - Homebrew installation must consume prebuilt release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - Direct install scripts must verify release artifacts with `SHA256SUMS` and Sigstore bundle sidecars (`<artifact>.sigstore.json`) via `cosign verify-blob --bundle`.
 - Direct installers must remain available at `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1`.
@@ -33,7 +35,8 @@
 - Human output color precedence must remain `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
 - User-facing `NodeupError` messages must follow the format `<cause>. Hint: <next action>`.
 - `NodeupError` cause text should include deterministic key-value diagnostics when available (for example `selector`, `runtime`, `path`, `url`, `status`, `attempt`).
-- JSON error envelopes must keep the stable shape `kind`, `message`, and `exit_code` while allowing message text improvements.
+- JSON error envelopes must keep the stable fields `kind`, `message`, and `exit_code` while allowing optional structured `diagnostics`.
+- Unsupported platform JSON diagnostics must be deterministic and include `os`, `architecture`, `platform_source`, optional `forced_platform`, and `supported_platforms`.
 - ANSI styling must never be injected into `--output json` payloads on stdout/stderr.
 - `completions` must generate raw shell completion scripts for `bash`, `zsh`, `fish`, `powershell`, and `elvish`.
 - `completions <shell> [command]` command scope must accept only top-level command identifiers and fail with `invalid-input` for unsupported scopes.
@@ -67,7 +70,7 @@
 - Completion coverage must include successful script generation, invalid shell/scope validation, and JSON-mode raw output behavior.
 - Output color coverage must include flag/env precedence, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
 - `packageManager` coverage must include strict parsing, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, and npm-exec fallback behavior.
-- Runtime install coverage must include `linux-arm64`, `windows-x64`, and `windows-arm64` archive selection and extraction behavior.
+- Runtime install coverage must include `linux-arm64`, `windows-x64`, and `windows-arm64` archive selection and extraction behavior plus unsupported x86 CLI override failures.
 
 ## Dependencies and Integrations
 - Integrates with filesystem runtime shims and remote distribution channels.

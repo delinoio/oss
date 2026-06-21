@@ -1,6 +1,6 @@
 # Installation
 
-Nodeup is distributed as first-party release artifacts. Install flows are designed for supported macOS, Linux, and Windows x64/arm64 hosts.
+Nodeup is distributed as first-party release artifacts. Install flows are designed for macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64 hosts.
 
 ## Homebrew
 
@@ -25,6 +25,8 @@ The repository maintains direct installers at:
 - `scripts/install/nodeup.ps1`
 
 Direct installers verify `SHA256SUMS` entries and Sigstore bundle sidecars (`*.sigstore.json`) with `cosign`. They support bundle-enabled releases only.
+
+Direct installers detect unsupported x86 hosts before resolving release tags or downloading assets. Use an x64/arm64 host or a supported CI image when an installer reports an unsupported host.
 
 macOS and Linux:
 
@@ -94,7 +96,7 @@ Nodeup runtime installation and shim dispatch support:
 | Windows | x64 | `node-v<version>-win-x64.zip` |
 | Windows | arm64 | `node-v<version>-win-arm64.zip` |
 
-x86 hosts are unsupported.
+x86 hosts are unsupported. Runtime installation and shim dispatch fail with `unsupported-platform` before archive download or delegated command planning. JSON errors include deterministic diagnostics: `os`, `architecture`, `platform_source`, optional `forced_platform`, and `supported_platforms`.
 
 ## Local Directories
 

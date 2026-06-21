@@ -10,7 +10,7 @@ use crate::{
     errors::{NodeupError, Result},
     process::{run_command, DelegatedStdioPolicy},
     resolver::ResolvedRuntimeTarget,
-    types::RuntimeSelectorSource,
+    types::{PlatformTarget, RuntimeSelectorSource},
     NodeupApp,
 };
 
@@ -38,6 +38,10 @@ pub fn execute(
             ),
             "Use `nodeup run [--install] <runtime> <command> [args...]`.",
         ));
+    }
+
+    if install {
+        PlatformTarget::ensure_supported_host("runtime installation")?;
     }
 
     let resolved = app
