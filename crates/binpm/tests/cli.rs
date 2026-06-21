@@ -76,7 +76,29 @@ fn help_includes_initial_command_surface() {
         .stdout(predicate::str::contains("run"))
         .stdout(predicate::str::contains("cache"))
         .stdout(predicate::str::contains("verify"))
-        .stdout(predicate::str::contains("env"));
+        .stdout(predicate::str::contains("env"))
+        .stdout(predicate::str::contains("--verbose"))
+        .stdout(predicate::str::contains("--debug"));
+}
+
+#[test]
+fn verbose_flag_overrides_binpm_log_env_filter() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_LOG", "binpm=off")
+        .env("BINPM_LOG_COLOR", "never")
+        .env("BINPM_HOME", &home)
+        .args(["--verbose", "env", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Rendered PATH environment commands").not())
+        .stderr(predicate::str::contains(
+            "Rendered PATH environment commands",
+        ));
 }
 
 #[test]

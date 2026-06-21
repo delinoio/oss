@@ -782,10 +782,11 @@ mod tests {
         let cache_file = dir.path().join("release-index.json");
         let server = MockServer::start();
         let index_url = server.url("/index.json");
+        let fetched_at_epoch_seconds = unix_epoch_seconds() - 120;
         let stale_payload = ReleaseIndexCachePayload {
             schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
             index_url: index_url.clone(),
-            fetched_at_epoch_seconds: 1,
+            fetched_at_epoch_seconds,
             entries: vec![ReleaseEntry {
                 version: "v22.11.0".to_string(),
                 lts: serde_json::Value::String("Jod".to_string()),
