@@ -143,6 +143,7 @@ enum ProjectId {
 - Local target-specific asset overrides must use `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.
 - Local `binpm install`, `binpm update`, and `binpm x` must honor `--frozen-lockfile`; `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.
 - `binpm verify --require-verified` must fail when no provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature under a documented trust policy is available.
+- `binpm update` and `binpm remove` must print selected local/global scope before mutation and support `--dry-run` previews that do not mutate manifests, lockfiles, package records, cache references, or executables.
 - `--no-confirm` is a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
 - `binpm env --shell` must keep supported shell values explicit: `bash`, `zsh`, `fish`, and `powershell` are supported, while `cmd` is accepted only to return a clear deferred-shell diagnostic.
 - Global install and doctor PATH setup messaging must remain guided and opt-in; binpm must not edit shell profile files unless a future contract explicitly adds an opt-in profile modification command.
