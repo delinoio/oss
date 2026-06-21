@@ -69,7 +69,8 @@ $Installer = Join-Path ([System.IO.Path]::GetTempPath()) ("nodeup-install-" + [S
 try {
   Invoke-WebRequest -Uri $InstallerUrl -OutFile $Installer
   Unblock-File -LiteralPath $Installer -ErrorAction SilentlyContinue
-  & $Installer -Version latest -Method direct
+  $PowerShell = (Get-Process -Id $PID).Path
+  & $PowerShell -NoProfile -ExecutionPolicy Bypass -File $Installer -Version latest -Method direct
 }
 finally {
   Remove-Item -LiteralPath $Installer -Force -ErrorAction SilentlyContinue
