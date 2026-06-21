@@ -170,6 +170,8 @@ pub enum ShowCommand {
     ActiveRuntime,
     /// Show the nodeup home directory path.
     Home,
+    /// Show effective human output and log color decisions.
+    Color,
 }
 
 #[derive(Debug, Subcommand)]

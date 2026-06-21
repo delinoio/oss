@@ -31,6 +31,7 @@
 - `which yarn|pnpm` in npm-exec mode must resolve to the runtime `npm` executable path.
 - Human output styling must support `--color auto|always|never` and `NODEUP_COLOR=auto|always|never`.
 - Human output color precedence must remain `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
+- `nodeup show color` must report effective color decisions for human stdout, human stderr, and logs, including ignored invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values.
 - User-facing `NodeupError` messages must follow the format `<cause>. Hint: <next action>`.
 - `NodeupError` cause text should include deterministic key-value diagnostics when available (for example `selector`, `runtime`, `path`, `url`, `status`, `attempt`).
 - JSON error envelopes must keep the stable shape `kind`, `message`, and `exit_code` while allowing message text improvements.
@@ -65,7 +66,7 @@
 - Install docs that choose to describe direct-install flows must keep Bash, PowerShell, `cargo-binstall`, and GitHub Actions usage aligned with the installer scripts and manifest metadata.
 - `apps/public-docs` is not required to surface repo-local direct-installer script examples.
 - Completion coverage must include successful script generation, invalid shell/scope validation, and JSON-mode raw output behavior.
-- Output color coverage must include flag/env precedence, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
+- Output color coverage must include flag/env precedence, diagnostic reporting, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
 - `packageManager` coverage must include strict parsing, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, and npm-exec fallback behavior.
 - Runtime install coverage must include `linux-arm64`, `windows-x64`, and `windows-arm64` archive selection and extraction behavior.
 

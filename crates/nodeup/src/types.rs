@@ -59,6 +59,7 @@ impl NodeupToolchainCommand {
 pub enum NodeupShowCommand {
     ActiveRuntime,
     Home,
+    Color,
 }
 
 impl NodeupShowCommand {
@@ -66,6 +67,7 @@ impl NodeupShowCommand {
         match self {
             Self::ActiveRuntime => "active-runtime",
             Self::Home => "home",
+            Self::Color => "color",
         }
     }
 }

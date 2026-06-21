@@ -3,7 +3,7 @@ use std::io::IsTerminal;
 use crate::cli::OutputColorMode;
 
 pub const NODEUP_COLOR_ENV: &str = "NODEUP_COLOR";
-const NO_COLOR_ENV: &str = "NO_COLOR";
+pub const NO_COLOR_ENV: &str = "NO_COLOR";
 
 const ANSI_RESET: &str = "\u{1b}[0m";
 const ANSI_BOLD: &str = "\u{1b}[1m";
@@ -14,6 +14,17 @@ const ANSI_BOLD_RED: &str = "\u{1b}[1;31m";
 enum OutputStream {
     Stdout,
     Stderr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputColorDecision {
+    pub stream: &'static str,
+    pub enabled: bool,
+    pub mode: OutputColorMode,
+    pub source: &'static str,
+    pub is_terminal: bool,
+    pub no_color_present: bool,
+    pub ignored_nodeup_color: Option<String>,
 }
 
 pub fn style_human_stdout(human_line: &str, color_flag: Option<OutputColorMode>) -> String {
@@ -92,6 +103,80 @@ fn resolve_output_color_enabled_for_stream(
     };
 
     resolve_output_color_enabled(color_flag, env_mode, no_color, is_terminal)
+}
+
+pub fn stdout_color_decision(color_flag: Option<OutputColorMode>) -> OutputColorDecision {
+    output_color_decision_for_stream(
+        OutputStream::Stdout,
+        color_flag,
+        std::io::stdout().is_terminal(),
+        false,
+    )
+}
+
+pub fn stderr_color_decision(color_flag: Option<OutputColorMode>) -> OutputColorDecision {
+    output_color_decision_for_stream(
+        OutputStream::Stderr,
+        color_flag,
+        false,
+        std::io::stderr().is_terminal(),
+    )
+}
+
+fn output_color_decision_for_stream(
+    stream: OutputStream,
+    color_flag: Option<OutputColorMode>,
+    stdout_is_terminal: bool,
+    stderr_is_terminal: bool,
+) -> OutputColorDecision {
+    let raw_env_mode = std::env::var(NODEUP_COLOR_ENV).ok();
+    let env_mode = raw_env_mode.as_deref().and_then(parse_output_color_mode);
+    let ignored_nodeup_color =
+        raw_env_mode.filter(|value| parse_output_color_mode(value).is_none());
+    let no_color_present = std::env::var_os(NO_COLOR_ENV).is_some();
+    let is_terminal = match stream {
+        OutputStream::Stdout => stdout_is_terminal,
+        OutputStream::Stderr => stderr_is_terminal,
+    };
+    let (mode, source) = resolve_output_color_mode(color_flag, env_mode, no_color_present);
+    let enabled = match mode {
+        OutputColorMode::Always => true,
+        OutputColorMode::Never => false,
+        OutputColorMode::Auto => is_terminal,
+    };
+
+    OutputColorDecision {
+        stream: match stream {
+            OutputStream::Stdout => "human-stdout",
+            OutputStream::Stderr => "human-stderr",
+        },
+        enabled,
+        mode,
+        source,
+        is_terminal,
+        no_color_present,
+        ignored_nodeup_color,
+    }
+}
+
+fn resolve_output_color_mode(
+    color_flag: Option<OutputColorMode>,
+    env_mode: Option<OutputColorMode>,
+    no_color: bool,
+) -> (OutputColorMode, &'static str) {
+    if let Some(mode) = color_flag {
+        return (mode, "--color");
+    }
+
+    if let Some(mode) = env_mode {
+        return (mode, NODEUP_COLOR_ENV);
+    }
+
+    if no_color {
+        return (OutputColorMode::Never, NO_COLOR_ENV);
+    }
+
+    (OutputColorMode::Auto, "auto")
 }
 
 fn resolve_output_color_enabled(
