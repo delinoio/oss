@@ -3848,15 +3848,27 @@ fn print_env(shell: Shell, global_bin: &Path, local_bin: &Path) {
     let local = shell_quote(shell, local_bin);
     match shell {
         Shell::Bash | Shell::Zsh => {
-            println!("export PATH={local}:{global}${{PATH:+:$PATH}}");
+            println!("# Global bin: persist this line in shell profiles");
+            println!("export PATH={global}${{PATH:+:$PATH}}");
+            println!("# Project-local bin: use for the current project/session only");
+            println!("export PATH={local}${{PATH:+:$PATH}}");
         }
         Shell::Fish => {
-            println!("set -gx PATH {local} {global} $PATH");
+            println!("# Global bin: persist this line in shell profiles");
+            println!("set -gx PATH {global} $PATH");
+            println!("# Project-local bin: use for the current project/session only");
+            println!("set -gx PATH {local} $PATH");
         }
         Shell::Powershell => {
+            println!("# Global bin: persist this line in shell profiles");
             println!(
-                "$env:PATH = {local} + [System.IO.Path]::PathSeparator + {global} + $(if \
-                 ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} else {{ '' }})"
+                "$env:PATH = {global} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
+                 $env:PATH }} else {{ '' }})"
+            );
+            println!("# Project-local bin: use for the current project/session only");
+            println!(
+                "$env:PATH = {local} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
+                 $env:PATH }} else {{ '' }})"
             );
         }
         Shell::Cmd => unreachable!("cmd shell is explicitly deferred before rendering"),
@@ -4120,9 +4132,10 @@ fn print_global_path_setup_guidance(global_bin: &Path) {
          commands"
     );
     println!(
-        "path_setup: profile changes are opt-in; add the printed commands to your shell profile \
-         only if you want them to persist"
+        "path_setup: profile changes are opt-in; persist only the global bin line in shell \
+         profiles"
     );
+    println!("path_setup: the project-local PATH line is for the current project/session only");
 }
 
 #[cfg(test)]

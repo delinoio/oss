@@ -165,10 +165,13 @@ fn env_prints_shell_path_exports() {
         .join(".binpm")
         .join("bin");
     let global_bin = home.join("bin");
-    let expected = format!(
-        "export PATH={}:{}${{PATH:+:$PATH}}",
-        bash_quote_path(&local_bin),
+    let expected_global = format!(
+        "export PATH={}${{PATH:+:$PATH}}",
         bash_quote_path(&global_bin)
+    );
+    let expected_local = format!(
+        "export PATH={}${{PATH:+:$PATH}}",
+        bash_quote_path(&local_bin)
     );
     let mut command = binpm();
 
@@ -178,7 +181,14 @@ fn env_prints_shell_path_exports() {
         .args(["env", "--shell", "bash"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(expected));
+        .stdout(predicate::str::contains(
+            "# Global bin: persist this line in shell profiles",
+        ))
+        .stdout(predicate::str::contains(expected_global))
+        .stdout(predicate::str::contains(
+            "# Project-local bin: use for the current project/session only",
+        ))
+        .stdout(predicate::str::contains(expected_local));
 }
 
 #[test]
@@ -429,7 +439,11 @@ fn doctor_guides_path_setup_when_global_bin_is_absent_from_path() {
         .success()
         .stdout(predicate::str::contains("global_bin_on_path: no"))
         .stdout(predicate::str::contains("binpm env --shell"))
-        .stdout(predicate::str::contains("profile changes are opt-in"));
+        .stdout(predicate::str::contains("profile changes are opt-in"))
+        .stdout(predicate::str::contains("persist only the global bin line"))
+        .stdout(predicate::str::contains(
+            "project-local PATH line is for the current project/session only",
+        ));
 }
 
 #[test]
@@ -478,11 +492,8 @@ fn env_fish_preserves_paths_before_directories_exist() {
         .join(".binpm")
         .join("bin");
     let global_bin = home.join("bin");
-    let expected = format!(
-        "set -gx PATH '{}' '{}' $PATH",
-        local_bin.display(),
-        global_bin.display()
-    );
+    let expected_global = format!("set -gx PATH '{}' $PATH", global_bin.display());
+    let expected_local = format!("set -gx PATH '{}' $PATH", local_bin.display());
     let mut command = binpm();
 
     command
@@ -491,7 +502,8 @@ fn env_fish_preserves_paths_before_directories_exist() {
         .args(["env", "--shell", "fish"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(expected))
+        .stdout(predicate::str::contains(expected_global))
+        .stdout(predicate::str::contains(expected_local))
         .stdout(predicate::str::contains("fish_add_path").not());
 }
 

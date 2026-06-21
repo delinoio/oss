@@ -38,7 +38,7 @@ binpm env --shell powershell
 
 Supported `--shell` values are `bash`, `zsh`, `fish`, and `powershell`. `PowerShell` is accepted case-insensitively. `cmd` is recognized but explicitly deferred and returns an unsupported-shell diagnostic.
 
-binpm does not edit shell profile files from these commands. Persistent profile changes are opt-in: add the printed commands to your shell profile only when you want them to persist.
+binpm does not edit shell profile files from these commands. Persistent profile changes are opt-in: add only the printed global bin command to your shell profile when you want global installs to persist on `PATH`. The printed project-local command is for the current project or shell session only.
 
 ## Security Boundary
 
