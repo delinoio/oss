@@ -24,4 +24,9 @@ pnpm --filter public-docs test
 - `derun.mdx`: Public project guide for `derun`.
 - `with-watch.mdx`: Public project guide for `with-watch`.
 
-Nodeup is intentionally not published through this Mintlify app. Its dedicated documentation app is `apps/nodeup-docs` at `https://nodeup.delino.io`.
+Nodeup and binpm are major projects linked from this Mintlify app through external top-level navigation entries:
+
+- Nodeup documentation is owned by `apps/nodeup-docs` and published at `https://nodeup.delino.io`.
+- binpm documentation is owned by `apps/binpm-docs` and published at `https://binpm.delino.io`.
+
+Do not add in-site `nodeup` or `binpm` guide routes under `apps/public-docs`; keep their public guides in the standalone documentation apps.
