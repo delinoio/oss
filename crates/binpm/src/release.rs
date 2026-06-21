@@ -183,6 +183,7 @@ impl GitLabReleaseClient {
         Ok(Self {
             http: Client::builder()
                 .user_agent(USER_AGENT)
+                .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .map_err(BinpmError::ReleaseHttpClient)?,
             now,
@@ -213,7 +214,7 @@ impl ReleaseClient for GitLabReleaseClient {
         let mut releases =
             fetch_paginated_json::<GitLabRelease>(&self.http, source, &url, None, auth.as_ref())?
                 .into_iter()
-                .map(|release| release.into_release_with_auth(self.now, auth.as_ref()))
+                .map(|release| release.into_release_with_auth(self.now, source, auth.as_ref()))
                 .collect::<Vec<_>>();
 
         sort_gitlab_releases(&mut releases);
@@ -676,10 +677,18 @@ struct GitLabRelease {
 impl GitLabRelease {
     #[cfg(test)]
     fn into_release(self, now: DateTime<Utc>) -> Release {
-        self.into_release_with_auth(now, None)
+        let source: SourceSpec = "gitlab:gitlab.example.com/group/tool"
+            .parse()
+            .expect("source");
+        self.into_release_with_auth(now, &source, None)
     }
 
-    fn into_release_with_auth(self, now: DateTime<Utc>, auth: Option<&ProviderAuth>) -> Release {
+    fn into_release_with_auth(
+        self,
+        now: DateTime<Utc>,
+        source: &SourceSpec,
+        auth: Option<&ProviderAuth>,
+    ) -> Release {
         let mut stable = true;
         let mut reason = None;
 
@@ -715,10 +724,10 @@ impl GitLabRelease {
                 .into_iter()
                 .map(|link| ReleaseAsset {
                     name: gitlab_link_asset_name(&link),
+                    download_auth: gitlab_asset_download_auth(source, &link, auth),
                     url: link.url,
                     provider_url: link.direct_asset_url,
                     download_url: None,
-                    download_auth: auth.cloned(),
                     download_accept: None,
                     digest: None,
                     source_archive: false,
@@ -729,7 +738,7 @@ impl GitLabRelease {
                     url: source.url,
                     provider_url: None,
                     download_url: None,
-                    download_auth: auth.cloned(),
+                    download_auth: None,
                     download_accept: None,
                     digest: None,
                     source_archive: true,
@@ -738,6 +747,19 @@ impl GitLabRelease {
                 .collect(),
         }
     }
+}
+
+fn gitlab_asset_download_auth(
+    source: &SourceSpec,
+    link: &GitLabLink,
+    auth: Option<&ProviderAuth>,
+) -> Option<ProviderAuth> {
+    let auth = auth?;
+    let source_origin = Url::parse(&format!("https://{}/", source.host)).ok()?;
+    let request_url = link.direct_asset_url.as_deref().unwrap_or(&link.url);
+    let request_origin = Url::parse(request_url).ok()?;
+
+    same_origin(&source_origin, &request_origin).then(|| auth.clone())
 }
 
 fn gitlab_link_asset_name(link: &GitLabLink) -> String {
@@ -1190,6 +1212,7 @@ mod tests {
         }
         .into_release_with_auth(
             Utc.with_ymd_and_hms(2026, 6, 19, 0, 0, 0).unwrap(),
+            &source,
             Some(&auth),
         );
 
@@ -1200,6 +1223,38 @@ mod tests {
                 .map(|auth| (auth.header_name, auth.header_value.as_str())),
             Some(("PRIVATE-TOKEN", "self-managed-token"))
         );
+    }
+
+    #[test]
+    fn gitlab_release_assets_drop_provider_auth_for_external_downloads_and_probes() {
+        let source: SourceSpec = "gitlab:gitlab.example.com/group/tool"
+            .parse()
+            .expect("source");
+        let auth = provider_auth_for_source_with(&source, |name| match name {
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_EXAMPLE_2E_COM" => Some("self-managed-token".to_string()),
+            _ => None,
+        })
+        .expect("auth");
+        let release = GitLabRelease {
+            tag_name: "v1.0.0".to_string(),
+            released_at: None,
+            upcoming_release: false,
+            assets: super::GitLabAssets {
+                links: vec![super::GitLabLink {
+                    name: "linux amd64".to_string(),
+                    url: "https://downloads.example.net/tool-linux-amd64.tar.gz".to_string(),
+                    direct_asset_url: None,
+                }],
+                sources: Vec::new(),
+            },
+        }
+        .into_release_with_auth(
+            Utc.with_ymd_and_hms(2026, 6, 19, 0, 0, 0).unwrap(),
+            &source,
+            Some(&auth),
+        );
+
+        assert_eq!(release.assets[0].download_auth, None);
     }
 
     #[test]
