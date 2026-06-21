@@ -30,6 +30,7 @@ Each project must have one project index document and one or more domain contrac
 ### binpm
 - `docs/project-binpm.md`
 - `docs/crates-binpm-foundation.md`
+- `docs/apps-binpm-docs-foundation.md` (`apps/binpm-docs` routes: `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/troubleshooting`, `/reference`)
 
 ### cargo-mono
 - `docs/project-cargo-mono.md`

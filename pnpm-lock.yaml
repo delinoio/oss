@@ -51,6 +51,12 @@ importers:
         specifier: ^2.9.14
         version: 2.9.18
 
+  apps/binpm-docs:
+    devDependencies:
+      '@rspress/core':
+        specifier: ^2.0.0
+        version: 2.0.14(@rspack/core@2.0.8(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
+
   apps/mpapp:
     dependencies:
       '@react-native-async-storage/async-storage':

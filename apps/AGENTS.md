@@ -14,6 +14,7 @@
 ### Scope in This Domain
 
 - `apps/mpapp`: Expo React Native mobile app.
+- `apps/binpm-docs`: Rspress static documentation app for `binpm`.
 - `apps/nodeup-docs`: Rspress static documentation app for `nodeup`.
 - `apps/public-docs`: Mintlify public documentation app.
 
@@ -21,6 +22,15 @@
 
 - `mpapp` must remain Expo-based unless a documented architecture decision changes it.
 - Bluetooth capabilities and permissions must be explicitly documented in `docs/apps-mpapp-foundation.md`.
+
+### binpm-docs Rules
+
+- `binpm-docs` must remain Rspress-based unless `docs/project-binpm.md` and `docs/apps-binpm-docs-foundation.md` document a replacement.
+- `binpm-docs` must use Cloudflare Pages as the default static deployment target unless the app contract documents a replacement.
+- Rspress routes and navigation in `apps/binpm-docs/rspress.config.ts` must stay aligned with `docs/apps-binpm-docs-foundation.md`.
+- Stable `binpm-docs` route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/troubleshooting`, and `/reference`.
+- `binpm-docs` content must remain documentation-only and must not imply new binpm runtime behavior before `docs/project-binpm.md` and `docs/crates-binpm-foundation.md` document it.
+- When binpm source, target, local tooling, cache, verification, install, execution, diagnostic, or output behavior changes, update related `apps/binpm-docs` pages in the same change set.
 
 ### public-docs Rules
 
@@ -40,6 +50,7 @@
 ### Testing and Validation
 
 - If frontend code changes in this domain, run `pnpm test` before finishing.
+- If `apps/binpm-docs` changes, run `pnpm --filter binpm-docs test` before finishing.
 - If `apps/nodeup-docs` changes, run `pnpm --filter nodeup-docs test` before finishing.
 - If `apps/public-docs` changes, run `pnpm --filter public-docs test` before finishing.
 - Update relevant docs in `docs/` for every behavior, structure, or interface change.

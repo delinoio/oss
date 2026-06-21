@@ -1,0 +1,61 @@
+# apps-binpm-docs-foundation
+
+## Scope
+- Project/component: binpm documentation web app contract
+- Canonical path: `apps/binpm-docs`
+
+## Runtime and Language
+- Runtime: Rspress static documentation app
+- Primary language: Markdown and TypeScript configuration with web build tooling
+- Build toolchain: Rspress, aligned with the repository default preference for Rsbuild/Rspress-style static documentation surfaces.
+- Deployment target: Cloudflare Pages by default.
+
+## Users and Operators
+- External users reading binpm installation, local tooling, cache, verification, and CLI behavior documentation.
+- Internal maintainers publishing and reviewing binpm documentation updates.
+
+## Interfaces and Contracts
+- The package name is `binpm-docs`.
+- The app is registered through the existing `apps/*` pnpm workspace glob.
+- Stable documentation route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/troubleshooting`, and `/reference`.
+- The development server uses fixed port `46260`.
+- Local production preview uses fixed port `46261`.
+- The production output directory is `doc_build`.
+- Content must stay aligned with the binpm project and crate contracts, especially source identifiers, local manifest and lockfile behavior, target selection, asset scoring, cache reuse, verification, read-only diagnostics, install finalization, and Node-free runtime requirements.
+- This app is a documentation surface only. It must not expand binpm runtime behavior, release automation, package-manager backend scope, checksum discovery, signature verification, or global update behavior without corresponding updates to `docs/project-binpm.md` and `docs/crates-binpm-foundation.md`.
+
+## Storage
+- Source documentation is versioned in-repo under `apps/binpm-docs/docs`.
+- Build artifacts are generated into `apps/binpm-docs/doc_build` and are not source-controlled.
+- The app does not introduce user-uploaded files or persistent application data.
+
+## Security
+- Published content must not expose internal-only secrets, unpublished release credentials, private CI environment details, or source-provider tokens.
+- Installation guidance must preserve the binpm HTTPS, sanitized URL persistence, cache validation, and `--require-verified` contracts.
+- Cloudflare Pages deployment credentials must remain managed by CI or hosting configuration, not checked into the repository.
+
+## Logging
+- Build and deployment logs should include the workspace name, changed documentation paths, build status, and deployment status.
+- Log output must be safe for public CI surfaces.
+
+## Build and Test
+- Local validation: `pnpm --filter binpm-docs test`
+- Production build: `pnpm --filter binpm-docs build`
+- App preparation: `pnpm run prepare` invokes `prepare:app`; `binpm-docs` currently has no app-specific preparation step.
+
+## Dependencies and Integrations
+- Integrates with the repository pnpm workspace through `apps/*`.
+- Integrates with Rspress and its Rsbuild-based static-site pipeline.
+- Integrates with Cloudflare Pages for static deployment by default.
+- Depends on `docs/project-binpm.md` and `docs/crates-binpm-foundation.md` for canonical binpm product and runtime contracts.
+
+## Change Triggers
+- Update `docs/project-binpm.md`, this file, and `apps/AGENTS.md` when the app path, route IDs, validation commands, toolchain, output directory, or deployment target changes.
+- Update `docs/crates-binpm-foundation.md` and the relevant app pages when binpm runtime, source, target, local tooling, cache, verification, install, execution, diagnostic, or output behavior changes.
+- Update `docs/README.md` when adding, renaming, or removing this domain contract.
+
+## References
+- `docs/project-binpm.md`
+- `docs/crates-binpm-foundation.md`
+- `docs/repository-defaults.md`
+- `docs/domain-template.md`
