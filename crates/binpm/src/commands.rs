@@ -2338,10 +2338,44 @@ fn zip_central_directory_systems(bytes: &[u8]) -> BTreeMap<String, u8> {
     const FILE_NAME_LENGTH_OFFSET: usize = 28;
     const EXTRA_FIELD_LENGTH_OFFSET: usize = 30;
     const FILE_COMMENT_LENGTH_OFFSET: usize = 32;
+    const END_OF_CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+    const END_OF_CENTRAL_DIRECTORY_LEN: usize = 22;
+    const CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 12;
+    const CENTRAL_DIRECTORY_OFFSET_OFFSET: usize = 16;
+
+    let directory_bounds = bytes
+        .len()
+        .checked_sub(END_OF_CENTRAL_DIRECTORY_LEN)
+        .and_then(|last_start| {
+            let first_start = bytes
+                .len()
+                .saturating_sub(END_OF_CENTRAL_DIRECTORY_LEN + u16::MAX as usize);
+            (first_start..=last_start)
+                .rev()
+                .find(|index| bytes[*index..].starts_with(&END_OF_CENTRAL_DIRECTORY_SIGNATURE))
+        })
+        .and_then(|index| {
+            let directory_size = u32::from_le_bytes([
+                bytes[index + CENTRAL_DIRECTORY_SIZE_OFFSET],
+                bytes[index + CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
+                bytes[index + CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
+                bytes[index + CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
+            ]) as usize;
+            let directory_start = u32::from_le_bytes([
+                bytes[index + CENTRAL_DIRECTORY_OFFSET_OFFSET],
+                bytes[index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 1],
+                bytes[index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 2],
+                bytes[index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 3],
+            ]) as usize;
+            let directory_end = directory_start.checked_add(directory_size)?;
+            (directory_start <= index && directory_end <= bytes.len())
+                .then_some((directory_start, directory_end))
+        })
+        .unwrap_or((0, bytes.len()));
 
     let mut systems = BTreeMap::new();
-    let mut index = 0;
-    while index + CENTRAL_DIRECTORY_HEADER_LEN <= bytes.len() {
+    let mut index = directory_bounds.0;
+    while index + CENTRAL_DIRECTORY_HEADER_LEN <= directory_bounds.1 {
         if !bytes[index..].starts_with(&CENTRAL_DIRECTORY_SIGNATURE) {
             index += 1;
             continue;
@@ -2361,16 +2395,19 @@ fn zip_central_directory_systems(bytes: &[u8]) -> BTreeMap<String, u8> {
         ]) as usize;
         let name_start = index + CENTRAL_DIRECTORY_HEADER_LEN;
         let Some(name_end) = name_start.checked_add(name_len) else {
-            break;
+            index += 1;
+            continue;
         };
         let Some(next_index) = name_end
             .checked_add(extra_len)
             .and_then(|offset| offset.checked_add(comment_len))
         else {
-            break;
+            index += 1;
+            continue;
         };
-        if next_index > bytes.len() {
-            break;
+        if next_index > directory_bounds.1 {
+            index += 1;
+            continue;
         }
 
         if let Ok(name) = std::str::from_utf8(&bytes[name_start..name_end]) {
@@ -2390,8 +2427,14 @@ fn zip_file_has_real_unix_mode(
     unix_mode: Option<u32>,
 ) -> bool {
     const ZIP_SYSTEM_UNIX: u8 = 3;
+    const UNIX_FILE_TYPE_MASK: u32 = 0o170000;
+    const UNIX_PERMISSION_MASK: u32 = 0o7777;
 
-    unix_mode.is_some()
+    let Some(mode) = unix_mode else {
+        return false;
+    };
+    let has_usable_unix_mode = mode & (UNIX_FILE_TYPE_MASK | UNIX_PERMISSION_MASK) != 0;
+    has_usable_unix_mode
         && entry_systems
             .get(file_name)
             .map(|system| *system == ZIP_SYSTEM_UNIX)
@@ -4567,6 +4610,57 @@ mod tests {
             None,
         )
         .expect("selected repo binary with DOS-only metadata");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+    }
+
+    #[test]
+    fn zip_extraction_skips_false_central_directory_signature_in_payload() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        let mut payload = b"prefix PK\x01\x02".to_vec();
+        payload.extend([0xff; 64]);
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("pkg/README.md", payload.as_slice()),
+                ("pkg/tool", b"#!/bin/sh\necho recovered\n".as_slice()),
+            ],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary despite false central-directory signature");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+    }
+
+    #[test]
+    fn zip_extraction_treats_zero_unix_mode_as_missing_executable_metadata() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_with_unix_zero_attributes(
+            &archive_path,
+            &[("pkg/tool", b"#!/bin/sh\necho recovered\n".as_slice())],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary with zero Unix mode");
 
         assert_eq!(selected.path, "pkg/tool");
         assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
@@ -7781,33 +7875,85 @@ mod tests {
         }
         writer.finish().expect("finish zip");
 
-        let mut bytes = fs::read(path).expect("read zip for metadata patch");
-        let mut index = 0;
-        while index + 46 <= bytes.len() {
-            if bytes[index..].starts_with(&[0x50, 0x4b, 0x01, 0x02]) {
-                bytes[index + 5] = 0;
-                bytes[index + 38..index + 42].copy_from_slice(&0u32.to_le_bytes());
-                index += 46;
-            } else {
-                index += 1;
-            }
-        }
-        fs::write(path, bytes).expect("write zip metadata patch");
+        patch_zip_central_directory_external_attributes(path, 0, 0);
     }
 
     fn write_zip_with_dos_archive_attributes(path: &Path, entries: &[(&str, &[u8], u32)]) {
         write_zip(path, entries);
 
+        patch_zip_central_directory_external_attributes(path, 0, 0x20);
+    }
+
+    fn write_zip_with_unix_zero_attributes(path: &Path, entries: &[(&str, &[u8])]) {
+        let entries = entries
+            .iter()
+            .map(|(name, bytes)| (*name, *bytes, 0o100644))
+            .collect::<Vec<_>>();
+        write_zip(path, &entries);
+
+        patch_zip_central_directory_external_attributes(path, 3, 0);
+    }
+
+    fn patch_zip_central_directory_external_attributes(path: &Path, system: u8, attributes: u32) {
+        const CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+        const CENTRAL_DIRECTORY_HEADER_LEN: usize = 46;
+        const VERSION_MADE_BY_SYSTEM_OFFSET: usize = 5;
+        const FILE_NAME_LENGTH_OFFSET: usize = 28;
+        const EXTRA_FIELD_LENGTH_OFFSET: usize = 30;
+        const FILE_COMMENT_LENGTH_OFFSET: usize = 32;
+        const EXTERNAL_FILE_ATTRIBUTES_OFFSET: usize = 38;
+        const END_OF_CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+        const END_OF_CENTRAL_DIRECTORY_LEN: usize = 22;
+        const CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 12;
+        const CENTRAL_DIRECTORY_OFFSET_OFFSET: usize = 16;
+
         let mut bytes = fs::read(path).expect("read zip for metadata patch");
-        let mut index = 0;
-        while index + 46 <= bytes.len() {
-            if bytes[index..].starts_with(&[0x50, 0x4b, 0x01, 0x02]) {
-                bytes[index + 5] = 0;
-                bytes[index + 38..index + 42].copy_from_slice(&0x20u32.to_le_bytes());
-                index += 46;
-            } else {
-                index += 1;
-            }
+        let eocd_index = bytes
+            .len()
+            .checked_sub(END_OF_CENTRAL_DIRECTORY_LEN)
+            .and_then(|last_start| {
+                let first_start = bytes
+                    .len()
+                    .saturating_sub(END_OF_CENTRAL_DIRECTORY_LEN + u16::MAX as usize);
+                (first_start..=last_start)
+                    .rev()
+                    .find(|index| bytes[*index..].starts_with(&END_OF_CENTRAL_DIRECTORY_SIGNATURE))
+            })
+            .expect("find end of central directory");
+        let directory_size = u32::from_le_bytes([
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
+        ]) as usize;
+        let directory_start = u32::from_le_bytes([
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 1],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 2],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 3],
+        ]) as usize;
+        let directory_end = directory_start + directory_size;
+
+        let mut index = directory_start;
+        while index + CENTRAL_DIRECTORY_HEADER_LEN <= directory_end {
+            assert!(bytes[index..].starts_with(&CENTRAL_DIRECTORY_SIGNATURE));
+            bytes[index + VERSION_MADE_BY_SYSTEM_OFFSET] = system;
+            bytes[index + EXTERNAL_FILE_ATTRIBUTES_OFFSET
+                ..index + EXTERNAL_FILE_ATTRIBUTES_OFFSET + 4]
+                .copy_from_slice(&attributes.to_le_bytes());
+            let name_len = u16::from_le_bytes([
+                bytes[index + FILE_NAME_LENGTH_OFFSET],
+                bytes[index + FILE_NAME_LENGTH_OFFSET + 1],
+            ]) as usize;
+            let extra_len = u16::from_le_bytes([
+                bytes[index + EXTRA_FIELD_LENGTH_OFFSET],
+                bytes[index + EXTRA_FIELD_LENGTH_OFFSET + 1],
+            ]) as usize;
+            let comment_len = u16::from_le_bytes([
+                bytes[index + FILE_COMMENT_LENGTH_OFFSET],
+                bytes[index + FILE_COMMENT_LENGTH_OFFSET + 1],
+            ]) as usize;
+            index += CENTRAL_DIRECTORY_HEADER_LEN + name_len + extra_len + comment_len;
         }
         fs::write(path, bytes).expect("write zip metadata patch");
     }
