@@ -1009,8 +1009,6 @@ fn install_resolved(
     local_root: Option<&Path>,
 ) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
-    scope_paths.ensure()?;
-    cache_paths.ensure()?;
     let resolved = resolve_asset(spec, tool)?;
     if require_verified && !resolved.checksum_source.is_upstream_verified() {
         return Err(BinpmError::VerificationRequired {
@@ -1050,8 +1048,6 @@ fn install_resolved(
                 deferred_cache_hit: Some(resolved),
                 cache_metadata_snapshot: None,
             });
-        } else if cache_asset.symlink_metadata().is_ok() {
-            remove_path_if_exists(&cache_asset)?;
         }
     }
     let bytes = download_asset(&resolved.decision.download_url)?;
@@ -1073,7 +1069,15 @@ fn install_resolved(
             });
         }
     }
-    let (sha256, cache_asset) = populate_cache_from_bytes(cache_paths, &resolved, &bytes)?;
+    let (sha256, cache_asset) = match populate_cache_from_bytes(cache_paths, &resolved, &bytes) {
+        Ok(cache_entry) => cache_entry,
+        Err(error) => {
+            if let Some(snapshot) = &cache_metadata_snapshot {
+                restore_cache_metadata(cache_paths, snapshot)?;
+            }
+            return Err(error);
+        }
+    };
     let populated_cache_entry = !had_verified_cache_entry;
     let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
     if let Err(error) = install_bare_executable(&cache_asset, &installed_path) {

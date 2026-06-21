@@ -464,7 +464,7 @@ impl GitLabRelease {
                 .links
                 .into_iter()
                 .map(|link| ReleaseAsset {
-                    name: link.name,
+                    name: gitlab_link_asset_name(&link),
                     url: link.url,
                     provider_url: link.direct_asset_url,
                     digest: None,
@@ -482,6 +482,23 @@ impl GitLabRelease {
                 .collect(),
         }
     }
+}
+
+fn gitlab_link_asset_name(link: &GitLabLink) -> String {
+    link.direct_asset_url
+        .as_deref()
+        .and_then(url_filename)
+        .or_else(|| url_filename(&link.url))
+        .unwrap_or_else(|| link.name.clone())
+}
+
+fn url_filename(raw: &str) -> Option<String> {
+    let parsed = Url::parse(raw).ok()?;
+    parsed
+        .path_segments()?
+        .next_back()
+        .filter(|segment| !segment.is_empty())
+        .map(str::to_string)
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -835,6 +852,28 @@ mod tests {
         assert!(!future.stable);
         assert!(!upcoming.stable);
         assert!(!prerelease.stable);
+    }
+
+    #[test]
+    fn gitlab_release_links_use_download_filename_for_asset_name() {
+        let release = GitLabRelease {
+            tag_name: "v1.0.0".to_string(),
+            released_at: None,
+            upcoming_release: false,
+            assets: super::GitLabAssets {
+                links: vec![super::GitLabLink {
+                    name: "linux amd64".to_string(),
+                    url: "https://gitlab.example.com/group/tool/-/releases/v1/downloads/tool-linux-amd64.tar.gz".to_string(),
+                    direct_asset_url: Some(
+                        "https://cdn.example.com/tool-linux-amd64.tar.gz".to_string(),
+                    ),
+                }],
+                sources: Vec::new(),
+            },
+        }
+        .into_release(Utc.with_ymd_and_hms(2026, 6, 19, 0, 0, 0).unwrap());
+
+        assert_eq!(release.assets[0].name, "tool-linux-amd64.tar.gz");
     }
 
     #[test]
