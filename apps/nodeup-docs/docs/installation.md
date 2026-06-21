@@ -54,7 +54,7 @@ Direct installers detect unsupported x86 hosts before resolving release tags or 
 After downloading the shell installer, run:
 
 ```bash
-sh nodeup.sh --version latest --method direct
+bash nodeup.sh --version latest --method direct
 ```
 
 After downloading the PowerShell installer, run:
