@@ -28,6 +28,7 @@
 - Canonical local sync command: `binpm install`.
 - Canonical local execution command: `binpm x CMD [args...]`.
 - Canonical one-off execution command: `binpm x --package <source> [--bin <upstream-binary>] CMD [args...]`.
+- Documented execution aliases: `binpm exec` and `binpm run`. These aliases are stable compatibility entry points for discoverability, but `binpm x` remains the canonical execution command used in contracts, diagnostics, examples, and logs.
 - Stable source enum values:
   - `github:owner/repo[@version]` addresses GitHub.com Releases and may omit the host only for `github.com`.
   - `github:<host>/owner/repo[@version]` addresses GitHub Enterprise Releases on an explicit host.
@@ -38,7 +39,9 @@
   - GitLab sources must list releases in descending `released_at` order and choose the first release whose `released_at` is not in the future, whose API response does not set `upcoming_release = true`, and whose normalized tag does not contain a SemVer prerelease segment such as `-alpha`, `-beta`, `-pre`, `-preview`, `-rc`, or another hyphenated prerelease identifier.
 - Explicit versions may be written with or without a leading `v`; release tag matching must try the exact input first, then the opposite `v` prefix form.
 - Commands with both local and global scope must default to local when a local `binpm.toml` is discovered; otherwise they must default to global. Such commands must document `--local` and `--global` overrides.
+- Scoped mutating commands must print the selected local or global scope before mutation. `binpm update` and `binpm remove` must support `--dry-run` previews that validate the selected tools, print the selected scope and planned file/runtime changes, and then exit without mutating manifests, lockfiles, package records, cache references, or executables.
 - `--frozen-lockfile` on local `binpm install`, `binpm update`, and `binpm x` must fail when the command would need to create or modify `binpm.lock`; `CI=true` must enable this behavior by default, and `--no-frozen-lockfile` is the explicit local-development escape hatch.
+- `--global` must remain an explicit scope override even when a local manifest is present. It does not currently add an interactive confirmation prompt; if a future global mutation adds confirmation, `--no-confirm` must bypass that prompt for scripts.
 - `--no-confirm` is a stable scripting flag. The default behavior remains no prompt for currently documented operations, but future dangerous operations that add confirmation prompts must allow `--no-confirm` to bypass them.
 - Cache management commands for v1:
   - `binpm cache list` must report cached assets with digest, byte size when known, source provider, source host, source path, release tag, asset name, last-used timestamp when known, and whether installed package manifests currently reference the entry.
@@ -46,10 +49,10 @@
   - `binpm cache clean` must remove all cache entries while preserving installed package records and executable links or copies under `~/.binpm/bin`.
   - `binpm cache key` must print a stable CI cache key derived from the current target and `binpm.lock`; it must not download, install, modify package records, or populate cache entries.
 - `binpm list [--local|--global]` must report declared and installed tools for the selected scope, including source, requested version, resolved release tag when known, selected binary, installed path, and verification state when known.
-- `binpm remove <cmd> [--local|--global]` must remove the selected tool from the selected scope; local removal updates `binpm.toml`, `binpm.lock`, `$repoRoot/.binpm/bin`, and project-local package records under `$repoRoot/.binpm/packages` when they exist, while global removal updates `~/.binpm/packages` and `~/.binpm/bin`.
+- `binpm remove <cmd> [--local|--global] [--dry-run]` must remove the selected tool from the selected scope; local removal updates `binpm.toml`, `binpm.lock`, `$repoRoot/.binpm/bin`, and project-local package records under `$repoRoot/.binpm/packages` when they exist, while global removal updates `~/.binpm/packages` and `~/.binpm/bin`. Before mutation it must print `remove scope: local` or `remove scope: global`; with `--dry-run` it must print the planned removal and leave state unchanged.
 - `binpm info <cmd-or-source> [--local|--global]` must print source metadata, resolved release metadata when available, selected target asset, selected binary, and checksum source without installing new bytes.
 - `binpm outdated [--local|--global]` must compare declared or installed tools with the latest stable release available from their source and must not update manifests, lockfiles, package records, cache entries, or executables.
-- `binpm update [cmd...] [--local|--global]` must update selected tools or all tools in scope to the latest stable release allowed by their source declarations; local updates must update `binpm.lock` and installed project-local executables.
+- `binpm update [cmd...] [--local|--global] [--dry-run]` must update selected tools or all tools in scope to the latest stable release allowed by their source declarations; local updates must update `binpm.lock` and installed project-local executables. Before mutation it must print `update scope: local` or `update scope: global` and a planned update list; with `--dry-run` it must print the same plan and leave state unchanged.
 - `binpm doctor` must inspect manifest discovery, lockfile readability, package records, cache state, installed executable records, PATH visibility, and provider configuration without mutating state.
 - `binpm explain <cmd-or-source> [--local|--global]` must explain source parsing, release selection, target normalization, asset candidate scoring, binary discovery, and verification decisions without mutating state.
 - Source-form `binpm explain <source>` may perform read-only GitHub or GitLab release API lookup and must print the normalized source, provider API URL, release decision, normalized target, selected asset when one is eligible, candidate scores, and rejection reasons. Local command explanation must inspect existing package records and print source, release, target, selected asset, selected binary, archive format, checksum source, and verification state without installing new bytes.
@@ -64,7 +67,8 @@
 - `binpm x CMD [args...]` must resolve `CMD` from `binpm.toml`, install it on demand when the lockfile or local executable is missing or stale, prepend `$repoRoot/.binpm/bin` to `PATH`, preserve the caller's current working directory, and forward every argument after `CMD` to the executed command.
 - `binpm x --package <source> [--bin <upstream-binary>] CMD [args...]` must install or reuse the explicit package in a temporary or cache-backed execution context, prepend that context and `$repoRoot/.binpm/bin` to `PATH` when a local project exists, and run `CMD [args...]`.
 - When one-off execution receives `--bin`, `binpm` must use that upstream executable name or archive member path while exposing it as the requested `CMD` inside the temporary execution context.
-- If `CMD` is absent from the local manifest and no explicit `--package` is provided, `binpm x` must fail with a clear hint to run `binpm add <cmd> <source>` or retry with `--package`; it must not infer a source repository from the command name.
+- `binpm exec` and `binpm run` must dispatch through the same execution implementation as `binpm x`, including argument forwarding, `--package` and `--bin` behavior, local manifest and lockfile behavior, install-on-demand behavior, PATH prepending, and process exit handling.
+- If `CMD` is absent from the local manifest and no explicit `--package` is provided, `binpm x` and its execution aliases must fail with a clear hint to run `binpm add <cmd> <source>` or retry with `--package`; they must not infer a source repository from the command name.
 - The host target model must be enum-driven and include:
   - OS: `linux`, `darwin`, `windows`, `freebsd`
   - CPU architecture: `x86_64`, `aarch64`, `i686`, `armv7`

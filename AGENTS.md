@@ -142,8 +142,9 @@ enum ProjectId {
 - `binpm add <cmd> <source> --bin <upstream-binary>` must persist the upstream binary selection in `binpm.toml`, and `binpm x --package <source> --bin <upstream-binary> <cmd>` must use that upstream binary for one-off execution.
 - Local `binpm remove` must clean project-local package records when they exist.
 - Local target-specific asset overrides must use `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.
-- Local `binpm install`, `binpm update`, and `binpm x` must honor `--frozen-lockfile`; `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch.
+- Local `binpm install`, `binpm update`, and `binpm x` must honor `--frozen-lockfile`; `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit escape hatch. Documented execution aliases `binpm exec` and `binpm run` must share `binpm x` lockfile and command execution behavior while `binpm x` remains canonical.
 - `binpm verify --require-verified` must fail when no provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature under a documented trust policy is available.
+- `binpm update` and `binpm remove` must print selected local/global scope before mutation and support `--dry-run` previews that do not mutate manifests, lockfiles, package records, cache references, or executables.
 - `--no-confirm` is a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
 
 ### binpm Docs App Contract

@@ -443,10 +443,15 @@ fn remove(args: RemoveArgs) -> Result<i32> {
         command = "remove",
         selected_scope = args.scope.scope().as_str(),
         local_cmd = args.cmd,
+        dry_run = args.dry_run,
         no_confirm = args.no_confirm,
         "Prepared remove request"
     );
     let scope = select_scope(args.scope.scope())?;
+    print_selected_mutation_scope("remove", scope);
+    if args.dry_run {
+        return preview_remove(scope, &args.cmd);
+    }
     match scope {
         Scope::Local => remove_local_tool(&args.cmd),
         Scope::Global => remove_global_tool(&args.cmd),
@@ -540,10 +545,17 @@ fn update(args: UpdateArgs) -> Result<i32> {
         selected_count = args.cmd.len(),
         frozen_lockfile,
         require_verified = args.require_verified,
+        dry_run = args.dry_run,
         no_confirm = args.no_confirm,
         "Prepared update request"
     );
-    match select_scope(args.scope.scope())? {
+    let scope = select_scope(args.scope.scope())?;
+    print_selected_mutation_scope("update", scope);
+    if args.dry_run {
+        return preview_update(scope, &args.cmd);
+    }
+    print_update_plan(scope, &args.cmd)?;
+    match scope {
         Scope::Local if frozen_lockfile => Err(BinpmError::FrozenLockfile {
             path: require_manifest_root()?.join(LOCKFILE_FILE),
         }),
@@ -553,6 +565,112 @@ fn update(args: UpdateArgs) -> Result<i32> {
         }),
         Scope::Auto => unreachable!("select_scope never returns auto"),
     }
+}
+
+fn print_selected_mutation_scope(command: &str, scope: Scope) {
+    println!("{command} scope: {}", scope.as_str());
+}
+
+fn preview_remove(scope: Scope, cmd: &str) -> Result<i32> {
+    validate_command_name(cmd)?;
+    match scope {
+        Scope::Local => {
+            let root = require_manifest_root()?;
+            let manifest_path = root.join(MANIFEST_FILE);
+            let manifest = read_manifest(&manifest_path)?;
+            let prior_state = capture_local_remove_state(&root, cmd)?;
+            if !manifest.tools.contains_key(cmd)
+                && !has_local_runtime_or_lock_state(cmd, &prior_state)
+            {
+                return Err(BinpmError::MissingTool {
+                    cmd: cmd.to_string(),
+                    manifest: manifest_path,
+                });
+            }
+            println!("would remove {cmd} from local scope");
+            println!("would update {}", root.join(MANIFEST_FILE).display());
+            println!("would update {}", root.join(LOCKFILE_FILE).display());
+            println!("would clean {}", ScopePaths::local(root).root.display());
+        }
+        Scope::Global => {
+            let paths = ScopePaths::global(binpm_home()?);
+            read_package_record(&package_record_path(&paths, cmd))?;
+            println!("would remove {cmd} from global scope");
+            println!("would update {}", paths.packages.display());
+            println!("would update {}", paths.bin.display());
+        }
+        Scope::Auto => unreachable!("select_scope never returns auto"),
+    }
+    println!("dry run: no changes made");
+    Ok(0)
+}
+
+fn preview_update(scope: Scope, selected: &[String]) -> Result<i32> {
+    print_update_plan(scope, selected)?;
+    println!("dry run: no changes made");
+    Ok(0)
+}
+
+fn print_update_plan(scope: Scope, selected: &[String]) -> Result<()> {
+    match scope {
+        Scope::Local => print_local_update_plan(selected),
+        Scope::Global => print_global_update_plan(selected),
+        Scope::Auto => unreachable!("select_scope never returns auto"),
+    }
+}
+
+fn print_local_update_plan(selected: &[String]) -> Result<()> {
+    let root = require_manifest_root()?;
+    let manifest_path = root.join(MANIFEST_FILE);
+    let manifest = read_manifest(&manifest_path)?;
+    for cmd in selected {
+        validate_command_name(cmd)?;
+        if !manifest.tools.contains_key(cmd) {
+            return Err(BinpmError::MissingTool {
+                cmd: cmd.clone(),
+                manifest: manifest_path.clone(),
+            });
+        }
+    }
+    validate_selected_manifest_entries(&manifest, selected)?;
+    ensure_no_selected_install_path_collisions(&manifest, selected)?;
+
+    let planned: Vec<_> = manifest
+        .tools
+        .iter()
+        .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
+        .collect();
+    println!("planned updates: {}", planned.len());
+    for (cmd, tool) in planned {
+        let version = tool.version.as_deref().unwrap_or("<latest>");
+        println!("would update {cmd} from {} {version}", tool.source);
+    }
+    println!("would update {}", root.join(LOCKFILE_FILE).display());
+    println!("would update {}", ScopePaths::local(root).bin.display());
+    Ok(())
+}
+
+fn print_global_update_plan(selected: &[String]) -> Result<()> {
+    let paths = ScopePaths::global(binpm_home()?);
+    let records = list_package_records(&paths)?;
+    for cmd in selected {
+        validate_command_name(cmd)?;
+        read_package_record(&package_record_path(&paths, cmd))?;
+    }
+    let planned: Vec<_> = records
+        .iter()
+        .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
+        .collect();
+    println!("planned updates: {}", planned.len());
+    for (cmd, record) in planned {
+        println!(
+            "would update {cmd} from {} {}",
+            record.source, record.release_tag
+        );
+    }
+    println!("would update {}", paths.packages.display());
+    println!("would update {}", paths.bin.display());
+    Ok(())
 }
 
 fn doctor() -> Result<i32> {
