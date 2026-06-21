@@ -153,6 +153,16 @@ struct SelfUninstallResponse {
     action: SelfAction,
     status: SelfUninstallOutcome,
     removed_paths: Vec<String>,
+    cleanup_boundaries: Vec<SelfUninstallCleanupBoundary>,
+    remaining_manual_steps: Vec<String>,
+    likely_leftover_paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct SelfUninstallCleanupBoundary {
+    category: &'static str,
+    cleanup: &'static str,
+    paths: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -299,16 +309,22 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
         "Processed self uninstall"
     );
 
+    let likely_leftover_paths = likely_leftover_paths();
+    let remaining_manual_steps = remaining_manual_steps(&likely_leftover_paths);
     let response = SelfUninstallResponse {
         action,
         status,
+        cleanup_boundaries: cleanup_boundaries(app, &removed_paths, &likely_leftover_paths),
         removed_paths,
+        remaining_manual_steps,
+        likely_leftover_paths,
     };
 
     let human = format!(
-        "Self uninstall status: {} (removed paths: {})",
+        "Self uninstall status: {} | removed paths: {} | manual steps: {}",
         status.as_str(),
-        response.removed_paths.len()
+        human_list(&response.removed_paths),
+        human_list(&response.remaining_manual_steps)
     );
     print_output(output, color, &human, &response)?;
 
@@ -562,6 +578,137 @@ fn directory_is_empty(path: &Path) -> Result<bool> {
     }
 
     Ok(true)
+}
+
+fn human_list(values: &[String]) -> String {
+    if values.is_empty() {
+        "<none>".to_string()
+    } else {
+        values.join("; ")
+    }
+}
+
+fn cleanup_boundaries(
+    app: &NodeupApp,
+    removed_paths: &[String],
+    likely_leftover_paths: &[String],
+) -> Vec<SelfUninstallCleanupBoundary> {
+    vec![
+        SelfUninstallCleanupBoundary {
+            category: "data",
+            cleanup: "removed-when-nodeup-owned-and-populated",
+            paths: boundary_paths(&[&app.paths.data_root], removed_paths),
+        },
+        SelfUninstallCleanupBoundary {
+            category: "cache",
+            cleanup: "removed-when-nodeup-owned-and-populated",
+            paths: boundary_paths(&[&app.paths.cache_root], removed_paths),
+        },
+        SelfUninstallCleanupBoundary {
+            category: "config",
+            cleanup: "removed-when-nodeup-owned-and-populated",
+            paths: boundary_paths(&[&app.paths.config_root], removed_paths),
+        },
+        SelfUninstallCleanupBoundary {
+            category: "binary",
+            cleanup: "manual",
+            paths: likely_leftover_paths
+                .iter()
+                .filter(|path| path.ends_with("nodeup") || path.ends_with("nodeup.exe"))
+                .cloned()
+                .collect(),
+        },
+        SelfUninstallCleanupBoundary {
+            category: "shims",
+            cleanup: "manual",
+            paths: likely_leftover_paths
+                .iter()
+                .filter(|path| is_likely_shim_path(path))
+                .cloned()
+                .collect(),
+        },
+        SelfUninstallCleanupBoundary {
+            category: "shell-profile-path",
+            cleanup: "manual",
+            paths: Vec::new(),
+        },
+    ]
+}
+
+fn boundary_paths(paths: &[&Path], removed_paths: &[String]) -> Vec<String> {
+    paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .filter(|path| removed_paths.contains(path))
+        .collect()
+}
+
+fn likely_leftover_paths() -> Vec<String> {
+    let mut paths = Vec::new();
+
+    if let Ok(path) = resolve_target_binary_path() {
+        if path.exists() {
+            paths.push(path.display().to_string());
+        }
+    }
+
+    let shim_dir = default_shim_dir();
+    for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
+        for candidate in [shim_dir.join(alias), shim_dir.join(format!("{alias}.exe"))] {
+            if candidate.exists() || fs::symlink_metadata(&candidate).is_ok() {
+                paths.push(candidate.display().to_string());
+            }
+        }
+    }
+
+    paths.sort();
+    paths.dedup();
+    paths
+}
+
+fn remaining_manual_steps(likely_leftover_paths: &[String]) -> Vec<String> {
+    let mut steps = vec![
+        "Remove the nodeup binary from its installation directory if it is no longer needed."
+            .to_string(),
+        "Remove managed shim files created by `nodeup shim setup` if they are no longer needed."
+            .to_string(),
+        "Remove the Nodeup shim directory from shell profile files or the user PATH manually."
+            .to_string(),
+    ];
+
+    if !likely_leftover_paths.is_empty() {
+        steps.push(format!(
+            "Review likely leftover paths: {}",
+            likely_leftover_paths.join(", ")
+        ));
+    }
+
+    steps
+}
+
+fn default_shim_dir() -> PathBuf {
+    if let Some(dir) = env::var_os("NODEUP_SHIM_DIR") {
+        return PathBuf::from(dir);
+    }
+
+    home_dir()
+        .join(".local")
+        .join("share")
+        .join("nodeup")
+        .join("shims")
+}
+
+fn home_dir() -> PathBuf {
+    env::var_os("HOME")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("USERPROFILE").map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn is_likely_shim_path(path: &str) -> bool {
+    ["node", "npm", "npx", "yarn", "pnpm"]
+        .iter()
+        .any(|alias| path.ends_with(alias) || path.ends_with(&format!("{alias}.exe")))
 }
 
 fn migrate_settings_schema(app: &NodeupApp) -> Result<SchemaMigrationResult> {

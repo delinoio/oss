@@ -7,7 +7,9 @@ This page summarizes stable Nodeup contracts. For command syntax, see [Command R
 - Channel selectors are `lts`, `current`, and `latest`.
 - Runtime selector precedence is explicit selector, directory override, then global default.
 - Shim dispatch is deterministic by executable name for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
+- `nodeup shim setup` is the first-class idempotent setup and repair command for managed shims.
 - `package.json` `packageManager` support is strict for `yarn` and `pnpm`.
+- `nodeup self uninstall` removes data/cache/config only and reports binary, shim, and PATH cleanup as manual.
 - Shell completions are deterministic for supported shells and top-level command scopes.
 - Human output color precedence is `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
 - JSON output never contains ANSI styling.

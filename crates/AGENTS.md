@@ -30,6 +30,9 @@
 ### nodeup-Specific Rules
 
 - Preserve rustup-like shim behavior: symlink strategy plus executable-name dispatch.
+- Keep `nodeup shim setup` as the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.
+- Keep Windows shim setup documented and implemented as copied `.exe` aliases because symlink privileges are not guaranteed.
+- Keep `nodeup self uninstall` scoped to Nodeup-owned data, cache, and config roots; binary, shim, and shell profile/PATH cleanup must remain manual and visible in human and JSON output.
 - Keep channel and command identifiers stable and documented.
 - Record storage and download behavior in project docs whenever changed.
 - Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.

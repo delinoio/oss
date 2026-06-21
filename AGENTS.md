@@ -152,6 +152,11 @@ enum ProjectId {
 - `apps/binpm-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-binpm.md` and `docs/apps-binpm-docs-foundation.md` document a replacement.
 - binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live `https://binpm.delino.io` site.
 
+### nodeup Shim and Self Cleanup Contract
+
+- `nodeup shim setup` is the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.
+- `nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only; binary, managed shims, and shell profile/PATH cleanup remain manual and must be reported in human and JSON output.
+
 ### Thenv Component Contract
 
 `thenv` is a two-component project with fixed mapping:

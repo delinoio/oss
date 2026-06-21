@@ -16,6 +16,10 @@
 - Channel and command identifiers must remain stable and documented.
 - Binary entrypoints must force-link `swc_malloc` allocator policy, while the library target remains allocator-agnostic for downstream consumers.
 - Shim dispatch behavior must remain deterministic by executable name (`node`, `npm`, `npx`, `yarn`, `pnpm`).
+- `nodeup shim setup [--dir <path>]` must create or repair all managed shims idempotently.
+- Shim setup must default to `NODEUP_SHIM_DIR` when set, otherwise `$HOME/.local/share/nodeup/shims`.
+- Shim setup must emit PATH guidance when the shim directory is not active on `PATH`.
+- macOS and Linux shim setup must use symlinks; Windows shim setup must use copied `.exe` aliases because symlink privileges are not guaranteed.
 - Install/update command surfaces must preserve backward-compatible flags and outputs.
 - Host support must include `macOS`, `Linux`, and `Windows` x64/arm64, while x86 hosts remain unsupported.
 - Homebrew installation must consume prebuilt release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
@@ -34,9 +38,13 @@
 - User-facing `NodeupError` messages must follow the format `<cause>. Hint: <next action>`.
 - `NodeupError` cause text should include deterministic key-value diagnostics when available (for example `selector`, `runtime`, `path`, `url`, `status`, `attempt`).
 - JSON error envelopes must keep the stable shape `kind`, `message`, and `exit_code` while allowing message text improvements.
+- `nodeup shim setup` JSON output must include `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, and `shims`; each shim entry must include `alias`, `path`, `status`, and `method`.
+- `nodeup self uninstall` must remove only Nodeup-owned data, cache, and config roots. It must not remove the running binary, managed shims, shell profile entries, or user PATH values.
+- `nodeup self uninstall` JSON output must include `removed_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
 - ANSI styling must never be injected into `--output json` payloads on stdout/stderr.
 - `completions` must generate raw shell completion scripts for `bash`, `zsh`, `fish`, `powershell`, and `elvish`.
 - `completions <shell> [command]` command scope must accept only top-level command identifiers and fail with `invalid-input` for unsupported scopes.
+- Top-level completion scopes must include `shim`.
 - `completions` output must remain raw script text on stdout even when `--output json` is requested.
 
 ## Storage
@@ -68,6 +76,8 @@
 - Output color coverage must include flag/env precedence, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
 - `packageManager` coverage must include strict parsing, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, and npm-exec fallback behavior.
 - Runtime install coverage must include `linux-arm64`, `windows-x64`, and `windows-arm64` archive selection and extraction behavior.
+- Shim setup coverage must include fresh setup, idempotent reruns, stale shim repair, and Windows copy mode.
+- Self uninstall coverage must include removed path reporting and manual cleanup fields for binary, shims, and shell profile/PATH boundaries.
 
 ## Dependencies and Integrations
 - Integrates with filesystem runtime shims and remote distribution channels.

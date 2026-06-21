@@ -40,6 +40,16 @@ nodeup which --runtime 22.1.0 npm
 
 For linked runtimes, verify the runtime root contains `bin/node` or `bin/node.exe`.
 
+## Shims Are Missing or Stale
+
+Repair managed aliases:
+
+```bash
+nodeup shim setup
+```
+
+If output includes a PATH instruction, run it for the current session and add the shim directory to your shell profile or user PATH for future sessions. On Windows, Nodeup uses copied `.exe` aliases, so rerun `nodeup shim setup` after moving or replacing `nodeup.exe`.
+
 ## packageManager Conflict
 
 If `package.json` says `pnpm@10.32.1`, running `yarn` fails with `conflict`.

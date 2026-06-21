@@ -21,6 +21,37 @@ If the binary is linked or copied as one of those names, Nodeup:
 
 Normal management commands still use the `nodeup` executable name.
 
+## Setup and Repair
+
+Create or repair all managed aliases with one command:
+
+```bash
+nodeup shim setup
+```
+
+Default shim directory:
+
+- macOS and Linux: `$HOME/.local/share/nodeup/shims`
+- Windows: `$HOME\.local\share\nodeup\shims`
+
+Use `NODEUP_SHIM_DIR` or `--dir <path>` to choose another directory:
+
+```bash
+NODEUP_SHIM_DIR="$HOME/.local/bin" nodeup shim setup
+nodeup shim setup --dir "$HOME/.local/bin"
+```
+
+The command is idempotent:
+
+- Missing shims are created.
+- Existing valid shims are reported as `existing`.
+- Stale symlinks or stale Windows copies are repaired.
+- Ambiguous non-Nodeup files are refused instead of overwritten.
+
+If the shim directory is not active on `PATH`, human and JSON output include a `path_instruction` value for the current session. Add the shim directory to your shell profile or user PATH for future sessions.
+
+Windows behavior differs because symlink creation may require privileges. Nodeup uses copied `.exe` aliases on Windows, so rerun `nodeup shim setup` after moving or updating the `nodeup.exe` binary.
+
 ## Direct Dispatch
 
 For `node`, `npm`, `npx`, and non-package-manager commands, Nodeup resolves the command under the selected runtime's `bin/` directory.
