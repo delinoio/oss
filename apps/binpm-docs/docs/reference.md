@@ -17,3 +17,7 @@ binpm resolves release assets against the current host target:
 - Libc or ABI environment: `gnu`, `musl`, `msvc`, `any`
 
 Unsupported operating systems or CPU architectures fail clearly instead of being mapped to a supported fallback target.
+
+## Global Update Status
+
+Local `binpm update [cmd...] [--local] [--dry-run]` is implemented for project tools. Global update is pending implementation: `binpm update --global` fails, including with `--dry-run`, and reports the supported workaround. Run `binpm outdated --global` to identify stale global tools, then reinstall each stale tool with `binpm install <source>`.

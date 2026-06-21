@@ -118,6 +118,56 @@ fn add_and_x_help_include_explicit_bin_selection() {
 }
 
 #[test]
+fn update_help_marks_global_update_pending() {
+    let mut command = binpm();
+
+    command
+        .args(["update", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Global update is pending"))
+        .stdout(predicate::str::contains("--global"));
+}
+
+#[test]
+fn global_update_reports_pending_workaround() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["update", "--global"])
+        .assert()
+        .failure()
+        .code(2)
+        .stdout(predicate::str::contains("update scope: global"))
+        .stderr(predicate::str::contains("pending implementation"))
+        .stderr(predicate::str::contains("binpm outdated --global"))
+        .stderr(predicate::str::contains("binpm install <source>"))
+        .stderr(predicate::str::contains("binpm update --local"));
+}
+
+#[test]
+fn global_update_dry_run_reports_same_pending_workaround() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["update", "--global", "--dry-run"])
+        .assert()
+        .failure()
+        .code(2)
+        .stdout(predicate::str::contains("planned updates").not())
+        .stderr(predicate::str::contains("pending implementation"))
+        .stderr(predicate::str::contains("binpm outdated --global"));
+}
+
+#[test]
 fn execution_aliases_accept_package_and_forwarded_flags() {
     for alias in ["exec", "run"] {
         let mut command = binpm();

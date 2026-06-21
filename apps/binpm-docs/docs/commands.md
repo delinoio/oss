@@ -9,6 +9,7 @@ binpm install <source>
 binpm add <cmd> <source> [--bin <upstream-binary>]
 binpm install
 binpm update [cmd...] [--local]
+binpm update --global
 binpm remove <cmd> [--local|--global]
 ```
 
@@ -16,7 +17,9 @@ binpm remove <cmd> [--local|--global]
 
 Use `binpm add <cmd> <source> --bin <upstream-binary>` when the release archive contains multiple executables or when the upstream executable name differs from the local command name. The selected binary is persisted in `binpm.toml`.
 
-Commands that support both local and global scope default to local when a local `binpm.toml` is discovered. Otherwise they default to global. `--local` and `--global` are explicit overrides. Global update is not implemented yet; use local `binpm update` for project tools.
+Commands that support both local and global scope default to local when a local `binpm.toml` is discovered. Otherwise they default to global. `--local` and `--global` are explicit overrides.
+
+Global update is pending implementation. `binpm update --global`, including `--dry-run`, fails with a workaround: run `binpm outdated --global` to find stale global tools, then reinstall each one with `binpm install <source>`. Use `binpm update --local` for project tools.
 
 ## Execution
 

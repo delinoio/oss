@@ -867,6 +867,9 @@ fn update(args: UpdateArgs) -> Result<i32> {
     );
     let scope = select_scope(args.scope.scope())?;
     print_selected_mutation_scope("update", scope);
+    if scope == Scope::Global {
+        return Err(BinpmError::GlobalUpdatePending);
+    }
     if args.dry_run {
         return preview_update(scope, &args.cmd);
     }
@@ -876,9 +879,7 @@ fn update(args: UpdateArgs) -> Result<i32> {
             path: require_manifest_root()?.join(LOCKFILE_FILE),
         }),
         Scope::Local => install_local_manifest(false, args.require_verified, &args.cmd),
-        Scope::Global => Err(BinpmError::NotImplemented {
-            command: "update global",
-        }),
+        Scope::Global => unreachable!("global update returns pending before planning"),
         Scope::Auto => unreachable!("select_scope never returns auto"),
     }
 }
