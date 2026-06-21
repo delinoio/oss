@@ -73,7 +73,7 @@ If unlinking reports `conflict`, change the default runtime or remove/update the
 
 ## Windows Shim Is Shadowed
 
-Windows resolves commands using `PATH` order and `PATHEXT`. Nodeup shim aliases such as `npm.exe` or `npm.cmd` must appear earlier than other Node.js or package-manager commands when you want Nodeup to dispatch them.
+Windows resolves commands using `PATH` order and `PATHEXT`. Nodeup shim aliases such as `npm.exe` must appear earlier than other Node.js or package-manager commands when you want Nodeup to dispatch them.
 
 Check the effective command order:
 
@@ -85,7 +85,7 @@ Get-Command npm -All
 
 If another `npm.cmd`, `npm.exe`, `node.exe`, or package-manager directory appears first, move the Nodeup shim directory earlier on `PATH` or invoke the desired shim by full path.
 
-Do not confuse the shim alias file with the runtime executable Nodeup delegates to. A Nodeup shim can be `npm.exe` or `npm.cmd`; the selected Windows Node.js runtime usually provides package managers as `bin/npm.cmd`, `bin/npx.cmd`, `bin/yarn.cmd`, and `bin/pnpm.cmd`.
+Do not confuse the shim alias file with the runtime executable Nodeup delegates to. A Nodeup shim should be a copied or linked executable such as `npm.exe`; a batch wrapper that calls `nodeup.exe` does not preserve the wrapper name as Nodeup's `argv[0]`. The selected Windows Node.js runtime usually provides package managers as `bin/npm.cmd`, `bin/npx.cmd`, `bin/yarn.cmd`, and `bin/pnpm.cmd`.
 
 ## packageManager Conflict
 
