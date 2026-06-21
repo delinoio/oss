@@ -352,16 +352,16 @@ impl ConfiguredPackageManager {
                     package_json_path.display()
                 ),
                 format!("Use an exact value such as `{raw}@<major>.<minor>.<patch>`."),
-                package_manager_diagnostics(
+                package_manager_diagnostics(PackageManagerDiagnosticsInput {
                     package_json_path,
-                    Some(raw),
-                    None,
-                    "version",
-                    "missing-version",
-                    Some(raw),
-                    None,
-                    json!(format!("{raw}@<major>.<minor>.<patch>")),
-                ),
+                    raw_value: Some(raw),
+                    received_type: None,
+                    failed_part: "version",
+                    problem: "missing-version",
+                    manager: Some(raw),
+                    version: None,
+                    correction: json!(format!("{raw}@<major>.<minor>.<patch>")),
+                }),
             ));
         }
 
@@ -373,16 +373,16 @@ impl ConfiguredPackageManager {
                 ),
                 "Use exactly one `@` separator in `<manager>@<exact-semver>`, for example \
                  `yarn@4.13.0` or `pnpm@10.32.1`.",
-                package_manager_diagnostics(
+                package_manager_diagnostics(PackageManagerDiagnosticsInput {
                     package_json_path,
-                    Some(raw),
-                    None,
-                    "separator",
-                    "malformed-separator",
-                    None,
-                    None,
-                    json!(["yarn@4.13.0", "pnpm@10.32.1"]),
-                ),
+                    raw_value: Some(raw),
+                    received_type: None,
+                    failed_part: "separator",
+                    problem: "malformed-separator",
+                    manager: None,
+                    version: None,
+                    correction: json!(["yarn@4.13.0", "pnpm@10.32.1"]),
+                }),
             ));
         }
 
@@ -397,16 +397,16 @@ impl ConfiguredPackageManager {
                     package_json_path.display()
                 ),
                 "Set packageManager to `yarn@<exact-semver>` or `pnpm@<exact-semver>`.",
-                package_manager_diagnostics(
+                package_manager_diagnostics(PackageManagerDiagnosticsInput {
                     package_json_path,
-                    Some(raw),
-                    None,
-                    "manager",
-                    "missing-manager",
-                    None,
-                    Some(version_raw),
-                    json!(["yarn@4.13.0", "pnpm@10.32.1"]),
-                ),
+                    raw_value: Some(raw),
+                    received_type: None,
+                    failed_part: "manager",
+                    problem: "missing-manager",
+                    manager: None,
+                    version: Some(version_raw),
+                    correction: json!(["yarn@4.13.0", "pnpm@10.32.1"]),
+                }),
             ));
         }
 
@@ -417,16 +417,16 @@ impl ConfiguredPackageManager {
                     package_json_path.display()
                 ),
                 format!("Use an exact value such as `{manager_raw}@<major>.<minor>.<patch>`."),
-                package_manager_diagnostics(
+                package_manager_diagnostics(PackageManagerDiagnosticsInput {
                     package_json_path,
-                    Some(raw),
-                    None,
-                    "version",
-                    "missing-version",
-                    Some(manager_raw),
-                    None,
-                    json!(format!("{manager_raw}@<major>.<minor>.<patch>")),
-                ),
+                    raw_value: Some(raw),
+                    received_type: None,
+                    failed_part: "version",
+                    problem: "missing-version",
+                    manager: Some(manager_raw),
+                    version: None,
+                    correction: json!(format!("{manager_raw}@<major>.<minor>.<patch>")),
+                }),
             ));
         }
 
@@ -440,16 +440,16 @@ impl ConfiguredPackageManager {
                         package_json_path.display()
                     ),
                     "Use `yarn@<exact-semver>` or `pnpm@<exact-semver>`.",
-                    package_manager_diagnostics(
+                    package_manager_diagnostics(PackageManagerDiagnosticsInput {
                         package_json_path,
-                        Some(raw),
-                        None,
-                        "manager",
-                        "unsupported-manager",
-                        Some(manager_raw),
-                        Some(version_raw),
-                        json!(["yarn@4.13.0", "pnpm@10.32.1"]),
-                    ),
+                        raw_value: Some(raw),
+                        received_type: None,
+                        failed_part: "manager",
+                        problem: "unsupported-manager",
+                        manager: Some(manager_raw),
+                        version: Some(version_raw),
+                        correction: json!(["yarn@4.13.0", "pnpm@10.32.1"]),
+                    }),
                 ));
             }
         };
@@ -465,16 +465,17 @@ impl ConfiguredPackageManager {
                      `{manager_raw}@10.32.1`."
                 ),
                 {
-                    let mut diagnostics = package_manager_diagnostics(
-                        package_json_path,
-                        Some(raw),
-                        None,
-                        "version",
-                        "non-exact-semver",
-                        Some(manager_raw),
-                        Some(version_raw),
-                        json!(format!("{manager_raw}@<major>.<minor>.<patch>")),
-                    );
+                    let mut diagnostics =
+                        package_manager_diagnostics(PackageManagerDiagnosticsInput {
+                            package_json_path,
+                            raw_value: Some(raw),
+                            received_type: None,
+                            failed_part: "version",
+                            problem: "non-exact-semver",
+                            manager: Some(manager_raw),
+                            version: Some(version_raw),
+                            correction: json!(format!("{manager_raw}@<major>.<minor>.<patch>")),
+                        });
                     diagnostics.insert("semver_error".to_string(), json!(error.to_string()));
                     diagnostics
                 },
@@ -544,16 +545,16 @@ fn discover_package_manager(cwd: &Path) -> Result<PackageManagerDiscovery> {
                     json_type_label(&raw_value),
                 ),
                 "Set packageManager to a string like `yarn@4.13.0` or `pnpm@10.32.1`.",
-                package_manager_diagnostics(
-                    &package_json_path,
-                    None,
-                    Some(json_type_label(&raw_value)),
-                    "value",
-                    "non-string",
-                    None,
-                    None,
-                    json!("<manager>@<exact-semver>"),
-                ),
+                package_manager_diagnostics(PackageManagerDiagnosticsInput {
+                    package_json_path: &package_json_path,
+                    raw_value: None,
+                    received_type: Some(json_type_label(&raw_value)),
+                    failed_part: "value",
+                    problem: "non-string",
+                    manager: None,
+                    version: None,
+                    correction: json!("<manager>@<exact-semver>"),
+                }),
             )
         })?;
         Some(ConfiguredPackageManager::parse(raw, &package_json_path)?)
@@ -605,37 +606,39 @@ fn package_manager_invalid_input(
     )
 }
 
-fn package_manager_diagnostics(
-    package_json_path: &Path,
-    raw_value: Option<&str>,
-    received_type: Option<&str>,
-    failed_part: &str,
-    problem: &str,
-    manager: Option<&str>,
-    version: Option<&str>,
+struct PackageManagerDiagnosticsInput<'a> {
+    package_json_path: &'a Path,
+    raw_value: Option<&'a str>,
+    received_type: Option<&'a str>,
+    failed_part: &'a str,
+    problem: &'a str,
+    manager: Option<&'a str>,
+    version: Option<&'a str>,
     correction: Value,
-) -> ErrorDiagnostics {
+}
+
+fn package_manager_diagnostics(input: PackageManagerDiagnosticsInput<'_>) -> ErrorDiagnostics {
     let mut diagnostics = ErrorDiagnostics::new();
     diagnostics.insert("diagnostic".to_string(), json!("package-manager-invalid"));
     diagnostics.insert(
         "package_json_path".to_string(),
-        json!(package_json_path.display().to_string()),
+        json!(input.package_json_path.display().to_string()),
     );
     diagnostics.insert("expected".to_string(), json!("<manager>@<exact-semver>"));
     diagnostics.insert("supported_managers".to_string(), json!(["yarn", "pnpm"]));
-    diagnostics.insert("failed_part".to_string(), json!(failed_part));
-    diagnostics.insert("problem".to_string(), json!(problem));
-    diagnostics.insert("correction".to_string(), correction);
-    if let Some(raw_value) = raw_value {
+    diagnostics.insert("failed_part".to_string(), json!(input.failed_part));
+    diagnostics.insert("problem".to_string(), json!(input.problem));
+    diagnostics.insert("correction".to_string(), input.correction);
+    if let Some(raw_value) = input.raw_value {
         diagnostics.insert("package_manager".to_string(), json!(raw_value));
     }
-    if let Some(received_type) = received_type {
+    if let Some(received_type) = input.received_type {
         diagnostics.insert("received_type".to_string(), json!(received_type));
     }
-    if let Some(manager) = manager {
+    if let Some(manager) = input.manager {
         diagnostics.insert("manager".to_string(), json!(manager));
     }
-    if let Some(version) = version {
+    if let Some(version) = input.version {
         diagnostics.insert("version".to_string(), json!(version));
     }
     diagnostics
