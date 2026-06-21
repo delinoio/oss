@@ -25,7 +25,10 @@
 - Linked runtime command identifiers are `toolchain link` for registration and `toolchain unlink` for record removal.
 - `toolchain unlink <name>...` must remove only nodeup settings records and tracked selectors; it must not delete files from external runtime directories.
 - `toolchain unlink` must fail with `conflict` when the linked runtime name is referenced by the global default selector or a directory override.
+- Runtime selector kinds exposed in JSON are `exact-version`, `channel`, and `linked-runtime`.
+- `current` is the canonical selector for the newest Node.js release-index entry; `latest` is a supported alias of `current` and must report alias metadata in JSON selector-bearing output.
 - Tracked exact-version selectors must be stored and processed by their canonical `v<semver>` identity, so `22.1.0` and `v22.1.0` are the same tracked selector.
+- Tracked channel aliases must be stored and processed by canonical selector identity, so `latest` and `current` are one tracked selector, `current`.
 - `nodeup update` treats exact-version selectors as immutable pins and reports them with `skipped-exact-version` rather than installing or reporting a newer runtime for that selector.
 - Host support must include `macOS`, `Linux`, and `Windows` x64/arm64, while x86 hosts remain unsupported.
 - Direct installers, runtime installation, and shim dispatch must detect unsupported x86 hosts before release asset download or delegated command planning.
@@ -40,6 +43,8 @@
 - Windows runtime archives that unpack without a top-level directory must be normalized into the stable `bin/` runtime layout used by nodeup execution and linking flows.
 - Windows managed shim aliases may be extensionless, `.exe`, or `.cmd` by executable basename, while delegated Windows runtime package-manager executables normalize to `bin/<command>.cmd` for `npm`, `npx`, `yarn`, `pnpm`, and `corepack`.
 - Linked runtime validation must require a runnable `node` command during `toolchain link` and active-runtime availability checks.
+- Linked runtime names are case-sensitive, but names that differ from reserved channel selectors only by case, such as `LTS`, `Current`, or `LATEST`, must be rejected with `invalid-input`.
+- Legacy settings and overrides that already contain reserved-channel case variants as linked runtime selectors must remain removable and must continue to report linked-runtime metadata in JSON output.
 - Unix linked-runtime validation must require an executable permission bit on `bin/node`; Windows platform behavior must select `bin/node.exe` for `node`.
 - `toolchain link` success output must report per-managed-shim direct command availability for `node`, `npm`, `npx`, `yarn`, and `pnpm`, including checked runtime paths, linked runtime name/path in JSON, install-on-demand eligibility, and PATH/PATHEXT precedence guidance.
 - Missing linked-runtime command failures from `which`, `run`, package-manager fallback planning, or managed shim dispatch must include actionable human checked-path context and JSON diagnostics for `command`, `runtime`, `checked_paths`, `selected_path`, direct executable existence/runnability, linked runtime name/path when applicable, install-on-demand eligibility, install-on-demand scope, and PATH/PATHEXT precedence guidance.
@@ -76,6 +81,8 @@
 - Invalid completion subcommand scopes such as `toolchain install` must suggest the valid top-level scope, for example `nodeup completions bash toolchain`, and JSON errors must include deterministic `rejected_scope`, `allowed_scope_category`, `allowed_scopes`, and optional `suggested_scope` diagnostics.
 - Top-level completion scopes must include `shim`.
 - `completions` output must remain raw script text on stdout even when `--output json` is requested.
+- Script-safe stdout guidance must map structured automation to `--output json`, newline-delimited runtime lists to setting `RUST_LOG=off` before `nodeup toolchain list --quiet`, completion redirection to setting `RUST_LOG=off` before `nodeup completions <shell> >file`, and log-free human output to setting `RUST_LOG=off` before `nodeup <command>`.
+- Tracing logs must be written to stderr when enabled so stdout remains reserved for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts. Management `--output json` keeps tracing logs off by default so JSON stdout and stderr payloads remain parseable unless `RUST_LOG` explicitly enables tracing.
 
 ## Storage
 - Maintains local version metadata, installation roots, and shim state.

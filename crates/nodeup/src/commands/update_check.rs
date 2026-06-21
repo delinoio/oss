@@ -9,7 +9,7 @@ use crate::{
     installer::InstallState,
     release_index::{normalize_version, ReleaseIndexResolutionDiagnostic},
     resolver::ResolvedRuntimeTarget,
-    selectors::RuntimeSelector,
+    selectors::{is_case_variant_of_reserved_channel_selector, RuntimeSelector},
     types::RuntimeSelectorSource,
     NodeupApp,
 };
@@ -24,6 +24,10 @@ struct CheckEntry {
 #[derive(Debug, Serialize)]
 struct UpdateEntry {
     selector: String,
+    selector_kind: String,
+    canonical_selector: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector_alias_of: Option<String>,
     previous_runtime: Option<String>,
     updated_runtime: Option<String>,
     status: String,
@@ -36,6 +40,7 @@ struct UpdateSelectorContext {
     source: &'static str,
     tracked_selectors: usize,
     installed_runtimes: usize,
+    allow_legacy_stored_linked_names: bool,
 }
 
 pub fn check(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupApp) -> Result<i32> {
@@ -76,6 +81,7 @@ pub fn update(
                 source: "explicit-args",
                 tracked_selectors: 0,
                 installed_runtimes: 0,
+                allow_legacy_stored_linked_names: false,
             },
         )
     };
@@ -97,11 +103,18 @@ pub fn update(
 
     let mut updates = Vec::new();
     for selector in selectors {
-        let parsed = RuntimeSelector::parse(&selector)?;
+        let parsed =
+            parse_update_selector(&selector, selector_context.allow_legacy_stored_linked_names)?;
+        let selector_kind = parsed.kind().as_str().to_string();
+        let canonical_selector = parsed.canonical_id();
+        let selector_alias_of = parsed.alias_of();
         match parsed {
             RuntimeSelector::LinkedName(_) => {
                 updates.push(UpdateEntry {
                     selector,
+                    selector_kind,
+                    canonical_selector,
+                    selector_alias_of,
                     previous_runtime: None,
                     updated_runtime: None,
                     status: "skipped-linked-runtime".to_string(),
@@ -120,6 +133,9 @@ pub fn update(
                 let report = app.installer.ensure_installed(&version, &app.releases)?;
                 updates.push(UpdateEntry {
                     selector,
+                    selector_kind,
+                    canonical_selector,
+                    selector_alias_of,
                     previous_runtime: None,
                     updated_runtime: Some(report.version),
                     status: if report.state == InstallState::AlreadyInstalled {
@@ -143,6 +159,9 @@ pub fn update(
                 let current = format!("v{version}");
                 updates.push(UpdateEntry {
                     selector,
+                    selector_kind,
+                    canonical_selector,
+                    selector_alias_of,
                     previous_runtime: Some(current.clone()),
                     updated_runtime: Some(current),
                     status: "skipped-exact-version".to_string(),
@@ -202,6 +221,7 @@ fn selectors_for_update(app: &NodeupApp) -> Result<(Vec<String>, UpdateSelectorC
                 source: "tracked-selectors",
                 tracked_selectors: tracked_count,
                 installed_runtimes: 0,
+                allow_legacy_stored_linked_names: true,
             },
         ));
     }
@@ -214,8 +234,28 @@ fn selectors_for_update(app: &NodeupApp) -> Result<(Vec<String>, UpdateSelectorC
             source: "installed-runtimes",
             tracked_selectors: 0,
             installed_runtimes: installed_count,
+            allow_legacy_stored_linked_names: false,
         },
     ))
+}
+
+fn parse_update_selector(
+    selector: &str,
+    allow_legacy_stored_linked_names: bool,
+) -> Result<RuntimeSelector> {
+    match RuntimeSelector::parse(selector) {
+        Ok(parsed) => Ok(parsed),
+        Err(error)
+            if allow_legacy_stored_linked_names
+                && is_case_variant_of_reserved_channel_selector(selector.trim()) =>
+        {
+            // Tracked selectors can come from settings written before reserved-case linked
+            // names were rejected. Keep no-arg update compatible while explicit
+            // CLI args stay strict.
+            Ok(RuntimeSelector::LinkedName(selector.trim().to_string()))
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn latest_newer_version(app: &NodeupApp, current: &str) -> Result<Option<String>> {

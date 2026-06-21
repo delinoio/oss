@@ -142,9 +142,7 @@ fn canonical_tracked_selectors(selectors: Vec<String>) -> Vec<String> {
 
 fn canonical_tracked_selector(selector: &str) -> String {
     match RuntimeSelector::parse(selector) {
-        Ok(RuntimeSelector::Version(version)) => format!("v{version}"),
-        Ok(RuntimeSelector::Channel(channel)) => channel.to_string(),
-        Ok(RuntimeSelector::LinkedName(name)) => name,
+        Ok(parsed) => parsed.canonical_id(),
         Err(_) => selector.to_string(),
     }
 }

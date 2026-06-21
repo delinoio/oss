@@ -21,16 +21,20 @@ impl LoggingContext {
 }
 
 pub fn init_logging(context: LoggingContext) {
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(context.default_filter()));
+    let env_filter = logging_filter(context);
     let _ = tracing_subscriber::fmt()
         .pretty()
+        .with_writer(std::io::stderr)
         .with_env_filter(env_filter)
         .with_ansi(log_color_enabled())
         .with_target(false)
         .with_level(true)
         .without_time()
         .try_init();
+}
+
+fn logging_filter(context: LoggingContext) -> EnvFilter {
+    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(context.default_filter()))
 }
 
 fn log_color_enabled() -> bool {
@@ -137,7 +141,11 @@ fn parse_log_color_mode(raw: &str) -> Option<LogColorMode> {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_log_color_enabled, LoggingContext};
+    use std::sync::Mutex;
+
+    use super::{logging_filter, resolve_log_color_enabled, LoggingContext};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn managed_alias_default_filter_is_warn() {
@@ -158,6 +166,17 @@ mod tests {
             LoggingContext::ManagementJson.default_filter(),
             "nodeup=off"
         );
+    }
+
+    #[test]
+    fn management_json_respects_explicit_rust_log_filter() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("RUST_LOG", "nodeup=info");
+
+        let filter = logging_filter(LoggingContext::ManagementJson);
+
+        std::env::remove_var("RUST_LOG");
+        assert_eq!(filter.to_string(), "nodeup=info");
     }
 
     #[test]

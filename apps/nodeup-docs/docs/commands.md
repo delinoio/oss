@@ -8,6 +8,8 @@ nodeup --output human|json --color auto|always|never <command>
 
 `--output` defaults to `human`. `--color` controls human stdout and stderr styling only.
 
+For script-safe stdout, use `--output json` for structured data, set `RUST_LOG=off` before `nodeup toolchain list --quiet` for newline-delimited runtime identifiers, and set `RUST_LOG=off` before `nodeup completions <shell> >file` for completion script redirection. Logs are written to stderr when enabled.
+
 ## toolchain list
 
 ```bash
@@ -21,7 +23,7 @@ Lists installed and linked runtimes.
 - `--verbose` prints installed runtime paths and linked runtime paths.
 - JSON output has `installed` and `linked` fields.
 
-Use `RUST_LOG=off nodeup toolchain list --quiet` or `nodeup --output json toolchain list` when scripts need log-free stdout.
+Set `RUST_LOG=off` before `nodeup toolchain list --quiet`, or use `nodeup --output json toolchain list`, when scripts need parseable stdout.
 
 ## toolchain install
 
@@ -160,7 +162,9 @@ Behavior by selector:
 
 Tracked exact versions are canonicalized and deduplicated by semantic version. For example, tracking both `22.1.0` and `v22.1.0` results in one tracked selector, `v22.1.0`.
 
-JSON output is an array with `selector`, `previous_runtime`, `updated_runtime`, and `status`.
+`current` and `latest` resolve to the same newest release-index entry; `latest` is reported as an alias of canonical selector `current`.
+
+JSON output is an array with `selector`, `selector_kind`, `canonical_selector`, optional `selector_alias_of`, `previous_runtime`, `updated_runtime`, and `status`.
 
 ## check
 

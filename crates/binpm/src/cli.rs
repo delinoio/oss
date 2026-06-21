@@ -360,6 +360,19 @@ impl LockfileArgs {
         }
         self.frozen_lockfile || std::env::var("CI").is_ok_and(|value| value == "true")
     }
+
+    pub fn frozen_lockfile_mode(&self) -> Option<&'static str> {
+        if self.no_frozen_lockfile {
+            return None;
+        }
+        if self.frozen_lockfile {
+            Some("--frozen-lockfile")
+        } else if std::env::var("CI").is_ok_and(|value| value == "true") {
+            Some("CI=true")
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

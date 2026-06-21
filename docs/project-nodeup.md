@@ -16,12 +16,16 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 
 ## Cross-Domain Invariants
 - Stable channel naming and runtime dispatch semantics must be preserved.
+- `current` is the canonical selector for the newest Node.js release-index entry; `latest` remains a supported alias that resolves identically and reports canonical alias metadata in JSON output.
 - Exact-version runtime selectors are immutable pins for `nodeup update`; they are canonicalized to `v<semver>` when tracked and are semantically deduplicated with non-`v` inputs.
+- Tracked semantic selectors must be canonicalized so legacy duplicate exact selectors and channel aliases such as `current`/`latest` do not produce duplicate update work.
 - Shim behavior must remain deterministic across supported operating systems.
 - Windows shim alias filenames and delegated runtime executable filenames are separate concepts: Nodeup recognizes managed alias basenames through extensionless, `.exe`, and `.cmd` invocations, while Windows runtime package-manager delegation checks the selected runtime's `bin/<command>.cmd` files.
 - `nodeup shim setup` is the stable idempotent setup/repair command for Nodeup-managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims, and must not replace unrelated existing commands.
 - Windows copied shims must use adjacent Nodeup ownership markers so stale Nodeup copies can be repaired without replacing unrelated executables.
 - Linked runtime lifecycle commands must preserve external runtime directories: `toolchain link` registers settings records and `toolchain unlink` removes those records only.
+- Linked runtime names are case-sensitive, but reserved-channel case variants such as `LTS`, `Current`, and `LATEST` are invalid linked names.
+- Legacy persisted linked runtime selectors that use reserved-channel case variants must remain removable and reportable as linked-runtime selectors.
 - Linked runtime resolution must validate that the selected `node` executable is runnable, including Unix executable-bit checks and Windows `node.exe` naming behavior.
 - Linked runtime command availability diagnostics must distinguish the minimum `node` link requirement from per-shim availability for `node`, `npm`, `npx`, `yarn`, and `pnpm`, and expose checked paths, linked runtime identity, install-on-demand eligibility, and PATH/PATHEXT guidance in human and JSON output.
 - `nodeup run` missing-version errors must keep installation opt-in with `--install`, while managed alias dispatch may install a missing selected version runtime on demand. Human and JSON diagnostics must make that distinction explicit.
@@ -33,6 +37,8 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.
 - `nodeup show color` must remain available as the color diagnostic command for human stdout, human stderr, and log color decisions.
 - `--output json` must render both application-level errors and clap parser failures as JSON error envelopes on stderr, except raw completion script output remains unwrapped on success.
+- Script-safe output guidance must remain discoverable from CLI help and docs: use `--output json` for structured automation, set `RUST_LOG=off` before `nodeup toolchain list --quiet` for raw runtime identifiers, and set `RUST_LOG=off` before `nodeup completions <shell> >file` for completion redirection.
+- Tracing logs must be written to stderr when enabled so stdout remains reserved for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts. Management `--output json` keeps tracing logs off by default so JSON stdout and stderr payloads remain parseable unless `RUST_LOG` explicitly enables tracing.
 - `nodeup toolchain install` and `nodeup toolchain uninstall` require at least one runtime selector at the parser layer.
 - `nodeup toolchain install` accepts only exact-version and channel selectors; linked-name selectors must be rejected before linked-runtime lookup so the error is deterministic whether or not the linked name exists.
 - `nodeup toolchain uninstall` removes exact installed versions only and must fail with `conflict` before mutation when an exact-version global default or directory override references a requested runtime; human output must name each blocking reference type and path with follow-up commands, and JSON error envelopes must include deterministic blocker diagnostics.
