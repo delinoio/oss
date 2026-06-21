@@ -33,6 +33,7 @@
 - Keep channel and command identifiers stable and documented.
 - Record storage and download behavior in project docs whenever changed.
 - Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.
+- Keep unsupported x86 host handling aligned across direct installers, runtime installation, shim dispatch, JSON diagnostics, and Nodeup docs.
 
 ### binpm-Specific Rules
 

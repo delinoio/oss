@@ -11,6 +11,7 @@ use crate::{
     resolver::ResolvedRuntimeTarget,
     selectors::{is_reserved_channel_selector_token, is_valid_linked_name, RuntimeSelector},
     store::runtime_executable_path,
+    types::PlatformTarget,
     NodeupApp,
 };
 
@@ -150,6 +151,8 @@ fn install(
             "Run `nodeup toolchain install <runtime>...`.",
         ));
     }
+
+    PlatformTarget::ensure_supported_host("runtime installation")?;
 
     let mut results = Vec::new();
     for runtime in runtimes {
