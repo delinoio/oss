@@ -283,9 +283,9 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
 
     let mut removed_paths = Vec::new();
     let mut removed_targets = Vec::new();
-    let preserved_shim_dirs = existing_shim_directories();
+    let preserved_paths = preserved_uninstall_paths();
     for target in deletion_targets {
-        remove_uninstall_target(&target.path, &preserved_shim_dirs).map_err(|error| {
+        remove_uninstall_target(&target.path, &preserved_paths).map_err(|error| {
             log_failure(
                 action,
                 self_internal(format!(
@@ -294,10 +294,8 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
                 )),
             )
         })?;
-        if !target.path.exists() {
-            removed_paths.push(target.path.display().to_string());
-            removed_targets.push(target);
-        }
+        removed_paths.push(target.path.display().to_string());
+        removed_targets.push(target);
     }
 
     let status = if removed_paths.is_empty() {
@@ -608,8 +606,8 @@ fn directory_is_empty(path: &Path) -> Result<bool> {
     Ok(true)
 }
 
-fn remove_uninstall_target(path: &Path, preserved_dirs: &[PathBuf]) -> std::io::Result<()> {
-    let preserved_descendants: Vec<&Path> = preserved_dirs
+fn remove_uninstall_target(path: &Path, preserved_paths: &[PathBuf]) -> std::io::Result<()> {
+    let preserved_descendants: Vec<&Path> = preserved_paths
         .iter()
         .map(PathBuf::as_path)
         .filter(|preserved| preserved.starts_with(path))
@@ -695,7 +693,7 @@ fn cleanup_boundaries(
             cleanup: "manual",
             paths: likely_leftover_paths
                 .iter()
-                .filter(|path| path.ends_with("nodeup") || path.ends_with("nodeup.exe"))
+                .filter(|path| !is_likely_shim_path(path))
                 .cloned()
                 .collect(),
         },
@@ -780,6 +778,24 @@ fn likely_leftover_paths() -> Vec<String> {
     paths.sort();
     paths.dedup();
     paths
+}
+
+fn preserved_uninstall_paths() -> Vec<PathBuf> {
+    let mut paths = existing_shim_directories();
+    if let Ok(path) = resolve_target_binary_path() {
+        if path.exists() {
+            if let Ok(path) = normalize_target_path(&path) {
+                paths.push(path);
+            }
+        }
+    }
+
+    paths.into_iter().fold(Vec::new(), |mut unique, path| {
+        if !unique.iter().any(|existing| paths_equal(existing, &path)) {
+            unique.push(path);
+        }
+        unique
+    })
 }
 
 fn existing_shim_directories() -> Vec<PathBuf> {

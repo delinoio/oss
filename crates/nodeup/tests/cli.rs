@@ -2229,7 +2229,7 @@ fn self_uninstall_preserves_configured_shim_dir_inside_removed_root() {
         .unwrap()
         .iter()
         .any(|path| path == shim_path.to_str().unwrap()));
-    assert!(!payload["removed_paths"]
+    assert!(payload["removed_paths"]
         .as_array()
         .unwrap()
         .iter()
@@ -2269,12 +2269,77 @@ fn self_uninstall_preserves_custom_managed_shim_dir_inside_removed_root() {
         .unwrap()
         .iter()
         .any(|path| path == node_shim.to_str().unwrap()));
-    assert!(!payload["removed_paths"]
+    assert!(payload["removed_paths"]
         .as_array()
         .unwrap()
         .iter()
         .any(|path| path == env.data_root.to_str().unwrap()));
     assert!(node_shim.exists() || fs::symlink_metadata(&node_shim).is_ok());
+    assert!(!env.data_root.join("data-marker.txt").exists());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_reports_renamed_binary_cleanup_boundary() {
+    let env = TestEnv::new();
+    let binary_path = env.root.join("bin").join("nodeup-linux-amd64");
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+    fs::write(env.config_root.join("config-marker.txt"), "config").unwrap();
+
+    let output = env
+        .command()
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall reports renamed binary boundary");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let binary_boundary = payload["cleanup_boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|boundary| boundary["category"] == "binary")
+        .unwrap();
+    assert!(binary_boundary["paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == binary_path.to_str().unwrap()));
+    assert!(binary_path.exists());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_preserves_configured_binary_inside_removed_root() {
+    let env = TestEnv::new();
+    let binary_path = env.data_root.join("bin").join("nodeup-linux-amd64");
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+    fs::write(env.data_root.join("data-marker.txt"), "data").unwrap();
+
+    let output = env
+        .command()
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves configured binary");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["status"], "removed");
+    assert!(payload["removed_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == env.data_root.to_str().unwrap()));
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == binary_path.to_str().unwrap()));
+    assert!(binary_path.exists());
     assert!(!env.data_root.join("data-marker.txt").exists());
 }
 
@@ -2666,7 +2731,9 @@ fn shim_setup_uses_copy_mode_for_windows_hosts() {
         .assert()
         .success()
         .stdout(predicates::str::contains("\"method\": \"copy\""))
-        .stdout(predicates::str::contains("PowerShell"));
+        .stdout(predicates::str::contains("$env:Path = "))
+        .stdout(predicates::str::contains(" + $env:Path"))
+        .stdout(predicates::str::contains("; add ").not());
 
     for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
         assert!(shim_dir.join(format!("{alias}.exe")).is_file());

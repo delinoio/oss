@@ -440,8 +440,7 @@ fn paths_equal(left: &Path, right: &Path) -> bool {
 fn path_instruction(dir: &Path) -> String {
     if host_is_windows() {
         format!(
-            "$env:Path = '{};' + $env:Path; add the same directory to the user PATH for future \
-             PowerShell sessions.",
+            "$env:Path = '{};' + $env:Path",
             escape_powershell_single_quoted(&dir.display().to_string())
         )
     } else {
