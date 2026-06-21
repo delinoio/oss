@@ -565,10 +565,11 @@ fn frozen_lockfile_safest_next_command(cmd: Option<&str>) -> String {
             parts.join(" ")
         }
         Some(FrozenLockfileCommandContext::UpdateLocal { .. }) if cmd.is_some() => {
-            frozen_update_local_command(cmd.expect("checked command is present"))
+            frozen_update_local_command(&[cmd.expect("checked command is present")])
         }
-        Some(FrozenLockfileCommandContext::UpdateLocal { cmds, .. }) if cmds.len() == 1 => {
-            frozen_update_local_command(&cmds[0])
+        Some(FrozenLockfileCommandContext::UpdateLocal { cmds, .. }) if !cmds.is_empty() => {
+            let selected = cmds.iter().map(String::as_str).collect::<Vec<_>>();
+            frozen_update_local_command(&selected)
         }
         Some(FrozenLockfileCommandContext::InstallLocalSource {
             source,
@@ -604,13 +605,13 @@ fn frozen_lockfile_safest_next_command(cmd: Option<&str>) -> String {
     }
 }
 
-fn frozen_update_local_command(cmd: &str) -> String {
+fn frozen_update_local_command(cmds: &[&str]) -> String {
     let mut parts = vec![
         "binpm".to_string(),
         "update".to_string(),
         "--local".to_string(),
-        cli_quote(cmd),
     ];
+    parts.extend(cmds.iter().map(|cmd| cli_quote(cmd)));
     if matches!(
         FROZEN_LOCKFILE_CONTEXT.get(),
         Some(FrozenLockfileCommandContext::UpdateLocal {

@@ -5130,7 +5130,10 @@ fn verify_lockfile_records(
             let locked_tool = lockfile
                 .tools
                 .get(cmd)
-                .ok_or_else(|| frozen_lockfile_missing_record_error(lockfile_path, cmd))?;
+                .ok_or_else(|| BinpmError::StaleLockfile {
+                    path: lockfile_path.to_path_buf(),
+                    cmd: cmd.clone(),
+                })?;
             if locked_tool.source != spec.source_without_version() || locked_tool.targets.is_empty()
             {
                 return Err(BinpmError::StaleLockfile {
@@ -7539,7 +7542,9 @@ mod tests {
         )
         .expect_err("manifest tool must be locked");
 
-        assert!(error.to_string().contains("Frozen lockfile"));
+        let message = error.to_string();
+        assert!(message.contains("stale"));
+        assert!(!message.contains("Frozen lockfile"));
     }
 
     #[test]

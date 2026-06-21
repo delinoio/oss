@@ -855,6 +855,42 @@ signature_verified = false
 }
 
 #[test]
+fn verify_local_json_missing_lockfile_omits_frozen_diagnostic() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["verify", "--local", "--json"])
+        .output()
+        .expect("verify --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 2);
+    assert!(payload["error"].get("diagnostic").is_none());
+    let message = payload["error"]["message"].as_str().expect("message");
+    assert!(message.contains("stale"));
+    assert!(!message.contains("Frozen lockfile failure"));
+    assert!(!message.contains("--no-frozen-lockfile"));
+}
+
+#[test]
 fn parse_error_with_json_flag_emits_parseable_error_envelope() {
     let output = binpm()
         .args(["explain", "--json"])
@@ -1555,6 +1591,56 @@ version = "1.0.0"
     assert_eq!(
         payload["error"]["diagnostic"]["safest_next_command"],
         "binpm update --local tool --require-verified"
+    );
+}
+
+#[test]
+fn auto_frozen_update_recovery_preserves_multiple_selected_tools() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.a]
+source = "github:owner/a"
+version = "1.0.0"
+
+[tools.b]
+source = "github:owner/b"
+version = "1.0.0"
+
+[tools.c]
+source = "github:owner/c"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "update",
+            "--local",
+            "a",
+            "b",
+            "--require-verified",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("update --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["diagnostic"]["reason"], "missing_lockfile");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm update --local a b --require-verified"
     );
 }
 
