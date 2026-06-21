@@ -15,7 +15,8 @@ Provide the Mintlify-based public documentation site for user-facing product and
 ## Cross-Domain Invariants
 - Mintlify navigation IDs and docs structure must stay aligned with documented contracts.
 - User-facing content changes should be versioned alongside relevant contract updates.
-- Public project pages currently exposed in top-level navigation include `nodeup`, `cargo-mono`, `derun`, and `with-watch`.
+- Public project pages currently exposed in top-level navigation include `cargo-mono`, `derun`, and `with-watch`.
+- Nodeup is intentionally not exposed by this Mintlify surface; its dedicated documentation app remains `apps/nodeup-docs` at `https://nodeup.delino.io`.
 - `public-docs` is an existing documented exception to the default Rsbuild/Rspress-style static-site toolchain and Cloudflare Pages deployment preference.
 
 ## Change Policy
