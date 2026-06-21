@@ -288,7 +288,11 @@ fn apply_shim_plan(
     action: ShimPlanAction,
 ) -> Result<ShimEntryStatus> {
     match (method, action) {
-        (_, ShimPlanAction::Keep) => Ok(ShimEntryStatus::Existing),
+        (ShimMethod::Symlink, ShimPlanAction::Keep) => Ok(ShimEntryStatus::Existing),
+        (ShimMethod::Copy, ShimPlanAction::Keep) => {
+            write_copy_marker(path)?;
+            Ok(ShimEntryStatus::Existing)
+        }
         (ShimMethod::Symlink, ShimPlanAction::Create) => {
             create_symlink(nodeup_binary, path)?;
             Ok(ShimEntryStatus::Created)
@@ -411,6 +415,33 @@ fn copy_marker_path(path: &Path) -> PathBuf {
         .and_then(|value| value.to_str())
         .unwrap_or("shim");
     path.with_file_name(format!(".{file_name}.nodeup-shim"))
+}
+
+pub(super) fn is_nodeup_owned_shim_path(path: &Path) -> bool {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            let Ok(existing_target) = fs::read_link(path) else {
+                return false;
+            };
+            let Ok(nodeup_binary) = env::current_exe() else {
+                return false;
+            };
+            looks_like_nodeup_binary_path(&existing_target, &nodeup_binary)
+        }
+        Ok(metadata) if metadata.is_file() => {
+            let marker = copy_marker_path(path);
+            marker.is_file()
+        }
+        Ok(_) | Err(_) => false,
+    }
+}
+
+pub(super) fn is_nodeup_copy_marker_path(path: &Path) -> bool {
+    path.is_file()
+        && path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|name| name.starts_with('.') && name.ends_with(".exe.nodeup-shim"))
 }
 
 fn write_copy_marker(path: &Path) -> Result<()> {

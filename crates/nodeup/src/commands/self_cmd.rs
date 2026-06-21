@@ -10,6 +10,7 @@ use tempfile::NamedTempFile;
 use toml::{value::Table, Value};
 use tracing::{info, warn};
 
+use super::shim_cmd;
 use crate::{
     cli::{OutputColorMode, OutputFormat, SelfCommand},
     commands::print_output,
@@ -165,6 +166,17 @@ struct SelfUninstallCleanupBoundary {
     paths: Vec<String>,
 }
 
+struct SelfUninstallRoot {
+    category: &'static str,
+    path: PathBuf,
+    bootstrap_child: Option<std::ffi::OsString>,
+}
+
+struct SelfUninstallTarget {
+    category: &'static str,
+    path: PathBuf,
+}
+
 #[derive(Debug, Serialize)]
 struct SchemaMigrationResult {
     file: String,
@@ -247,51 +259,42 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
     let action = SelfAction::Uninstall;
 
     let mut deletion_targets = Vec::new();
-    for (path, bootstrap_child) in [
-        (
-            &app.paths.data_root,
-            app.paths
-                .toolchains_dir
-                .file_name()
-                .map(|value| value.to_os_string()),
-        ),
-        (
-            &app.paths.cache_root,
-            app.paths
-                .downloads_dir
-                .file_name()
-                .map(|value| value.to_os_string()),
-        ),
-        (&app.paths.config_root, None),
-    ] {
+    for root in uninstall_roots(app) {
         let normalized_path =
-            normalize_target_path(path).map_err(|error| log_failure(action, error))?;
+            normalize_target_path(&root.path).map_err(|error| log_failure(action, error))?;
         ensure_safe_uninstall_path(&normalized_path).map_err(|error| log_failure(action, error))?;
+        ensure_uninstall_path_excludes_running_binary(&normalized_path)
+            .map_err(|error| log_failure(action, error))?;
 
         let has_artifacts = if normalized_path.exists() {
-            path_has_artifacts(&normalized_path, bootstrap_child.as_deref())
+            path_has_artifacts(&normalized_path, root.bootstrap_child.as_deref())
                 .map_err(|error| log_failure(action, error))?
         } else {
             false
         };
 
         if has_artifacts {
-            deletion_targets.push(normalized_path);
+            deletion_targets.push(SelfUninstallTarget {
+                category: root.category,
+                path: normalized_path,
+            });
         }
     }
 
     let mut removed_paths = Vec::new();
+    let mut removed_targets = Vec::new();
     for target in deletion_targets {
-        fs::remove_dir_all(&target).map_err(|error| {
+        fs::remove_dir_all(&target.path).map_err(|error| {
             log_failure(
                 action,
                 self_internal(format!(
                     "Failed to remove uninstall target {}: {error}",
-                    target.display()
+                    target.path.display()
                 )),
             )
         })?;
-        removed_paths.push(target.display().to_string());
+        removed_paths.push(target.path.display().to_string());
+        removed_targets.push(target);
     }
 
     let status = if removed_paths.is_empty() {
@@ -314,7 +317,7 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
     let response = SelfUninstallResponse {
         action,
         status,
-        cleanup_boundaries: cleanup_boundaries(app, &removed_paths, &likely_leftover_paths),
+        cleanup_boundaries: cleanup_boundaries(&removed_targets, &likely_leftover_paths),
         removed_paths,
         remaining_manual_steps,
         likely_leftover_paths,
@@ -540,6 +543,28 @@ fn ensure_safe_uninstall_path(path: &Path) -> Result<()> {
     Ok(())
 }
 
+fn ensure_uninstall_path_excludes_running_binary(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let current_exe = env::current_exe().map_err(|error| {
+        self_internal(format!(
+            "Failed to resolve current executable path before uninstall: {error}"
+        ))
+    })?;
+    let current_exe = normalize_target_path(&current_exe)?;
+
+    if current_exe.starts_with(path) {
+        return Err(self_invalid_input(format!(
+            "Refusing to uninstall path containing the running nodeup binary: {}",
+            path.display()
+        )));
+    }
+
+    Ok(())
+}
+
 fn is_nodeup_owned_component(component: &str) -> bool {
     let lowercase = component.to_ascii_lowercase();
     lowercase == "nodeup"
@@ -589,25 +614,24 @@ fn human_list(values: &[String]) -> String {
 }
 
 fn cleanup_boundaries(
-    app: &NodeupApp,
-    removed_paths: &[String],
+    removed_targets: &[SelfUninstallTarget],
     likely_leftover_paths: &[String],
 ) -> Vec<SelfUninstallCleanupBoundary> {
     vec![
         SelfUninstallCleanupBoundary {
             category: "data",
             cleanup: "removed-when-nodeup-owned-and-populated",
-            paths: boundary_paths(&[&app.paths.data_root], removed_paths),
+            paths: boundary_paths("data", removed_targets),
         },
         SelfUninstallCleanupBoundary {
             category: "cache",
             cleanup: "removed-when-nodeup-owned-and-populated",
-            paths: boundary_paths(&[&app.paths.cache_root], removed_paths),
+            paths: boundary_paths("cache", removed_targets),
         },
         SelfUninstallCleanupBoundary {
             category: "config",
             cleanup: "removed-when-nodeup-owned-and-populated",
-            paths: boundary_paths(&[&app.paths.config_root], removed_paths),
+            paths: boundary_paths("config", removed_targets),
         },
         SelfUninstallCleanupBoundary {
             category: "binary",
@@ -635,12 +659,40 @@ fn cleanup_boundaries(
     ]
 }
 
-fn boundary_paths(paths: &[&Path], removed_paths: &[String]) -> Vec<String> {
-    paths
+fn boundary_paths(category: &'static str, removed_targets: &[SelfUninstallTarget]) -> Vec<String> {
+    removed_targets
         .iter()
-        .map(|path| path.display().to_string())
-        .filter(|path| removed_paths.contains(path))
+        .filter(|target| target.category == category)
+        .map(|target| target.path.display().to_string())
         .collect()
+}
+
+fn uninstall_roots(app: &NodeupApp) -> [SelfUninstallRoot; 3] {
+    [
+        SelfUninstallRoot {
+            category: "data",
+            path: app.paths.data_root.clone(),
+            bootstrap_child: app
+                .paths
+                .toolchains_dir
+                .file_name()
+                .map(|value| value.to_os_string()),
+        },
+        SelfUninstallRoot {
+            category: "cache",
+            path: app.paths.cache_root.clone(),
+            bootstrap_child: app
+                .paths
+                .downloads_dir
+                .file_name()
+                .map(|value| value.to_os_string()),
+        },
+        SelfUninstallRoot {
+            category: "config",
+            path: app.paths.config_root.clone(),
+            bootstrap_child: None,
+        },
+    ]
 }
 
 fn likely_leftover_paths() -> Vec<String> {
@@ -659,7 +711,9 @@ fn likely_leftover_paths() -> Vec<String> {
             shim_dir.join(format!("{alias}.exe")),
             shim_dir.join(format!(".{alias}.exe.nodeup-shim")),
         ] {
-            if candidate.exists() || fs::symlink_metadata(&candidate).is_ok() {
+            if shim_cmd::is_nodeup_owned_shim_path(&candidate)
+                || shim_cmd::is_nodeup_copy_marker_path(&candidate)
+            {
                 paths.push(candidate.display().to_string());
             }
         }
