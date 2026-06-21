@@ -198,6 +198,7 @@ fn execution_aliases_accept_package_and_forwarded_flags() {
 #[test]
 fn init_writes_minimal_manifest() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let manifest_path = temp_dir.path().join("binpm.toml");
     let mut command = binpm();
 
     command
@@ -205,10 +206,16 @@ fn init_writes_minimal_manifest() {
         .arg("init")
         .assert()
         .success()
-        .stdout(predicate::str::contains("created"));
+        .stdout(predicate::str::contains(format!(
+            "manifest destination: {}",
+            manifest_path.display()
+        )))
+        .stdout(predicate::str::contains(format!(
+            "created manifest: {}",
+            manifest_path.display()
+        )));
 
-    let manifest =
-        std::fs::read_to_string(temp_dir.path().join("binpm.toml")).expect("read manifest");
+    let manifest = std::fs::read_to_string(manifest_path).expect("read manifest");
     assert_eq!(manifest, "version = 1\n");
 }
 
@@ -218,6 +225,7 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
     fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
     let nested_dir = temp_dir.path().join("packages").join("cli");
     fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let manifest_path = temp_dir.path().join("binpm.toml");
     let mut command = binpm();
 
     command
@@ -225,9 +233,16 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
         .arg("init")
         .assert()
         .success()
-        .stdout(predicate::str::contains("created"));
+        .stdout(predicate::str::contains(format!(
+            "manifest destination: {}",
+            manifest_path.display()
+        )))
+        .stdout(predicate::str::contains(format!(
+            "created manifest: {}",
+            manifest_path.display()
+        )));
 
-    let manifest = fs::read_to_string(temp_dir.path().join("binpm.toml")).expect("read manifest");
+    let manifest = fs::read_to_string(manifest_path).expect("read manifest");
     assert_eq!(manifest, "version = 1\n");
     assert!(!nested_dir.join("binpm.toml").exists());
 }
@@ -235,7 +250,8 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
 #[test]
 fn init_from_nested_directory_detects_existing_manifest_without_git() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let manifest_path = temp_dir.path().join("binpm.toml");
+    fs::write(&manifest_path, "version = 1\n").expect("write manifest");
     let nested_dir = temp_dir.path().join("packages").join("cli");
     fs::create_dir_all(&nested_dir).expect("create nested dir");
     let mut command = binpm();
@@ -246,6 +262,11 @@ fn init_from_nested_directory_detects_existing_manifest_without_git() {
         .assert()
         .failure()
         .code(2)
+        .stdout(predicate::str::contains(format!(
+            "manifest destination: {}",
+            manifest_path.display()
+        )))
+        .stdout(predicate::str::contains("created manifest:").not())
         .stderr(predicate::str::contains(
             "Refusing to overwrite existing manifest",
         ));
@@ -257,9 +278,10 @@ fn init_from_nested_directory_detects_existing_manifest_without_git() {
 #[test]
 fn init_treats_broken_manifest_symlink_as_existing_manifest() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
+    let manifest_path = temp_dir.path().join("binpm.toml");
     std::os::unix::fs::symlink(
         temp_dir.path().join("missing-manifest-target"),
-        temp_dir.path().join("binpm.toml"),
+        &manifest_path,
     )
     .expect("create broken manifest symlink");
     let nested_dir = temp_dir.path().join("packages").join("cli");
@@ -272,6 +294,11 @@ fn init_treats_broken_manifest_symlink_as_existing_manifest() {
         .assert()
         .failure()
         .code(2)
+        .stdout(predicate::str::contains(format!(
+            "manifest destination: {}",
+            manifest_path.display()
+        )))
+        .stdout(predicate::str::contains("created manifest:").not())
         .stderr(predicate::str::contains(
             "Refusing to overwrite existing manifest",
         ));

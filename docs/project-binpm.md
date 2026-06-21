@@ -41,6 +41,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - Cache management commands must preserve installed package records and `~/.binpm/bin` entries unless a separate uninstall contract explicitly changes that behavior.
 - `binpm cache key` must be a read-only diagnostic command that prints a current-target CI cache key derived from `binpm.lock`.
 - Project-local tooling must use `binpm.toml` at the repository root as the committed local tool manifest.
+- `binpm init` must print the resolved full `binpm.toml` destination before it creates or refuses to overwrite the manifest. Creation targets the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory. There is no contracted flag for forcing initialization in a nested current directory.
 - Project-local tooling must use `binpm.lock` at the repository root as the committed deterministic resolution record for release tags, target-specific assets, selected binaries, checksums, and installed paths.
 - Committed lockfiles must store sanitized canonical asset URLs only, never credential-bearing or expiring download URLs.
 - Local target-specific asset overrides must live under `[tools.<cmd>.targets.<target-key>]`, must use canonical target keys, and must preserve deterministic lockfile output. Diagnostic snippets must never include credential-bearing URLs, runtime cache paths, or other transient machine-local fields.

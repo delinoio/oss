@@ -5220,6 +5220,8 @@ fn init(args: InitArgs) -> Result<i32> {
     let project_root = manifest_creation_root()?;
     let manifest_path = project_root.join(MANIFEST_FILE);
 
+    println!("manifest destination: {}", manifest_path.display());
+
     if path_exists_or_unreadable(&manifest_path) && !args.force {
         return Err(BinpmError::ManifestExists {
             path: manifest_path,
@@ -5240,7 +5242,7 @@ fn init(args: InitArgs) -> Result<i32> {
         force = args.force,
         "Wrote minimal binpm manifest"
     );
-    println!("created {}", manifest_path.display());
+    println!("created manifest: {}", manifest_path.display());
     Ok(0)
 }
 
