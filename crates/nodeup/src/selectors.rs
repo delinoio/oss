@@ -53,6 +53,15 @@ impl RuntimeSelector {
             return Ok(Self::Channel(channel));
         }
 
+        if is_case_variant_of_reserved_channel_selector(normalized) {
+            return Err(NodeupError::invalid_input_with_hint(
+                format!("Invalid runtime selector '{normalized}'"),
+                "Reserved channel selectors are case-sensitive; use `lts`, `current`, or \
+                 `latest`, or choose a linked runtime name that does not differ from a reserved \
+                 channel selector only by case.",
+            ));
+        }
+
         if let Some(stripped) = normalized.strip_prefix('v') {
             if let Ok(version) = Version::parse(stripped) {
                 return Ok(Self::Version(version));
@@ -221,5 +230,14 @@ mod tests {
 
         assert!(!is_case_variant_of_reserved_channel_selector("lts"));
         assert!(!is_case_variant_of_reserved_channel_selector("node-lts"));
+    }
+
+    #[test]
+    fn parse_rejects_case_variants_of_reserved_channel_selectors() {
+        for selector in ["LTS", "Current", "LATEST"] {
+            let error = RuntimeSelector::parse(selector).unwrap_err();
+            assert_eq!(error.kind, crate::errors::ErrorKind::InvalidInput);
+            assert!(error.message.contains("Reserved channel selectors"));
+        }
     }
 }

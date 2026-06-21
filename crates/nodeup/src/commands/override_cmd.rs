@@ -15,6 +15,10 @@ use crate::{
 struct OverrideListItem {
     path: String,
     selector: String,
+    selector_kind: String,
+    canonical_selector: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector_alias_of: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -50,11 +54,17 @@ fn list(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupApp) -
         .overrides
         .list()?
         .into_iter()
-        .map(|entry| OverrideListItem {
-            path: entry.path,
-            selector: entry.selector,
+        .map(|entry| {
+            let selector = RuntimeSelector::parse(&entry.selector)?;
+            Ok(OverrideListItem {
+                path: entry.path,
+                selector: entry.selector,
+                selector_kind: selector.kind().as_str().to_string(),
+                canonical_selector: selector.canonical_id(),
+                selector_alias_of: selector.alias_of(),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>>>()?;
 
     let human = format!("Configured overrides: {}", entries.len());
     print_output(output, color, &human, &entries)?;

@@ -830,6 +830,40 @@ fn toolchain_link_rejects_case_variant_reserved_channel_name() {
 
 #[test]
 #[serial]
+fn runtime_selector_commands_reject_case_variant_reserved_channel_names() {
+    let env = TestEnv::new();
+    let project_dir = env.root.join("case-variant-override");
+    fs::create_dir_all(&project_dir).unwrap();
+
+    let override_output = env
+        .command()
+        .args([
+            "override",
+            "set",
+            "LTS",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("override set with case-variant reserved channel selector");
+    assert_eq!(override_output.status.code(), Some(2));
+    let override_stderr = String::from_utf8_lossy(&override_output.stderr);
+    assert!(override_stderr.contains("Invalid runtime selector 'LTS'"));
+    assert!(override_stderr.contains("Reserved channel selectors are case-sensitive"));
+
+    let update_output = env
+        .command()
+        .args(["update", "LATEST"])
+        .output()
+        .expect("update with case-variant reserved channel selector");
+    assert_eq!(update_output.status.code(), Some(2));
+    let update_stderr = String::from_utf8_lossy(&update_output.stderr);
+    assert!(update_stderr.contains("Invalid runtime selector 'LATEST'"));
+    assert!(update_stderr.contains("Reserved channel selectors are case-sensitive"));
+}
+
+#[test]
+#[serial]
 fn toolchain_link_rejects_regular_file_path_and_does_not_persist_selector() {
     let env = TestEnv::new();
     let invalid_path = env.root.join("not-a-runtime-file");
@@ -3259,7 +3293,7 @@ fn override_list_json_includes_configured_entries() {
         .args([
             "override",
             "set",
-            "lts",
+            "latest",
             "--path",
             project_b.to_str().unwrap(),
         ])
@@ -3285,12 +3319,20 @@ fn override_list_json_includes_configured_entries() {
         .unwrap()
         .to_string_lossy()
         .to_string();
-    assert!(entries
-        .iter()
-        .any(|entry| entry["path"] == canonical_a && entry["selector"] == "v22.1.0"));
-    assert!(entries
-        .iter()
-        .any(|entry| entry["path"] == canonical_b && entry["selector"] == "lts"));
+    assert!(entries.iter().any(|entry| {
+        entry["path"] == canonical_a
+            && entry["selector"] == "v22.1.0"
+            && entry["selector_kind"] == "exact-version"
+            && entry["canonical_selector"] == "v22.1.0"
+            && entry.get("selector_alias_of").is_none()
+    }));
+    assert!(entries.iter().any(|entry| {
+        entry["path"] == canonical_b
+            && entry["selector"] == "latest"
+            && entry["selector_kind"] == "channel"
+            && entry["canonical_selector"] == "current"
+            && entry["selector_alias_of"] == "current"
+    }));
 }
 
 #[test]
