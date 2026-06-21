@@ -111,7 +111,11 @@ pub enum BinpmError {
     MissingTool { cmd: String, manifest: PathBuf },
     #[error("No installable asset matched `{package}` for target `{target}`.")]
     AssetNotFound { package: String, target: String },
-    #[error("Archive `{asset}` does not contain an executable binary.")]
+    #[error(
+        "Archive `{asset}` does not contain an executable binary with permission metadata or an \
+         unambiguous filename/target match. Set `bin` in binpm.toml to the intended archive \
+         member when upstream archives omit executable metadata."
+    )]
     ArchiveBinaryNotFound { asset: String },
     #[error(
         "Archive `{asset}` contains multiple plausible executables: {}. Set `bin` in binpm.toml to disambiguate.",

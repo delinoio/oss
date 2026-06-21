@@ -22,7 +22,7 @@
   - `binpm env --shell <shell>` may print PATH commands for project-local and global bin directories.
   - `binpm doctor` may report manifest, lockfile, and global home state without mutation.
   - `binpm cache key` may print a deterministic key for the current target and project-root `binpm.lock`, using an empty lockfile digest when the file is absent.
-- Current install finalization supports bare executable assets and documented archive assets end to end. Archive extraction is implemented for `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip`, and installs only the selected executable member.
+- Current install finalization supports bare executable assets and documented archive assets end to end. Archive extraction is implemented for `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, and `.zip`, and installs only the selected executable member. On POSIX hosts, archive installs must write the selected member with executable permissions even when the upstream archive, especially a `.zip`, omitted Unix executable metadata and binary discovery was unambiguous.
 - Canonical global install command: `binpm install <source>`.
 - Canonical local declaration command: `binpm add <cmd> <source>`.
 - Canonical local sync command: `binpm install`.
@@ -90,7 +90,8 @@
   - Package formulas and package-manager metadata such as `.rb`, `.json` manifests, npm package tarballs, and Homebrew formula assets.
 - Desktop or system package formats are de-prioritized and must not be installed by default in v1: `.deb`, `.rpm`, `.apk`, `.pkg.tar.zst`, `.dmg`, `.msi`, `.pkg`, `.AppImage`, `.flatpak`, `.snap`.
 - Archive extraction must locate one or more executable files by executable permission, Windows `.exe` suffix, expected package name, and target-aware filename tokens. Explicit manifest `bin` values may name an exact archive member path or a unique member basename.
-- If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates.
+- When an archive has no usable POSIX executable metadata for a member, `binpm` may recover the executable bit only after filename and target signals identify the selected binary unambiguously. The automatic recovery path is intentionally narrow: a non-executable member is recoverable when its basename matches the expected repository binary name and target-aware filtering leaves one candidate. Recovered POSIX installs must be chmodded executable during finalization.
+- If archive member permissions are missing and filename/target signals do not identify one binary, `binpm` must fail with an actionable diagnostic instead of guessing. If an archive contains multiple plausible executables, `binpm` must prefer a binary whose basename matches the repository name; otherwise it must fail with an ambiguity error that lists candidates.
 - The current foundation implements binary discovery as a deterministic member-list heuristic and uses it during archive extraction and install finalization.
 
 ## Local Manifest and Lockfile
