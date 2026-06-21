@@ -58,12 +58,16 @@ When a saved default no longer resolves, `nodeup default` still reports the save
 
 Exact versions and channels resolve to version directories under the toolchains root. Linked names resolve to the registered path.
 
+Linked runtime records are registered with `nodeup toolchain link <name> <path>` and removed with `nodeup toolchain unlink <name>`. Unlinking removes only the nodeup settings record and tracked selector; it does not delete the external runtime directory.
+
 Nodeup verifies availability when commands need an executable:
 
-- `nodeup show active-runtime` requires `node`.
-- `nodeup which <command>` requires the resolved direct executable to exist.
-- `nodeup run <runtime> <command>` requires the resolved direct executable to exist.
+- `nodeup show active-runtime` requires runnable `node`.
+- `nodeup which <command>` requires the resolved direct executable to exist and be runnable.
+- `nodeup run <runtime> <command>` requires the resolved direct executable to exist and be runnable.
 - Managed alias dispatch installs a missing selected version before execution.
+
+For linked runtimes, Unix hosts require an executable bit on `bin/node`. Windows platform behavior resolves `node` to `bin/node.exe`.
 
 ## Release Index Cache
 

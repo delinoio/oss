@@ -38,7 +38,15 @@ nodeup which node
 nodeup which --runtime 22.1.0 npm
 ```
 
-For linked runtimes, verify the runtime root contains `bin/node` or `bin/node.exe`.
+For linked runtimes, verify the runtime root contains a runnable `bin/node` or `bin/node.exe`. On Unix, `bin/node` must have an executable permission bit.
+
+Remove a stale linked runtime record without deleting the external directory:
+
+```bash
+nodeup toolchain unlink <name>
+```
+
+If unlinking reports `conflict`, change the default runtime or remove/update the blocking directory override first.
 
 ## packageManager Conflict
 
