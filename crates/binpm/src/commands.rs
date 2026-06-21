@@ -25,12 +25,13 @@ use crate::{
     },
     contract::{
         normalize_source_input, validate_version_selector, ArchiveFormat, ChecksumSource,
-        HostTarget, Scope, SourceSpec, TargetArch, TargetLibc, TargetOs, VerificationState,
+        HostTarget, Scope, SourceProvider, SourceSpec, TargetArch, TargetLibc, TargetOs,
+        VerificationState,
     },
     error::{BinpmError, Result},
     release::{
-        client_for_source, GitHubReleaseClient, GitLabReleaseClient, ProviderAuth, ReleaseAsset,
-        ReleaseClient,
+        client_for_source, provider_auth_for_source, GitHubReleaseClient, GitLabReleaseClient,
+        ProviderAuth, ReleaseAsset, ReleaseClient, GITHUB_ASSET_DOWNLOAD_ACCEPT,
     },
     storage::{
         archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
@@ -2799,10 +2800,22 @@ struct DownloadRequest {
 }
 
 fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
+    let source = SourceSpec {
+        provider: record.source_provider,
+        host: record.source_host.clone(),
+        path: record.source_path.clone(),
+        version: Some(record.release_tag.clone()),
+    };
+    let auth = provider_auth_for_source(&source);
+    let accept = match (record.source_provider, auth.as_ref()) {
+        (SourceProvider::GitHub, Some(_)) => Some(GITHUB_ASSET_DOWNLOAD_ACCEPT),
+        _ => None,
+    };
+
     Ok(DownloadRequest {
         url: sanitize_persisted_url(&record.asset_url)?,
-        auth: None,
-        accept: None,
+        auth,
+        accept,
     })
 }
 
@@ -5739,6 +5752,7 @@ mod tests {
         verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
         zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
         InstalledPathSnapshot, LocalRemoveState, OutputMode, RuntimeToolState,
+        GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
         assets::CandidateDecision,
@@ -8678,8 +8692,11 @@ mod tests {
     #[test]
     fn locked_record_download_request_uses_locked_asset_url() {
         let mut record = package_record();
+        record.source = "github:ghe.no-token.example/owner/tool".to_string();
+        record.source_host = "ghe.no-token.example".to_string();
         record.asset_url =
-            "https://github.com/owner/tool/releases/download/1.0.0/locked-tool-linux".to_string();
+            "https://ghe.no-token.example/owner/tool/releases/download/1.0.0/locked-tool-linux"
+                .to_string();
         record.asset_name = "tool-linux".to_string();
 
         let request = locked_record_download_request(&record).expect("download request");
@@ -8687,6 +8704,29 @@ mod tests {
         assert_eq!(request.url, record.asset_url);
         assert_eq!(request.auth, None);
         assert_eq!(request.accept, None);
+    }
+
+    #[test]
+    fn locked_record_download_request_preserves_provider_auth_metadata() {
+        let mut record = package_record();
+        record.source = "github:ghe.locked.example/owner/tool".to_string();
+        record.source_host = "ghe.locked.example".to_string();
+        record.asset_url =
+            "https://ghe.locked.example/owner/tool/releases/download/1.0.0/tool-linux".to_string();
+        std::env::set_var(
+            "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE",
+            "locked-token",
+        );
+
+        let request = locked_record_download_request(&record).expect("download request");
+
+        std::env::remove_var("BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
+        assert_eq!(request.url, record.asset_url);
+        assert_eq!(request.accept, Some(GITHUB_ASSET_DOWNLOAD_ACCEPT));
+        let auth = request.auth.expect("provider auth");
+        assert_eq!(auth.header_name, "authorization");
+        assert_eq!(auth.header_value, "Bearer locked-token");
+        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
     }
 
     #[test]

@@ -324,7 +324,7 @@ fn sanitize_url(url: &str) -> String {
     parsed.to_string()
 }
 
-fn provider_auth_for_source(source: &SourceSpec) -> Option<ProviderAuth> {
+pub(crate) fn provider_auth_for_source(source: &SourceSpec) -> Option<ProviderAuth> {
     provider_auth_for_source_with(source, |name| env::var(name).ok())
 }
 
