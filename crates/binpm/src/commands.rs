@@ -12,12 +12,10 @@ use std::{
 use sha2::{Digest, Sha256};
 use tracing::{debug, info, warn};
 
-#[cfg(test)]
-use crate::assets::ArtifactKind;
 use crate::{
     assets::{
         discover_archive_binary, gitlab_https_eligible, select_asset, target_archive_candidates,
-        ArchiveMember, BinaryDiscovery,
+        ArchiveMember, ArtifactKind, BinaryDiscovery, CandidateDecision,
     },
     cli::{
         AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
@@ -29,7 +27,8 @@ use crate::{
     },
     error::{BinpmError, Result},
     release::{
-        client_for_source, GitHubReleaseClient, GitLabReleaseClient, ReleaseAsset, ReleaseClient,
+        client_for_source, GitHubReleaseClient, GitLabReleaseClient, ProviderAuth, ReleaseAsset,
+        ReleaseClient,
     },
     storage::{
         archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
@@ -764,6 +763,21 @@ fn explain(args: ExplainArgs) -> Result<i32> {
     println!("archive_format: {}", record.archive_format.as_str());
     println!("checksum_source: {}", record.checksum_source.as_str());
     println!("verification: {}", verification_state(&record));
+    println!("override_snippet:");
+    println!(
+        "{}",
+        target_override_snippet(
+            &args.cmd_or_source,
+            &HostTarget {
+                os: record.target_os,
+                arch: record.target_arch,
+                libc: record.target_libc,
+            },
+            &record.asset_name,
+            &record.selected_binary,
+            Some(record.checksum_source),
+        )
+    );
     Ok(0)
 }
 
@@ -808,18 +822,178 @@ fn explain_source(spec: SourceSpec, target: HostTarget) -> Result<i32> {
             for decision in selection.decisions {
                 println!("{}", decision.explain_line());
             }
+            println!("override_snippet:");
+            println!(
+                "{}",
+                target_override_snippet(
+                    repo_name(&spec),
+                    &target,
+                    &selection.selected.asset_name,
+                    &override_snippet_bin(&spec, &selection.selected),
+                    None,
+                )
+            );
         }
         None => {
             println!("selected_asset: <none>");
-            for decision in
-                crate::assets::score_assets(spec.provider, &target, &selection.release.assets)
-            {
+            let decisions =
+                crate::assets::score_assets(spec.provider, &target, &selection.release.assets);
+            for decision in &decisions {
                 println!("{}", decision.explain_line());
+            }
+            for line in release_diagnostic_lines(&decisions, &target) {
+                println!("{line}");
+            }
+            if let Some(candidate) = override_snippet_candidate(&decisions) {
+                println!("override_snippet:");
+                println!(
+                    "{}",
+                    target_override_snippet(
+                        repo_name(&spec),
+                        &target,
+                        &candidate.asset_name,
+                        &override_snippet_bin(&spec, candidate),
+                        None,
+                    )
+                );
             }
         }
     }
 
     Ok(0)
+}
+
+fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget) -> Vec<String> {
+    if decisions.is_empty() {
+        return vec![
+            "diagnostic: release has no downloadable assets for binpm to score".to_string(),
+        ];
+    }
+
+    let installable_count = decisions
+        .iter()
+        .filter(|decision| decision.kind.is_installable())
+        .count();
+    let desktop_packages = decisions
+        .iter()
+        .filter(|decision| decision.kind == ArtifactKind::DesktopPackage)
+        .map(|decision| decision.asset_name.as_str())
+        .collect::<Vec<_>>();
+    let sidecars = decisions
+        .iter()
+        .filter(|decision| decision.kind == ArtifactKind::Sidecar)
+        .map(|decision| decision.asset_name.as_str())
+        .collect::<Vec<_>>();
+
+    let mut lines = Vec::new();
+    if installable_count == 0 && !desktop_packages.is_empty() {
+        lines.push(format!(
+            "diagnostic: release only provides unsupported desktop or system installer packages \
+             for target {}; binpm v1 installs portable archives or bare executables by default",
+            target.key()
+        ));
+        lines.push(format!(
+            "unsupported_installers: {}",
+            desktop_packages.join(", ")
+        ));
+        lines.push(
+            "remediation: ask upstream for a portable archive or bare executable asset; installer \
+             package installation is not enabled by default"
+                .to_string(),
+        );
+    }
+
+    if installable_count == 0 && !sidecars.is_empty() && !desktop_packages.is_empty() {
+        lines.push(format!("sidecar_assets: {}", sidecars.join(", ")));
+    }
+
+    if decisions.iter().any(|decision| {
+        decision.rejection_reason.as_deref().is_some_and(|reason| {
+            reason.contains("linux musl target requires an explicit libc signal")
+        })
+    }) {
+        lines.push(
+            "remediation: Linux musl releases should include musl, static, portable, universal, \
+             or any in compatible asset names; use the override snippet only when you have \
+             verified compatibility"
+                .to_string(),
+        );
+    }
+
+    lines
+}
+
+fn override_snippet_candidate(decisions: &[CandidateDecision]) -> Option<&CandidateDecision> {
+    decisions.iter().find(|decision| {
+        decision.kind.is_installable()
+            && decision.rejection_reason.as_deref().is_some_and(|reason| {
+                reason.contains("linux musl target requires an explicit libc signal")
+            })
+    })
+}
+
+fn override_snippet_bin(spec: &SourceSpec, decision: &CandidateDecision) -> String {
+    match decision.kind {
+        ArtifactKind::BareExecutable => decision.asset_name.clone(),
+        ArtifactKind::Archive(_) => repo_name(spec).to_string(),
+        _ => repo_name(spec).to_string(),
+    }
+}
+
+fn target_override_snippet(
+    cmd: &str,
+    target: &HostTarget,
+    asset: &str,
+    bin: &str,
+    checksum_source: Option<ChecksumSource>,
+) -> String {
+    let mut snippet = format!(
+        "[tools.{}.targets.{}]\nasset = {}\nbin = {}",
+        toml_key_segment(cmd),
+        target.key(),
+        toml_string(asset),
+        toml_string(bin)
+    );
+    if checksum_source == Some(ChecksumSource::GitHubDigest) {
+        snippet.push_str(&format!(
+            "\nchecksum_source = {}",
+            toml_string(ChecksumSource::GitHubDigest.as_str())
+        ));
+    }
+    snippet
+}
+
+fn toml_key_segment(key: &str) -> String {
+    if key
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
+        && !key.is_empty()
+    {
+        key.to_string()
+    } else {
+        toml_string(key)
+    }
+}
+
+fn toml_string(value: &str) -> String {
+    let mut escaped = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '\u{08}' => escaped.push_str("\\b"),
+            '\t' => escaped.push_str("\\t"),
+            '\n' => escaped.push_str("\\n"),
+            '\u{0c}' => escaped.push_str("\\f"),
+            '\r' => escaped.push_str("\\r"),
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            character if character.is_control() => {
+                escaped.push_str(&format!("\\u{:04X}", character as u32));
+            }
+            character => escaped.push(character),
+        }
+    }
+    escaped.push('"');
+    escaped
 }
 
 fn print_source_info(spec: &SourceSpec) -> Result<i32> {
@@ -1564,7 +1738,11 @@ fn install_resolved(
             });
         }
     }
-    let bytes = download_asset(&resolved.decision.download_url)?;
+    let bytes = download_asset(
+        &resolved.decision.download_url,
+        resolved.decision.download_auth.as_ref(),
+        resolved.decision.download_accept,
+    )?;
     let sha256 = format!("{:x}", Sha256::digest(&bytes));
     let cache_asset = cache_paths.asset_path(&sha256);
     let had_existing_cache_entry = cache_asset.symlink_metadata().is_ok();
@@ -1754,9 +1932,12 @@ fn install_local_from_lock(
     };
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
         let repair_result = (|| {
-            let resolved = locked_record_resolved_asset(&record, &target)?;
-            let download_url = resolved.decision.download_url.clone();
-            let bytes = download_asset(&download_url)?;
+            let download_request = locked_record_download_request(&record)?;
+            let bytes = download_asset(
+                &download_request.url,
+                download_request.auth.as_ref(),
+                download_request.accept,
+            )?;
             let actual = format!("{:x}", Sha256::digest(&bytes));
             if actual != record.sha256 {
                 return Err(BinpmError::DigestMismatch {
@@ -1765,6 +1946,38 @@ fn install_local_from_lock(
                     actual,
                 });
             }
+            let resolved = ResolvedAsset {
+                source: SourceSpec::from_str(
+                    &record
+                        .requested_version
+                        .as_ref()
+                        .map(|version| format!("{}@{version}", record.source))
+                        .unwrap_or_else(|| record.source.clone()),
+                )?,
+                release_tag: record.release_tag.clone(),
+                target: target.clone(),
+                decision: crate::assets::CandidateDecision {
+                    asset_name: record.asset_name.clone(),
+                    canonical_url: record.asset_url.clone(),
+                    download_url: download_request.url,
+                    download_auth: download_request.auth,
+                    download_accept: download_request.accept,
+                    kind: crate::assets::classify_artifact(&record.asset_name, false),
+                    detected_os: Some(record.target_os),
+                    detected_arch: Some(record.target_arch),
+                    detected_libc: Some(record.target_libc),
+                    score: None,
+                    eligible: true,
+                    recognized_pattern: true,
+                    rejection_reason: None,
+                },
+                archive_format: record.archive_format,
+                selected_binary: record.selected_binary.clone(),
+                provider_digest_sha256: None,
+                checksum_source: record.checksum_source,
+                signature_available: record.signature_available,
+                signature_verified: record.signature_verified,
+            };
             populate_cache_from_bytes(&cache_paths, &resolved, &bytes)?;
             Ok(())
         })();
@@ -1778,7 +1991,38 @@ fn install_local_from_lock(
     }
 
     let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
-    let mut resolved_for_install = locked_record_resolved_asset(&record, &target)?;
+    let mut resolved_for_install = ResolvedAsset {
+        source: SourceSpec::from_str(
+            &record
+                .requested_version
+                .as_ref()
+                .map(|version| format!("{}@{version}", record.source))
+                .unwrap_or_else(|| record.source.clone()),
+        )?,
+        release_tag: record.release_tag.clone(),
+        target: target.clone(),
+        decision: crate::assets::CandidateDecision {
+            asset_name: record.asset_name.clone(),
+            canonical_url: record.asset_url.clone(),
+            download_url: record.asset_url.clone(),
+            download_auth: None,
+            download_accept: None,
+            kind: crate::assets::classify_artifact(&record.asset_name, false),
+            detected_os: Some(record.target_os),
+            detected_arch: Some(record.target_arch),
+            detected_libc: Some(record.target_libc),
+            score: None,
+            eligible: true,
+            recognized_pattern: true,
+            rejection_reason: None,
+        },
+        archive_format: record.archive_format,
+        selected_binary: record.selected_binary.clone(),
+        provider_digest_sha256: record.provider_digest_sha256.clone(),
+        checksum_source: record.checksum_source,
+        signature_available: record.signature_available,
+        signature_verified: record.signature_verified,
+    };
     if let Err(error) = install_selected_executable(
         &cache_paths.asset_path(&record.sha256),
         &installed_path,
@@ -1823,44 +2067,6 @@ fn install_local_from_lock(
         populated_cache_entry,
         deferred_cache_hit: None,
         cache_metadata_snapshot,
-    })
-}
-
-fn locked_record_resolved_asset(
-    record: &PackageRecord,
-    target: &HostTarget,
-) -> Result<ResolvedAsset> {
-    let source = SourceSpec::from_str(
-        &record
-            .requested_version
-            .as_ref()
-            .map(|version| format!("{}@{version}", record.source))
-            .unwrap_or_else(|| record.source.clone()),
-    )?;
-    validate_download_url(&record.asset_url)?;
-    Ok(ResolvedAsset {
-        source,
-        release_tag: record.release_tag.clone(),
-        target: target.clone(),
-        decision: crate::assets::CandidateDecision {
-            asset_name: record.asset_name.clone(),
-            canonical_url: record.asset_url.clone(),
-            download_url: record.asset_url.clone(),
-            kind: crate::assets::classify_artifact(&record.asset_name, false),
-            detected_os: Some(record.target_os),
-            detected_arch: Some(record.target_arch),
-            detected_libc: Some(record.target_libc),
-            score: None,
-            eligible: true,
-            recognized_pattern: true,
-            rejection_reason: None,
-        },
-        archive_format: record.archive_format,
-        selected_binary: record.selected_binary.clone(),
-        provider_digest_sha256: record.provider_digest_sha256.clone(),
-        checksum_source: record.checksum_source,
-        signature_available: record.signature_available,
-        signature_verified: record.signature_verified,
     })
 }
 
@@ -1943,6 +2149,9 @@ fn validate_locked_record_artifact(
                 name: record.asset_name.clone(),
                 url: record.asset_url.clone(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -2035,6 +2244,69 @@ fn record_matches_current_provider_digest(record: &PackageRecord, assets: &[Rele
         Some(current_digest) => current_digest == record.sha256,
         None => record.checksum_source != ChecksumSource::GitHubDigest,
     }
+}
+
+struct DownloadRequest {
+    url: String,
+    auth: Option<ProviderAuth>,
+    accept: Option<&'static str>,
+}
+
+fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
+    let spec = locked_release_lookup_spec(record)?;
+    let client = client_for_source(&spec)?;
+    let selection = client.resolve_release(&spec)?;
+    let asset = selection
+        .release
+        .assets
+        .iter()
+        .find(|asset| asset.name == record.asset_name)
+        .ok_or_else(|| BinpmError::AssetNotFound {
+            package: record.package_spec.clone(),
+            target: HostTarget {
+                os: record.target_os,
+                arch: record.target_arch,
+                libc: record.target_libc,
+            }
+            .key(),
+        })?;
+    if record.source_provider == crate::contract::SourceProvider::GitLab && asset.source_archive {
+        return Err(BinpmError::AssetNotFound {
+            package: record.package_spec.clone(),
+            target: HostTarget {
+                os: record.target_os,
+                arch: record.target_arch,
+                libc: record.target_libc,
+            }
+            .key(),
+        });
+    }
+    if record.source_provider == crate::contract::SourceProvider::GitLab
+        && !gitlab_https_eligible(asset)
+    {
+        let diagnostic_url = asset
+            .provider_url
+            .as_deref()
+            .unwrap_or(&asset.url)
+            .split(['?', '#'])
+            .next()
+            .unwrap_or(&asset.url)
+            .to_string();
+        return Err(BinpmError::UnsafeUrl {
+            url: diagnostic_url,
+            message: "gitlab asset link is not HTTPS eligible".to_string(),
+        });
+    }
+    Ok(DownloadRequest {
+        url: asset
+            .download_url
+            .as_deref()
+            .or(asset.provider_url.as_deref())
+            .unwrap_or(&asset.url)
+            .to_string(),
+        auth: asset.download_auth.clone(),
+        accept: asset.download_accept,
+    })
 }
 
 fn locked_release_lookup_spec(record: &PackageRecord) -> Result<SourceSpec> {
@@ -2274,12 +2546,12 @@ fn read_tar_selected_binary<R: Read>(
                 message: error.to_string(),
             })?;
         let path = validate_archive_member_path(asset_name, &path)?;
-        let executable = entry
+        let has_executable_mode = entry
             .header()
             .mode()
             .map(|mode| mode & 0o111 != 0)
-            .unwrap_or(false)
-            || archive_exe_is_executable(&path, target);
+            .unwrap_or(false);
+        let executable = has_executable_mode || archive_exe_is_executable(&path, target);
         let mut bytes = Vec::new();
         entry
             .read_to_end(&mut bytes)
@@ -2293,6 +2565,7 @@ fn read_tar_selected_binary<R: Read>(
         members.push(ArchiveMember {
             path: path.clone(),
             executable,
+            missing_executable_metadata: false,
         });
         member_bytes.insert(path, bytes);
     }
@@ -2306,13 +2579,14 @@ fn read_tar_selected_binary<R: Read>(
     )
 }
 
-fn read_zip_selected_binary<R: Read + std::io::Seek>(
-    reader: R,
+fn read_zip_selected_binary(
+    reader: Cursor<Vec<u8>>,
     asset_name: &str,
     repo_name: &str,
     target: &HostTarget,
     explicit_binary: Option<&str>,
 ) -> Result<SelectedArchiveBinary> {
+    let zip_entry_systems = zip_central_directory_systems(reader.get_ref());
     let mut archive =
         zip::ZipArchive::new(reader).map_err(|error| BinpmError::ArchiveExtraction {
             asset: asset_name.to_string(),
@@ -2345,11 +2619,15 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
                 message: "non-regular zip entries are not installable".to_string(),
             });
         }
-        let executable = file
-            .unix_mode()
-            .map(|mode| mode & 0o111 != 0)
-            .unwrap_or(false)
-            || archive_exe_is_executable(&path, target);
+        let unix_mode = file.unix_mode();
+        let has_executable_mode = unix_mode.map(|mode| mode & 0o111 != 0).unwrap_or(false);
+        let executable = has_executable_mode || archive_exe_is_executable(&path, target);
+        let has_real_unix_mode =
+            zip_file_has_real_unix_mode(zip_entry_systems.get(index).copied(), unix_mode);
+        let missing_executable_metadata = !has_real_unix_mode
+            && !executable
+            && target.os != TargetOs::Windows
+            && !path.to_ascii_lowercase().ends_with(".exe");
         let mut bytes = Vec::new();
         file.read_to_end(&mut bytes)
             .map_err(|error| BinpmError::ArchiveExtraction {
@@ -2362,6 +2640,7 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
         members.push(ArchiveMember {
             path: path.clone(),
             executable,
+            missing_executable_metadata,
         });
         member_bytes.insert(path, bytes);
     }
@@ -2373,6 +2652,226 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
         members,
         member_bytes,
     )
+}
+
+fn zip_central_directory_systems(bytes: &[u8]) -> Vec<u8> {
+    const CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+    const CENTRAL_DIRECTORY_HEADER_LEN: usize = 46;
+    const VERSION_MADE_BY_SYSTEM_OFFSET: usize = 5;
+    const FILE_NAME_LENGTH_OFFSET: usize = 28;
+    const EXTRA_FIELD_LENGTH_OFFSET: usize = 30;
+    const FILE_COMMENT_LENGTH_OFFSET: usize = 32;
+
+    let Some(directory_bounds) = zip_central_directory_bounds(bytes) else {
+        return Vec::new();
+    };
+
+    let mut systems = Vec::new();
+    let mut index = directory_bounds.0;
+    while index + CENTRAL_DIRECTORY_HEADER_LEN <= directory_bounds.1 {
+        if !bytes[index..].starts_with(&CENTRAL_DIRECTORY_SIGNATURE) {
+            break;
+        }
+
+        let name_len = u16::from_le_bytes([
+            bytes[index + FILE_NAME_LENGTH_OFFSET],
+            bytes[index + FILE_NAME_LENGTH_OFFSET + 1],
+        ]) as usize;
+        let extra_len = u16::from_le_bytes([
+            bytes[index + EXTRA_FIELD_LENGTH_OFFSET],
+            bytes[index + EXTRA_FIELD_LENGTH_OFFSET + 1],
+        ]) as usize;
+        let comment_len = u16::from_le_bytes([
+            bytes[index + FILE_COMMENT_LENGTH_OFFSET],
+            bytes[index + FILE_COMMENT_LENGTH_OFFSET + 1],
+        ]) as usize;
+        let name_start = index + CENTRAL_DIRECTORY_HEADER_LEN;
+        let Some(name_end) = name_start.checked_add(name_len) else {
+            break;
+        };
+        let Some(next_index) = name_end
+            .checked_add(extra_len)
+            .and_then(|offset| offset.checked_add(comment_len))
+        else {
+            break;
+        };
+        if next_index > directory_bounds.1 {
+            break;
+        }
+
+        systems.push(bytes[index + VERSION_MADE_BY_SYSTEM_OFFSET]);
+        index = next_index;
+    }
+    systems
+}
+
+fn zip_central_directory_bounds(bytes: &[u8]) -> Option<(usize, usize)> {
+    const END_OF_CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+    const END_OF_CENTRAL_DIRECTORY_LEN: usize = 22;
+    const CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 12;
+    const CENTRAL_DIRECTORY_OFFSET_OFFSET: usize = 16;
+    const END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET: usize = 20;
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x06, 0x06];
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_LEN: usize = 56;
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 4;
+    const ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 40;
+    const ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET: usize = 48;
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x06, 0x07];
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_LEN: usize = 20;
+    const ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET: usize = 8;
+    const ZIP32_PLACEHOLDER: u32 = u32::MAX;
+
+    let eocd_index = bytes
+        .len()
+        .checked_sub(END_OF_CENTRAL_DIRECTORY_LEN)
+        .and_then(|last_start| {
+            let first_start = bytes
+                .len()
+                .saturating_sub(END_OF_CENTRAL_DIRECTORY_LEN + u16::MAX as usize);
+            (first_start..=last_start).rev().find(|index| {
+                let index = *index;
+                if !bytes[index..].starts_with(&END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
+                    return false;
+                }
+                let comment_len = u16::from_le_bytes([
+                    bytes[index + END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET],
+                    bytes[index + END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET + 1],
+                ]) as usize;
+                index + END_OF_CENTRAL_DIRECTORY_LEN + comment_len == bytes.len()
+            })
+        })?;
+
+    let directory_size_32 = u32::from_le_bytes([
+        bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET],
+        bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
+        bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
+        bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
+    ]);
+    let directory_start_32 = u32::from_le_bytes([
+        bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET],
+        bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 1],
+        bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 2],
+        bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 3],
+    ]);
+    if directory_size_32 != ZIP32_PLACEHOLDER && directory_start_32 != ZIP32_PLACEHOLDER {
+        return zip_central_directory_bounds_from_values(
+            bytes,
+            eocd_index,
+            directory_size_32 as usize,
+            directory_start_32 as usize,
+        );
+    }
+
+    let locator_index = eocd_index.checked_sub(ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_LEN)?;
+    if !bytes[locator_index..].starts_with(&ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE) {
+        return None;
+    }
+    let zip64_eocd_offset = u64::from_le_bytes([
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 1],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 2],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 3],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 4],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 5],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 6],
+        bytes[locator_index + ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_OFFSET_OFFSET + 7],
+    ]);
+    let zip64_eocd_offset = usize::try_from(zip64_eocd_offset).ok()?;
+    let zip64_eocd_index = (0..=locator_index.saturating_sub(ZIP64_END_OF_CENTRAL_DIRECTORY_LEN))
+        .rev()
+        .find(|candidate| {
+            let candidate = *candidate;
+            if !bytes[candidate..].starts_with(&ZIP64_END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
+                return false;
+            }
+            let record_size = u64::from_le_bytes([
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 4],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 5],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 6],
+                bytes[candidate + ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 7],
+            ]);
+            let Some(record_size) = usize::try_from(record_size).ok() else {
+                return false;
+            };
+            let Some(record_end) = candidate
+                .checked_add(ZIP64_END_OF_CENTRAL_DIRECTORY_SIZE_OFFSET + 8)
+                .and_then(|offset| offset.checked_add(record_size))
+            else {
+                return false;
+            };
+            record_end == locator_index
+                && candidate
+                    .checked_sub(zip64_eocd_offset)
+                    .is_some_and(|archive_offset| {
+                        archive_offset
+                            .checked_add(zip64_eocd_offset)
+                            .is_some_and(|offset| offset == candidate)
+                    })
+        })?;
+    let directory_size = u64::from_le_bytes([
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 4],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 5],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 6],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_SIZE_OFFSET + 7],
+    ]);
+    let directory_start = u64::from_le_bytes([
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 1],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 2],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 3],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 4],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 5],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 6],
+        bytes[zip64_eocd_index + ZIP64_CENTRAL_DIRECTORY_OFFSET_OFFSET + 7],
+    ]);
+    let directory_size = usize::try_from(directory_size).ok()?;
+    let directory_start = usize::try_from(directory_start).ok()?;
+    zip_central_directory_bounds_from_values(
+        bytes,
+        zip64_eocd_index,
+        directory_size,
+        directory_start,
+    )
+}
+
+fn zip_central_directory_bounds_from_values(
+    bytes: &[u8],
+    directory_end_index: usize,
+    directory_size: usize,
+    directory_start: usize,
+) -> Option<(usize, usize)> {
+    let archive_offset = directory_end_index
+        .checked_sub(directory_size)?
+        .checked_sub(directory_start)?;
+    let directory_start = archive_offset.checked_add(directory_start)?;
+    let directory_end = directory_start.checked_add(directory_size)?;
+    (directory_start <= directory_end_index
+        && directory_end == directory_end_index
+        && directory_end <= bytes.len())
+    .then_some((directory_start, directory_end))
+}
+
+fn zip_file_has_real_unix_mode(entry_system: Option<u8>, unix_mode: Option<u32>) -> bool {
+    const ZIP_SYSTEM_UNIX: u8 = 3;
+    const UNIX_FILE_TYPE_MASK: u32 = 0o170000;
+    const UNIX_PERMISSION_MASK: u32 = 0o7777;
+
+    let Some(mode) = unix_mode else {
+        return false;
+    };
+    let has_usable_unix_mode = mode & (UNIX_FILE_TYPE_MASK | UNIX_PERMISSION_MASK) != 0;
+    has_usable_unix_mode
+        && entry_system
+            .map(|system| system == ZIP_SYSTEM_UNIX)
+            .unwrap_or(false)
 }
 
 fn zip_file_is_symlink(unix_mode: Option<u32>) -> bool {
@@ -2423,16 +2922,16 @@ fn select_archive_member(
             });
         }
         let explicit_path = validate_archive_member_path(asset_name, Path::new(explicit_binary))?;
-        if members
-            .iter()
-            .any(|member| member.path == explicit_path && member.executable)
-        {
+        if members.iter().any(|member| {
+            member.path == explicit_path
+                && (member.executable || member.missing_executable_metadata)
+        }) {
             explicit_path
         } else {
             let matches = members
                 .iter()
                 .filter(|member| {
-                    member.executable
+                    (member.executable || member.missing_executable_metadata)
                         && archive_binary_name_matches(target, &member.path, explicit_binary)
                 })
                 .map(|member| member.path.clone())
@@ -2718,10 +3217,13 @@ fn select_manifest_asset(
                 .unwrap_or(&asset.url)
                 .to_string(),
             download_url: asset
-                .provider_url
+                .download_url
                 .as_deref()
+                .or(asset.provider_url.as_deref())
                 .unwrap_or(&asset.url)
                 .to_string(),
+            download_auth: asset.download_auth.clone(),
+            download_accept: asset.download_accept,
             kind,
             detected_os: Some(target.os),
             detected_arch: Some(target.arch),
@@ -2736,9 +3238,8 @@ fn select_manifest_asset(
     let selection =
         select_asset(spec.provider, target, assets).ok_or_else(|| BinpmError::AssetNotFound {
             package: spec.to_string(),
-            target: target_key.clone(),
+            target: target_key,
         })?;
-
     Ok(selection.selected)
 }
 
@@ -3281,7 +3782,11 @@ fn restore_executable_symlink(path: &Path, target: &Path) -> Result<()> {
     })
 }
 
-fn download_asset(url: &str) -> Result<Vec<u8>> {
+fn download_asset(
+    url: &str,
+    auth: Option<&ProviderAuth>,
+    accept: Option<&'static str>,
+) -> Result<Vec<u8>> {
     validate_download_url(url)?;
     let sanitized_url = sanitize_download_diagnostic_url(url);
     let asset_name = download_asset_name(&sanitized_url);
@@ -3293,21 +3798,21 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
     );
     let client = reqwest::blocking::Client::builder()
         .user_agent(concat!("binpm/", env!("CARGO_PKG_VERSION")))
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if let Err(error) = validate_download_url(attempt.url().as_str()) {
-                attempt.error(error)
-            } else if attempt.previous().len() >= 10 {
-                attempt.error("too many redirects while downloading release asset")
-            } else {
-                attempt.follow()
-            }
-        }))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(BinpmError::ReleaseHttpClient)?;
 
     let mut last_error = None;
     for attempt in 1..=DOWNLOAD_RETRY_ATTEMPTS {
-        match download_asset_attempt(&client, url, attempt, &sanitized_url, &asset_name) {
+        match download_asset_attempt(
+            &client,
+            url,
+            auth,
+            accept,
+            attempt,
+            &sanitized_url,
+            &asset_name,
+        ) {
             Ok(bytes) => return Ok(bytes),
             Err(error)
                 if attempt < DOWNLOAD_RETRY_ATTEMPTS && is_retryable_download_error(&error) =>
@@ -3340,15 +3845,62 @@ fn download_asset(url: &str) -> Result<Vec<u8>> {
 fn download_asset_attempt(
     client: &reqwest::blocking::Client,
     url: &str,
+    auth: Option<&ProviderAuth>,
+    accept: Option<&'static str>,
     attempt: usize,
     sanitized_url: &str,
     asset_name: &str,
 ) -> Result<Vec<u8>> {
-    let mut response = client
-        .get(url)
-        .send()
-        .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
-    validate_download_url(response.url().as_str())?;
+    let origin = reqwest::Url::parse(url).expect("download URL was already validated");
+    let mut current_url = url.to_string();
+    let mut visited_urls = BTreeSet::new();
+    let mut redirects = 0usize;
+    let mut response = loop {
+        if !visited_urls.insert(current_url.clone()) {
+            return Err(BinpmError::UnsafeUrl {
+                url: sanitize_download_diagnostic_url(&current_url),
+                message: "release asset redirect loop detected".to_string(),
+            });
+        }
+        let current = reqwest::Url::parse(&current_url).map_err(|_| BinpmError::UnsafeUrl {
+            url: sanitize_download_diagnostic_url(&current_url),
+            message: "persisted release asset URLs must be valid https URLs".to_string(),
+        })?;
+        validate_download_url(current.as_str())?;
+        let mut request = client.get(current.as_str());
+        if let Some(accept) = accept {
+            request = request.header(reqwest::header::ACCEPT, accept);
+        }
+        if let Some(auth) = auth.filter(|_| same_download_origin(&origin, &current)) {
+            request = request.header(auth.header_name, auth.header_value.as_str());
+        }
+
+        let response = request
+            .send()
+            .map_err(|error| BinpmError::ReleaseLookup(error.without_url()))?;
+        validate_download_url(response.url().as_str())?;
+        let status = response.status();
+        if !status.is_redirection() {
+            break response;
+        }
+        let Some(next_url) = response
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|location| location.to_str().ok())
+            .and_then(|location| response.url().join(location).ok())
+            .map(|location| location.to_string())
+        else {
+            break response;
+        };
+        redirects += 1;
+        if redirects > 10 {
+            return Err(BinpmError::UnsafeUrl {
+                url: sanitize_download_diagnostic_url(&next_url),
+                message: "release asset redirect chain exceeded limit".to_string(),
+            });
+        }
+        current_url = next_url;
+    };
     let final_url = sanitize_download_diagnostic_url(response.url().as_str());
     let status = response.status();
     if !status.is_success() {
@@ -3422,6 +3974,12 @@ fn download_asset_attempt(
         "Downloaded release asset"
     );
     Ok(bytes)
+}
+
+fn same_download_origin(left: &reqwest::Url, right: &reqwest::Url) -> bool {
+    left.scheme() == right.scheme()
+        && left.host_str() == right.host_str()
+        && left.port_or_known_default() == right.port_or_known_default()
 }
 
 fn is_retryable_download_error(error: &BinpmError) -> bool {
@@ -4518,20 +5076,21 @@ mod tests {
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        normalize_bin_selection, parse_manifest_source, parse_manifest_tool_source,
-        project_root_from, read_archive_selected_binary, record_matches_current_provider_digest,
+        normalize_bin_selection, override_snippet_candidate, parse_manifest_source,
+        parse_manifest_tool_source, project_root_from, read_archive_selected_binary,
+        record_matches_current_provider_digest, release_diagnostic_lines,
         remove_global_tool_from_paths, remove_local_manifest_orphans,
         require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
         sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
         shell_path, shell_quote, snapshot_cache_metadata, source_install_scope,
-        update_manifest_tool_source, validate_frozen_update_versionless_current_release,
-        validate_locked_record_artifact, validate_locked_record_current_asset,
-        validate_locked_record_current_provider_digest, validate_package_record_metadata,
-        validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verify_installed_binary_contents,
-        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_regular,
-        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
-        LocalRemoveState, RuntimeToolState,
+        target_override_snippet, update_manifest_tool_source,
+        validate_frozen_update_versionless_current_release, validate_locked_record_artifact,
+        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries,
+        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
+        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
+        InstalledPathSnapshot, LocalRemoveState, RuntimeToolState,
     };
     use crate::{
         assets::CandidateDecision,
@@ -4768,12 +5327,320 @@ mod tests {
     }
 
     #[test]
+    fn archive_extraction_does_not_recover_explicitly_non_executable_zip_entry() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip(&archive_path, &[("pkg/tool", b"config".as_slice(), 0o644)]);
+
+        let error = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect_err("explicitly non-executable zip entry is not recovered");
+
+        assert!(matches!(error, BinpmError::ArchiveBinaryNotFound { .. }));
+    }
+
+    #[test]
+    fn archive_extraction_recovers_explicit_member_without_unix_permissions() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("pkg/foo", b"#!/bin/sh\necho foo\n".as_slice()),
+                ("pkg/bar", b"#!/bin/sh\necho bar\n".as_slice()),
+            ],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            Some("pkg/foo"),
+        )
+        .expect("explicit missing-metadata member is recovered");
+
+        assert_eq!(selected.path, "pkg/foo");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho foo\n");
+    }
+
+    #[test]
+    fn zip_extraction_recovers_missing_executable_metadata_for_unambiguous_binary() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("pkg/README.md", b"docs".as_slice()),
+                ("pkg/tool", b"#!/bin/sh\necho recovered\n".as_slice()),
+            ],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected binary with recovered executable bit");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+
+        let installed_path = temp_dir.path().join("bin").join("tool");
+        crate::storage::install_executable_bytes(&installed_path, &selected.bytes)
+            .expect("install recovered binary");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mode = fs::metadata(&installed_path)
+                .expect("installed metadata")
+                .permissions()
+                .mode();
+            assert_ne!(mode & 0o111, 0);
+        }
+    }
+
+    #[test]
+    fn zip_extraction_treats_dos_attributes_as_missing_executable_metadata() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_with_dos_archive_attributes(
+            &archive_path,
+            &[
+                (
+                    "pkg/install.sh",
+                    b"#!/bin/sh\necho install\n".as_slice(),
+                    0o100755,
+                ),
+                (
+                    "pkg/tool",
+                    b"#!/bin/sh\necho recovered\n".as_slice(),
+                    0o100644,
+                ),
+            ],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary with DOS-only metadata");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+    }
+
+    #[test]
+    fn zip_extraction_recovers_missing_metadata_with_prepended_data() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("pkg/README.md", b"docs".as_slice()),
+                ("pkg/tool", b"#!/bin/sh\necho recovered\n".as_slice()),
+            ],
+        );
+        prepend_zip_data(&archive_path, b"#!/bin/sh\nexit 0\n");
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary from prepended zip");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+    }
+
+    #[test]
+    fn zip_extraction_ignores_false_eocd_signature_in_comment() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("pkg/README.md", b"docs".as_slice()),
+                ("pkg/tool", b"#!/bin/sh\necho recovered\n".as_slice()),
+            ],
+        );
+        append_zip_comment(&archive_path, b"comment PK\x05\x06 fake footer");
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary despite false EOCD signature in comment");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+    }
+
+    #[test]
+    fn zip_extraction_recovers_missing_metadata_for_legacy_encoded_name() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("README.md", b"docs".as_slice()),
+                ("x/tool", b"#!/bin/sh\necho recovered\n".as_slice()),
+            ],
+        );
+        patch_zip_member_raw_name(&archive_path, b"x/tool", b"\x82/tool");
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary with CP437 name");
+
+        assert_eq!(selected.path, "\u{e9}/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+    }
+
+    #[test]
+    fn zip_extraction_skips_false_central_directory_signature_in_payload() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        let mut payload = b"prefix PK\x01\x02".to_vec();
+        payload.extend([0xff; 64]);
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("pkg/README.md", payload.as_slice()),
+                ("pkg/tool", b"#!/bin/sh\necho recovered\n".as_slice()),
+            ],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary despite false central-directory signature");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+    }
+
+    #[test]
+    fn zip_extraction_uses_zip64_bounds_before_payload_signatures() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        let mut payload = b"prefix PK\x01\x02".to_vec();
+        payload.extend([0xff; 64]);
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("pkg/README.md", payload.as_slice()),
+                ("pkg/tool", b"#!/bin/sh\necho recovered\n".as_slice()),
+            ],
+        );
+        patch_zip_to_use_zip64_central_directory_bounds(&archive_path);
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary despite ZIP64 placeholders and payload signature");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+    }
+
+    #[test]
+    fn zip_extraction_treats_zero_unix_mode_as_missing_executable_metadata() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_with_unix_zero_attributes(
+            &archive_path,
+            &[("pkg/tool", b"#!/bin/sh\necho recovered\n".as_slice())],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary with zero Unix mode");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
+    }
+
+    #[test]
+    fn archive_extraction_does_not_guess_between_non_executable_candidates() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_without_unix_permissions(
+            &archive_path,
+            &[
+                ("pkg/alpha", b"#!/bin/sh\nexit 0\n".as_slice()),
+                ("pkg/beta", b"#!/bin/sh\nexit 0\n".as_slice()),
+            ],
+        );
+
+        let error = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect_err("non-executable members without name signal are not guessed");
+
+        assert!(matches!(error, BinpmError::ArchiveBinaryNotFound { .. }));
+        assert!(error
+            .to_string()
+            .contains("unambiguous filename/target match"));
+    }
+
+    #[test]
     fn archive_extraction_ignores_exe_candidates_on_non_windows_targets() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let archive_path = temp_dir.path().join("tool.zip");
-        write_zip(
+        write_zip_without_unix_permissions(
             &archive_path,
-            &[("pkg/tool.exe", b"windows".as_slice(), 0o644)],
+            &[("pkg/tool.exe", b"windows".as_slice())],
         );
 
         let error = read_archive_selected_binary(
@@ -6569,6 +7436,9 @@ mod tests {
                 "https://gitlab.com/owner/tool/-/releases/v1/downloads/tool-linux?token=secret"
                     .to_string(),
             ),
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: Some(false),
@@ -6591,6 +7461,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6600,6 +7473,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6629,6 +7505,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6638,6 +7517,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6665,6 +7547,9 @@ mod tests {
             name: "tool-linux-x64".to_string(),
             url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64".to_string(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: None,
@@ -6684,6 +7569,9 @@ mod tests {
             name: "tool-x86_64-unknown-linux-gnu.tar.gz".to_string(),
             url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz".to_string(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: None,
@@ -6705,6 +7593,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6714,6 +7605,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6730,11 +7624,148 @@ mod tests {
     }
 
     #[test]
+    fn explain_diagnostics_distinguish_installer_only_releases() {
+        let target = linux_target();
+        let assets = [
+            ReleaseAsset {
+                name: "Tool-1.0.0.dmg".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/Tool.dmg".to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+            ReleaseAsset {
+                name: "Tool-1.0.0.msi".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/Tool.msi".to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+            },
+        ];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(override_snippet_candidate(&decisions).is_none());
+        let lines = release_diagnostic_lines(&decisions, &target);
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("release only provides unsupported")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("Tool-1.0.0.dmg, Tool-1.0.0.msi")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("portable archive or bare executable")));
+    }
+
+    #[test]
+    fn explain_diagnostics_suggest_musl_override_for_missing_libc_assets() {
+        let target = HostTarget {
+            os: TargetOs::Linux,
+            arch: TargetArch::X86_64,
+            libc: TargetLibc::Musl,
+        };
+        let assets = [ReleaseAsset {
+            name: "tool-linux-x64.tar.gz".to_string(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64.tar.gz"
+                .to_string(),
+            provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+        }];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(decisions.iter().all(|decision| !decision.eligible));
+        assert_eq!(
+            override_snippet_candidate(&decisions).map(|decision| decision.asset_name.as_str()),
+            Some("tool-linux-x64.tar.gz")
+        );
+        let lines = release_diagnostic_lines(&decisions, &target);
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("Linux musl releases should include")));
+    }
+
+    #[test]
+    fn explain_diagnostics_do_not_suggest_override_for_incompatible_target_assets() {
+        let target = HostTarget {
+            os: TargetOs::Darwin,
+            arch: TargetArch::Aarch64,
+            libc: TargetLibc::Any,
+        };
+        let assets = [ReleaseAsset {
+            name: "tool-linux-x64.tar.gz".to_string(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64.tar.gz"
+                .to_string(),
+            provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+        }];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(decisions.iter().all(|decision| !decision.eligible));
+        assert!(decisions.iter().any(|decision| {
+            decision.rejection_reason.as_deref() == Some("asset target does not match host target")
+        }));
+        assert!(override_snippet_candidate(&decisions).is_none());
+    }
+
+    #[test]
+    fn target_override_snippet_uses_canonical_key_and_toml_escaped_fields() {
+        let target = linux_target();
+        let snippet = target_override_snippet(
+            "tool.name",
+            &target,
+            "tool-linux-x64.tar.gz",
+            "bin/tool \"quoted\"",
+            Some(ChecksumSource::Local),
+        );
+
+        assert!(snippet.starts_with("[tools.\"tool.name\".targets.linux-x86_64-gnu]"));
+        assert!(snippet.contains("asset = \"tool-linux-x64.tar.gz\""));
+        assert!(snippet.contains("bin = \"bin/tool \\\"quoted\\\"\""));
+        assert!(!snippet.contains("checksum_source"));
+        toml::from_str::<toml::Value>(&snippet).expect("valid TOML snippet");
+    }
+
+    #[test]
+    fn target_override_snippet_keeps_manifest_accepted_checksum_source() {
+        let target = linux_target();
+        let snippet = target_override_snippet(
+            "tool",
+            &target,
+            "tool-linux-x64.tar.gz",
+            "tool",
+            Some(ChecksumSource::GitHubDigest),
+        );
+
+        assert!(snippet.contains("checksum_source = \"github-digest\""));
+        toml::from_str::<toml::Value>(&snippet).expect("valid TOML snippet");
+    }
+
+    #[test]
     fn explain_selected_asset_url_rejects_credentials_without_echoing_them() {
         let decision = CandidateDecision {
             asset_name: "tool".to_string(),
             canonical_url: "https://token@example.com/tool".to_string(),
             download_url: "https://token@example.com/tool".to_string(),
+            download_auth: None,
+            download_accept: None,
             kind: ArtifactKind::BareExecutable,
             detected_os: Some(TargetOs::Linux),
             detected_arch: Some(TargetArch::X86_64),
@@ -6850,6 +7881,9 @@ mod tests {
                 name: record.asset_name.clone(),
                 url: record.asset_url.clone(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6859,6 +7893,9 @@ mod tests {
                 url: "https://github.com/owner/tool/releases/download/1.0.0/tool-x86_64-unknown-linux-gnu"
                     .to_string(),
                 provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
@@ -6886,6 +7923,9 @@ mod tests {
             url: "https://github.com/owner/tool/releases/download/1.0.0/renamed-tool-linux"
                 .to_string(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: None,
@@ -6971,6 +8011,9 @@ mod tests {
             name: record.asset_name.clone(),
             url: record.asset_url.clone(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: Some(format!("sha256:{changed_digest}")),
             source_archive: false,
             final_url_https: None,
@@ -6996,6 +8039,9 @@ mod tests {
             name: record.asset_name.clone(),
             url: record.asset_url.clone(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: Some(format!("sha256:{changed_digest}")),
             source_archive: false,
             final_url_https: None,
@@ -7020,6 +8066,9 @@ mod tests {
             name: record.asset_name.clone(),
             url: record.asset_url.clone(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: Some(format!("sha256:{}", record.sha256)),
             source_archive: false,
             final_url_https: None,
@@ -7036,6 +8085,9 @@ mod tests {
             name: record.asset_name.clone(),
             url: record.asset_url.clone(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: None,
@@ -7051,6 +8103,9 @@ mod tests {
             name: record.asset_name.clone(),
             url: record.asset_url.clone(),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: Some(format!("sha256:{}", record.sha256)),
             source_archive: false,
             final_url_https: None,
@@ -7963,6 +9018,8 @@ mod tests {
                     .to_string(),
                 download_url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
                     .to_string(),
+                download_auth: None,
+                download_accept: None,
                 kind: ArtifactKind::BareExecutable,
                 detected_os: Some(TargetOs::Linux),
                 detected_arch: Some(TargetArch::X86_64),
@@ -8010,6 +9067,281 @@ mod tests {
             writer.write_all(bytes).expect("write zip entry");
         }
         writer.finish().expect("finish zip");
+    }
+
+    fn write_zip_without_unix_permissions(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = fs::File::create(path).expect("create zip");
+        let mut writer = zip::ZipWriter::new(file);
+        for (name, bytes) in entries {
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            writer.start_file(*name, options).expect("start zip entry");
+            writer.write_all(bytes).expect("write zip entry");
+        }
+        writer.finish().expect("finish zip");
+
+        patch_zip_central_directory_external_attributes(path, 0, 0);
+    }
+
+    fn write_zip_with_dos_archive_attributes(path: &Path, entries: &[(&str, &[u8], u32)]) {
+        write_zip(path, entries);
+
+        patch_zip_central_directory_external_attributes(path, 0, 0x20);
+    }
+
+    fn write_zip_with_unix_zero_attributes(path: &Path, entries: &[(&str, &[u8])]) {
+        let entries = entries
+            .iter()
+            .map(|(name, bytes)| (*name, *bytes, 0o100644))
+            .collect::<Vec<_>>();
+        write_zip(path, &entries);
+
+        patch_zip_central_directory_external_attributes(path, 3, 0);
+    }
+
+    fn prepend_zip_data(path: &Path, prefix: &[u8]) {
+        let bytes = fs::read(path).expect("read zip for prepending");
+        let mut prefixed = prefix.to_vec();
+        prefixed.extend(bytes);
+        fs::write(path, prefixed).expect("write prepended zip");
+    }
+
+    fn append_zip_comment(path: &Path, comment: &[u8]) {
+        const END_OF_CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+        const END_OF_CENTRAL_DIRECTORY_LEN: usize = 22;
+        const END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET: usize = 20;
+
+        let mut bytes = fs::read(path).expect("read zip for comment patch");
+        assert!(comment.len() <= u16::MAX as usize);
+        let eocd_index = bytes
+            .len()
+            .checked_sub(END_OF_CENTRAL_DIRECTORY_LEN)
+            .expect("zip has EOCD");
+        assert!(bytes[eocd_index..].starts_with(&END_OF_CENTRAL_DIRECTORY_SIGNATURE));
+        bytes[eocd_index + END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET
+            ..eocd_index + END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET + 2]
+            .copy_from_slice(&(comment.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(comment);
+        fs::write(path, bytes).expect("write zip comment patch");
+    }
+
+    fn patch_zip_member_raw_name(path: &Path, old_name: &[u8], new_name: &[u8]) {
+        const LOCAL_FILE_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x03, 0x04];
+        const LOCAL_FILE_HEADER_LEN: usize = 30;
+        const LOCAL_FILE_FLAGS_OFFSET: usize = 6;
+        const LOCAL_FILE_NAME_LENGTH_OFFSET: usize = 26;
+        const LOCAL_FILE_EXTRA_FIELD_LENGTH_OFFSET: usize = 28;
+        const CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+        const CENTRAL_DIRECTORY_HEADER_LEN: usize = 46;
+        const CENTRAL_DIRECTORY_FLAGS_OFFSET: usize = 8;
+        const CENTRAL_DIRECTORY_FILE_NAME_LENGTH_OFFSET: usize = 28;
+        const CENTRAL_DIRECTORY_EXTRA_FIELD_LENGTH_OFFSET: usize = 30;
+        const CENTRAL_DIRECTORY_FILE_COMMENT_LENGTH_OFFSET: usize = 32;
+        const UTF8_FILE_NAME_FLAG: u16 = 1 << 11;
+
+        assert_eq!(
+            old_name.len(),
+            new_name.len(),
+            "raw ZIP name patches must preserve header sizes"
+        );
+
+        let mut bytes = fs::read(path).expect("read zip for name patch");
+        let mut index = 0;
+        while index + LOCAL_FILE_HEADER_LEN <= bytes.len() {
+            if !bytes[index..].starts_with(&LOCAL_FILE_SIGNATURE) {
+                index += 1;
+                continue;
+            }
+            let name_len = u16::from_le_bytes([
+                bytes[index + LOCAL_FILE_NAME_LENGTH_OFFSET],
+                bytes[index + LOCAL_FILE_NAME_LENGTH_OFFSET + 1],
+            ]) as usize;
+            let extra_len = u16::from_le_bytes([
+                bytes[index + LOCAL_FILE_EXTRA_FIELD_LENGTH_OFFSET],
+                bytes[index + LOCAL_FILE_EXTRA_FIELD_LENGTH_OFFSET + 1],
+            ]) as usize;
+            let name_start = index + LOCAL_FILE_HEADER_LEN;
+            let name_end = name_start + name_len;
+            if name_end <= bytes.len() && &bytes[name_start..name_end] == old_name {
+                bytes[name_start..name_end].copy_from_slice(new_name);
+                let mut flags = u16::from_le_bytes([
+                    bytes[index + LOCAL_FILE_FLAGS_OFFSET],
+                    bytes[index + LOCAL_FILE_FLAGS_OFFSET + 1],
+                ]);
+                flags &= !UTF8_FILE_NAME_FLAG;
+                bytes[index + LOCAL_FILE_FLAGS_OFFSET..index + LOCAL_FILE_FLAGS_OFFSET + 2]
+                    .copy_from_slice(&flags.to_le_bytes());
+            }
+            index = name_end.saturating_add(extra_len);
+        }
+
+        let mut index = 0;
+        while index + CENTRAL_DIRECTORY_HEADER_LEN <= bytes.len() {
+            if !bytes[index..].starts_with(&CENTRAL_DIRECTORY_SIGNATURE) {
+                index += 1;
+                continue;
+            }
+            let name_len = u16::from_le_bytes([
+                bytes[index + CENTRAL_DIRECTORY_FILE_NAME_LENGTH_OFFSET],
+                bytes[index + CENTRAL_DIRECTORY_FILE_NAME_LENGTH_OFFSET + 1],
+            ]) as usize;
+            let extra_len = u16::from_le_bytes([
+                bytes[index + CENTRAL_DIRECTORY_EXTRA_FIELD_LENGTH_OFFSET],
+                bytes[index + CENTRAL_DIRECTORY_EXTRA_FIELD_LENGTH_OFFSET + 1],
+            ]) as usize;
+            let comment_len = u16::from_le_bytes([
+                bytes[index + CENTRAL_DIRECTORY_FILE_COMMENT_LENGTH_OFFSET],
+                bytes[index + CENTRAL_DIRECTORY_FILE_COMMENT_LENGTH_OFFSET + 1],
+            ]) as usize;
+            let name_start = index + CENTRAL_DIRECTORY_HEADER_LEN;
+            let name_end = name_start + name_len;
+            if name_end <= bytes.len() && &bytes[name_start..name_end] == old_name {
+                bytes[name_start..name_end].copy_from_slice(new_name);
+                let mut flags = u16::from_le_bytes([
+                    bytes[index + CENTRAL_DIRECTORY_FLAGS_OFFSET],
+                    bytes[index + CENTRAL_DIRECTORY_FLAGS_OFFSET + 1],
+                ]);
+                flags &= !UTF8_FILE_NAME_FLAG;
+                bytes[index + CENTRAL_DIRECTORY_FLAGS_OFFSET
+                    ..index + CENTRAL_DIRECTORY_FLAGS_OFFSET + 2]
+                    .copy_from_slice(&flags.to_le_bytes());
+            }
+            index = name_end
+                .saturating_add(extra_len)
+                .saturating_add(comment_len);
+        }
+        fs::write(path, bytes).expect("write zip name patch");
+    }
+
+    fn patch_zip_to_use_zip64_central_directory_bounds(path: &Path) {
+        const END_OF_CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+        const END_OF_CENTRAL_DIRECTORY_LEN: usize = 22;
+        const END_OF_CENTRAL_DIRECTORY_ENTRY_COUNT_OFFSET: usize = 8;
+        const CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 12;
+        const CENTRAL_DIRECTORY_OFFSET_OFFSET: usize = 16;
+        const ZIP32_PLACEHOLDER_16: u16 = u16::MAX;
+        const ZIP32_PLACEHOLDER_32: u32 = u32::MAX;
+
+        let bytes = fs::read(path).expect("read zip for ZIP64 patch");
+        let eocd_index = bytes
+            .len()
+            .checked_sub(END_OF_CENTRAL_DIRECTORY_LEN)
+            .expect("zip has EOCD");
+        assert!(bytes[eocd_index..].starts_with(&END_OF_CENTRAL_DIRECTORY_SIGNATURE));
+        let directory_size = u32::from_le_bytes([
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
+        ]) as u64;
+        let directory_start = u32::from_le_bytes([
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 1],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 2],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 3],
+        ]) as u64;
+
+        let mut zip64_eocd = Vec::new();
+        zip64_eocd.extend_from_slice(&[0x50, 0x4b, 0x06, 0x06]);
+        zip64_eocd.extend_from_slice(&44_u64.to_le_bytes());
+        zip64_eocd.extend_from_slice(&45_u16.to_le_bytes());
+        zip64_eocd.extend_from_slice(&45_u16.to_le_bytes());
+        zip64_eocd.extend_from_slice(&0_u32.to_le_bytes());
+        zip64_eocd.extend_from_slice(&0_u32.to_le_bytes());
+        zip64_eocd.extend_from_slice(&2_u64.to_le_bytes());
+        zip64_eocd.extend_from_slice(&2_u64.to_le_bytes());
+        zip64_eocd.extend_from_slice(&directory_size.to_le_bytes());
+        zip64_eocd.extend_from_slice(&directory_start.to_le_bytes());
+
+        let mut zip64_locator = Vec::new();
+        zip64_locator.extend_from_slice(&[0x50, 0x4b, 0x06, 0x07]);
+        zip64_locator.extend_from_slice(&0_u32.to_le_bytes());
+        zip64_locator.extend_from_slice(&(eocd_index as u64).to_le_bytes());
+        zip64_locator.extend_from_slice(&1_u32.to_le_bytes());
+
+        let mut patched = bytes[..eocd_index].to_vec();
+        patched.extend_from_slice(&zip64_eocd);
+        patched.extend_from_slice(&zip64_locator);
+        patched.extend_from_slice(&bytes[eocd_index..]);
+        let new_eocd_index = patched.len() - END_OF_CENTRAL_DIRECTORY_LEN;
+        patched[new_eocd_index + END_OF_CENTRAL_DIRECTORY_ENTRY_COUNT_OFFSET
+            ..new_eocd_index + END_OF_CENTRAL_DIRECTORY_ENTRY_COUNT_OFFSET + 2]
+            .copy_from_slice(&ZIP32_PLACEHOLDER_16.to_le_bytes());
+        patched[new_eocd_index + END_OF_CENTRAL_DIRECTORY_ENTRY_COUNT_OFFSET + 2
+            ..new_eocd_index + END_OF_CENTRAL_DIRECTORY_ENTRY_COUNT_OFFSET + 4]
+            .copy_from_slice(&ZIP32_PLACEHOLDER_16.to_le_bytes());
+        patched[new_eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET
+            ..new_eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 4]
+            .copy_from_slice(&ZIP32_PLACEHOLDER_32.to_le_bytes());
+        patched[new_eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET
+            ..new_eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 4]
+            .copy_from_slice(&ZIP32_PLACEHOLDER_32.to_le_bytes());
+
+        fs::write(path, patched).expect("write ZIP64 bounds patch");
+    }
+
+    fn patch_zip_central_directory_external_attributes(path: &Path, system: u8, attributes: u32) {
+        const CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+        const CENTRAL_DIRECTORY_HEADER_LEN: usize = 46;
+        const VERSION_MADE_BY_SYSTEM_OFFSET: usize = 5;
+        const FILE_NAME_LENGTH_OFFSET: usize = 28;
+        const EXTRA_FIELD_LENGTH_OFFSET: usize = 30;
+        const FILE_COMMENT_LENGTH_OFFSET: usize = 32;
+        const EXTERNAL_FILE_ATTRIBUTES_OFFSET: usize = 38;
+        const END_OF_CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+        const END_OF_CENTRAL_DIRECTORY_LEN: usize = 22;
+        const CENTRAL_DIRECTORY_SIZE_OFFSET: usize = 12;
+        const CENTRAL_DIRECTORY_OFFSET_OFFSET: usize = 16;
+
+        let mut bytes = fs::read(path).expect("read zip for metadata patch");
+        let eocd_index = bytes
+            .len()
+            .checked_sub(END_OF_CENTRAL_DIRECTORY_LEN)
+            .and_then(|last_start| {
+                let first_start = bytes
+                    .len()
+                    .saturating_sub(END_OF_CENTRAL_DIRECTORY_LEN + u16::MAX as usize);
+                (first_start..=last_start)
+                    .rev()
+                    .find(|index| bytes[*index..].starts_with(&END_OF_CENTRAL_DIRECTORY_SIGNATURE))
+            })
+            .expect("find end of central directory");
+        let directory_size = u32::from_le_bytes([
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 1],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 2],
+            bytes[eocd_index + CENTRAL_DIRECTORY_SIZE_OFFSET + 3],
+        ]) as usize;
+        let directory_start = u32::from_le_bytes([
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 1],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 2],
+            bytes[eocd_index + CENTRAL_DIRECTORY_OFFSET_OFFSET + 3],
+        ]) as usize;
+        let directory_end = directory_start + directory_size;
+
+        let mut index = directory_start;
+        while index + CENTRAL_DIRECTORY_HEADER_LEN <= directory_end {
+            assert!(bytes[index..].starts_with(&CENTRAL_DIRECTORY_SIGNATURE));
+            bytes[index + VERSION_MADE_BY_SYSTEM_OFFSET] = system;
+            bytes[index + EXTERNAL_FILE_ATTRIBUTES_OFFSET
+                ..index + EXTERNAL_FILE_ATTRIBUTES_OFFSET + 4]
+                .copy_from_slice(&attributes.to_le_bytes());
+            let name_len = u16::from_le_bytes([
+                bytes[index + FILE_NAME_LENGTH_OFFSET],
+                bytes[index + FILE_NAME_LENGTH_OFFSET + 1],
+            ]) as usize;
+            let extra_len = u16::from_le_bytes([
+                bytes[index + EXTRA_FIELD_LENGTH_OFFSET],
+                bytes[index + EXTRA_FIELD_LENGTH_OFFSET + 1],
+            ]) as usize;
+            let comment_len = u16::from_le_bytes([
+                bytes[index + FILE_COMMENT_LENGTH_OFFSET],
+                bytes[index + FILE_COMMENT_LENGTH_OFFSET + 1],
+            ]) as usize;
+            index += CENTRAL_DIRECTORY_HEADER_LEN + name_len + extra_len + comment_len;
+        }
+        fs::write(path, bytes).expect("write zip metadata patch");
     }
 
     fn mark_github_verified(record: &mut PackageRecord) {

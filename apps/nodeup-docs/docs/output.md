@@ -86,9 +86,20 @@ NODEUP_COLOR=always nodeup show home
 NO_COLOR=1 nodeup show home
 ```
 
+Inspect the effective decisions with:
+
+```bash
+nodeup show color
+nodeup --output json show color
+```
+
+The diagnostic reports separate decisions for human stdout, human stderr, and logs. It also reports ignored invalid `NODEUP_COLOR` values.
+
 ## Log Color
 
 Logs use `NODEUP_LOG_COLOR=always|auto|never`. The default is colored logs unless `NO_COLOR` disables color. `NODEUP_LOG_COLOR=always` overrides `NO_COLOR`.
+
+Invalid `NODEUP_LOG_COLOR` values are ignored and fall back to `NO_COLOR` or the default. `nodeup show color` reports ignored invalid log color values.
 
 ## Logging Defaults
 

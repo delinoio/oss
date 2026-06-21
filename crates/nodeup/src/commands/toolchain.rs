@@ -10,7 +10,7 @@ use crate::{
     release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
     selectors::{is_reserved_channel_selector_token, is_valid_linked_name, RuntimeSelector},
-    store::runtime_executable_path,
+    store::{runtime_executable_is_runnable, runtime_primary_executable_path},
     types::PlatformTarget,
     NodeupApp,
 };
@@ -46,6 +46,7 @@ pub fn execute(
         ToolchainCommand::Install { runtimes } => install(&runtimes, output, color, app),
         ToolchainCommand::Uninstall { runtimes } => uninstall(&runtimes, output, color, app),
         ToolchainCommand::Link { name, path } => link(&name, &path, output, color, app),
+        ToolchainCommand::Unlink { names } => unlink(&names, output, color, app),
     }
 }
 
@@ -281,8 +282,8 @@ fn uninstall(
                         "`toolchain uninstall` only supports exact version selectors \
                          (selector={runtime})"
                     ),
-                    "Use selectors like `22.1.0` or `v22.1.0`. Channels and linked runtime names \
-                     are not supported here.",
+                    "Use selectors like `22.1.0` or `v22.1.0`. Remove linked runtime records with \
+                     `nodeup toolchain unlink <name>`.",
                 ));
             }
         };
@@ -364,6 +365,13 @@ fn uninstall(
 fn selector_references_version(selector: &str, target_version: &str) -> bool {
     canonical_version_selector(selector)
         .is_some_and(|canonical_selector_version| canonical_selector_version == target_version)
+}
+
+fn selector_references_linked_name(selector: &str, target_name: &str) -> bool {
+    matches!(
+        RuntimeSelector::parse(selector).ok(),
+        Some(RuntimeSelector::LinkedName(name)) if name == target_name
+    )
 }
 
 fn canonical_version_selector(selector: &str) -> Option<String> {
@@ -449,7 +457,7 @@ fn link(
     }
 
     let absolute = fs::canonicalize(&runtime_path)?;
-    let node_executable = runtime_executable_path(&absolute, "node");
+    let node_executable = runtime_primary_executable_path(&absolute, "node");
     if !node_executable.exists() {
         info!(
             command_path = "nodeup.toolchain.link",
@@ -468,6 +476,27 @@ fn link(
             ),
             "Verify the runtime root path and ensure `<path>/bin/node` or `<path>/bin/node.exe` \
              exists before linking.",
+        ));
+    }
+
+    if !runtime_executable_is_runnable(&node_executable) {
+        info!(
+            command_path = "nodeup.toolchain.link",
+            linked_name = %name,
+            requested_path = %runtime_path.display(),
+            resolved_path = %absolute.display(),
+            expected_node_path = %node_executable.display(),
+            validation = false,
+            reason = "node-executable-not-runnable",
+            "Rejected linked runtime"
+        );
+        return Err(NodeupError::invalid_input_with_hint(
+            format!(
+                "Linked runtime node executable exists but is not runnable: {}",
+                node_executable.display()
+            ),
+            "On Unix, ensure the executable bit is set on `<path>/bin/node`. On Windows, ensure \
+             the runtime provides `<path>/bin/node.exe`.",
         ));
     }
 
@@ -494,6 +523,96 @@ fn link(
         "status": "linked"
     });
     print_output(output, color, &message, &response)?;
+
+    Ok(0)
+}
+
+fn unlink(
+    names: &[String],
+    output: OutputFormat,
+    color: Option<OutputColorMode>,
+    app: &NodeupApp,
+) -> Result<i32> {
+    if names.is_empty() {
+        return Err(NodeupError::invalid_input_with_hint(
+            format!(
+                "Missing linked runtime name for `nodeup toolchain unlink` (requested_count={})",
+                names.len()
+            ),
+            "Run `nodeup toolchain unlink <name>...`.",
+        ));
+    }
+
+    let mut settings = app.store.load_settings()?;
+    let overrides = app.overrides.load()?;
+
+    info!(
+        command_path = "nodeup.toolchain.unlink",
+        requested_count = names.len(),
+        "Starting linked runtime unlink preflight"
+    );
+
+    let mut unique_names = Vec::new();
+    let mut seen_names = HashSet::new();
+    for name in names {
+        if seen_names.insert(name.clone()) {
+            unique_names.push(name.clone());
+        }
+    }
+
+    for name in &unique_names {
+        if !settings.linked_runtimes.contains_key(name) {
+            return Err(NodeupError::not_found_with_hint(
+                format!("Linked runtime '{name}' does not exist"),
+                "List linked runtimes with `nodeup toolchain list --verbose` and retry with an \
+                 existing linked runtime name.",
+            ));
+        }
+
+        if settings
+            .default_selector
+            .as_ref()
+            .is_some_and(|default| selector_references_linked_name(default, name))
+        {
+            return Err(NodeupError::conflict_with_hint(
+                format!("Cannot unlink '{name}'; it is used as the default runtime"),
+                "Set a different default first with `nodeup default <runtime>`, then retry unlink.",
+            ));
+        }
+
+        if overrides
+            .entries
+            .iter()
+            .any(|entry| selector_references_linked_name(&entry.selector, name))
+        {
+            return Err(NodeupError::conflict_with_hint(
+                format!("Cannot unlink '{name}'; it is referenced by a directory override"),
+                "Update or remove the blocking override with `nodeup override set <runtime> \
+                 --path <path>` or `nodeup override unset --path <path>`.",
+            ));
+        }
+    }
+
+    for name in &unique_names {
+        settings.linked_runtimes.remove(name);
+    }
+
+    let removed_names = unique_names.into_iter().collect::<HashSet<_>>();
+    settings
+        .tracked_selectors
+        .retain(|selector| !removed_names.contains(selector));
+    app.store.save_settings(&settings)?;
+
+    let mut removed_names = removed_names.into_iter().collect::<Vec<_>>();
+    removed_names.sort();
+    info!(
+        command_path = "nodeup.toolchain.unlink",
+        removed_count = removed_names.len(),
+        removed_names = ?removed_names,
+        "Completed linked runtime unlink"
+    );
+    let human = format!("Removed {} linked runtime(s)", removed_names.len());
+    print_output(output, color, &human, &removed_names)?;
 
     Ok(0)
 }

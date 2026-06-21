@@ -2,14 +2,14 @@
 
 ## Explain Asset Selection
 
-Use `binpm explain` to inspect source parsing, release selection, target normalization, asset candidate scoring, binary discovery, and verification decisions.
+Use `binpm explain` to inspect how binpm reads a source, chooses a release asset for your target, finds a binary, and determines verification status.
 
 ```bash
 binpm explain github:BurntSushi/ripgrep
 binpm explain rg --local
 ```
 
-Source-form explanation may perform read-only provider release lookup. It must not mutate manifests, lockfiles, package records, cache entries, or executables.
+Explaining a source may contact the source provider for release information, but it does not change manifests, lockfiles, cached assets, or installed executables.
 
 ## Resolve Binary Ambiguity
 
@@ -24,7 +24,7 @@ Use the `add` form to persist the selection in `binpm.toml`. Use the `x --packag
 
 ## Validate Local State
 
-Use `binpm doctor` to inspect manifest discovery, lockfile readability, package records, cache state, installed executable records, PATH visibility, and provider configuration without mutation.
+Use `binpm doctor` to inspect manifest discovery, lockfile readability, cache state, installed executables, PATH visibility, and provider configuration without changing them.
 
 ```bash
 binpm doctor
@@ -34,17 +34,9 @@ When `~/.binpm/bin` is not on `PATH`, doctor prints setup guidance that points t
 
 ## Verify Installed Records
 
-Use `binpm verify` to validate lockfile records, package records, cache bytes, and installed executable records.
+Use `binpm verify` to validate local tool metadata, cached bytes, and installed executables.
 
 ```bash
 binpm verify
 binpm verify --require-verified
-```
-
-## Documentation Validation
-
-Run the docs build before publishing documentation changes:
-
-```bash
-pnpm --filter binpm-docs test
 ```

@@ -1,6 +1,6 @@
 # Local Tooling
 
-binpm local tooling is anchored by committed manifest and lockfile documents at the repository root.
+binpm local tooling is anchored by committed `binpm.toml` and `binpm.lock` files in your project.
 
 ## Manifest
 
@@ -15,7 +15,7 @@ version = "14.1.1"
 bin = "rg"
 ```
 
-Tool command names must be executable basenames. Path separators, `.` and `..` are invalid command names.
+Tool command names are executable basenames. Path separators, `.` and `..` are invalid command names.
 
 `bin` stores the selected upstream executable name or archive member path. Prefer setting it through the CLI:
 
@@ -29,18 +29,16 @@ Target-specific asset overrides use `[tools.<cmd>.targets.<target-key>]`.
 
 ## Lockfile
 
-`binpm.lock` is the committed deterministic project-local resolution file. It records release tags, target-specific assets, selected binaries, checksums, and installed paths.
+`binpm.lock` is the committed deterministic project-local resolution file. It records the selected release, target-specific asset, selected binary, checksum, and installed path needed to reproduce the tool install.
 
-Lockfile records must not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata.
+Lockfiles do not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata.
 
-Committed lockfiles must store sanitized canonical asset URLs only. They must never store query strings, fragments, credential-bearing URLs, or expiring signed download URLs.
+Committed lockfiles store sanitized asset URLs only. They do not store query strings, fragments, credential-bearing URLs, or expiring signed download URLs.
 
 ## Local Paths
 
 Project-local executable files are installed under:
 
 ```text
-$repoRoot/.binpm/bin
+<project>/.binpm/bin
 ```
-
-Other project-local runtime state stays under `$repoRoot/.binpm`.

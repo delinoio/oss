@@ -5,7 +5,7 @@ use tracing::debug;
 
 use crate::{
     contract::{ArchiveFormat, HostTarget, SourceProvider, TargetArch, TargetLibc, TargetOs},
-    release::ReleaseAsset,
+    release::{ProviderAuth, ReleaseAsset},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +38,10 @@ impl ArtifactKind {
             Self::Unknown => "unknown",
         }
     }
+
+    pub fn is_installable(self) -> bool {
+        matches!(self, Self::Archive(_) | Self::BareExecutable)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +49,8 @@ pub struct CandidateDecision {
     pub asset_name: String,
     pub canonical_url: String,
     pub download_url: String,
+    pub download_auth: Option<ProviderAuth>,
+    pub download_accept: Option<&'static str>,
     pub kind: ArtifactKind,
     pub detected_os: Option<TargetOs>,
     pub detected_arch: Option<TargetArch>,
@@ -92,6 +98,7 @@ pub struct AssetSelection {
 pub struct ArchiveMember {
     pub path: String,
     pub executable: bool,
+    pub missing_executable_metadata: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,11 +186,47 @@ pub fn discover_archive_binary(
     target: &HostTarget,
     members: &[ArchiveMember],
 ) -> BinaryDiscovery {
-    let mut candidates = members
+    let executable_candidates = members
         .iter()
         .filter(|member| member.executable)
         .map(|member| member.path.clone())
         .collect::<Vec<_>>();
+    let executable_repo_discovery = discover_archive_binary_from_candidates(
+        repo_name,
+        target,
+        executable_candidates.clone(),
+        true,
+    );
+    if !matches!(executable_repo_discovery, BinaryDiscovery::NotFound) {
+        return executable_repo_discovery;
+    }
+
+    let executable_discovery =
+        discover_archive_binary_from_candidates(repo_name, target, executable_candidates, false);
+
+    let recoverable_candidates = members
+        .iter()
+        .filter(|member| {
+            member.missing_executable_metadata
+                && recoverable_archive_binary_name(repo_name, target, &member.path)
+        })
+        .map(|member| member.path.clone())
+        .collect::<Vec<_>>();
+    let recoverable_discovery =
+        discover_archive_binary_from_candidates(repo_name, target, recoverable_candidates, true);
+    if !matches!(recoverable_discovery, BinaryDiscovery::NotFound) {
+        return recoverable_discovery;
+    }
+
+    executable_discovery
+}
+
+fn discover_archive_binary_from_candidates(
+    repo_name: &str,
+    target: &HostTarget,
+    mut candidates: Vec<String>,
+    require_repo_name_match: bool,
+) -> BinaryDiscovery {
     candidates.sort();
 
     if candidates.is_empty() {
@@ -205,6 +248,10 @@ pub fn discover_archive_binary(
         _ => {}
     }
 
+    if require_repo_name_match {
+        return BinaryDiscovery::NotFound;
+    }
+
     let candidates = target_archive_candidates(target, candidates);
     if candidates.is_empty() {
         return BinaryDiscovery::NotFound;
@@ -222,6 +269,14 @@ pub fn discover_archive_binary(
         _ if candidates.len() == 1 => BinaryDiscovery::Selected(candidates[0].clone()),
         _ => BinaryDiscovery::Ambiguous(candidates),
     }
+}
+
+fn recoverable_archive_binary_name(repo_name: &str, target: &HostTarget, path: &str) -> bool {
+    let basename = basename(path);
+    if target.os != TargetOs::Windows && basename.to_ascii_lowercase().ends_with(".exe") {
+        return false;
+    }
+    normalized_binary_name(basename) == normalized_binary_name(repo_name)
 }
 
 pub(crate) fn target_archive_candidates(
@@ -289,11 +344,17 @@ fn score_asset(
     asset: &ReleaseAsset,
 ) -> CandidateDecision {
     let download_url = asset
+        .download_url
+        .as_deref()
+        .or(asset.provider_url.as_deref())
+        .unwrap_or(&asset.url)
+        .to_string();
+    let canonical_url = asset
         .provider_url
         .as_deref()
         .unwrap_or(&asset.url)
         .to_string();
-    let canonical_url = download_url
+    let canonical_url = canonical_url
         .split(['?', '#'])
         .next()
         .unwrap_or(&asset.url)
@@ -304,6 +365,8 @@ fn score_asset(
         asset_name: asset.name.clone(),
         canonical_url,
         download_url,
+        download_auth: asset.download_auth.clone(),
+        download_accept: asset.download_accept,
         kind,
         detected_os: target_signal.os,
         detected_arch: target_signal.arch,
@@ -351,7 +414,7 @@ fn score_asset(
     }
 
     let Some(score) = target_score(target, &target_signal) else {
-        decision.rejection_reason = Some("asset target does not match host target".to_string());
+        decision.rejection_reason = Some(target_rejection_reason(target, &target_signal));
         log_candidate(target, &decision);
         return decision;
     };
@@ -419,6 +482,28 @@ fn target_score(target: &HostTarget, signal: &TargetSignal) -> Option<i32> {
     }
 
     Some(score)
+}
+
+fn target_rejection_reason(target: &HostTarget, signal: &TargetSignal) -> String {
+    if target.os == TargetOs::Linux
+        && target.libc == TargetLibc::Musl
+        && signal.os == Some(TargetOs::Linux)
+        && signal.arch == Some(target.arch)
+        && signal.libc.is_none()
+    {
+        return "linux musl target requires an explicit libc signal; rename the asset with musl, \
+                static, portable, universal, or any, or add a target override if this binary is \
+                known to be compatible"
+            .to_string();
+    }
+
+    if target.arch == TargetArch::Armv7 && signal.os == Some(target.os) && signal.arch.is_none() {
+        return "armv7 target requires an explicit architecture token such as armv7, armv7l, or \
+                armhf"
+            .to_string();
+    }
+
+    "asset target does not match host target".to_string()
 }
 
 fn compare_candidates(left: &CandidateDecision, right: &CandidateDecision) -> Ordering {
@@ -531,7 +616,7 @@ fn arch_alias(token: &str) -> Option<TargetArch> {
         "x86_64" | "amd64" | "x64" => Some(TargetArch::X86_64),
         "aarch64" | "arm64" => Some(TargetArch::Aarch64),
         "i686" | "i386" | "x86" | "ia32" | "386" => Some(TargetArch::I686),
-        "armv7" => Some(TargetArch::Armv7),
+        "armv7" | "armv7l" | "armhf" => Some(TargetArch::Armv7),
         _ => None,
     }
 }
@@ -702,6 +787,9 @@ mod tests {
             name: name.to_string(),
             url: format!("https://example.com/{name}"),
             provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
             digest: None,
             source_archive: false,
             final_url_https: None,
@@ -716,6 +804,7 @@ mod tests {
         ArchiveMember {
             path: path.to_string(),
             executable,
+            missing_executable_metadata: !executable,
         }
     }
 
@@ -855,6 +944,22 @@ mod tests {
             "https://example.com/tool?token=secret#fragment"
         );
         assert_eq!(selected.selected.canonical_url, "https://example.com/tool");
+
+        let mut release_asset = asset("tool-x86_64-unknown-linux-gnu");
+        release_asset.url = "https://github.com/owner/tool/releases/download/v1/tool".to_string();
+        release_asset.download_url =
+            Some("https://api.github.com/repos/owner/tool/releases/assets/1".to_string());
+        let selected =
+            select_asset(SourceProvider::GitHub, &linux, &[release_asset]).expect("selected");
+
+        assert_eq!(
+            selected.selected.download_url,
+            "https://api.github.com/repos/owner/tool/releases/assets/1"
+        );
+        assert_eq!(
+            selected.selected.canonical_url,
+            "https://github.com/owner/tool/releases/download/v1/tool"
+        );
     }
 
     #[test]
@@ -869,7 +974,11 @@ mod tests {
         assert!(!decisions[0].eligible);
         assert_eq!(
             decisions[0].rejection_reason.as_deref(),
-            Some("asset target does not match host target")
+            Some(
+                "linux musl target requires an explicit libc signal; rename the asset with musl, \
+                 static, portable, universal, or any, or add a target override if this binary is \
+                 known to be compatible"
+            )
         );
     }
 
@@ -909,6 +1018,7 @@ mod tests {
     fn recognizes_cargo_dist_and_goreleaser_and_bun_deno_patterns() {
         let linux = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
         let darwin = target(TargetOs::Darwin, TargetArch::Aarch64, TargetLibc::Any);
+        let armv7 = target(TargetOs::Linux, TargetArch::Armv7, TargetLibc::Gnu);
 
         assert!(select_asset(
             SourceProvider::GitHub,
@@ -932,6 +1042,24 @@ mod tests {
             SourceProvider::GitHub,
             &linux,
             &[asset("deno-x86_64-unknown-linux-gnu.zip")]
+        )
+        .is_some());
+        assert!(select_asset(
+            SourceProvider::GitHub,
+            &armv7,
+            &[asset("tool_1.2.3_Linux_armv7.tar.gz")]
+        )
+        .is_some());
+        assert!(select_asset(
+            SourceProvider::GitHub,
+            &armv7,
+            &[asset("tool-linux-armv7l.tar.gz")]
+        )
+        .is_some());
+        assert!(select_asset(
+            SourceProvider::GitHub,
+            &armv7,
+            &[asset("tool-linux-armhf.tar.gz")]
         )
         .is_some());
     }
@@ -1037,6 +1165,71 @@ mod tests {
                 &[member("bin/linux/helper", true), member("pkg/tool", true),],
             ),
             BinaryDiscovery::Selected("pkg/tool".to_string())
+        );
+    }
+
+    #[test]
+    fn archive_binary_discovery_recovers_missing_executable_metadata_for_repo_binary() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[member("pkg/README.md", false), member("pkg/tool", false),],
+            ),
+            BinaryDiscovery::Selected("pkg/tool".to_string())
+        );
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[
+                    member("bin/darwin/tool", false),
+                    member("bin/linux-x64/tool", false),
+                ],
+            ),
+            BinaryDiscovery::Selected("bin/linux-x64/tool".to_string())
+        );
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[member("pkg/install.sh", true), member("pkg/tool", false),],
+            ),
+            BinaryDiscovery::Selected("pkg/tool".to_string())
+        );
+    }
+
+    #[test]
+    fn archive_binary_discovery_does_not_guess_non_executable_non_repo_files() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[member("pkg/alpha", false), member("pkg/beta", false)],
+            ),
+            BinaryDiscovery::NotFound
+        );
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[
+                    member("linux-x64/README", false),
+                    member("linux-x64/LICENSE", false)
+                ],
+            ),
+            BinaryDiscovery::NotFound
+        );
+    }
+
+    #[test]
+    fn archive_binary_discovery_does_not_recover_windows_exe_on_posix_target() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        assert_eq!(
+            discover_archive_binary("tool", &host, &[member("pkg/tool.exe", false)]),
+            BinaryDiscovery::NotFound
         );
     }
 }
