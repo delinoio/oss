@@ -2058,13 +2058,14 @@ fn read_tar_selected_binary<R: Read>(
     )
 }
 
-fn read_zip_selected_binary<R: Read + std::io::Seek>(
-    reader: R,
+fn read_zip_selected_binary(
+    reader: Cursor<Vec<u8>>,
     asset_name: &str,
     repo_name: &str,
     target: &HostTarget,
     explicit_binary: Option<&str>,
 ) -> Result<SelectedArchiveBinary> {
+    let zip_entry_systems = zip_central_directory_systems(reader.get_ref());
     let mut archive =
         zip::ZipArchive::new(reader).map_err(|error| BinpmError::ArchiveExtraction {
             asset: asset_name.to_string(),
@@ -2100,7 +2101,9 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
         let unix_mode = file.unix_mode();
         let has_executable_mode = unix_mode.map(|mode| mode & 0o111 != 0).unwrap_or(false);
         let executable = has_executable_mode || archive_exe_is_executable(&path, target);
-        let missing_executable_metadata = unix_mode.is_none()
+        let has_real_unix_mode =
+            zip_file_has_real_unix_mode(&zip_entry_systems, file.name(), unix_mode);
+        let missing_executable_metadata = !has_real_unix_mode
             && !executable
             && target.os != TargetOs::Windows
             && !path.to_ascii_lowercase().ends_with(".exe");
@@ -2128,6 +2131,73 @@ fn read_zip_selected_binary<R: Read + std::io::Seek>(
         members,
         member_bytes,
     )
+}
+
+fn zip_central_directory_systems(bytes: &[u8]) -> BTreeMap<String, u8> {
+    const CENTRAL_DIRECTORY_SIGNATURE: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+    const CENTRAL_DIRECTORY_HEADER_LEN: usize = 46;
+    const VERSION_MADE_BY_SYSTEM_OFFSET: usize = 5;
+    const FILE_NAME_LENGTH_OFFSET: usize = 28;
+    const EXTRA_FIELD_LENGTH_OFFSET: usize = 30;
+    const FILE_COMMENT_LENGTH_OFFSET: usize = 32;
+
+    let mut systems = BTreeMap::new();
+    let mut index = 0;
+    while index + CENTRAL_DIRECTORY_HEADER_LEN <= bytes.len() {
+        if !bytes[index..].starts_with(&CENTRAL_DIRECTORY_SIGNATURE) {
+            index += 1;
+            continue;
+        }
+
+        let name_len = u16::from_le_bytes([
+            bytes[index + FILE_NAME_LENGTH_OFFSET],
+            bytes[index + FILE_NAME_LENGTH_OFFSET + 1],
+        ]) as usize;
+        let extra_len = u16::from_le_bytes([
+            bytes[index + EXTRA_FIELD_LENGTH_OFFSET],
+            bytes[index + EXTRA_FIELD_LENGTH_OFFSET + 1],
+        ]) as usize;
+        let comment_len = u16::from_le_bytes([
+            bytes[index + FILE_COMMENT_LENGTH_OFFSET],
+            bytes[index + FILE_COMMENT_LENGTH_OFFSET + 1],
+        ]) as usize;
+        let name_start = index + CENTRAL_DIRECTORY_HEADER_LEN;
+        let Some(name_end) = name_start.checked_add(name_len) else {
+            break;
+        };
+        let Some(next_index) = name_end
+            .checked_add(extra_len)
+            .and_then(|offset| offset.checked_add(comment_len))
+        else {
+            break;
+        };
+        if next_index > bytes.len() {
+            break;
+        }
+
+        if let Ok(name) = std::str::from_utf8(&bytes[name_start..name_end]) {
+            systems.insert(
+                name.to_string(),
+                bytes[index + VERSION_MADE_BY_SYSTEM_OFFSET],
+            );
+        }
+        index = next_index;
+    }
+    systems
+}
+
+fn zip_file_has_real_unix_mode(
+    entry_systems: &BTreeMap<String, u8>,
+    file_name: &str,
+    unix_mode: Option<u32>,
+) -> bool {
+    const ZIP_SYSTEM_UNIX: u8 = 3;
+
+    unix_mode.is_some()
+        && entry_systems
+            .get(file_name)
+            .map(|system| *system == ZIP_SYSTEM_UNIX)
+            .unwrap_or(true)
 }
 
 fn zip_file_is_symlink(unix_mode: Option<u32>) -> bool {
@@ -4236,6 +4306,40 @@ mod tests {
                 .mode();
             assert_ne!(mode & 0o111, 0);
         }
+    }
+
+    #[test]
+    fn zip_extraction_treats_dos_attributes_as_missing_executable_metadata() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let archive_path = temp_dir.path().join("tool.zip");
+        write_zip_with_dos_archive_attributes(
+            &archive_path,
+            &[
+                (
+                    "pkg/install.sh",
+                    b"#!/bin/sh\necho install\n".as_slice(),
+                    0o100755,
+                ),
+                (
+                    "pkg/tool",
+                    b"#!/bin/sh\necho recovered\n".as_slice(),
+                    0o100644,
+                ),
+            ],
+        );
+
+        let selected = read_archive_selected_binary(
+            &archive_path,
+            ArchiveFormat::Zip,
+            "tool.zip",
+            "tool",
+            &linux_target(),
+            None,
+        )
+        .expect("selected repo binary with DOS-only metadata");
+
+        assert_eq!(selected.path, "pkg/tool");
+        assert_eq!(selected.bytes, b"#!/bin/sh\necho recovered\n");
     }
 
     #[test]
@@ -7367,6 +7471,23 @@ mod tests {
             if bytes[index..].starts_with(&[0x50, 0x4b, 0x01, 0x02]) {
                 bytes[index + 5] = 0;
                 bytes[index + 38..index + 42].copy_from_slice(&0u32.to_le_bytes());
+                index += 46;
+            } else {
+                index += 1;
+            }
+        }
+        fs::write(path, bytes).expect("write zip metadata patch");
+    }
+
+    fn write_zip_with_dos_archive_attributes(path: &Path, entries: &[(&str, &[u8], u32)]) {
+        write_zip(path, entries);
+
+        let mut bytes = fs::read(path).expect("read zip for metadata patch");
+        let mut index = 0;
+        while index + 46 <= bytes.len() {
+            if bytes[index..].starts_with(&[0x50, 0x4b, 0x01, 0x02]) {
+                bytes[index + 5] = 0;
+                bytes[index + 38..index + 42].copy_from_slice(&0x20u32.to_le_bytes());
                 index += 46;
             } else {
                 index += 1;

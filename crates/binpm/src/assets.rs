@@ -185,11 +185,18 @@ pub fn discover_archive_binary(
         .filter(|member| member.executable)
         .map(|member| member.path.clone())
         .collect::<Vec<_>>();
+    let executable_repo_discovery = discover_archive_binary_from_candidates(
+        repo_name,
+        target,
+        executable_candidates.clone(),
+        true,
+    );
+    if !matches!(executable_repo_discovery, BinaryDiscovery::NotFound) {
+        return executable_repo_discovery;
+    }
+
     let executable_discovery =
         discover_archive_binary_from_candidates(repo_name, target, executable_candidates, false);
-    if !matches!(executable_discovery, BinaryDiscovery::NotFound) {
-        return executable_discovery;
-    }
 
     let recoverable_candidates = members
         .iter()
@@ -199,7 +206,13 @@ pub fn discover_archive_binary(
         })
         .map(|member| member.path.clone())
         .collect::<Vec<_>>();
-    discover_archive_binary_from_candidates(repo_name, target, recoverable_candidates, true)
+    let recoverable_discovery =
+        discover_archive_binary_from_candidates(repo_name, target, recoverable_candidates, true);
+    if !matches!(recoverable_discovery, BinaryDiscovery::NotFound) {
+        return recoverable_discovery;
+    }
+
+    executable_discovery
 }
 
 fn discover_archive_binary_from_candidates(
@@ -1098,6 +1111,14 @@ mod tests {
                 ],
             ),
             BinaryDiscovery::Selected("bin/linux-x64/tool".to_string())
+        );
+        assert_eq!(
+            discover_archive_binary(
+                "tool",
+                &host,
+                &[member("pkg/install.sh", true), member("pkg/tool", false),],
+            ),
+            BinaryDiscovery::Selected("pkg/tool".to_string())
         );
     }
 
