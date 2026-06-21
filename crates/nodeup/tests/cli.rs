@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use assert_cmd::Command;
+use assert_cmd::{assert::OutputAssertExt, Command};
 use httpmock::{Method::GET, MockServer};
 use predicates::prelude::PredicateBooleanExt;
 use serde_json::Value;
@@ -294,6 +294,9 @@ fn help_lists_top_level_subcommand_descriptions() {
             "Manage directory-scoped runtime overrides",
         ))
         .stdout(predicates::str::contains(
+            "Manage executable-name dispatch shims",
+        ))
+        .stdout(predicates::str::contains(
             "Generate shell completion scripts",
         ));
 }
@@ -327,6 +330,12 @@ fn help_lists_nested_subcommand_descriptions() {
         .stdout(predicates::str::contains(
             "Remove a runtime override for a directory",
         ));
+
+    env.command()
+        .args(["shim", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Create or repair managed shims"));
 }
 
 #[test]
@@ -1919,9 +1928,9 @@ fn completions_accepts_valid_top_level_scope() {
 
     let output = env
         .command()
-        .args(["completions", "bash", "show"])
+        .args(["completions", "bash", "shim"])
         .output()
-        .expect("completions bash show");
+        .expect("completions bash shim");
 
     assert!(output.status.success());
     assert!(!output.stdout.is_empty());
@@ -2206,6 +2215,453 @@ fn self_uninstall_reports_already_clean_on_repeated_runs() {
 
 #[test]
 #[serial]
+fn self_uninstall_reports_cleanup_boundaries_and_manual_steps() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-leftover");
+    let binary_path = env.root.join("bin").join("nodeup");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+    #[cfg(unix)]
+    let shim_path = {
+        let shim_path = shim_dir.join("node");
+        std::os::unix::fs::symlink(&binary_path, &shim_path).unwrap();
+        shim_path
+    };
+    #[cfg(not(unix))]
+    let shim_path = {
+        let shim_path = shim_dir.join("node.exe");
+        fs::write(&shim_path, "shim").unwrap();
+        fs::write(shim_dir.join(".node.exe.nodeup-shim"), "nodeup shim copy\n").unwrap();
+        shim_path
+    };
+    fs::write(env.config_root.join("config-marker.txt"), "config").unwrap();
+
+    env.command()
+        .env("NODEUP_SHIM_DIR", &shim_dir)
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"removed_paths\""))
+        .stdout(predicates::str::contains("\"cleanup_boundaries\""))
+        .stdout(predicates::str::contains("\"category\": \"binary\""))
+        .stdout(predicates::str::contains("\"category\": \"shims\""))
+        .stdout(predicates::str::contains(
+            "\"category\": \"shell-profile-path\"",
+        ))
+        .stdout(predicates::str::contains("\"remaining_manual_steps\""))
+        .stdout(predicates::str::contains(binary_path.to_str().unwrap()))
+        .stdout(predicates::str::contains(shim_path.to_str().unwrap()));
+
+    assert!(binary_path.exists());
+    assert!(shim_path.exists() || fs::symlink_metadata(&shim_path).is_ok());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_reports_default_setup_shim_leftovers() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join(".local").join("bin");
+    let node_shim = if cfg!(windows) {
+        shim_dir.join("node.exe")
+    } else {
+        shim_dir.join("node")
+    };
+
+    env.command()
+        .env("HOME", &env.root)
+        .args(["shim", "setup"])
+        .assert()
+        .success();
+
+    env.command()
+        .env("HOME", &env.root)
+        .args(["--output", "json", "self", "uninstall"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(node_shim.to_str().unwrap()));
+
+    assert!(node_shim.exists());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_preserves_configured_shim_dir_inside_removed_root() {
+    let env = TestEnv::new();
+    let shim_dir = env.data_root.join("shims");
+    let binary_path = env.root.join("bin").join("nodeup");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+    fs::write(env.data_root.join("data-marker.txt"), "data").unwrap();
+
+    #[cfg(unix)]
+    let shim_path = {
+        let shim_path = shim_dir.join("node");
+        std::os::unix::fs::symlink(&binary_path, &shim_path).unwrap();
+        shim_path
+    };
+    #[cfg(not(unix))]
+    let shim_path = {
+        let shim_path = shim_dir.join("node.exe");
+        fs::write(&shim_path, "shim").unwrap();
+        fs::write(shim_dir.join(".node.exe.nodeup-shim"), "nodeup shim copy\n").unwrap();
+        shim_path
+    };
+
+    let output = env
+        .command()
+        .env("NODEUP_SHIM_DIR", &shim_dir)
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves configured shim dir");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == shim_path.to_str().unwrap()));
+    assert!(payload["removed_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == env.data_root.to_str().unwrap()));
+    assert!(shim_path.exists() || fs::symlink_metadata(&shim_path).is_ok());
+    assert!(!env.data_root.join("data-marker.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn self_uninstall_preserves_configured_symlinked_shim_dir_inside_removed_root() {
+    let env = TestEnv::new();
+    let real_shim_dir = env.root.join("real-shims");
+    let shim_dir = env.data_root.join("linked-shims");
+    let binary_path = env.root.join("bin").join("nodeup");
+    fs::create_dir_all(&real_shim_dir).unwrap();
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+    fs::write(env.data_root.join("data-marker.txt"), "data").unwrap();
+    std::os::unix::fs::symlink(&real_shim_dir, &shim_dir).unwrap();
+
+    let shim_path = shim_dir.join("node");
+    std::os::unix::fs::symlink(&binary_path, real_shim_dir.join("node")).unwrap();
+
+    let output = env
+        .command()
+        .env("NODEUP_SHIM_DIR", &shim_dir)
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves configured symlinked shim dir");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == shim_path.to_str().unwrap()));
+    assert!(fs::symlink_metadata(&shim_dir).is_ok());
+    assert!(fs::symlink_metadata(&shim_path).is_ok());
+    assert!(!env.data_root.join("data-marker.txt").exists());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_preserves_custom_managed_shim_dir_inside_removed_root() {
+    let env = TestEnv::new();
+    let shim_dir = env.data_root.join("my-shims");
+    fs::write(env.data_root.join("data-marker.txt"), "data").unwrap();
+
+    env.command()
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let node_shim = if cfg!(windows) {
+        shim_dir.join("node.exe")
+    } else {
+        shim_dir.join("node")
+    };
+
+    let output = env
+        .command()
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves custom managed shim dir");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == node_shim.to_str().unwrap()));
+    assert!(payload["removed_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == env.data_root.to_str().unwrap()));
+    assert!(node_shim.exists() || fs::symlink_metadata(&node_shim).is_ok());
+    assert!(!env.data_root.join("data-marker.txt").exists());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_preserves_custom_managed_shim_dir_under_default_data_root() {
+    let env = TestEnv::new();
+    let data_root = env.root.join(".local").join("share").join("nodeup");
+    let shim_dir = data_root.join("my-shims");
+    fs::create_dir_all(&data_root).unwrap();
+    fs::write(data_root.join("data-marker.txt"), "data").unwrap();
+
+    Command::new(assert_cmd::cargo::cargo_bin!("nodeup"))
+        .env("HOME", &env.root)
+        .env("NODEUP_INDEX_URL", &env.index_url)
+        .env("NODEUP_DOWNLOAD_BASE_URL", &env.download_base_url)
+        .env("NODEUP_FORCE_PLATFORM", "linux-x64")
+        .env("NODEUP_LOG_COLOR", "never")
+        .env("RUST_LOG", "off")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .success();
+
+    let node_shim = if cfg!(windows) {
+        shim_dir.join("node.exe")
+    } else {
+        shim_dir.join("node")
+    };
+
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("nodeup"))
+        .env("HOME", &env.root)
+        .env("NODEUP_INDEX_URL", &env.index_url)
+        .env("NODEUP_DOWNLOAD_BASE_URL", &env.download_base_url)
+        .env("NODEUP_FORCE_PLATFORM", "linux-x64")
+        .env("NODEUP_LOG_COLOR", "never")
+        .env("RUST_LOG", "off")
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves default-root custom managed shim dir");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == node_shim.to_str().unwrap()));
+    assert!(payload["removed_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == data_root.to_str().unwrap()));
+    assert!(node_shim.exists() || fs::symlink_metadata(&node_shim).is_ok());
+    assert!(!data_root.join("data-marker.txt").exists());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_reports_renamed_binary_cleanup_boundary() {
+    let env = TestEnv::new();
+    let binary_path = env.root.join("bin").join("nodeup-linux-amd64");
+    let shim_dir = env.root.join("nodeup-shims-leftover");
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+    fs::write(env.config_root.join("config-marker.txt"), "config").unwrap();
+    #[cfg(unix)]
+    let shim_path = {
+        let shim_path = shim_dir.join("node");
+        std::os::unix::fs::symlink(&binary_path, &shim_path).unwrap();
+        Some(shim_path)
+    };
+    #[cfg(not(unix))]
+    let shim_path: Option<PathBuf> = None;
+
+    let output = env
+        .command()
+        .env("NODEUP_SHIM_DIR", &shim_dir)
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall reports renamed binary boundary");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let binary_boundary = payload["cleanup_boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|boundary| boundary["category"] == "binary")
+        .unwrap();
+    assert!(binary_boundary["paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == binary_path.to_str().unwrap()));
+    if let Some(shim_path) = shim_path {
+        assert!(payload["likely_leftover_paths"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|path| path == shim_path.to_str().unwrap()));
+    }
+    assert!(binary_path.exists());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_preserves_configured_binary_inside_removed_root() {
+    let env = TestEnv::new();
+    let binary_path = env.data_root.join("bin").join("nodeup-linux-amd64");
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+    fs::write(env.data_root.join("data-marker.txt"), "data").unwrap();
+
+    let output = env
+        .command()
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves configured binary");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["status"], "removed");
+    assert!(payload["removed_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == env.data_root.to_str().unwrap()));
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == binary_path.to_str().unwrap()));
+    assert!(binary_path.exists());
+    assert!(!env.data_root.join("data-marker.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn self_uninstall_preserves_configured_binary_symlink_inside_removed_root() {
+    let env = TestEnv::new();
+    let real_binary_path = env.root.join("bin").join("nodeup-linux-amd64");
+    let binary_path = env.data_root.join("bin").join("nodeup");
+    fs::create_dir_all(real_binary_path.parent().unwrap()).unwrap();
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&real_binary_path, "nodeup").unwrap();
+    std::os::unix::fs::symlink(&real_binary_path, &binary_path).unwrap();
+    fs::write(env.data_root.join("data-marker.txt"), "data").unwrap();
+
+    let output = env
+        .command()
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves configured binary symlink");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == binary_path.to_str().unwrap()));
+    assert!(fs::symlink_metadata(&binary_path).is_ok());
+    assert!(!env.data_root.join("data-marker.txt").exists());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_ignores_unowned_default_shim_leftovers() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join(".local").join("bin");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::write(shim_dir.join("node"), "unrelated-node").unwrap();
+
+    let output = env
+        .command()
+        .env("HOME", &env.root)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall ignores unowned shims");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains(shim_dir.join("node").to_str().unwrap()));
+    assert!(shim_dir.join("node").exists());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_reports_normalized_cleanup_boundary_paths() {
+    let env = TestEnv::new();
+    let data_root = env.root.join("nodeup-data-relative");
+    let cache_root = env.root.join("nodeup-cache-relative");
+    let config_root = env.root.join("nodeup-config-relative");
+    fs::create_dir_all(&data_root).unwrap();
+    fs::create_dir_all(&cache_root).unwrap();
+    fs::create_dir_all(&config_root).unwrap();
+    fs::write(config_root.join("settings.toml"), "schema_version = 1\n").unwrap();
+
+    let output = Command::new(assert_cmd::cargo::cargo_bin!("nodeup"))
+        .current_dir(&env.root)
+        .env("NODEUP_DATA_HOME", "nodeup-data-relative")
+        .env("NODEUP_CACHE_HOME", "nodeup-cache-relative")
+        .env("NODEUP_CONFIG_HOME", "nodeup-config-relative")
+        .env("NODEUP_INDEX_URL", &env.index_url)
+        .env("NODEUP_DOWNLOAD_BASE_URL", &env.download_base_url)
+        .env("NODEUP_FORCE_PLATFORM", "linux-x64")
+        .env("NODEUP_LOG_COLOR", "never")
+        .env("RUST_LOG", "off")
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall relative roots");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let config_boundary = payload["cleanup_boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|boundary| boundary["category"] == "config")
+        .unwrap();
+    assert_eq!(
+        config_boundary["paths"][0].as_str().unwrap(),
+        config_root.to_str().unwrap()
+    );
+}
+
+#[test]
+#[serial]
+fn self_uninstall_refuses_root_containing_running_binary() {
+    let env = TestEnv::new();
+    let binary_path = env.data_root.join("bin").join("nodeup");
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::copy(assert_cmd::cargo::cargo_bin!("nodeup"), &binary_path).unwrap();
+    fs::write(env.data_root.join("data-marker.txt"), "data").unwrap();
+
+    env.command_with_program(&binary_path)
+        .args(["self", "uninstall"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to uninstall path containing the running nodeup binary",
+        ));
+
+    assert!(binary_path.exists());
+    assert!(env.data_root.join("data-marker.txt").exists());
+}
+
+#[test]
+#[serial]
 fn self_uninstall_rejects_non_nodeup_owned_paths() {
     let env = TestEnv::new();
     let unsafe_root = env.root.join("unsafe-home");
@@ -2272,6 +2728,464 @@ fn self_uninstall_validates_all_roots_before_deleting() {
     assert!(safe_data_root.join("keep-data.txt").exists());
     assert!(safe_cache_root.exists());
     assert!(safe_cache_root.join("keep-cache.txt").exists());
+}
+
+#[test]
+#[serial]
+fn shim_setup_creates_all_aliases_and_reports_path_guidance() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims");
+
+    env.command()
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"status\": \"created\""))
+        .stdout(predicates::str::contains("\"path_active\": false"));
+
+    if cfg!(windows) {
+        env.command()
+            .args([
+                "--output",
+                "json",
+                "shim",
+                "setup",
+                "--dir",
+                shim_dir.to_str().unwrap(),
+            ])
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("$env:Path ="));
+
+        for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
+            assert!(shim_dir.join(format!("{alias}.exe")).is_file());
+        }
+    } else {
+        env.command()
+            .args([
+                "--output",
+                "json",
+                "shim",
+                "setup",
+                "--dir",
+                shim_dir.to_str().unwrap(),
+            ])
+            .assert()
+            .success()
+            .stdout(predicates::str::contains("export PATH="));
+
+        for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
+            assert!(fs::symlink_metadata(shim_dir.join(alias)).is_ok());
+        }
+    }
+}
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn shim_setup_escapes_posix_path_guidance() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-$(touch pwn)'quoted");
+    let shim_dir_text = shim_dir.to_str().unwrap();
+    let expected = format!(
+        "export PATH='{}':\"$PATH\"",
+        shim_dir_text.replace('\'', "'\"'\"'")
+    );
+
+    env.command()
+        .env("PATH", env.root.join("empty-path"))
+        .args(["shim", "setup", "--dir", shim_dir_text])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(expected));
+}
+
+#[test]
+#[serial]
+fn shim_setup_is_idempotent_for_existing_valid_aliases() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-idempotent");
+
+    env.command()
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .success();
+
+    env.command()
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "\"status\": \"already-configured\"",
+        ))
+        .stdout(predicates::str::contains("\"status\": \"existing\""));
+}
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn shim_setup_repairs_copied_unix_alias_to_symlink() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-copied-alias");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let copied_alias = shim_dir.join("node");
+    fs::copy(assert_cmd::cargo::cargo_bin!("nodeup"), &copied_alias).unwrap();
+
+    env.command()
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"status\": \"repaired\""))
+        .stdout(predicates::str::contains("\"alias\": \"node\""));
+
+    assert!(fs::symlink_metadata(&copied_alias)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+}
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn shim_setup_repairs_stale_symlink_alias() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-repair");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let stale_target_dir = env.root.join("old-nodeup-bin");
+    fs::create_dir_all(&stale_target_dir).unwrap();
+    let stale_target = stale_target_dir.join("nodeup");
+    fs::write(&stale_target, "old").unwrap();
+    std::os::unix::fs::symlink(&stale_target, shim_dir.join("node")).unwrap();
+
+    env.command()
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"status\": \"repaired\""))
+        .stdout(predicates::str::contains("\"alias\": \"node\""));
+
+    let repaired_target = fs::read_link(shim_dir.join("node")).unwrap();
+    assert_ne!(repaired_target, stale_target);
+}
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn shim_setup_refuses_unrelated_symlink_alias() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-conflict");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let existing_target = env.root.join("node");
+    fs::write(&existing_target, "existing-node").unwrap();
+    std::os::unix::fs::symlink(&existing_target, shim_dir.join("node")).unwrap();
+
+    env.command()
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to replace non-nodeup shim target",
+        ));
+
+    assert_eq!(
+        fs::read_link(shim_dir.join("node")).unwrap(),
+        existing_target
+    );
+}
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn shim_setup_preflights_conflicts_before_creating_aliases() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-preflight");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let existing_target = env.root.join("npm");
+    fs::write(&existing_target, "existing-npm").unwrap();
+    std::os::unix::fs::symlink(&existing_target, shim_dir.join("npm")).unwrap();
+
+    env.command()
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to replace non-nodeup shim target",
+        ));
+
+    assert!(!shim_dir.join("node").exists());
+    assert_eq!(
+        fs::read_link(shim_dir.join("npm")).unwrap(),
+        existing_target
+    );
+}
+
+#[test]
+#[serial]
+fn shim_setup_uses_copy_mode_for_windows_hosts() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows");
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"method\": \"copy\""))
+        .stdout(predicates::str::contains("$env:Path = "))
+        .stdout(predicates::str::contains(" + $env:Path"))
+        .stdout(predicates::str::contains("; add ").not());
+
+    for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
+        assert!(shim_dir.join(format!("{alias}.exe")).is_file());
+    }
+}
+
+#[test]
+#[serial]
+fn shim_setup_refuses_existing_windows_executable() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-conflict");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let existing_node = shim_dir.join("node.exe");
+    fs::write(&existing_node, "existing-node").unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to replace existing shim target with different content",
+        ));
+
+    assert_eq!(fs::read_to_string(existing_node).unwrap(), "existing-node");
+}
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn shim_setup_refuses_windows_copy_mode_symlink_alias() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-symlink-conflict");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let external_target = env.root.join("external-node.exe");
+    let node = shim_dir.join("node.exe");
+    fs::write(&external_target, "external-node").unwrap();
+    std::os::unix::fs::symlink(&external_target, &node).unwrap();
+    fs::write(shim_dir.join(".node.exe.nodeup-shim"), "nodeup shim copy\n").unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to replace symlink shim target in copy mode",
+        ));
+
+    assert_eq!(
+        fs::read_to_string(&external_target).unwrap(),
+        "external-node"
+    );
+    assert_eq!(fs::read_link(node).unwrap(), external_target);
+}
+
+#[test]
+#[serial]
+fn shim_setup_repairs_marked_windows_copy_alias() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-repair");
+    let node = shim_dir.join("node.exe");
+    let marker = shim_dir.join(".node.exe.nodeup-shim");
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .success();
+
+    assert!(marker.is_file());
+    let original = fs::read(&node).unwrap();
+    fs::write(&node, "old-nodeup-copy").unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"status\": \"repaired\""))
+        .stdout(predicates::str::contains("\"alias\": \"node\""));
+
+    assert_eq!(fs::read(node).unwrap(), original);
+    assert!(marker.is_file());
+}
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn shim_setup_refuses_symlinked_windows_copy_marker() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-marker-symlink");
+    let node = shim_dir.join("node.exe");
+    let marker = shim_dir.join(".node.exe.nodeup-shim");
+    let external_marker_target = env.root.join("external-marker");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::write(&node, "old-nodeup-copy").unwrap();
+    fs::write(&external_marker_target, "external-marker").unwrap();
+    std::os::unix::fs::symlink(&external_marker_target, &marker).unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to use symlink Windows shim ownership marker",
+        ));
+
+    assert_eq!(fs::read_to_string(&node).unwrap(), "old-nodeup-copy");
+    assert_eq!(
+        fs::read_to_string(&external_marker_target).unwrap(),
+        "external-marker"
+    );
+    assert_eq!(fs::read_link(marker).unwrap(), external_marker_target);
+}
+
+#[test]
+#[serial]
+fn shim_setup_preflights_invalid_windows_copy_marker_before_create() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-marker-dir");
+    let node = shim_dir.join("node.exe");
+    let marker = shim_dir.join(".node.exe.nodeup-shim");
+    fs::create_dir_all(&marker).unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to use non-file Windows shim ownership marker",
+        ));
+
+    assert!(!node.exists());
+    assert!(marker.is_dir());
+}
+
+#[test]
+#[serial]
+fn shim_setup_backfills_marker_for_existing_windows_copy_alias() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-backfill");
+    let node = shim_dir.join("node.exe");
+    let marker = shim_dir.join(".node.exe.nodeup-shim");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::copy(assert_cmd::cargo::cargo_bin!("nodeup"), &node).unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\"alias\": \"node\""))
+        .stdout(predicates::str::contains("\"status\": \"existing\""));
+
+    assert!(marker.is_file());
+}
+
+#[test]
+#[serial]
+fn shim_setup_preflights_windows_conflicts_before_creating_aliases() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-preflight");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let existing_npm = shim_dir.join("npm.exe");
+    fs::write(&existing_npm, "existing-npm").unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to replace existing shim target with different content",
+        ));
+
+    assert!(!shim_dir.join("node.exe").exists());
+    assert_eq!(fs::read_to_string(existing_npm).unwrap(), "existing-npm");
+}
+
+#[test]
+#[serial]
+fn shim_setup_refuses_windows_pathext_alias_conflicts() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-windows-pathext");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let existing_npm = shim_dir.join("npm.cmd");
+    fs::write(&existing_npm, "existing-npm").unwrap();
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args(["shim", "setup", "--dir", shim_dir.to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "Refusing to create Windows .exe shim because another command name already exists",
+        ));
+
+    assert!(!shim_dir.join("node.exe").exists());
+    assert!(!shim_dir.join("npm.exe").exists());
+    assert_eq!(fs::read_to_string(existing_npm).unwrap(), "existing-npm");
 }
 
 #[test]

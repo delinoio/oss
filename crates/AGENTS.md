@@ -30,9 +30,12 @@
 ### nodeup-Specific Rules
 
 - Preserve rustup-like shim behavior: symlink strategy plus executable-name dispatch.
+- Keep `nodeup shim setup` as the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.
+- Keep Windows shim setup documented and implemented as copied `.exe` aliases with adjacent Nodeup ownership marker files because symlink privileges are not guaranteed and stale copies must be repairable without replacing unrelated executables.
+- Keep `nodeup self uninstall` scoped to Nodeup-owned data, cache, and config roots; binary, shim, and shell profile/PATH cleanup must remain manual and visible in human and JSON output.
 - Keep channel and command identifiers stable and documented.
 - Record storage and download behavior in project docs whenever changed.
-- Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs.
+- Keep direct installers and `cargo-binstall` metadata aligned with release asset names, signing contracts, and install docs. Nodeup direct installers must preflight missing `cosign` before release lookup or artifact download, and `cargo-binstall` must stay first-party-asset-only with `quick-install` and `compile` fallbacks disabled.
 - Keep unsupported x86 host handling aligned across direct installers, runtime installation, shim dispatch, JSON diagnostics, and Nodeup docs.
 
 ### binpm-Specific Rules
@@ -44,7 +47,10 @@
 - Keep cache management and diagnostic command identifiers stable as `binpm cache list`, `binpm cache prune`, `binpm cache clean`, and `binpm cache key`.
 - Ensure cache reuse is always verified against provider asset digests, upstream checksum material, successfully verified signatures, or locally recorded SHA-256 metadata before extraction or install finalization.
 - Keep cache cleanup behavior separate from uninstall behavior: cache pruning and cleaning must not remove package records or executable links/copies under `~/.binpm/bin`.
+- Keep `binpm cache clean` output explicit about removing global cache asset entries while preserving cache references, package records, and executable links/copies.
+- Keep `binpm cache prune` responsible for stale structured local-project cache-reference cleanup before asset pruning; legacy plain-text references remain preserving until rewritten.
 - Keep `binpm cache key` read-only; it must not download, install, or populate cache entries.
+- Keep `binpm cache key` explicit about missing lockfiles through a human warning or structured JSON status.
 - Keep source identifiers aligned with the documented enum contract: `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
 - Keep provider token selection host-scoped: GitHub.com may use `BINPM_GITHUB_TOKEN_GITHUB_COM`, `BINPM_GITHUB_TOKEN`, or `GITHUB_TOKEN`; GitHub Enterprise must use `BINPM_GITHUB_TOKEN_<NORMALIZED_HOST>`; GitLab.com may use `BINPM_GITLAB_TOKEN_GITLAB_COM`, `BINPM_GITLAB_TOKEN`, or `GITLAB_TOKEN`; self-managed GitLab must use `BINPM_GITLAB_TOKEN_<NORMALIZED_HOST>`. For explicit hosts, `<NORMALIZED_HOST>` must encode non-ASCII-alphanumeric UTF-8 bytes as `_HH_` uppercase hexadecimal so distinct hosts cannot share a token variable. Generic SaaS tokens must not be sent to enterprise or self-managed hosts.
 - Keep release lookup diagnostics distinct for missing authentication, insufficient permissions, and rate limiting, and keep tokens, authorization headers, private-token headers, query strings, fragments, and credential-bearing URLs out of logs, errors, persisted URLs, cache metadata, package records, and lockfiles.
@@ -53,7 +59,7 @@
 - Keep GitLab release asset link selection HTTPS-only before candidate scoring and download, including final redirect targets.
 - Keep GitLab generated `assets.sources` source archives out of installable asset scoring.
 - Preserve `binpm.toml` and `binpm.lock` as the canonical project-local declaration and resolution files, with project-local executables installed under `$repoRoot/.binpm/bin`.
-- Keep `binpm init` manifest creation rooted at the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory.
+- Keep `binpm init` manifest creation rooted at the current Git worktree root when available, otherwise the nearest ancestor containing `binpm.toml` when present, otherwise the current directory. Keep init output explicit: print the resolved full manifest destination before creation or overwrite refusal, then print a clear created-manifest line after successful creation. Do not add current-directory or alternate-root init flags unless the docs contract adds them first.
 - Keep target-specific asset overrides under `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.
 - Keep `binpm explain` diagnostics actionable for target-scoring failures: use canonical target keys in generated override snippets, avoid credential-bearing URLs and transient machine paths, and distinguish unsupported installer-only releases from missing release assets.
 - Preserve stable `--json` output for read-only binpm diagnostics (`list`, `info`, `outdated`, `doctor`, `explain`, `verify`, and `cache list`): emit one compact JSON object on stdout for success, avoid ANSI color in JSON-mode command output, keep parseable stderr error envelopes with `error.message` and `error.exit_code`, and reuse documented enum values for scope, target, checksum source, and verification state.
@@ -64,7 +70,8 @@
 - Keep release asset selection deterministic and documented by OS, CPU architecture, and libc/ABI environment.
 - Keep checksum/signature fallback behavior aligned with `docs/project-binpm.md` and `docs/crates-binpm-foundation.md`.
 - Keep strict verification behavior aligned with `--require-verified` and `binpm verify --require-verified`; signature material must count only after successful verification under a documented trust policy.
-- Keep local `binpm install`, `binpm update`, and `binpm x` behavior aligned with `--frozen-lockfile`, default `CI=true` frozen behavior, and `--no-frozen-lockfile`. Documented execution aliases `binpm exec` and `binpm run` must share `binpm x` lockfile behavior.
+- Keep local `binpm install`, `binpm update`, and `binpm x` behavior aligned with `--frozen-lockfile`, default `CI=true` frozen behavior, and `--no-frozen-lockfile`. Frozen commands must fail when they would need to create or modify `binpm.lock`, except empty-manifest local updates that require no lockfile changes must succeed without creating `binpm.lock`. Documented execution aliases `binpm exec` and `binpm run` must share `binpm x` lockfile behavior.
+- Keep frozen local install and `x` restore behavior deterministic: missing `.binpm/bin` executables and `.binpm/packages` package records may be restored from existing target lock records only when cache bytes match the locked SHA-256. If cache repair needs a download, it may use only the lockfile's persisted sanitized asset URL, must validate the recorded SHA-256 before installing or populating cache, and must not require provider release-list pagination.
 - Keep `binpm update` and `binpm remove` scope reporting and `--dry-run` previews aligned with `docs/crates-binpm-foundation.md`; previews must not mutate manifests, lockfiles, package records, cache references, or executables.
 - Keep `--no-confirm` stable for script compatibility and future dangerous-operation confirmation prompts.
 - Keep `binpm x` command execution aligned with the local manifest contract: use manifest-declared tools or explicit `--package`, prepend project-local bin directories to `PATH`, and do not infer GitHub repositories from command names. `binpm exec` and `binpm run` are aliases of that same execution behavior; `binpm x` remains canonical in contracts and examples.

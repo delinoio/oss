@@ -118,6 +118,11 @@ pub enum Command {
         #[arg(required = true, trailing_var_arg = true)]
         command: Vec<String>,
     },
+    /// Manage executable-name dispatch shims.
+    Shim {
+        #[command(subcommand)]
+        command: ShimCommand,
+    },
     /// Manage the nodeup installation.
     #[command(name = "self")]
     SelfCmd {
@@ -210,10 +215,21 @@ pub enum OverrideCommand {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum ShimCommand {
+    /// Create or repair managed shims for node, npm, npx, yarn, and pnpm.
+    Setup {
+        /// Directory where managed shims are created.
+        #[arg(long)]
+        dir: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 pub enum SelfCommand {
     /// Update the nodeup binary.
     Update,
-    /// Uninstall nodeup from the current machine.
+    /// Remove Nodeup-owned data, cache, and config. Binary, shims, and PATH
+    /// remain manual.
     Uninstall,
     /// Migrate nodeup local data to the latest schema.
     #[command(name = "upgrade-data")]

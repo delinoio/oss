@@ -39,6 +39,7 @@ Supported command scopes:
 - `override`
 - `which`
 - `run`
+- `shim`
 - `self`
 - `completions`
 

@@ -10,7 +10,7 @@ use crate::{
 };
 
 const SUPPORTED_SCOPE_LIST: &str =
-    "toolchain, default, show, update, check, override, which, run, self, completions";
+    "toolchain, default, show, update, check, override, which, run, shim, self, completions";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompletionShell {
@@ -70,6 +70,7 @@ enum CompletionScope {
     Override,
     Which,
     Run,
+    Shim,
     SelfCmd,
     Completions,
 }
@@ -89,6 +90,7 @@ impl CompletionScope {
             "override" => Self::Override,
             "which" => Self::Which,
             "run" => Self::Run,
+            "shim" => Self::Shim,
             "self" => Self::SelfCmd,
             "completions" => Self::Completions,
             _ => return Err(unsupported_scope_error(tokens, shell, None)),
@@ -111,6 +113,7 @@ impl CompletionScope {
             Self::Override => "override",
             Self::Which => "which",
             Self::Run => "run",
+            Self::Shim => "shim",
             Self::SelfCmd => "self",
             Self::Completions => "completions",
         }
@@ -247,6 +250,7 @@ fn unsupported_scope_error(
                 "override",
                 "which",
                 "run",
+                "shim",
                 "self",
                 "completions",
             ]
