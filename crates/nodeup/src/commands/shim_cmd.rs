@@ -257,8 +257,15 @@ fn plan_symlink(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
 }
 
 fn plan_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
-    match fs::metadata(path) {
+    match fs::symlink_metadata(path) {
         Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                return Err(shim_conflict(format!(
+                    "Refusing to replace symlink shim target in copy mode: {}",
+                    path.display()
+                )));
+            }
+
             if !metadata.is_file() {
                 return Err(shim_conflict(format!(
                     "Refusing to replace non-file shim target: {}",

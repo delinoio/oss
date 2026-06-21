@@ -294,8 +294,10 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
                 )),
             )
         })?;
-        removed_paths.push(target.path.display().to_string());
-        removed_targets.push(target);
+        if !target.path.exists() {
+            removed_paths.push(target.path.display().to_string());
+            removed_targets.push(target);
+        }
     }
 
     let status = if removed_paths.is_empty() {
@@ -759,7 +761,7 @@ fn likely_leftover_paths() -> Vec<String> {
         }
     }
 
-    for shim_dir in shim_directories() {
+    for shim_dir in leftover_shim_directories() {
         for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
             for candidate in [
                 shim_dir.join(alias),
@@ -781,10 +783,78 @@ fn likely_leftover_paths() -> Vec<String> {
 }
 
 fn existing_shim_directories() -> Vec<PathBuf> {
-    shim_directories()
+    let mut paths = shim_directories();
+    for root in known_nodeup_roots() {
+        collect_managed_shim_dirs(&root, &mut paths);
+    }
+
+    paths
         .into_iter()
         .filter(|path| path.exists())
         .filter_map(|path| normalize_target_path(&path).ok())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .fold(Vec::new(), |mut unique, path| {
+            if !unique.iter().any(|existing| paths_equal(existing, &path)) {
+                unique.push(path);
+            }
+            unique
+        })
+}
+
+fn collect_managed_shim_dirs(path: &Path, paths: &mut Vec<PathBuf>) {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
+        return;
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return;
+    }
+
+    if directory_contains_nodeup_shim(path) {
+        paths.push(path.to_path_buf());
+    }
+
+    let Ok(entries) = fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        collect_managed_shim_dirs(&entry.path(), paths);
+    }
+}
+
+fn directory_contains_nodeup_shim(path: &Path) -> bool {
+    ["node", "npm", "npx", "yarn", "pnpm"].iter().any(|alias| {
+        [
+            path.join(alias),
+            path.join(format!("{alias}.exe")),
+            path.join(format!(".{alias}.exe.nodeup-shim")),
+        ]
+        .into_iter()
+        .any(|candidate| {
+            shim_cmd::is_nodeup_owned_shim_path(&candidate)
+                || shim_cmd::is_nodeup_copy_marker_path(&candidate)
+        })
+    })
+}
+
+fn known_nodeup_roots() -> Vec<PathBuf> {
+    [
+        env::var_os("NODEUP_DATA_HOME"),
+        env::var_os("NODEUP_CACHE_HOME"),
+        env::var_os("NODEUP_CONFIG_HOME"),
+    ]
+    .into_iter()
+    .flatten()
+    .map(PathBuf::from)
+    .collect()
+}
+
+fn leftover_shim_directories() -> Vec<PathBuf> {
+    let mut paths = existing_shim_directories();
+    paths.extend(shim_directories());
+    paths
+        .into_iter()
+        .filter_map(|path| normalize_target_path(&path).ok().or(Some(path)))
         .collect()
 }
 
