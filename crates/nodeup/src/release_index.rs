@@ -774,7 +774,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let cache_file = dir.path().join("release-index.json");
         let server = MockServer::start();
-        let index_url = format!("{}?token=secret#fragment", server.url("/index.json"));
+        let index_url = server
+            .url("/index.json")
+            .replacen("http://", "http://user:secret@", 1)
+            + "?token=secret#fragment";
         let stale_payload = ReleaseIndexCachePayload {
             schema_version: RELEASE_INDEX_CACHE_SCHEMA_VERSION,
             index_url: index_url.clone(),
@@ -809,6 +812,7 @@ mod tests {
         assert_eq!(diagnostic.selector, "lts");
         assert_eq!(diagnostic.selected_version, "v22.11.0");
         assert!(diagnostic.cache_age_seconds > diagnostic.ttl_seconds);
+        assert!(!diagnostic.source_url.contains("user:secret"));
         assert!(!diagnostic.source_url.contains("token=secret"));
         assert!(!diagnostic.source_url.contains("#fragment"));
         index_mock.assert_calls(MAX_RETRIES);

@@ -2370,6 +2370,57 @@ fn which_json_reports_stale_release_index_cache_fallback_for_channel_selector() 
 
 #[test]
 #[serial]
+fn which_human_output_stays_path_only_with_stale_release_index_cache_fallback() {
+    let env = TestEnv::new();
+    let runtime_bin = env
+        .data_root
+        .join("toolchains")
+        .join("v22.11.0")
+        .join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    fs::write(runtime_bin.join("node"), "#!/bin/sh\necho stale-cache\n").unwrap();
+    fs::write(
+        env.cache_root.join("release-index.json"),
+        serde_json::json!({
+            "schema_version": 1,
+            "index_url": env.index_url,
+            "fetched_at_epoch_seconds": 1,
+            "entries": [
+                { "version": "v22.11.0", "lts": "Jod" }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let index_mock = env.server.mock(|when, then| {
+        when.method(GET).path("/download/release/index.json");
+        then.status(500);
+    });
+
+    let output = env
+        .command()
+        .args(["which", "--runtime", "lts", "node"])
+        .output()
+        .expect("which --runtime lts with stale release index fallback");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let expected = env
+        .data_root
+        .join("toolchains")
+        .join("v22.11.0")
+        .join("bin")
+        .join("node");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("{}\n", expected.display())
+    );
+    index_mock.assert_calls(3);
+}
+
+#[test]
+#[serial]
 fn which_explicit_runtime_takes_precedence_over_override_and_default() {
     let env = TestEnv::new();
     let default_runtime = env.root.join("linked-runtime-which-default-priority");
