@@ -2351,15 +2351,16 @@ fn zip_central_directory_systems(bytes: &[u8]) -> Vec<u8> {
             let first_start = bytes
                 .len()
                 .saturating_sub(END_OF_CENTRAL_DIRECTORY_LEN + u16::MAX as usize);
-            (first_start..=last_start).rev().find_map(|index| {
+            (first_start..=last_start).rev().find(|index| {
+                let index = *index;
                 if !bytes[index..].starts_with(&END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
-                    return None;
+                    return false;
                 }
                 let comment_len = u16::from_le_bytes([
                     bytes[index + END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET],
                     bytes[index + END_OF_CENTRAL_DIRECTORY_COMMENT_LENGTH_OFFSET + 1],
                 ]) as usize;
-                (index + END_OF_CENTRAL_DIRECTORY_LEN + comment_len == bytes.len()).then_some(index)
+                index + END_OF_CENTRAL_DIRECTORY_LEN + comment_len == bytes.len()
             })
         })
         .and_then(|index| {
