@@ -133,13 +133,14 @@ fn unparseable_userinfo_search_end(raw: &str, authority_start: usize) -> usize {
         raw[authority_start..query_or_fragment_start].contains('/');
     let has_credential_separator_before_query_or_fragment =
         raw[authority_start..query_or_fragment_start].contains(':');
-
-    if has_path_before_query_or_fragment || !has_credential_separator_before_query_or_fragment {
-        query_or_fragment_start
-    } else if raw[query_or_fragment_start + 1..]
+    let delimiter_tail_looks_like_query = raw[query_or_fragment_start + 1..]
         .split('@')
         .next()
-        .is_some_and(|query_prefix| query_prefix.contains(['=', '&']))
+        .is_some_and(|query_prefix| query_prefix.contains(['=', '&']));
+
+    if has_path_before_query_or_fragment
+        || !has_credential_separator_before_query_or_fragment
+        || delimiter_tail_looks_like_query
     {
         query_or_fragment_start
     } else {
