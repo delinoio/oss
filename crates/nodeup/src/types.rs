@@ -335,8 +335,8 @@ impl PlatformTarget {
 
     pub fn from_forced(value: &str) -> Option<Self> {
         match value {
-            "darwin-x64" => Some(Self::DarwinX64),
-            "darwin-arm64" => Some(Self::DarwinArm64),
+            "darwin-x64" | "macos-x64" | "macos/x64" => Some(Self::DarwinX64),
+            "darwin-arm64" | "macos-arm64" | "macos/arm64" => Some(Self::DarwinArm64),
             "linux-x64" => Some(Self::LinuxX64),
             "linux-arm64" => Some(Self::LinuxArm64),
             "windows-x64" => Some(Self::WindowsX64),
@@ -352,7 +352,7 @@ impl PlatformTarget {
 }
 
 fn parse_forced_platform_diagnostic(value: &str) -> (String, String) {
-    if let Some((os, architecture)) = value.split_once('-') {
+    if let Some((os, architecture)) = value.split_once('-').or_else(|| value.split_once('/')) {
         (os.to_string(), architecture.to_string())
     } else {
         ("unknown".to_string(), value.to_string())
@@ -469,7 +469,23 @@ mod tests {
             Some(PlatformTarget::DarwinX64)
         );
         assert_eq!(
+            PlatformTarget::from_forced("macos-x64"),
+            Some(PlatformTarget::DarwinX64)
+        );
+        assert_eq!(
+            PlatformTarget::from_forced("macos/x64"),
+            Some(PlatformTarget::DarwinX64)
+        );
+        assert_eq!(
             PlatformTarget::from_forced("darwin-arm64"),
+            Some(PlatformTarget::DarwinArm64)
+        );
+        assert_eq!(
+            PlatformTarget::from_forced("macos-arm64"),
+            Some(PlatformTarget::DarwinArm64)
+        );
+        assert_eq!(
+            PlatformTarget::from_forced("macos/arm64"),
             Some(PlatformTarget::DarwinArm64)
         );
         assert_eq!(

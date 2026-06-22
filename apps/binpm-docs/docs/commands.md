@@ -38,7 +38,7 @@ binpm x --package <source> [--bin <upstream-binary>] [CMD] [args...]
 
 `binpm x` runs commands from the local manifest or from an explicitly supplied `--package`.
 
-With `--package`, use `--bin` to choose the upstream executable for one-off execution. `CMD` remains the command name placed in the temporary execution context. If `CMD` is omitted, the one-off shortcut keeps the source explicit and exposes the repository basename, or the `--bin` basename when `--bin` is supplied. Provide an explicit `CMD` when you need to forward args. `binpm x rg` without a local manifest entry still does not infer a remote package.
+With `--package`, use `--bin` to choose the upstream executable for one-off execution. `CMD` remains the command name placed in the temporary execution context. If `CMD` is omitted, the one-off shortcut keeps the source explicit and exposes the repository basename, or the `--bin` basename when `--bin` is supplied. The shortcut form does not forward args; provide an explicit `CMD` when you need to pass args, for example `binpm x --package <source> <cmd> -- <args...>`. `binpm x rg` without a local manifest entry still does not infer a remote package.
 
 ## Diagnostics
 
