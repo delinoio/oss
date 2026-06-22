@@ -463,11 +463,15 @@ fn path_segments<'a>(raw: &str, path: &'a str) -> Result<Vec<&'a str>, BinpmErro
 }
 
 fn validate_source_path_component(raw: &str, component: &str) -> Result<(), BinpmError> {
-    if component.is_empty()
-        || component.chars().any(|character| {
-            !(character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.'))
-        })
-    {
+    if component.is_empty() || component == "." || component == ".." {
+        return Err(invalid_source(
+            raw,
+            "source path components must not be empty, `.`, or `..`",
+        ));
+    }
+    if component.chars().any(|character| {
+        !(character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.'))
+    }) {
         return Err(invalid_source(
             raw,
             "source path components may contain only ASCII letters, digits, `.`, `_`, and `-`",
@@ -869,6 +873,22 @@ mod tests {
         ] {
             match SourceSpec::from_str(raw).expect_err("canonical parser rejects shorthand") {
                 BinpmError::InvalidSourceSpec { raw: error_raw, .. } => assert_eq!(error_raw, raw),
+                other => panic!("expected InvalidSourceSpec, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_dot_only_github_shorthand_components() {
+        for raw in ["../repo", "./tool"] {
+            match normalize_source_input(raw).expect_err("dot-only component") {
+                BinpmError::InvalidSourceSpec {
+                    raw: error_raw,
+                    message,
+                } => {
+                    assert_eq!(error_raw, raw);
+                    assert!(message.contains("must not be empty, `.`, or `..`"));
+                }
                 other => panic!("expected InvalidSourceSpec, got {other:?}"),
             }
         }

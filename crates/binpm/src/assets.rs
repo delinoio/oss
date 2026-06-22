@@ -337,7 +337,8 @@ pub(crate) fn target_archive_candidates(
 
 fn archive_member_target_score(target: &HostTarget, path: &str) -> Option<i32> {
     let signal = detect_archive_member_target(path);
-    if signal.cpu_feature == Some(CpuFeatureVariant::Modern) {
+    let modern_basename_product_token = archive_member_modern_basename_product_token(path);
+    if signal.cpu_feature == Some(CpuFeatureVariant::Modern) && !modern_basename_product_token {
         return None;
     }
     if signal.os.is_none() && signal.arch.is_none() && signal.libc.is_none() {
@@ -369,10 +370,29 @@ fn archive_member_target_score(target: &HostTarget, path: &str) -> Option<i32> {
     if signal.recognized_pattern {
         score += 5;
     }
-    if let Some(cpu_feature) = signal.cpu_feature {
+    if let Some(cpu_feature) = signal
+        .cpu_feature
+        .filter(|_| !modern_basename_product_token)
+    {
         score += cpu_feature.score_adjustment();
     }
     Some(score)
+}
+
+fn archive_member_modern_basename_product_token(path: &str) -> bool {
+    let lower_path = path.to_ascii_lowercase().replace("x86_64", "x64");
+    let lower_path = strip_known_suffixes(&lower_path);
+    let modern_token_count = lower_path
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|token| *token == "modern")
+        .count();
+    if modern_token_count != 1 {
+        return false;
+    }
+
+    let lower_basename = basename(path).to_ascii_lowercase().replace("x86_64", "x64");
+    let lower_basename = strip_known_suffixes(&lower_basename);
+    lower_basename == "modern"
 }
 
 fn score_asset(
@@ -1398,6 +1418,24 @@ mod tests {
         let modern_only =
             target_archive_candidates(&host, vec!["pkg/bin/linux-x64-modern/tool".to_string()]);
         assert!(modern_only.is_empty());
+    }
+
+    #[test]
+    fn archive_member_discovery_preserves_modern_basename_in_target_directory() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let candidates = target_archive_candidates(
+            &host,
+            vec![
+                "pkg/bin/linux-x64/modern".to_string(),
+                "pkg/bin/darwin-arm64/modern".to_string(),
+            ],
+        );
+
+        assert_eq!(candidates, vec!["pkg/bin/linux-x64/modern"]);
+
+        let variant_directory =
+            target_archive_candidates(&host, vec!["pkg/bin/linux-x64-modern/modern".to_string()]);
+        assert!(variant_directory.is_empty());
     }
 
     #[test]

@@ -684,7 +684,7 @@ fn package_shortcut_command(source: Option<&str>, explicit_bin: Option<&str>) ->
         return Ok(basename.to_string());
     }
     let source = source.ok_or_else(|| BinpmError::InvalidCommandName { cmd: String::new() })?;
-    let spec = SourceSpec::from_str(source)?;
+    let spec = normalize_source_input(source)?;
     let cmd = repo_name(&spec).to_string();
     validate_command_name(&cmd)?;
     Ok(cmd)
@@ -1575,12 +1575,18 @@ fn release_diagnostics(
         });
     }
 
-    if decisions.iter().any(|decision| {
-        decision.cpu_feature == Some(crate::assets::CpuFeatureVariant::Modern)
-            && decision.rejection_reason.as_deref().is_some_and(|reason| {
-                reason.contains("CPU feature variant `modern` requires explicit host capability")
-            })
-    }) {
+    let has_eligible_installable = decisions
+        .iter()
+        .any(|decision| decision.kind.is_installable() && decision.eligible);
+    if !has_eligible_installable
+        && decisions.iter().any(|decision| {
+            decision.cpu_feature == Some(crate::assets::CpuFeatureVariant::Modern)
+                && decision.rejection_reason.as_deref().is_some_and(|reason| {
+                    reason
+                        .contains("CPU feature variant `modern` requires explicit host capability")
+                })
+        })
+    {
         diagnostics.push(ReleaseDiagnosticOutput {
             kind: ReleaseDiagnosticKind::TargetScoringRemediation,
             target: target.clone(),
@@ -5994,13 +6000,14 @@ mod tests {
         manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         normalize_bin_selection, override_snippet_candidate, package_record_output,
-        parse_manifest_source, parse_manifest_tool_source, parse_source_argument,
-        project_root_from, read_archive_selected_binary, record_matches_current_provider_digest,
-        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
-        restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
-        selected_asset_display_url, shell_path, shell_quote, snapshot_cache_metadata,
-        source_install_scope, target_override_snippet, update_manifest_tool_source,
+        package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
+        parse_source_argument, project_root_from, read_archive_selected_binary,
+        record_matches_current_provider_digest, release_diagnostic_lines, release_diagnostics,
+        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
+        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
+        shell_path, shell_quote, snapshot_cache_metadata, source_install_scope,
+        target_override_snippet, update_manifest_tool_source,
         validate_frozen_update_current_release, validate_locked_record_artifact,
         validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
         validate_package_record_metadata, validate_package_record_source_identity,
@@ -6068,6 +6075,19 @@ mod tests {
         assert_eq!(spec.host, "github.com");
         assert_eq!(spec.path, "owner/tool");
         assert_eq!(spec.version.as_deref(), Some("nightly/2026-06-21"));
+    }
+
+    #[test]
+    fn package_shortcut_command_accepts_normalized_github_shorthand() {
+        assert_eq!(
+            package_shortcut_command(Some("owner/tool"), None).expect("owner/repo shorthand"),
+            "tool"
+        );
+        assert_eq!(
+            package_shortcut_command(Some("https://github.com/owner/tool"), None)
+                .expect("url shorthand"),
+            "tool"
+        );
     }
 
     fn release_asset_from_record(record: &PackageRecord) -> ReleaseAsset {
@@ -8797,6 +8817,24 @@ mod tests {
         );
         let lines = release_diagnostic_lines(&decisions, &target);
         assert!(lines
+            .iter()
+            .any(|line| line.contains("CPU feature variants were detected")));
+    }
+
+    #[test]
+    fn explain_diagnostics_suppress_modern_remediation_after_baseline_selection() {
+        let target = linux_target();
+        let assets = [
+            release_asset("tool-linux-x64-baseline.tar.gz"),
+            release_asset("tool-linux-x64-modern.tar.gz"),
+        ];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(decisions.iter().any(|decision| decision.asset_name
+            == "tool-linux-x64-baseline.tar.gz"
+            && decision.eligible));
+        let lines = release_diagnostic_lines(&decisions, &target);
+        assert!(!lines
             .iter()
             .any(|line| line.contains("CPU feature variants were detected")));
     }
