@@ -143,9 +143,19 @@ impl PackageRecord {
     }
 
     pub fn has_verified_source(&self) -> bool {
-        self.source_provider == SourceProvider::GitHub
-            && self.checksum_source == ChecksumSource::GitHubDigest
-            && self.provider_digest_sha256.as_deref() == Some(self.sha256.as_str())
+        match self.checksum_source {
+            ChecksumSource::GitHubDigest => {
+                self.source_provider == SourceProvider::GitHub
+                    && self.provider_digest_sha256.as_deref() == Some(self.sha256.as_str())
+            }
+            ChecksumSource::Sidecar | ChecksumSource::Manifest => {
+                validate_sha256_digest(&self.sha256).is_ok()
+            }
+            ChecksumSource::Signature => {
+                self.signature_verified && validate_sha256_digest(&self.sha256).is_ok()
+            }
+            ChecksumSource::Local => false,
+        }
     }
 }
 
@@ -240,6 +250,7 @@ pub struct ResolvedAsset {
     pub archive_format: ArchiveFormat,
     pub selected_binary: String,
     pub provider_digest_sha256: Option<String>,
+    pub upstream_checksum_sha256: Option<String>,
     pub checksum_source: ChecksumSource,
     pub signature_available: bool,
     pub signature_verified: bool,
@@ -2486,6 +2497,7 @@ created_at = "2026-01-01T00:00:00Z"
             archive_format: ArchiveFormat::BareExecutable,
             selected_binary: "tool-linux-x64".to_string(),
             provider_digest_sha256: None,
+            upstream_checksum_sha256: None,
             checksum_source: ChecksumSource::Local,
             signature_available: false,
             signature_verified: false,
