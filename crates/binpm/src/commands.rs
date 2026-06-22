@@ -46,7 +46,7 @@ use crate::{
         validate_command_name, validate_download_url, validate_installed_binary_path,
         validate_sha256_digest, write_cache_ref, write_lockfile, write_manifest,
         write_package_record, CachePaths, LockTool, Manifest, ManifestTool, PackageRecord,
-        ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
+        ResolvedAsset, ScopePaths, SignatureSidecar, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
 
@@ -326,6 +326,7 @@ const DOWNLOAD_PROGRESS_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
 const DOWNLOAD_PROGRESS_STEP_BYTES: u64 = 5 * 1024 * 1024;
 const DOWNLOAD_PROGRESS_INTERVAL: Duration = Duration::from_secs(2);
 const DOWNLOAD_INITIAL_CAPACITY_LIMIT: usize = 8 * 1024 * 1024;
+const GITHUB_ACTIONS_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";
 
 pub fn run(cli: Cli) -> Result<i32> {
     let output = OutputMode::from_json_flag(cli.json);
@@ -2475,17 +2476,13 @@ fn install_resolved(
 ) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
     let mut resolved = resolve_asset(spec, tool)?;
-    if require_verified && !resolved.checksum_source.is_upstream_verified() {
+    if require_verified
+        && !resolved.checksum_source.is_upstream_verified()
+        && !resolved.signature_available
+    {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
         });
-    }
-    if resolved.checksum_source == ChecksumSource::Local {
-        eprintln!(
-            "warning: no upstream checksum or verified signature was available for {}; using a \
-             locally computed SHA-256",
-            spec
-        );
     }
     ensure_no_package_record_install_path_collision(scope_paths, cmd, resolved.target.os)?;
     if let Some(expected) = resolved.provider_digest_sha256.clone() {
@@ -2541,6 +2538,19 @@ fn install_resolved(
                 actual: sha256,
             });
         }
+    }
+    verify_signature_sidecar(cache_paths, &mut resolved, &bytes, require_verified)?;
+    if require_verified && !resolved_has_verified_source(&resolved) {
+        return Err(BinpmError::VerificationRequired {
+            package: spec.to_string(),
+        });
+    }
+    if resolved.checksum_source == ChecksumSource::Local {
+        eprintln!(
+            "warning: no upstream checksum or verified signature was available for {}; using a \
+             locally computed SHA-256",
+            spec
+        );
     }
     let (sha256, cache_asset) = match populate_cache_from_bytes(cache_paths, &resolved, &bytes) {
         Ok(cache_entry) => cache_entry,
@@ -2756,6 +2766,7 @@ fn install_local_from_lock(
                 selected_binary: record.selected_binary.clone(),
                 provider_digest_sha256: None,
                 checksum_source: record.checksum_source,
+                signature_sidecar: None,
                 signature_available: record.signature_available,
                 signature_verified: record.signature_verified,
             };
@@ -2802,6 +2813,7 @@ fn install_local_from_lock(
         selected_binary: record.selected_binary.clone(),
         provider_digest_sha256: record.provider_digest_sha256.clone(),
         checksum_source: record.checksum_source,
+        signature_sidecar: None,
         signature_available: record.signature_available,
         signature_verified: record.signature_verified,
     };
@@ -3134,6 +3146,8 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
     } else {
         manifest_checksum_source
     };
+    let signature_sidecar = signature_sidecar_for_asset(&decision.asset_name, &release.assets);
+    let signature_available = signature_sidecar.is_some();
     Ok(ResolvedAsset {
         source: spec.clone(),
         release_tag: release.tag,
@@ -3143,8 +3157,286 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         selected_binary,
         provider_digest_sha256,
         checksum_source,
-        signature_available: false,
+        signature_sidecar,
+        signature_available,
         signature_verified: false,
+    })
+}
+
+fn signature_sidecar_for_asset(
+    asset_name: &str,
+    assets: &[ReleaseAsset],
+) -> Option<SignatureSidecar> {
+    let expected_name = format!("{asset_name}.sigstore.json");
+    assets
+        .iter()
+        .find(|asset| asset.name == expected_name)
+        .map(|asset| {
+            let download_url = asset
+                .download_url
+                .as_deref()
+                .or(asset.provider_url.as_deref())
+                .unwrap_or(&asset.url)
+                .to_string();
+            let canonical_url = asset
+                .provider_url
+                .as_deref()
+                .unwrap_or(&asset.url)
+                .split(['?', '#'])
+                .next()
+                .unwrap_or(&asset.url)
+                .to_string();
+            SignatureSidecar {
+                asset_name: asset.name.clone(),
+                canonical_url,
+                download_url,
+                download_auth: asset.download_auth.clone(),
+                download_accept: asset.download_accept,
+            }
+        })
+}
+
+fn verify_signature_sidecar(
+    cache_paths: &CachePaths,
+    resolved: &mut ResolvedAsset,
+    asset_bytes: &[u8],
+    require_verified: bool,
+) -> Result<()> {
+    if resolved.checksum_source.is_upstream_verified() {
+        return Ok(());
+    }
+    let Some(sidecar) = resolved.signature_sidecar.clone() else {
+        return Ok(());
+    };
+    resolved.signature_available = true;
+    let Some(policy) = sigstore_trust_policy(resolved) else {
+        warn!(
+            package = %resolved.source,
+            asset_name = %resolved.decision.asset_name,
+            signature_sidecar = %sidecar.asset_name,
+            "Skipping package signature verification because no trust policy applies"
+        );
+        if require_verified {
+            eprintln!(
+                "warning: signature sidecar {} is present for {}, but binpm has no applicable \
+                 trust policy for this package",
+                sidecar.asset_name, resolved.source
+            );
+        }
+        return Ok(());
+    };
+
+    let bundle_bytes = match download_asset(
+        &sidecar.download_url,
+        sidecar.download_auth.as_ref(),
+        sidecar.download_accept,
+    ) {
+        Ok(bytes) => bytes,
+        Err(error) if !require_verified => {
+            warn!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                error = %error,
+                "Skipping optional package signature verification because sidecar download failed"
+            );
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
+    let temp_paths = match write_sigstore_verification_inputs(
+        cache_paths,
+        resolved,
+        asset_bytes,
+        &bundle_bytes,
+    ) {
+        Ok(paths) => paths,
+        Err(error) if !require_verified => {
+            warn!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                error = %error,
+                "Skipping optional package signature verification because verifier input setup failed"
+            );
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
+    let output = ProcessCommand::new("cosign")
+        .arg("verify-blob")
+        .arg("--bundle")
+        .arg(&temp_paths.bundle_path)
+        .arg("--certificate-identity-regexp")
+        .arg(&policy.identity_regexp)
+        .arg("--certificate-oidc-issuer")
+        .arg(policy.issuer)
+        .arg(&temp_paths.asset_path)
+        .output();
+    let _ = remove_path_if_exists(&temp_paths.asset_path);
+    let _ = remove_path_if_exists(&temp_paths.bundle_path);
+
+    match output {
+        Ok(output) if output.status.success() => {
+            resolved.checksum_source = ChecksumSource::Signature;
+            resolved.signature_verified = true;
+            info!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                signature_policy = %policy.name,
+                "Verified package signature sidecar"
+            );
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                signature_policy = %policy.name,
+                status = output.status.code().unwrap_or_default(),
+                stderr = %stderr.trim(),
+                "Package signature sidecar did not verify"
+            );
+            if require_verified {
+                eprintln!(
+                    "warning: signature verification failed for {} using sidecar {}",
+                    resolved.source, sidecar.asset_name
+                );
+            }
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            warn!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                "Skipping package signature verification because cosign is not on PATH"
+            );
+            if require_verified {
+                eprintln!(
+                    "warning: --require-verified needs cosign on PATH to validate signature \
+                     sidecar {} for {}",
+                    sidecar.asset_name, resolved.source
+                );
+            }
+        }
+        Err(error) => {
+            if require_verified {
+                return Err(BinpmError::Execute {
+                    cmd: "cosign".to_string(),
+                    source: error,
+                });
+            }
+            warn!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                error = %error,
+                "Skipping optional package signature verification because cosign could not execute"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn resolved_has_verified_source(resolved: &ResolvedAsset) -> bool {
+    resolved.checksum_source.is_upstream_verified()
+        || (resolved.checksum_source == ChecksumSource::Signature
+            && resolved.signature_available
+            && resolved.signature_verified)
+}
+
+struct SigstoreTrustPolicy {
+    name: &'static str,
+    issuer: &'static str,
+    identity_regexp: String,
+}
+
+fn sigstore_trust_policy(resolved: &ResolvedAsset) -> Option<SigstoreTrustPolicy> {
+    if resolved.source.provider != SourceProvider::GitHub || resolved.source.host != "github.com" {
+        return None;
+    }
+    let (owner, repo) = resolved.source.path.split_once('/')?;
+    Some(SigstoreTrustPolicy {
+        name: "github-actions-tagged-release",
+        issuer: GITHUB_ACTIONS_OIDC_ISSUER,
+        identity_regexp: format!(
+            "^https://github\\.com/{}/{}/\\.github/workflows/[^@]+@refs/tags/{}$",
+            regex_escape(owner),
+            regex_escape(repo),
+            regex_escape(&resolved.release_tag)
+        ),
+    })
+}
+
+fn regex_escape(raw: &str) -> String {
+    let mut escaped = String::with_capacity(raw.len());
+    for character in raw.chars() {
+        if matches!(
+            character,
+            '.' | '+'
+                | '*'
+                | '?'
+                | '^'
+                | '$'
+                | '('
+                | ')'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '|'
+                | '\\'
+                | '/'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
+}
+
+struct SigstoreTempPaths {
+    asset_path: PathBuf,
+    bundle_path: PathBuf,
+}
+
+fn write_sigstore_verification_inputs(
+    cache_paths: &CachePaths,
+    resolved: &ResolvedAsset,
+    asset_bytes: &[u8],
+    bundle_bytes: &[u8],
+) -> Result<SigstoreTempPaths> {
+    fs::create_dir_all(&cache_paths.tmp).map_err(|source| BinpmError::CreateDirectory {
+        path: cache_paths.tmp.clone(),
+        source,
+    })?;
+    let nonce = format!(
+        "{}-{:x}",
+        std::process::id(),
+        Sha256::digest(
+            format!(
+                "{}:{}:{}",
+                resolved.source, resolved.release_tag, resolved.decision.asset_name
+            )
+            .as_bytes()
+        )
+    );
+    let asset_path = cache_paths.tmp.join(format!("sigstore-{nonce}.asset"));
+    let bundle_path = cache_paths.tmp.join(format!("sigstore-{nonce}.bundle"));
+    fs::write(&asset_path, asset_bytes).map_err(|source| BinpmError::WriteFile {
+        path: asset_path.clone(),
+        source,
+    })?;
+    fs::write(&bundle_path, bundle_bytes).map_err(|source| BinpmError::WriteFile {
+        path: bundle_path.clone(),
+        source,
+    })?;
+    Ok(SigstoreTempPaths {
+        asset_path,
+        bundle_path,
     })
 }
 
@@ -6011,11 +6303,12 @@ mod tests {
         normalize_bin_selection, override_snippet_candidate, package_record_output,
         package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
         parse_source_argument, project_root_from, read_archive_selected_binary,
-        record_matches_current_provider_digest, release_diagnostic_lines, release_diagnostics,
-        remove_global_tool_from_paths, remove_local_manifest_orphans,
-        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
-        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
-        shell_path, shell_quote, snapshot_cache_metadata, source_install_scope,
+        record_matches_current_provider_digest, regex_escape, release_diagnostic_lines,
+        release_diagnostics, remove_global_tool_from_paths, remove_local_manifest_orphans,
+        require_executable_managed_file, resolved_has_verified_source, restore_local_remove_state,
+        restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
+        selected_asset_display_url, shell_path, shell_quote, signature_sidecar_for_asset,
+        sigstore_trust_policy, snapshot_cache_metadata, source_install_scope,
         target_override_snippet, update_manifest_tool_source,
         validate_frozen_update_current_release, validate_locked_record_artifact,
         validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
@@ -9465,6 +9758,83 @@ mod tests {
     }
 
     #[test]
+    fn signature_sidecar_discovery_matches_selected_asset_sidecar_only() {
+        let record = package_record();
+        let mut selected = release_asset_from_record(&record);
+        selected.name = "tool-linux-amd64".to_string();
+        let sidecar = ReleaseAsset {
+            name: "tool-linux-amd64.sigstore.json".to_string(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-amd64.sigstore.json?token=secret".to_string(),
+            provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+            final_url: None,
+        };
+        let unrelated = ReleaseAsset {
+            name: "other-linux-amd64.sigstore.json".to_string(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/other-linux-amd64.sigstore.json".to_string(),
+            provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+            final_url: None,
+        };
+
+        let discovered =
+            signature_sidecar_for_asset("tool-linux-amd64", &[selected, unrelated, sidecar])
+                .expect("matching sigstore sidecar");
+
+        assert_eq!(discovered.asset_name, "tool-linux-amd64.sigstore.json");
+        assert_eq!(
+            discovered.canonical_url,
+            "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-amd64.sigstore.json"
+        );
+    }
+
+    #[test]
+    fn sigstore_trust_policy_is_github_actions_tag_scoped() {
+        let mut resolved = resolved_asset(&package_record().sha256);
+        resolved.source = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source");
+        resolved.release_tag = "tool@v1.0.0".to_string();
+
+        let policy = sigstore_trust_policy(&resolved).expect("github.com policy");
+
+        assert_eq!(policy.name, "github-actions-tagged-release");
+        assert_eq!(
+            policy.identity_regexp,
+            "^https://github\\.com/owner/tool/\\.github/workflows/[^@]+@refs/tags/tool@v1\\.0\\.0$"
+        );
+
+        resolved.source =
+            SourceSpec::from_str("github:ghe.example.com/owner/tool@1.0.0").expect("ghe source");
+        assert!(sigstore_trust_policy(&resolved).is_none());
+        assert_eq!(
+            regex_escape("tool+linux/v1.0.0"),
+            "tool\\+linux\\/v1\\.0\\.0"
+        );
+    }
+
+    #[test]
+    fn resolved_signature_requires_successful_verification() {
+        let mut resolved = resolved_asset(&package_record().sha256);
+        resolved.provider_digest_sha256 = None;
+        resolved.checksum_source = ChecksumSource::Signature;
+        resolved.signature_available = true;
+
+        assert!(!resolved_has_verified_source(&resolved));
+
+        resolved.signature_verified = true;
+        assert!(resolved_has_verified_source(&resolved));
+    }
+
+    #[test]
     fn package_record_local_checksum_accepts_matching_current_provider_digest() {
         let record = package_record();
         let assets = [ReleaseAsset {
@@ -10438,6 +10808,7 @@ mod tests {
             selected_binary: "tool-linux".to_string(),
             provider_digest_sha256: Some(sha256.to_string()),
             checksum_source: ChecksumSource::GitHubDigest,
+            signature_sidecar: None,
             signature_available: false,
             signature_verified: false,
         }
