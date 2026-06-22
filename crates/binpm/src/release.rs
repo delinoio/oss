@@ -891,7 +891,9 @@ fn is_known_prerelease_identifier(candidate: &str) -> bool {
         .next()
         .unwrap_or(candidate)
         .to_ascii_lowercase();
-    const KNOWN_IDENTIFIERS: &[&str] = &["alpha", "a", "beta", "b", "pre", "preview", "rc"];
+    const KNOWN_IDENTIFIERS: &[&str] = &[
+        "alpha", "a", "beta", "b", "canary", "dev", "nightly", "pre", "preview", "rc",
+    ];
     KNOWN_IDENTIFIERS.contains(&identifier.as_str())
         || KNOWN_IDENTIFIERS.iter().any(|prefix| {
             identifier
@@ -1580,6 +1582,9 @@ mod tests {
         assert!(has_prerelease_tag("v1.2.3-rc1"));
         assert!(has_prerelease_tag("v1.2.3-beta1"));
         assert!(has_prerelease_tag("tool-v1.2.3-beta.1"));
+        assert!(has_prerelease_tag("v2.0.0-dev.1"));
+        assert!(has_prerelease_tag("v2.0.0-nightly.20260622"));
+        assert!(has_prerelease_tag("v2.0.0-canary.1"));
     }
 
     #[test]
