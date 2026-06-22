@@ -273,7 +273,11 @@ where
     };
 
     if ManagedAlias::from_argv0(argv0.as_os_str()).is_some() {
-        return logging::LoggingContext::ManagedAlias;
+        return if managed_alias_output_preferences_from_args(args).json_error_output_requested {
+            logging::LoggingContext::ManagementJson
+        } else {
+            logging::LoggingContext::ManagedAlias
+        };
     }
 
     if management_output_preferences_from_management_args(args).json_error_output_requested {
@@ -473,6 +477,32 @@ mod tests {
         );
         assert_eq!(
             logging_context_from_args(os_args(&["pnpm"])),
+            LoggingContext::ManagedAlias
+        );
+    }
+
+    #[test]
+    fn managed_alias_json_output_selects_management_json_logging_context() {
+        assert_eq!(
+            logging_context_from_args(os_args(&["node", "--output", "json"])),
+            LoggingContext::ManagementJson
+        );
+        assert_eq!(
+            logging_context_from_args(os_args(&["npm", "--output=json"])),
+            LoggingContext::ManagementJson
+        );
+    }
+
+    #[test]
+    fn managed_alias_delegated_json_output_keeps_managed_alias_logging_context() {
+        assert_eq!(
+            logging_context_from_args(os_args(&[
+                "node",
+                "-e",
+                "console.log(1)",
+                "--output",
+                "json",
+            ])),
             LoggingContext::ManagedAlias
         );
     }
