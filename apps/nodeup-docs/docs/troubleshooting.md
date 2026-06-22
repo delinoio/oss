@@ -120,6 +120,8 @@ nodeup shim setup
 
 If output includes a PATH instruction, run it for the current session and add the shim directory to your shell profile or user PATH for future sessions. On Windows, Nodeup uses copied `.exe` aliases, so rerun `nodeup shim setup` after moving or replacing `nodeup.exe`.
 
+If setup reports a conflict, review the listed path, ownership classification, and remediation. Nodeup will not replace unrelated commands; move the conflicting file or choose another shim directory with `nodeup shim setup --dir <path>`.
+
 ## Windows Shim Is Shadowed
 
 Windows resolves commands using `PATH` order and `PATHEXT`. Nodeup shim aliases such as `npm.exe` must appear earlier than other Node.js or package-manager commands when you want Nodeup to dispatch them.
@@ -240,6 +242,18 @@ Symptom:
 
 This means `cosign` was available, but the downloaded artifact did not verify against the published Sigstore bundle and the expected GitHub Actions release workflow identity. Retry only after confirming you are using a bundle-enabled Nodeup release from `delinoio/oss`. Do not bypass verification.
 
+## Direct Installer Release Material Is Missing
+
+Symptom:
+
+```text
+[install.nodeup] required release verification material is missing
+```
+
+Direct installers support bundle-enabled releases only. The selected release must include `SHA256SUMS`, the selected artifact, and the selected artifact's `<artifact>.sigstore.json` bundle sidecar. Legacy `.sig` or `.pem` sidecars are not supported by the direct installer and are not treated as equivalent verification material.
+
+Fix: choose a newer bundle-enabled Nodeup release from `delinoio/oss`, use Homebrew on macOS/Linux when the formula points at a complete release, or use `cargo binstall nodeup --no-confirm` on supported hosts when the release includes the matching first-party asset.
+
 ## cargo-binstall Cannot Find an Asset
 
 Nodeup's `cargo-binstall` metadata points only at first-party GitHub Release assets for macOS, Linux, and Windows x64/arm64 hosts. It disables `quick-install` and `compile`, so unsupported hosts or releases missing the matching asset fail instead of compiling from source or using third-party binaries.
@@ -314,10 +328,10 @@ Invalid values fall back to 600 seconds. Human/log diagnostics report only a saf
 
 ## JSON Output Has Log Noise
 
-Keep `RUST_LOG` unset or off:
+Keep `RUST_LOG` unset:
 
 ```bash
-RUST_LOG=off nodeup --output json show home
+nodeup --output json show home
 ```
 
 JSON mode disables Nodeup logging by default, but an explicit `RUST_LOG` can re-enable it.

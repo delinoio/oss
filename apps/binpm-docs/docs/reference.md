@@ -1,5 +1,7 @@
 # Reference
 
+Use this page as a compact contract reference for stable source syntax, target values, and read-only command behavior. For installation-channel availability, start with the first-party platform matrix before applying the broader target parsing model to third-party release assets.
+
 ## Stable Source Identifiers
 
 - `github:owner/repo[@version]`
@@ -28,10 +30,12 @@ Unsupported operating systems or CPU architectures fail clearly instead of being
 
 CPU feature tokens such as `baseline` and `modern` are scored separately from architecture tokens. Baseline variants are preferred for automatic selection. Modern variants require explicit host CPU capability support, so binpm reports them as a compatibility decision instead of treating `modern` as an architecture.
 
+The target model is broader than binpm's own first-party release matrix. Direct installers, Homebrew, and cargo-binstall publish or consume binpm prebuilt assets only for the documented first-party macOS, Linux, and Windows x64/arm64 platforms; additional target values are for parsing and scoring third-party package assets or writing explicit local target overrides.
+
 ## GitLab HTTPS Assets
 
 GitLab release links must use HTTPS for the release link URL, the direct asset URL when present, and the final redirect target. `binpm explain` reports those cases separately so maintainers can fix the GitLab release link or publish a secure direct asset URL. Redirect diagnostics show only a sanitized origin and omit credentials, query strings, and fragments.
 
 ## Global Update Status
 
-`binpm update [cmd...] [--local|--global] [--dry-run]` updates selected tools or all tools in the selected scope. Global updates use existing global package records, preserve each command alias and selected upstream binary, resolve the latest stable release for the recorded source, and finalize through the same cache, install, rollback, and verification behavior as global installs. Use `--dry-run` to print the selected scope and planned runtime changes without mutating package records, cache references, or executables.
+`binpm update [cmd...] [--local|--global] [--dry-run]` updates selected tools or all tools in the selected scope. Omitting command names is explicit all-tools mode; output states that mode before the planned update list, and `--dry-run` previews it without mutation. Global updates use existing global package records, preserve each command alias and selected upstream binary, resolve the latest stable release for the recorded source, and finalize through the same cache, install, rollback, and verification behavior as global installs.

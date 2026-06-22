@@ -8,7 +8,7 @@ nodeup --output human|json --color auto|always|never <command>
 
 `--output` defaults to `human`. `--color` controls human stdout and stderr styling only.
 
-For script-safe stdout, use `--output json` for structured data, set `RUST_LOG=off` before `nodeup toolchain list --quiet` for newline-delimited runtime identifiers, and set `RUST_LOG=off` before `nodeup completions <shell> >file` for completion script redirection. Logs are written to stderr when enabled.
+For script-safe stdout, use `--output json` for structured data, `nodeup toolchain list --quiet` for newline-delimited runtime identifiers, and `nodeup completions <shell> >file` for completion script redirection. Logs are written to stderr when enabled.
 
 ## toolchain list
 
@@ -23,7 +23,7 @@ Lists installed and linked runtimes.
 - `--verbose` prints installed runtime paths and linked runtime paths.
 - JSON output has `installed` and `linked` fields.
 
-Set `RUST_LOG=off` before `nodeup toolchain list --quiet`, or use `nodeup --output json toolchain list`, when scripts need parseable stdout.
+Use `nodeup toolchain list --quiet` or `nodeup --output json toolchain list` when scripts need parseable stdout.
 
 ## toolchain install
 
@@ -46,7 +46,7 @@ The command rejects linked runtime names before linked-runtime lookup, so a link
 nodeup toolchain uninstall <version>...
 ```
 
-Removes exact installed versions only. At least one version selector is required. Channels and linked runtime names are rejected. Use `nodeup toolchain unlink <name>` for linked runtime records. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
+Removes exact installed versions only. At least one version selector is required. Channels and linked runtime names are rejected before uninstall preflight. For channels, list installed exact versions with `nodeup toolchain list --verbose` and uninstall the exact version. Use `nodeup toolchain unlink <name>` for linked runtime records. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
 
 When removal is blocked, human output reports each blocking reference type and path:
 
@@ -110,12 +110,13 @@ Missing linked names fail with `not-found`. JSON output is the removed linked-na
 nodeup default [runtime]
 ```
 
-Without an argument, prints the current default selector and resolution status. With an argument, resolves the selector, installs version targets when needed, saves it as the global default, and tracks it for updates.
+Without an argument, prints the current default selector and resolution status. With an argument, resolves the selector, installs version/channel targets when needed, saves it as the global default, and tracks it for updates. Human output reports whether the resolved version was installed or already installed.
 
 JSON output includes:
 
 - `default_selector`
 - `resolved_runtime`
+- `install_side_effect` when setting a version/channel default
 - `resolution_error`
 
 `resolution_error` is populated when an existing default cannot currently be resolved.
@@ -154,7 +155,7 @@ Valid color environment values are `NODEUP_COLOR=auto|always|never` and `NODEUP_
 nodeup update [runtime]...
 ```
 
-With explicit selectors, processes those selectors. Without arguments, updates tracked selectors first; if no selectors are tracked, it falls back to installed runtimes.
+With explicit selectors, processes those selectors. Without arguments, updates tracked selectors first; if no selectors are tracked, it falls back to installed runtimes. JSON entries for no-argument updates include `selector_source` (`tracked-selectors` or `installed-runtimes`) and `implicit_target: true`.
 
 Behavior by selector:
 
@@ -166,7 +167,7 @@ Tracked exact versions are canonicalized and deduplicated by semantic version. F
 
 `current` and `latest` resolve to the same newest release-index entry; `latest` is reported as an alias of canonical selector `current`.
 
-JSON output is an array with `selector`, `selector_kind`, `canonical_selector`, optional `selector_alias_of`, `previous_runtime`, `updated_runtime`, and `status`.
+JSON output is an array with `selector`, optional `selector_source`, optional `implicit_target`, `selector_kind`, `canonical_selector`, optional `selector_alias_of`, `previous_runtime`, `updated_runtime`, and `status`. Empty no-argument updates include structured error diagnostics with selector source, selector counts, and a selector preview.
 
 ## check
 
@@ -203,6 +204,8 @@ nodeup override unset [--path <path>] [--nonexistent]
 ```
 
 Removes an override for the provided path or current directory. `--nonexistent` removes stale entries whose directories no longer exist.
+
+`--path` and `--nonexistent` are mutually exclusive. Use `--path` for one override target, or `--nonexistent` for global stale-entry cleanup.
 
 JSON output is the removed override list.
 
@@ -257,7 +260,7 @@ Creates or repairs managed executable-name dispatch shims for `node`, `npm`, `np
 - macOS and Linux use symlinks named `node`, `npm`, `npx`, `yarn`, and `pnpm`.
 - Windows uses copied executables named `node.exe`, `npm.exe`, `npx.exe`, `yarn.exe`, and `pnpm.exe`.
 - Re-running the command reports existing valid shims as `existing`.
-- Existing unrelated commands are reported as conflicts and are not replaced.
+- Existing unrelated commands are reported as conflicts and are not replaced. Conflict output includes the path, ownership classification, and remediation; JSON errors expose the same data under `diagnostics.conflicts`.
 - Stale Nodeup symlinks are repaired.
 - Non-Nodeup files and different existing Windows executables are refused instead of being overwritten.
 
@@ -279,7 +282,7 @@ JSON output includes `action`, `status`, `target_binary`, and `source_binary`.
 nodeup self uninstall
 ```
 
-Removes Nodeup-owned data, cache, and config roots when they contain artifacts. It refuses unsafe paths that are not clearly Nodeup-owned.
+Removes Nodeup-owned data, cache, and config roots when they contain artifacts. It refuses unsafe paths and reports configured roots that are not clearly Nodeup-owned without deleting them.
 
 Cleanup boundaries:
 
@@ -290,7 +293,7 @@ Cleanup boundaries:
 - Shims: manual; Nodeup does not delete aliases created by `nodeup shim setup`.
 - Shell profile/PATH: manual; Nodeup does not edit shell profile files or the user PATH.
 
-Human output includes removed paths and remaining manual steps. JSON output includes `action`, `status`, `removed_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
+Human output separates removed paths, manual leftovers, ownership-refused paths, and remaining manual steps. JSON output includes `action`, `status`, `removed_paths`, `manual_leftover_paths`, `ownership_refused_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
 
 ## self upgrade-data
 

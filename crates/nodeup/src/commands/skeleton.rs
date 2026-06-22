@@ -239,6 +239,14 @@ fn unsupported_scope_error(
         serde_json::Value::String("top-level-command".to_string()),
     );
     diagnostics.insert(
+        "scope_token_count".to_string(),
+        serde_json::Value::Number(tokens.len().into()),
+    );
+    diagnostics.insert(
+        "scope_boundary".to_string(),
+        serde_json::Value::String("top-level-only".to_string()),
+    );
+    diagnostics.insert(
         "allowed_scopes".to_string(),
         serde_json::Value::Array(
             [
@@ -266,9 +274,17 @@ fn unsupported_scope_error(
             "suggested_scope".to_string(),
             serde_json::Value::String(suggested_scope.to_string()),
         );
+        diagnostics.insert(
+            "suggested_command".to_string(),
+            serde_json::Value::String(format!(
+                "nodeup completions {} {}",
+                shell.as_str(),
+                suggested_scope
+            )),
+        );
         format!(
-            "Only top-level command scopes are supported; use `nodeup completions {shell} \
-             {suggested_scope}` instead.",
+            "Only top-level command scopes are supported; nested subcommand scopes are not \
+             generated separately. Use `nodeup completions {shell} {suggested_scope}` instead.",
             shell = shell.as_str()
         )
     } else {

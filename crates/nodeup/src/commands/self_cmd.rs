@@ -92,6 +92,7 @@ impl SelfUpdateOutcome {
 enum SelfUninstallOutcome {
     Removed,
     AlreadyClean,
+    OwnershipRefused,
 }
 
 impl SelfUninstallOutcome {
@@ -99,6 +100,7 @@ impl SelfUninstallOutcome {
         match self {
             Self::Removed => "removed",
             Self::AlreadyClean => "already-clean",
+            Self::OwnershipRefused => "ownership-refused",
         }
     }
 }
@@ -154,6 +156,8 @@ struct SelfUninstallResponse {
     action: SelfAction,
     status: SelfUninstallOutcome,
     removed_paths: Vec<String>,
+    manual_leftover_paths: Vec<String>,
+    ownership_refused_paths: Vec<String>,
     cleanup_boundaries: Vec<SelfUninstallCleanupBoundary>,
     remaining_manual_steps: Vec<String>,
     likely_leftover_paths: Vec<String>,
@@ -259,11 +263,11 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
     let action = SelfAction::Uninstall;
 
     let mut deletion_targets = Vec::new();
+    let mut ownership_refused_paths = Vec::new();
     for root in uninstall_roots(app) {
         let normalized_path =
             normalize_target_path(&root.path).map_err(|error| log_failure(action, error))?;
-        ensure_safe_uninstall_path(&normalized_path).map_err(|error| log_failure(action, error))?;
-        ensure_uninstall_path_excludes_running_binary(&normalized_path)
+        ensure_uninstall_path_has_parent(&normalized_path)
             .map_err(|error| log_failure(action, error))?;
 
         let has_artifacts = if normalized_path.exists() {
@@ -274,16 +278,25 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
         };
 
         if has_artifacts {
-            deletion_targets.push(SelfUninstallTarget {
-                category: root.category,
-                path: normalized_path,
-            });
+            if is_nodeup_owned_path(&normalized_path) {
+                ensure_uninstall_path_excludes_running_binary(&normalized_path)
+                    .map_err(|error| log_failure(action, error))?;
+                deletion_targets.push(SelfUninstallTarget {
+                    category: root.category,
+                    path: normalized_path,
+                });
+            } else {
+                ownership_refused_paths.push(normalized_path);
+            }
         }
     }
 
     let mut removed_paths = Vec::new();
     let mut removed_targets = Vec::new();
-    let preserved_paths = preserved_uninstall_paths(app);
+    ownership_refused_paths.sort();
+    ownership_refused_paths.dedup();
+
+    let preserved_paths = preserved_uninstall_paths(app, &ownership_refused_paths);
     for target in deletion_targets {
         remove_uninstall_target(&target.path, &preserved_paths).map_err(|error| {
             log_failure(
@@ -298,11 +311,18 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
         removed_targets.push(target);
     }
 
-    let status = if removed_paths.is_empty() {
-        SelfUninstallOutcome::AlreadyClean
-    } else {
+    let ownership_refused_path_strings = ownership_refused_paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+
+    let status = if !removed_paths.is_empty() {
         removed_paths.sort();
         SelfUninstallOutcome::Removed
+    } else if !ownership_refused_path_strings.is_empty() {
+        SelfUninstallOutcome::OwnershipRefused
+    } else {
+        SelfUninstallOutcome::AlreadyClean
     };
 
     info!(
@@ -313,21 +333,26 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
         "Processed self uninstall"
     );
 
-    let likely_leftover_paths = likely_leftover_paths(app);
-    let remaining_manual_steps = remaining_manual_steps(&likely_leftover_paths);
+    let manual_leftover_paths = likely_leftover_paths(app, &ownership_refused_paths);
+    let remaining_manual_steps = remaining_manual_steps(&manual_leftover_paths);
     let response = SelfUninstallResponse {
         action,
         status,
-        cleanup_boundaries: cleanup_boundaries(&removed_targets, &likely_leftover_paths),
+        cleanup_boundaries: cleanup_boundaries(&removed_targets, &manual_leftover_paths),
         removed_paths,
+        manual_leftover_paths: manual_leftover_paths.clone(),
+        ownership_refused_paths: ownership_refused_path_strings,
         remaining_manual_steps,
-        likely_leftover_paths,
+        likely_leftover_paths: manual_leftover_paths,
     };
 
     let human = format!(
-        "Self uninstall status: {} | removed paths: {} | manual steps: {}",
+        "Self uninstall status: {} | removed paths: {} | manual leftovers: {} | ownership-refused \
+         paths: {} | manual steps: {}",
         status.as_str(),
         human_list(&response.removed_paths),
+        human_list(&response.manual_leftover_paths),
+        human_list(&response.ownership_refused_paths),
         human_list(&response.remaining_manual_steps)
     );
     print_output(output, color, &human, &response)?;
@@ -529,7 +554,7 @@ fn absolute_target_path(path: &Path) -> Result<PathBuf> {
     Ok(std::env::current_dir()?.join(path))
 }
 
-fn ensure_safe_uninstall_path(path: &Path) -> Result<()> {
+fn ensure_uninstall_path_has_parent(path: &Path) -> Result<()> {
     if path.parent().is_none() {
         return Err(self_invalid_input(format!(
             "Refusing to uninstall unsafe path: {}",
@@ -537,19 +562,14 @@ fn ensure_safe_uninstall_path(path: &Path) -> Result<()> {
         )));
     }
 
-    let owned_by_nodeup = path.components().any(|component| match component {
+    Ok(())
+}
+
+fn is_nodeup_owned_path(path: &Path) -> bool {
+    path.components().any(|component| match component {
         Component::Normal(value) => value.to_str().is_some_and(is_nodeup_owned_component),
         _ => false,
-    });
-
-    if !owned_by_nodeup {
-        return Err(self_invalid_input(format!(
-            "Refusing to uninstall non-nodeup-owned path: {}",
-            path.display()
-        )));
-    }
-
-    Ok(())
+    })
 }
 
 fn ensure_uninstall_path_excludes_running_binary(path: &Path) -> Result<()> {
@@ -758,7 +778,7 @@ fn uninstall_roots(app: &NodeupApp) -> [SelfUninstallRoot; 3] {
     ]
 }
 
-fn likely_leftover_paths(app: &NodeupApp) -> Vec<String> {
+fn likely_leftover_paths(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec<String> {
     let mut paths = Vec::new();
 
     if let Ok(path) = resolve_target_binary_path() {
@@ -767,7 +787,7 @@ fn likely_leftover_paths(app: &NodeupApp) -> Vec<String> {
         }
     }
 
-    for shim_dir in leftover_shim_directories(app) {
+    for shim_dir in leftover_shim_directories(app, excluded_roots) {
         for alias in ["node", "npm", "npx", "yarn", "pnpm"] {
             for candidate in [
                 shim_dir.join(alias),
@@ -788,8 +808,8 @@ fn likely_leftover_paths(app: &NodeupApp) -> Vec<String> {
     paths
 }
 
-fn preserved_uninstall_paths(app: &NodeupApp) -> Vec<PathBuf> {
-    let mut paths = existing_shim_directories(app);
+fn preserved_uninstall_paths(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec<PathBuf> {
+    let mut paths = existing_shim_directories(app, excluded_roots);
     if let Ok(path) = resolve_target_binary_path() {
         if path.exists() {
             if let Ok(path) = absolute_target_path(&path) {
@@ -806,9 +826,9 @@ fn preserved_uninstall_paths(app: &NodeupApp) -> Vec<PathBuf> {
     })
 }
 
-fn existing_shim_directories(app: &NodeupApp) -> Vec<PathBuf> {
+fn existing_shim_directories(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut paths = shim_directories();
-    for root in known_nodeup_roots(app) {
+    for root in known_nodeup_roots(app, excluded_roots) {
         collect_managed_shim_dirs(&root, &mut paths);
     }
 
@@ -824,6 +844,12 @@ fn existing_shim_directories(app: &NodeupApp) -> Vec<PathBuf> {
             }
             unique
         })
+}
+
+fn path_is_excluded_root(path: &Path, excluded_roots: &[PathBuf]) -> bool {
+    excluded_roots
+        .iter()
+        .any(|excluded_root| paths_equal(path, excluded_root))
 }
 
 fn collect_managed_shim_dirs(path: &Path, paths: &mut Vec<PathBuf>) {
@@ -861,7 +887,7 @@ fn directory_contains_nodeup_shim(path: &Path) -> bool {
     })
 }
 
-fn known_nodeup_roots(app: &NodeupApp) -> Vec<PathBuf> {
+fn known_nodeup_roots(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec<PathBuf> {
     [
         Some(app.paths.data_root.clone()),
         Some(app.paths.cache_root.clone()),
@@ -873,6 +899,7 @@ fn known_nodeup_roots(app: &NodeupApp) -> Vec<PathBuf> {
     .into_iter()
     .flatten()
     .filter_map(|path| absolute_target_path(&path).ok())
+    .filter(|path| !path_is_excluded_root(path, excluded_roots))
     .fold(Vec::new(), |mut unique, path| {
         if !unique.iter().any(|existing| existing == &path) {
             unique.push(path);
@@ -881,10 +908,8 @@ fn known_nodeup_roots(app: &NodeupApp) -> Vec<PathBuf> {
     })
 }
 
-fn leftover_shim_directories(app: &NodeupApp) -> Vec<PathBuf> {
-    let mut paths = existing_shim_directories(app);
-    paths.extend(shim_directories());
-    paths
+fn leftover_shim_directories(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec<PathBuf> {
+    existing_shim_directories(app, excluded_roots)
         .into_iter()
         .filter_map(|path| absolute_target_path(&path).ok().or(Some(path)))
         .collect()

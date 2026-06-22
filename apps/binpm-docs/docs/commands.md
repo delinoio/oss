@@ -8,8 +8,7 @@ binpm provides commands for global installs, project-local tools, one-off execut
 binpm install <source> [--as <cmd>] [--bin <upstream-binary>]
 binpm add <cmd> <source> [--bin <upstream-binary>] [--also <cmd=upstream-binary>] [--manifest-only]
 binpm install
-binpm update [cmd...] [--local]
-binpm update --global
+binpm update [cmd...] [--local|--global] [--dry-run]
 binpm remove <cmd> [--local|--global]
 ```
 
@@ -27,7 +26,7 @@ binpm add foo github:owner/tools@v1.2.3 --bin bin/foo --also bar=bin/bar --also 
 
 Commands that support both local and global scope default to local when a local `binpm.toml` is discovered. Otherwise they default to global. `--local` and `--global` are explicit overrides.
 
-`binpm update [cmd...] --global` updates selected global tools, or every global tool when no command names are supplied. It uses existing global package records, preserves each command alias and selected upstream binary, resolves the latest stable release for the recorded source, and finalizes through the same cache, install, rollback, and verification behavior as global installs. Add `--dry-run` to print the selected scope and planned runtime changes without mutating package records, cache references, or executables.
+`binpm update [cmd...] [--local|--global]` updates selected tools, or every tool in the selected scope when no command names are supplied. Output states the selected scope and whether the request is all-tools or command-scoped before printing the planned update list. Global updates use existing global package records, preserve each command alias and selected upstream binary, resolve the latest stable release for the recorded source, and finalize through the same cache, install, rollback, and verification behavior as global installs. Add `--dry-run` to preview the selected scope, update mode, and planned runtime changes without mutating package records, cache references, or executables.
 
 ## Execution
 
@@ -38,7 +37,7 @@ binpm x --package <source> [--bin <upstream-binary>] [CMD] [args...]
 
 `binpm x` runs commands from the local manifest or from an explicitly supplied `--package`.
 
-With `--package`, use `--bin` to choose the upstream executable for one-off execution. `CMD` remains the command name placed in the temporary execution context. If `CMD` is omitted, the one-off shortcut keeps the source explicit and exposes the repository basename, or the `--bin` basename when `--bin` is supplied. Provide an explicit `CMD` when you need to forward args. `binpm x rg` without a local manifest entry still does not infer a remote package.
+With `--package`, use `--bin` to choose the upstream executable for one-off execution. `CMD` remains the command name placed in the temporary execution context. If `CMD` is omitted, the one-off shortcut keeps the source explicit and exposes the repository basename, or the `--bin` basename when `--bin` is supplied. The shortcut form does not forward args; provide an explicit `CMD` when you need to pass args, for example `binpm x --package <source> <cmd> -- <args...>`. `binpm x rg` without a local manifest entry still does not infer a remote package.
 
 ## Diagnostics
 
@@ -50,17 +49,17 @@ binpm info <cmd-or-source> [--local|--global]
 binpm outdated [--local|--global]
 ```
 
-`binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, and `binpm outdated` inspect state without changing manifests, lockfiles, cached assets, or installed executables. `binpm outdated` includes each tool source in stale human rows and JSON tool entries so global tools can be reinstalled from the reported source.
+`binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, and `binpm outdated` inspect state without changing manifests, lockfiles, cached assets, or installed executables. Scoped read-only commands show the selected local or global scope in human output when that scope affects results, and include `scope` in JSON output. `binpm outdated` includes each tool source in stale human rows and JSON tool entries so global tools can be reinstalled from the reported source.
 
 ## Environment
 
 ```bash
-binpm env --shell <bash|zsh|fish|powershell>
+binpm env [--shell <bash|zsh|fish|powershell|pwsh>] [--global|--local]
 ```
 
-`binpm env` prints shell-specific commands for adding the project-local and global binpm binary directories to `PATH`. It labels the global command as profile-safe and the project-local command as current-project/session-only. It does not edit shell profile files.
+`binpm env` prints shell-specific commands for adding the project-local and global binpm binary directories to `PATH`. It labels the global command as profile-safe and the project-local command as current-project/session-only. Use `--global` to print only the global command for profile setup, or `--local` to print only the project-local current-session command. It does not edit shell profile files.
 
-Supported shell values are `bash`, `zsh`, `fish`, and `powershell`. `PowerShell` is accepted case-insensitively. `cmd` is a recognized but deferred value and returns an unsupported-shell diagnostic.
+Supported shell values are `bash`, `zsh`, `fish`, and `powershell`. `PowerShell` is accepted case-insensitively, and `pwsh` is accepted as a PowerShell alias. `--shell` may be omitted when `SHELL` or `ComSpec` identifies a supported shell. `cmd` is a recognized but deferred value and returns an unsupported-shell diagnostic with current-session and persistent user-PATH guidance for cmd.exe.
 
 ## Cache
 

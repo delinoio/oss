@@ -56,11 +56,10 @@ impl ToolchainListDetail {
     version,
     about = "Rustup-like Node.js version manager",
     after_help = "Script-safe output:\n  Use `--output json` for structured automation.\n  Use \
-                  `nodeup toolchain list --quiet` with RUST_LOG=off in the environment for raw \
-                  runtime identifiers.\n  Use `nodeup completions <shell> >file` with \
-                  RUST_LOG=off in the environment for raw completion scripts.\n  Logs are written \
-                  to stderr and JSON mode keeps logging off for parseable automation \
-                  output.\n\nColor controls:\n  --color accepts auto, always, or never.\n  \
+                  `nodeup toolchain list --quiet` for raw runtime identifiers.\n  Use `nodeup \
+                  completions <shell> >file` for raw completion scripts.\n  Logs are written to \
+                  stderr when enabled; JSON mode keeps Nodeup logging off by default for \
+                  parseable automation output.\n\nColor controls:\n  --color accepts auto, always, or never.\n  \
                   NODEUP_COLOR accepts auto, always, or never for human stdout/stderr.\n  \
                   NODEUP_LOG_COLOR accepts auto, always, or never for logs.\n  Precedence for \
                   human output is --color > NODEUP_COLOR > NO_COLOR > stream-aware auto.\n  Run \
@@ -141,12 +140,11 @@ pub enum Command {
         #[command(subcommand)]
         command: SelfCommand,
     },
-    /// Generate shell completion scripts. Set RUST_LOG=off in the environment
-    /// before redirecting for script-safe raw output.
+    /// Generate shell completion scripts.
     Completions {
         /// Target shell (for example: `bash`, `zsh`, or `fish`).
         shell: String,
-        /// Optional command scope for completion generation.
+        /// Optional top-level command scope for completion generation.
         #[arg(value_name = "COMMAND", allow_hyphen_values = true)]
         command: Vec<String>,
     },
@@ -156,8 +154,7 @@ pub enum Command {
 pub enum ToolchainCommand {
     /// List installed runtimes.
     List {
-        /// Print compact runtime identifiers only. Set RUST_LOG=off in the
-        /// environment for script-safe raw lists.
+        /// Print compact runtime identifiers only.
         #[arg(long, conflicts_with = "verbose")]
         quiet: bool,
         /// Include runtime metadata such as resolved target paths.
@@ -217,10 +214,10 @@ pub enum OverrideCommand {
     /// Remove a runtime override for a directory.
     Unset {
         /// Override target directory. Defaults to current working directory.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "nonexistent")]
         path: Option<String>,
         /// Remove stale entries whose directories no longer exist.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "path")]
         nonexistent: bool,
     },
 }

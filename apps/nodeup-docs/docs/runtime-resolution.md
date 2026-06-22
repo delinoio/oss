@@ -45,6 +45,8 @@ nodeup override unset --path ~/src/service
 nodeup override unset --nonexistent
 ```
 
+`--path` removes one target. `--nonexistent` performs global stale-entry cleanup. The two flags cannot be combined.
+
 ## Global Default
 
 The global default is used when no explicit selector or matching override exists:
@@ -55,6 +57,8 @@ nodeup default
 ```
 
 When a saved default no longer resolves, `nodeup default` still reports the saved selector and includes a resolution error in JSON output.
+
+Setting a default can install a version/channel target as a side effect. Human output reports the resolved runtime as `installed` or `already-installed`, and JSON output includes `install_side_effect` with the runtime, status, and whether the default command performed a fresh install.
 
 JSON selector-bearing responses include:
 
@@ -76,6 +80,8 @@ Nodeup verifies availability when commands need an executable:
 - Managed alias dispatch installs a missing selected version before execution.
 
 For linked runtimes, Unix hosts require an executable bit on `bin/node`. Windows platform behavior resolves `node` to `bin/node.exe`.
+
+For platform override tests, `NODEUP_FORCE_PLATFORM` accepts macOS aliases in either documented host spelling (`macos-x64`, `macos-arm64`, `macos/x64`, `macos/arm64`) or runtime archive spelling (`darwin-x64`, `darwin-arm64`).
 
 `toolchain link` only requires the linked runtime to provide runnable `node`. Package-manager commands are checked per command later. Successful link output reports availability for each managed shim command:
 

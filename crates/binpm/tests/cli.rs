@@ -245,6 +245,9 @@ fn global_update_dry_run_reports_all_global_records_without_mutation() {
         .assert()
         .success()
         .stdout(predicate::str::contains("update scope: global"))
+        .stdout(predicate::str::contains(
+            "update mode: all tools in global scope",
+        ))
         .stdout(predicate::str::contains("planned updates: 2"))
         .stdout(predicate::str::contains(
             "would update alpha from github:owner/alpha 1.0.0",
@@ -277,6 +280,7 @@ fn global_update_dry_run_reports_selected_global_records_without_mutation() {
         .assert()
         .success()
         .stdout(predicate::str::contains("update scope: global"))
+        .stdout(predicate::str::contains("update mode: selected tools (1)"))
         .stdout(predicate::str::contains("planned updates: 1"))
         .stdout(predicate::str::contains(
             "would update beta from github:owner/beta 2.0.0",
@@ -404,6 +408,48 @@ fn package_shortcut_without_command_keeps_source_explicit() {
 }
 
 #[test]
+fn package_shortcut_rejects_ambiguous_forwarded_args_without_command() {
+    let mut command = binpm();
+
+    command
+        .args(["x", "--package", "github:owner/tool", "--", "--version"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Ambiguous `--package` execution arguments",
+        ))
+        .stderr(predicate::str::contains(
+            "binpm x --package <source> <cmd> -- <args...>",
+        ))
+        .stderr(predicate::str::contains("binpm add <cmd> <source>"));
+}
+
+#[test]
+fn local_x_missing_command_points_to_explicit_remediation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["x", "missing"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Tool `missing` is not declared"))
+        .stderr(predicate::str::contains(
+            "binpm will not infer a package source from the command name",
+        ))
+        .stderr(predicate::str::contains("binpm add missing <source>"))
+        .stderr(predicate::str::contains(
+            "binpm x --package <source> missing",
+        ));
+}
+
+#[test]
 fn execution_aliases_accept_package_and_forwarded_flags() {
     for alias in ["exec", "run"] {
         let mut command = binpm();
@@ -476,6 +522,97 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
     let manifest = fs::read_to_string(manifest_path).expect("read manifest");
     assert_eq!(manifest, "version = 1\n");
     assert!(!nested_dir.join("binpm.toml").exists());
+}
+
+#[test]
+fn init_manifest_path_is_explicit_destination_escape_hatch() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
+    let nested_dir = temp_dir.path().join("packages").join("cli");
+    fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let manifest_path = nested_dir.join("binpm.toml");
+    let mut command = binpm();
+
+    command
+        .current_dir(&nested_dir)
+        .args(["init", "--manifest-path"])
+        .arg(&manifest_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "manifest destination: {}",
+            manifest_path.display()
+        )))
+        .stdout(predicate::str::contains(format!(
+            "created manifest: {}",
+            manifest_path.display()
+        )));
+
+    let manifest = fs::read_to_string(&manifest_path).expect("read manifest");
+    assert_eq!(manifest, "version = 1\n");
+    assert!(!temp_dir.path().join("binpm.toml").exists());
+}
+
+#[test]
+fn init_manifest_path_must_name_binpm_toml() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let invalid_path = temp_dir.path().join("tools.toml");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .args(["init", "--manifest-path"])
+        .arg(&invalid_path)
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("explicit init destinations"))
+        .stderr(predicate::str::contains("binpm.toml"));
+}
+
+#[test]
+fn init_manifest_path_rejects_parent_directory_components() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let existing_manifest = temp_dir.path().join("binpm.toml");
+    let ambiguous_manifest = temp_dir
+        .path()
+        .join("missing")
+        .join("..")
+        .join("binpm.toml");
+    fs::write(&existing_manifest, "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .args(["init", "--manifest-path"])
+        .arg(&ambiguous_manifest)
+        .assert()
+        .failure()
+        .code(2)
+        .stdout(predicate::str::contains("created manifest:").not())
+        .stderr(predicate::str::contains(
+            "Invalid init manifest destination",
+        ));
+
+    assert_eq!(
+        fs::read_to_string(&existing_manifest).expect("read existing manifest"),
+        "version = 1\n"
+    );
+    assert!(!temp_dir.path().join("missing").exists());
+}
+
+#[test]
+fn init_force_is_rejected() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .args(["init", "--force"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument '--force'"));
 }
 
 #[test]
@@ -568,6 +705,211 @@ fn env_prints_shell_path_exports() {
             "# Project-local bin: use for the current project/session only",
         ))
         .stdout(predicate::str::contains(expected_local));
+}
+
+#[test]
+fn env_can_infer_shell_from_environment() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let global_bin = home.join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("SHELL", "/usr/bin/zsh")
+        .arg("env")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "export PATH={}${{PATH:+:$PATH}}",
+            bash_quote_path(&global_bin)
+        )));
+}
+
+#[test]
+fn env_without_shell_or_detectable_environment_reports_hint() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .arg("env")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Failed to infer a shell"))
+        .stderr(predicate::str::contains(
+            "--shell <bash|zsh|fish|powershell|pwsh|cmd>",
+        ));
+}
+
+#[test]
+fn env_global_scope_prints_only_global_path_command() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let global_bin = home.join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--global", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Global bin"))
+        .stdout(predicate::str::contains(bash_quote_path(&global_bin)))
+        .stdout(predicate::str::contains("Project-local bin").not());
+}
+
+#[test]
+fn env_local_scope_prints_only_project_path_command() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--local", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Global bin").not())
+        .stdout(predicate::str::contains("Project-local bin"))
+        .stdout(predicate::str::contains(bash_quote_path(&local_bin)));
+}
+
+#[test]
+fn env_local_scope_does_not_require_global_home() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", "relative-home")
+        .args(["env", "--local", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Global bin").not())
+        .stdout(predicate::str::contains("Project-local bin"))
+        .stdout(predicate::str::contains(bash_quote_path(&local_bin)));
+}
+
+#[test]
+fn env_local_cmd_guidance_is_session_only() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", "relative-home")
+        .args(["env", "--local", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Unsupported shell `cmd`"))
+        .stderr(predicate::str::contains(format!(
+            "set \"PATH={};%PATH%\"",
+            local_bin.display()
+        )))
+        .stderr(predicate::str::contains("current project/session"))
+        .stderr(predicate::str::contains("Windows Environment Variables").not())
+        .stderr(predicate::str::contains("user PATH").not());
+}
+
+#[test]
+fn env_cmd_combined_session_keeps_local_before_global() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let global_bin = home.join("bin");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let local_before_global = format!(
+        "set \"PATH={};{};%PATH%\"",
+        local_bin.display(),
+        global_bin.display()
+    );
+    let global_before_local = format!(
+        "set \"PATH={};{};%PATH%\"",
+        global_bin.display(),
+        local_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Unsupported shell `cmd`"))
+        .stderr(predicate::str::contains("add the global bin"))
+        .stderr(predicate::str::contains(local_before_global))
+        .stderr(predicate::str::contains(global_before_local).not());
+}
+
+#[test]
+fn env_cmd_escapes_percent_expansion_in_session_hints() {
+    let temp_dir = tempfile::Builder::new()
+        .prefix("binpm-%USERPROFILE%-")
+        .tempdir()
+        .expect("tempdir");
+    let home = temp_dir.path().join("home-%APPDATA%");
+    let global_bin = home.join("bin");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let escaped_global = global_bin.display().to_string().replace('%', "%%cd:~,%");
+    let escaped_local = local_bin.display().to_string().replace('%', "%%cd:~,%");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(format!(
+            "set \"PATH={escaped_local};%PATH%\""
+        )))
+        .stderr(predicate::str::contains(format!(
+            "set \"PATH={escaped_local};{escaped_global};%PATH%\""
+        )))
+        .stderr(predicate::str::contains("^%").not())
+        .stderr(
+            predicate::str::contains(format!("set \"PATH={};%PATH%\"", local_bin.display())).not(),
+        )
+        .stderr(
+            predicate::str::contains(format!(
+                "set \"PATH={};{};%PATH%\"",
+                local_bin.display(),
+                global_bin.display()
+            ))
+            .not(),
+        );
 }
 
 #[test]
@@ -844,6 +1186,73 @@ fn cache_clean_output_states_removed_and_preserved_boundaries() {
 }
 
 #[test]
+fn cache_clean_json_states_removed_and_preserved_boundaries() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let entry = home.join("cache").join("sha256").join("abc");
+    fs::create_dir_all(&entry).expect("create cache entry");
+    fs::write(entry.join("asset"), b"bytes").expect("write cache asset");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["cache", "clean", "--json"])
+        .output()
+        .expect("cache clean --json");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse cache clean json");
+    assert_eq!(payload["command"], "cache clean");
+    assert_eq!(payload["removed_cache_entries"], 1);
+    assert!(payload["removed_boundary"]
+        .as_str()
+        .expect("removed boundary")
+        .ends_with("/cache/sha256"));
+    assert!(payload["preserved_boundaries"]["cache_refs"]
+        .as_str()
+        .expect("cache refs")
+        .ends_with("/cache/refs"));
+    assert!(payload["preserved_boundaries"]["package_records"]
+        .as_str()
+        .expect("package records")
+        .ends_with("/packages"));
+    assert!(payload["preserved_boundaries"]["executables"]
+        .as_str()
+        .expect("executables")
+        .ends_with("/bin"));
+}
+
+#[test]
+fn cache_prune_json_reports_legacy_ref_migration_boundary() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let refs = home.join("cache").join("refs");
+    fs::create_dir_all(&refs).expect("create refs");
+    fs::write(
+        refs.join("legacy.ref"),
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    )
+    .expect("write legacy ref");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["cache", "prune", "--json"])
+        .output()
+        .expect("cache prune --json");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse cache prune json");
+    assert_eq!(payload["command"], "cache prune");
+    assert_eq!(payload["preserved_legacy_cache_refs"], 1);
+    assert!(payload["migration_hint"]
+        .as_str()
+        .expect("migration hint")
+        .contains("rewrite them as structured refs"));
+    assert!(refs.join("legacy.ref").exists());
+}
+
+#[test]
 fn doctor_from_nested_directory_reports_git_root_state() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -934,6 +1343,30 @@ version = "1.0.0"
 }
 
 #[test]
+fn list_human_reports_selected_scope() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(
+        temp_dir.path().join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list scope: local"));
+}
+
+#[test]
 fn cache_list_json_is_parseable_without_entries() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -1012,6 +1445,8 @@ signature_verified = false
     let payload: Value = serde_json::from_slice(&output.stdout).expect("parse explain json");
     assert_eq!(payload["kind"], "package");
     assert_eq!(payload["command"], "explain");
+    assert_eq!(payload["read_only"], true);
+    assert_eq!(payload["network_free"], true);
     assert_eq!(payload["scope"], "local");
     assert_eq!(payload["record"]["target"]["os"], "linux");
     assert_eq!(payload["record"]["target"]["arch"], "x86_64");
@@ -1027,6 +1462,39 @@ signature_verified = false
         "[tools.tool.targets.linux-x86_64-gnu]\nasset = \"tool-linux-x64\"\nbin = \
          \"tool-linux-x64\""
     );
+}
+
+#[test]
+fn explain_rejects_unsupported_package_manager_backend_with_backend_diagnostic() {
+    for source in ["npm:eslint@1.0.0", "npm:eslint@latest", "npm:@scope/pkg"] {
+        let mut command = binpm();
+
+        command
+            .args(["explain", source])
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(predicate::str::contains("package-manager backend"))
+            .stderr(predicate::str::contains("provider release assets"))
+            .stderr(predicate::str::contains("github:owner/repo"))
+            .stderr(predicate::str::contains("gitlab:<host>"));
+    }
+}
+
+#[test]
+fn explain_rejects_gitlab_without_explicit_host() {
+    let mut command = binpm();
+
+    command
+        .args(["explain", "gitlab:group/project"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "gitlab sources require an explicit host",
+        ))
+        .stderr(predicate::str::contains("gitlab:gitlab.com/group/project"))
+        .stderr(predicate::str::contains("intentionally not accepted"));
 }
 
 #[test]
@@ -1250,7 +1718,7 @@ fn doctor_guides_path_setup_when_global_bin_is_absent_from_path() {
         .assert()
         .success()
         .stdout(predicate::str::contains("global_bin_on_path: no"))
-        .stdout(predicate::str::contains("binpm env --shell"))
+        .stdout(predicate::str::contains("binpm env --global --shell"))
         .stdout(predicate::str::contains("profile changes are opt-in"))
         .stdout(predicate::str::contains("persist only the global bin line"))
         .stdout(predicate::str::contains(
@@ -1336,6 +1804,22 @@ fn env_powershell_uses_runtime_path_separator() {
 }
 
 #[test]
+fn env_pwsh_alias_renders_powershell_syntax() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--shell", "pwsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("$env:PATH"))
+        .stdout(predicate::str::contains("[System.IO.Path]::PathSeparator"));
+}
+
+#[test]
 fn env_powershell_avoids_trailing_separator_when_path_is_unset() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -1368,7 +1852,49 @@ fn env_cmd_reports_explicitly_deferred_shell() {
         .stderr(predicate::str::contains(
             "Supported shells: bash, zsh, fish, powershell",
         ))
-        .stderr(predicate::str::contains("Deferred shell: cmd"));
+        .stderr(predicate::str::contains("Alias: pwsh"))
+        .stderr(predicate::str::contains("Deferred shell: cmd"))
+        .stderr(predicate::str::contains("add the global bin"))
+        .stderr(predicate::str::contains("current project/session"))
+        .stderr(predicate::str::contains("set \"PATH="));
+}
+
+#[test]
+fn env_cmd_hint_uses_configured_global_home() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("custom-home");
+    let global_bin = home.join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--global", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(global_bin.display().to_string()))
+        .stderr(predicate::str::contains("%USERPROFILE%\\.binpm\\bin").not());
+}
+
+#[test]
+fn env_cmd_local_hint_uses_project_local_bin() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .args(["env", "--local", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(local_bin.display().to_string()))
+        .stderr(predicate::str::contains("%USERPROFILE%\\.binpm\\bin").not());
 }
 
 #[test]
@@ -1410,7 +1936,12 @@ fn frozen_local_update_allows_empty_manifest_without_lockfile() {
         .env("BINPM_HOME", &home)
         .args(["update", "--local", "--frozen-lockfile"])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::contains("planned updates: 0"))
+        .stdout(predicate::str::contains(
+            "empty manifest: no lockfile or local executable changes needed",
+        ))
+        .stdout(predicate::str::contains("would update").not());
 
     assert!(!project.join("binpm.lock").exists());
 }
@@ -1431,7 +1962,12 @@ fn ci_local_update_allows_empty_manifest_without_lockfile() {
         .env("CI", "true")
         .args(["update", "--local"])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::contains("planned updates: 0"))
+        .stdout(predicate::str::contains(
+            "empty manifest: no lockfile or local executable changes needed",
+        ))
+        .stdout(predicate::str::contains("would update").not());
 
     assert!(!project.join("binpm.lock").exists());
 }
@@ -2402,6 +2938,9 @@ version = "1.0.0"
         .assert()
         .success()
         .stdout(predicate::str::contains("update scope: local"))
+        .stdout(predicate::str::contains(
+            "update mode: all tools in local scope",
+        ))
         .stdout(predicate::str::contains("planned updates: 2"))
         .stdout(predicate::str::contains(
             "would update alpha from github:owner/alpha <latest>",
@@ -2412,6 +2951,75 @@ version = "1.0.0"
         .stdout(predicate::str::contains("dry run: no changes made"));
 
     assert!(!project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
+}
+
+#[test]
+fn local_update_dry_run_suppresses_empty_manifest_file_change_plan() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("update scope: local"))
+        .stdout(predicate::str::contains("planned updates: 0"))
+        .stdout(predicate::str::contains(
+            "empty manifest: no lockfile or local executable changes needed",
+        ))
+        .stdout(predicate::str::contains("would update").not())
+        .stdout(predicate::str::contains("dry run: no changes made"));
+
+    assert!(!project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
+}
+
+#[test]
+fn local_update_dry_run_reports_empty_manifest_orphan_cleanup() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("update scope: local"))
+        .stdout(predicate::str::contains("planned updates: 0"))
+        .stdout(
+            predicate::str::contains(
+                "empty manifest: no lockfile or local executable changes needed",
+            )
+            .not(),
+        )
+        .stdout(predicate::str::contains(format!(
+            "would update {}",
+            project.join("binpm.lock").display()
+        )))
+        .stdout(predicate::str::contains("dry run: no changes made"));
+
+    assert!(project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
 }
 

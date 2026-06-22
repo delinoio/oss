@@ -19,6 +19,7 @@
 - `nodeup shim setup [--dir <path>]` must create or repair Nodeup-managed shims idempotently without replacing unrelated existing commands.
 - Shim setup must default to `NODEUP_SHIM_DIR` when set, otherwise `$HOME/.local/bin`.
 - Shim setup must emit PATH guidance when the shim directory is not active on `PATH`.
+- Shim setup conflicts must report the conflicting path, ownership classification, and remediation in human output and JSON error diagnostics.
 - macOS and Linux shim setup must use symlinks; Windows shim setup must use copied `.exe` aliases because symlink privileges are not guaranteed.
 - Windows copied aliases must have Nodeup ownership marker files next to them; setup may repair differing copied aliases only when the matching marker exists.
 - Install/update command surfaces must preserve backward-compatible flags and outputs.
@@ -30,14 +31,18 @@
 - Tracked exact-version selectors must be stored and processed by their canonical `v<semver>` identity, so `22.1.0` and `v22.1.0` are the same tracked selector.
 - Tracked channel aliases must be stored and processed by canonical selector identity, so `latest` and `current` are one tracked selector, `current`.
 - `nodeup update` treats exact-version selectors as immutable pins and reports them with `skipped-exact-version` rather than installing or reporting a newer runtime for that selector.
+- `nodeup update` without explicit selectors must expose the implicit target source in JSON entries (`tracked-selectors` or `installed-runtimes`) and include structured empty-target diagnostics with selector source, counts, and selector preview.
 - Host support must include `macOS`, `Linux`, and `Windows` x64/arm64, while x86 hosts remain unsupported.
+- Public Nodeup docs must explain that release asset names use `amd64` for the same CPU family commonly called `x64`.
+- `NODEUP_FORCE_PLATFORM` must accept both runtime archive target spellings (`darwin-x64`, `darwin-arm64`) and documented host spellings (`macos-x64`, `macos-arm64`, `macos/x64`, `macos/arm64`) for macOS.
 - Direct installers, runtime installation, and shim dispatch must detect unsupported x86 hosts before release asset download or delegated command planning.
 - Unsupported host failures must use `unsupported-platform`, include the supported pairs `macos/x64`, `macos/arm64`, `linux/x64`, `linux/arm64`, `windows/x64`, and `windows/arm64`, and guide users to an x64/arm64 host or supported CI image.
 - Homebrew installation must consume prebuilt release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - Direct install scripts must verify release artifacts with `SHA256SUMS` and Sigstore bundle sidecars (`<artifact>.sigstore.json`) via `cosign verify-blob --bundle`.
+- Direct install scripts must support bundle-enabled releases only; legacy `.sig` or `.pem` sidecars are out of scope and must not be treated as sufficient release verification material.
 - Direct install scripts must fail before release lookup or artifact download when `cosign` is missing, describe the missing prerequisite with OS-specific setup guidance, and keep that message distinct from checksum mismatch or Sigstore verification failure.
 - Direct installers must remain available at `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1`.
-- Public direct-installer docs must keep remote POSIX and PowerShell examples on first-party `delinoio/oss` raw GitHub URLs for those same scripts; third-party installer URLs and verification-disabling examples are out of scope.
+- Public direct-installer docs must keep remote POSIX and PowerShell examples on first-party `delinoio/oss` raw GitHub URLs for those same scripts, including current `main` commands and tag/commit-pinned command patterns for reproducible automation; third-party installer URLs and verification-disabling examples are out of scope.
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies; docs must explain that unsupported hosts and missing first-party assets fail instead of using source compilation or third-party binary fallback.
 - Runtime archive selection must remain enum-driven: `tar.xz` for `darwin/*` and `linux/*`, `zip` for `windows/*`.
 - Windows runtime archives that unpack without a top-level directory must be normalized into the stable `bin/` runtime layout used by nodeup execution and linking flows.
@@ -45,6 +50,7 @@
 - Linked runtime validation must require a runnable `node` command during `toolchain link` and active-runtime availability checks.
 - Linked runtime names are case-sensitive, but names that differ from reserved channel selectors only by case, such as `LTS`, `Current`, or `LATEST`, must be rejected with `invalid-input`.
 - Legacy settings and overrides that already contain reserved-channel case variants as linked runtime selectors must remain removable and must continue to report linked-runtime metadata in JSON output.
+- `nodeup override unset --path <path>` and `nodeup override unset --nonexistent` are mutually exclusive because path-scoped removal and global stale-entry cleanup have different safety boundaries.
 - Unix linked-runtime validation must require an executable permission bit on `bin/node`; Windows platform behavior must select `bin/node.exe` for `node`.
 - `toolchain link` success output must report per-managed-shim direct command availability for `node`, `npm`, `npx`, `yarn`, and `pnpm`, including checked runtime paths, linked runtime name/path in JSON, install-on-demand eligibility, and PATH/PATHEXT precedence guidance.
 - Missing linked-runtime command failures from `which`, `run`, package-manager fallback planning, or managed shim dispatch must include actionable human checked-path context and JSON diagnostics for `command`, `runtime`, `checked_paths`, `selected_path`, direct executable existence/runnability, linked runtime name/path when applicable, install-on-demand eligibility, install-on-demand scope, and PATH/PATHEXT precedence guidance.
@@ -62,7 +68,9 @@
 - `toolchain uninstall` must remove exact installed versions only; channel selectors and linked-name selectors must fail with `invalid-input` before reference-blocker checks.
 - `toolchain uninstall` must fail atomically with `conflict` when any requested exact runtime is referenced by an exact-version global default or exact-version directory override.
 - `toolchain uninstall` reference-blocker conflicts must report each blocking reference type (`global-default` or `directory-override`), the blocking path, selector, runtime, and follow-up commands for changing the default or unsetting/updating the override.
+- `toolchain uninstall` channel-selector and linked-selector rejections must be actionable: channel rejections must direct users to list installed exact versions, while linked-selector rejections must direct users to `toolchain unlink`.
 - `toolchain uninstall` JSON error diagnostics must include deterministic `blocked_versions` and `blockers` fields so scripts do not parse prose.
+- `nodeup default <runtime>` must make install side effects explicit for version and channel targets. JSON output must include an `install_side_effect` object with runtime, status, and whether the default command performed a fresh install; human output must mention the installed or already-installed runtime.
 - Human output styling must support `--color auto|always|never` and `NODEUP_COLOR=auto|always|never`.
 - Human output color precedence must remain `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
 - `nodeup show color` must report effective color decisions for human stdout, human stderr, and logs, including ignored invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values and whether `NO_COLOR` is present but overridden by a Nodeup-specific color environment variable.
@@ -73,9 +81,9 @@
 - JSON error envelopes must keep the stable fields `kind`, `message`, and `exit_code` while allowing optional structured `diagnostics`.
 - Unsupported platform JSON diagnostics must be deterministic and include `os`, `architecture`, `platform_source`, optional `forced_platform`, and `supported_platforms`.
 - `nodeup shim setup` JSON output must include `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, and `shims`; each shim entry must include `alias`, `path`, `status`, and `method`.
-- `nodeup self uninstall` must remove only Nodeup-owned data, cache, and config roots. It must not remove the running binary, managed shims, shell profile entries, or user PATH values.
+- `nodeup self uninstall` must remove only Nodeup-owned data, cache, and config roots. Non-Nodeup-owned configured roots must be refused without deletion and reported separately. It must not remove the running binary, managed shims, shell profile entries, or user PATH values.
 - `nodeup self uninstall` must report managed shim leftovers from the same default shim directory used by `nodeup shim setup`, including Windows copy marker files when present.
-- `nodeup self uninstall` JSON output must include `removed_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
+- `nodeup self uninstall` JSON output must include `removed_paths`, `manual_leftover_paths`, `ownership_refused_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and the compatibility alias `likely_leftover_paths`.
 - In `--output json` mode, clap parser failures must emit JSON error envelopes on stderr with no ANSI styling; without `--output json`, parser failures must keep clap's native human output.
 - ANSI styling must never be injected into `--output json` payloads on stdout/stderr.
 - `completions` must generate raw shell completion scripts for `bash`, `zsh`, `fish`, `powershell`, and `elvish`.
@@ -83,7 +91,7 @@
 - Invalid completion subcommand scopes such as `toolchain install` must suggest the valid top-level scope, for example `nodeup completions bash toolchain`, and JSON errors must include deterministic `rejected_scope`, `allowed_scope_category`, `allowed_scopes`, and optional `suggested_scope` diagnostics.
 - Top-level completion scopes must include `shim`.
 - `completions` output must remain raw script text on stdout even when `--output json` is requested.
-- Script-safe stdout guidance must map structured automation to `--output json`, newline-delimited runtime lists to setting `RUST_LOG=off` before `nodeup toolchain list --quiet`, completion redirection to setting `RUST_LOG=off` before `nodeup completions <shell> >file`, and log-free human output to setting `RUST_LOG=off` before `nodeup <command>`.
+- Script-safe stdout guidance must map structured automation to `--output json`, newline-delimited runtime lists to `nodeup toolchain list --quiet`, completion redirection to `nodeup completions <shell> >file`, and log-free human output to setting `RUST_LOG=off` before `nodeup <command>`. Logs must remain on stderr when enabled so quiet runtime identifiers and completion scripts keep stdout parseable.
 - Tracing logs must be written to stderr when enabled so stdout remains reserved for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts. Management `--output json` keeps tracing logs off by default so JSON stdout and stderr payloads remain parseable unless `RUST_LOG` explicitly enables tracing.
 
 ## Storage
@@ -120,8 +128,8 @@
 - Parser-error coverage must include human clap output and JSON envelopes for root, nested subcommand, required argument, conflicting flag, unknown command, and unexpected extra argument failures.
 - `packageManager` coverage must include strict parsing diagnostics, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, pinned npm-exec planning output, unpinned npm-exec fallback output, and `which` npm-exec JSON fields.
 - Runtime install coverage must include `linux-arm64`, `windows-x64`, and `windows-arm64` archive selection and extraction behavior plus unsupported x86 CLI override failures.
-- Shim setup coverage must include fresh setup, idempotent reruns, stale shim repair, and Windows copy mode.
-- Self uninstall coverage must include removed path reporting and manual cleanup fields for binary, shims, and shell profile/PATH boundaries.
+- Shim setup coverage must include fresh setup, idempotent reruns, stale shim repair, Windows copy mode, and structured conflict ownership/remediation diagnostics.
+- Self uninstall coverage must include removed path reporting, manual cleanup fields for binary, shims, and shell profile/PATH boundaries, and ownership-refused root reporting.
 - Linked runtime coverage must include unlink success without external directory deletion, missing-link `not-found` errors, default/override unlink conflicts, Unix executable-bit validation, and Windows `node.exe` name selection.
 - Runtime uninstall coverage must include default reference blockers, directory override reference blockers, combined default-and-override blockers, JSON blocker diagnostics, and distinct channel-selector rejection.
 

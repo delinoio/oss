@@ -134,6 +134,8 @@ $env:Path = "$HOME\.local\bin;$env:Path"
 - `nodeup self upgrade-data`
 - `nodeup completions <shell> [command]`
 
+`nodeup override unset --path <path>` and `nodeup override unset --nonexistent` are mutually exclusive. Use `--path` for one override target, or `--nonexistent` for global stale-entry cleanup.
+
 ## Runtime Resolution Precedence
 
 Runtime resolution follows a stable order:
@@ -192,15 +194,16 @@ Fallback rules when `packageManager` is absent:
 - Default shim directory: `NODEUP_SHIM_DIR`, otherwise `$HOME/.local/bin`
 - macOS/Linux: symlink aliases
 - Windows: copied `.exe` aliases
+- Conflicts report the existing path, ownership classification, and remediation; unrelated commands are not replaced
 - JSON output includes `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, and per-alias `shims`
 
 Re-run the command after moving the Nodeup binary or when an alias is stale.
 
 ## Self Uninstall Boundary
 
-`nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only. It does not remove the running binary, managed shims, shell profile entries, or user PATH values.
+`nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only. It does not remove the running binary, managed shims, shell profile entries, or user PATH values. Configured roots that are not clearly Nodeup-owned are refused without deletion and reported separately.
 
-JSON output includes `removed_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
+JSON output includes `removed_paths`, `manual_leftover_paths`, `ownership_refused_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
 
 ## Output and Logging
 
@@ -224,8 +227,8 @@ JSON output includes `removed_paths`, `cleanup_boundaries`, `remaining_manual_st
 Script-safe output patterns:
 
 - Structured automation: `nodeup --output json <command>`
-- Runtime identifier loops: set `RUST_LOG=off`, then run `nodeup toolchain list --quiet`
-- Completion redirection: set `RUST_LOG=off`, then run `nodeup completions <shell> >file`
+- Runtime identifier loops: `nodeup toolchain list --quiet`
+- Completion redirection: `nodeup completions <shell> >file`
 - Human output without logs: set `RUST_LOG=off`, then run `nodeup <command>`
 
 Human output color control:
@@ -269,7 +272,7 @@ Scope filtering:
 - `nodeup completions <shell>` generates completions for all top-level commands.
 - `nodeup completions <shell> <command>` accepts only top-level command scopes:
   - `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `shim`, `self`, `completions`
-  - invalid scopes fail with `invalid-input`.
+  - nested subcommand scopes such as `toolchain install` fail with `invalid-input` and suggest the nearest valid top-level scope, such as `nodeup completions bash toolchain`.
 
 ## Testing Strategy
 

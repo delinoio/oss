@@ -6,7 +6,7 @@ binpm local tooling is anchored by committed `binpm.toml` and `binpm.lock` files
 
 `binpm.toml` is the committed project-local tool declaration file.
 
-`binpm init` prints the full manifest destination before it writes. From a nested directory inside a Git worktree, that destination is the worktree root `binpm.toml`; outside Git, binpm uses the nearest existing manifest ancestor or the current directory. The current contract does not include a flag for forcing a different initialization root.
+`binpm init` prints the full manifest destination before it writes. From a nested directory inside a Git worktree, that destination is the worktree root `binpm.toml`; outside Git, binpm uses the nearest existing manifest ancestor or the current directory. Use `binpm init --manifest-path ./binpm.toml` as an explicit destination escape hatch when you need to create a new manifest somewhere else. The destination must be named `binpm.toml`, existing files are never overwritten, and `--force` is not supported.
 
 ```toml
 version = 1
@@ -19,7 +19,7 @@ bin = "rg"
 
 Tool command names are executable basenames. Path separators, `.` and `..` are invalid command names.
 
-`bin` stores the selected upstream executable name or archive member path. Prefer setting it through the CLI:
+`bin` stores the selected upstream executable name or archive member path. The table key is the installed command alias; `bin` is the upstream binary selected from the release asset. Prefer setting it through the CLI:
 
 ```bash
 binpm add rg github:BurntSushi/ripgrep@14.1.1 --bin rg
@@ -43,7 +43,7 @@ binpm add foo github:owner/tools@v1.2.3 --bin bin/foo --also bar=bin/bar
 
 The manifest still keeps one `[tools.<cmd>]` table per command so each selected binary remains explicit.
 
-Target-specific asset overrides use `[tools.<cmd>.targets.<target-key>]`.
+Target-specific asset overrides use `[tools.<cmd>.targets.<target-key>]` with canonical keys such as `linux-x86_64-gnu`. Override assets must be portable archives or bare executables, not installer packages. Snippets printed by `binpm explain <source>` are marked unverified when they are based only on release metadata; verify the asset compatibility and archive member path before committing them.
 
 ## Lockfile
 
@@ -53,7 +53,7 @@ Lockfiles do not include install timestamps, last-used timestamps, absolute cach
 
 Committed lockfiles store sanitized asset URLs only. They do not store query strings, fragments, credential-bearing URLs, or expiring signed download URLs.
 
-Frozen-lockfile errors include structured diagnostics with `mode`, `reason`, `file`, `record`, `on_demand_install_attempt`, `would_change`, `safest_next_command`, and `local_development_escape_hatch` fields. Use those fields to distinguish CI frozen mode from explicit `--frozen-lockfile`, missing lockfiles from stale records, and regular sync failures from `binpm x` on-demand install attempts.
+Frozen-lockfile errors include structured diagnostics with `mode`, `reason`, `file`, `record`, `on_demand_install_attempt`, `would_change`, `safest_next_command`, and `local_development_escape_hatch` fields. Use those fields to distinguish CI frozen mode (`mode = "CI=true"`) from explicit `--frozen-lockfile`, missing lockfiles from stale records, and regular sync failures from `binpm x` on-demand install attempts.
 
 ## Local Paths
 
@@ -63,4 +63,4 @@ Project-local executable files are installed under:
 <project>/.binpm/bin
 ```
 
-After a normal `binpm add`, run local tools with `binpm x <cmd>`. Use `binpm env --shell <bash|zsh|fish|powershell>` only when you want opt-in direct shell access for the current project or session. binpm does not edit shell profile files.
+After a normal `binpm add`, run local tools with `binpm x <cmd>`. Use `binpm env --local --shell <bash|zsh|fish|powershell>` only when you want opt-in direct shell access for the current project or session. binpm does not edit shell profile files.

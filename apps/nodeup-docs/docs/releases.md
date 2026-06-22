@@ -2,6 +2,8 @@
 
 Nodeup releases provide prebuilt CLI downloads, checksums, and Sigstore verification material.
 
+Download Nodeup release artifacts from the [`delinoio/oss` GitHub Releases page](https://github.com/delinoio/oss/releases). Look for releases whose tag starts with `nodeup@v`, such as `nodeup@v<semver>`.
+
 ## Tag Contract
 
 Release tags use:
@@ -21,6 +23,8 @@ Release downloads are provided for:
 - `windows/amd64`
 - `windows/arm64`
 
+In Nodeup release asset names, `amd64` means the same 64-bit Intel/AMD CPU family often called `x64` in operating-system and user-facing documentation. For example, Linux x64 hosts use `linux/amd64` assets, and Windows x64 hosts use `windows/amd64` assets.
+
 Each download can be checked against `SHA256SUMS` and Sigstore verification material. Direct installers require releases that include this verification material.
 
 ## Direct Installer Verification
@@ -31,6 +35,8 @@ Direct installers verify:
 2. The artifact's Sigstore bundle with `cosign`.
 
 Direct installers require `cosign` and support bundle-enabled releases only. Missing `cosign` is reported as a prerequisite failure before artifact download. If verification material is missing or verification fails, installation stops before the binary is installed with a distinct verification or release-material error.
+
+A release is direct-installer compatible only when it includes `SHA256SUMS`, the selected artifact, and the selected artifact's `<artifact>.sigstore.json` bundle sidecar. Legacy `.sig` or `.pem` sidecars are not supported by the direct installer. For older releases that lack bundle sidecars, use a newer bundle-enabled release, Homebrew on macOS/Linux when available, or `cargo-binstall` on supported hosts with complete first-party assets.
 
 ## cargo-binstall Asset Contract
 
