@@ -94,40 +94,37 @@ pub fn sanitize_url_text(raw: &str) -> String {
 }
 
 fn sanitize_unparseable_url_text(raw: &str) -> String {
-    let without_query_or_fragment = raw.split(['?', '#']).next().unwrap_or_default().to_string();
-
-    let Some(scheme_end) = without_query_or_fragment.find("://") else {
-        let authority_end = without_query_or_fragment
-            .find('/')
-            .unwrap_or(without_query_or_fragment.len());
-        let authority = &without_query_or_fragment[..authority_end];
-
-        if let Some(userinfo_end) = authority.rfind('@') {
-            return format!(
-                "{}{}",
-                &authority[userinfo_end + 1..],
-                &without_query_or_fragment[authority_end..]
-            );
+    let without_userinfo = match raw.find("://") {
+        Some(scheme_end) => {
+            let authority_start = scheme_end + 3;
+            strip_unparseable_url_userinfo(raw, authority_start)
         }
-
-        return without_query_or_fragment;
+        None => strip_unparseable_url_userinfo(raw, 0),
     };
-    let authority_start = scheme_end + 3;
-    let authority_end = without_query_or_fragment[authority_start..]
+
+    without_userinfo
+        .split(['?', '#'])
+        .next()
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn strip_unparseable_url_userinfo(raw: &str, authority_start: usize) -> String {
+    let authority_end = raw[authority_start..]
         .find('/')
         .map(|index| authority_start + index)
-        .unwrap_or(without_query_or_fragment.len());
-    let authority = &without_query_or_fragment[authority_start..authority_end];
+        .unwrap_or(raw.len());
+    let authority = &raw[authority_start..authority_end];
 
     let Some(userinfo_end) = authority.rfind('@') else {
-        return without_query_or_fragment;
+        return raw.to_string();
     };
 
     format!(
         "{}{}{}",
-        &without_query_or_fragment[..authority_start],
+        &raw[..authority_start],
         &authority[userinfo_end + 1..],
-        &without_query_or_fragment[authority_end..]
+        &raw[authority_end..]
     )
 }
 
@@ -421,6 +418,13 @@ mod tests {
         let sanitized = sanitize_url_text("https://user:token@example test/index.json?secret=1");
 
         assert_eq!(sanitized, "https://example test/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_userinfo_before_query_delimiter_from_unparseable_text() {
+        let sanitized = sanitize_url_text("https://user:pa?ss@mirror/index.json#fragment");
+
+        assert_eq!(sanitized, "https://mirror/index.json");
     }
 
     #[test]
