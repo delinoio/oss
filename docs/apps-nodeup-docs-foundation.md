@@ -24,6 +24,7 @@
 - The production output directory is `doc_build`.
 - The default theme must expose a visible GitHub repository link to `https://github.com/delinoio/oss`, including the top-level GitHub social link and the document-page footer repository link.
 - Content must stay aligned with the Nodeup project and crate contracts, especially installation method selection, direct-installer current and pinned command patterns, release verification, supported host targets, x64/amd64 release asset terminology, command behavior, linked-runtime lifecycle and executable validation, linked-runtime per-shim command availability diagnostics, runtime resolution precedence, shim behavior, Windows shim alias extension behavior versus delegated runtime `.cmd` package-manager executables, shell completions and shell-specific completion installation guidance, invalid subcommand-scope guidance, package-manager resolution, `nodeup run` versus managed-shim install-on-demand behavior, human/JSON output contracts, parser-error envelope behavior, PATH/PATHEXT troubleshooting guidance, and color-control precedence.
+- Content must curate those internal contracts into public guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 
 ## Storage
 - Source documentation is versioned in-repo under `apps/nodeup-docs/docs`.
@@ -32,6 +33,7 @@
 
 ## Security
 - Published content must not expose internal-only secrets, unpublished release credentials, or private CI environment details.
+- Published content must not expose internal architecture, operational, CI, or repository-layout details that are not part of a stable public contract.
 - Installation guidance must preserve the Nodeup direct-installer verification contract for `SHA256SUMS` and Sigstore bundle sidecars and must explain that legacy `.sig` or `.pem` sidecars do not satisfy the direct-installer bundle requirement.
 - Installation guidance must include a chooser that states when to use Homebrew, direct installers, `cargo-binstall`, and binpm.
 - Direct-installer guidance must provide remote copy-paste POSIX and PowerShell commands using stable first-party `delinoio/oss` raw GitHub URLs, include tag/commit-pinned command patterns for reproducible automation, keep canonical in-repo script paths visible for maintainer workflows, present `cosign` as a required prerequisite before direct installer commands, and distinguish missing prerequisite failures from missing release material and verification failures.
