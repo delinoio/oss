@@ -2090,6 +2090,9 @@ fn prepare_global_updates(
 }
 
 fn global_update_selected_binary(record: &PackageRecord) -> Result<Option<String>> {
+    if record.archive_format == ArchiveFormat::BareExecutable {
+        return Ok(None);
+    }
     normalize_bin_selection(Some(&record.selected_binary))
 }
 
@@ -6959,14 +6962,14 @@ mod tests {
     }
 
     #[test]
-    fn global_update_selected_binary_keeps_bare_executable_asset() {
+    fn global_update_selected_binary_omits_bare_executable_override() {
         let mut record = package_record();
         record.archive_format = ArchiveFormat::BareExecutable;
         record.selected_binary = "tool-linux-x64".to_string();
 
         assert_eq!(
             global_update_selected_binary(&record).expect("selection"),
-            Some("tool-linux-x64".to_string())
+            None
         );
     }
 
