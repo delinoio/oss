@@ -13,6 +13,7 @@ Each project must have one project index document and one or more domain contrac
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
 - If a documentation change affects repository or domain policy boundaries, update or create the relevant `AGENTS.md` file in the same change when needed.
+- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation surfaces under `apps/*-docs` and `apps/public-docs` must curate from those contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 
 ## Naming Rules
 - Project index docs: `docs/project-<project-id>.md`

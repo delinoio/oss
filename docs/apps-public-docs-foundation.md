@@ -16,6 +16,7 @@
 ## Interfaces and Contracts
 - Navigation and page ID contracts in `apps/public-docs/docs.json` must remain stable.
 - Public-facing routes and content groupings must map to canonical docs contracts.
+- Content must curate internal contracts from `docs/` into user-facing guidance and must not document repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 - Top-level in-site product page IDs currently include `cargo-mono`, `derun`, and `with-watch`.
 - External top-level major project links include Nodeup at `https://nodeup.delino.io` and binpm at `https://binpm.delino.io`.
 - The legacy `/nodeup` public-docs route must remain a lightweight compatibility handoff page to `https://nodeup.delino.io`; it is not an in-site guide route and must not duplicate Nodeup documentation content.
@@ -30,6 +31,7 @@
 
 ## Security
 - Public content must avoid leaking internal-only secrets or environment details.
+- Public content must avoid exposing internal architecture, operational, CI, or repository-layout details that are not part of a stable public contract.
 - Documentation publishing pipelines must use approved credentials only.
 
 ## Logging
