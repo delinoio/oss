@@ -184,6 +184,13 @@ pub enum BinpmError {
         path: PathBuf,
         version: u8,
     },
+    #[error(
+        "Ambiguous `--package` execution arguments: `binpm x --package <source>` without CMD is \
+         only the one-off shortcut and cannot forward args. To pass args, run `binpm x --package \
+         <source> <cmd> -- <args...>`. To persist a local command, run `binpm add <cmd> <source>` \
+         and then `binpm x <cmd> -- <args...>`."
+    )]
+    AmbiguousPackageShortcutArgs,
     #[error("{}", frozen_lockfile_message(path))]
     FrozenLockfile { path: PathBuf },
     #[error("{}", missing_lockfile_record_message(path, cmd))]
@@ -236,7 +243,7 @@ pub enum BinpmError {
     #[error("Command `{cmd}` exited with status {status}.")]
     CommandFailed { cmd: String, status: i32 },
     #[error(
-        "Tool `{cmd}` is not declared in `{}`. Run `binpm add {cmd} <source>` or retry with `binpm x --package <source> {cmd}`.",
+        "Tool `{cmd}` is not declared in `{}`. binpm will not infer a package source from the command name. Declare it explicitly with `binpm add {cmd} <source>` or run it one-off with `binpm x --package <source> {cmd}`.",
         manifest.display()
     )]
     ExecToolMissing { cmd: String, manifest: PathBuf },
@@ -366,6 +373,7 @@ impl BinpmError {
             Self::InvalidSourceSpec { .. }
             | Self::InvalidTargetKey { .. }
             | Self::InvalidCommandName { .. }
+            | Self::AmbiguousPackageShortcutArgs
             | Self::DuplicateAddDeclaration { .. }
             | Self::InvalidBinSelection { .. }
             | Self::UnsupportedTargetComponent { .. }

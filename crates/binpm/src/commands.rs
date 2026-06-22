@@ -578,12 +578,21 @@ fn source_install_scope(requested_scope: Scope) -> Scope {
 fn exec(args: ExecArgs) -> Result<i32> {
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     let cmd = match args.cmd() {
-        Some(cmd) => cmd.to_string_lossy().to_string(),
+        Some(cmd) => {
+            if args.package.is_some() && cmd.to_string_lossy().starts_with('-') {
+                return Err(BinpmError::AmbiguousPackageShortcutArgs);
+            }
+            cmd.to_string_lossy().to_string()
+        }
         None if args.package.is_some() => {
+            if !args.args().is_empty() {
+                return Err(BinpmError::AmbiguousPackageShortcutArgs);
+            }
             package_shortcut_command(args.package.as_deref(), explicit_bin.as_deref())?
         }
         None => return Err(BinpmError::InvalidCommandName { cmd: String::new() }),
     };
+    validate_command_name(&cmd)?;
     let forwarded_arg_count = args.args().len();
 
     if let Some(source) = &args.package {
@@ -647,7 +656,6 @@ fn exec(args: ExecArgs) -> Result<i32> {
         );
     }
 
-    validate_command_name(&cmd)?;
     let root = require_manifest_root()?;
     let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
     let tool = manifest

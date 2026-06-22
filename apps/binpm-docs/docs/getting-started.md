@@ -32,7 +32,7 @@ For packages where the repository name is the command, the shorter explicit-sour
 binpm x --package github:owner/tool
 ```
 
-Use `--bin <upstream-binary>` when the upstream executable or archive member has a different basename. Provide an explicit `CMD` when you need to forward args. binpm does not infer a GitHub repository from the command name. If `CMD` is missing and `--package` is not supplied, the command fails with a clear hint.
+Use `--bin <upstream-binary>` when the upstream executable or archive member has a different basename. The omitted-`CMD` shortcut does not forward args; provide an explicit `CMD` when you need to pass args, for example `binpm x --package <source> <cmd> -- <args...>`. binpm does not infer a GitHub repository from the command name. If `CMD` is missing and `--package` is not supplied, the command fails with a clear hint to use `binpm add <cmd> <source>` or `binpm x --package <source> <cmd>`.
 
 ## Frozen Lockfiles
 
