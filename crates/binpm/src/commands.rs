@@ -2715,6 +2715,12 @@ fn install_local_from_lock(
     } else {
         None
     };
+    if require_verified && !record.has_verified_source() && !record_has_signature_evidence(&record)
+    {
+        return Err(BinpmError::VerificationRequired {
+            package: record.package_spec,
+        });
+    }
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
         let repair_result = (|| {
             let download_request = locked_record_download_request(&record)?;
@@ -2729,6 +2735,14 @@ fn install_local_from_lock(
                     path: cache_asset.clone(),
                     expected: record.sha256.clone(),
                     actual,
+                });
+            }
+            if require_verified
+                && !record.has_verified_source()
+                && !reverify_locked_record_signature(&cache_paths, &record, &bytes)?
+            {
+                return Err(BinpmError::VerificationRequired {
+                    package: record.package_spec.clone(),
                 });
             }
             let resolved = ResolvedAsset {
@@ -3541,18 +3555,31 @@ fn write_sigstore_verification_inputs(
     );
     let asset_path = cache_paths.tmp.join(format!("sigstore-{nonce}.asset"));
     let bundle_path = cache_paths.tmp.join(format!("sigstore-{nonce}.bundle"));
-    fs::write(&asset_path, asset_bytes).map_err(|source| BinpmError::WriteFile {
-        path: asset_path.clone(),
-        source,
-    })?;
-    fs::write(&bundle_path, bundle_bytes).map_err(|source| BinpmError::WriteFile {
-        path: bundle_path.clone(),
-        source,
-    })?;
+    write_new_file(&asset_path, asset_bytes)?;
+    if let Err(error) = write_new_file(&bundle_path, bundle_bytes) {
+        let _ = remove_path_if_exists(&asset_path);
+        return Err(error);
+    }
     Ok(SigstoreTempPaths {
         asset_path,
         bundle_path,
     })
+}
+
+fn write_new_file(path: &Path, bytes: &[u8]) -> Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|source| BinpmError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    file.write_all(bytes)
+        .map_err(|source| BinpmError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 fn selected_binary_override(
@@ -4449,11 +4476,20 @@ fn verify_check_output(
     target: Option<HostTarget>,
     record: &PackageRecord,
 ) -> VerifyCheckOutput {
+    verify_check_output_with_state(cmd, target, record, verification_state(record))
+}
+
+fn verify_check_output_with_state(
+    cmd: String,
+    target: Option<HostTarget>,
+    record: &PackageRecord,
+    verification: VerificationState,
+) -> VerifyCheckOutput {
     VerifyCheckOutput {
         cmd,
         target,
         checksum_source: record.checksum_source,
-        verification: verification_state(record),
+        verification,
     }
 }
 
@@ -5667,16 +5703,21 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
         validate_package_record_current_provider_digest(&record)?;
         validate_package_record_metadata(&cache_paths, &record)?;
         verify_runtime_cache_bytes(&cache_paths, &record)?;
-        if args.require_verified && !locked_record_has_verified_source(&cache_paths, &record)? {
-            return Err(BinpmError::VerificationRequired {
-                package: record.package_spec,
-            });
-        }
+        let runtime_check = if args.require_verified {
+            if !locked_record_has_verified_source(&cache_paths, &record)? {
+                return Err(BinpmError::VerificationRequired {
+                    package: record.package_spec,
+                });
+            }
+            verify_check_output_with_state(cmd.clone(), None, &record, VerificationState::Verified)
+        } else {
+            verify_check_output(cmd.clone(), None, &record)
+        };
         let installed_path = validate_installed_binary_path(&paths, &cmd, &record)?;
         require_regular_managed_file(&installed_path)?;
         require_executable_managed_file(&installed_path)?;
         verify_installed_binary_contents(&cache_paths, &record, &installed_path)?;
-        checks.push(verify_check_output(cmd.clone(), None, &record));
+        checks.push(runtime_check);
         if !output.is_json() {
             println!("{cmd} verified {}", record.checksum_source.as_str());
         }
@@ -6016,17 +6057,23 @@ fn verify_lockfile_records(
             validate_locked_record_artifact(lockfile_path, &cmd, &record, &target, manifest_tool)?;
             validate_provider_digest_evidence(&record)?;
             validate_locked_record_current_release(lockfile_path, &cmd, &record)?;
-            if require_verified && !download_locked_record_verified_source(&record)? {
-                return Err(BinpmError::VerificationRequired {
-                    package: record.package_spec,
-                });
-            }
+            let lock_check = if require_verified {
+                if !download_locked_record_verified_source(&record)? {
+                    return Err(BinpmError::VerificationRequired {
+                        package: record.package_spec,
+                    });
+                }
+                verify_check_output_with_state(
+                    cmd.clone(),
+                    Some(target.clone()),
+                    &record,
+                    VerificationState::Verified,
+                )
+            } else {
+                verify_check_output(cmd.clone(), Some(target.clone()), &record)
+            };
             locked.insert(cmd.clone());
-            checks.push(verify_check_output(
-                cmd.clone(),
-                Some(target.clone()),
-                &record,
-            ));
+            checks.push(lock_check);
             if !output.is_json() {
                 println!(
                     "{cmd} lock verified {target_key} {}",
@@ -6429,10 +6476,11 @@ mod tests {
         validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
         validate_package_record_metadata, validate_package_record_source_identity,
         validate_provider_digest_evidence, validate_selected_manifest_entries, verify_check_output,
-        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
-        write_sigstore_verification_inputs, zip_file_is_regular, zip_file_is_symlink, ArtifactKind,
-        InstalledPackage, InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode,
-        RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT,
+        verify_check_output_with_state, verify_installed_binary_contents, verify_lockfile_records,
+        verify_runtime_cache_bytes, write_sigstore_verification_inputs, zip_file_is_regular,
+        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
+        GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
         assets::CandidateDecision,
@@ -6444,7 +6492,7 @@ mod tests {
         error::{BinpmError, Result},
         release::{Release, ReleaseAsset, ReleaseClient, ReleaseSelection},
         storage::{
-            managed_installed_path, read_cache_records, require_regular_managed_file,
+            ensure_dir, managed_installed_path, read_cache_records, require_regular_managed_file,
             validate_installed_binary_path, write_cache_record, write_lockfile, write_manifest,
             write_package_record, CachePaths, CacheRecord, LockTool, Lockfile, Manifest,
             ManifestTargetOverride, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths,
@@ -7818,6 +7866,24 @@ mod tests {
         assert_eq!(target.arch, TargetArch::X86_64);
         assert_eq!(target.libc, TargetLibc::Gnu);
         assert_eq!(check.checksum_source, ChecksumSource::GitHubDigest);
+        assert_eq!(check.verification, VerificationState::Verified);
+    }
+
+    #[test]
+    fn json_verify_check_can_report_reverified_signature_record() {
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::Signature;
+        record.signature_available = true;
+        record.signature_verified = true;
+
+        let check = verify_check_output_with_state(
+            "tool".to_string(),
+            None,
+            &record,
+            VerificationState::Verified,
+        );
+
+        assert_eq!(check.checksum_source, ChecksumSource::Signature);
         assert_eq!(check.verification, VerificationState::Verified);
     }
 
@@ -9967,6 +10033,37 @@ mod tests {
             .expect("outside dir")
             .next()
             .is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sigstore_verification_inputs_reject_precreated_symlink_file() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        let resolved = resolved_asset(&package_record().sha256);
+        ensure_dir(&cache.tmp).expect("tmp dir");
+        let nonce = format!(
+            "{}-{:x}",
+            std::process::id(),
+            Sha256::digest(
+                format!(
+                    "{}:{}:{}",
+                    resolved.source, resolved.release_tag, resolved.decision.asset_name
+                )
+                .as_bytes()
+            )
+        );
+        let asset_path = cache.tmp.join(format!("sigstore-{nonce}.asset"));
+        let outside_target = outside.path().join("asset-target");
+        std::os::unix::fs::symlink(&outside_target, &asset_path).expect("symlink asset");
+
+        let error =
+            write_sigstore_verification_inputs(&cache, &resolved, b"asset bytes", b"bundle bytes")
+                .expect_err("precreated symlink");
+
+        assert!(matches!(error, BinpmError::WriteFile { .. }));
+        assert!(!outside_target.exists());
     }
 
     #[test]
