@@ -3394,6 +3394,39 @@ fn self_uninstall_refuses_root_containing_running_binary() {
 
 #[test]
 #[serial]
+fn self_uninstall_reports_non_nodeup_owned_root_containing_running_binary() {
+    let env = TestEnv::new();
+    let unsafe_root = env.root.join("unsafe-home");
+    let binary_path = unsafe_root.join(".local").join("bin").join("nodeup");
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::create_dir_all(&env.cache_root).unwrap();
+    fs::create_dir_all(&env.config_root).unwrap();
+    fs::copy(assert_cmd::cargo::cargo_bin!("nodeup"), &binary_path).unwrap();
+    fs::write(unsafe_root.join("keep.txt"), "do-not-delete").unwrap();
+
+    let output = env
+        .command_with_program(&binary_path)
+        .env("NODEUP_DATA_HOME", &unsafe_root)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall reports refused root containing binary");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["status"], "ownership-refused");
+    assert!(payload["removed_paths"].as_array().unwrap().is_empty());
+    assert!(payload["ownership_refused_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == unsafe_root.to_str().unwrap()));
+
+    assert!(binary_path.exists());
+    assert!(unsafe_root.join("keep.txt").exists());
+}
+
+#[test]
+#[serial]
 fn self_uninstall_reports_non_nodeup_owned_paths_without_removing_them() {
     let env = TestEnv::new();
     let unsafe_root = env.root.join("unsafe-home");
@@ -3488,6 +3521,68 @@ fn self_uninstall_preserves_owned_shims_under_refused_ancestor() {
         .iter()
         .any(|path| path == shim_marker.to_str().unwrap()));
 
+    assert!(shim_marker.exists());
+    assert!(!data_root.join("data-marker.txt").exists());
+    assert!(unsafe_root.join("keep.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
+fn self_uninstall_preserves_configured_symlinked_shims_under_refused_ancestor() {
+    let env = TestEnv::new();
+    let unsafe_root = env.root.join("unsafe-home");
+    let data_root = unsafe_root.join(".local").join("share").join("nodeup");
+    let actual_shim_dir = unsafe_root.join("actual-managed-shims");
+    let shim_dir = data_root.join("managed-shims");
+    let shim_marker = actual_shim_dir.join(".node.exe.nodeup-shim");
+    let reported_shim_marker = shim_dir.join(".node.exe.nodeup-shim");
+    fs::create_dir_all(&data_root).unwrap();
+    fs::create_dir_all(&actual_shim_dir).unwrap();
+    fs::create_dir_all(&env.config_root).unwrap();
+    std::os::unix::fs::symlink(&actual_shim_dir, &shim_dir).unwrap();
+    fs::write(unsafe_root.join("keep.txt"), "do-not-delete").unwrap();
+    fs::write(data_root.join("data-marker.txt"), "data").unwrap();
+    fs::write(&shim_marker, "nodeup shim copy\n").unwrap();
+
+    let mut command = Command::new(assert_cmd::cargo::cargo_bin!("nodeup"));
+    command
+        .env("NODEUP_DATA_HOME", &data_root)
+        .env("NODEUP_CACHE_HOME", &unsafe_root)
+        .env("NODEUP_CONFIG_HOME", &env.config_root)
+        .env("NODEUP_SHIM_DIR", &shim_dir)
+        .env("NODEUP_INDEX_URL", &env.index_url)
+        .env("NODEUP_DOWNLOAD_BASE_URL", &env.download_base_url)
+        .env("NODEUP_FORCE_PLATFORM", "linux-x64");
+
+    let output = command
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves symlinked shims under refused ancestor");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["status"], "removed");
+    assert!(payload["removed_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == data_root.to_str().unwrap()));
+    assert!(payload["ownership_refused_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == unsafe_root.to_str().unwrap()));
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == reported_shim_marker.to_str().unwrap()));
+
+    assert!(fs::symlink_metadata(&shim_dir)
+        .unwrap()
+        .file_type()
+        .is_symlink());
     assert!(shim_marker.exists());
     assert!(!data_root.join("data-marker.txt").exists());
     assert!(unsafe_root.join("keep.txt").exists());

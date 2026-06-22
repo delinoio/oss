@@ -269,8 +269,6 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
             normalize_target_path(&root.path).map_err(|error| log_failure(action, error))?;
         ensure_uninstall_path_has_parent(&normalized_path)
             .map_err(|error| log_failure(action, error))?;
-        ensure_uninstall_path_excludes_running_binary(&normalized_path)
-            .map_err(|error| log_failure(action, error))?;
 
         let has_artifacts = if normalized_path.exists() {
             path_has_artifacts(&normalized_path, root.bootstrap_child.as_deref())
@@ -281,6 +279,8 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
 
         if has_artifacts {
             if is_nodeup_owned_path(&normalized_path) {
+                ensure_uninstall_path_excludes_running_binary(&normalized_path)
+                    .map_err(|error| log_failure(action, error))?;
                 deletion_targets.push(SelfUninstallTarget {
                     category: root.category,
                     path: normalized_path,
@@ -827,10 +827,7 @@ fn preserved_uninstall_paths(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec
 }
 
 fn existing_shim_directories(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec<PathBuf> {
-    let mut paths = shim_directories()
-        .into_iter()
-        .filter(|path| !path_is_under_excluded_root(path, excluded_roots))
-        .collect::<Vec<_>>();
+    let mut paths = shim_directories();
     for root in known_nodeup_roots(app, excluded_roots) {
         collect_managed_shim_dirs(&root, &mut paths);
     }
@@ -847,12 +844,6 @@ fn existing_shim_directories(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec
             }
             unique
         })
-}
-
-fn path_is_under_excluded_root(path: &Path, excluded_roots: &[PathBuf]) -> bool {
-    excluded_roots
-        .iter()
-        .any(|excluded_root| paths_equal(path, excluded_root) || path.starts_with(excluded_root))
 }
 
 fn path_is_excluded_root(path: &Path, excluded_roots: &[PathBuf]) -> bool {
