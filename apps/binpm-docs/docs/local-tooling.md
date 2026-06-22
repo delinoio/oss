@@ -19,7 +19,7 @@ bin = "rg"
 
 Tool command names are executable basenames. Path separators, `.` and `..` are invalid command names.
 
-`bin` stores the selected upstream executable name or archive member path. Prefer setting it through the CLI:
+`bin` stores the selected upstream executable name or archive member path. The table key is the installed command alias; `bin` is the upstream binary selected from the release asset. Prefer setting it through the CLI:
 
 ```bash
 binpm add rg github:BurntSushi/ripgrep@14.1.1 --bin rg
@@ -43,7 +43,7 @@ binpm add foo github:owner/tools@v1.2.3 --bin bin/foo --also bar=bin/bar
 
 The manifest still keeps one `[tools.<cmd>]` table per command so each selected binary remains explicit.
 
-Target-specific asset overrides use `[tools.<cmd>.targets.<target-key>]`.
+Target-specific asset overrides use `[tools.<cmd>.targets.<target-key>]` with canonical keys such as `linux-x86_64-gnu`. Override assets must be portable archives or bare executables, not installer packages. Snippets printed by `binpm explain <source>` are marked unverified when they are based only on release metadata; verify the asset compatibility and archive member path before committing them.
 
 ## Lockfile
 

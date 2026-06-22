@@ -11,7 +11,7 @@ use crate::contract::Scope;
     about = "Install and run native command-line tools from release assets"
 )]
 pub struct Cli {
-    /// Emit stable JSON for read-only diagnostic commands.
+    /// Emit stable JSON for diagnostics and cache cleanup summaries.
     #[arg(long, global = true)]
     pub json: bool,
 
@@ -86,7 +86,7 @@ pub enum Command {
     Info(InfoArgs),
     /// Compare selected tools with latest stable releases.
     Outdated(ScopedArgs),
-    /// Update selected local or global tools.
+    /// Update selected local or global tools, or all tools when none are named.
     Update(UpdateArgs),
     /// Inspect local and global binpm state.
     Doctor,
@@ -267,6 +267,8 @@ pub struct InfoArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct UpdateArgs {
+    /// Tool commands to update. Omit to update every tool in the selected
+    /// scope; use --dry-run to preview that broader update.
     pub cmd: Vec<String>,
 
     #[command(flatten)]

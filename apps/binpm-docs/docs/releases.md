@@ -12,7 +12,7 @@ binpm@v<semver>
 
 ## binpm CLI Artifacts
 
-Release downloads are provided for:
+First-party binpm release downloads are provided for:
 
 - `linux/amd64`
 - `linux/arm64`
@@ -22,6 +22,8 @@ Release downloads are provided for:
 - `windows/arm64`
 
 Each release includes standalone prebuilt binaries, archive assets, `SHA256SUMS`, and Sigstore bundle sidecars (`*.sigstore.json`) for each artifact. Direct installers require releases that include this verification material.
+
+This distribution matrix describes where the binpm binary itself is published. It is separate from binpm's target parsing support for third-party package resolution, which can recognize additional target values such as `freebsd`, `i686`, and `armv7` when scoring upstream release assets or rendering override snippets.
 
 ## Direct Installer Verification
 
@@ -41,7 +43,9 @@ Homebrew installation consumes prebuilt release archives for:
 - `linux/amd64`
 - `linux/arm64`
 
-`cargo-binstall` metadata resolves only first-party GitHub Release assets. Quick-install and compile fallback strategies are disabled.
+Homebrew is prebuilt-only for binpm; the formula does not compile from source when an archive is missing or the host platform is unsupported.
+
+`cargo-binstall` metadata resolves only first-party GitHub Release assets. Quick-install and compile fallback strategies are disabled, so unsupported cargo-binstall platforms fail instead of using third-party binary indexes or source compilation.
 
 ## Package Verification Boundary
 
