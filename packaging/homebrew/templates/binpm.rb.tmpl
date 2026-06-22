@@ -18,7 +18,7 @@ class Binpm < Formula
     if Hardware::CPU.intel?
       url "__LINUX_AMD64_URL__"
       sha256 "__LINUX_AMD64_SHA256__"
-    elsif Hardware::CPU.arm?
+    elsif Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
       url "__LINUX_ARM64_URL__"
       sha256 "__LINUX_ARM64_SHA256__"
     else

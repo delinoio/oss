@@ -1,5 +1,7 @@
 # Reference
 
+Use this page as a compact contract reference for stable source syntax, target values, and read-only command behavior. For installation-channel availability, start with the first-party platform matrix before applying the broader target parsing model to third-party release assets.
+
 ## Stable Source Identifiers
 
 - `github:owner/repo[@version]`
@@ -27,6 +29,8 @@ binpm resolves release assets against the current host target:
 Unsupported operating systems or CPU architectures fail clearly instead of being mapped to a supported fallback target.
 
 CPU feature tokens such as `baseline` and `modern` are scored separately from architecture tokens. Baseline variants are preferred for automatic selection. Modern variants require explicit host CPU capability support, so binpm reports them as a compatibility decision instead of treating `modern` as an architecture.
+
+The target model is broader than binpm's own first-party release matrix. Direct installers, Homebrew, and cargo-binstall publish or consume binpm prebuilt assets only for the documented first-party macOS, Linux, and Windows x64/arm64 platforms; additional target values are for parsing and scoring third-party package assets or writing explicit local target overrides.
 
 ## GitLab HTTPS Assets
 

@@ -30,7 +30,9 @@
 - Tracked exact-version selectors must be stored and processed by their canonical `v<semver>` identity, so `22.1.0` and `v22.1.0` are the same tracked selector.
 - Tracked channel aliases must be stored and processed by canonical selector identity, so `latest` and `current` are one tracked selector, `current`.
 - `nodeup update` treats exact-version selectors as immutable pins and reports them with `skipped-exact-version` rather than installing or reporting a newer runtime for that selector.
+- `nodeup update` without explicit selectors must expose the implicit target source in JSON entries (`tracked-selectors` or `installed-runtimes`) and include structured empty-target diagnostics with selector source, counts, and selector preview.
 - Host support must include `macOS`, `Linux`, and `Windows` x64/arm64, while x86 hosts remain unsupported.
+- `NODEUP_FORCE_PLATFORM` must accept both runtime archive target spellings (`darwin-x64`, `darwin-arm64`) and documented host spellings (`macos-x64`, `macos-arm64`, `macos/x64`, `macos/arm64`) for macOS.
 - Direct installers, runtime installation, and shim dispatch must detect unsupported x86 hosts before release asset download or delegated command planning.
 - Unsupported host failures must use `unsupported-platform`, include the supported pairs `macos/x64`, `macos/arm64`, `linux/x64`, `linux/arm64`, `windows/x64`, and `windows/arm64`, and guide users to an x64/arm64 host or supported CI image.
 - Homebrew installation must consume prebuilt release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
@@ -62,7 +64,9 @@
 - `toolchain uninstall` must remove exact installed versions only; channel selectors and linked-name selectors must fail with `invalid-input` before reference-blocker checks.
 - `toolchain uninstall` must fail atomically with `conflict` when any requested exact runtime is referenced by an exact-version global default or exact-version directory override.
 - `toolchain uninstall` reference-blocker conflicts must report each blocking reference type (`global-default` or `directory-override`), the blocking path, selector, runtime, and follow-up commands for changing the default or unsetting/updating the override.
+- `toolchain uninstall` channel-selector and linked-selector rejections must be actionable: channel rejections must direct users to list installed exact versions, while linked-selector rejections must direct users to `toolchain unlink`.
 - `toolchain uninstall` JSON error diagnostics must include deterministic `blocked_versions` and `blockers` fields so scripts do not parse prose.
+- `nodeup default <runtime>` must make install side effects explicit for version and channel targets. JSON output must include an `install_side_effect` object with runtime, status, and whether the default command performed a fresh install; human output must mention the installed or already-installed runtime.
 - Human output styling must support `--color auto|always|never` and `NODEUP_COLOR=auto|always|never`.
 - Human output color precedence must remain `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
 - `nodeup show color` must report effective color decisions for human stdout, human stderr, and logs, including ignored invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values.

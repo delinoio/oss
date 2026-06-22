@@ -46,7 +46,7 @@ The command rejects linked runtime names before linked-runtime lookup, so a link
 nodeup toolchain uninstall <version>...
 ```
 
-Removes exact installed versions only. At least one version selector is required. Channels and linked runtime names are rejected. Use `nodeup toolchain unlink <name>` for linked runtime records. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
+Removes exact installed versions only. At least one version selector is required. Channels and linked runtime names are rejected before uninstall preflight. For channels, list installed exact versions with `nodeup toolchain list --verbose` and uninstall the exact version. Use `nodeup toolchain unlink <name>` for linked runtime records. A runtime cannot be removed while referenced by an exact-version global default or exact-version directory override.
 
 When removal is blocked, human output reports each blocking reference type and path:
 
@@ -110,12 +110,13 @@ Missing linked names fail with `not-found`. JSON output is the removed linked-na
 nodeup default [runtime]
 ```
 
-Without an argument, prints the current default selector and resolution status. With an argument, resolves the selector, installs version targets when needed, saves it as the global default, and tracks it for updates.
+Without an argument, prints the current default selector and resolution status. With an argument, resolves the selector, installs version/channel targets when needed, saves it as the global default, and tracks it for updates. Human output reports whether the resolved version was installed or already installed.
 
 JSON output includes:
 
 - `default_selector`
 - `resolved_runtime`
+- `install_side_effect` when setting a version/channel default
 - `resolution_error`
 
 `resolution_error` is populated when an existing default cannot currently be resolved.
@@ -152,7 +153,7 @@ Prints effective color decisions for human stdout, human stderr, and logs. JSON 
 nodeup update [runtime]...
 ```
 
-With explicit selectors, processes those selectors. Without arguments, updates tracked selectors first; if no selectors are tracked, it falls back to installed runtimes.
+With explicit selectors, processes those selectors. Without arguments, updates tracked selectors first; if no selectors are tracked, it falls back to installed runtimes. JSON entries for no-argument updates include `selector_source` (`tracked-selectors` or `installed-runtimes`) and `implicit_target: true`.
 
 Behavior by selector:
 
@@ -164,7 +165,7 @@ Tracked exact versions are canonicalized and deduplicated by semantic version. F
 
 `current` and `latest` resolve to the same newest release-index entry; `latest` is reported as an alias of canonical selector `current`.
 
-JSON output is an array with `selector`, `selector_kind`, `canonical_selector`, optional `selector_alias_of`, `previous_runtime`, `updated_runtime`, and `status`.
+JSON output is an array with `selector`, optional `selector_source`, optional `implicit_target`, `selector_kind`, `canonical_selector`, optional `selector_alias_of`, `previous_runtime`, `updated_runtime`, and `status`. Empty no-argument updates include structured error diagnostics with selector source, selector counts, and a selector preview.
 
 ## check
 
