@@ -5,7 +5,7 @@ use tracing::info;
 use crate::{
     cli::{OutputColorMode, OutputFormat},
     commands::print_output,
-    errors::{NodeupError, Result},
+    errors::{ErrorDiagnostics, NodeupError, Result},
     installer::InstallState,
     release_index::{normalize_version, ReleaseIndexResolutionDiagnostic},
     resolver::ResolvedRuntimeTarget,
@@ -24,6 +24,10 @@ struct CheckEntry {
 #[derive(Debug, Serialize)]
 struct UpdateEntry {
     selector: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    implicit_target: Option<bool>,
     selector_kind: String,
     canonical_selector: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -41,6 +45,7 @@ struct UpdateSelectorContext {
     tracked_selectors: usize,
     installed_runtimes: usize,
     allow_legacy_stored_linked_names: bool,
+    implicit_targets: bool,
 }
 
 pub fn check(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupApp) -> Result<i32> {
@@ -82,12 +87,28 @@ pub fn update(
                 tracked_selectors: 0,
                 installed_runtimes: 0,
                 allow_legacy_stored_linked_names: false,
+                implicit_targets: false,
             },
         )
     };
 
     if selectors.is_empty() {
-        return Err(NodeupError::not_found_with_hint(
+        let mut diagnostics = ErrorDiagnostics::new();
+        diagnostics.insert(
+            "selector_source".to_string(),
+            serde_json::json!(selector_context.source),
+        );
+        diagnostics.insert(
+            "tracked_selectors".to_string(),
+            serde_json::json!(selector_context.tracked_selectors),
+        );
+        diagnostics.insert(
+            "installed_runtimes".to_string(),
+            serde_json::json!(selector_context.installed_runtimes),
+        );
+        diagnostics.insert("resolved_selectors".to_string(), serde_json::json!(0));
+        diagnostics.insert("selector_preview".to_string(), serde_json::json!(selectors));
+        return Err(NodeupError::not_found_with_diagnostics(
             format!(
                 "No runtimes are eligible for update (selector_source={}, tracked_selectors={}, \
                  installed_runtimes={}, resolved_selectors={})",
@@ -98,10 +119,15 @@ pub fn update(
             ),
             "Install a runtime with `nodeup toolchain install <runtime>` or configure tracked \
              selectors first.",
+            diagnostics,
         ));
     }
 
     let mut updates = Vec::new();
+    let selector_source = selector_context
+        .implicit_targets
+        .then(|| selector_context.source.to_string());
+    let implicit_target = selector_context.implicit_targets.then_some(true);
     for selector in selectors {
         let parsed =
             parse_update_selector(&selector, selector_context.allow_legacy_stored_linked_names)?;
@@ -112,6 +138,8 @@ pub fn update(
             RuntimeSelector::LinkedName(_) => {
                 updates.push(UpdateEntry {
                     selector,
+                    selector_source: selector_source.clone(),
+                    implicit_target,
                     selector_kind,
                     canonical_selector,
                     selector_alias_of,
@@ -133,6 +161,8 @@ pub fn update(
                 let report = app.installer.ensure_installed(&version, &app.releases)?;
                 updates.push(UpdateEntry {
                     selector,
+                    selector_source: selector_source.clone(),
+                    implicit_target,
                     selector_kind,
                     canonical_selector,
                     selector_alias_of,
@@ -159,6 +189,8 @@ pub fn update(
                 let current = format!("v{version}");
                 updates.push(UpdateEntry {
                     selector,
+                    selector_source: selector_source.clone(),
+                    implicit_target,
                     selector_kind,
                     canonical_selector,
                     selector_alias_of,
@@ -222,6 +254,7 @@ fn selectors_for_update(app: &NodeupApp) -> Result<(Vec<String>, UpdateSelectorC
                 tracked_selectors: tracked_count,
                 installed_runtimes: 0,
                 allow_legacy_stored_linked_names: true,
+                implicit_targets: true,
             },
         ));
     }
@@ -235,6 +268,7 @@ fn selectors_for_update(app: &NodeupApp) -> Result<(Vec<String>, UpdateSelectorC
             tracked_selectors: 0,
             installed_runtimes: installed_count,
             allow_legacy_stored_linked_names: false,
+            implicit_targets: true,
         },
     ))
 }
