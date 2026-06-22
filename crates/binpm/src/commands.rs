@@ -3175,6 +3175,7 @@ fn release_asset_download_request(asset: &ReleaseAsset) -> Result<DownloadReques
     let url = asset
         .download_url
         .as_deref()
+        .or(asset.provider_url.as_deref())
         .unwrap_or(asset.url.as_str())
         .to_string();
     validate_download_url(&url)?;
@@ -6224,12 +6225,12 @@ mod tests {
         normalize_bin_selection, override_snippet_candidate, package_record_output,
         package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
         parse_source_argument, project_root_from, read_archive_selected_binary,
-        record_matches_current_provider_digest, release_diagnostic_lines, release_diagnostics,
-        remove_global_tool_from_paths, remove_local_manifest_orphans,
-        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
-        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
-        shell_path, shell_quote, snapshot_cache_metadata, source_install_scope,
-        target_override_snippet, update_manifest_tool_source,
+        record_matches_current_provider_digest, release_asset_download_request,
+        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
+        remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
+        restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
+        selected_asset_display_url, shell_path, shell_quote, snapshot_cache_metadata,
+        source_install_scope, target_override_snippet, update_manifest_tool_source,
         validate_frozen_update_current_release, validate_locked_record_artifact,
         validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
         validate_package_record_metadata, validate_package_record_source_identity,
@@ -6460,6 +6461,32 @@ mod tests {
                 .map(|asset| asset.name.as_str())
                 .collect::<Vec<_>>(),
             vec!["SHA256SUMS", "checksums.txt"]
+        );
+    }
+
+    #[test]
+    fn checksum_download_request_prefers_provider_url_before_link_url() {
+        let asset = ReleaseAsset {
+            name: "tool-linux.tar.gz.sha256".to_string(),
+            url: "https://cdn.example.com/tool-linux.tar.gz.sha256".to_string(),
+            provider_url: Some(
+                "https://gitlab.example.com/owner/tool/-/releases/v1/downloads/tool-linux.tar.gz.sha256"
+                    .to_string(),
+            ),
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+            final_url: None,
+        };
+
+        let request = release_asset_download_request(&asset).expect("download request");
+
+        assert_eq!(
+            request.url,
+            "https://gitlab.example.com/owner/tool/-/releases/v1/downloads/tool-linux.tar.gz.sha256"
         );
     }
 

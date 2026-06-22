@@ -148,12 +148,7 @@ impl PackageRecord {
                 self.source_provider == SourceProvider::GitHub
                     && self.provider_digest_sha256.as_deref() == Some(self.sha256.as_str())
             }
-            ChecksumSource::Sidecar | ChecksumSource::Manifest => {
-                validate_sha256_digest(&self.sha256).is_ok()
-            }
-            ChecksumSource::Signature => {
-                self.signature_verified && validate_sha256_digest(&self.sha256).is_ok()
-            }
+            ChecksumSource::Sidecar | ChecksumSource::Manifest | ChecksumSource::Signature => false,
             ChecksumSource::Local => false,
         }
     }
@@ -740,13 +735,13 @@ pub fn populate_cache_from_bytes(
 }
 
 pub fn record_verified_cache_hit(paths: &CachePaths, resolved: &ResolvedAsset) -> Result<PathBuf> {
-    let sha256 =
-        resolved
-            .provider_digest_sha256
-            .as_deref()
-            .ok_or_else(|| BinpmError::InvalidSha256 {
-                value: String::new(),
-            })?;
+    let sha256 = resolved
+        .provider_digest_sha256
+        .as_deref()
+        .or(resolved.upstream_checksum_sha256.as_deref())
+        .ok_or_else(|| BinpmError::InvalidSha256 {
+            value: String::new(),
+        })?;
     validate_sha256_digest(sha256)?;
     reject_symlinked_cache_entry(paths, sha256)?;
     let asset_path = paths.asset_path(sha256);
@@ -1803,6 +1798,29 @@ mod tests {
         assert_eq!(records[0].checksum_source, ChecksumSource::GitHubDigest);
     }
 
+    #[test]
+    fn upstream_checksum_cache_hit_reuses_verified_asset_without_provider_digest() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let mut resolved = resolved_asset();
+        let bytes = b"sidecar bytes";
+        let expected = format!("{:x}", Sha256::digest(bytes));
+        resolved.provider_digest_sha256 = None;
+        resolved.upstream_checksum_sha256 = Some(expected.clone());
+        resolved.checksum_source = ChecksumSource::Sidecar;
+        let asset_path = cache.asset_path(&expected);
+        std::fs::create_dir_all(asset_path.parent().expect("asset parent"))
+            .expect("create cache entry");
+        std::fs::write(&asset_path, bytes).expect("write cached asset");
+
+        let reused = record_verified_cache_hit(&cache, &resolved).expect("cache hit");
+
+        assert_eq!(reused, asset_path);
+        let records = read_cache_records(&cache).expect("cache records");
+        assert_eq!(records[0].sha256, expected);
+        assert_eq!(records[0].checksum_source, ChecksumSource::Sidecar);
+    }
+
     #[cfg(unix)]
     #[test]
     fn provider_digest_cache_hit_rejects_symlinked_digest_entry() {
@@ -1832,6 +1850,8 @@ mod tests {
     #[test]
     fn package_records_do_not_trust_persisted_signature_flags() {
         let mut record = package_record();
+        record.sha256 =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
         record.checksum_source = ChecksumSource::Signature;
         record.signature_verified = true;
 
