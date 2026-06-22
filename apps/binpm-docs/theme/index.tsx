@@ -87,7 +87,10 @@ function setMobileDrawerState() {
 
 function syncAccessibleControls() {
   const searchButton = document.querySelector(".rp-search-button");
-  if (searchButton instanceof HTMLButtonElement) {
+  if (
+    searchButton instanceof HTMLButtonElement &&
+    searchButton.getAttribute("type") !== "button"
+  ) {
     searchButton.type = "button";
   }
   setButtonName(searchButton, SEARCH_LABEL);
