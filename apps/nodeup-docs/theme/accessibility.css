@@ -1,0 +1,87 @@
+.rp-search-button--mobile {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: var(--rp-radius-small);
+  color: var(--rp-c-text-1);
+}
+
+.rp-search-button--mobile:hover,
+.rp-search-button--mobile:focus-visible {
+  background-color: var(--rp-c-bg-mute);
+}
+
+.rp-search-panel__mask {
+  z-index: calc(var(--rp-z-index-nav-screen) + 10);
+  padding: calc(var(--rp-nav-height) + var(--rp-banner-height, 0px) + 16px) 16px 16px;
+  overflow-y: auto;
+}
+
+.rp-search-panel__modal {
+  max-height: calc(100vh - var(--rp-nav-height) - var(--rp-banner-height, 0px) - 32px);
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+.rp-search-panel__results {
+  max-height: calc(100vh - var(--rp-nav-height) - var(--rp-banner-height, 0px) - 170px);
+}
+
+.rp-doc :not(:where(.rp-not-doc, .rp-not-doc *)):where(.rp-header-anchor) {
+  pointer-events: auto;
+}
+
+.rp-doc-layout__sidebar[inert] {
+  pointer-events: none;
+}
+
+.rp-doc :not(:where(.rp-not-doc, .rp-not-doc *)):where(.rp-table-scroll-container) {
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+.rp-doc :not(:where(.rp-not-doc, .rp-not-doc *)):where(.rp-table-scroll-container) table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.rp-doc :not(:where(.rp-not-doc, .rp-not-doc *)):where(th, td) {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+@media (width <= 768px) {
+  .rp-search-panel__mask {
+    padding: calc(var(--rp-nav-height) + var(--rp-banner-height, 0px) + 8px) 8px 8px;
+  }
+
+  .rp-search-panel__modal {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100vh - var(--rp-nav-height) - var(--rp-banner-height, 0px) - 16px);
+  }
+
+  .rp-search-panel__results {
+    max-height: calc(100vh - var(--rp-nav-height) - var(--rp-banner-height, 0px) - 128px);
+  }
+
+  .rp-doc :not(:where(.rp-not-doc, .rp-not-doc *)):where(.rp-table-scroll-container) {
+    width: calc(100% + (2 * var(--rp-content-padding-x)));
+    max-width: calc(100% + (2 * var(--rp-content-padding-x)));
+    margin-right: calc(-1 * var(--rp-content-padding-x));
+    margin-left: calc(-1 * var(--rp-content-padding-x));
+    padding-right: var(--rp-content-padding-x);
+    padding-left: var(--rp-content-padding-x);
+  }
+
+  .rp-doc :not(:where(.rp-not-doc, .rp-not-doc *)):where(.rp-table-scroll-container) table {
+    min-width: max(640px, 100%);
+  }
+
+  .rp-doc :not(:where(.rp-not-doc, .rp-not-doc *)):where(th, td) {
+    min-width: 10rem;
+    padding: 0.625rem 0.75rem;
+  }
+}

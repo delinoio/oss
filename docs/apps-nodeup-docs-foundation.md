@@ -23,6 +23,7 @@
 - Local production preview uses fixed port `46251`.
 - The production output directory is `doc_build`.
 - The default theme must expose a visible GitHub repository link to `https://github.com/delinoio/oss`, including the top-level GitHub social link and the document-page footer repository link.
+- The docs theme must preserve keyboard accessibility for generated navigation controls: mobile documentation navigation closes on `Escape`, returns focus to its opener, keeps closed sidebar links out of the tab order, uses a labeled button for mobile search, avoids redundant ambiguous hamburger labels, keeps search overlays clear of the sticky header, removes decorative heading anchors from sequential keyboard navigation, and keeps Markdown tables horizontally readable on mobile viewports.
 - Content must stay aligned with the Nodeup project and crate contracts, especially installation and verification flows, release verification, supported host targets, command behavior, linked-runtime lifecycle and executable validation, linked-runtime per-shim command availability diagnostics, runtime resolution precedence, shim behavior, Windows shim alias extension behavior versus delegated runtime `.cmd` package-manager executables, shell completions and invalid subcommand-scope guidance, package-manager resolution, `nodeup run` versus managed-shim install-on-demand behavior, human/JSON output contracts, parser-error envelope behavior, PATH/PATHEXT troubleshooting guidance, and color-control precedence.
 
 ## Storage
