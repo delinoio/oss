@@ -1237,8 +1237,9 @@ fn print_local_update_plan(selected: &[String]) -> Result<()> {
         let version = tool.version.as_deref().unwrap_or("<latest>");
         println!("would update {cmd} from {} {version}", tool.source);
     }
+    let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
     if manifest.tools.is_empty()
-        && capture_local_manifest_orphan_states(&root, &manifest.tools)?.is_empty()
+        && local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty()
     {
         println!("empty manifest: no lockfile or local executable changes needed");
         return Ok(());
@@ -2095,7 +2096,7 @@ fn install_local_manifest(
             }
         }
     }
-    let orphan_states = if selected.is_empty() {
+    let orphan_states = if selected.is_empty() && !frozen_lockfile {
         match capture_local_manifest_orphan_states(&root, &manifest.tools) {
             Ok(orphan_states) => orphan_states,
             Err(error) => {
@@ -5318,23 +5319,10 @@ fn remove_local_manifest_orphans(
     manifest_tools: &BTreeMap<String, ManifestTool>,
     frozen_lockfile: bool,
 ) -> Result<()> {
-    let scope_paths = ScopePaths::local(root.to_path_buf());
-    let mut orphan_cmds = BTreeSet::new();
-    for (cmd, _) in list_package_records(&scope_paths)? {
-        if !manifest_tools.contains_key(&cmd) {
-            validate_command_name(&cmd)?;
-            orphan_cmds.insert(cmd);
-        }
-    }
-
     let lockfile_path = root.join(LOCKFILE_FILE);
     let mut lockfile = read_lockfile(&lockfile_path)?;
-    for cmd in lockfile.tools.keys() {
-        if !manifest_tools.contains_key(cmd) {
-            validate_command_name(cmd)?;
-            orphan_cmds.insert(cmd.clone());
-        }
-    }
+    let scope_paths = ScopePaths::local(root.to_path_buf());
+    let orphan_cmds = local_manifest_orphan_cmds(root, &lockfile, manifest_tools)?;
 
     if orphan_cmds.is_empty() {
         return Ok(());
@@ -5523,6 +5511,20 @@ fn capture_local_manifest_orphan_states(
     manifest_tools: &BTreeMap<String, ManifestTool>,
 ) -> Result<Vec<(String, RuntimeToolState)>> {
     let scope_paths = ScopePaths::local(root.to_path_buf());
+    let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
+    let orphan_cmds = local_manifest_orphan_cmds(root, &lockfile, manifest_tools)?;
+    orphan_cmds
+        .into_iter()
+        .map(|cmd| Ok((cmd.clone(), capture_runtime_tool_state(&scope_paths, &cmd)?)))
+        .collect()
+}
+
+fn local_manifest_orphan_cmds(
+    root: &Path,
+    lockfile: &crate::storage::Lockfile,
+    manifest_tools: &BTreeMap<String, ManifestTool>,
+) -> Result<BTreeSet<String>> {
+    let scope_paths = ScopePaths::local(root.to_path_buf());
     let mut orphan_cmds = BTreeSet::new();
     for (cmd, _) in list_package_records(&scope_paths)? {
         if !manifest_tools.contains_key(&cmd) {
@@ -5530,16 +5532,13 @@ fn capture_local_manifest_orphan_states(
             orphan_cmds.insert(cmd);
         }
     }
-    for cmd in read_lockfile(&root.join(LOCKFILE_FILE))?.tools.keys() {
+    for cmd in lockfile.tools.keys() {
         if !manifest_tools.contains_key(cmd) {
             validate_command_name(cmd)?;
             orphan_cmds.insert(cmd.clone());
         }
     }
-    orphan_cmds
-        .into_iter()
-        .map(|cmd| Ok((cmd.clone(), capture_runtime_tool_state(&scope_paths, &cmd)?)))
-        .collect()
+    Ok(orphan_cmds)
 }
 
 fn rollback_local_install_state(
@@ -7083,11 +7082,11 @@ mod tests {
         ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
         format_outdated_tool_line, github_sha256_digest, global_update_selected_binary,
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
-        install_path_collision_key, is_retryable_status, local_runtime_lock_records,
-        local_tool_execution_ready, local_update_manifest_with_latest_versions_from,
-        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
-        locked_record_download_request, locked_record_signature_sidecar,
-        locked_record_verified_download_request,
+        install_path_collision_key, is_retryable_status, local_manifest_orphan_cmds,
+        local_runtime_lock_records, local_tool_execution_ready,
+        local_update_manifest_with_latest_versions_from, lock_targets_conflict_with_manifest,
+        lock_targets_conflict_with_record, locked_record_download_request,
+        locked_record_signature_sidecar, locked_record_verified_download_request,
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
@@ -9145,8 +9144,12 @@ mod tests {
     #[test]
     fn frozen_manifest_sync_rejects_lock_orphans_without_removing_them() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
         let mut record = package_record();
         mark_github_verified(&mut record);
+        write_package_record(&paths, "tool", &record).expect("write package record");
+        fs::create_dir(paths.bin.join("tool")).expect("write unreadable runtime path");
         write_lockfile(
             &temp_dir.path().join(LOCKFILE_FILE),
             &Lockfile {
@@ -9172,6 +9175,21 @@ mod tests {
         let lockfile = crate::storage::read_lockfile(&temp_dir.path().join(LOCKFILE_FILE))
             .expect("read lockfile");
         assert!(lockfile.tools.contains_key("tool"));
+    }
+
+    #[test]
+    fn orphan_key_scan_does_not_snapshot_runtime_paths() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().to_path_buf());
+        paths.ensure().expect("scope paths");
+        write_package_record(&paths, "tool", &package_record()).expect("write package record");
+        fs::create_dir(paths.bin.join("tool")).expect("write unreadable runtime path");
+        let lockfile = Lockfile::default();
+
+        let orphan_cmds = local_manifest_orphan_cmds(temp_dir.path(), &lockfile, &BTreeMap::new())
+            .expect("scan orphan keys");
+
+        assert!(orphan_cmds.contains("tool"));
     }
 
     #[test]
