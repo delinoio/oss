@@ -148,7 +148,8 @@ impl PackageRecord {
                 self.source_provider == SourceProvider::GitHub
                     && self.provider_digest_sha256.as_deref() == Some(self.sha256.as_str())
             }
-            ChecksumSource::Sidecar | ChecksumSource::Manifest | ChecksumSource::Signature => false,
+            ChecksumSource::Sidecar | ChecksumSource::Manifest => true,
+            ChecksumSource::Signature => false,
             ChecksumSource::Local => false,
         }
     }
@@ -1858,10 +1859,10 @@ mod tests {
         assert!(!record.has_verified_source());
 
         record.checksum_source = ChecksumSource::Sidecar;
-        assert!(!record.has_verified_source());
+        assert!(record.has_verified_source());
 
         record.checksum_source = ChecksumSource::Manifest;
-        assert!(!record.has_verified_source());
+        assert!(record.has_verified_source());
 
         record.checksum_source = ChecksumSource::GitHubDigest;
 
