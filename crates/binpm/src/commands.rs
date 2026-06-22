@@ -5992,9 +5992,7 @@ fn assert_runtime_record_matches_lock(
         || runtime_record.archive_format != lock_record.archive_format
         || runtime_record.selected_binary != lock_record.selected_binary
         || runtime_record.sha256 != lock_record.sha256
-        || runtime_record.checksum_source != lock_record.checksum_source
-        || runtime_record.signature_available != lock_record.signature_available
-        || runtime_record.signature_verified != lock_record.signature_verified
+        || !runtime_integrity_metadata_matches_lock(lock_record, runtime_record)
     {
         return Err(BinpmError::StaleLockfile {
             path: root.join(LOCKFILE_FILE),
@@ -6002,6 +6000,25 @@ fn assert_runtime_record_matches_lock(
         });
     }
     Ok(())
+}
+
+fn runtime_integrity_metadata_matches_lock(
+    lock_record: &PackageRecord,
+    runtime_record: &PackageRecord,
+) -> bool {
+    if runtime_record.checksum_source == lock_record.checksum_source
+        && runtime_record.signature_available == lock_record.signature_available
+        && runtime_record.signature_verified == lock_record.signature_verified
+    {
+        return true;
+    }
+
+    !lock_record.has_verified_source()
+        && lock_record.signature_available
+        && !lock_record.signature_verified
+        && runtime_record.checksum_source == ChecksumSource::Signature
+        && runtime_record.signature_available
+        && runtime_record.signature_verified
 }
 
 fn verify_lockfile_records(
@@ -8725,6 +8742,22 @@ mod tests {
         .expect_err("stale runtime record");
 
         assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn reverified_runtime_signature_metadata_remains_lock_compatible() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut lock_record = package_record();
+        lock_record.signature_available = true;
+        lock_record.signature_verified = false;
+
+        let mut runtime_record = lock_record.clone();
+        runtime_record.checksum_source = ChecksumSource::Signature;
+        runtime_record.signature_available = true;
+        runtime_record.signature_verified = true;
+
+        assert_runtime_record_matches_lock(temp_dir.path(), "tool", &lock_record, &runtime_record)
+            .expect("reverified runtime signature metadata is compatible with the lock");
     }
 
     #[test]
