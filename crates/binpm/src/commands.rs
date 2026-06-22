@@ -2499,7 +2499,7 @@ fn install_resolved(
     let mut resolved = resolve_asset(spec, tool)?;
     if require_verified
         && !resolved.checksum_source.is_upstream_verified()
-        && !resolved.signature_available
+        && !resolved_has_supported_signature_evidence(&resolved)
     {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
@@ -2736,6 +2736,7 @@ fn install_local_from_lock(
     } else {
         None
     };
+    let mut repair_locked_verification = None;
     if require_verified && !record.has_verified_source() && !record_has_signature_evidence(&record)
     {
         return Err(BinpmError::VerificationRequired {
@@ -2758,13 +2759,14 @@ fn install_local_from_lock(
                     actual,
                 });
             }
-            if require_verified
-                && !record.has_verified_source()
-                && !reverify_locked_record_signature(&cache_paths, &record, &bytes)?.verified
-            {
-                return Err(BinpmError::VerificationRequired {
-                    package: record.package_spec.clone(),
-                });
+            if require_verified && !record.has_verified_source() {
+                let verification = reverify_locked_record_signature(&cache_paths, &record, &bytes)?;
+                if !verification.verified {
+                    return Err(BinpmError::VerificationRequired {
+                        package: record.package_spec.clone(),
+                    });
+                }
+                repair_locked_verification = Some(verification);
             }
             let resolved = ResolvedAsset {
                 source: SourceSpec::from_str(
@@ -2812,7 +2814,10 @@ fn install_local_from_lock(
         populated_cache_entry = cache_metadata_snapshot.is_none();
     }
     let locked_verification = if require_verified {
-        let verification = locked_record_verified_source(&cache_paths, &record)?;
+        let verification = match repair_locked_verification {
+            Some(verification) => verification,
+            None => locked_record_verified_source(&cache_paths, &record)?,
+        };
         if !verification.verified {
             return Err(BinpmError::VerificationRequired {
                 package: record.package_spec.clone(),
@@ -3418,6 +3423,10 @@ fn resolved_has_verified_source(resolved: &ResolvedAsset) -> bool {
         || (resolved.checksum_source == ChecksumSource::Signature
             && resolved.signature_available
             && resolved.signature_verified)
+}
+
+fn resolved_has_supported_signature_evidence(resolved: &ResolvedAsset) -> bool {
+    resolved.signature_available && sigstore_trust_policy(resolved).is_some()
 }
 
 fn locked_record_verified_source(
@@ -4648,11 +4657,17 @@ fn json_path_state(path: &Path) -> PathState {
 }
 
 fn verification_state(record: &PackageRecord) -> VerificationState {
-    if record.has_verified_source() {
+    if record.has_verified_source() || record_reports_verified_signature(record) {
         VerificationState::Verified
     } else {
         VerificationState::Unverified
     }
+}
+
+fn record_reports_verified_signature(record: &PackageRecord) -> bool {
+    record.checksum_source == ChecksumSource::Signature
+        && record.signature_available
+        && record.signature_verified
 }
 
 #[derive(Debug, Clone)]
@@ -6528,19 +6543,20 @@ mod tests {
         record_has_signature_evidence, record_matches_current_provider_digest, regex_escape,
         release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
         remove_local_manifest_orphans, require_executable_managed_file,
-        resolved_has_verified_source, restore_local_remove_state, restore_runtime_tool_state,
-        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
-        shell_path, shell_quote, signature_sidecar_for_asset, sigstore_trust_policy,
-        snapshot_cache_metadata, source_install_scope, target_override_snippet,
-        update_manifest_tool_source, validate_frozen_update_current_release,
-        validate_locked_record_artifact, validate_locked_record_current_asset,
-        validate_locked_record_current_provider_digest, validate_package_record_metadata,
-        validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verify_check_output, verify_check_output_with_state,
-        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
-        write_sigstore_verification_inputs, zip_file_is_regular, zip_file_is_symlink, ArtifactKind,
-        InstalledPackage, InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode,
-        RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT,
+        resolved_has_supported_signature_evidence, resolved_has_verified_source,
+        restore_local_remove_state, restore_runtime_tool_state, sanitize_download_diagnostic_url,
+        select_manifest_asset, selected_asset_display_url, shell_path, shell_quote,
+        signature_sidecar_for_asset, sigstore_trust_policy, snapshot_cache_metadata,
+        source_install_scope, target_override_snippet, update_manifest_tool_source,
+        validate_frozen_update_current_release, validate_locked_record_artifact,
+        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries, verification_state,
+        verify_check_output, verify_check_output_with_state, verify_installed_binary_contents,
+        verify_lockfile_records, verify_runtime_cache_bytes, write_sigstore_verification_inputs,
+        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
+        InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
+        GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
         assets::CandidateDecision,
@@ -10161,6 +10177,35 @@ mod tests {
 
         resolved.signature_verified = true;
         assert!(resolved_has_verified_source(&resolved));
+    }
+
+    #[test]
+    fn strict_signature_evidence_requires_supported_policy() {
+        let mut resolved = resolved_asset(&package_record().sha256);
+        resolved.provider_digest_sha256 = None;
+        resolved.checksum_source = ChecksumSource::Local;
+        resolved.signature_available = true;
+
+        assert!(resolved_has_supported_signature_evidence(&resolved));
+
+        resolved.source =
+            SourceSpec::from_str("github:ghe.example.com/owner/tool@1.0.0").expect("ghe source");
+        assert!(!resolved_has_supported_signature_evidence(&resolved));
+
+        resolved.source = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source");
+        resolved.signature_available = false;
+        assert!(!resolved_has_supported_signature_evidence(&resolved));
+    }
+
+    #[test]
+    fn verified_signature_record_reports_verified() {
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::Signature;
+        record.signature_available = true;
+        record.signature_verified = true;
+
+        assert!(!record.has_verified_source());
+        assert_eq!(verification_state(&record), VerificationState::Verified);
     }
 
     #[test]
