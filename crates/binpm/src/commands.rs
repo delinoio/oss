@@ -1052,16 +1052,13 @@ fn update(args: UpdateArgs) -> Result<i32> {
     );
     let scope = select_scope(args.scope.scope())?;
     print_selected_mutation_scope("update", scope);
-    if scope == Scope::Global {
-        return Err(BinpmError::GlobalUpdatePending);
-    }
     if args.dry_run {
         return preview_update(scope, &args.cmd);
     }
     print_update_plan(scope, &args.cmd)?;
     match scope {
         Scope::Local => update_local_manifest(frozen_lockfile, args.require_verified, &args.cmd),
-        Scope::Global => unreachable!("global update returns pending before planning"),
+        Scope::Global => update_global_packages(args.require_verified, &args.cmd),
         Scope::Auto => unreachable!("select_scope never returns auto"),
     }
 }
@@ -2055,6 +2052,34 @@ fn update_local_manifest(
         validate_frozen_local_update_latest(&root, &manifest, selected)?;
     }
     install_local_manifest(frozen_lockfile, require_verified, selected)
+}
+
+fn update_global_packages(require_verified: bool, selected: &[String]) -> Result<i32> {
+    let home = binpm_home()?;
+    let scope_paths = ScopePaths::global(home.clone());
+    let records = selected_global_package_records(&scope_paths, selected)?;
+    for (cmd, record) in records {
+        let mut spec = SourceSpec::from_str(&record.source)?;
+        spec.version = None;
+        let selected_binary = normalize_bin_selection(Some(&record.selected_binary))?;
+        install_global_source(spec, &cmd, selected_binary, require_verified)?;
+    }
+    Ok(0)
+}
+
+fn selected_global_package_records(
+    scope_paths: &ScopePaths,
+    selected: &[String],
+) -> Result<Vec<(String, PackageRecord)>> {
+    let records = list_package_records(scope_paths)?;
+    for cmd in selected {
+        validate_command_name(cmd)?;
+        read_package_record(&package_record_path(scope_paths, cmd))?;
+    }
+    Ok(records
+        .into_iter()
+        .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
+        .collect())
 }
 
 fn validate_frozen_local_update_latest(
