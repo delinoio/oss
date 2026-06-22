@@ -34,4 +34,4 @@ GitLab release links must use HTTPS for the release link URL, the direct asset U
 
 ## Global Update Status
 
-`binpm update [cmd...] [--local|--global] [--dry-run]` updates selected tools or all tools in the selected scope. Global updates use existing global package records, preserve each command alias and selected upstream binary, resolve the latest stable release for the recorded source, and finalize through the same cache, install, rollback, and verification behavior as global installs. Use `--dry-run` to print the selected scope and planned runtime changes without mutating package records, cache references, or executables.
+`binpm update [cmd...] [--local|--global] [--dry-run]` updates selected tools or all tools in the selected scope. Omitting command names is explicit all-tools mode; output states that mode before the planned update list, and `--dry-run` previews it without mutation. Global updates use existing global package records, preserve each command alias and selected upstream binary, resolve the latest stable release for the recorded source, and finalize through the same cache, install, rollback, and verification behavior as global installs.
