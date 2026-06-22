@@ -1170,17 +1170,19 @@ signature_verified = false
 
 #[test]
 fn explain_rejects_unsupported_package_manager_backend_with_backend_diagnostic() {
-    let mut command = binpm();
+    for source in ["npm:eslint@1.0.0", "npm:eslint@latest", "npm:@scope/pkg"] {
+        let mut command = binpm();
 
-    command
-        .args(["explain", "npm:eslint@1.0.0"])
-        .assert()
-        .failure()
-        .code(2)
-        .stderr(predicate::str::contains("package-manager backend"))
-        .stderr(predicate::str::contains("provider release assets"))
-        .stderr(predicate::str::contains("github:owner/repo"))
-        .stderr(predicate::str::contains("gitlab:<host>"));
+        command
+            .args(["explain", source])
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(predicate::str::contains("package-manager backend"))
+            .stderr(predicate::str::contains("provider release assets"))
+            .stderr(predicate::str::contains("github:owner/repo"))
+            .stderr(predicate::str::contains("gitlab:<host>"));
+    }
 }
 
 #[test]
