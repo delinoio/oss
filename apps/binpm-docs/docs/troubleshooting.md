@@ -25,16 +25,19 @@ Some projects publish CPU feature variants such as `baseline` and `modern`. binp
 
 Automatic selection prefers baseline-compatible assets. A `modern` asset is rejected unless binpm has explicit host CPU capability support or you add a target override after verifying compatibility.
 
+For modern-only releases, first verify that the target machines support the upstream CPU feature requirements. Then add a canonical target override, for example `[tools.<cmd>.targets.linux-x86_64-gnu]`, that names the exact modern asset and upstream binary. `binpm explain <source>` may print an unverified snippet to start from, but source explain has not downloaded or inspected the archive.
+
 ## Resolve Binary Ambiguity
 
 When an archive contains multiple plausible executables, the error lists candidate archive members and includes retry commands.
 
 ```bash
+binpm install <source> --as <cmd> --bin <candidate>
 binpm add <cmd> <source> --bin <candidate>
 binpm x --package <source> --bin <candidate> <cmd>
 ```
 
-Use the `add` form to persist the selection in `binpm.toml`. Use the `x --package` form for one-off execution.
+Use the `install --as ... --bin ...` form for a global command alias, the `add` form to persist a local installed command alias in `binpm.toml`, and the `x --package` form for one-off execution. In each command, `<cmd>` is the installed command alias and `<candidate>` is the upstream binary or archive member.
 
 ## Validate Local State
 

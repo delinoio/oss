@@ -1392,7 +1392,11 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
             for decision in selection.decisions {
                 println!("{}", decision.explain_line());
             }
-            println!("override_snippet:");
+            println!("override_snippet_unverified:");
+            println!(
+                "override_snippet_note: source explain has not downloaded or inspected archive \
+                 members; verify the asset and bin values before committing this override"
+            );
             println!(
                 "{}",
                 target_override_snippet(
@@ -1413,7 +1417,12 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
                 println!("{line}");
             }
             if let Some(candidate) = override_snippet_candidate(&all_decisions) {
-                println!("override_snippet:");
+                println!("override_snippet_unverified:");
+                println!(
+                    "override_snippet_note: source explain has not downloaded or inspected \
+                     archive members; verify compatibility and the bin value before committing \
+                     this override"
+                );
                 println!(
                     "{}",
                     target_override_snippet(
@@ -1452,6 +1461,34 @@ fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget
                 lines.push(format!("remediation: {remediation}"));
             }
             lines
+        })
+        .collect()
+}
+
+fn selection_failure_diagnostics(
+    decisions: &[CandidateDecision],
+    target: &HostTarget,
+) -> Vec<String> {
+    release_diagnostics(decisions, target)
+        .into_iter()
+        .map(|diagnostic| {
+            let mut parts = vec![diagnostic.message];
+            if !diagnostic.unsupported_installers.is_empty() {
+                parts.push(format!(
+                    "unsupported installers: {}",
+                    diagnostic.unsupported_installers.join(", ")
+                ));
+            }
+            if !diagnostic.sidecar_assets.is_empty() {
+                parts.push(format!(
+                    "sidecar assets: {}",
+                    diagnostic.sidecar_assets.join(", ")
+                ));
+            }
+            if let Some(remediation) = diagnostic.remediation {
+                parts.push(format!("remediation: {remediation}"));
+            }
+            parts.join("; ")
         })
         .collect()
 }
@@ -1725,12 +1762,12 @@ fn print_source_info(spec: &SourceSpec, output: OutputMode) -> Result<i32> {
 
 fn print_package_record_info(cmd: &str, record: &PackageRecord) {
     println!("binpm info");
-    println!("cmd: {cmd}");
+    println!("installed_command_alias: {cmd}");
     println!("source: {}", record.source);
     println!("package_spec: {}", record.package_spec);
     println!("release: {}", record.release_tag);
     println!("selected_asset: {}", record.asset_name);
-    println!("selected_binary: {}", record.selected_binary);
+    println!("upstream_binary: {}", record.selected_binary);
     println!("installed_path: {}", record.installed_path);
     println!("checksum_source: {}", record.checksum_source.as_str());
     println!("verification: {}", verification_state(record).as_str());
@@ -2717,6 +2754,12 @@ fn binary_retry_suggestions(
         .iter()
         .flat_map(|candidate| {
             let mut suggestions = Vec::new();
+            suggestions.push(format!(
+                "`binpm install {} --as {} --bin {}`",
+                cli_quote(&spec.to_string()),
+                cli_quote(cmd),
+                cli_quote(candidate)
+            ));
             if include_add {
                 suggestions.push(format!(
                     "`binpm add {} {} --bin {}`",
@@ -4741,6 +4784,18 @@ fn select_manifest_asset(
                 target: target_key.clone(),
             })?;
         let kind = crate::assets::classify_artifact(&asset.name, asset.source_archive);
+        if archive_format(kind).is_none() {
+            return Err(BinpmError::AssetSelectionFailed {
+                package: spec.to_string(),
+                target: target_key.clone(),
+                diagnostics: vec![format!(
+                    "target override selected `{}` with kind `{}`; choose an archive or bare \
+                     executable release asset and keep installer packages out of overrides",
+                    asset.name,
+                    kind.as_str()
+                )],
+            });
+        }
         if spec.provider == crate::contract::SourceProvider::GitLab && !gitlab_https_eligible(asset)
         {
             return Err(BinpmError::UnsafeUrl {
@@ -4779,11 +4834,22 @@ fn select_manifest_asset(
         });
     }
 
-    let selection =
-        select_asset(spec.provider, target, assets).ok_or_else(|| BinpmError::AssetNotFound {
-            package: spec.to_string(),
-            target: target_key,
-        })?;
+    let selection = select_asset(spec.provider, target, assets).ok_or_else(|| {
+        let decisions = crate::assets::score_assets(spec.provider, target, assets);
+        let diagnostics = selection_failure_diagnostics(&decisions, target);
+        if diagnostics.is_empty() {
+            BinpmError::AssetNotFound {
+                package: spec.to_string(),
+                target: target_key,
+            }
+        } else {
+            BinpmError::AssetSelectionFailed {
+                package: spec.to_string(),
+                target: target_key,
+                diagnostics,
+            }
+        }
+    })?;
     Ok(selection.selected)
 }
 
@@ -4864,13 +4930,16 @@ fn print_list_tool(row: &ListToolOutput, output: OutputMode) {
     }
     match row.state {
         ToolState::Declared => println!(
-            "{} declared {} {} <unknown> <unknown> <unknown> <unknown>",
+            "installed_command_alias={} state=declared source={} requested_version={} \
+             release=<unknown> upstream_binary=<unknown> installed_path=<unknown> \
+             verification=<unknown>",
             row.cmd,
             row.source,
             row.requested_version.as_deref().unwrap_or("<latest>")
         ),
         ToolState::Installed => println!(
-            "{} installed {} {} {} {} {} {}",
+            "installed_command_alias={} state=installed source={} requested_version={} release={} \
+             upstream_binary={} installed_path={} verification={}",
             row.cmd,
             row.source,
             row.requested_version.as_deref().unwrap_or("<latest>"),
@@ -5354,6 +5423,11 @@ fn manifest_target_override<'tool>(
         if raw_key != &canonical_key {
             return Err(BinpmError::InvalidTargetKey {
                 raw: raw_key.clone(),
+                message: format!(
+                    "Manifest override keys must be canonical. Use \
+                     `[tools.<cmd>.targets.{canonical_key}]`; aliases are accepted in release \
+                     asset names, not as persisted override keys."
+                ),
             });
         }
         if canonical_key == target_key {
@@ -9205,6 +9279,8 @@ mod tests {
             manifest_target_override(Some(&tool), &target).expect_err("target aliases rejected");
 
         assert!(error.to_string().contains("Invalid target key"));
+        assert!(error.to_string().contains("linux-x86_64-gnu"));
+        assert!(error.to_string().contains("[tools.<cmd>.targets."));
 
         let invalid_tool = ManifestTool {
             targets: BTreeMap::from([(
@@ -9219,6 +9295,37 @@ mod tests {
         };
 
         assert!(manifest_target_override(Some(&invalid_tool), &target).is_err());
+    }
+
+    #[test]
+    fn target_override_rejects_non_installable_assets_with_actionable_message() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "Tool-1.0.0.dmg".to_string(),
+                    bin: "tool".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+
+        let error = select_manifest_asset(
+            &spec,
+            Some(&tool),
+            &target,
+            &[release_asset("Tool-1.0.0.dmg")],
+        )
+        .expect_err("installer override rejected");
+        let rendered = error.to_string();
+
+        assert!(rendered.contains("target override selected `Tool-1.0.0.dmg`"));
+        assert!(rendered.contains("choose an archive or bare executable"));
     }
 
     #[test]
@@ -9848,6 +9955,24 @@ mod tests {
             .as_str()
             .expect("remediation")
             .contains("portable archive or bare executable"));
+    }
+
+    #[test]
+    fn install_selection_failure_reports_installer_only_release_boundary() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let assets = [
+            release_asset("Tool-1.0.0.dmg"),
+            release_asset("Tool-1.0.0.msi"),
+        ];
+
+        let error =
+            select_manifest_asset(&spec, None, &target, &assets).expect_err("installer-only");
+        let rendered = error.to_string();
+
+        assert!(rendered.contains("unsupported desktop or system installer packages"));
+        assert!(rendered.contains("Tool-1.0.0.dmg, Tool-1.0.0.msi"));
+        assert!(rendered.contains("portable archive or bare executable"));
     }
 
     #[test]
