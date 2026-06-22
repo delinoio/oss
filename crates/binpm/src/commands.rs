@@ -3408,9 +3408,7 @@ fn download_locked_record_verified_source(record: &PackageRecord) -> Result<bool
 }
 
 fn record_has_signature_evidence(record: &PackageRecord) -> bool {
-    record.checksum_source == ChecksumSource::Signature
-        && record.signature_available
-        && record.signature_verified
+    record.signature_available
 }
 
 fn reverify_locked_record_signature(
@@ -6465,22 +6463,22 @@ mod tests {
         normalize_bin_selection, override_snippet_candidate, package_record_output,
         package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
         parse_source_argument, project_root_from, read_archive_selected_binary,
-        record_matches_current_provider_digest, regex_escape, release_diagnostic_lines,
-        release_diagnostics, remove_global_tool_from_paths, remove_local_manifest_orphans,
-        require_executable_managed_file, resolved_has_verified_source, restore_local_remove_state,
-        restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
-        selected_asset_display_url, shell_path, shell_quote, signature_sidecar_for_asset,
-        sigstore_trust_policy, snapshot_cache_metadata, source_install_scope,
-        target_override_snippet, update_manifest_tool_source,
-        validate_frozen_update_current_release, validate_locked_record_artifact,
-        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries, verify_check_output,
-        verify_check_output_with_state, verify_installed_binary_contents, verify_lockfile_records,
-        verify_runtime_cache_bytes, write_sigstore_verification_inputs, zip_file_is_regular,
-        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
-        LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
-        GITHUB_ASSET_DOWNLOAD_ACCEPT,
+        record_has_signature_evidence, record_matches_current_provider_digest, regex_escape,
+        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
+        remove_local_manifest_orphans, require_executable_managed_file,
+        resolved_has_verified_source, restore_local_remove_state, restore_runtime_tool_state,
+        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
+        shell_path, shell_quote, signature_sidecar_for_asset, sigstore_trust_policy,
+        snapshot_cache_metadata, source_install_scope, target_override_snippet,
+        update_manifest_tool_source, validate_frozen_update_current_release,
+        validate_locked_record_artifact, validate_locked_record_current_asset,
+        validate_locked_record_current_provider_digest, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verify_check_output, verify_check_output_with_state,
+        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
+        write_sigstore_verification_inputs, zip_file_is_regular, zip_file_is_symlink, ArtifactKind,
+        InstalledPackage, InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode,
+        RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
         assets::CandidateDecision,
@@ -10013,6 +10011,20 @@ mod tests {
 
         resolved.signature_verified = true;
         assert!(resolved_has_verified_source(&resolved));
+    }
+
+    #[test]
+    fn signature_evidence_allows_strict_recheck_when_sidecar_was_not_verified() {
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::Local;
+        record.signature_available = true;
+        record.signature_verified = false;
+
+        assert!(record_has_signature_evidence(&record));
+        assert!(!record.has_verified_source());
+
+        record.signature_available = false;
+        assert!(!record_has_signature_evidence(&record));
     }
 
     #[cfg(unix)]
