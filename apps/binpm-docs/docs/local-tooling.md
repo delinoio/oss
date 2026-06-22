@@ -53,7 +53,7 @@ Lockfiles do not include install timestamps, last-used timestamps, absolute cach
 
 Committed lockfiles store sanitized asset URLs only. They do not store query strings, fragments, credential-bearing URLs, or expiring signed download URLs.
 
-Frozen-lockfile errors include structured diagnostics with `mode`, `reason`, `file`, `record`, `on_demand_install_attempt`, `would_change`, `safest_next_command`, and `local_development_escape_hatch` fields. Use those fields to distinguish CI frozen mode from explicit `--frozen-lockfile`, missing lockfiles from stale records, and regular sync failures from `binpm x` on-demand install attempts.
+Frozen-lockfile errors include structured diagnostics with `mode`, `reason`, `file`, `record`, `on_demand_install_attempt`, `would_change`, `safest_next_command`, and `local_development_escape_hatch` fields. Use those fields to distinguish CI frozen mode (`mode = "CI=true"`) from explicit `--frozen-lockfile`, missing lockfiles from stale records, and regular sync failures from `binpm x` on-demand install attempts.
 
 ## Local Paths
 

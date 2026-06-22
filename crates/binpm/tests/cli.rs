@@ -1410,7 +1410,12 @@ fn frozen_local_update_allows_empty_manifest_without_lockfile() {
         .env("BINPM_HOME", &home)
         .args(["update", "--local", "--frozen-lockfile"])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::contains("planned updates: 0"))
+        .stdout(predicate::str::contains(
+            "empty manifest: no lockfile or local executable changes needed",
+        ))
+        .stdout(predicate::str::contains("would update").not());
 
     assert!(!project.join("binpm.lock").exists());
 }
@@ -1431,7 +1436,12 @@ fn ci_local_update_allows_empty_manifest_without_lockfile() {
         .env("CI", "true")
         .args(["update", "--local"])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::contains("planned updates: 0"))
+        .stdout(predicate::str::contains(
+            "empty manifest: no lockfile or local executable changes needed",
+        ))
+        .stdout(predicate::str::contains("would update").not());
 
     assert!(!project.join("binpm.lock").exists());
 }
@@ -2409,6 +2419,33 @@ version = "1.0.0"
         .stdout(predicate::str::contains(
             "would update beta from github:owner/beta 1.0.0",
         ))
+        .stdout(predicate::str::contains("dry run: no changes made"));
+
+    assert!(!project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
+}
+
+#[test]
+fn local_update_dry_run_suppresses_empty_manifest_file_change_plan() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("update scope: local"))
+        .stdout(predicate::str::contains("planned updates: 0"))
+        .stdout(predicate::str::contains(
+            "empty manifest: no lockfile or local executable changes needed",
+        ))
+        .stdout(predicate::str::contains("would update").not())
         .stdout(predicate::str::contains("dry run: no changes made"));
 
     assert!(!project.join("binpm.lock").exists());

@@ -1144,6 +1144,10 @@ fn print_local_update_plan(selected: &[String]) -> Result<()> {
         let version = tool.version.as_deref().unwrap_or("<latest>");
         println!("would update {cmd} from {} {version}", tool.source);
     }
+    if manifest.tools.is_empty() {
+        println!("empty manifest: no lockfile or local executable changes needed");
+        return Ok(());
+    }
     println!("would update {}", root.join(LOCKFILE_FILE).display());
     println!("would update {}", ScopePaths::local(root).bin.display());
     Ok(())
@@ -3368,20 +3372,12 @@ struct DownloadRequest {
 }
 
 fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
-    let source = SourceSpec {
-        provider: record.source_provider,
-        host: record.source_host.clone(),
-        path: record.source_path.clone(),
-        version: Some(record.release_tag.clone()),
-    };
     let url = sanitize_persisted_url(&record.asset_url)?;
-    let auth = provider_origin_download_auth(&source, &url, provider_auth_for_source(&source));
-    let accept = match (record.source_provider, auth.as_ref()) {
-        (SourceProvider::GitHub, Some(_)) => Some(GITHUB_ASSET_DOWNLOAD_ACCEPT),
-        _ => None,
-    };
-
-    Ok(DownloadRequest { url, auth, accept })
+    Ok(DownloadRequest {
+        url,
+        auth: None,
+        accept: None,
+    })
 }
 
 fn locked_record_signature_sidecar(record: &PackageRecord) -> Result<SignatureSidecar> {
@@ -10137,7 +10133,7 @@ mod tests {
     }
 
     #[test]
-    fn locked_record_download_request_preserves_provider_auth_metadata() {
+    fn locked_record_download_request_omits_provider_auth_for_provider_asset_url() {
         let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "github:ghe.locked.example/owner/tool".to_string();
@@ -10153,11 +10149,8 @@ mod tests {
 
         std::env::remove_var("BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
         assert_eq!(request.url, record.asset_url);
-        assert_eq!(request.accept, Some(GITHUB_ASSET_DOWNLOAD_ACCEPT));
-        let auth = request.auth.expect("provider auth");
-        assert_eq!(auth.header_name, "authorization");
-        assert_eq!(auth.header_value, "Bearer locked-token");
-        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
+        assert_eq!(request.auth, None);
+        assert_eq!(request.accept, None);
     }
 
     #[test]
@@ -10183,7 +10176,7 @@ mod tests {
     }
 
     #[test]
-    fn locked_record_download_request_preserves_gitlab_auth_for_provider_asset_url() {
+    fn locked_record_download_request_omits_gitlab_auth_for_provider_asset_url() {
         let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
@@ -10202,14 +10195,8 @@ mod tests {
 
         std::env::remove_var("BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE");
         assert_eq!(request.url, record.asset_url);
+        assert_eq!(request.auth, None);
         assert_eq!(request.accept, None);
-        let auth = request.auth.expect("provider auth");
-        assert_eq!(auth.header_name, "PRIVATE-TOKEN");
-        assert_eq!(auth.header_value, "locked-token");
-        assert_eq!(
-            auth.env_var,
-            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE"
-        );
     }
 
     #[test]

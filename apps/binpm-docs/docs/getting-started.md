@@ -36,6 +36,10 @@ Use `--bin <upstream-binary>` when the upstream executable or archive member has
 
 ## Frozen Lockfiles
 
-Local `binpm install`, `binpm update`, and `binpm x` honor `--frozen-lockfile`. `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit local-development escape hatch.
+Local `binpm install`, `binpm update`, and `binpm x` honor `--frozen-lockfile`. `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit local-development escape hatch. Frozen mode prevents lockfile creation or modification; it is not an offline or cache-only mode.
+
+An empty `binpm.toml` has no tools to resolve. `binpm update --local --frozen-lockfile` succeeds for that no-op case without creating `binpm.lock` and reports that no lockfile or local executable changes are needed.
 
 Frozen failures explain the mode, missing or stale `binpm.lock` file or target record, any `binpm x` on-demand install attempt, the exact lockfile path that would change, and the safest next command. In CI this usually means running `binpm install --local` or `binpm update --local <cmd>` locally and committing `binpm.lock`.
+
+When a frozen local install or `binpm x` only needs to restore a missing project-local executable or package record, binpm first uses SHA-256-verified global cache bytes. If the cache entry is absent or corrupt, it may download the sanitized asset URL already stored in `binpm.lock`, validate the locked SHA-256, and restore from those bytes without provider release-list pagination or provider authentication headers.
