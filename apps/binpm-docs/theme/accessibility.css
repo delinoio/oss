@@ -1,0 +1,96 @@
+.delino-skip-link {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: calc(var(--rp-z-index-nav) + 1);
+  border: 2px solid var(--rp-c-brand);
+  border-radius: var(--rp-radius-small);
+  background: var(--rp-c-bg);
+  color: var(--rp-c-text-1);
+  padding: 10px 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(calc(-100% - 24px));
+  transition: transform 0.15s ease-out;
+}
+
+.delino-skip-link:focus {
+  outline: none;
+  transform: translateY(0);
+}
+
+.delino-main-content-anchor {
+  display: block;
+  position: relative;
+  top: calc(-1 * var(--rp-nav-height));
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.rp-code-button-group {
+  top: 8px;
+  right: 8px;
+  gap: 4px;
+}
+
+.rp-code-button-group__button {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--rp-radius-small);
+  opacity: 1;
+}
+
+.rp-code-button-group__button:hover,
+.rp-code-button-group__button:focus-visible {
+  background: color-mix(in srgb, var(--rp-c-bg-soft) 82%, transparent);
+}
+
+.rp-code-button-group__button:focus-visible,
+.rp-search-button:focus-visible,
+.rp-search-button--mobile:focus-visible,
+.rp-switch-appearance:focus-visible,
+.rp-social-links__item:focus-visible,
+.rp-sidebar-menu button:focus-visible {
+  outline: 2px solid var(--rp-c-brand);
+  outline-offset: 2px;
+}
+
+.rp-codeblock__content :where(code) {
+  padding-right: 104px;
+}
+
+.rp-doc h2 + .rp-codeblock .rp-codeblock__content :where(code) {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.rp-search-button--mobile,
+.rp-switch-appearance,
+.rp-social-links__item {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--rp-radius-small);
+}
+
+.rp-search-button--mobile:hover,
+.rp-search-button--mobile:focus-visible,
+.rp-switch-appearance:hover,
+.rp-switch-appearance:focus-visible,
+.rp-social-links__item:hover,
+.rp-social-links__item:focus-visible {
+  background: color-mix(in srgb, var(--rp-c-bg-soft) 82%, transparent);
+}
+
+.rp-switch-appearance {
+  width: 44px;
+  height: 44px;
+}
+
+@media (width <= 1279px) {
+  .rp-doc-layout__sidebar:not(.rp-doc-layout__sidebar--open),
+  .rp-doc-layout__outline:not(.rp-doc-layout__outline--open) {
+    visibility: hidden;
+  }
+}
