@@ -1,5 +1,7 @@
 # Troubleshooting
 
+Use this page when binpm can parse your request but cannot select, verify, install, or expose the expected executable. The checks below focus on read-only diagnostics first, then on the specific distribution and target boundaries that commonly explain install failures.
+
 ## Explain Asset Selection
 
 Use `binpm explain` to inspect how binpm reads a source, chooses a release asset for your target, finds a binary, and determines verification status.
@@ -35,6 +37,14 @@ binpm x --package <source> --bin <candidate> <cmd>
 ```
 
 Use the `add` form to persist the selection in `binpm.toml`. Use the `x --package` form for one-off execution.
+
+## Resolve binpm Distribution Failures
+
+Homebrew installs consume first-party prebuilt binpm archives for macOS and Linux x64/arm64. If Homebrew reports an unsupported platform or a missing release archive, the formula is not expected to build from source. Retry on a supported Homebrew platform, use the direct installer on a supported host, use `cargo binstall`, or build from source.
+
+`cargo-binstall` for binpm also resolves first-party release assets only. Quick-install and compile fallbacks are disabled, so an unsupported cargo-binstall target should be treated as a distribution boundary instead of a prompt to bypass verification or use an unowned binary source.
+
+Direct installer failures before any artifact download usually mean the host is outside the first-party binpm release matrix or `cosign` is missing from `PATH`. Install `cosign`, choose a supported macOS/Linux/Windows x64 or arm64 host, or build from source for other runtime targets.
 
 ## Validate Local State
 
