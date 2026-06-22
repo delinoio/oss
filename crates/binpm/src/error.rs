@@ -68,8 +68,8 @@ pub enum BinpmError {
     NotImplemented { command: &'static str },
     #[error("Invalid source spec `{raw}`: {message}")]
     InvalidSourceSpec { raw: String, message: String },
-    #[error("Invalid target key `{raw}`. Expected `<os>-<arch>-<libc>`.")]
-    InvalidTargetKey { raw: String },
+    #[error("Invalid target key `{raw}`. {message}")]
+    InvalidTargetKey { raw: String, message: String },
     #[error("Invalid command name `{cmd}`: command names must be executable basenames.")]
     InvalidCommandName { cmd: String },
     #[error("Duplicate local command declaration `{cmd}` in binpm add arguments.")]
@@ -207,6 +207,12 @@ pub enum BinpmError {
     MissingTool { cmd: String, manifest: PathBuf },
     #[error("No installable asset matched `{package}` for target `{target}`.")]
     AssetNotFound { package: String, target: String },
+    #[error("{}", asset_selection_failed_message(package, target, diagnostics))]
+    AssetSelectionFailed {
+        package: String,
+        target: String,
+        diagnostics: Vec<String>,
+    },
     #[error(
         "Archive `{asset}` does not contain an executable binary with permission metadata or an \
          unambiguous filename/target match. Set `bin` in binpm.toml to the intended archive \
@@ -299,6 +305,7 @@ impl BinpmError {
                 | Self::DownloadStream { .. }
                 | Self::ReleaseNotFound { .. }
                 | Self::AssetNotFound { .. }
+                | Self::AssetSelectionFailed { .. }
                 | Self::ArchiveBinaryNotFound { .. }
                 | Self::AmbiguousArchiveBinaries { .. }
                 | Self::ArchiveMemberNotFound { .. }
@@ -410,6 +417,7 @@ impl BinpmError {
             | Self::ExecToolMissing { .. }
             | Self::InstalledPathCollision { .. }
             | Self::AssetNotFound { .. }
+            | Self::AssetSelectionFailed { .. }
             | Self::ArchiveBinaryNotFound { .. }
             | Self::AmbiguousArchiveBinaries { .. }
             | Self::ArchiveMemberNotFound { .. }
@@ -677,6 +685,15 @@ fn ambiguous_archive_binaries_message(
         message.push_str(" Retry with ");
         message.push_str(&suggestions.join(" or "));
         message.push('.');
+    }
+    message
+}
+
+fn asset_selection_failed_message(package: &str, target: &str, diagnostics: &[String]) -> String {
+    let mut message = format!("No installable asset matched `{package}` for target `{target}`.");
+    if !diagnostics.is_empty() {
+        message.push_str(" Diagnostics: ");
+        message.push_str(&diagnostics.join(" "));
     }
     message
 }
