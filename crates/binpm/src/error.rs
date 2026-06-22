@@ -96,9 +96,14 @@ pub enum BinpmError {
     },
     #[error(
         "Unsupported shell `{shell}` for binpm env. Supported shells: bash, zsh, fish, \
-         powershell. Deferred shell: cmd."
+         powershell. Alias: pwsh renders PowerShell syntax. Deferred shell: cmd. {cmd_hint}"
     )]
-    UnsupportedShell { shell: String },
+    UnsupportedShell { shell: String, cmd_hint: String },
+    #[error(
+        "Failed to infer a shell for binpm env. Pass `--shell \
+         <bash|zsh|fish|powershell|pwsh|cmd>`."
+    )]
+    ShellRequired,
     #[error("Failed to build release HTTP client: {0}")]
     ReleaseHttpClient(#[source] reqwest::Error),
     #[error("Failed to look up release metadata: {0}")]
@@ -140,11 +145,14 @@ pub enum BinpmError {
         #[source]
         source: io::Error,
     },
-    #[error(
-        "Refusing to overwrite existing manifest `{}`. Use `--force` to replace it.",
-        path.display()
-    )]
+    #[error("Refusing to overwrite existing manifest `{}`.", path.display())]
     ManifestExists { path: PathBuf },
+    #[error(
+        "Invalid init manifest destination `{}`: explicit init destinations must be named `{}`.",
+        path.display(),
+        crate::storage::MANIFEST_FILE
+    )]
+    InvalidInitManifestPath { path: PathBuf },
     #[error("Failed to read `{}`: {source}", path.display())]
     ReadFile {
         path: PathBuf,
@@ -407,8 +415,10 @@ impl BinpmError {
             | Self::InvalidBinSelection { .. }
             | Self::UnsupportedTargetComponent { .. }
             | Self::UnsupportedShell { .. }
+            | Self::ShellRequired
             | Self::ReleaseNotFound { .. }
             | Self::ManifestExists { .. }
+            | Self::InvalidInitManifestPath { .. }
             | Self::UnsupportedStorageVersion { .. }
             | Self::InvalidSha256 { .. } => 2,
             Self::CurrentDirectory(_)

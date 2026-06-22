@@ -44,6 +44,13 @@ as an archive binary-selection error, binpm may keep the SHA-256-recorded cache
 entry for a retry. Reuse still revalidates the cached bytes before extraction or
 install finalization.
 
+`binpm init` creates new manifests without overwriting existing files.
+`--manifest-path <PATH>` is the explicit destination escape hatch when the
+default Git-root or manifest-ancestor destination is not desired. `binpm env`
+prints non-mutating PATH commands, supports optional shell inference, accepts
+`pwsh` as PowerShell syntax, and exposes `--global` or `--local` to print only
+one PATH command.
+
 `binpm update [cmd...] [--local|--global]` supports local and global tools.
 Omitting command names updates every tool in the selected scope, and output
 states that all-tools mode before printing the planned update list. Local

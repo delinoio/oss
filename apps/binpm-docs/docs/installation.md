@@ -202,11 +202,14 @@ binpm env --shell bash
 binpm env --shell zsh
 binpm env --shell fish
 binpm env --shell powershell
+binpm env --shell pwsh
 ```
 
-Supported `--shell` values are `bash`, `zsh`, `fish`, and `powershell`. `PowerShell` is accepted case-insensitively. `cmd` is recognized but explicitly deferred and returns an unsupported-shell diagnostic.
+Supported `--shell` values are `bash`, `zsh`, `fish`, and `powershell`. `PowerShell` is accepted case-insensitively, and `pwsh` is accepted as a PowerShell alias. You may omit `--shell` when `SHELL` or `ComSpec` identifies a supported shell. `cmd` is recognized but explicitly deferred and returns an unsupported-shell diagnostic with cmd.exe PATH guidance.
 
-binpm does not edit shell profile files from these commands. Persistent profile changes are opt-in: add only the printed global bin command to your shell profile when you want global installs to persist on `PATH`. The printed project-local command is for the current project or shell session only.
+binpm does not edit shell profile files from these commands. Persistent profile changes are opt-in: use `binpm env --global --shell <shell>` and add only the printed global bin command to your shell profile when you want global installs to persist on `PATH`. The printed project-local command is for the current project or shell session only; `binpm env --local --shell <shell>` prints only that session command.
+
+For cmd.exe, run `binpm env --global --shell cmd` to print the resolved global bin path, including any absolute `BINPM_HOME` override. Use the printed `set "PATH=<global-bin>;%PATH%"` command for the current session, or add that global bin path to the user PATH in Windows Environment Variables for persistent setup.
 
 ## Security Boundary
 

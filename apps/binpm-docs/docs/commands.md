@@ -54,12 +54,12 @@ binpm outdated [--local|--global]
 ## Environment
 
 ```bash
-binpm env --shell <bash|zsh|fish|powershell>
+binpm env [--shell <bash|zsh|fish|powershell|pwsh>] [--global|--local]
 ```
 
-`binpm env` prints shell-specific commands for adding the project-local and global binpm binary directories to `PATH`. It labels the global command as profile-safe and the project-local command as current-project/session-only. It does not edit shell profile files.
+`binpm env` prints shell-specific commands for adding the project-local and global binpm binary directories to `PATH`. It labels the global command as profile-safe and the project-local command as current-project/session-only. Use `--global` to print only the global command for profile setup, or `--local` to print only the project-local current-session command. It does not edit shell profile files.
 
-Supported shell values are `bash`, `zsh`, `fish`, and `powershell`. `PowerShell` is accepted case-insensitively. `cmd` is a recognized but deferred value and returns an unsupported-shell diagnostic.
+Supported shell values are `bash`, `zsh`, `fish`, and `powershell`. `PowerShell` is accepted case-insensitively, and `pwsh` is accepted as a PowerShell alias. `--shell` may be omitted when `SHELL` or `ComSpec` identifies a supported shell. `cmd` is a recognized but deferred value and returns an unsupported-shell diagnostic with current-session and persistent user-PATH guidance for cmd.exe.
 
 ## Cache
 

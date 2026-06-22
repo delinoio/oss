@@ -368,6 +368,13 @@ const DOWNLOAD_INITIAL_CAPACITY_LIMIT: usize = 8 * 1024 * 1024;
 const GITHUB_ACTIONS_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";
 static SIGSTORE_TEMP_ATTEMPT: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EnvPathScope {
+    Both,
+    Global,
+    Local,
+}
+
 pub fn run(cli: Cli) -> Result<i32> {
     let output = OutputMode::from_json_flag(cli.json);
     match cli.command {
@@ -601,7 +608,8 @@ fn add(args: AddArgs) -> Result<i32> {
         println!("run: binpm x {cmd}");
     }
     println!(
-        "path: use `binpm env --shell <bash|zsh|fish|powershell>` for opt-in direct shell access"
+        "path: use `binpm env --local --shell <bash|zsh|fish|powershell>` for opt-in direct shell \
+         access"
     );
     Ok(0)
 }
@@ -6746,12 +6754,12 @@ fn verify_lockfile_records(
 }
 
 fn init(args: InitArgs) -> Result<i32> {
-    let project_root = manifest_creation_root()?;
-    let manifest_path = project_root.join(MANIFEST_FILE);
+    let explicit_destination = args.manifest_path.is_some();
+    let manifest_path = init_manifest_path(args.manifest_path)?;
 
     println!("manifest destination: {}", manifest_path.display());
 
-    if path_exists_or_unreadable(&manifest_path) && !args.force {
+    if path_exists_or_unreadable(&manifest_path) {
         return Err(BinpmError::ManifestExists {
             path: manifest_path,
         });
@@ -6768,7 +6776,7 @@ fn init(args: InitArgs) -> Result<i32> {
     info!(
         command = "init",
         manifest_path = %manifest_path.display(),
-        force = args.force,
+        explicit_destination,
         "Wrote minimal binpm manifest"
     );
     println!("created manifest: {}", manifest_path.display());
@@ -6776,60 +6784,206 @@ fn init(args: InitArgs) -> Result<i32> {
 }
 
 fn env_cmd(args: EnvArgs) -> Result<i32> {
-    if matches!(args.shell, Shell::Cmd) {
+    let shell = args.shell.map(Ok).unwrap_or_else(infer_env_shell)?;
+    let scope = env_path_scope(&args);
+
+    let global_bin = if matches!(scope, EnvPathScope::Both | EnvPathScope::Global) {
+        Some(binpm_home()?.join("bin"))
+    } else {
+        None
+    };
+    let local_bin = if matches!(scope, EnvPathScope::Both | EnvPathScope::Local) {
+        Some(project_root()?.join(".binpm").join("bin"))
+    } else {
+        None
+    };
+
+    if matches!(shell, Shell::Cmd) {
         return Err(BinpmError::UnsupportedShell {
-            shell: args.shell.as_str().to_string(),
+            shell: shell.as_str().to_string(),
+            cmd_hint: cmd_path_hint(scope, global_bin.as_deref(), local_bin.as_deref()),
         });
     }
 
-    let project_root = project_root()?;
-    let home = binpm_home()?;
-    let global_bin = home.join("bin");
-    let local_bin = project_root.join(".binpm").join("bin");
+    let global_bin_display = global_bin
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<not requested>".to_string());
+    let local_bin_display = local_bin
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<not requested>".to_string());
 
     info!(
         command = "env",
-        shell = args.shell.as_str(),
+        shell = shell.as_str(),
+        path_scope = ?scope,
         read_only = true,
-        global_bin = %global_bin.display(),
-        local_bin = %local_bin.display(),
+        global_bin = %global_bin_display,
+        local_bin = %local_bin_display,
         "Rendered PATH environment commands"
     );
 
-    print_env(args.shell, &global_bin, &local_bin);
+    print_env(shell, scope, global_bin.as_deref(), local_bin.as_deref());
     Ok(0)
 }
 
-fn print_env(shell: Shell, global_bin: &Path, local_bin: &Path) {
-    let global = shell_quote(shell, global_bin);
-    let local = shell_quote(shell, local_bin);
+fn init_manifest_path(explicit: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(path) = explicit {
+        if path.file_name() != Some(std::ffi::OsStr::new(MANIFEST_FILE))
+            || path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(BinpmError::InvalidInitManifestPath { path });
+        }
+        if path.is_absolute() {
+            return Ok(path);
+        }
+        return Ok(current_dir()?.join(path));
+    }
+
+    Ok(manifest_creation_root()?.join(MANIFEST_FILE))
+}
+
+fn env_path_scope(args: &EnvArgs) -> EnvPathScope {
+    match (args.global, args.local) {
+        (true, false) => EnvPathScope::Global,
+        (false, true) => EnvPathScope::Local,
+        _ => EnvPathScope::Both,
+    }
+}
+
+fn infer_env_shell() -> Result<Shell> {
+    for name in ["SHELL", "ComSpec"] {
+        if let Some(shell) = env::var_os(name).and_then(|value| shell_from_program(&value)) {
+            return Ok(shell);
+        }
+    }
+    Err(BinpmError::ShellRequired)
+}
+
+fn shell_from_program(program: &std::ffi::OsStr) -> Option<Shell> {
+    let name = Path::new(program)
+        .file_stem()
+        .or_else(|| Path::new(program).file_name())?
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    match name.as_str() {
+        "bash" => Some(Shell::Bash),
+        "zsh" => Some(Shell::Zsh),
+        "fish" => Some(Shell::Fish),
+        "powershell" | "pwsh" => Some(Shell::Powershell),
+        "cmd" => Some(Shell::Cmd),
+        _ => None,
+    }
+}
+
+fn print_env(
+    shell: Shell,
+    scope: EnvPathScope,
+    global_bin: Option<&Path>,
+    local_bin: Option<&Path>,
+) {
     match shell {
         Shell::Bash | Shell::Zsh => {
-            println!("# Global bin: persist this line in shell profiles");
-            println!("export PATH={global}${{PATH:+:$PATH}}");
-            println!("# Project-local bin: use for the current project/session only");
-            println!("export PATH={local}${{PATH:+:$PATH}}");
+            if matches!(scope, EnvPathScope::Both | EnvPathScope::Global) {
+                let global = shell_quote(shell, global_bin.expect("global bin path for env scope"));
+                println!("# Global bin: persist this line in shell profiles");
+                println!("export PATH={global}${{PATH:+:$PATH}}");
+            }
+            if matches!(scope, EnvPathScope::Both | EnvPathScope::Local) {
+                let local = shell_quote(shell, local_bin.expect("local bin path for env scope"));
+                println!("# Project-local bin: use for the current project/session only");
+                println!("export PATH={local}${{PATH:+:$PATH}}");
+            }
         }
         Shell::Fish => {
-            println!("# Global bin: persist this line in shell profiles");
-            println!("set -gx PATH {global} $PATH");
-            println!("# Project-local bin: use for the current project/session only");
-            println!("set -gx PATH {local} $PATH");
+            if matches!(scope, EnvPathScope::Both | EnvPathScope::Global) {
+                let global = shell_quote(shell, global_bin.expect("global bin path for env scope"));
+                println!("# Global bin: persist this line in shell profiles");
+                println!("set -gx PATH {global} $PATH");
+            }
+            if matches!(scope, EnvPathScope::Both | EnvPathScope::Local) {
+                let local = shell_quote(shell, local_bin.expect("local bin path for env scope"));
+                println!("# Project-local bin: use for the current project/session only");
+                println!("set -gx PATH {local} $PATH");
+            }
         }
         Shell::Powershell => {
-            println!("# Global bin: persist this line in shell profiles");
-            println!(
-                "$env:PATH = {global} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
-                 $env:PATH }} else {{ '' }})"
-            );
-            println!("# Project-local bin: use for the current project/session only");
-            println!(
-                "$env:PATH = {local} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
-                 $env:PATH }} else {{ '' }})"
-            );
+            if matches!(scope, EnvPathScope::Both | EnvPathScope::Global) {
+                let global = shell_quote(shell, global_bin.expect("global bin path for env scope"));
+                println!("# Global bin: persist this line in shell profiles");
+                println!(
+                    "$env:PATH = {global} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
+                     $env:PATH }} else {{ '' }})"
+                );
+            }
+            if matches!(scope, EnvPathScope::Both | EnvPathScope::Local) {
+                let local = shell_quote(shell, local_bin.expect("local bin path for env scope"));
+                println!("# Project-local bin: use for the current project/session only");
+                println!(
+                    "$env:PATH = {local} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
+                     $env:PATH }} else {{ '' }})"
+                );
+            }
         }
         Shell::Cmd => unreachable!("cmd shell is explicitly deferred before rendering"),
     }
+}
+
+fn cmd_path_hint(
+    scope: EnvPathScope,
+    global_bin: Option<&Path>,
+    local_bin: Option<&Path>,
+) -> String {
+    match scope {
+        EnvPathScope::Global => {
+            cmd_global_path_hint(global_bin.expect("global bin path for env scope"))
+        }
+        EnvPathScope::Local => {
+            cmd_local_path_hint(local_bin.expect("local bin path for env scope"))
+        }
+        EnvPathScope::Both => {
+            let global_path = global_bin.expect("global bin path for env scope");
+            let local_path = local_bin.expect("local bin path for env scope");
+            let global = cmd_path(global_path);
+            let global_set = cmd_set_path(global_path);
+            let local_set = cmd_set_path(local_path);
+            format!(
+                "For cmd.exe, add the global bin `{global}` to the user PATH in Windows \
+                 Environment Variables. For the current project/session, run `set \
+                 \"PATH={local_set};%PATH%\"`. To include both in the current cmd.exe session, \
+                 run `set \"PATH={local_set};{global_set};%PATH%\"`."
+            )
+        }
+    }
+}
+
+fn cmd_global_path_hint(path: &Path) -> String {
+    let raw_path = cmd_path(path);
+    let set_path = cmd_set_path(path);
+    format!(
+        "For cmd.exe, add `{raw_path}` to the user PATH in Windows Environment Variables, or for \
+         the current cmd.exe session run `set \"PATH={set_path};%PATH%\"`."
+    )
+}
+
+fn cmd_local_path_hint(path: &Path) -> String {
+    let path = cmd_set_path(path);
+    format!("For cmd.exe, run `set \"PATH={path};%PATH%\"` for the current project/session.")
+}
+
+fn cmd_path(path: &Path) -> String {
+    path.display().to_string()
+}
+
+fn cmd_set_path(path: &Path) -> String {
+    cmd_escape(&cmd_path(path))
+}
+
+fn cmd_escape(raw: &str) -> String {
+    raw.replace('^', "^^").replace('%', "%%cd:~,%")
 }
 
 fn shell_quote(shell: Shell, path: &Path) -> String {
@@ -7085,8 +7239,8 @@ fn yes_no(value: bool) -> &'static str {
 fn print_global_path_setup_guidance(global_bin: &Path) {
     println!("path_setup: {} is not on PATH", global_bin.display());
     println!(
-        "path_setup: run `binpm env --shell <bash|zsh|fish|powershell>` to print PATH setup \
-         commands"
+        "path_setup: run `binpm env --global --shell <bash|zsh|fish|powershell>` to print PATH \
+         setup commands"
     );
     println!(
         "path_setup: profile changes are opt-in; persist only the global bin line in shell \

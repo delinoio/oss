@@ -6,7 +6,7 @@ binpm local tooling is anchored by committed `binpm.toml` and `binpm.lock` files
 
 `binpm.toml` is the committed project-local tool declaration file.
 
-`binpm init` prints the full manifest destination before it writes. From a nested directory inside a Git worktree, that destination is the worktree root `binpm.toml`; outside Git, binpm uses the nearest existing manifest ancestor or the current directory. The current contract does not include a flag for forcing a different initialization root.
+`binpm init` prints the full manifest destination before it writes. From a nested directory inside a Git worktree, that destination is the worktree root `binpm.toml`; outside Git, binpm uses the nearest existing manifest ancestor or the current directory. Use `binpm init --manifest-path ./binpm.toml` as an explicit destination escape hatch when you need to create a new manifest somewhere else. The destination must be named `binpm.toml`, existing files are never overwritten, and `--force` is not supported.
 
 ```toml
 version = 1
@@ -63,4 +63,4 @@ Project-local executable files are installed under:
 <project>/.binpm/bin
 ```
 
-After a normal `binpm add`, run local tools with `binpm x <cmd>`. Use `binpm env --shell <bash|zsh|fish|powershell>` only when you want opt-in direct shell access for the current project or session. binpm does not edit shell profile files.
+After a normal `binpm add`, run local tools with `binpm x <cmd>`. Use `binpm env --local --shell <bash|zsh|fish|powershell>` only when you want opt-in direct shell access for the current project or session. binpm does not edit shell profile files.

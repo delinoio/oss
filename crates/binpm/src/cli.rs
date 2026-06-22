@@ -1,4 +1,7 @@
-use std::ffi::{OsStr, OsString};
+use std::{
+    ffi::{OsStr, OsString},
+    path::PathBuf,
+};
 
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
@@ -312,15 +315,25 @@ pub struct VerifyArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct InitArgs {
-    /// Replace an existing binpm.toml.
-    #[arg(long)]
-    pub force: bool,
+    /// Create binpm.toml at this explicit destination instead of the inferred
+    /// project root. Existing files are never overwritten.
+    #[arg(long, value_name = "PATH")]
+    pub manifest_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Args)]
 pub struct EnvArgs {
+    /// Shell syntax to render. Omit to infer from SHELL or ComSpec.
     #[arg(long, value_enum, ignore_case = true)]
-    pub shell: Shell,
+    pub shell: Option<Shell>,
+
+    /// Print only the global bin PATH command for explicit profile setup.
+    #[arg(long, conflicts_with = "local")]
+    pub global: bool,
+
+    /// Print only the project-local bin PATH command for this project/session.
+    #[arg(long)]
+    pub local: bool,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -627,7 +640,7 @@ mod tests {
         let cli = Cli::parse_from(["binpm", "env", "--shell", "fish"]);
 
         match cli.command {
-            Command::Env(args) => assert_eq!(args.shell, Shell::Fish),
+            Command::Env(args) => assert_eq!(args.shell, Some(Shell::Fish)),
             other => panic!("unexpected command: {other:?}"),
         }
     }
@@ -637,7 +650,30 @@ mod tests {
         let cli = Cli::parse_from(["binpm", "env", "--shell", "PowerShell"]);
 
         match cli.command {
-            Command::Env(args) => assert_eq!(args.shell, Shell::Powershell),
+            Command::Env(args) => assert_eq!(args.shell, Some(Shell::Powershell)),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_env_pwsh_alias_as_powershell() {
+        let cli = Cli::parse_from(["binpm", "env", "--shell", "pwsh"]);
+
+        match cli.command {
+            Command::Env(args) => assert_eq!(args.shell, Some(Shell::Powershell)),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_env_without_shell_for_runtime_inference() {
+        let cli = Cli::parse_from(["binpm", "env", "--global"]);
+
+        match cli.command {
+            Command::Env(args) => {
+                assert_eq!(args.shell, None);
+                assert!(args.global);
+            }
             other => panic!("unexpected command: {other:?}"),
         }
     }
@@ -647,7 +683,7 @@ mod tests {
         let cli = Cli::parse_from(["binpm", "env", "--shell", "cmd"]);
 
         match cli.command {
-            Command::Env(args) => assert_eq!(args.shell, Shell::Cmd),
+            Command::Env(args) => assert_eq!(args.shell, Some(Shell::Cmd)),
             other => panic!("unexpected command: {other:?}"),
         }
     }
