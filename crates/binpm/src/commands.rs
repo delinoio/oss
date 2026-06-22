@@ -1144,7 +1144,9 @@ fn print_local_update_plan(selected: &[String]) -> Result<()> {
         let version = tool.version.as_deref().unwrap_or("<latest>");
         println!("would update {cmd} from {} {version}", tool.source);
     }
-    if manifest.tools.is_empty() {
+    if manifest.tools.is_empty()
+        && capture_local_manifest_orphan_states(&root, &manifest.tools)?.is_empty()
+    {
         println!("empty manifest: no lockfile or local executable changes needed");
         return Ok(());
     }

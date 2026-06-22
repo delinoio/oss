@@ -2453,6 +2453,48 @@ fn local_update_dry_run_suppresses_empty_manifest_file_change_plan() {
 }
 
 #[test]
+fn local_update_dry_run_reports_empty_manifest_orphan_cleanup() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("update scope: local"))
+        .stdout(predicate::str::contains("planned updates: 0"))
+        .stdout(
+            predicate::str::contains(
+                "empty manifest: no lockfile or local executable changes needed",
+            )
+            .not(),
+        )
+        .stdout(predicate::str::contains(format!(
+            "would update {}",
+            project.join("binpm.lock").display()
+        )))
+        .stdout(predicate::str::contains("dry run: no changes made"));
+
+    assert!(project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
+}
+
+#[test]
 fn local_remove_preserves_exe_sibling_tool() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
