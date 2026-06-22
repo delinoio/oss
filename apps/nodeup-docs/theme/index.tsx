@@ -107,6 +107,10 @@ function NodeupDocsAccessibility() {
       attributeFilter: ["class", "href", "id"],
     });
 
+    function onResize() {
+      updateGeneratedControlAccessibility();
+    }
+
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") {
         return;
@@ -123,9 +127,11 @@ function NodeupDocsAccessibility() {
       }
     }
 
+    window.addEventListener("resize", onResize);
     document.addEventListener("keydown", onKeyDown);
 
     return () => {
+      window.removeEventListener("resize", onResize);
       document.removeEventListener("keydown", onKeyDown);
       observer.disconnect();
     };
