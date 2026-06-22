@@ -106,11 +106,14 @@ function syncAccessibleControls() {
     setButtonName(button, "Copy code block");
   }
 
-  const themeSwitch = document.querySelector(".rp-switch-appearance");
   const nextThemeLabel = document.documentElement.classList.contains("rp-dark")
     ? "Switch to light theme"
     : "Switch to dark theme";
-  setInteractiveDiv(themeSwitch, nextThemeLabel);
+  for (const themeSwitch of document.querySelectorAll(
+    ".rp-switch-appearance",
+  )) {
+    setInteractiveDiv(themeSwitch, nextThemeLabel);
+  }
 
   for (const link of document.querySelectorAll<HTMLAnchorElement>(
     '.rp-social-links__item[href="https://github.com/delinoio/oss"]',
@@ -120,12 +123,7 @@ function syncAccessibleControls() {
 
   const sidebar = document.querySelector(".rp-doc-layout__sidebar");
   const outline = document.querySelector(".rp-doc-layout__outline");
-  setButtonName(
-    document.querySelector(".rp-sidebar-menu__left"),
-    isDrawerOpen(sidebar, "rp-doc-layout__sidebar--open")
-      ? "Close menu"
-      : "Open menu",
-  );
+  setButtonName(document.querySelector(".rp-sidebar-menu__left"), "Open menu");
   setButtonName(
     document.querySelector(".rp-sidebar-menu__right"),
     isDrawerOpen(outline, "rp-doc-layout__outline--open")
@@ -151,18 +149,23 @@ function closeMobileDrawers() {
     document.querySelector<HTMLElement>(".rp-nav-hamburger")?.focus();
   }
 
-  const hasOpenDrawer =
-    document.querySelector(".rp-doc-layout__sidebar--open") ||
-    document.querySelector(".rp-doc-layout__outline--open");
+  const sidebar = document.querySelector(".rp-doc-layout__sidebar");
+  const outline = document.querySelector(".rp-doc-layout__outline");
+  const isSidebarOpen = isDrawerOpen(sidebar, "rp-doc-layout__sidebar--open");
+  const isOutlineOpen = isDrawerOpen(outline, "rp-doc-layout__outline--open");
 
-  if (!hasOpenDrawer) {
+  if (!isSidebarOpen && !isOutlineOpen) {
     return;
   }
 
   document.body.dispatchEvent(
     new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
   );
-  document.querySelector<HTMLElement>(".rp-sidebar-menu button")?.focus();
+  document
+    .querySelector<HTMLElement>(
+      isOutlineOpen ? ".rp-sidebar-menu__right" : ".rp-sidebar-menu__left",
+    )
+    ?.focus();
 }
 
 function AccessibilitySync() {
@@ -212,7 +215,13 @@ function AccessibilitySync() {
 }
 
 function MainContentAnchor() {
-  return <span className="delino-main-content-anchor" id="main-content" />;
+  return (
+    <span
+      className="delino-main-content-anchor"
+      id="main-content"
+      tabIndex={-1}
+    />
+  );
 }
 
 function SkipToContent() {
