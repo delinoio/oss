@@ -2299,6 +2299,27 @@ struct InstalledPackage {
     cache_metadata_snapshot: Option<CacheMetadataSnapshot>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LockedRecordVerification {
+    verified: bool,
+    signature_reverified: bool,
+}
+
+impl LockedRecordVerification {
+    const SIGNATURE_REVERIFIED: Self = Self {
+        verified: true,
+        signature_reverified: true,
+    };
+    const UNVERIFIED: Self = Self {
+        verified: false,
+        signature_reverified: false,
+    };
+    const VERIFIED: Self = Self {
+        verified: true,
+        signature_reverified: false,
+    };
+}
+
 struct CompletedLocalInstall {
     cmd: String,
     install: InstalledPackage,
@@ -2739,7 +2760,7 @@ fn install_local_from_lock(
             }
             if require_verified
                 && !record.has_verified_source()
-                && !reverify_locked_record_signature(&cache_paths, &record, &bytes)?
+                && !reverify_locked_record_signature(&cache_paths, &record, &bytes)?.verified
             {
                 return Err(BinpmError::VerificationRequired {
                     package: record.package_spec.clone(),
@@ -2790,11 +2811,17 @@ fn install_local_from_lock(
         }
         populated_cache_entry = cache_metadata_snapshot.is_none();
     }
-    if require_verified && !locked_record_has_verified_source(&cache_paths, &record)? {
-        return Err(BinpmError::VerificationRequired {
-            package: record.package_spec,
-        });
-    }
+    let locked_verification = if require_verified {
+        let verification = locked_record_verified_source(&cache_paths, &record)?;
+        if !verification.verified {
+            return Err(BinpmError::VerificationRequired {
+                package: record.package_spec.clone(),
+            });
+        }
+        Some(verification)
+    } else {
+        None
+    };
 
     let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
     let mut resolved_for_install = ResolvedAsset {
@@ -2847,6 +2874,14 @@ fn install_local_from_lock(
         return Err(error);
     }
     let mut runtime_record = record;
+    if locked_verification
+        .map(|verification| verification.signature_reverified)
+        .unwrap_or(false)
+    {
+        runtime_record.checksum_source = ChecksumSource::Signature;
+        runtime_record.signature_available = true;
+        runtime_record.signature_verified = true;
+    }
     runtime_record.cache_key = Some(crate::storage::cache_key(&runtime_record.sha256));
     runtime_record.cache_path = Some(
         cache_paths
@@ -3076,6 +3111,29 @@ fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequ
     };
 
     Ok(DownloadRequest { url, auth, accept })
+}
+
+fn locked_record_signature_sidecar(record: &PackageRecord) -> Result<SignatureSidecar> {
+    let url = sanitize_persisted_url(&format!("{}.sigstore.json", record.asset_url))?;
+    let source = SourceSpec {
+        provider: record.source_provider,
+        host: record.source_host.clone(),
+        path: record.source_path.clone(),
+        version: Some(record.release_tag.clone()),
+    };
+    let auth = provider_origin_download_auth(&source, &url, provider_auth_for_source(&source));
+    let accept = match (record.source_provider, auth.as_ref()) {
+        (SourceProvider::GitHub, Some(_)) => Some(GITHUB_ASSET_DOWNLOAD_ACCEPT),
+        _ => None,
+    };
+
+    Ok(SignatureSidecar {
+        asset_name: format!("{}.sigstore.json", record.asset_name),
+        canonical_url: url.clone(),
+        download_url: url,
+        download_auth: auth,
+        download_accept: accept,
+    })
 }
 
 fn locked_release_lookup_spec(record: &PackageRecord) -> Result<SourceSpec> {
@@ -3362,15 +3420,15 @@ fn resolved_has_verified_source(resolved: &ResolvedAsset) -> bool {
             && resolved.signature_verified)
 }
 
-fn locked_record_has_verified_source(
+fn locked_record_verified_source(
     cache_paths: &CachePaths,
     record: &PackageRecord,
-) -> Result<bool> {
+) -> Result<LockedRecordVerification> {
     if record.has_verified_source() {
-        return Ok(true);
+        return Ok(LockedRecordVerification::VERIFIED);
     }
     if !record_has_signature_evidence(record) {
-        return Ok(false);
+        return Ok(LockedRecordVerification::UNVERIFIED);
     }
     let asset_path = cache_paths.asset_path(&record.sha256);
     let asset_bytes = fs::read(&asset_path).map_err(|source| BinpmError::ReadFile {
@@ -3404,7 +3462,7 @@ fn download_locked_record_verified_source(record: &PackageRecord) -> Result<bool
     let home = binpm_home()?;
     let cache_paths = CachePaths::new(&home);
     cache_paths.ensure()?;
-    reverify_locked_record_signature(&cache_paths, record, &asset_bytes)
+    Ok(reverify_locked_record_signature(&cache_paths, record, &asset_bytes)?.verified)
 }
 
 fn record_has_signature_evidence(record: &PackageRecord) -> bool {
@@ -3415,26 +3473,8 @@ fn reverify_locked_record_signature(
     cache_paths: &CachePaths,
     record: &PackageRecord,
     asset_bytes: &[u8],
-) -> Result<bool> {
-    let spec = locked_release_lookup_spec(record)?;
-    let release = client_for_source(&spec)?.resolve_release(&spec)?.release;
-    if release.tag != record.release_tag {
-        return Ok(false);
-    }
-    let current_asset = release
-        .assets
-        .iter()
-        .find(|asset| asset.name == record.asset_name);
-    let Some(current_asset) = current_asset else {
-        return Ok(false);
-    };
-    if release_asset_display_url(current_asset)? != record.asset_url {
-        return Ok(false);
-    }
-    let Some(signature_sidecar) = signature_sidecar_for_asset(&record.asset_name, &release.assets)
-    else {
-        return Ok(false);
-    };
+) -> Result<LockedRecordVerification> {
+    let signature_sidecar = locked_record_signature_sidecar(record)?;
     let mut resolved = ResolvedAsset {
         source: SourceSpec::from_str(
             &record
@@ -3474,7 +3514,11 @@ fn reverify_locked_record_signature(
         signature_verified: false,
     };
     verify_signature_sidecar(cache_paths, &mut resolved, asset_bytes, true)?;
-    Ok(resolved_has_verified_source(&resolved))
+    if resolved_has_verified_source(&resolved) {
+        Ok(LockedRecordVerification::SIGNATURE_REVERIFIED)
+    } else {
+        Ok(LockedRecordVerification::UNVERIFIED)
+    }
 }
 
 struct SigstoreTrustPolicy {
@@ -5702,7 +5746,7 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
         validate_package_record_metadata(&cache_paths, &record)?;
         verify_runtime_cache_bytes(&cache_paths, &record)?;
         let runtime_check = if args.require_verified {
-            if !locked_record_has_verified_source(&cache_paths, &record)? {
+            if !locked_record_verified_source(&cache_paths, &record)?.verified {
                 return Err(BinpmError::VerificationRequired {
                     package: record.package_spec,
                 });
@@ -6457,8 +6501,9 @@ mod tests {
         has_local_runtime_or_lock_state, install_local_from_lock, install_path_collision_key,
         is_retryable_status, local_runtime_lock_records, local_tool_execution_ready,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
-        locked_record_download_request, locked_release_lookup_spec, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
+        locked_record_download_request, locked_record_signature_sidecar,
+        locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
+        manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         normalize_bin_selection, override_snippet_candidate, package_record_output,
         package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
@@ -9609,6 +9654,78 @@ mod tests {
             auth.env_var,
             "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE"
         );
+    }
+
+    #[test]
+    fn locked_record_signature_sidecar_uses_locked_asset_url() {
+        let mut record = package_record();
+        record.source = "github:ghe.no-token.example/owner/tool".to_string();
+        record.source_host = "ghe.no-token.example".to_string();
+        record.asset_url =
+            "https://ghe.no-token.example/owner/tool/releases/download/1.0.0/locked-tool-linux"
+                .to_string();
+        record.asset_name = "locked-tool-linux".to_string();
+
+        let sidecar = locked_record_signature_sidecar(&record).expect("signature sidecar");
+
+        assert_eq!(sidecar.asset_name, "locked-tool-linux.sigstore.json");
+        assert_eq!(
+            sidecar.canonical_url,
+            "https://ghe.no-token.example/owner/tool/releases/download/1.0.0/locked-tool-linux.sigstore.json"
+        );
+        assert_eq!(sidecar.download_url, sidecar.canonical_url);
+        assert_eq!(sidecar.download_auth, None);
+        assert_eq!(sidecar.download_accept, None);
+    }
+
+    #[test]
+    fn locked_record_signature_sidecar_preserves_provider_auth_metadata() {
+        let mut record = package_record();
+        record.source = "github:ghe.locked.example/owner/tool".to_string();
+        record.source_host = "ghe.locked.example".to_string();
+        record.asset_url =
+            "https://ghe.locked.example/owner/tool/releases/download/1.0.0/tool-linux".to_string();
+        std::env::set_var(
+            "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE",
+            "locked-token",
+        );
+
+        let sidecar = locked_record_signature_sidecar(&record).expect("signature sidecar");
+
+        std::env::remove_var("BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
+        assert_eq!(
+            sidecar.download_url,
+            "https://ghe.locked.example/owner/tool/releases/download/1.0.0/tool-linux.sigstore.json"
+        );
+        assert_eq!(sidecar.download_accept, Some(GITHUB_ASSET_DOWNLOAD_ACCEPT));
+        let auth = sidecar.download_auth.expect("provider auth");
+        assert_eq!(auth.header_name, "authorization");
+        assert_eq!(auth.header_value, "Bearer locked-token");
+        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
+    }
+
+    #[test]
+    fn locked_record_signature_sidecar_omits_provider_auth_for_external_asset_url() {
+        let mut record = package_record();
+        record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
+        record.source_provider = SourceProvider::GitLab;
+        record.source_host = "gitlab.locked.example".to_string();
+        record.source_path = "group/tool".to_string();
+        record.asset_url = "https://cdn.locked.example/group/tool/releases/tool-linux".to_string();
+        std::env::set_var(
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE",
+            "locked-token",
+        );
+
+        let sidecar = locked_record_signature_sidecar(&record).expect("signature sidecar");
+
+        std::env::remove_var("BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE");
+        assert_eq!(
+            sidecar.download_url,
+            "https://cdn.locked.example/group/tool/releases/tool-linux.sigstore.json"
+        );
+        assert_eq!(sidecar.download_auth, None);
+        assert_eq!(sidecar.download_accept, None);
     }
 
     #[test]
