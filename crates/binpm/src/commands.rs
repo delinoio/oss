@@ -922,6 +922,9 @@ fn cache_key(output: OutputMode) -> Result<i32> {
 fn list(args: ScopedArgs, output: OutputMode) -> Result<i32> {
     let scope = select_scope(args.scope.scope())?;
     log_read_only_scope("list", scope);
+    if !output.is_json() {
+        println!("list scope: {}", scope.as_str());
+    }
     let mut tools = Vec::new();
     match scope {
         Scope::Local => {
@@ -1034,6 +1037,7 @@ fn info_cmd(args: InfoArgs, output: OutputMode) -> Result<i32> {
             record: package_record_output(&record)?,
         });
     }
+    println!("info scope: {}", scope.as_str());
     print_package_record_info(&args.cmd_or_source, &record);
     Ok(0)
 }
@@ -1041,6 +1045,9 @@ fn info_cmd(args: InfoArgs, output: OutputMode) -> Result<i32> {
 fn outdated(args: ScopedArgs, output: OutputMode) -> Result<i32> {
     let scope = select_scope(args.scope.scope())?;
     log_read_only_scope("outdated", scope);
+    if !output.is_json() {
+        println!("outdated scope: {}", scope.as_str());
+    }
     let mut checked = 0usize;
     let mut tools = Vec::new();
     match scope {
@@ -1144,6 +1151,7 @@ fn update(args: UpdateArgs) -> Result<i32> {
     );
     let scope = select_scope(args.scope.scope())?;
     print_selected_mutation_scope("update", scope);
+    print_update_mode(scope, &args.cmd);
     if args.dry_run {
         return preview_update(scope, &args.cmd);
     }
@@ -1157,6 +1165,14 @@ fn update(args: UpdateArgs) -> Result<i32> {
 
 fn print_selected_mutation_scope(command: &str, scope: Scope) {
     println!("{command} scope: {}", scope.as_str());
+}
+
+fn print_update_mode(scope: Scope, selected: &[String]) {
+    if selected.is_empty() {
+        println!("update mode: all tools in {} scope", scope.as_str());
+    } else {
+        println!("update mode: selected tools ({})", selected.len());
+    }
 }
 
 fn preview_remove(scope: Scope, cmd: &str) -> Result<i32> {
@@ -1377,6 +1393,7 @@ fn explain(args: ExplainArgs, output: OutputMode) -> Result<i32> {
     println!("binpm explain");
     println!("read_only: true");
     println!("network_free: true");
+    println!("explain scope: {}", scope.as_str());
     println!("cmd: {}", args.cmd_or_source);
     println!("source: {}", record.source);
     println!("release: {}", record.release_tag);
@@ -2192,12 +2209,72 @@ fn update_local_manifest(
     require_verified: bool,
     selected: &[String],
 ) -> Result<i32> {
+    let root = require_manifest_root()?;
+    let manifest_path = root.join(MANIFEST_FILE);
+    let manifest = read_manifest(&manifest_path)?;
     if frozen_lockfile {
-        let root = require_manifest_root()?;
-        let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
         validate_frozen_local_update_latest(&root, &manifest, selected)?;
+        return install_local_manifest(frozen_lockfile, require_verified, selected);
+    }
+
+    let (next_manifest, manifest_changed) =
+        local_update_manifest_with_latest_versions(&manifest, selected)?;
+    if manifest_changed {
+        write_manifest(&manifest_path, &next_manifest)?;
+        if let Err(error) = install_local_manifest(frozen_lockfile, require_verified, selected) {
+            let _ = write_manifest(&manifest_path, &manifest);
+            return Err(error);
+        }
+        return Ok(0);
     }
     install_local_manifest(frozen_lockfile, require_verified, selected)
+}
+
+fn local_update_manifest_with_latest_versions(
+    manifest: &Manifest,
+    selected: &[String],
+) -> Result<(Manifest, bool)> {
+    local_update_manifest_with_latest_versions_from(
+        manifest,
+        selected,
+        latest_stable_tag_for_update,
+    )
+}
+
+fn local_update_manifest_with_latest_versions_from(
+    manifest: &Manifest,
+    selected: &[String],
+    latest_tag: impl Fn(&ManifestTool) -> Result<String>,
+) -> Result<(Manifest, bool)> {
+    validate_selected_manifest_entries(manifest, selected)?;
+    let mut next_manifest = manifest.clone();
+    let mut changed = false;
+    for (cmd, tool) in &manifest.tools {
+        if !selected.is_empty() && !selected.contains(cmd) {
+            continue;
+        }
+        if tool.version.is_none() {
+            continue;
+        }
+        let latest = latest_tag(tool)?;
+        if tool.version.as_deref() != Some(latest.as_str()) {
+            let Some(next_tool) = next_manifest.tools.get_mut(cmd) else {
+                continue;
+            };
+            next_tool.version = Some(latest);
+            changed = true;
+        }
+    }
+    Ok((next_manifest, changed))
+}
+
+fn latest_stable_tag_for_update(tool: &ManifestTool) -> Result<String> {
+    let mut spec = parse_manifest_tool_source(tool)?;
+    spec.version = None;
+    Ok(client_for_source(&spec)?
+        .resolve_release(&spec)?
+        .release
+        .tag)
 }
 
 fn update_global_packages(require_verified: bool, selected: &[String]) -> Result<i32> {
@@ -2286,6 +2363,10 @@ fn validate_frozen_local_update_latest(
             .tools
             .get(cmd)
             .ok_or_else(|| frozen_lockfile_missing_record_error(&lockfile_path, cmd))?;
+        let record = locked_tool
+            .targets
+            .get(&target.key())
+            .ok_or_else(|| frozen_lockfile_missing_record_error(&lockfile_path, cmd))?;
         if locked_tool.source != spec.source_without_version()
             || lock_targets_conflict_with_manifest(
                 &lockfile_path,
@@ -2301,11 +2382,17 @@ fn validate_frozen_local_update_latest(
                 cmd: cmd.clone(),
             });
         }
-        let record = locked_tool
-            .targets
-            .get(&target.key())
-            .ok_or_else(|| frozen_lockfile_missing_record_error(&lockfile_path, cmd))?;
-        if record.requested_version != spec.version {
+        let latest_tag = latest_stable_tag_for_update(tool)?;
+        let expected_requested_version = tool.version.as_ref().map(|_| latest_tag.clone());
+        if tool.version.is_some() && tool.version.as_deref() != Some(latest_tag.as_str()) {
+            return Err(BinpmError::StaleLockfile {
+                path: lockfile_path.clone(),
+                cmd: cmd.clone(),
+            });
+        }
+        if record.requested_version != expected_requested_version
+            || record.release_tag != latest_tag
+        {
             return Err(BinpmError::StaleLockfile {
                 path: lockfile_path.clone(),
                 cmd: cmd.clone(),
@@ -6205,6 +6292,9 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
     let mut checks = Vec::new();
     let mut locked = BTreeSet::new();
     let mut local_runtime_locks = BTreeMap::new();
+    if !output.is_json() {
+        println!("verify scope: {}", scope.as_str());
+    }
     if let Some(root) = &root {
         let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
         let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
@@ -7015,10 +7105,11 @@ mod tests {
         format_outdated_tool_line, github_sha256_digest, global_update_selected_binary,
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
         install_path_collision_key, is_retryable_status, local_runtime_lock_records,
-        local_tool_execution_ready, lock_targets_conflict_with_manifest,
-        lock_targets_conflict_with_record, locked_record_download_request,
-        locked_record_signature_sidecar, locked_release_lookup_spec, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
+        local_tool_execution_ready, local_update_manifest_with_latest_versions_from,
+        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
+        locked_record_download_request, locked_record_signature_sidecar,
+        locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
+        manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         normalize_bin_selection, override_snippet_candidate, package_record_output,
         package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
@@ -7157,6 +7248,67 @@ mod tests {
         .expect("serialize outdated tool");
 
         assert_eq!(payload["source"], "github:owner/tool");
+    }
+
+    #[test]
+    fn local_update_manifest_advances_pinned_versions_only() {
+        let mut manifest = Manifest {
+            version: 1,
+            tools: BTreeMap::new(),
+        };
+        manifest.tools.insert(
+            "pinned".to_string(),
+            ManifestTool {
+                source: "github:owner/pinned".to_string(),
+                version: Some("1.0.0".to_string()),
+                bin: Some("pinned-bin".to_string()),
+                targets: BTreeMap::new(),
+            },
+        );
+        manifest.tools.insert(
+            "floating".to_string(),
+            ManifestTool {
+                source: "github:owner/floating".to_string(),
+                version: None,
+                bin: None,
+                targets: BTreeMap::new(),
+            },
+        );
+
+        let (next_manifest, changed) =
+            local_update_manifest_with_latest_versions_from(&manifest, &[], |tool| {
+                Ok(match tool.source.as_str() {
+                    "github:owner/pinned" => "2.0.0".to_string(),
+                    other => panic!("unexpected latest lookup for {other}"),
+                })
+            })
+            .expect("update manifest");
+
+        assert!(changed);
+        assert_eq!(
+            next_manifest
+                .tools
+                .get("pinned")
+                .expect("pinned tool")
+                .version
+                .as_deref(),
+            Some("2.0.0")
+        );
+        assert_eq!(
+            next_manifest
+                .tools
+                .get("pinned")
+                .expect("pinned tool")
+                .bin
+                .as_deref(),
+            Some("pinned-bin")
+        );
+        assert!(next_manifest
+            .tools
+            .get("floating")
+            .expect("floating tool")
+            .version
+            .is_none());
     }
 
     #[test]
@@ -10376,7 +10528,7 @@ mod tests {
         record.source = "github:ghe.locked.example/owner/tool".to_string();
         record.source_host = "ghe.locked.example".to_string();
         record.asset_url =
-            "https://ghe.locked.example/owner/tool/releases/download/1.0.0/tool-linux".to_string();
+            "https://ghe.locked.example/api/v3/repos/owner/tool/releases/assets/123".to_string();
         std::env::set_var(
             "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE",
             "locked-token",
