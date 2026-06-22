@@ -120,6 +120,8 @@ nodeup shim setup
 
 If output includes a PATH instruction, run it for the current session and add the shim directory to your shell profile or user PATH for future sessions. On Windows, Nodeup uses copied `.exe` aliases, so rerun `nodeup shim setup` after moving or replacing `nodeup.exe`.
 
+If setup reports a conflict, review the listed path, ownership classification, and remediation. Nodeup will not replace unrelated commands; move the conflicting file or choose another shim directory with `nodeup shim setup --dir <path>`.
+
 ## Windows Shim Is Shadowed
 
 Windows resolves commands using `PATH` order and `PATHEXT`. Nodeup shim aliases such as `npm.exe` must appear earlier than other Node.js or package-manager commands when you want Nodeup to dispatch them.

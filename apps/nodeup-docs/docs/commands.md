@@ -203,6 +203,8 @@ nodeup override unset [--path <path>] [--nonexistent]
 
 Removes an override for the provided path or current directory. `--nonexistent` removes stale entries whose directories no longer exist.
 
+`--path` and `--nonexistent` are mutually exclusive. Use `--path` for one override target, or `--nonexistent` for global stale-entry cleanup.
+
 JSON output is the removed override list.
 
 ## which
@@ -256,7 +258,7 @@ Creates or repairs managed executable-name dispatch shims for `node`, `npm`, `np
 - macOS and Linux use symlinks named `node`, `npm`, `npx`, `yarn`, and `pnpm`.
 - Windows uses copied executables named `node.exe`, `npm.exe`, `npx.exe`, `yarn.exe`, and `pnpm.exe`.
 - Re-running the command reports existing valid shims as `existing`.
-- Existing unrelated commands are reported as conflicts and are not replaced.
+- Existing unrelated commands are reported as conflicts and are not replaced. Conflict output includes the path, ownership classification, and remediation; JSON errors expose the same data under `diagnostics.conflicts`.
 - Stale Nodeup symlinks are repaired.
 - Non-Nodeup files and different existing Windows executables are refused instead of being overwritten.
 
@@ -278,7 +280,7 @@ JSON output includes `action`, `status`, `target_binary`, and `source_binary`.
 nodeup self uninstall
 ```
 
-Removes Nodeup-owned data, cache, and config roots when they contain artifacts. It refuses unsafe paths that are not clearly Nodeup-owned.
+Removes Nodeup-owned data, cache, and config roots when they contain artifacts. It refuses unsafe paths and reports configured roots that are not clearly Nodeup-owned without deleting them.
 
 Cleanup boundaries:
 
@@ -289,7 +291,7 @@ Cleanup boundaries:
 - Shims: manual; Nodeup does not delete aliases created by `nodeup shim setup`.
 - Shell profile/PATH: manual; Nodeup does not edit shell profile files or the user PATH.
 
-Human output includes removed paths and remaining manual steps. JSON output includes `action`, `status`, `removed_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
+Human output separates removed paths, manual leftovers, ownership-refused paths, and remaining manual steps. JSON output includes `action`, `status`, `removed_paths`, `manual_leftover_paths`, `ownership_refused_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
 
 ## self upgrade-data
 
