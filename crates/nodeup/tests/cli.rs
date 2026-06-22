@@ -6413,6 +6413,26 @@ fn color_diagnostics_reports_invalid_color_env_values() {
 
 #[test]
 #[serial]
+fn color_diagnostics_treats_unsupported_log_color_aliases_as_invalid() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NO_COLOR", "1")
+        .env("NODEUP_LOG_COLOR", "off")
+        .args(["--output", "json", "show", "color"])
+        .output()
+        .expect("show color with unsupported NODEUP_LOG_COLOR alias");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["logs"]["enabled"], false);
+    assert_eq!(payload["logs"]["source"], "NO_COLOR");
+    assert_eq!(payload["logs"]["ignored_nodeup_log_color"], "off");
+}
+
+#[test]
+#[serial]
 fn color_diagnostics_json_output_stays_plain_when_log_color_is_forced() {
     let env = TestEnv::new();
 

@@ -85,8 +85,33 @@ fn sanitized_url(url: &reqwest::Url) -> String {
 pub fn sanitize_url_text(raw: &str) -> String {
     match reqwest::Url::parse(raw) {
         Ok(url) => sanitized_url(&url),
-        Err(_) => raw.to_string(),
+        Err(_) => sanitize_unparseable_url_text(raw),
     }
+}
+
+fn sanitize_unparseable_url_text(raw: &str) -> String {
+    let without_query_or_fragment = raw.split(['?', '#']).next().unwrap_or_default().to_string();
+
+    let Some(scheme_end) = without_query_or_fragment.find("://") else {
+        return without_query_or_fragment;
+    };
+    let authority_start = scheme_end + 3;
+    let authority_end = without_query_or_fragment[authority_start..]
+        .find('/')
+        .map(|index| authority_start + index)
+        .unwrap_or(without_query_or_fragment.len());
+    let authority = &without_query_or_fragment[authority_start..authority_end];
+
+    let Some(userinfo_end) = authority.rfind('@') else {
+        return without_query_or_fragment;
+    };
+
+    format!(
+        "{}{}{}",
+        &without_query_or_fragment[..authority_start],
+        &authority[userinfo_end + 1..],
+        &without_query_or_fragment[authority_end..]
+    )
 }
 
 fn reqwest_error_classification(error: &reqwest::Error) -> &'static str {
@@ -365,5 +390,19 @@ mod tests {
             sanitize_url_text("https://user:token@example.test/index.json?token=secret#fragment");
 
         assert_eq!(sanitized, "https://example.test/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_query_and_fragment_from_unparseable_text() {
+        let sanitized = sanitize_url_text("mirror/index.json?token=secret#fragment");
+
+        assert_eq!(sanitized, "mirror/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_userinfo_from_unparseable_text() {
+        let sanitized = sanitize_url_text("https://user:token@example test/index.json?secret=1");
+
+        assert_eq!(sanitized, "https://example test/index.json");
     }
 }

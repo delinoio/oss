@@ -141,8 +141,8 @@ impl LogColorMode {
 
 fn parse_log_color_mode(raw: &str) -> Option<LogColorMode> {
     match raw.trim().to_ascii_lowercase().as_str() {
-        "always" | "on" | "true" | "1" | "yes" => Some(LogColorMode::Always),
-        "never" | "off" | "false" | "0" | "no" => Some(LogColorMode::Never),
+        "always" => Some(LogColorMode::Always),
+        "never" => Some(LogColorMode::Never),
         "auto" => Some(LogColorMode::Auto),
         _ => None,
     }
