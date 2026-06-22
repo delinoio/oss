@@ -749,7 +749,7 @@ impl ChecksumSource {
     }
 
     pub fn is_upstream_verified(self) -> bool {
-        matches!(self, Self::GitHubDigest)
+        matches!(self, Self::GitHubDigest | Self::Sidecar | Self::Manifest)
     }
 }
 

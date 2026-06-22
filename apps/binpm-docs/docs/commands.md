@@ -27,7 +27,7 @@ binpm add foo github:owner/tools@v1.2.3 --bin bin/foo --also bar=bin/bar --also 
 
 Commands that support both local and global scope default to local when a local `binpm.toml` is discovered. Otherwise they default to global. `--local` and `--global` are explicit overrides.
 
-Global update is pending implementation. `binpm update --global`, including `--dry-run`, fails with a workaround: run `binpm outdated --global` to find stale global tools, inspect each stale command with `binpm info --global <cmd>` for its recorded source and selected binary, then reinstall it with `binpm install <source> --as <cmd> --bin <selected_binary>`. Use `binpm update --local` for project tools.
+`binpm update [cmd...] --global` updates selected global tools, or every global tool when no command names are supplied. It uses existing global package records, preserves each command alias and selected upstream binary, resolves the latest stable release for the recorded source, and finalizes through the same cache, install, rollback, and verification behavior as global installs. Add `--dry-run` to print the selected scope and planned runtime changes without mutating package records, cache references, or executables.
 
 ## Execution
 

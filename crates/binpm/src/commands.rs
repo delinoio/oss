@@ -39,8 +39,8 @@ use crate::{
         list_package_records, managed_installed_path, package_record_from_resolved,
         package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
         read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
-        referenced_cache_keys, reject_symlinked_cache_entry, remove_cache_ref,
-        remove_installed_binary, remove_package_record, remove_path_if_exists,
+        referenced_cache_keys, reject_symlinked_cache_entry, reject_symlinked_package_record_dirs,
+        remove_cache_ref, remove_installed_binary, remove_package_record, remove_path_if_exists,
         remove_stale_cache_refs, require_regular_managed_file,
         require_verified_regular_cache_asset, sanitize_persisted_url, scan_cache_references,
         validate_command_name, validate_download_url, validate_installed_binary_path,
@@ -1053,16 +1053,13 @@ fn update(args: UpdateArgs) -> Result<i32> {
     );
     let scope = select_scope(args.scope.scope())?;
     print_selected_mutation_scope("update", scope);
-    if scope == Scope::Global {
-        return Err(BinpmError::GlobalUpdatePending);
-    }
     if args.dry_run {
         return preview_update(scope, &args.cmd);
     }
     print_update_plan(scope, &args.cmd)?;
     match scope {
         Scope::Local => update_local_manifest(frozen_lockfile, args.require_verified, &args.cmd),
-        Scope::Global => unreachable!("global update returns pending before planning"),
+        Scope::Global => update_global_packages(args.require_verified, &args.cmd),
         Scope::Auto => unreachable!("select_scope never returns auto"),
     }
 }
@@ -1152,17 +1149,10 @@ fn print_local_update_plan(selected: &[String]) -> Result<()> {
 
 fn print_global_update_plan(selected: &[String]) -> Result<()> {
     let paths = ScopePaths::global(binpm_home()?);
-    let records = list_package_records(&paths)?;
-    for cmd in selected {
-        validate_command_name(cmd)?;
-        read_package_record(&package_record_path(&paths, cmd))?;
-    }
-    let planned: Vec<_> = records
-        .iter()
-        .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
-        .collect();
+    let planned = selected_global_package_records(&paths, selected)?;
+    prepare_global_updates(planned.clone())?;
     println!("planned updates: {}", planned.len());
-    for (cmd, record) in planned {
+    for (cmd, record) in &planned {
         println!(
             "would update {cmd} from {} {}",
             record.source, record.release_tag
@@ -2058,6 +2048,75 @@ fn update_local_manifest(
     install_local_manifest(frozen_lockfile, require_verified, selected)
 }
 
+fn update_global_packages(require_verified: bool, selected: &[String]) -> Result<i32> {
+    let home = binpm_home()?;
+    let scope_paths = ScopePaths::global(home.clone());
+    let records = selected_global_package_records(&scope_paths, selected)?;
+    let updates = prepare_global_updates(records)?;
+    for update in updates {
+        install_global_source(
+            update.spec,
+            &update.cmd,
+            update.selected_binary,
+            require_verified,
+        )?;
+    }
+    Ok(0)
+}
+
+#[derive(Debug)]
+struct PreparedGlobalUpdate {
+    cmd: String,
+    spec: SourceSpec,
+    selected_binary: Option<String>,
+}
+
+fn prepare_global_updates(
+    records: Vec<(String, PackageRecord)>,
+) -> Result<Vec<PreparedGlobalUpdate>> {
+    records
+        .into_iter()
+        .map(|(cmd, record)| {
+            validate_command_name(&cmd)?;
+            let mut spec = SourceSpec::from_str(&record.source)?;
+            spec.version = None;
+            let selected_binary = global_update_selected_binary(&record)?;
+            Ok(PreparedGlobalUpdate {
+                cmd,
+                spec,
+                selected_binary,
+            })
+        })
+        .collect()
+}
+
+fn global_update_selected_binary(record: &PackageRecord) -> Result<Option<String>> {
+    if record.archive_format == ArchiveFormat::BareExecutable {
+        return Ok(None);
+    }
+    normalize_bin_selection(Some(&record.selected_binary))
+}
+
+fn selected_global_package_records(
+    scope_paths: &ScopePaths,
+    selected: &[String],
+) -> Result<Vec<(String, PackageRecord)>> {
+    if !selected.is_empty() {
+        reject_symlinked_package_record_dirs(scope_paths)?;
+        return selected
+            .iter()
+            .map(|cmd| {
+                validate_command_name(cmd)?;
+                let record = read_package_record(&package_record_path(scope_paths, cmd))?;
+                Ok((cmd.clone(), record))
+            })
+            .collect();
+    }
+
+    let records = list_package_records(scope_paths)?;
+    Ok(records)
+}
+
 fn validate_frozen_local_update_latest(
     root: &Path,
     manifest: &Manifest,
@@ -2506,7 +2565,11 @@ fn install_resolved(
         });
     }
     ensure_no_package_record_install_path_collision(scope_paths, cmd, resolved.target.os)?;
-    if let Some(expected) = resolved.provider_digest_sha256.clone() {
+    let expected_upstream_sha256 = resolved
+        .provider_digest_sha256
+        .clone()
+        .or_else(|| resolved.upstream_checksum_sha256.clone());
+    if let Some(expected) = expected_upstream_sha256 {
         let cache_asset = cache_paths.asset_path(&expected);
         reject_symlinked_cache_entry(cache_paths, &expected)?;
         if cache_asset_is_verified_regular(&cache_asset, &expected)? {
@@ -2552,6 +2615,14 @@ fn install_resolved(
         None
     };
     if let Some(expected) = &resolved.provider_digest_sha256 {
+        if &sha256 != expected {
+            return Err(BinpmError::DigestMismatch {
+                path: cache_paths.asset_path(expected),
+                expected: expected.clone(),
+                actual: sha256,
+            });
+        }
+    } else if let Some(expected) = &resolved.upstream_checksum_sha256 {
         if &sha256 != expected {
             return Err(BinpmError::DigestMismatch {
                 path: cache_paths.asset_path(expected),
@@ -2797,6 +2868,7 @@ fn install_local_from_lock(
                 archive_format: record.archive_format,
                 selected_binary: record.selected_binary.clone(),
                 provider_digest_sha256: None,
+                upstream_checksum_sha256: None,
                 checksum_source: record.checksum_source,
                 signature_sidecar: None,
                 signature_available: record.signature_available,
@@ -2858,6 +2930,14 @@ fn install_local_from_lock(
         archive_format: record.archive_format,
         selected_binary: record.selected_binary.clone(),
         provider_digest_sha256: record.provider_digest_sha256.clone(),
+        upstream_checksum_sha256: if matches!(
+            record.checksum_source,
+            ChecksumSource::Sidecar | ChecksumSource::Manifest
+        ) {
+            Some(record.sha256.clone())
+        } else {
+            None
+        },
         checksum_source: record.checksum_source,
         signature_sidecar: None,
         signature_available: record.signature_available,
@@ -3095,6 +3175,190 @@ fn record_matches_current_provider_digest(record: &PackageRecord, assets: &[Rele
     }
 }
 
+#[derive(Debug, Clone)]
+struct UpstreamChecksumEvidence {
+    sha256: String,
+    source: ChecksumSource,
+}
+
+fn discover_upstream_checksum(
+    selected_asset_name: &str,
+    assets: &[ReleaseAsset],
+) -> Result<Option<UpstreamChecksumEvidence>> {
+    info!(
+        asset_name = selected_asset_name,
+        "Discovering upstream checksum material"
+    );
+
+    for asset in checksum_sidecar_candidates(selected_asset_name, assets) {
+        if let Some(sha256) = download_checksum_evidence(asset, selected_asset_name, true)? {
+            info!(
+                asset_name = selected_asset_name,
+                checksum_asset = asset.name,
+                checksum_source = ChecksumSource::Sidecar.as_str(),
+                "Discovered upstream checksum sidecar"
+            );
+            return Ok(Some(UpstreamChecksumEvidence {
+                sha256,
+                source: ChecksumSource::Sidecar,
+            }));
+        }
+    }
+
+    for asset in checksum_manifest_candidates(selected_asset_name, assets) {
+        if let Some(sha256) = download_checksum_evidence(asset, selected_asset_name, false)? {
+            info!(
+                asset_name = selected_asset_name,
+                checksum_asset = asset.name,
+                checksum_source = ChecksumSource::Manifest.as_str(),
+                "Discovered upstream checksum manifest"
+            );
+            return Ok(Some(UpstreamChecksumEvidence {
+                sha256,
+                source: ChecksumSource::Manifest,
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
+fn checksum_sidecar_candidates<'a>(
+    selected_asset_name: &str,
+    assets: &'a [ReleaseAsset],
+) -> Vec<&'a ReleaseAsset> {
+    let selected_lower = selected_asset_name.to_ascii_lowercase();
+    let mut candidates = assets
+        .iter()
+        .filter(|asset| {
+            let lower = asset.name.to_ascii_lowercase();
+            matches!(
+                lower.strip_prefix(&selected_lower),
+                Some(".sha256" | ".sha256sum" | ".sha256.txt" | ".sha256sum.txt")
+            )
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| left.name.cmp(&right.name));
+    candidates
+}
+
+fn checksum_manifest_candidates<'a>(
+    selected_asset_name: &str,
+    assets: &'a [ReleaseAsset],
+) -> Vec<&'a ReleaseAsset> {
+    let sidecar_names = checksum_sidecar_candidates(selected_asset_name, assets)
+        .into_iter()
+        .map(|asset| asset.name.clone())
+        .collect::<BTreeSet<_>>();
+    let mut candidates = assets
+        .iter()
+        .filter(|asset| !sidecar_names.contains(&asset.name))
+        .filter(|asset| is_checksum_manifest_name(&asset.name))
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        checksum_manifest_priority(&left.name)
+            .cmp(&checksum_manifest_priority(&right.name))
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    candidates
+}
+
+fn is_checksum_manifest_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "sha256sums" | "sha256sums.txt" | "sha256.sum" | "sha256.txt" | "checksums.txt"
+    )
+}
+
+fn checksum_manifest_priority(name: &str) -> u8 {
+    match name.to_ascii_lowercase().as_str() {
+        "sha256sums" | "sha256sums.txt" => 0,
+        "sha256.sum" | "sha256.txt" => 1,
+        "checksums.txt" => 2,
+        _ => 3,
+    }
+}
+
+fn download_checksum_evidence(
+    asset: &ReleaseAsset,
+    selected_asset_name: &str,
+    allow_single_digest: bool,
+) -> Result<Option<String>> {
+    let request = release_asset_download_request(asset)?;
+    debug!(
+        asset_name = selected_asset_name,
+        checksum_asset = asset.name,
+        checksum_url = sanitize_download_diagnostic_url(&request.url),
+        "Downloading checksum metadata"
+    );
+    let bytes = download_asset(&request.url, request.auth.as_ref(), request.accept)?;
+    let text = String::from_utf8_lossy(&bytes);
+    checksum_digest_from_text(&text, selected_asset_name, allow_single_digest)
+}
+
+fn release_asset_download_request(asset: &ReleaseAsset) -> Result<DownloadRequest> {
+    let url = asset
+        .download_url
+        .as_deref()
+        .or(asset.provider_url.as_deref())
+        .unwrap_or(asset.url.as_str())
+        .to_string();
+    validate_download_url(&url)?;
+    Ok(DownloadRequest {
+        url,
+        auth: asset.download_auth.clone(),
+        accept: asset.download_accept,
+    })
+}
+
+fn checksum_digest_from_text(
+    text: &str,
+    selected_asset_name: &str,
+    allow_single_digest: bool,
+) -> Result<Option<String>> {
+    let mut single_digest = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some(digest) = leading_sha256_digest(line) else {
+            continue;
+        };
+        let remainder = line[digest.len()..].trim_start();
+        if checksum_line_matches_asset(remainder, selected_asset_name) {
+            return Ok(Some(digest.to_ascii_lowercase()));
+        }
+        if allow_single_digest && remainder.is_empty() {
+            single_digest = Some(digest.to_ascii_lowercase());
+        }
+    }
+    Ok(single_digest)
+}
+
+fn leading_sha256_digest(line: &str) -> Option<&str> {
+    let candidate = line.get(..64)?;
+    if candidate
+        .chars()
+        .all(|character| character.is_ascii_hexdigit())
+    {
+        return Some(candidate);
+    }
+    None
+}
+
+fn checksum_line_matches_asset(remainder: &str, selected_asset_name: &str) -> bool {
+    let normalized = remainder
+        .trim_start_matches('*')
+        .trim_start_matches("./")
+        .trim();
+    normalized == selected_asset_name
+        || Path::new(normalized)
+            .file_name()
+            .and_then(|name| name.to_str())
+            == Some(selected_asset_name)
+}
+
 struct DownloadRequest {
     url: String,
     auth: Option<ProviderAuth>,
@@ -3214,12 +3478,19 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         .iter()
         .find(|asset| asset.name == decision.asset_name)
         .and_then(|asset| github_sha256_digest(asset.digest.as_deref()));
+    let upstream_checksum = if provider_digest_sha256.is_none() {
+        discover_upstream_checksum(&decision.asset_name, &release.assets)?
+    } else {
+        None
+    };
     let manifest_checksum_source =
         manifest_checksum_source(tool, &target, provider_digest_sha256.as_deref())?;
     let checksum_source = if spec.provider == crate::contract::SourceProvider::GitHub
         && provider_digest_sha256.is_some()
     {
         ChecksumSource::GitHubDigest
+    } else if let Some(evidence) = &upstream_checksum {
+        evidence.source
     } else {
         manifest_checksum_source
     };
@@ -3233,6 +3504,7 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         archive_format,
         selected_binary,
         provider_digest_sha256,
+        upstream_checksum_sha256: upstream_checksum.map(|evidence| evidence.sha256),
         checksum_source,
         signature_sidecar,
         signature_available,
@@ -3517,6 +3789,7 @@ fn reverify_locked_record_signature(
         archive_format: record.archive_format,
         selected_binary: record.selected_binary.clone(),
         provider_digest_sha256: record.provider_digest_sha256.clone(),
+        upstream_checksum_sha256: None,
         checksum_source: ChecksumSource::Local,
         signature_sidecar: Some(signature_sidecar),
         signature_available: true,
@@ -6518,6 +6791,7 @@ mod tests {
         io::Write,
         path::{Path, PathBuf},
         str::FromStr,
+        sync::Mutex,
     };
 
     use sha2::{Digest, Sha256};
@@ -6526,36 +6800,39 @@ mod tests {
         assert_local_runtime_records_complete, assert_lock_matches_manifest_tool,
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
+        checksum_digest_from_text, checksum_manifest_candidates, checksum_sidecar_candidates,
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
         download_asset_name, download_initial_capacity,
         ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
-        format_outdated_tool_line, github_sha256_digest, has_current_cache_record,
-        has_local_runtime_or_lock_state, install_local_from_lock, install_path_collision_key,
-        is_retryable_status, local_runtime_lock_records, local_tool_execution_ready,
-        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
-        locked_record_download_request, locked_record_signature_sidecar,
-        locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
-        manifest_creation_root_from, manifest_project_root_from,
+        format_outdated_tool_line, github_sha256_digest, global_update_selected_binary,
+        has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
+        install_path_collision_key, is_retryable_status, local_runtime_lock_records,
+        local_tool_execution_ready, lock_targets_conflict_with_manifest,
+        lock_targets_conflict_with_record, locked_record_download_request,
+        locked_record_signature_sidecar, locked_release_lookup_spec, lockfile_digest,
+        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         normalize_bin_selection, override_snippet_candidate, package_record_output,
         package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
-        parse_source_argument, project_root_from, read_archive_selected_binary,
-        record_has_signature_evidence, record_matches_current_provider_digest, regex_escape,
+        parse_source_argument, prepare_global_updates, project_root_from,
+        read_archive_selected_binary, record_has_signature_evidence,
+        record_matches_current_provider_digest, regex_escape, release_asset_download_request,
         release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
         remove_local_manifest_orphans, require_executable_managed_file,
         resolved_has_supported_signature_evidence, resolved_has_verified_source,
         restore_local_remove_state, restore_runtime_tool_state, sanitize_download_diagnostic_url,
-        select_manifest_asset, selected_asset_display_url, shell_path, shell_quote,
-        signature_sidecar_for_asset, sigstore_trust_policy, snapshot_cache_metadata,
-        source_install_scope, target_override_snippet, update_manifest_tool_source,
-        validate_frozen_update_current_release, validate_locked_record_artifact,
-        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries, verification_state,
-        verify_check_output, verify_check_output_with_state, verify_installed_binary_contents,
-        verify_lockfile_records, verify_runtime_cache_bytes, write_sigstore_verification_inputs,
-        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
+        select_manifest_asset, selected_asset_display_url, selected_global_package_records,
+        shell_path, shell_quote, signature_sidecar_for_asset, sigstore_trust_policy,
+        snapshot_cache_metadata, source_install_scope, target_override_snippet,
+        update_manifest_tool_source, validate_frozen_update_current_release,
+        validate_locked_record_artifact, validate_locked_record_current_asset,
+        validate_locked_record_current_provider_digest, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verification_state, verify_check_output,
+        verify_check_output_with_state, verify_installed_binary_contents, verify_lockfile_records,
+        verify_runtime_cache_bytes, write_sigstore_verification_inputs, zip_file_is_regular,
+        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
         GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
@@ -6575,6 +6852,8 @@ mod tests {
             LOCKFILE_FILE, MANIFEST_FILE,
         },
     };
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct StaticReleaseClient {
         tag: &'static str,
@@ -6693,6 +6972,119 @@ mod tests {
             "tool.tar.gz"
         );
         assert_eq!(download_asset_name("not a url"), "release asset");
+    }
+
+    #[test]
+    fn checksum_text_parses_single_digest_sidecar() {
+        let digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assert_eq!(
+            checksum_digest_from_text(digest, "tool-linux.tar.gz", true)
+                .expect("checksum text")
+                .as_deref(),
+            Some(digest)
+        );
+        assert_eq!(
+            checksum_digest_from_text(digest, "tool-linux.tar.gz", false).expect("checksum text"),
+            None
+        );
+    }
+
+    #[test]
+    fn checksum_text_matches_selected_asset_in_manifest() {
+        let selected = "tool-linux.tar.gz";
+        let digest = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let other = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let text = format!("{other}  tool-darwin.tar.gz\n{digest} *./dist/{selected}\n");
+
+        assert_eq!(
+            checksum_digest_from_text(&text, selected, false)
+                .expect("checksum text")
+                .as_deref(),
+            Some(digest)
+        );
+    }
+
+    #[test]
+    fn checksum_candidates_prefer_exact_sidecars_before_manifests() {
+        let assets = vec![
+            ReleaseAsset {
+                name: "SHA256SUMS".to_string(),
+                url: "https://example.com/SHA256SUMS".to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            },
+            ReleaseAsset {
+                name: "tool-linux.tar.gz.sha256".to_string(),
+                url: "https://example.com/tool-linux.tar.gz.sha256".to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            },
+            ReleaseAsset {
+                name: "checksums.txt".to_string(),
+                url: "https://example.com/checksums.txt".to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            },
+        ];
+
+        assert_eq!(
+            checksum_sidecar_candidates("tool-linux.tar.gz", &assets)
+                .iter()
+                .map(|asset| asset.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["tool-linux.tar.gz.sha256"]
+        );
+        assert_eq!(
+            checksum_manifest_candidates("tool-linux.tar.gz", &assets)
+                .iter()
+                .map(|asset| asset.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SHA256SUMS", "checksums.txt"]
+        );
+    }
+
+    #[test]
+    fn checksum_download_request_prefers_provider_url_before_link_url() {
+        let asset = ReleaseAsset {
+            name: "tool-linux.tar.gz.sha256".to_string(),
+            url: "https://cdn.example.com/tool-linux.tar.gz.sha256".to_string(),
+            provider_url: Some(
+                "https://gitlab.example.com/owner/tool/-/releases/v1/downloads/tool-linux.tar.gz.sha256"
+                    .to_string(),
+            ),
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+            final_url: None,
+        };
+
+        let request = release_asset_download_request(&asset).expect("download request");
+
+        assert_eq!(
+            request.url,
+            "https://gitlab.example.com/owner/tool/-/releases/v1/downloads/tool-linux.tar.gz.sha256"
+        );
     }
 
     #[test]
@@ -7380,6 +7772,91 @@ mod tests {
         assert_eq!(updated.source, "github:owner/new-tool");
         assert_eq!(updated.version.as_deref(), Some("2.0.0"));
         assert_eq!(updated.bin.as_deref(), Some("dist/new-bin"));
+    }
+
+    #[test]
+    fn selected_global_package_records_reads_only_named_records() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::global(temp_dir.path().join("home"));
+        let mut beta = package_record();
+        beta.source = "github:owner/beta".to_string();
+        write_package_record(&paths, "beta", &beta).expect("write beta");
+        fs::write(paths.packages.join("alpha.toml"), b"not toml").expect("write corrupt alpha");
+
+        let records = selected_global_package_records(&paths, &["beta".to_string()])
+            .expect("selected record");
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].0, "beta");
+        assert_eq!(records[0].1.source, "github:owner/beta");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_global_package_records_rejects_symlinked_packages_dir() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::global(temp_dir.path().join("home"));
+        let outside = temp_dir.path().join("outside");
+        fs::create_dir_all(&paths.root).expect("scope root");
+        fs::create_dir_all(&outside).expect("outside dir");
+        symlink(&outside, &paths.packages).expect("symlink packages");
+
+        let error = selected_global_package_records(&paths, &["beta".to_string()])
+            .expect_err("symlinked packages dir");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+    }
+
+    #[test]
+    fn global_update_selected_binary_preserves_archive_member_path() {
+        let mut record = package_record();
+        record.archive_format = ArchiveFormat::Zip;
+        record.selected_binary = "bin/tool".to_string();
+
+        assert_eq!(
+            global_update_selected_binary(&record).expect("selection"),
+            Some("bin/tool".to_string())
+        );
+    }
+
+    #[test]
+    fn global_update_selected_binary_omits_bare_executable_override() {
+        let mut record = package_record();
+        record.archive_format = ArchiveFormat::BareExecutable;
+        record.selected_binary = "tool-linux-x64".to_string();
+
+        assert_eq!(
+            global_update_selected_binary(&record).expect("selection"),
+            None
+        );
+    }
+
+    #[test]
+    fn prepare_global_updates_validates_all_records_before_planning_installs() {
+        let mut valid = package_record();
+        valid.source = "github:owner/valid".to_string();
+        let mut invalid = package_record();
+        invalid.source = "github:".to_string();
+
+        let error = prepare_global_updates(vec![
+            ("valid".to_string(), valid),
+            ("invalid".to_string(), invalid),
+        ])
+        .expect_err("invalid later record");
+
+        assert!(matches!(error, BinpmError::InvalidSourceSpec { .. }));
+    }
+
+    #[test]
+    fn prepare_global_updates_validates_record_command_names() {
+        let record = package_record();
+
+        let error = prepare_global_updates(vec![("bad:name".to_string(), record)])
+            .expect_err("invalid command name");
+
+        assert!(matches!(error, BinpmError::InvalidCommandName { .. }));
     }
 
     #[test]
@@ -9634,6 +10111,7 @@ mod tests {
 
     #[test]
     fn locked_record_download_request_preserves_provider_auth_metadata() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "github:ghe.locked.example/owner/tool".to_string();
         record.source_host = "ghe.locked.example".to_string();
@@ -9657,6 +10135,7 @@ mod tests {
 
     #[test]
     fn locked_record_download_request_omits_provider_auth_for_external_asset_url() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
         record.source_provider = SourceProvider::GitLab;
@@ -9678,6 +10157,7 @@ mod tests {
 
     #[test]
     fn locked_record_download_request_preserves_gitlab_auth_for_provider_asset_url() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
         record.source_provider = SourceProvider::GitLab;
@@ -11246,6 +11726,7 @@ mod tests {
             archive_format: ArchiveFormat::BareExecutable,
             selected_binary: "tool-linux".to_string(),
             provider_digest_sha256: Some(sha256.to_string()),
+            upstream_checksum_sha256: None,
             checksum_source: ChecksumSource::GitHubDigest,
             signature_sidecar: None,
             signature_available: false,

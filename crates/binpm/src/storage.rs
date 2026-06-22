@@ -152,7 +152,8 @@ impl PackageRecord {
             // Signature booleans in persisted package and lock records are audit metadata, not
             // proof that the current asset bytes have been verified in this process.
             ChecksumSource::Signature => false,
-            ChecksumSource::Sidecar | ChecksumSource::Manifest | ChecksumSource::Local => false,
+            ChecksumSource::Sidecar | ChecksumSource::Manifest => true,
+            ChecksumSource::Local => false,
         }
     }
 }
@@ -248,6 +249,7 @@ pub struct ResolvedAsset {
     pub archive_format: ArchiveFormat,
     pub selected_binary: String,
     pub provider_digest_sha256: Option<String>,
+    pub upstream_checksum_sha256: Option<String>,
     pub checksum_source: ChecksumSource,
     pub signature_sidecar: Option<SignatureSidecar>,
     pub signature_available: bool,
@@ -362,15 +364,18 @@ pub fn write_package_record(paths: &ScopePaths, cmd: &str, record: &PackageRecor
 
 pub fn remove_package_record(paths: &ScopePaths, cmd: &str) -> Result<()> {
     validate_command_name(cmd)?;
-    reject_symlinked_managed_directory(&paths.root)?;
-    reject_symlinked_managed_directory(&paths.packages)?;
+    reject_symlinked_package_record_dirs(paths)?;
     remove_path_if_exists(&package_record_path(paths, cmd))
+}
+
+pub fn reject_symlinked_package_record_dirs(paths: &ScopePaths) -> Result<()> {
+    reject_symlinked_managed_directory(&paths.root)?;
+    reject_symlinked_managed_directory(&paths.packages)
 }
 
 pub fn list_package_records(paths: &ScopePaths) -> Result<Vec<(String, PackageRecord)>> {
     let mut records = Vec::new();
-    reject_symlinked_managed_directory(&paths.root)?;
-    reject_symlinked_managed_directory(&paths.packages)?;
+    reject_symlinked_package_record_dirs(paths)?;
     let entries = match fs::read_dir(&paths.packages) {
         Ok(entries) => entries,
         Err(source) if source.kind() == ErrorKind::NotFound => return Ok(records),
@@ -747,13 +752,13 @@ pub fn populate_cache_from_bytes(
 }
 
 pub fn record_verified_cache_hit(paths: &CachePaths, resolved: &ResolvedAsset) -> Result<PathBuf> {
-    let sha256 =
-        resolved
-            .provider_digest_sha256
-            .as_deref()
-            .ok_or_else(|| BinpmError::InvalidSha256 {
-                value: String::new(),
-            })?;
+    let sha256 = resolved
+        .provider_digest_sha256
+        .as_deref()
+        .or(resolved.upstream_checksum_sha256.as_deref())
+        .ok_or_else(|| BinpmError::InvalidSha256 {
+            value: String::new(),
+        })?;
     validate_sha256_digest(sha256)?;
     reject_symlinked_cache_entry(paths, sha256)?;
     let asset_path = paths.asset_path(sha256);
@@ -1810,6 +1815,29 @@ mod tests {
         assert_eq!(records[0].checksum_source, ChecksumSource::GitHubDigest);
     }
 
+    #[test]
+    fn upstream_checksum_cache_hit_reuses_verified_asset_without_provider_digest() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let mut resolved = resolved_asset();
+        let bytes = b"sidecar bytes";
+        let expected = format!("{:x}", Sha256::digest(bytes));
+        resolved.provider_digest_sha256 = None;
+        resolved.upstream_checksum_sha256 = Some(expected.clone());
+        resolved.checksum_source = ChecksumSource::Sidecar;
+        let asset_path = cache.asset_path(&expected);
+        std::fs::create_dir_all(asset_path.parent().expect("asset parent"))
+            .expect("create cache entry");
+        std::fs::write(&asset_path, bytes).expect("write cached asset");
+
+        let reused = record_verified_cache_hit(&cache, &resolved).expect("cache hit");
+
+        assert_eq!(reused, asset_path);
+        let records = read_cache_records(&cache).expect("cache records");
+        assert_eq!(records[0].sha256, expected);
+        assert_eq!(records[0].checksum_source, ChecksumSource::Sidecar);
+    }
+
     #[cfg(unix)]
     #[test]
     fn provider_digest_cache_hit_rejects_symlinked_digest_entry() {
@@ -1839,6 +1867,8 @@ mod tests {
     #[test]
     fn package_records_do_not_trust_persisted_signature_flags_as_verified_source() {
         let mut record = package_record();
+        record.sha256 =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
         record.checksum_source = ChecksumSource::Signature;
         record.signature_verified = true;
 
@@ -1851,10 +1881,10 @@ mod tests {
         assert!(!record.has_verified_source());
 
         record.checksum_source = ChecksumSource::Sidecar;
-        assert!(!record.has_verified_source());
+        assert!(record.has_verified_source());
 
         record.checksum_source = ChecksumSource::Manifest;
-        assert!(!record.has_verified_source());
+        assert!(record.has_verified_source());
 
         record.checksum_source = ChecksumSource::GitHubDigest;
 
@@ -2510,6 +2540,7 @@ created_at = "2026-01-01T00:00:00Z"
             archive_format: ArchiveFormat::BareExecutable,
             selected_binary: "tool-linux-x64".to_string(),
             provider_digest_sha256: None,
+            upstream_checksum_sha256: None,
             checksum_source: ChecksumSource::Local,
             signature_sidecar: None,
             signature_available: false,
