@@ -27,11 +27,14 @@ function removeAttributeIfPresent(element: HTMLElement, name: string) {
   }
 }
 
+let wasMobileDrawerOpen = false;
+
 function updateSidebarAccessibility(shouldRestoreFocus = false) {
   const trigger = document.querySelector(".rp-sidebar-menu__left");
   const sidebar = document.querySelector(".rp-doc-layout__sidebar");
 
   if (!isHTMLElement(trigger) || !isHTMLElement(sidebar)) {
+    wasMobileDrawerOpen = false;
     return;
   }
 
@@ -44,29 +47,37 @@ function updateSidebarAccessibility(shouldRestoreFocus = false) {
 
   const isMobileDrawerControlVisible =
     trigger.getClientRects().length > 0 && getComputedStyle(trigger).visibility !== "hidden";
+  const isMobileDrawerViewport = window.matchMedia("(max-width: 768px)").matches;
+  const isMobileDrawer = isMobileDrawerControlVisible && isMobileDrawerViewport;
+  const shouldMoveFocusFromSidebar =
+    shouldRestoreFocus || (wasMobileDrawerOpen && sidebar.contains(document.activeElement));
+
   setAttributeIfChanged(
     trigger,
     "aria-label",
     isOpen ? "Close documentation navigation" : "Open documentation navigation",
   );
   setAttributeIfChanged(trigger, "aria-controls", sidebarId);
-  setAttributeIfChanged(trigger, "aria-expanded", String(isMobileDrawerControlVisible && isOpen));
+  setAttributeIfChanged(trigger, "aria-expanded", String(isMobileDrawer && isOpen));
 
-  if (!isMobileDrawerControlVisible) {
+  if (!isMobileDrawer) {
     removeAttributeIfPresent(sidebar, "aria-hidden");
     removeAttributeIfPresent(sidebar, "inert");
+    wasMobileDrawerOpen = false;
     return;
   }
 
   if (isOpen) {
     removeAttributeIfPresent(sidebar, "aria-hidden");
     removeAttributeIfPresent(sidebar, "inert");
+    wasMobileDrawerOpen = true;
   } else {
     setAttributeIfChanged(sidebar, "aria-hidden", "true");
     setAttributeIfChanged(sidebar, "inert", "");
-    if (shouldRestoreFocus) {
+    if (shouldMoveFocusFromSidebar) {
       trigger.focus();
     }
+    wasMobileDrawerOpen = false;
   }
 }
 
