@@ -40,6 +40,12 @@ prints non-mutating PATH commands, supports optional shell inference, accepts
 `pwsh` as PowerShell syntax, and exposes `--global` or `--local` to print only
 one PATH command.
 
+`binpm update [cmd...] [--local|--global]` supports local and global tools.
+Omitting command names updates every tool in the selected scope, and output
+states that all-tools mode before printing the planned update list. Local
+updates advance exact-version manifest entries to the latest stable release and
+write `binpm.toml`, `binpm.lock`, and project-local executables consistently.
+
 Use `-v`/`--verbose` for info-level tracing diagnostics and `--debug` for
 debug-level tracing diagnostics. `BINPM_LOG` remains supported when no CLI
 verbosity flag is provided; CLI verbosity flags take precedence.

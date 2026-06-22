@@ -89,7 +89,7 @@ pub enum Command {
     Info(InfoArgs),
     /// Compare selected tools with latest stable releases.
     Outdated(ScopedArgs),
-    /// Update selected local or global tools.
+    /// Update selected local or global tools, or all tools when none are named.
     Update(UpdateArgs),
     /// Inspect local and global binpm state.
     Doctor,
@@ -270,6 +270,8 @@ pub struct InfoArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct UpdateArgs {
+    /// Tool commands to update. Omit to update every tool in the selected
+    /// scope; use --dry-run to preview that broader update.
     pub cmd: Vec<String>,
 
     #[command(flatten)]

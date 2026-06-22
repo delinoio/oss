@@ -2,6 +2,19 @@
 
 Nodeup is distributed as first-party release artifacts. Install flows are designed for macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64 hosts.
 
+Release asset names use `amd64` for the same 64-bit Intel/AMD CPU family that many user-facing docs and tools call `x64`. For example, a Linux x64 machine uses the `linux/amd64` Nodeup release asset.
+
+## Choose an Install Method
+
+For most macOS and Linux users, start with Homebrew. For Windows users, start with the direct installer after installing `cosign`.
+
+| Method | Use this when |
+| --- | --- |
+| Homebrew | You are on macOS or Linux and already use Homebrew, or you want the simplest managed install path. |
+| Direct installers | You want a first-party release artifact without Homebrew or `cargo-binstall`, and you can install `cosign` first. Use pinned commands in CI or audited environments. |
+| `cargo-binstall` | You already have Rust tooling and want to install from first-party GitHub Release assets without source-build fallback. |
+| binpm | You want Nodeup managed by a project-local or dedicated binpm manifest, usually because the rest of your tooling already uses binpm. |
+
 ## binpm
 
 Install binpm by following the [binpm installation docs](https://binpm.delino.io/installation). Use a dedicated Nodeup binpm home so `binpm add` does not modify an unrelated project manifest.
@@ -32,6 +45,8 @@ Replace `<semver>` with the Nodeup release version to install. Nodeup release ta
 
 ## Homebrew
 
+Use Homebrew when you are on macOS or Linux and want the shortest managed installation path.
+
 On macOS and Linux:
 
 ```bash
@@ -44,6 +59,8 @@ The Homebrew formula uses prebuilt Nodeup release archives for:
 - `darwin/arm64`
 - `linux/amd64`
 - `linux/arm64`
+
+Here, `amd64` means the x64 CPU family.
 
 ## Direct Installers
 
@@ -96,7 +113,44 @@ finally {
 }
 ```
 
-These commands fetch the current first-party installer scripts from `delinoio/oss`. For reproducible automation, pin the same raw URL paths to a reviewed commit or repository tag instead of `refs/heads/main`, and replace `latest` with an explicit Nodeup semver.
+These commands fetch the current first-party installer scripts from `delinoio/oss`.
+
+Use pinned commands when reproducibility matters, especially in CI, bootstrap scripts, and audited environments. Pin the same first-party raw GitHub paths to a reviewed repository tag or commit, and replace `latest` with an explicit Nodeup semver.
+
+macOS and Linux pinned pattern:
+
+```bash
+(
+  installer_ref="refs/tags/nodeup@v<semver>"
+  installer_url="https://raw.githubusercontent.com/delinoio/oss/${installer_ref}/scripts/install/nodeup.sh"
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  if ! curl -fsSL "$installer_url" -o "$tmp_dir/nodeup.sh"; then
+    exit 1
+  fi
+  bash "$tmp_dir/nodeup.sh" --version "<semver>" --method direct
+)
+```
+
+Windows PowerShell pinned pattern:
+
+```powershell
+$InstallerRef = "refs/tags/nodeup@v<semver>"
+$InstallerUrl = "https://raw.githubusercontent.com/delinoio/oss/$InstallerRef/scripts/install/nodeup.ps1"
+$Installer = Join-Path ([System.IO.Path]::GetTempPath()) ("nodeup-install-" + [System.Guid]::NewGuid().ToString("N") + ".ps1")
+try {
+  Invoke-WebRequest -Uri $InstallerUrl -OutFile $Installer -UseBasicParsing
+  Unblock-File -LiteralPath $Installer -ErrorAction SilentlyContinue
+  $PowerShell = (Get-Process -Id $PID).Path
+  & $PowerShell -NoProfile -ExecutionPolicy Bypass -File $Installer -Version "<semver>" -Method direct
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+}
+finally {
+  Remove-Item -LiteralPath $Installer -Force -ErrorAction SilentlyContinue
+}
+```
 
 The canonical in-repo installer paths remain:
 
@@ -115,7 +169,7 @@ bash ./scripts/install/nodeup.sh --version latest --method direct
 
 Direct installers detect unsupported x86 hosts before resolving release tags or downloading assets. Use an x64/arm64 host or a supported CI image when an installer reports an unsupported host.
 
-Direct installers support bundle-enabled releases only.
+Direct installers support bundle-enabled releases only. The selected release must include `SHA256SUMS`, the selected artifact, and the selected artifact's `<artifact>.sigstore.json` bundle sidecar. Legacy `.sig` or `.pem` sidecars are not enough for the direct installer. If an older release lacks bundle sidecars, use a newer bundle-enabled release, Homebrew on macOS/Linux when available, or `cargo-binstall` on supported hosts with complete first-party assets.
 
 Direct installers place the binary in `~/.local/bin` by default and do not modify your shell `PATH`. Add that directory before verifying the install, or pass `--install-dir` / `-InstallDir` with a directory already on `PATH`.
 
@@ -132,6 +186,8 @@ $env:Path = "$HOME\.local\bin;$env:Path"
 ```
 
 ## cargo-binstall
+
+Use `cargo-binstall` when you already use Rust tooling and want a first-party GitHub Release asset without source-build fallback.
 
 ```bash
 cargo binstall nodeup --no-confirm
