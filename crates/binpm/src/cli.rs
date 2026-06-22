@@ -11,7 +11,7 @@ use crate::contract::Scope;
     about = "Install and run native command-line tools from release assets"
 )]
 pub struct Cli {
-    /// Emit stable JSON for read-only diagnostic commands.
+    /// Emit stable JSON for diagnostics and cache cleanup summaries.
     #[arg(long, global = true)]
     pub json: bool,
 

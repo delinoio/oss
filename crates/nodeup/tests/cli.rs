@@ -1816,6 +1816,38 @@ fn default_override_show_precedence() {
 
 #[test]
 #[serial]
+fn default_json_reports_install_side_effect_for_version_targets() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[("node", "#!/bin/sh\necho node-22\n")],
+        ),
+        None,
+    );
+
+    let output = env
+        .command()
+        .args(["--output", "json", "default", "22.1.0"])
+        .output()
+        .expect("default --output json installs version target");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["default_selector"], "22.1.0");
+    assert_eq!(payload["install_side_effect"]["runtime"], "v22.1.0");
+    assert_eq!(payload["install_side_effect"]["status"], "installed");
+    assert_eq!(
+        payload["install_side_effect"]["installed_by_default_command"],
+        true
+    );
+}
+
+#[test]
+#[serial]
 fn default_json_returns_selector_when_channel_resolution_is_offline() {
     let env = TestEnv::new();
     let settings_file = env.config_root.join("settings.toml");
@@ -4699,6 +4731,37 @@ fn linux_arm64_platform_installs_from_tar_xz_archive() {
 
 #[test]
 #[serial]
+fn macos_forced_platform_alias_installs_darwin_archive() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release_for_target(
+        "22.1.0",
+        "darwin-x64",
+        make_archive(
+            "22.1.0",
+            "darwin-x64",
+            &[("node", "#!/bin/sh\necho macos\n")],
+        ),
+        None,
+    );
+
+    env.command()
+        .env("NODEUP_FORCE_PLATFORM", "macos-x64")
+        .args(["toolchain", "install", "22.1.0"])
+        .assert()
+        .success();
+
+    assert!(env
+        .data_root
+        .join("toolchains")
+        .join("v22.1.0")
+        .join("bin")
+        .join("node")
+        .exists());
+}
+
+#[test]
+#[serial]
 fn windows_x64_platform_installs_from_zip_archive() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);
@@ -5669,6 +5732,8 @@ tracked_selectors = ["linked-update-priority"]
     let entries = payload.as_array().expect("update JSON array");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["selector"], "linked-update-priority");
+    assert_eq!(entries[0]["selector_source"], "tracked-selectors");
+    assert_eq!(entries[0]["implicit_target"], true);
     assert_eq!(entries[0]["status"], "skipped-linked-runtime");
 }
 
