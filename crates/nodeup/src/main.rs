@@ -392,15 +392,23 @@ where
                 // Clap accepts global flags between `run <runtime>` and the delegated
                 // command. Keep scanning for those flags, then stop at the first token
                 // that belongs to delegated argv.
-                if arg == "--" || !matches!(arg, "--output" | "--color") {
+                if arg == "--" {
                     break;
                 }
+                if is_run_pre_delegated_flag(arg) {
+                    continue;
+                }
+                break;
             }
             CommandScanState::RunDelegated | CommandScanState::AfterSubcommand => {}
         }
     }
 
     output_preferences
+}
+
+fn is_run_pre_delegated_flag(arg: &str) -> bool {
+    matches!(arg, "--install" | "--output" | "--color")
 }
 
 fn apply_output_value(value: &str, json_output_requested: &mut bool) {
@@ -569,6 +577,28 @@ mod tests {
             "nodeup",
             "run",
             "lts",
+            "--output=json",
+            "node",
+        ])));
+    }
+
+    #[test]
+    fn run_positioned_output_after_install_before_delegated_command_is_respected() {
+        assert!(json_error_output_requested_from_args(os_args(&[
+            "nodeup",
+            "run",
+            "lts",
+            "--install",
+            "--output",
+            "json",
+            "node",
+        ])));
+
+        assert!(json_error_output_requested_from_args(os_args(&[
+            "nodeup",
+            "run",
+            "lts",
+            "--install",
             "--output=json",
             "node",
         ])));
