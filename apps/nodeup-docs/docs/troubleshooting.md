@@ -242,6 +242,18 @@ Symptom:
 
 This means `cosign` was available, but the downloaded artifact did not verify against the published Sigstore bundle and the expected GitHub Actions release workflow identity. Retry only after confirming you are using a bundle-enabled Nodeup release from `delinoio/oss`. Do not bypass verification.
 
+## Direct Installer Release Material Is Missing
+
+Symptom:
+
+```text
+[install.nodeup] required release verification material is missing
+```
+
+Direct installers support bundle-enabled releases only. The selected release must include `SHA256SUMS`, the selected artifact, and the selected artifact's `<artifact>.sigstore.json` bundle sidecar. Legacy `.sig` or `.pem` sidecars are not supported by the direct installer and are not treated as equivalent verification material.
+
+Fix: choose a newer bundle-enabled Nodeup release from `delinoio/oss`, use Homebrew on macOS/Linux when the formula points at a complete release, or use `cargo binstall nodeup --no-confirm` on supported hosts when the release includes the matching first-party asset.
+
 ## cargo-binstall Cannot Find an Asset
 
 Nodeup's `cargo-binstall` metadata points only at first-party GitHub Release assets for macOS, Linux, and Windows x64/arm64 hosts. It disables `quick-install` and `compile`, so unsupported hosts or releases missing the matching asset fail instead of compiling from source or using third-party binaries.

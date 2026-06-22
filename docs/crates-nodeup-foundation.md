@@ -33,14 +33,16 @@
 - `nodeup update` treats exact-version selectors as immutable pins and reports them with `skipped-exact-version` rather than installing or reporting a newer runtime for that selector.
 - `nodeup update` without explicit selectors must expose the implicit target source in JSON entries (`tracked-selectors` or `installed-runtimes`) and include structured empty-target diagnostics with selector source, counts, and selector preview.
 - Host support must include `macOS`, `Linux`, and `Windows` x64/arm64, while x86 hosts remain unsupported.
+- Public Nodeup docs must explain that release asset names use `amd64` for the same CPU family commonly called `x64`.
 - `NODEUP_FORCE_PLATFORM` must accept both runtime archive target spellings (`darwin-x64`, `darwin-arm64`) and documented host spellings (`macos-x64`, `macos-arm64`, `macos/x64`, `macos/arm64`) for macOS.
 - Direct installers, runtime installation, and shim dispatch must detect unsupported x86 hosts before release asset download or delegated command planning.
 - Unsupported host failures must use `unsupported-platform`, include the supported pairs `macos/x64`, `macos/arm64`, `linux/x64`, `linux/arm64`, `windows/x64`, and `windows/arm64`, and guide users to an x64/arm64 host or supported CI image.
 - Homebrew installation must consume prebuilt release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
 - Direct install scripts must verify release artifacts with `SHA256SUMS` and Sigstore bundle sidecars (`<artifact>.sigstore.json`) via `cosign verify-blob --bundle`.
+- Direct install scripts must support bundle-enabled releases only; legacy `.sig` or `.pem` sidecars are out of scope and must not be treated as sufficient release verification material.
 - Direct install scripts must fail before release lookup or artifact download when `cosign` is missing, describe the missing prerequisite with OS-specific setup guidance, and keep that message distinct from checksum mismatch or Sigstore verification failure.
 - Direct installers must remain available at `scripts/install/nodeup.sh` and `scripts/install/nodeup.ps1`.
-- Public direct-installer docs must keep remote POSIX and PowerShell examples on first-party `delinoio/oss` raw GitHub URLs for those same scripts; third-party installer URLs and verification-disabling examples are out of scope.
+- Public direct-installer docs must keep remote POSIX and PowerShell examples on first-party `delinoio/oss` raw GitHub URLs for those same scripts, including current `main` commands and tag/commit-pinned command patterns for reproducible automation; third-party installer URLs and verification-disabling examples are out of scope.
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies; docs must explain that unsupported hosts and missing first-party assets fail instead of using source compilation or third-party binary fallback.
 - Runtime archive selection must remain enum-driven: `tar.xz` for `darwin/*` and `linux/*`, `zip` for `windows/*`.
 - Windows runtime archives that unpack without a top-level directory must be normalized into the stable `bin/` runtime layout used by nodeup execution and linking flows.
