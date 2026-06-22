@@ -116,6 +116,38 @@ fn write_cache_asset(home: &Path, sha256: &str, bytes: &[u8]) {
     fs::write(entry.join("asset"), bytes).expect("write cache asset");
 }
 
+fn write_global_package_record(home: &Path, cmd: &str, source_path: &str, release_tag: &str) {
+    let packages = home.join("packages");
+    fs::create_dir_all(&packages).expect("create global packages");
+    fs::write(
+        packages.join(format!("{cmd}.toml")),
+        format!(
+            r#"package_spec = "github:{source_path}@{release_tag}"
+source = "github:{source_path}"
+source_provider = "github"
+source_host = "github.com"
+source_path = "{source_path}"
+requested_version = "{release_tag}"
+release_tag = "{release_tag}"
+asset_name = "{cmd}-linux-x64"
+asset_url = "https://github.com/{source_path}/releases/download/{release_tag}/{cmd}-linux-x64"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "{cmd}-linux-x64"
+installed_path = "{}"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+checksum_source = "local"
+signature_available = false
+signature_verified = false
+"#,
+            home.join("bin").join(cmd).display()
+        ),
+    )
+    .expect("write global package record");
+}
+
 #[test]
 fn help_includes_initial_command_surface() {
     let mut command = binpm();
@@ -183,44 +215,27 @@ fn add_and_x_help_include_explicit_bin_selection() {
 }
 
 #[test]
-fn update_help_marks_global_update_pending() {
+fn update_help_includes_global_scope() {
     let mut command = binpm();
 
     command
         .args(["update", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Global update is pending"))
+        .stdout(predicate::str::contains(
+            "Update selected local or global tools",
+        ))
         .stdout(predicate::str::contains("--global"));
 }
 
 #[test]
-fn global_update_reports_pending_workaround() {
+fn global_update_dry_run_reports_all_global_records_without_mutation() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
-    let mut command = binpm();
-
-    command
-        .current_dir(temp_dir.path())
-        .env("BINPM_HOME", &home)
-        .args(["update", "--global"])
-        .assert()
-        .failure()
-        .code(2)
-        .stdout(predicate::str::contains("update scope: global"))
-        .stderr(predicate::str::contains("pending implementation"))
-        .stderr(predicate::str::contains("binpm outdated --global"))
-        .stderr(predicate::str::contains("binpm info --global <cmd>"))
-        .stderr(predicate::str::contains(
-            "binpm install <source> --as <cmd> --bin <selected_binary>",
-        ))
-        .stderr(predicate::str::contains("binpm update --local"));
-}
-
-#[test]
-fn global_update_dry_run_reports_same_pending_workaround() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    let home = temp_dir.path().join("binpm-home");
+    write_global_package_record(&home, "alpha", "owner/alpha", "1.0.0");
+    write_global_package_record(&home, "beta", "owner/beta", "2.0.0");
+    let alpha_record_path = home.join("packages").join("alpha.toml");
+    let alpha_before = fs::read_to_string(&alpha_record_path).expect("read alpha record");
     let mut command = binpm();
 
     command
@@ -228,11 +243,76 @@ fn global_update_dry_run_reports_same_pending_workaround() {
         .env("BINPM_HOME", &home)
         .args(["update", "--global", "--dry-run"])
         .assert()
+        .success()
+        .stdout(predicate::str::contains("update scope: global"))
+        .stdout(predicate::str::contains("planned updates: 2"))
+        .stdout(predicate::str::contains(
+            "would update alpha from github:owner/alpha 1.0.0",
+        ))
+        .stdout(predicate::str::contains(
+            "would update beta from github:owner/beta 2.0.0",
+        ))
+        .stdout(predicate::str::contains("dry run: no changes made"));
+
+    assert_eq!(
+        fs::read_to_string(alpha_record_path).expect("read alpha record after"),
+        alpha_before
+    );
+}
+
+#[test]
+fn global_update_dry_run_reports_selected_global_records_without_mutation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    write_global_package_record(&home, "alpha", "owner/alpha", "1.0.0");
+    write_global_package_record(&home, "beta", "owner/beta", "2.0.0");
+    let beta_record_path = home.join("packages").join("beta.toml");
+    let beta_before = fs::read_to_string(&beta_record_path).expect("read beta record");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["update", "--global", "--dry-run", "beta"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("update scope: global"))
+        .stdout(predicate::str::contains("planned updates: 1"))
+        .stdout(predicate::str::contains(
+            "would update beta from github:owner/beta 2.0.0",
+        ))
+        .stdout(predicate::str::contains("alpha").not())
+        .stdout(predicate::str::contains("dry run: no changes made"));
+
+    assert_eq!(
+        fs::read_to_string(beta_record_path).expect("read beta record after"),
+        beta_before
+    );
+}
+
+#[test]
+fn global_update_dry_run_validates_selected_global_records() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    write_global_package_record(&home, "beta", "owner/beta", "2.0.0");
+    let beta_record_path = home.join("packages").join("beta.toml");
+    let beta_record = fs::read_to_string(&beta_record_path).expect("read beta record");
+    fs::write(
+        &beta_record_path,
+        beta_record.replace("source = \"github:owner/beta\"", "source = \"github:\""),
+    )
+    .expect("write invalid beta record");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["update", "--global", "--dry-run", "beta"])
+        .assert()
         .failure()
-        .code(2)
+        .stderr(predicate::str::contains("github:"))
         .stdout(predicate::str::contains("planned updates").not())
-        .stderr(predicate::str::contains("pending implementation"))
-        .stderr(predicate::str::contains("binpm outdated --global"));
+        .stdout(predicate::str::contains("dry run: no changes made").not());
 }
 
 #[test]

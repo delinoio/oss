@@ -39,8 +39,8 @@ use crate::{
         list_package_records, managed_installed_path, package_record_from_resolved,
         package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
         read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
-        referenced_cache_keys, reject_symlinked_cache_entry, remove_cache_ref,
-        remove_installed_binary, remove_package_record, remove_path_if_exists,
+        referenced_cache_keys, reject_symlinked_cache_entry, reject_symlinked_package_record_dirs,
+        remove_cache_ref, remove_installed_binary, remove_package_record, remove_path_if_exists,
         remove_stale_cache_refs, require_regular_managed_file,
         require_verified_regular_cache_asset, sanitize_persisted_url, scan_cache_references,
         validate_command_name, validate_download_url, validate_installed_binary_path,
@@ -1052,16 +1052,13 @@ fn update(args: UpdateArgs) -> Result<i32> {
     );
     let scope = select_scope(args.scope.scope())?;
     print_selected_mutation_scope("update", scope);
-    if scope == Scope::Global {
-        return Err(BinpmError::GlobalUpdatePending);
-    }
     if args.dry_run {
         return preview_update(scope, &args.cmd);
     }
     print_update_plan(scope, &args.cmd)?;
     match scope {
         Scope::Local => update_local_manifest(frozen_lockfile, args.require_verified, &args.cmd),
-        Scope::Global => unreachable!("global update returns pending before planning"),
+        Scope::Global => update_global_packages(args.require_verified, &args.cmd),
         Scope::Auto => unreachable!("select_scope never returns auto"),
     }
 }
@@ -1151,17 +1148,10 @@ fn print_local_update_plan(selected: &[String]) -> Result<()> {
 
 fn print_global_update_plan(selected: &[String]) -> Result<()> {
     let paths = ScopePaths::global(binpm_home()?);
-    let records = list_package_records(&paths)?;
-    for cmd in selected {
-        validate_command_name(cmd)?;
-        read_package_record(&package_record_path(&paths, cmd))?;
-    }
-    let planned: Vec<_> = records
-        .iter()
-        .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
-        .collect();
+    let planned = selected_global_package_records(&paths, selected)?;
+    prepare_global_updates(planned.clone())?;
     println!("planned updates: {}", planned.len());
-    for (cmd, record) in planned {
+    for (cmd, record) in &planned {
         println!(
             "would update {cmd} from {} {}",
             record.source, record.release_tag
@@ -2055,6 +2045,75 @@ fn update_local_manifest(
         validate_frozen_local_update_latest(&root, &manifest, selected)?;
     }
     install_local_manifest(frozen_lockfile, require_verified, selected)
+}
+
+fn update_global_packages(require_verified: bool, selected: &[String]) -> Result<i32> {
+    let home = binpm_home()?;
+    let scope_paths = ScopePaths::global(home.clone());
+    let records = selected_global_package_records(&scope_paths, selected)?;
+    let updates = prepare_global_updates(records)?;
+    for update in updates {
+        install_global_source(
+            update.spec,
+            &update.cmd,
+            update.selected_binary,
+            require_verified,
+        )?;
+    }
+    Ok(0)
+}
+
+#[derive(Debug)]
+struct PreparedGlobalUpdate {
+    cmd: String,
+    spec: SourceSpec,
+    selected_binary: Option<String>,
+}
+
+fn prepare_global_updates(
+    records: Vec<(String, PackageRecord)>,
+) -> Result<Vec<PreparedGlobalUpdate>> {
+    records
+        .into_iter()
+        .map(|(cmd, record)| {
+            validate_command_name(&cmd)?;
+            let mut spec = SourceSpec::from_str(&record.source)?;
+            spec.version = None;
+            let selected_binary = global_update_selected_binary(&record)?;
+            Ok(PreparedGlobalUpdate {
+                cmd,
+                spec,
+                selected_binary,
+            })
+        })
+        .collect()
+}
+
+fn global_update_selected_binary(record: &PackageRecord) -> Result<Option<String>> {
+    if record.archive_format == ArchiveFormat::BareExecutable {
+        return Ok(None);
+    }
+    normalize_bin_selection(Some(&record.selected_binary))
+}
+
+fn selected_global_package_records(
+    scope_paths: &ScopePaths,
+    selected: &[String],
+) -> Result<Vec<(String, PackageRecord)>> {
+    if !selected.is_empty() {
+        reject_symlinked_package_record_dirs(scope_paths)?;
+        return selected
+            .iter()
+            .map(|cmd| {
+                validate_command_name(cmd)?;
+                let record = read_package_record(&package_record_path(scope_paths, cmd))?;
+                Ok((cmd.clone(), record))
+            })
+            .collect();
+    }
+
+    let records = list_package_records(scope_paths)?;
+    Ok(records)
 }
 
 fn validate_frozen_local_update_latest(
@@ -6203,6 +6262,7 @@ mod tests {
         io::Write,
         path::{Path, PathBuf},
         str::FromStr,
+        sync::Mutex,
     };
 
     use sha2::{Digest, Sha256};
@@ -6215,21 +6275,23 @@ mod tests {
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
         download_asset_name, download_initial_capacity,
         ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
-        format_outdated_tool_line, github_sha256_digest, has_current_cache_record,
-        has_local_runtime_or_lock_state, install_local_from_lock, install_path_collision_key,
-        is_retryable_status, local_runtime_lock_records, local_tool_execution_ready,
-        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
-        locked_record_download_request, locked_release_lookup_spec, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
+        format_outdated_tool_line, github_sha256_digest, global_update_selected_binary,
+        has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
+        install_path_collision_key, is_retryable_status, local_runtime_lock_records,
+        local_tool_execution_ready, lock_targets_conflict_with_manifest,
+        lock_targets_conflict_with_record, locked_record_download_request,
+        locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
+        manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         normalize_bin_selection, override_snippet_candidate, package_record_output,
         package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
-        parse_source_argument, project_root_from, read_archive_selected_binary,
-        record_matches_current_provider_digest, release_asset_download_request,
-        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
-        restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
-        selected_asset_display_url, shell_path, shell_quote, snapshot_cache_metadata,
+        parse_source_argument, prepare_global_updates, project_root_from,
+        read_archive_selected_binary, record_matches_current_provider_digest,
+        release_asset_download_request, release_diagnostic_lines, release_diagnostics,
+        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
+        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
+        selected_global_package_records, shell_path, shell_quote, snapshot_cache_metadata,
         source_install_scope, target_override_snippet, update_manifest_tool_source,
         validate_frozen_update_current_release, validate_locked_record_artifact,
         validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
@@ -6257,6 +6319,8 @@ mod tests {
             LOCKFILE_FILE, MANIFEST_FILE,
         },
     };
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct StaticReleaseClient {
         tag: &'static str,
@@ -7175,6 +7239,91 @@ mod tests {
         assert_eq!(updated.source, "github:owner/new-tool");
         assert_eq!(updated.version.as_deref(), Some("2.0.0"));
         assert_eq!(updated.bin.as_deref(), Some("dist/new-bin"));
+    }
+
+    #[test]
+    fn selected_global_package_records_reads_only_named_records() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::global(temp_dir.path().join("home"));
+        let mut beta = package_record();
+        beta.source = "github:owner/beta".to_string();
+        write_package_record(&paths, "beta", &beta).expect("write beta");
+        fs::write(paths.packages.join("alpha.toml"), b"not toml").expect("write corrupt alpha");
+
+        let records = selected_global_package_records(&paths, &["beta".to_string()])
+            .expect("selected record");
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].0, "beta");
+        assert_eq!(records[0].1.source, "github:owner/beta");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_global_package_records_rejects_symlinked_packages_dir() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::global(temp_dir.path().join("home"));
+        let outside = temp_dir.path().join("outside");
+        fs::create_dir_all(&paths.root).expect("scope root");
+        fs::create_dir_all(&outside).expect("outside dir");
+        symlink(&outside, &paths.packages).expect("symlink packages");
+
+        let error = selected_global_package_records(&paths, &["beta".to_string()])
+            .expect_err("symlinked packages dir");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+    }
+
+    #[test]
+    fn global_update_selected_binary_preserves_archive_member_path() {
+        let mut record = package_record();
+        record.archive_format = ArchiveFormat::Zip;
+        record.selected_binary = "bin/tool".to_string();
+
+        assert_eq!(
+            global_update_selected_binary(&record).expect("selection"),
+            Some("bin/tool".to_string())
+        );
+    }
+
+    #[test]
+    fn global_update_selected_binary_omits_bare_executable_override() {
+        let mut record = package_record();
+        record.archive_format = ArchiveFormat::BareExecutable;
+        record.selected_binary = "tool-linux-x64".to_string();
+
+        assert_eq!(
+            global_update_selected_binary(&record).expect("selection"),
+            None
+        );
+    }
+
+    #[test]
+    fn prepare_global_updates_validates_all_records_before_planning_installs() {
+        let mut valid = package_record();
+        valid.source = "github:owner/valid".to_string();
+        let mut invalid = package_record();
+        invalid.source = "github:".to_string();
+
+        let error = prepare_global_updates(vec![
+            ("valid".to_string(), valid),
+            ("invalid".to_string(), invalid),
+        ])
+        .expect_err("invalid later record");
+
+        assert!(matches!(error, BinpmError::InvalidSourceSpec { .. }));
+    }
+
+    #[test]
+    fn prepare_global_updates_validates_record_command_names() {
+        let record = package_record();
+
+        let error = prepare_global_updates(vec![("bad:name".to_string(), record)])
+            .expect_err("invalid command name");
+
+        assert!(matches!(error, BinpmError::InvalidCommandName { .. }));
     }
 
     #[test]
@@ -9395,6 +9544,7 @@ mod tests {
 
     #[test]
     fn locked_record_download_request_preserves_provider_auth_metadata() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "github:ghe.locked.example/owner/tool".to_string();
         record.source_host = "ghe.locked.example".to_string();
@@ -9418,6 +9568,7 @@ mod tests {
 
     #[test]
     fn locked_record_download_request_omits_provider_auth_for_external_asset_url() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
         record.source_provider = SourceProvider::GitLab;
@@ -9439,6 +9590,7 @@ mod tests {
 
     #[test]
     fn locked_record_download_request_preserves_gitlab_auth_for_provider_asset_url() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
         record.source_provider = SourceProvider::GitLab;

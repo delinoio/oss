@@ -351,15 +351,18 @@ pub fn write_package_record(paths: &ScopePaths, cmd: &str, record: &PackageRecor
 
 pub fn remove_package_record(paths: &ScopePaths, cmd: &str) -> Result<()> {
     validate_command_name(cmd)?;
-    reject_symlinked_managed_directory(&paths.root)?;
-    reject_symlinked_managed_directory(&paths.packages)?;
+    reject_symlinked_package_record_dirs(paths)?;
     remove_path_if_exists(&package_record_path(paths, cmd))
+}
+
+pub fn reject_symlinked_package_record_dirs(paths: &ScopePaths) -> Result<()> {
+    reject_symlinked_managed_directory(&paths.root)?;
+    reject_symlinked_managed_directory(&paths.packages)
 }
 
 pub fn list_package_records(paths: &ScopePaths) -> Result<Vec<(String, PackageRecord)>> {
     let mut records = Vec::new();
-    reject_symlinked_managed_directory(&paths.root)?;
-    reject_symlinked_managed_directory(&paths.packages)?;
+    reject_symlinked_package_record_dirs(paths)?;
     let entries = match fs::read_dir(&paths.packages) {
         Ok(entries) => entries,
         Err(source) if source.kind() == ErrorKind::NotFound => return Ok(records),
