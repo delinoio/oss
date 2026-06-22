@@ -1149,6 +1149,8 @@ signature_verified = false
     let payload: Value = serde_json::from_slice(&output.stdout).expect("parse explain json");
     assert_eq!(payload["kind"], "package");
     assert_eq!(payload["command"], "explain");
+    assert_eq!(payload["read_only"], true);
+    assert_eq!(payload["network_free"], true);
     assert_eq!(payload["scope"], "local");
     assert_eq!(payload["record"]["target"]["os"], "linux");
     assert_eq!(payload["record"]["target"]["arch"], "x86_64");
@@ -1164,6 +1166,39 @@ signature_verified = false
         "[tools.tool.targets.linux-x86_64-gnu]\nasset = \"tool-linux-x64\"\nbin = \
          \"tool-linux-x64\""
     );
+}
+
+#[test]
+fn explain_rejects_unsupported_package_manager_backend_with_backend_diagnostic() {
+    for source in ["npm:eslint@1.0.0", "npm:eslint@latest", "npm:@scope/pkg"] {
+        let mut command = binpm();
+
+        command
+            .args(["explain", source])
+            .assert()
+            .failure()
+            .code(2)
+            .stderr(predicate::str::contains("package-manager backend"))
+            .stderr(predicate::str::contains("provider release assets"))
+            .stderr(predicate::str::contains("github:owner/repo"))
+            .stderr(predicate::str::contains("gitlab:<host>"));
+    }
+}
+
+#[test]
+fn explain_rejects_gitlab_without_explicit_host() {
+    let mut command = binpm();
+
+    command
+        .args(["explain", "gitlab:group/project"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "gitlab sources require an explicit host",
+        ))
+        .stderr(predicate::str::contains("gitlab:gitlab.com/group/project"))
+        .stderr(predicate::str::contains("intentionally not accepted"));
 }
 
 #[test]

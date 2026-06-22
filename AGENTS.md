@@ -131,14 +131,14 @@ enum ProjectId {
 
 ### binpm Source Contract
 
-- Stable `binpm` source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
+- Stable `binpm` source identifiers are `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`. GitLab sources always require an explicit host, including `gitlab:gitlab.com/<namespace...>/<project>[@version]` for GitLab.com; `gitlab:group/project` is intentionally invalid.
 - binpm provider tokens are host-scoped. GitHub.com may use `BINPM_GITHUB_TOKEN_GITHUB_COM`, `BINPM_GITHUB_TOKEN`, or `GITHUB_TOKEN`; GitHub Enterprise must use `BINPM_GITHUB_TOKEN_<NORMALIZED_HOST>`. GitLab.com may use `BINPM_GITLAB_TOKEN_GITLAB_COM`, `BINPM_GITLAB_TOKEN`, or `GITLAB_TOKEN`; self-managed GitLab must use `BINPM_GITLAB_TOKEN_<NORMALIZED_HOST>`. For explicit hosts, `<NORMALIZED_HOST>` must encode non-ASCII-alphanumeric UTF-8 bytes as `_HH_` uppercase hexadecimal so distinct hosts cannot share a token variable. Generic SaaS tokens must not be sent to enterprise or self-managed hosts.
 - binpm release lookup diagnostics must distinguish missing authentication, insufficient permissions, and rate limiting while keeping tokens, authorization headers, private-token headers, query strings, fragments, and credential-bearing URLs out of logs, errors, persisted URLs, cache metadata, package records, and lockfiles.
-- `binpm` source versions are exact release tag requests only; omitted `@version` selects latest stable, while `@latest`, semver range-like selectors, channel selectors, and major-version pins must be rejected before manifest or lockfile persistence.
-- GitLab versionless installs must exclude upcoming releases, releases with future `released_at` values, and prerelease tag patterns.
+- `binpm` source versions are exact release tag requests only; omitted `@version` selects latest stable, while `@latest`, semver range-like selectors, channel selectors, and major-version pins must be rejected before manifest or lockfile persistence. Diagnostics may suggest an exact leading-`v` tag alternative when the release list shows one, but exact-match semantics must not change.
+- GitLab versionless installs must exclude upcoming releases, releases with future `released_at` values, and known SemVer prerelease tag identifiers while preserving non-SemVer stable GitLab tags.
 - GitLab release asset links must use HTTPS link URLs and HTTPS final redirect targets before candidate scoring or download.
 - GitLab generated `assets.sources` source archives must not be selected as installable assets.
-- Direct URLs, registries, and package-manager backends remain out of scope until documented in `docs/crates-binpm-foundation.md`.
+- Direct URLs, registries, and package-manager backends remain out of scope until documented in `docs/crates-binpm-foundation.md`; recognizable package-manager backend prefixes must fail with explicit unsupported-backend diagnostics.
 
 ### binpm Local Tooling Contract
 

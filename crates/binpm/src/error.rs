@@ -59,6 +59,12 @@ impl fmt::Display for ReleaseLookupDiagnosticKind {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReleaseSkipDiagnostic {
+    pub tag: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Error)]
 pub enum BinpmError {
     #[error(
@@ -120,8 +126,12 @@ pub enum BinpmError {
     },
     #[error("Release pagination loop detected at `{url}`.")]
     ReleasePaginationLoop { url: String },
-    #[error("Failed to resolve release for `{package}`: {message}")]
-    ReleaseNotFound { package: String, message: String },
+    #[error("{}", release_not_found_message(package, message, skipped_releases))]
+    ReleaseNotFound {
+        package: String,
+        message: String,
+        skipped_releases: Vec<ReleaseSkipDiagnostic>,
+    },
     #[error("Failed to determine the current working directory: {0}")]
     CurrentDirectory(#[source] io::Error),
     #[error("Failed to write `{}`: {source}", path.display())]
@@ -370,6 +380,18 @@ impl BinpmError {
                     "local_development_escape_hatch": "--no-frozen-lockfile"
                 })
             }),
+            Self::ReleaseNotFound {
+                skipped_releases, ..
+            } if !skipped_releases.is_empty() => Some(serde_json::json!({
+                "kind": "release_not_found",
+                "skipped_releases": skipped_releases
+                    .iter()
+                    .map(|release| serde_json::json!({
+                        "tag": release.tag,
+                        "reason": release.reason,
+                    }))
+                    .collect::<Vec<_>>()
+            })),
             _ => None,
         }
     }
@@ -435,6 +457,24 @@ impl BinpmError {
             Self::Execute { .. } => 1,
         }
     }
+}
+
+fn release_not_found_message(
+    package: &str,
+    message: &str,
+    skipped_releases: &[ReleaseSkipDiagnostic],
+) -> String {
+    let mut rendered = format!("Failed to resolve release for `{package}`: {message}");
+    if !skipped_releases.is_empty() {
+        let skipped = skipped_releases
+            .iter()
+            .map(|release| format!("`{}` ({})", release.tag, release.reason))
+            .collect::<Vec<_>>()
+            .join(", ");
+        rendered.push_str(". Skipped releases: ");
+        rendered.push_str(&skipped);
+    }
+    rendered
 }
 
 fn frozen_lockfile_message(path: &std::path::Path) -> String {
