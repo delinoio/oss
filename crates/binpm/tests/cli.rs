@@ -2517,9 +2517,7 @@ fn local_update_dry_run_reports_scope_and_planned_tools_without_mutation() {
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
     fs::create_dir_all(&project).expect("create project");
-    fs::write(
-        project.join("binpm.toml"),
-        r#"version = 1
+    let manifest = r#"version = 1
 
 [tools.alpha]
 source = "github:owner/alpha"
@@ -2527,9 +2525,8 @@ source = "github:owner/alpha"
 [tools.beta]
 source = "github:owner/beta"
 version = "1.0.0"
-"#,
-    )
-    .expect("write manifest");
+"#;
+    fs::write(project.join("binpm.toml"), manifest).expect("write manifest");
     let mut command = binpm();
 
     command
@@ -2549,8 +2546,18 @@ version = "1.0.0"
         .stdout(predicate::str::contains(
             "would update beta from github:owner/beta 1.0.0",
         ))
+        .stdout(predicate::str::contains(
+            "would update beta manifest version from 1.0.0 to latest stable",
+        ))
+        .stdout(
+            predicate::str::contains("would update").and(predicate::str::contains("binpm.toml")),
+        )
         .stdout(predicate::str::contains("dry run: no changes made"));
 
+    assert_eq!(
+        fs::read_to_string(project.join("binpm.toml")).expect("read manifest"),
+        manifest
+    );
     assert!(!project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
 }

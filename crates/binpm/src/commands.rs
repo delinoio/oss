@@ -1236,6 +1236,17 @@ fn print_local_update_plan(selected: &[String]) -> Result<()> {
     for (cmd, tool) in planned {
         let version = tool.version.as_deref().unwrap_or("<latest>");
         println!("would update {cmd} from {} {version}", tool.source);
+        if let Some(version) = &tool.version {
+            println!("would update {cmd} manifest version from {version} to latest stable");
+        }
+    }
+    if manifest
+        .tools
+        .iter()
+        .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
+        .any(|(_, tool)| tool.version.is_some())
+    {
+        println!("would update {}", root.join(MANIFEST_FILE).display());
     }
     println!("would update {}", root.join(LOCKFILE_FILE).display());
     println!("would update {}", ScopePaths::local(root).bin.display());
@@ -2221,6 +2232,7 @@ fn local_update_manifest_with_latest_versions_from(
             continue;
         }
         let latest = latest_tag(tool)?;
+        validate_version_selector(&tool.source, &latest)?;
         if tool.version.as_deref() != Some(latest.as_str()) {
             let Some(next_tool) = next_manifest.tools.get_mut(cmd) else {
                 continue;
@@ -7272,6 +7284,30 @@ mod tests {
             .expect("floating tool")
             .version
             .is_none());
+    }
+
+    #[test]
+    fn local_update_manifest_rejects_unpersistable_latest_tag() {
+        let mut manifest = Manifest {
+            version: 1,
+            tools: BTreeMap::new(),
+        };
+        manifest.tools.insert(
+            "pinned".to_string(),
+            ManifestTool {
+                source: "github:owner/pinned".to_string(),
+                version: Some("1.0.0".to_string()),
+                bin: None,
+                targets: BTreeMap::new(),
+            },
+        );
+
+        let error = local_update_manifest_with_latest_versions_from(&manifest, &[], |_| {
+            Ok("latest".to_string())
+        })
+        .expect_err("reject unsupported manifest version tag");
+
+        assert!(error.to_string().contains("`@latest` is not supported"));
     }
 
     #[test]
