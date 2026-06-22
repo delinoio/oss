@@ -90,11 +90,9 @@ pub enum BinpmError {
     },
     #[error(
         "Unsupported shell `{shell}` for binpm env. Supported shells: bash, zsh, fish, \
-         powershell. Alias: pwsh renders PowerShell syntax. Deferred shell: cmd. For cmd.exe, add \
-         `%USERPROFILE%\\.binpm\\bin` to the user PATH in Windows Environment Variables, or for \
-         the current cmd.exe session run `set \"PATH=%USERPROFILE%\\.binpm\\bin;%PATH%\"`."
+         powershell. Alias: pwsh renders PowerShell syntax. Deferred shell: cmd. {cmd_hint}"
     )]
-    UnsupportedShell { shell: String },
+    UnsupportedShell { shell: String, cmd_hint: String },
     #[error(
         "Failed to infer a shell for binpm env. Pass `--shell \
          <bash|zsh|fish|powershell|pwsh|cmd>`."

@@ -6645,29 +6645,46 @@ fn init(args: InitArgs) -> Result<i32> {
 
 fn env_cmd(args: EnvArgs) -> Result<i32> {
     let shell = args.shell.map(Ok).unwrap_or_else(infer_env_shell)?;
+    let scope = env_path_scope(&args);
+
+    let global_bin = if matches!(scope, EnvPathScope::Both | EnvPathScope::Global) {
+        Some(binpm_home()?.join("bin"))
+    } else {
+        None
+    };
+    let local_bin = if matches!(scope, EnvPathScope::Both | EnvPathScope::Local) {
+        Some(project_root()?.join(".binpm").join("bin"))
+    } else {
+        None
+    };
+
     if matches!(shell, Shell::Cmd) {
         return Err(BinpmError::UnsupportedShell {
             shell: shell.as_str().to_string(),
+            cmd_hint: cmd_path_hint(scope, global_bin.as_deref(), local_bin.as_deref()),
         });
     }
-    let scope = env_path_scope(&args);
 
-    let project_root = project_root()?;
-    let home = binpm_home()?;
-    let global_bin = home.join("bin");
-    let local_bin = project_root.join(".binpm").join("bin");
+    let global_bin_display = global_bin
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<not requested>".to_string());
+    let local_bin_display = local_bin
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<not requested>".to_string());
 
     info!(
         command = "env",
         shell = shell.as_str(),
         path_scope = ?scope,
         read_only = true,
-        global_bin = %global_bin.display(),
-        local_bin = %local_bin.display(),
+        global_bin = %global_bin_display,
+        local_bin = %local_bin_display,
         "Rendered PATH environment commands"
     );
 
-    print_env(shell, scope, &global_bin, &local_bin);
+    print_env(shell, scope, global_bin.as_deref(), local_bin.as_deref());
     Ok(0)
 }
 
@@ -6718,32 +6735,40 @@ fn shell_from_program(program: &std::ffi::OsStr) -> Option<Shell> {
     }
 }
 
-fn print_env(shell: Shell, scope: EnvPathScope, global_bin: &Path, local_bin: &Path) {
-    let global = shell_quote(shell, global_bin);
-    let local = shell_quote(shell, local_bin);
+fn print_env(
+    shell: Shell,
+    scope: EnvPathScope,
+    global_bin: Option<&Path>,
+    local_bin: Option<&Path>,
+) {
     match shell {
         Shell::Bash | Shell::Zsh => {
             if matches!(scope, EnvPathScope::Both | EnvPathScope::Global) {
+                let global = shell_quote(shell, global_bin.expect("global bin path for env scope"));
                 println!("# Global bin: persist this line in shell profiles");
                 println!("export PATH={global}${{PATH:+:$PATH}}");
             }
             if matches!(scope, EnvPathScope::Both | EnvPathScope::Local) {
+                let local = shell_quote(shell, local_bin.expect("local bin path for env scope"));
                 println!("# Project-local bin: use for the current project/session only");
                 println!("export PATH={local}${{PATH:+:$PATH}}");
             }
         }
         Shell::Fish => {
             if matches!(scope, EnvPathScope::Both | EnvPathScope::Global) {
+                let global = shell_quote(shell, global_bin.expect("global bin path for env scope"));
                 println!("# Global bin: persist this line in shell profiles");
                 println!("set -gx PATH {global} $PATH");
             }
             if matches!(scope, EnvPathScope::Both | EnvPathScope::Local) {
+                let local = shell_quote(shell, local_bin.expect("local bin path for env scope"));
                 println!("# Project-local bin: use for the current project/session only");
                 println!("set -gx PATH {local} $PATH");
             }
         }
         Shell::Powershell => {
             if matches!(scope, EnvPathScope::Both | EnvPathScope::Global) {
+                let global = shell_quote(shell, global_bin.expect("global bin path for env scope"));
                 println!("# Global bin: persist this line in shell profiles");
                 println!(
                     "$env:PATH = {global} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
@@ -6751,6 +6776,7 @@ fn print_env(shell: Shell, scope: EnvPathScope, global_bin: &Path, local_bin: &P
                 );
             }
             if matches!(scope, EnvPathScope::Both | EnvPathScope::Local) {
+                let local = shell_quote(shell, local_bin.expect("local bin path for env scope"));
                 println!("# Project-local bin: use for the current project/session only");
                 println!(
                     "$env:PATH = {local} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
@@ -6760,6 +6786,42 @@ fn print_env(shell: Shell, scope: EnvPathScope, global_bin: &Path, local_bin: &P
         }
         Shell::Cmd => unreachable!("cmd shell is explicitly deferred before rendering"),
     }
+}
+
+fn cmd_path_hint(
+    scope: EnvPathScope,
+    global_bin: Option<&Path>,
+    local_bin: Option<&Path>,
+) -> String {
+    match scope {
+        EnvPathScope::Global => {
+            cmd_single_path_hint(global_bin.expect("global bin path for env scope"))
+        }
+        EnvPathScope::Local => {
+            cmd_single_path_hint(local_bin.expect("local bin path for env scope"))
+        }
+        EnvPathScope::Both => {
+            let global = cmd_path(global_bin.expect("global bin path for env scope"));
+            let local = cmd_path(local_bin.expect("local bin path for env scope"));
+            format!(
+                "For cmd.exe, add `{global}` and `{local}` to the user PATH in Windows \
+                 Environment Variables, or for the current cmd.exe session run `set \
+                 \"PATH={global};{local};%PATH%\"`."
+            )
+        }
+    }
+}
+
+fn cmd_single_path_hint(path: &Path) -> String {
+    let path = cmd_path(path);
+    format!(
+        "For cmd.exe, add `{path}` to the user PATH in Windows Environment Variables, or for the \
+         current cmd.exe session run `set \"PATH={path};%PATH%\"`."
+    )
+}
+
+fn cmd_path(path: &Path) -> String {
+    path.display().to_string()
 }
 
 fn shell_quote(shell: Shell, path: &Path) -> String {

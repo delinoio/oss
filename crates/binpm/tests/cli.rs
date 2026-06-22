@@ -753,6 +753,27 @@ fn env_local_scope_prints_only_project_path_command() {
 }
 
 #[test]
+fn env_local_scope_does_not_require_global_home() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", "relative-home")
+        .args(["env", "--local", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Global bin").not())
+        .stdout(predicate::str::contains("Project-local bin"))
+        .stdout(predicate::str::contains(bash_quote_path(&local_bin)));
+}
+
+#[test]
 fn env_bash_avoids_empty_path_segment_when_path_is_unset() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -1635,9 +1656,45 @@ fn env_cmd_reports_explicitly_deferred_shell() {
         ))
         .stderr(predicate::str::contains("Alias: pwsh"))
         .stderr(predicate::str::contains("Deferred shell: cmd"))
-        .stderr(predicate::str::contains(
-            "set \"PATH=%USERPROFILE%\\.binpm\\bin;%PATH%\"",
-        ));
+        .stderr(predicate::str::contains("set \"PATH="));
+}
+
+#[test]
+fn env_cmd_hint_uses_configured_global_home() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("custom-home");
+    let global_bin = home.join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--global", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(global_bin.display().to_string()))
+        .stderr(predicate::str::contains("%USERPROFILE%\\.binpm\\bin").not());
+}
+
+#[test]
+fn env_cmd_local_hint_uses_project_local_bin() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .args(["env", "--local", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(local_bin.display().to_string()))
+        .stderr(predicate::str::contains("%USERPROFILE%\\.binpm\\bin").not());
 }
 
 #[test]
