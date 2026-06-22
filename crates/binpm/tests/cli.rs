@@ -479,6 +479,66 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
 }
 
 #[test]
+fn init_manifest_path_is_explicit_destination_escape_hatch() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
+    let nested_dir = temp_dir.path().join("packages").join("cli");
+    fs::create_dir_all(&nested_dir).expect("create nested dir");
+    let manifest_path = nested_dir.join("binpm.toml");
+    let mut command = binpm();
+
+    command
+        .current_dir(&nested_dir)
+        .args(["init", "--manifest-path"])
+        .arg(&manifest_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "manifest destination: {}",
+            manifest_path.display()
+        )))
+        .stdout(predicate::str::contains(format!(
+            "created manifest: {}",
+            manifest_path.display()
+        )));
+
+    let manifest = fs::read_to_string(&manifest_path).expect("read manifest");
+    assert_eq!(manifest, "version = 1\n");
+    assert!(!temp_dir.path().join("binpm.toml").exists());
+}
+
+#[test]
+fn init_manifest_path_must_name_binpm_toml() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let invalid_path = temp_dir.path().join("tools.toml");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .args(["init", "--manifest-path"])
+        .arg(&invalid_path)
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("explicit init destinations"))
+        .stderr(predicate::str::contains("binpm.toml"));
+}
+
+#[test]
+fn init_force_is_rejected() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .args(["init", "--force"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("unexpected argument '--force'"));
+}
+
+#[test]
 fn init_from_nested_directory_detects_existing_manifest_without_git() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let manifest_path = temp_dir.path().join("binpm.toml");
@@ -568,6 +628,86 @@ fn env_prints_shell_path_exports() {
             "# Project-local bin: use for the current project/session only",
         ))
         .stdout(predicate::str::contains(expected_local));
+}
+
+#[test]
+fn env_can_infer_shell_from_environment() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let global_bin = home.join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .env("SHELL", "/usr/bin/zsh")
+        .arg("env")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "export PATH={}${{PATH:+:$PATH}}",
+            bash_quote_path(&global_bin)
+        )));
+}
+
+#[test]
+fn env_without_shell_or_detectable_environment_reports_hint() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .arg("env")
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Failed to infer a shell"))
+        .stderr(predicate::str::contains(
+            "--shell <bash|zsh|fish|powershell|pwsh|cmd>",
+        ));
+}
+
+#[test]
+fn env_global_scope_prints_only_global_path_command() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let global_bin = home.join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--global", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Global bin"))
+        .stdout(predicate::str::contains(bash_quote_path(&global_bin)))
+        .stdout(predicate::str::contains("Project-local bin").not());
+}
+
+#[test]
+fn env_local_scope_prints_only_project_path_command() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--local", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Global bin").not())
+        .stdout(predicate::str::contains("Project-local bin"))
+        .stdout(predicate::str::contains(bash_quote_path(&local_bin)));
 }
 
 #[test]
@@ -1250,7 +1390,7 @@ fn doctor_guides_path_setup_when_global_bin_is_absent_from_path() {
         .assert()
         .success()
         .stdout(predicate::str::contains("global_bin_on_path: no"))
-        .stdout(predicate::str::contains("binpm env --shell"))
+        .stdout(predicate::str::contains("binpm env --global --shell"))
         .stdout(predicate::str::contains("profile changes are opt-in"))
         .stdout(predicate::str::contains("persist only the global bin line"))
         .stdout(predicate::str::contains(
@@ -1336,6 +1476,22 @@ fn env_powershell_uses_runtime_path_separator() {
 }
 
 #[test]
+fn env_pwsh_alias_renders_powershell_syntax() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--shell", "pwsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("$env:PATH"))
+        .stdout(predicate::str::contains("[System.IO.Path]::PathSeparator"));
+}
+
+#[test]
 fn env_powershell_avoids_trailing_separator_when_path_is_unset() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -1368,7 +1524,11 @@ fn env_cmd_reports_explicitly_deferred_shell() {
         .stderr(predicate::str::contains(
             "Supported shells: bash, zsh, fish, powershell",
         ))
-        .stderr(predicate::str::contains("Deferred shell: cmd"));
+        .stderr(predicate::str::contains("Alias: pwsh"))
+        .stderr(predicate::str::contains("Deferred shell: cmd"))
+        .stderr(predicate::str::contains(
+            "set \"PATH=%USERPROFILE%\\.binpm\\bin;%PATH%\"",
+        ));
 }
 
 #[test]

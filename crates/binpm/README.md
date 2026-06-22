@@ -21,6 +21,13 @@ prune` repairs stale structured project references before pruning unreferenced
 assets. `binpm cache key` remains read-only and reports missing lockfiles
 explicitly.
 
+`binpm init` creates new manifests without overwriting existing files.
+`--manifest-path <PATH>` is the explicit destination escape hatch when the
+default Git-root or manifest-ancestor destination is not desired. `binpm env`
+prints non-mutating PATH commands, supports optional shell inference, accepts
+`pwsh` as PowerShell syntax, and exposes `--global` or `--local` to print only
+one PATH command.
+
 Use `-v`/`--verbose` for info-level tracing diagnostics and `--debug` for
 debug-level tracing diagnostics. `BINPM_LOG` remains supported when no CLI
 verbosity flag is provided; CLI verbosity flags take precedence.
