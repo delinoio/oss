@@ -13,11 +13,10 @@ nodeup show home
 
 ## 2. Install a Node.js Runtime
 
-Install one or more exact versions or channels:
+Install a durable channel selector first:
 
 ```bash
-nodeup toolchain install 22.1.0
-nodeup toolchain install lts current
+nodeup toolchain install lts
 ```
 
 The install command resolves channels through the Node.js release index, downloads the matching archive for the current host, verifies `SHASUMS256.txt`, and extracts the runtime into Nodeup's toolchains directory.
@@ -32,7 +31,7 @@ nodeup toolchain list --verbose
 ## 3. Set the Default Runtime
 
 ```bash
-nodeup default 22.1.0
+nodeup default lts
 nodeup default
 nodeup show active-runtime
 ```
@@ -44,7 +43,7 @@ nodeup show active-runtime
 Run a command against a specific runtime:
 
 ```bash
-nodeup run 22.1.0 node --version
+nodeup run lts node --version
 nodeup run --install lts npm --version
 ```
 
@@ -63,11 +62,24 @@ nodeup show active-runtime
 Set or remove an override for another directory:
 
 ```bash
-nodeup override set 22.1.0 --path ~/src/my-app
+nodeup override set lts --path ~/src/my-app
 nodeup override unset --path ~/src/my-app
 ```
 
 Runtime resolution for normal dispatch is explicit selector, then nearest directory override, then global default. See [Runtime Resolution](/runtime-resolution).
+
+## Exact-Version Pins
+
+Use exact versions when a project or CI job needs a fixed runtime:
+
+```bash
+nodeup toolchain install 22.1.0
+nodeup default 22.1.0
+nodeup run 22.1.0 node --version
+nodeup override set 22.1.0 --path ~/src/my-app
+```
+
+Exact-version selectors may include or omit the `v` prefix. Nodeup stores tracked exact versions in canonical `v<semver>` form, treats `22.1.0` and `v22.1.0` as the same selector, and keeps exact versions immutable during `nodeup update`.
 
 ## 6. Use Shims
 
