@@ -78,6 +78,7 @@ struct RuntimeReferenceBlocker {
     path: String,
     clear_command: String,
     change_command: String,
+    action: String,
 }
 
 pub fn execute(
@@ -329,14 +330,26 @@ fn uninstall(
         let selector = RuntimeSelector::parse(runtime)?;
         let version = match selector {
             RuntimeSelector::Version(version) => format!("v{version}"),
-            _ => {
+            RuntimeSelector::Channel(_) => {
                 return Err(NodeupError::invalid_input_with_hint(
                     format!(
                         "`toolchain uninstall` only supports exact version selectors \
-                         (selector={runtime})"
+                         (selector={runtime}, selector_kind=channel)"
                     ),
-                    "Use selectors like `22.1.0` or `v22.1.0`. Remove linked runtime records with \
-                     `nodeup toolchain unlink <name>`.",
+                    "Channels cannot be uninstalled directly. List installed exact versions with \
+                     `nodeup toolchain list --verbose`, then retry with `nodeup toolchain \
+                     uninstall <version>`.",
+                ));
+            }
+            RuntimeSelector::LinkedName(_) => {
+                return Err(NodeupError::invalid_input_with_hint(
+                    format!(
+                        "`toolchain uninstall` only supports exact version selectors \
+                         (selector={runtime}, selector_kind=linked-runtime)"
+                    ),
+                    "Remove linked runtime records with `nodeup toolchain unlink <name>`. To \
+                     remove an installed version, list exact versions with `nodeup toolchain list \
+                     --verbose` and retry with `nodeup toolchain uninstall <version>`.",
                 ));
             }
         };
@@ -436,6 +449,8 @@ fn runtime_reference_blockers(
                 path: app.store.paths().settings_file.display().to_string(),
                 clear_command: "nodeup default <runtime>".to_string(),
                 change_command: "nodeup default <runtime>".to_string(),
+                action: "Set the global default to a different runtime before uninstalling."
+                    .to_string(),
             });
         }
     }
@@ -452,6 +467,9 @@ fn runtime_reference_blockers(
                     "nodeup override set <runtime> --path {}",
                     shell_quote(&entry.path)
                 ),
+                action: "Unset this directory override or set it to a different runtime before \
+                         uninstalling."
+                    .to_string(),
             });
         }
     }
@@ -568,7 +586,8 @@ fn link(
         );
         return Err(NodeupError::invalid_input_with_hint(
             format!("Invalid linked runtime name: {name}"),
-            "Use a linked runtime name that matches `[A-Za-z0-9][A-Za-z0-9_-]*`.",
+            "Use a linked runtime name that matches `[A-Za-z0-9][A-Za-z0-9_-]*`, for example \
+             `local-node` or `work_node`.",
         ));
     }
 
@@ -584,7 +603,8 @@ fn link(
         return Err(NodeupError::invalid_input_with_hint(
             format!("Invalid linked runtime name: {name}"),
             "Reserved channel selectors (`lts`, `current`, `latest`) cannot be used as linked \
-             runtime names.",
+             runtime names. Choose a distinct name such as `local-lts`, then select channels with \
+             `nodeup default lts` or `nodeup toolchain install lts`.",
         ));
     }
 
@@ -600,7 +620,8 @@ fn link(
         return Err(NodeupError::invalid_input_with_hint(
             format!("Invalid linked runtime name: {name}"),
             "Linked runtime names are case-sensitive, but names that differ from reserved channel \
-             selectors (`lts`, `current`, `latest`) only by case are not allowed.",
+             selectors (`lts`, `current`, `latest`) only by case are not allowed. Choose a \
+             distinct name such as `local-lts`.",
         ));
     }
 

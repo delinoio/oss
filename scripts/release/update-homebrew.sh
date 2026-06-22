@@ -57,6 +57,27 @@ log() {
   echo "[release.homebrew] $*" >&2
 }
 
+validate_url_basename() {
+  local label="$1"
+  local url="$2"
+  local expected="$3"
+  local sanitized_url="${url%%#*}"
+  sanitized_url="${sanitized_url%%\?*}"
+  local actual="${sanitized_url##*/}"
+
+  if [ "$actual" != "$expected" ]; then
+    log "${label} URL must point to prebuilt archive ${expected}; got ${actual}"
+    exit 1
+  fi
+}
+
+validate_binpm_prebuilt_urls() {
+  validate_url_basename "binpm darwin/amd64" "$darwin_amd64_url" "binpm-darwin-amd64.tar.gz"
+  validate_url_basename "binpm darwin/arm64" "$darwin_arm64_url" "binpm-darwin-arm64.tar.gz"
+  validate_url_basename "binpm linux/amd64" "$linux_amd64_url" "binpm-linux-amd64.tar.gz"
+  validate_url_basename "binpm linux/arm64" "$linux_arm64_url" "binpm-linux-arm64.tar.gz"
+}
+
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --project)
@@ -140,6 +161,10 @@ case "$project" in
     if { [ "$project" = "binpm" ] || [ "$project" = "nodeup" ] || [ "$project" = "with-watch" ]; } && { [ -z "$linux_arm64_url" ] || [ -z "$linux_arm64_sha256" ]; }; then
       log "$project requires --linux-arm64-url and --linux-arm64-sha256"
       exit 1
+    fi
+
+    if [ "$project" = "binpm" ]; then
+      validate_binpm_prebuilt_urls
     fi
 
     template_path="$repo_root/packaging/homebrew/templates/${project}.rb.tmpl"
