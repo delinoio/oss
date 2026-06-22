@@ -35,7 +35,7 @@ use crate::{
     },
     storage::{
         archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
-        install_bare_executable, install_executable_bytes, installed_filename,
+        ensure_dir, install_bare_executable, install_executable_bytes, installed_filename,
         list_package_records, managed_installed_path, package_record_from_resolved,
         package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
         read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
@@ -3398,6 +3398,7 @@ fn regex_escape(raw: &str) -> String {
     escaped
 }
 
+#[derive(Debug)]
 struct SigstoreTempPaths {
     asset_path: PathBuf,
     bundle_path: PathBuf,
@@ -3409,10 +3410,7 @@ fn write_sigstore_verification_inputs(
     asset_bytes: &[u8],
     bundle_bytes: &[u8],
 ) -> Result<SigstoreTempPaths> {
-    fs::create_dir_all(&cache_paths.tmp).map_err(|source| BinpmError::CreateDirectory {
-        path: cache_paths.tmp.clone(),
-        source,
-    })?;
+    ensure_dir(&cache_paths.tmp)?;
     let nonce = format!(
         "{}-{:x}",
         std::process::id(),
@@ -6315,9 +6313,9 @@ mod tests {
         validate_package_record_metadata, validate_package_record_source_identity,
         validate_provider_digest_evidence, validate_selected_manifest_entries, verify_check_output,
         verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
-        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
-        GITHUB_ASSET_DOWNLOAD_ACCEPT,
+        write_sigstore_verification_inputs, zip_file_is_regular, zip_file_is_symlink, ArtifactKind,
+        InstalledPackage, InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode,
+        RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
         assets::CandidateDecision,
@@ -9832,6 +9830,26 @@ mod tests {
 
         resolved.signature_verified = true;
         assert!(resolved_has_verified_source(&resolved));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sigstore_verification_inputs_reject_symlinked_tmp_dir() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        std::os::unix::fs::symlink(outside.path(), &cache.tmp).expect("symlink tmp");
+        let resolved = resolved_asset(&package_record().sha256);
+
+        let error =
+            write_sigstore_verification_inputs(&cache, &resolved, b"asset bytes", b"bundle bytes")
+                .expect_err("symlinked temp dir");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert!(std::fs::read_dir(outside.path())
+            .expect("outside dir")
+            .next()
+            .is_none());
     }
 
     #[test]

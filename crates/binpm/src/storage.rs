@@ -149,7 +149,9 @@ impl PackageRecord {
                 self.source_provider == SourceProvider::GitHub
                     && self.provider_digest_sha256.as_deref() == Some(self.sha256.as_str())
             }
-            ChecksumSource::Signature => self.signature_available && self.signature_verified,
+            // Signature booleans in persisted package and lock records are audit metadata, not
+            // proof that the current asset bytes have been verified in this process.
+            ChecksumSource::Signature => false,
             ChecksumSource::Sidecar | ChecksumSource::Manifest | ChecksumSource::Local => false,
         }
     }
@@ -1835,7 +1837,7 @@ mod tests {
     }
 
     #[test]
-    fn package_records_require_verified_signature_source_for_signature_trust() {
+    fn package_records_do_not_trust_persisted_signature_flags_as_verified_source() {
         let mut record = package_record();
         record.checksum_source = ChecksumSource::Signature;
         record.signature_verified = true;
@@ -1843,7 +1845,7 @@ mod tests {
         assert!(!record.has_verified_source());
 
         record.signature_available = true;
-        assert!(record.has_verified_source());
+        assert!(!record.has_verified_source());
 
         record.signature_verified = false;
         assert!(!record.has_verified_source());
