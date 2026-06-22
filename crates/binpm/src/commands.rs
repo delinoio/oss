@@ -105,6 +105,32 @@ struct CacheListOutput {
 }
 
 #[derive(Debug, Serialize)]
+struct CachePruneOutput {
+    command: &'static str,
+    removed_cache_entries: usize,
+    removed_stale_local_project_cache_refs: usize,
+    preserved_legacy_cache_refs: usize,
+    removed_boundary: String,
+    preserved_boundaries: CachePreservedBoundariesOutput,
+    migration_hint: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheCleanOutput {
+    command: &'static str,
+    removed_cache_entries: usize,
+    removed_boundary: String,
+    preserved_boundaries: CachePreservedBoundariesOutput,
+}
+
+#[derive(Debug, Serialize)]
+struct CachePreservedBoundariesOutput {
+    cache_refs: String,
+    package_records: String,
+    executables: String,
+}
+
+#[derive(Debug, Serialize)]
 struct CacheEntryOutput {
     cache_key: String,
     byte_size: Option<u64>,
@@ -773,12 +799,33 @@ fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
             let local_paths = manifest_project_root()?.map(ScopePaths::local);
             let scan = scan_cache_references(&cache_paths)?;
             let stale_refs_removed = remove_stale_cache_refs(&cache_paths, &scan.stale_refs)?;
+            let legacy_refs = scan.legacy_refs;
             let referenced =
                 referenced_cache_keys(&global_paths, local_paths.as_ref(), &cache_paths)?;
             let removed = prune_cache(&cache_paths, &referenced)?;
+            let preserved_boundaries = cache_preserved_boundaries(&cache_paths);
+            if output.is_json() {
+                return print_json(&CachePruneOutput {
+                    command: "cache prune",
+                    removed_cache_entries: removed,
+                    removed_stale_local_project_cache_refs: stale_refs_removed,
+                    preserved_legacy_cache_refs: legacy_refs,
+                    removed_boundary: cache_paths.root.join("sha256").display().to_string(),
+                    preserved_boundaries,
+                    migration_hint: legacy_cache_ref_migration_hint().to_string(),
+                });
+            }
             println!("pruned cache entries: {removed}");
             println!("removed stale local-project cache refs: {stale_refs_removed}");
-            println!("preserved referenced cache entries, package records, and executable links");
+            println!("preserved legacy cache refs: {legacy_refs}");
+            println!(
+                "removed boundary: {}",
+                cache_paths.root.join("sha256").display()
+            );
+            println!("preserved: {}", preserved_boundaries.cache_refs);
+            println!("preserved: {}", preserved_boundaries.package_records);
+            println!("preserved: {}", preserved_boundaries.executables);
+            println!("{}", legacy_cache_ref_migration_hint());
             Ok(0)
         }
         CacheCommand::Clean { .. } => {
@@ -789,15 +836,37 @@ fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
             );
             let paths = CachePaths::new(&binpm_home()?);
             let removed = clean_cache(&paths)?;
+            let preserved_boundaries = cache_preserved_boundaries(&paths);
+            if output.is_json() {
+                return print_json(&CacheCleanOutput {
+                    command: "cache clean",
+                    removed_cache_entries: removed,
+                    removed_boundary: paths.root.join("sha256").display().to_string(),
+                    preserved_boundaries,
+                });
+            }
             println!("removed cache entries: {removed}");
-            println!("removed: {}", paths.root.join("sha256").display());
-            println!("preserved: {}", paths.refs.display());
-            println!("preserved: {}", paths.home.join("packages").display());
-            println!("preserved: {}", paths.home.join("bin").display());
+            println!("removed boundary: {}", paths.root.join("sha256").display());
+            println!("preserved: {}", preserved_boundaries.cache_refs);
+            println!("preserved: {}", preserved_boundaries.package_records);
+            println!("preserved: {}", preserved_boundaries.executables);
             Ok(0)
         }
         CacheCommand::Key => cache_key(output),
     }
+}
+
+fn cache_preserved_boundaries(paths: &CachePaths) -> CachePreservedBoundariesOutput {
+    CachePreservedBoundariesOutput {
+        cache_refs: paths.refs.display().to_string(),
+        package_records: paths.home.join("packages").display().to_string(),
+        executables: paths.home.join("bin").display().to_string(),
+    }
+}
+
+fn legacy_cache_ref_migration_hint() -> &'static str {
+    "legacy cache refs are preserved; run local install/update/remove in those projects to rewrite \
+     them as structured refs"
 }
 
 fn cache_key(output: OutputMode) -> Result<i32> {
@@ -2467,7 +2536,13 @@ fn cleanup_failed_install_cache(
     install: &InstalledPackage,
 ) -> Result<()> {
     if install.populated_cache_entry {
-        remove_unreferenced_cache_entry(cache_paths, sha256, local_root)?;
+        debug!(
+            cache_key = crate::storage::cache_key(sha256),
+            cache_path = %cache_paths.entry_dir(sha256).display(),
+            local_root = local_root.map(|root| root.display().to_string()).unwrap_or_default(),
+            cache_action = "preserve-after-install-failure",
+            "Preserved verified cache entry after install finalization failed"
+        );
     } else if let Some(snapshot) = &install.cache_metadata_snapshot {
         restore_cache_metadata(cache_paths, snapshot)?;
     }
@@ -2673,9 +2748,7 @@ fn install_resolved(
         selected_binary,
     ) {
         let error = add_binary_retry_suggestions(error, cmd, spec, local_root.is_some());
-        if populated_cache_entry {
-            remove_unreferenced_cache_entry(cache_paths, &sha256, local_root)?;
-        } else if let Some(snapshot) = &cache_metadata_snapshot {
+        if let Some(snapshot) = &cache_metadata_snapshot {
             restore_cache_metadata(cache_paths, snapshot)?;
         }
         return Err(error);
@@ -4804,26 +4877,6 @@ fn rollback_failed_install(
     Ok(())
 }
 
-fn remove_unreferenced_cache_entry(
-    cache_paths: &CachePaths,
-    sha256: &str,
-    local_root: Option<&Path>,
-) -> Result<()> {
-    let cache_key = crate::storage::cache_key(sha256);
-    let home = cache_paths
-        .root
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or(BinpmError::MissingGlobalHome)?;
-    let global_paths = ScopePaths::global(home);
-    let local_paths = local_root.map(|root| ScopePaths::local(root.to_path_buf()));
-    let referenced = referenced_cache_keys(&global_paths, local_paths.as_ref(), cache_paths)?;
-    if !referenced.contains(&cache_key) {
-        remove_path_if_exists(&cache_paths.entry_dir(sha256))?;
-    }
-    Ok(())
-}
-
 fn print_json(value: &impl Serialize) -> Result<i32> {
     let rendered = serde_json::to_string(value).map_err(BinpmError::SerializeJson)?;
     println!("{rendered}");
@@ -5915,6 +5968,11 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
         return Err(error);
     }
     println!("removed {cmd}");
+    println!("cleaned local manifest, lockfile, package record, cache ref, and executable state");
+    println!(
+        "cache assets preserved; run `binpm cache prune` for unreferenced assets or `binpm cache \
+         clean` for all cached assets"
+    );
     Ok(0)
 }
 
@@ -5927,6 +5985,11 @@ fn remove_global_tool(cmd: &str) -> Result<i32> {
     let paths = ScopePaths::global(binpm_home()?);
     remove_global_tool_from_paths(&paths, cmd)?;
     println!("removed {cmd}");
+    println!("cleaned global package record and executable state");
+    println!(
+        "cache assets preserved; run `binpm cache prune` for unreferenced assets or `binpm cache \
+         clean` for all cached assets"
+    );
     Ok(0)
 }
 
@@ -11238,6 +11301,36 @@ mod tests {
             bytes
         );
         assert!(!cache.metadata_path(&sha256).exists());
+    }
+
+    #[test]
+    fn failed_install_cleanup_preserves_new_verified_cache_entry_for_retry() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        cache.ensure().expect("cache paths");
+        let bytes = b"downloaded tool";
+        let sha256 = format!("{:x}", Sha256::digest(bytes));
+        fs::create_dir_all(cache.entry_dir(&sha256)).expect("cache entry dir");
+        fs::write(cache.asset_path(&sha256), bytes).expect("cache asset");
+        write_cache_record(&cache, &cache_record(&sha256)).expect("cache record");
+        let mut record = package_record();
+        record.sha256 = sha256.clone();
+        record.cache_key = Some(crate::storage::cache_key(&sha256));
+        record.cache_path = Some(cache.asset_path(&sha256).display().to_string());
+        let install = InstalledPackage {
+            record,
+            populated_cache_entry: true,
+            deferred_cache_hit: None,
+            cache_metadata_snapshot: None,
+        };
+
+        cleanup_failed_install_cache(&cache, &sha256, None, &install).expect("cleanup cache");
+
+        assert_eq!(
+            fs::read(cache.asset_path(&sha256)).expect("cache asset"),
+            bytes
+        );
+        assert!(has_current_cache_record(&cache, &sha256).expect("cache record check"));
     }
 
     #[test]

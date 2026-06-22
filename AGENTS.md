@@ -124,8 +124,8 @@ enum ProjectId {
 - `binpm` package signature verification is distinct from direct-installer verification for binpm's own release artifacts. Package signatures may satisfy strict verification only when a supported verifier validates the selected asset under the documented package trust policy; raw signature sidecar presence alone is not verification evidence.
 - Cache management and diagnostic command identifiers are `list`, `prune`, `clean`, and `key` under `binpm cache`.
 - `binpm cache prune` and `binpm cache clean` must not remove installed package records or executable links/copies under `~/.binpm/bin`.
-- `binpm cache clean` must state the removed cache asset boundary and the preserved `~/.binpm/cache/refs`, package-record, and executable boundaries.
-- `binpm cache prune` must remove stale structured local-project cache references before asset pruning while preserving active and legacy references.
+- `binpm cache clean` must state the removed cache asset boundary and the preserved `~/.binpm/cache/refs`, package-record, and executable boundaries in human and JSON output.
+- `binpm cache prune` must remove stale structured local-project cache references before asset pruning while preserving active and legacy references, and must guide legacy reference migration through future local install, update, or removal flows.
 - `binpm cache key` must be read-only and must not download, install, or populate cache entries.
 - `binpm cache key` must warn or expose structured status when `binpm.lock` is absent.
 
