@@ -159,6 +159,14 @@ pub fn runtime_executable_path(runtime_root: &Path, command: &str) -> PathBuf {
     bin_dir.join(runtime_primary_executable_name(command))
 }
 
+pub fn runtime_executable_candidate_paths(runtime_root: &Path, command: &str) -> Vec<PathBuf> {
+    let bin_dir = runtime_root.join("bin");
+    runtime_executable_candidates(command)
+        .into_iter()
+        .map(|candidate| bin_dir.join(candidate))
+        .collect()
+}
+
 pub fn runtime_primary_executable_path(runtime_root: &Path, command: &str) -> PathBuf {
     runtime_root
         .join("bin")

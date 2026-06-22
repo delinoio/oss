@@ -53,6 +53,27 @@ If the shim directory is not active on `PATH`, human and JSON output include a `
 
 Windows behavior differs because symlink creation may require privileges. Nodeup uses copied `.exe` aliases on Windows, so rerun `nodeup shim setup` after moving or updating the `nodeup.exe` binary.
 
+## Windows Shim Alias Files
+
+Windows shim aliases and runtime package-manager executables are separate files:
+
+| Layer | Example | Meaning |
+| --- | --- | --- |
+| Nodeup shim alias | `npm.exe` | A copy or link of the Nodeup binary whose executable name lets Nodeup dispatch by `argv[0]`. |
+| Delegated runtime executable | `bin/npm.cmd` | The package-manager command inside the selected Node.js runtime that Nodeup runs after resolution. |
+
+The recommended first-party setup copies the Nodeup binary to `.exe` aliases such as `node.exe`, `npm.exe`, `npx.exe`, `yarn.exe`, and `pnpm.exe`. The alias file only controls how Windows starts Nodeup; it does not change which executable Nodeup checks inside the selected runtime. A batch file that calls `nodeup.exe` does not preserve the batch file name as Nodeup's `argv[0]`, so use copied or linked executable aliases for managed shim dispatch.
+
+On Windows, command lookup depends on `PATH` order and `PATHEXT`. If another `npm.cmd` or `node.exe` appears earlier on `PATH`, Windows may run that command instead of the Nodeup shim. Check precedence with:
+
+```powershell
+where npm
+where node
+Get-Command npm -All
+```
+
+Place the Nodeup shim directory before other Node.js or package-manager directories when you want Nodeup-managed dispatch.
+
 ## Direct Dispatch
 
 For `node`, `npm`, `npx`, and non-package-manager commands, Nodeup resolves the command under the selected runtime's `bin/` directory.
@@ -133,6 +154,7 @@ That fallback is unpinned. Nodeup reports it as an unpinned fallback and recomme
 
 - Direct mode prints the runtime's `yarn` or `pnpm` executable.
 - npm-exec mode prints the runtime's `npm` executable and labels that `npm` will invoke the requested package-manager CLI.
+- Missing direct commands include JSON diagnostics with checked paths, linked runtime names when applicable, install-on-demand eligibility, and PATH/PATHEXT guidance.
 
 Direct-mode example:
 

@@ -90,6 +90,8 @@ Use a custom shim directory when needed:
 nodeup shim setup --dir "$HOME/.local/bin"
 ```
 
+The Windows examples create `.exe` Nodeup shim aliases. Batch wrappers that call `nodeup.exe` do not preserve the wrapper name as Nodeup's `argv[0]`, so use copied or linked executable aliases for managed shim dispatch. The delegated package-manager files inside a Windows Node.js runtime are usually `bin/npm.cmd`, `bin/npx.cmd`, `bin/yarn.cmd`, and `bin/pnpm.cmd`. Keep the shim directory before other Node.js directories on `PATH`; use `where npm` or `Get-Command npm -All` if a different command is shadowing the shim.
+
 ```bash
 node --version
 npm --version

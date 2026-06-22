@@ -413,15 +413,18 @@ impl ManagedAlias {
     pub fn from_argv0(argv0: &OsStr) -> Option<Self> {
         let path = std::path::Path::new(argv0);
         let basename = path.file_name().and_then(|part| part.to_str())?;
-        let alias_name = if path
-            .extension()
-            .and_then(|part| part.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("exe"))
-        {
-            path.file_stem().and_then(|part| part.to_str())?
-        } else {
-            basename
-        };
+        let alias_name =
+            if path
+                .extension()
+                .and_then(|part| part.to_str())
+                .is_some_and(|extension| {
+                    extension.eq_ignore_ascii_case("exe") || extension.eq_ignore_ascii_case("cmd")
+                })
+            {
+                path.file_stem().and_then(|part| part.to_str())?
+            } else {
+                basename
+            };
 
         match alias_name {
             "node" => Some(Self::Node),
@@ -439,7 +442,7 @@ mod tests {
     use super::{ManagedAlias, PlatformTarget};
 
     #[test]
-    fn managed_alias_from_argv0_accepts_extensionless_and_windows_exe_aliases() {
+    fn managed_alias_from_argv0_accepts_extensionless_and_windows_alias_extensions() {
         assert_eq!(
             ManagedAlias::from_argv0("node".as_ref()),
             Some(ManagedAlias::Node)
@@ -451,6 +454,10 @@ mod tests {
         assert_eq!(
             ManagedAlias::from_argv0("/Users/alice/bin/npm.exe".as_ref()),
             Some(ManagedAlias::Npm)
+        );
+        assert_eq!(
+            ManagedAlias::from_argv0("pnpm.cmd".as_ref()),
+            Some(ManagedAlias::Pnpm)
         );
         assert_eq!(ManagedAlias::from_argv0("nodeup.exe".as_ref()), None);
     }

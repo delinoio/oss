@@ -3,6 +3,7 @@ use std::ffi::OsString;
 use tracing::info;
 
 use crate::{
+    command_diagnostics::RuntimeCommandAvailability,
     command_plan::{plan_delegated_command, DelegatedCommandMode},
     errors::{NodeupError, Result},
     process::{run_command, DelegatedStdioPolicy},
@@ -12,7 +13,10 @@ use crate::{
     NodeupApp,
 };
 
-pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> {
+pub fn dispatch_managed_alias_if_needed(
+    app: &NodeupApp,
+    json_error_output_requested: bool,
+) -> Result<Option<i32>> {
     let mut args = std::env::args_os();
     let Some(argv0) = args.next() else {
         return Ok(None);
@@ -38,20 +42,42 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
         plan_delegated_command(&resolved, &app.store, alias.as_str(), &delegated_args, &cwd)?;
 
     if plan.mode == DelegatedCommandMode::Direct && !plan.executable.exists() {
-        return Err(NodeupError::not_found_with_hint(
+        let diagnostics = RuntimeCommandAvailability::for_resolved_runtime(
+            &resolved,
+            &app.store,
+            alias.as_str(),
+            false,
+            "managed-shim-active-selector",
+        )
+        .into_error_diagnostics();
+        return Err(NodeupError::not_found_with_diagnostics(
             format!(
-                "Managed alias '{}' is not available in runtime {}",
+                "Managed alias '{}' is not available in runtime {} (checked_path={}, \
+                 install_on_demand_eligible={})",
                 alias.as_str(),
-                resolved.runtime_id()
+                resolved.runtime_id(),
+                plan.executable.display(),
+                false
             ),
-            "Install or relink the active runtime so it provides the delegated executable.",
+            "Install or relink the active runtime so it provides the delegated executable. On \
+             Windows, verify PATH/PATHEXT precedence with `where <alias>` or PowerShell \
+             `Get-Command <alias> -All`.",
+            diagnostics,
         ));
     }
 
     if plan.mode == DelegatedCommandMode::Direct
         && !runtime_executable_is_runnable(&plan.executable)
     {
-        return Err(NodeupError::not_found_with_hint(
+        let diagnostics = RuntimeCommandAvailability::for_resolved_runtime(
+            &resolved,
+            &app.store,
+            alias.as_str(),
+            false,
+            "managed-shim-active-selector",
+        )
+        .into_error_diagnostics();
+        return Err(NodeupError::not_found_with_diagnostics(
             format!(
                 "Managed alias '{}' exists but is not runnable for runtime {} (path={})",
                 alias.as_str(),
@@ -60,6 +86,7 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
             ),
             "On Unix, ensure the executable bit is set. On Windows, relink a runtime that \
              provides the expected executable name.",
+            diagnostics,
         ));
     }
 
@@ -87,8 +114,10 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
         "Dispatching managed alias"
     );
 
-    if let Some(notice) = plan.npm_exec_human_notice() {
-        eprintln!("{notice}");
+    if !json_error_output_requested {
+        if let Some(notice) = plan.npm_exec_human_notice() {
+            eprintln!("{notice}");
+        }
     }
 
     let exit_code = run_command(

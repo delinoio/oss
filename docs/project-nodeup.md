@@ -20,12 +20,15 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Exact-version runtime selectors are immutable pins for `nodeup update`; they are canonicalized to `v<semver>` when tracked and are semantically deduplicated with non-`v` inputs.
 - Tracked semantic selectors must be canonicalized so legacy duplicate exact selectors and channel aliases such as `current`/`latest` do not produce duplicate update work.
 - Shim behavior must remain deterministic across supported operating systems.
+- Windows shim alias filenames and delegated runtime executable filenames are separate concepts: Nodeup recognizes managed alias basenames through extensionless, `.exe`, and `.cmd` invocations, while Windows runtime package-manager delegation checks the selected runtime's `bin/<command>.cmd` files.
 - `nodeup shim setup` is the stable idempotent setup/repair command for Nodeup-managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims, and must not replace unrelated existing commands.
 - Windows copied shims must use adjacent Nodeup ownership markers so stale Nodeup copies can be repaired without replacing unrelated executables.
 - Linked runtime lifecycle commands must preserve external runtime directories: `toolchain link` registers settings records and `toolchain unlink` removes those records only.
 - Linked runtime names are case-sensitive, but reserved-channel case variants such as `LTS`, `Current`, and `LATEST` are invalid linked names.
 - Legacy persisted linked runtime selectors that use reserved-channel case variants must remain removable and reportable as linked-runtime selectors.
 - Linked runtime resolution must validate that the selected `node` executable is runnable, including Unix executable-bit checks and Windows `node.exe` naming behavior.
+- Linked runtime command availability diagnostics must distinguish the minimum `node` link requirement from per-shim availability for `node`, `npm`, `npx`, `yarn`, and `pnpm`, and expose checked paths, linked runtime identity, install-on-demand eligibility, and PATH/PATHEXT guidance in human and JSON output.
+- `nodeup run` missing-version errors must keep installation opt-in with `--install`, while managed alias dispatch may install a missing selected version runtime on demand. Human and JSON diagnostics must make that distinction explicit.
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic: supported values are exact `yarn@<semver>` or `pnpm@<semver>` strings only, and invalid values must report the failed part plus JSON diagnostics.
 - `yarn` and `pnpm` npm-exec delegation must be visible in human output, JSON output, and planning logs, including whether the package spec is pinned or an unpinned fallback.
 - `nodeup self uninstall` cleanup boundaries are data/cache/config only; binary, shims, and shell profile/PATH cleanup must remain manual and visible in human and JSON output.

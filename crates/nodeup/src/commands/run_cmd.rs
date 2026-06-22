@@ -5,6 +5,7 @@ use tracing::info;
 
 use crate::{
     cli::{OutputColorMode, OutputFormat},
+    command_diagnostics::RuntimeCommandAvailability,
     command_plan::{plan_delegated_command, DelegatedCommandMode, DelegatedCommandPlanDiagnostics},
     commands::print_output,
     errors::{NodeupError, Result},
@@ -49,6 +50,7 @@ pub fn execute(
         PlatformTarget::ensure_supported_host("runtime installation")?;
     }
 
+    let delegated_command = &command[0];
     let resolved = app
         .resolver
         .resolve_selector_with_source(runtime, RuntimeSelectorSource::Explicit)?;
@@ -59,18 +61,43 @@ pub fn execute(
             if install {
                 app.installer.ensure_installed(version, &app.releases)?;
             } else {
-                return Err(NodeupError::not_found_with_hint(
-                    format!("Runtime {version} is not installed"),
-                    format!(
-                        "Install it with `nodeup toolchain install {runtime}` or retry with \
-                         `nodeup run --install {runtime} ...`."
+                let mut diagnostics = RuntimeCommandAvailability::for_resolved_runtime(
+                    &resolved,
+                    &app.store,
+                    delegated_command,
+                    false,
+                    "nodeup-run-explicit-runtime-requires---install",
+                )
+                .into_error_diagnostics();
+                diagnostics.insert(
+                    "retry_with_install".to_string(),
+                    serde_json::json!(format!("nodeup run --install {runtime} ...")),
+                );
+                diagnostics.insert(
+                    "managed_shim_install_on_demand".to_string(),
+                    serde_json::json!(
+                        "managed aliases install a missing selected version runtime from the \
+                         active selector"
                     ),
+                );
+                return Err(NodeupError::not_found_with_diagnostics(
+                    format!(
+                        "Runtime {version} is not installed (install_on_demand_eligible=false, \
+                         execution_path=nodeup-run)"
+                    ),
+                    format!(
+                        "Retry with `nodeup run --install {runtime} ...` to explicitly install \
+                         before running, or install first with `nodeup toolchain install \
+                         {runtime}`. Managed shim aliases (`node`, `npm`, `npx`, `yarn`, `pnpm`) \
+                         can install a missing version selected by the active default or \
+                         override; `nodeup run` requires explicit `--install`."
+                    ),
+                    diagnostics,
                 ));
             }
         }
     }
 
-    let delegated_command = &command[0];
     let delegated_args = command[1..]
         .iter()
         .map(OsString::from)
@@ -85,23 +112,43 @@ pub fn execute(
         &cwd,
     )?;
     if plan.mode == DelegatedCommandMode::Direct && !plan.executable.exists() {
-        return Err(NodeupError::not_found_with_hint(
+        let diagnostics = RuntimeCommandAvailability::for_resolved_runtime(
+            &resolved,
+            &app.store,
+            delegated_command,
+            false,
+            "nodeup-run-command-resolution",
+        )
+        .into_error_diagnostics();
+        return Err(NodeupError::not_found_with_diagnostics(
             format!(
-                "Command '{delegated_command}' is not available in runtime {}",
-                resolved.runtime_id()
+                "Command '{delegated_command}' is not available in runtime {} (checked_paths={}, \
+                 install_on_demand_eligible=false)",
+                resolved.runtime_id(),
+                plan.executable.display()
             ),
             format!(
                 "Check available commands with `nodeup which --runtime {} {delegated_command}` or \
-                 pick a runtime that provides it.",
+                 pick a runtime that provides it. On Windows, verify PATH/PATHEXT precedence with \
+                 `where {delegated_command}` or PowerShell `Get-Command {delegated_command} -All`.",
                 resolved.runtime_id()
             ),
+            diagnostics,
         ));
     }
 
     if plan.mode == DelegatedCommandMode::Direct
         && !runtime_executable_is_runnable(&plan.executable)
     {
-        return Err(NodeupError::not_found_with_hint(
+        let diagnostics = RuntimeCommandAvailability::for_resolved_runtime(
+            &resolved,
+            &app.store,
+            delegated_command,
+            false,
+            "nodeup-run-command-resolution",
+        )
+        .into_error_diagnostics();
+        return Err(NodeupError::not_found_with_diagnostics(
             format!(
                 "Command '{delegated_command}' exists but is not runnable for runtime {} (path={})",
                 resolved.runtime_id(),
@@ -109,6 +156,7 @@ pub fn execute(
             ),
             "On Unix, ensure the executable bit is set. On Windows, relink a runtime that \
              provides the expected executable name.",
+            diagnostics,
         ));
     }
 
