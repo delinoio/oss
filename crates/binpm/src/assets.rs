@@ -945,6 +945,10 @@ fn log_candidate(target: &HostTarget, decision: &CandidateDecision) {
         detected_os = decision.detected_os.map(TargetOs::as_str).unwrap_or(""),
         detected_arch = decision.detected_arch.map(TargetArch::as_str).unwrap_or(""),
         detected_libc = decision.detected_libc.map(TargetLibc::as_str).unwrap_or(""),
+        detected_cpu_feature = decision
+            .cpu_feature
+            .map(CpuFeatureVariant::as_str)
+            .unwrap_or(""),
         artifact_kind = decision.kind.as_str(),
         score = decision.score.unwrap_or_default(),
         rejection_reason = decision.rejection_reason.as_deref().unwrap_or(""),

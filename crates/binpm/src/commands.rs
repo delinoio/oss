@@ -3042,17 +3042,14 @@ fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequ
         path: record.source_path.clone(),
         version: Some(record.release_tag.clone()),
     };
-    let auth = provider_auth_for_source(&source);
+    let url = sanitize_persisted_url(&record.asset_url)?;
+    let auth = provider_origin_download_auth(&source, &url, provider_auth_for_source(&source));
     let accept = match (record.source_provider, auth.as_ref()) {
         (SourceProvider::GitHub, Some(_)) => Some(GITHUB_ASSET_DOWNLOAD_ACCEPT),
         _ => None,
     };
 
-    Ok(DownloadRequest {
-        url: sanitize_persisted_url(&record.asset_url)?,
-        auth,
-        accept,
-    })
+    Ok(DownloadRequest { url, auth, accept })
 }
 
 fn locked_release_lookup_spec(record: &PackageRecord) -> Result<SourceSpec> {
@@ -4873,6 +4870,18 @@ fn same_download_origin(left: &reqwest::Url, right: &reqwest::Url) -> bool {
     left.scheme() == right.scheme()
         && left.host_str() == right.host_str()
         && left.port_or_known_default() == right.port_or_known_default()
+}
+
+fn provider_origin_download_auth(
+    source: &SourceSpec,
+    url: &str,
+    auth: Option<ProviderAuth>,
+) -> Option<ProviderAuth> {
+    let auth = auth?;
+    let source_origin = reqwest::Url::parse(&format!("https://{}/", source.host)).ok()?;
+    let request_origin = reqwest::Url::parse(url).ok()?;
+
+    same_download_origin(&source_origin, &request_origin).then_some(auth)
 }
 
 fn is_retryable_download_error(error: &BinpmError) -> bool {
@@ -9078,6 +9087,56 @@ mod tests {
         assert_eq!(auth.header_name, "authorization");
         assert_eq!(auth.header_value, "Bearer locked-token");
         assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
+    }
+
+    #[test]
+    fn locked_record_download_request_omits_provider_auth_for_external_asset_url() {
+        let mut record = package_record();
+        record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
+        record.source_provider = SourceProvider::GitLab;
+        record.source_host = "gitlab.locked.example".to_string();
+        record.source_path = "group/tool".to_string();
+        record.asset_url = "https://cdn.locked.example/group/tool/releases/tool-linux".to_string();
+        std::env::set_var(
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE",
+            "locked-token",
+        );
+
+        let request = locked_record_download_request(&record).expect("download request");
+
+        std::env::remove_var("BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE");
+        assert_eq!(request.url, record.asset_url);
+        assert_eq!(request.auth, None);
+        assert_eq!(request.accept, None);
+    }
+
+    #[test]
+    fn locked_record_download_request_preserves_gitlab_auth_for_provider_asset_url() {
+        let mut record = package_record();
+        record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
+        record.source_provider = SourceProvider::GitLab;
+        record.source_host = "gitlab.locked.example".to_string();
+        record.source_path = "group/tool".to_string();
+        record.asset_url =
+            "https://gitlab.locked.example/group/tool/-/releases/1.0.0/downloads/tool-linux"
+                .to_string();
+        std::env::set_var(
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE",
+            "locked-token",
+        );
+
+        let request = locked_record_download_request(&record).expect("download request");
+
+        std::env::remove_var("BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE");
+        assert_eq!(request.url, record.asset_url);
+        assert_eq!(request.accept, None);
+        let auth = request.auth.expect("provider auth");
+        assert_eq!(auth.header_name, "PRIVATE-TOKEN");
+        assert_eq!(auth.header_value, "locked-token");
+        assert_eq!(
+            auth.env_var,
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE"
+        );
     }
 
     #[test]
