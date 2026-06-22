@@ -83,6 +83,10 @@ fn sanitized_url(url: &reqwest::Url) -> String {
 }
 
 pub fn sanitize_url_text(raw: &str) -> String {
+    if !raw.contains("://") {
+        return sanitize_unparseable_url_text(raw);
+    }
+
     match reqwest::Url::parse(raw) {
         Ok(url) => sanitized_url(&url),
         Err(_) => sanitize_unparseable_url_text(raw),
@@ -93,6 +97,19 @@ fn sanitize_unparseable_url_text(raw: &str) -> String {
     let without_query_or_fragment = raw.split(['?', '#']).next().unwrap_or_default().to_string();
 
     let Some(scheme_end) = without_query_or_fragment.find("://") else {
+        let authority_end = without_query_or_fragment
+            .find('/')
+            .unwrap_or(without_query_or_fragment.len());
+        let authority = &without_query_or_fragment[..authority_end];
+
+        if let Some(userinfo_end) = authority.rfind('@') {
+            return format!(
+                "{}{}",
+                &authority[userinfo_end + 1..],
+                &without_query_or_fragment[authority_end..]
+            );
+        }
+
         return without_query_or_fragment;
     };
     let authority_start = scheme_end + 3;
@@ -404,5 +421,12 @@ mod tests {
         let sanitized = sanitize_url_text("https://user:token@example test/index.json?secret=1");
 
         assert_eq!(sanitized, "https://example test/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_userinfo_from_schemeless_text() {
+        let sanitized = sanitize_url_text("user:token@mirror/index.json?secret=1#fragment");
+
+        assert_eq!(sanitized, "mirror/index.json");
     }
 }
