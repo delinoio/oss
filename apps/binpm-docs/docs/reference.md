@@ -34,4 +34,4 @@ GitLab release links must use HTTPS for the release link URL, the direct asset U
 
 ## Global Update Status
 
-Local `binpm update [cmd...] [--local] [--dry-run]` is implemented for project tools. Global update is pending implementation: `binpm update --global` fails, including with `--dry-run`, and reports the supported workaround. Run `binpm outdated --global` to identify stale global tools, inspect each stale command with `binpm info --global <cmd>` for its recorded source and selected binary, then reinstall it with `binpm install <source> --as <cmd> --bin <selected_binary>`.
+`binpm update [cmd...] [--local|--global] [--dry-run]` updates selected tools or all tools in the selected scope. Global updates use existing global package records, preserve each command alias and selected upstream binary, resolve the latest stable release for the recorded source, and finalize through the same cache, install, rollback, and verification behavior as global installs. Use `--dry-run` to print the selected scope and planned runtime changes without mutating package records, cache references, or executables.

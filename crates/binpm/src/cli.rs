@@ -86,8 +86,7 @@ pub enum Command {
     Info(InfoArgs),
     /// Compare selected tools with latest stable releases.
     Outdated(ScopedArgs),
-    /// Update selected local tools. Global update is pending; use outdated +
-    /// reinstall.
+    /// Update selected local or global tools.
     Update(UpdateArgs),
     /// Inspect local and global binpm state.
     Doctor,

@@ -66,13 +66,6 @@ pub enum BinpmError {
          yet."
     )]
     NotImplemented { command: &'static str },
-    #[error(
-        "`binpm update --global` is pending implementation. Workaround: run `binpm outdated \
-         --global` to find stale global tools, inspect each one with `binpm info --global <cmd>`, \
-         then reinstall with `binpm install <source> --as <cmd> --bin <selected_binary>`. Use \
-         `binpm update --local` for project tools."
-    )]
-    GlobalUpdatePending,
     #[error("Invalid source spec `{raw}`: {message}")]
     InvalidSourceSpec { raw: String, message: String },
     #[error("Invalid target key `{raw}`. Expected `<os>-<arch>-<libc>`.")]
@@ -369,7 +362,7 @@ impl BinpmError {
 
     pub fn exit_code(&self) -> i32 {
         match self {
-            Self::NotImplemented { .. } | Self::GlobalUpdatePending => 2,
+            Self::NotImplemented { .. } => 2,
             Self::InvalidSourceSpec { .. }
             | Self::InvalidTargetKey { .. }
             | Self::InvalidCommandName { .. }
