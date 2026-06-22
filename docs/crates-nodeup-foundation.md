@@ -89,7 +89,7 @@
 - Invalid completion subcommand scopes such as `toolchain install` must suggest the valid top-level scope, for example `nodeup completions bash toolchain`, and JSON errors must include deterministic `rejected_scope`, `allowed_scope_category`, `allowed_scopes`, and optional `suggested_scope` diagnostics.
 - Top-level completion scopes must include `shim`.
 - `completions` output must remain raw script text on stdout even when `--output json` is requested.
-- Script-safe stdout guidance must map structured automation to `--output json`, newline-delimited runtime lists to setting `RUST_LOG=off` before `nodeup toolchain list --quiet`, completion redirection to setting `RUST_LOG=off` before `nodeup completions <shell> >file`, and log-free human output to setting `RUST_LOG=off` before `nodeup <command>`.
+- Script-safe stdout guidance must map structured automation to `--output json`, newline-delimited runtime lists to `nodeup toolchain list --quiet`, completion redirection to `nodeup completions <shell> >file`, and log-free human output to setting `RUST_LOG=off` before `nodeup <command>`. Logs must remain on stderr when enabled so quiet runtime identifiers and completion scripts keep stdout parseable.
 - Tracing logs must be written to stderr when enabled so stdout remains reserved for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts. Management `--output json` keeps tracing logs off by default so JSON stdout and stderr payloads remain parseable unless `RUST_LOG` explicitly enables tracing.
 
 ## Storage

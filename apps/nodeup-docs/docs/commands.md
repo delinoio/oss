@@ -8,7 +8,7 @@ nodeup --output human|json --color auto|always|never <command>
 
 `--output` defaults to `human`. `--color` controls human stdout and stderr styling only.
 
-For script-safe stdout, use `--output json` for structured data, set `RUST_LOG=off` before `nodeup toolchain list --quiet` for newline-delimited runtime identifiers, and set `RUST_LOG=off` before `nodeup completions <shell> >file` for completion script redirection. Logs are written to stderr when enabled.
+For script-safe stdout, use `--output json` for structured data, `nodeup toolchain list --quiet` for newline-delimited runtime identifiers, and `nodeup completions <shell> >file` for completion script redirection. Logs are written to stderr when enabled.
 
 ## toolchain list
 
@@ -23,7 +23,7 @@ Lists installed and linked runtimes.
 - `--verbose` prints installed runtime paths and linked runtime paths.
 - JSON output has `installed` and `linked` fields.
 
-Set `RUST_LOG=off` before `nodeup toolchain list --quiet`, or use `nodeup --output json toolchain list`, when scripts need parseable stdout.
+Use `nodeup toolchain list --quiet` or `nodeup --output json toolchain list` when scripts need parseable stdout.
 
 ## toolchain install
 
