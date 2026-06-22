@@ -3403,6 +3403,10 @@ fn self_uninstall_reports_non_nodeup_owned_paths_without_removing_them() {
     fs::create_dir_all(&unsafe_cache).unwrap();
     fs::create_dir_all(&unsafe_config).unwrap();
     fs::write(unsafe_root.join("keep.txt"), "do-not-delete").unwrap();
+    let unsafe_nested_shim_dir = unsafe_root.join("deep").join("managed-shims");
+    fs::create_dir_all(&unsafe_nested_shim_dir).unwrap();
+    let unsafe_nested_shim_marker = unsafe_nested_shim_dir.join(".node.exe.nodeup-shim");
+    fs::write(&unsafe_nested_shim_marker, "nodeup shim copy\n").unwrap();
 
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("nodeup"));
     command
@@ -3427,6 +3431,11 @@ fn self_uninstall_reports_non_nodeup_owned_paths_without_removing_them() {
         .unwrap()
         .iter()
         .any(|path| path == unsafe_root.to_str().unwrap()));
+    assert!(!payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == unsafe_nested_shim_marker.to_str().unwrap()));
 
     assert!(unsafe_root.exists());
     assert!(unsafe_root.join("keep.txt").exists());
