@@ -104,13 +104,22 @@ download_bundle() {
   fi
 }
 
+require_cosign() {
+  if ! command -v cosign >/dev/null 2>&1; then
+    echo "[install.binpm] missing required prerequisite: cosign" >&2
+    echo "[install.binpm] direct installs require cosign before artifact download so SHA256SUMS and Sigstore bundle sidecars can be verified" >&2
+    echo "[install.binpm] install cosign and retry:" >&2
+    echo "[install.binpm]   macOS: brew install cosign" >&2
+    echo "[install.binpm]   Linux: brew install cosign, or follow https://docs.sigstore.dev/cosign/system_config/installation/" >&2
+    echo "[install.binpm]   Windows: winget install sigstore.cosign, or scoop install cosign" >&2
+    exit 1
+  fi
+}
+
 verify_bundle() {
   local artifact="$1"
 
-  if ! command -v cosign >/dev/null 2>&1; then
-    echo "[install.binpm] cosign is required for direct install verification" >&2
-    exit 1
-  fi
+  require_cosign
 
   cosign verify-blob \
     --bundle "${artifact}.sigstore.json" \
@@ -176,6 +185,8 @@ install_direct() {
 
   local tag
   tag="$(resolve_tag)"
+
+  require_cosign
 
   local ext="tar.gz"
   local asset_name="binpm-${os}-${arch}.${ext}"

@@ -65,15 +65,28 @@ function Download-Bundle {
   }
 }
 
+function Require-Cosign {
+  if (Get-Command cosign -ErrorAction SilentlyContinue) {
+    return
+  }
+
+  throw @"
+[install.binpm] missing required prerequisite: cosign
+[install.binpm] direct installs require cosign before artifact download so SHA256SUMS and Sigstore bundle sidecars can be verified
+[install.binpm] install cosign and retry:
+[install.binpm]   macOS: brew install cosign
+[install.binpm]   Linux: brew install cosign, or follow https://docs.sigstore.dev/cosign/system_config/installation/
+[install.binpm]   Windows: winget install sigstore.cosign, or scoop install cosign
+"@
+}
+
 function Verify-Bundle {
   param(
     [string]$FilePath,
     [string]$BundlePath
   )
 
-  if (-not (Get-Command cosign -ErrorAction SilentlyContinue)) {
-    throw "[install.binpm] cosign is required for direct installation"
-  }
+  Require-Cosign
 
   cosign verify-blob `
     --bundle $BundlePath `
@@ -125,6 +138,7 @@ function Get-DirectPlatform {
 function Install-Direct {
   $platform = Get-DirectPlatform
   $tag = Resolve-Tag
+  Require-Cosign
   $baseUrl = "https://github.com/$Repo/releases/download/$tag"
   $assetArch = $platform.AssetArch
   $assetName = "binpm-windows-$assetArch.zip"

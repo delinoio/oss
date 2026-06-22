@@ -302,15 +302,17 @@ signature_verified = false
 - The crate remains publishable through `crates/binpm/Cargo.toml` so crates.io publication can carry first-party `cargo-binstall` metadata.
 - Publish tag eligibility is enabled through root `[workspace.metadata.cargo-mono.publish.tag].packages`, and binpm release tags must use `binpm@v<version>`.
 - Tag release automation is defined in `.github/workflows/release-binpm.yml` and must publish signed GitHub Release assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, including standalone binaries (`binpm-<os>-<arch>[.exe]`) and archives (`binpm-<os>-<arch>.tar.gz|zip`).
+- The first-party binpm release matrix is distinct from the broader target parser used for third-party package asset scoring. Target parser support for values such as `freebsd`, `i686`, and `armv7` must not imply first-party binpm prebuilt artifact availability.
 - Release signing outputs must include `SHA256SUMS.sigstore.json` and `<artifact>.sigstore.json` sidecars; legacy `.sig`/`.pem` sidecars are out of scope for direct installation.
-- Direct installers must remain available at `scripts/install/binpm.sh` and `scripts/install/binpm.ps1`; direct installs must verify `SHA256SUMS` entries and Sigstore bundle sidecars via `cosign verify-blob --bundle`.
+- Direct installers must remain available at `scripts/install/binpm.sh` and `scripts/install/binpm.ps1`; direct installs must verify `SHA256SUMS` entries and Sigstore bundle sidecars via `cosign verify-blob --bundle`, and must fail before artifact download when `cosign` is missing from `PATH`.
 - Direct installers must detect unsupported x86 hosts before release tag resolution or artifact download. Use an x64/arm64 host or supported CI image when direct installers report an unsupported host.
 - Direct-installer verification applies to binpm's own release artifact and must not be described as implementing signature verification for packages installed by binpm.
 - Homebrew release automation must render the `binpm` prebuilt formula from release asset URLs and push tap updates directly to `delinoio/homebrew-tap` `main` with a dedicated tap-write credential.
-- Homebrew installation must consume prebuilt `binpm` release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`.
-- `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies.
+- Homebrew release automation must validate that binpm formula URLs point to the expected prebuilt archive names before rendering or pushing tap updates.
+- Homebrew installation must consume prebuilt `binpm` release archives for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`; the formula is prebuilt-only and must not add a source build fallback without a new distribution contract.
+- `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies; unsupported cargo-binstall targets must fail rather than using third-party binary indexes or source compilation.
 - Install docs that describe direct-install flows must keep Bash, PowerShell, Homebrew, `cargo-binstall`, and GitHub Actions usage aligned with installer scripts and manifest metadata.
-- Direct-install documentation must make `cosign` a prerequisite before remote installer commands and describe missing `cosign` as a prerequisite failure rather than a verification bypass opportunity.
+- Direct-install documentation must make `cosign` a prerequisite before remote installer commands, link to official installation guidance, include latest and pinned first-party raw GitHub installer command patterns, and describe missing `cosign` as a prerequisite failure rather than a verification bypass opportunity.
 
 ## Build and Test
 - Local validation for binpm runtime changes must include `cargo test -p binpm` and the repository Rust baseline `cargo test --workspace --all-targets`.
