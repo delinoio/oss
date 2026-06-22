@@ -2184,9 +2184,7 @@ fn update_local_manifest(
     let (next_manifest, manifest_changed) =
         local_update_manifest_with_latest_versions(&manifest, selected)?;
     if manifest_changed {
-        if let Err(error) = write_manifest(&manifest_path, &next_manifest) {
-            return Err(error);
-        }
+        write_manifest(&manifest_path, &next_manifest)?;
         if let Err(error) = install_local_manifest(frozen_lockfile, require_verified, selected) {
             let _ = write_manifest(&manifest_path, &manifest);
             return Err(error);
@@ -10493,7 +10491,7 @@ mod tests {
         record.source = "github:ghe.locked.example/owner/tool".to_string();
         record.source_host = "ghe.locked.example".to_string();
         record.asset_url =
-            "https://ghe.locked.example/owner/tool/releases/download/1.0.0/tool-linux".to_string();
+            "https://ghe.locked.example/api/v3/repos/owner/tool/releases/assets/123".to_string();
         std::env::set_var(
             "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE",
             "locked-token",
