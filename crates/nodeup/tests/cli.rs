@@ -3443,6 +3443,58 @@ fn self_uninstall_reports_non_nodeup_owned_paths_without_removing_them() {
 
 #[test]
 #[serial]
+fn self_uninstall_preserves_owned_shims_under_refused_ancestor() {
+    let env = TestEnv::new();
+    let unsafe_root = env.root.join("unsafe-home");
+    let data_root = unsafe_root.join(".local").join("share").join("nodeup");
+    let shim_dir = data_root.join("managed-shims");
+    let shim_marker = shim_dir.join(".node.exe.nodeup-shim");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::create_dir_all(&env.config_root).unwrap();
+    fs::write(unsafe_root.join("keep.txt"), "do-not-delete").unwrap();
+    fs::write(data_root.join("data-marker.txt"), "data").unwrap();
+    fs::write(&shim_marker, "nodeup shim copy\n").unwrap();
+
+    let mut command = Command::new(assert_cmd::cargo::cargo_bin!("nodeup"));
+    command
+        .env("NODEUP_DATA_HOME", &data_root)
+        .env("NODEUP_CACHE_HOME", &unsafe_root)
+        .env("NODEUP_CONFIG_HOME", &env.config_root)
+        .env("NODEUP_INDEX_URL", &env.index_url)
+        .env("NODEUP_DOWNLOAD_BASE_URL", &env.download_base_url)
+        .env("NODEUP_FORCE_PLATFORM", "linux-x64");
+
+    let output = command
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall preserves owned shims under refused ancestor");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["status"], "removed");
+    assert!(payload["removed_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == data_root.to_str().unwrap()));
+    assert!(payload["ownership_refused_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == unsafe_root.to_str().unwrap()));
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == shim_marker.to_str().unwrap()));
+
+    assert!(shim_marker.exists());
+    assert!(!data_root.join("data-marker.txt").exists());
+    assert!(unsafe_root.join("keep.txt").exists());
+}
+
+#[test]
+#[serial]
 fn self_uninstall_separates_removed_and_ownership_refused_roots() {
     let env = TestEnv::new();
     let safe_data_root = env.root.join("nodeup-data-safe");

@@ -827,7 +827,10 @@ fn preserved_uninstall_paths(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec
 }
 
 fn existing_shim_directories(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec<PathBuf> {
-    let mut paths = shim_directories();
+    let mut paths = shim_directories()
+        .into_iter()
+        .filter(|path| !path_is_under_excluded_root(path, excluded_roots))
+        .collect::<Vec<_>>();
     for root in known_nodeup_roots(app, excluded_roots) {
         collect_managed_shim_dirs(&root, &mut paths);
     }
@@ -850,6 +853,12 @@ fn path_is_under_excluded_root(path: &Path, excluded_roots: &[PathBuf]) -> bool 
     excluded_roots
         .iter()
         .any(|excluded_root| paths_equal(path, excluded_root) || path.starts_with(excluded_root))
+}
+
+fn path_is_excluded_root(path: &Path, excluded_roots: &[PathBuf]) -> bool {
+    excluded_roots
+        .iter()
+        .any(|excluded_root| paths_equal(path, excluded_root))
 }
 
 fn collect_managed_shim_dirs(path: &Path, paths: &mut Vec<PathBuf>) {
@@ -899,7 +908,7 @@ fn known_nodeup_roots(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec<PathBu
     .into_iter()
     .flatten()
     .filter_map(|path| absolute_target_path(&path).ok())
-    .filter(|path| !path_is_under_excluded_root(path, excluded_roots))
+    .filter(|path| !path_is_excluded_root(path, excluded_roots))
     .fold(Vec::new(), |mut unique, path| {
         if !unique.iter().any(|existing| existing == &path) {
             unique.push(path);
@@ -909,11 +918,8 @@ fn known_nodeup_roots(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec<PathBu
 }
 
 fn leftover_shim_directories(app: &NodeupApp, excluded_roots: &[PathBuf]) -> Vec<PathBuf> {
-    let mut paths = existing_shim_directories(app, excluded_roots);
-    paths.extend(shim_directories());
-    paths
+    existing_shim_directories(app, excluded_roots)
         .into_iter()
-        .filter(|path| !path_is_under_excluded_root(path, excluded_roots))
         .filter_map(|path| absolute_target_path(&path).ok().or(Some(path)))
         .collect()
 }
