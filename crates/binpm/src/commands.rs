@@ -39,8 +39,8 @@ use crate::{
         list_package_records, managed_installed_path, package_record_from_resolved,
         package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
         read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
-        referenced_cache_keys, reject_symlinked_cache_entry, remove_cache_ref,
-        remove_installed_binary, remove_package_record, remove_path_if_exists,
+        referenced_cache_keys, reject_symlinked_cache_entry, reject_symlinked_package_record_dirs,
+        remove_cache_ref, remove_installed_binary, remove_package_record, remove_path_if_exists,
         remove_stale_cache_refs, require_regular_managed_file,
         require_verified_regular_cache_asset, sanitize_persisted_url, scan_cache_references,
         validate_command_name, validate_download_url, validate_installed_binary_path,
@@ -2076,6 +2076,7 @@ fn prepare_global_updates(
     records
         .into_iter()
         .map(|(cmd, record)| {
+            validate_command_name(&cmd)?;
             let mut spec = SourceSpec::from_str(&record.source)?;
             spec.version = None;
             let selected_binary = global_update_selected_binary(&record)?;
@@ -2097,6 +2098,7 @@ fn selected_global_package_records(
     selected: &[String],
 ) -> Result<Vec<(String, PackageRecord)>> {
     if !selected.is_empty() {
+        reject_symlinked_package_record_dirs(scope_paths)?;
         return selected
             .iter()
             .map(|cmd| {
@@ -6926,6 +6928,24 @@ mod tests {
         assert_eq!(records[0].1.source, "github:owner/beta");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn selected_global_package_records_rejects_symlinked_packages_dir() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::global(temp_dir.path().join("home"));
+        let outside = temp_dir.path().join("outside");
+        fs::create_dir_all(&paths.root).expect("scope root");
+        fs::create_dir_all(&outside).expect("outside dir");
+        symlink(&outside, &paths.packages).expect("symlink packages");
+
+        let error = selected_global_package_records(&paths, &["beta".to_string()])
+            .expect_err("symlinked packages dir");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+    }
+
     #[test]
     fn global_update_selected_binary_preserves_archive_member_path() {
         let mut record = package_record();
@@ -6964,6 +6984,16 @@ mod tests {
         .expect_err("invalid later record");
 
         assert!(matches!(error, BinpmError::InvalidSourceSpec { .. }));
+    }
+
+    #[test]
+    fn prepare_global_updates_validates_record_command_names() {
+        let record = package_record();
+
+        let error = prepare_global_updates(vec![("bad:name".to_string(), record)])
+            .expect_err("invalid command name");
+
+        assert!(matches!(error, BinpmError::InvalidCommandName { .. }));
     }
 
     #[test]
