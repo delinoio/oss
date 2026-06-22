@@ -304,10 +304,10 @@ Invalid values fall back to 600 seconds. Human/log diagnostics report only a saf
 
 ## JSON Output Has Log Noise
 
-Keep `RUST_LOG` unset or off:
+Keep `RUST_LOG` unset:
 
 ```bash
-RUST_LOG=off nodeup --output json show home
+nodeup --output json show home
 ```
 
 JSON mode disables Nodeup logging by default, but an explicit `RUST_LOG` can re-enable it.

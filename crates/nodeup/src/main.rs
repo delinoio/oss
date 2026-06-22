@@ -386,7 +386,15 @@ where
                 if arg.starts_with('-') {
                     continue;
                 }
-                command_scan_state = CommandScanState::RunDelegated;
+                command_scan_state = CommandScanState::RunBeforeDelegatedCommand;
+            }
+            CommandScanState::RunBeforeDelegatedCommand => {
+                // Clap accepts global flags between `run <runtime>` and the delegated
+                // command. Keep scanning for those flags, then stop at the first token
+                // that belongs to delegated argv.
+                if arg == "--" || !matches!(arg, "--output" | "--color") {
+                    break;
+                }
             }
             CommandScanState::RunDelegated | CommandScanState::AfterSubcommand => {}
         }
@@ -413,6 +421,7 @@ fn apply_color_value(value: &str, color_mode: &mut Option<OutputColorMode>) {
 enum CommandScanState {
     BeforeSubcommand,
     RunBeforeRuntime,
+    RunBeforeDelegatedCommand,
     RunDelegated,
     AfterSubcommand,
 }
@@ -547,6 +556,28 @@ mod tests {
             "lts",
             "node",
             "--output=json",
+        ])));
+    }
+
+    #[test]
+    fn run_positioned_output_before_delegated_command_is_respected() {
+        assert!(json_error_output_requested_from_args(os_args(&[
+            "nodeup", "run", "lts", "--output", "json", "node",
+        ])));
+
+        assert!(json_error_output_requested_from_args(os_args(&[
+            "nodeup",
+            "run",
+            "lts",
+            "--output=json",
+            "node",
+        ])));
+    }
+
+    #[test]
+    fn run_delimited_delegated_output_flags_do_not_toggle_json_mode() {
+        assert!(!json_error_output_requested_from_args(os_args(&[
+            "nodeup", "run", "lts", "--", "--output", "json",
         ])));
     }
 

@@ -164,10 +164,10 @@ Run these commands in a shell where `nodeup` resolves on `PATH`:
 ```bash
 nodeup --version
 nodeup show home
-RUST_LOG=off nodeup completions bash >/tmp/nodeup.bash
+nodeup completions bash >/tmp/nodeup.bash
 ```
 
-`nodeup show home` verifies that the binary can initialize Nodeup's local directory layout. `nodeup completions` verifies CLI parsing without requiring a Node.js runtime. `RUST_LOG=off` keeps redirected completion scripts free of human-mode log lines.
+`nodeup show home` verifies that the binary can initialize Nodeup's local directory layout. `nodeup completions` verifies CLI parsing without requiring a Node.js runtime. Completion scripts are written to stdout, while logs are written to stderr when enabled.
 
 ## Supported Runtime Hosts
 

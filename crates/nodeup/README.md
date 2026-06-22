@@ -224,8 +224,8 @@ JSON output includes `removed_paths`, `cleanup_boundaries`, `remaining_manual_st
 Script-safe output patterns:
 
 - Structured automation: `nodeup --output json <command>`
-- Runtime identifier loops: set `RUST_LOG=off`, then run `nodeup toolchain list --quiet`
-- Completion redirection: set `RUST_LOG=off`, then run `nodeup completions <shell> >file`
+- Runtime identifier loops: `nodeup toolchain list --quiet`
+- Completion redirection: `nodeup completions <shell> >file`
 - Human output without logs: set `RUST_LOG=off`, then run `nodeup <command>`
 
 Human output color control:
@@ -260,7 +260,7 @@ Scope filtering:
 - `nodeup completions <shell>` generates completions for all top-level commands.
 - `nodeup completions <shell> <command>` accepts only top-level command scopes:
   - `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `shim`, `self`, `completions`
-  - invalid scopes fail with `invalid-input`.
+  - nested subcommand scopes such as `toolchain install` fail with `invalid-input` and suggest the nearest valid top-level scope, such as `nodeup completions bash toolchain`.
 
 ## Testing Strategy
 

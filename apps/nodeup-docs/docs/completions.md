@@ -56,19 +56,18 @@ For example, `nodeup completions bash toolchain install` fails with `invalid-inp
 Completion output is always raw script text on stdout:
 
 ```bash
-RUST_LOG=off nodeup completions bash >nodeup.bash
-RUST_LOG=off nodeup completions zsh >_nodeup
+nodeup completions bash >nodeup.bash
+nodeup completions zsh >_nodeup
 ```
 
 PowerShell:
 
 ```powershell
-$env:RUST_LOG = "off"
 nodeup completions powershell > nodeup.ps1
 ```
 
-`--output json` and `--color always` do not wrap or style completion script output. Set `RUST_LOG=off` before redirecting because completion scripts are raw text, not structured command data.
+`--output json` and `--color always` do not wrap or style completion script output. Completion scripts are raw text, not structured command data.
 
 ## Logging
 
-Completion generation logs include shell, command scope, and whether generation succeeded or failed. Logs are written to stderr when enabled. Use `RUST_LOG=off` when redirecting completion scripts so stdout contains only the generated script.
+Completion generation logs include shell, command scope, and whether generation succeeded or failed. Logs are written to stderr when enabled, so redirected completion files contain only the generated script. Use `RUST_LOG=off` only when a wrapper also needs stderr to stay quiet.

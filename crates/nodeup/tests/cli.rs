@@ -291,10 +291,10 @@ fn help_lists_top_level_subcommand_descriptions() {
             "Use `--output json` for structured automation.",
         ))
         .stdout(predicates::str::contains(
-            "`nodeup toolchain list --quiet` with RUST_LOG=off in the environment",
+            "Use `nodeup toolchain list --quiet` for raw runtime identifiers.",
         ))
         .stdout(predicates::str::contains(
-            "`nodeup completions <shell> >file` with RUST_LOG=off in the environment",
+            "Use `nodeup completions <shell> >file` for raw completion scripts.",
         ))
         .stdout(predicates::str::contains("Manage installed runtimes"))
         .stdout(predicates::str::contains(
@@ -338,7 +338,7 @@ fn help_lists_nested_subcommand_descriptions() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "Set RUST_LOG=off in the environment for script-safe raw lists",
+            "Print compact runtime identifiers only",
         ));
 
     env.command()
@@ -346,7 +346,10 @@ fn help_lists_nested_subcommand_descriptions() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "Set RUST_LOG=off in the environment before redirecting",
+            "Generate shell completion scripts",
+        ))
+        .stdout(predicates::str::contains(
+            "Optional top-level command scope",
         ));
 
     env.command()
@@ -515,6 +518,34 @@ fn delegated_run_arguments_do_not_request_json_parser_errors() {
         .code(4)
         .stderr(predicates::str::contains("nodeup error:"))
         .stderr(predicates::str::contains("Release index request failed"));
+}
+
+#[test]
+#[serial]
+fn run_positioned_json_output_emits_error_envelope_before_delegated_command() {
+    let env = TestEnv::new();
+
+    for args in [
+        vec!["run", "current", "--output", "json", "node"],
+        vec!["run", "current", "--output=json", "node"],
+    ] {
+        let output = env
+            .command()
+            .args(&args)
+            .output()
+            .expect("run positioned --output json failure");
+
+        assert_eq!(output.status.code(), Some(4));
+        assert!(output.stdout.is_empty());
+
+        let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(payload["kind"], "network");
+        assert_eq!(payload["exit_code"], 4);
+        assert!(payload["message"]
+            .as_str()
+            .unwrap()
+            .contains("Release index request failed"));
+    }
 }
 
 #[test]
@@ -2710,6 +2741,12 @@ fn json_completions_subcommand_scope_emits_scope_diagnostics() {
         "top-level-command"
     );
     assert_eq!(payload["diagnostics"]["suggested_scope"], "override");
+    assert_eq!(payload["diagnostics"]["scope_boundary"], "top-level-only");
+    assert_eq!(payload["diagnostics"]["scope_token_count"], 2);
+    assert_eq!(
+        payload["diagnostics"]["suggested_command"],
+        "nodeup completions zsh override"
+    );
     assert!(payload["diagnostics"]["allowed_scopes"]
         .as_array()
         .unwrap()
