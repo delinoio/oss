@@ -571,6 +571,37 @@ fn init_manifest_path_must_name_binpm_toml() {
 }
 
 #[test]
+fn init_manifest_path_rejects_parent_directory_components() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let existing_manifest = temp_dir.path().join("binpm.toml");
+    let ambiguous_manifest = temp_dir
+        .path()
+        .join("missing")
+        .join("..")
+        .join("binpm.toml");
+    fs::write(&existing_manifest, "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .args(["init", "--manifest-path"])
+        .arg(&ambiguous_manifest)
+        .assert()
+        .failure()
+        .code(2)
+        .stdout(predicate::str::contains("created manifest:").not())
+        .stderr(predicate::str::contains(
+            "Invalid init manifest destination",
+        ));
+
+    assert_eq!(
+        fs::read_to_string(&existing_manifest).expect("read existing manifest"),
+        "version = 1\n"
+    );
+    assert!(!temp_dir.path().join("missing").exists());
+}
+
+#[test]
 fn init_force_is_rejected() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let mut command = binpm();
@@ -775,6 +806,67 @@ fn env_local_scope_does_not_require_global_home() {
         .stdout(predicate::str::contains("Global bin").not())
         .stdout(predicate::str::contains("Project-local bin"))
         .stdout(predicate::str::contains(bash_quote_path(&local_bin)));
+}
+
+#[test]
+fn env_local_cmd_guidance_is_session_only() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("BINPM_HOME", "relative-home")
+        .args(["env", "--local", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Unsupported shell `cmd`"))
+        .stderr(predicate::str::contains(format!(
+            "set \"PATH={};%PATH%\"",
+            local_bin.display()
+        )))
+        .stderr(predicate::str::contains("current project/session"))
+        .stderr(predicate::str::contains("Windows Environment Variables").not())
+        .stderr(predicate::str::contains("user PATH").not());
+}
+
+#[test]
+fn env_cmd_combined_session_keeps_local_before_global() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let global_bin = home.join("bin");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let local_before_global = format!(
+        "set \"PATH={};{};%PATH%\"",
+        local_bin.display(),
+        global_bin.display()
+    );
+    let global_before_local = format!(
+        "set \"PATH={};{};%PATH%\"",
+        global_bin.display(),
+        local_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Unsupported shell `cmd`"))
+        .stderr(predicate::str::contains("add the global bin"))
+        .stderr(predicate::str::contains(local_before_global))
+        .stderr(predicate::str::contains(global_before_local).not());
 }
 
 #[test]

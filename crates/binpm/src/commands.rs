@@ -6780,7 +6780,11 @@ fn env_cmd(args: EnvArgs) -> Result<i32> {
 
 fn init_manifest_path(explicit: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(path) = explicit {
-        if path.file_name() != Some(std::ffi::OsStr::new(MANIFEST_FILE)) {
+        if path.file_name() != Some(std::ffi::OsStr::new(MANIFEST_FILE))
+            || path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
             return Err(BinpmError::InvalidInitManifestPath { path });
         }
         if path.is_absolute() {
@@ -6885,10 +6889,10 @@ fn cmd_path_hint(
 ) -> String {
     match scope {
         EnvPathScope::Global => {
-            cmd_single_path_hint(global_bin.expect("global bin path for env scope"))
+            cmd_global_path_hint(global_bin.expect("global bin path for env scope"))
         }
         EnvPathScope::Local => {
-            cmd_single_path_hint(local_bin.expect("local bin path for env scope"))
+            cmd_local_path_hint(local_bin.expect("local bin path for env scope"))
         }
         EnvPathScope::Both => {
             let global = cmd_path(global_bin.expect("global bin path for env scope"));
@@ -6897,18 +6901,23 @@ fn cmd_path_hint(
                 "For cmd.exe, add the global bin `{global}` to the user PATH in Windows \
                  Environment Variables. For the current project/session, run `set \
                  \"PATH={local};%PATH%\"`. To include both in the current cmd.exe session, run \
-                 `set \"PATH={global};{local};%PATH%\"`."
+                 `set \"PATH={local};{global};%PATH%\"`."
             )
         }
     }
 }
 
-fn cmd_single_path_hint(path: &Path) -> String {
+fn cmd_global_path_hint(path: &Path) -> String {
     let path = cmd_path(path);
     format!(
         "For cmd.exe, add `{path}` to the user PATH in Windows Environment Variables, or for the \
          current cmd.exe session run `set \"PATH={path};%PATH%\"`."
     )
+}
+
+fn cmd_local_path_hint(path: &Path) -> String {
+    let path = cmd_path(path);
+    format!("For cmd.exe, run `set \"PATH={path};%PATH%\"` for the current project/session.")
 }
 
 fn cmd_path(path: &Path) -> String {
