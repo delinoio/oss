@@ -5,8 +5,9 @@ use std::{
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
     str::FromStr,
+    sync::atomic::{AtomicU64, Ordering},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::Serialize;
@@ -327,6 +328,7 @@ const DOWNLOAD_PROGRESS_STEP_BYTES: u64 = 5 * 1024 * 1024;
 const DOWNLOAD_PROGRESS_INTERVAL: Duration = Duration::from_secs(2);
 const DOWNLOAD_INITIAL_CAPACITY_LIMIT: usize = 8 * 1024 * 1024;
 const GITHUB_ACTIONS_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";
+static SIGSTORE_TEMP_ATTEMPT: AtomicU64 = AtomicU64::new(0);
 
 pub fn run(cli: Cli) -> Result<i32> {
     let output = OutputMode::from_json_flag(cli.json);
@@ -3740,14 +3742,28 @@ fn download_locked_record_verified_source(record: &PackageRecord) -> Result<bool
             actual,
         });
     }
-    let home = binpm_home()?;
-    let cache_paths = CachePaths::new(&home);
-    cache_paths.ensure()?;
-    Ok(reverify_locked_record_signature(&cache_paths, record, &asset_bytes)?.verified)
+    Ok(reverify_locked_record_signature_in_temp(record, &asset_bytes)?.verified)
 }
 
 fn record_has_signature_evidence(record: &PackageRecord) -> bool {
     record.signature_available
+        && record.source_provider == SourceProvider::GitHub
+        && record.source_host == "github.com"
+        && record.source_path.split_once('/').is_some()
+}
+
+fn reverify_locked_record_signature_in_temp(
+    record: &PackageRecord,
+    asset_bytes: &[u8],
+) -> Result<LockedRecordVerification> {
+    let temp_home = env::temp_dir().join(format!("binpm-signature-{}", sigstore_temp_attempt()));
+    let cache_paths = CachePaths::new(&temp_home);
+    let result = reverify_locked_record_signature(&cache_paths, record, asset_bytes);
+    let cleanup_result = fs::remove_dir_all(&temp_home);
+    match (result, cleanup_result) {
+        (Ok(verification), _) => Ok(verification),
+        (Err(error), _) => Err(error),
+    }
 }
 
 fn reverify_locked_record_signature(
@@ -3866,17 +3882,7 @@ fn write_sigstore_verification_inputs(
     bundle_bytes: &[u8],
 ) -> Result<SigstoreTempPaths> {
     ensure_dir(&cache_paths.tmp)?;
-    let nonce = format!(
-        "{}-{:x}",
-        std::process::id(),
-        Sha256::digest(
-            format!(
-                "{}:{}:{}",
-                resolved.source, resolved.release_tag, resolved.decision.asset_name
-            )
-            .as_bytes()
-        )
-    );
+    let nonce = sigstore_temp_attempt_for_resolved(resolved);
     let asset_path = cache_paths.tmp.join(format!("sigstore-{nonce}.asset"));
     let bundle_path = cache_paths.tmp.join(format!("sigstore-{nonce}.bundle"));
     write_new_file(&asset_path, asset_bytes)?;
@@ -3888,6 +3894,27 @@ fn write_sigstore_verification_inputs(
         asset_path,
         bundle_path,
     })
+}
+
+fn sigstore_temp_attempt_for_resolved(resolved: &ResolvedAsset) -> String {
+    let identity = format!(
+        "{}:{}:{}",
+        resolved.source, resolved.release_tag, resolved.decision.asset_name
+    );
+    format!(
+        "{}-{:x}",
+        sigstore_temp_attempt(),
+        Sha256::digest(identity.as_bytes())
+    )
+}
+
+fn sigstore_temp_attempt() -> String {
+    let sequence = SIGSTORE_TEMP_ATTEMPT.fetch_add(1, Ordering::Relaxed);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("{}-{sequence}-{nanos:x}", std::process::id())
 }
 
 fn write_new_file(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -10702,6 +10729,25 @@ mod tests {
         assert!(!record_has_signature_evidence(&record));
     }
 
+    #[test]
+    fn signature_evidence_requires_supported_record_policy() {
+        let mut record = package_record();
+        record.signature_available = true;
+
+        assert!(record_has_signature_evidence(&record));
+
+        record.source_host = "ghe.example.com".to_string();
+        assert!(!record_has_signature_evidence(&record));
+
+        record.source_host = "github.com".to_string();
+        record.source_provider = SourceProvider::GitLab;
+        assert!(!record_has_signature_evidence(&record));
+
+        record.source_provider = SourceProvider::GitHub;
+        record.source_path = "owner".to_string();
+        assert!(!record_has_signature_evidence(&record));
+    }
+
     #[cfg(unix)]
     #[test]
     fn sigstore_verification_inputs_reject_symlinked_tmp_dir() {
@@ -10724,33 +10770,39 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn sigstore_verification_inputs_reject_precreated_symlink_file() {
+    fn sigstore_verification_inputs_ignore_stale_precreated_symlink_file() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let outside = tempfile::tempdir().expect("outside");
         let cache = CachePaths::new(temp_dir.path());
         let resolved = resolved_asset(&package_record().sha256);
         ensure_dir(&cache.tmp).expect("tmp dir");
-        let nonce = format!(
-            "{}-{:x}",
-            std::process::id(),
-            Sha256::digest(
-                format!(
-                    "{}:{}:{}",
-                    resolved.source, resolved.release_tag, resolved.decision.asset_name
-                )
-                .as_bytes()
-            )
-        );
-        let asset_path = cache.tmp.join(format!("sigstore-{nonce}.asset"));
+        let asset_path = cache.tmp.join("sigstore-stale.asset");
         let outside_target = outside.path().join("asset-target");
         std::os::unix::fs::symlink(&outside_target, &asset_path).expect("symlink asset");
 
-        let error =
+        let paths =
             write_sigstore_verification_inputs(&cache, &resolved, b"asset bytes", b"bundle bytes")
-                .expect_err("precreated symlink");
+                .expect("input write");
 
-        assert!(matches!(error, BinpmError::WriteFile { .. }));
+        assert_ne!(paths.asset_path, asset_path);
         assert!(!outside_target.exists());
+    }
+
+    #[test]
+    fn sigstore_verification_inputs_use_attempt_unique_names() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let resolved = resolved_asset(&package_record().sha256);
+
+        let first =
+            write_sigstore_verification_inputs(&cache, &resolved, b"asset bytes", b"bundle bytes")
+                .expect("first input write");
+        let second =
+            write_sigstore_verification_inputs(&cache, &resolved, b"asset bytes", b"bundle bytes")
+                .expect("second input write");
+
+        assert_ne!(first.asset_path, second.asset_path);
+        assert_ne!(first.bundle_path, second.bundle_path);
     }
 
     #[test]
