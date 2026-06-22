@@ -1656,6 +1656,8 @@ fn env_cmd_reports_explicitly_deferred_shell() {
         ))
         .stderr(predicate::str::contains("Alias: pwsh"))
         .stderr(predicate::str::contains("Deferred shell: cmd"))
+        .stderr(predicate::str::contains("add the global bin"))
+        .stderr(predicate::str::contains("current project/session"))
         .stderr(predicate::str::contains("set \"PATH="));
 }
 
