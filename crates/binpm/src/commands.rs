@@ -6894,9 +6894,10 @@ fn cmd_path_hint(
             let global = cmd_path(global_bin.expect("global bin path for env scope"));
             let local = cmd_path(local_bin.expect("local bin path for env scope"));
             format!(
-                "For cmd.exe, add `{global}` and `{local}` to the user PATH in Windows \
-                 Environment Variables, or for the current cmd.exe session run `set \
-                 \"PATH={global};{local};%PATH%\"`."
+                "For cmd.exe, add the global bin `{global}` to the user PATH in Windows \
+                 Environment Variables. For the current project/session, run `set \
+                 \"PATH={local};%PATH%\"`. To include both in the current cmd.exe session, run \
+                 `set \"PATH={global};{local};%PATH%\"`."
             )
         }
     }
