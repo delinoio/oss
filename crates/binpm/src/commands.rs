@@ -6895,33 +6895,45 @@ fn cmd_path_hint(
             cmd_local_path_hint(local_bin.expect("local bin path for env scope"))
         }
         EnvPathScope::Both => {
-            let global = cmd_path(global_bin.expect("global bin path for env scope"));
-            let local = cmd_path(local_bin.expect("local bin path for env scope"));
+            let global_path = global_bin.expect("global bin path for env scope");
+            let local_path = local_bin.expect("local bin path for env scope");
+            let global = cmd_path(global_path);
+            let global_set = cmd_set_path(global_path);
+            let local_set = cmd_set_path(local_path);
             format!(
                 "For cmd.exe, add the global bin `{global}` to the user PATH in Windows \
                  Environment Variables. For the current project/session, run `set \
-                 \"PATH={local};%PATH%\"`. To include both in the current cmd.exe session, run \
-                 `set \"PATH={local};{global};%PATH%\"`."
+                 \"PATH={local_set};%PATH%\"`. To include both in the current cmd.exe session, \
+                 run `set \"PATH={local_set};{global_set};%PATH%\"`."
             )
         }
     }
 }
 
 fn cmd_global_path_hint(path: &Path) -> String {
-    let path = cmd_path(path);
+    let raw_path = cmd_path(path);
+    let set_path = cmd_set_path(path);
     format!(
-        "For cmd.exe, add `{path}` to the user PATH in Windows Environment Variables, or for the \
-         current cmd.exe session run `set \"PATH={path};%PATH%\"`."
+        "For cmd.exe, add `{raw_path}` to the user PATH in Windows Environment Variables, or for \
+         the current cmd.exe session run `set \"PATH={set_path};%PATH%\"`."
     )
 }
 
 fn cmd_local_path_hint(path: &Path) -> String {
-    let path = cmd_path(path);
+    let path = cmd_set_path(path);
     format!("For cmd.exe, run `set \"PATH={path};%PATH%\"` for the current project/session.")
 }
 
 fn cmd_path(path: &Path) -> String {
     path.display().to_string()
+}
+
+fn cmd_set_path(path: &Path) -> String {
+    cmd_escape(&cmd_path(path))
+}
+
+fn cmd_escape(raw: &str) -> String {
+    raw.replace('^', "^^").replace('%', "^%")
 }
 
 fn shell_quote(shell: Shell, path: &Path) -> String {

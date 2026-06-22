@@ -870,6 +870,48 @@ fn env_cmd_combined_session_keeps_local_before_global() {
 }
 
 #[test]
+fn env_cmd_escapes_percent_expansion_in_session_hints() {
+    let temp_dir = tempfile::Builder::new()
+        .prefix("binpm-%USERPROFILE%-")
+        .tempdir()
+        .expect("tempdir");
+    let home = temp_dir.path().join("home-%APPDATA%");
+    let global_bin = home.join("bin");
+    let local_bin = fs::canonicalize(temp_dir.path())
+        .expect("canonical temp dir")
+        .join(".binpm")
+        .join("bin");
+    let escaped_global = global_bin.display().to_string().replace('%', "^%");
+    let escaped_local = local_bin.display().to_string().replace('%', "^%");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["env", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(format!(
+            "set \"PATH={escaped_local};%PATH%\""
+        )))
+        .stderr(predicate::str::contains(format!(
+            "set \"PATH={escaped_local};{escaped_global};%PATH%\""
+        )))
+        .stderr(
+            predicate::str::contains(format!("set \"PATH={};%PATH%\"", local_bin.display())).not(),
+        )
+        .stderr(
+            predicate::str::contains(format!(
+                "set \"PATH={};{};%PATH%\"",
+                local_bin.display(),
+                global_bin.display()
+            ))
+            .not(),
+        );
+}
+
+#[test]
 fn env_bash_avoids_empty_path_segment_when_path_is_unset() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
