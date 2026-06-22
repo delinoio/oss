@@ -2696,11 +2696,6 @@ fn install_local_from_lock(
     }
     assert_lock_record_matches_source_and_target(&lockfile_path, cmd, spec, &target, &record)?;
     assert_lock_matches_manifest_tool(root, cmd, tool, &target, &record)?;
-    if require_verified && !record.has_verified_source() {
-        return Err(BinpmError::VerificationRequired {
-            package: record.package_spec,
-        });
-    }
     validate_provider_digest_evidence(&record)?;
     validate_locked_record_artifact(&lockfile_path, cmd, &record, &target, tool)?;
     let home = binpm_home()?;
@@ -2780,6 +2775,11 @@ fn install_local_from_lock(
             return Err(error);
         }
         populated_cache_entry = cache_metadata_snapshot.is_none();
+    }
+    if require_verified && !locked_record_has_verified_source(&cache_paths, &record)? {
+        return Err(BinpmError::VerificationRequired {
+            package: record.package_spec,
+        });
     }
 
     let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
@@ -3346,6 +3346,123 @@ fn resolved_has_verified_source(resolved: &ResolvedAsset) -> bool {
         || (resolved.checksum_source == ChecksumSource::Signature
             && resolved.signature_available
             && resolved.signature_verified)
+}
+
+fn locked_record_has_verified_source(
+    cache_paths: &CachePaths,
+    record: &PackageRecord,
+) -> Result<bool> {
+    if record.has_verified_source() {
+        return Ok(true);
+    }
+    if !record_has_signature_evidence(record) {
+        return Ok(false);
+    }
+    let asset_path = cache_paths.asset_path(&record.sha256);
+    let asset_bytes = fs::read(&asset_path).map_err(|source| BinpmError::ReadFile {
+        path: asset_path,
+        source,
+    })?;
+    reverify_locked_record_signature(cache_paths, record, &asset_bytes)
+}
+
+fn download_locked_record_verified_source(record: &PackageRecord) -> Result<bool> {
+    if record.has_verified_source() {
+        return Ok(true);
+    }
+    if !record_has_signature_evidence(record) {
+        return Ok(false);
+    }
+    let download_request = locked_record_download_request(record)?;
+    let asset_bytes = download_asset(
+        &download_request.url,
+        download_request.auth.as_ref(),
+        download_request.accept,
+    )?;
+    let actual = format!("{:x}", Sha256::digest(&asset_bytes));
+    if actual != record.sha256 {
+        return Err(BinpmError::DigestMismatch {
+            path: PathBuf::from(&record.asset_url),
+            expected: record.sha256.clone(),
+            actual,
+        });
+    }
+    let home = binpm_home()?;
+    let cache_paths = CachePaths::new(&home);
+    cache_paths.ensure()?;
+    reverify_locked_record_signature(&cache_paths, record, &asset_bytes)
+}
+
+fn record_has_signature_evidence(record: &PackageRecord) -> bool {
+    record.checksum_source == ChecksumSource::Signature
+        && record.signature_available
+        && record.signature_verified
+}
+
+fn reverify_locked_record_signature(
+    cache_paths: &CachePaths,
+    record: &PackageRecord,
+    asset_bytes: &[u8],
+) -> Result<bool> {
+    let spec = locked_release_lookup_spec(record)?;
+    let release = client_for_source(&spec)?.resolve_release(&spec)?.release;
+    if release.tag != record.release_tag {
+        return Ok(false);
+    }
+    let current_asset = release
+        .assets
+        .iter()
+        .find(|asset| asset.name == record.asset_name);
+    let Some(current_asset) = current_asset else {
+        return Ok(false);
+    };
+    if release_asset_display_url(current_asset)? != record.asset_url {
+        return Ok(false);
+    }
+    let Some(signature_sidecar) = signature_sidecar_for_asset(&record.asset_name, &release.assets)
+    else {
+        return Ok(false);
+    };
+    let mut resolved = ResolvedAsset {
+        source: SourceSpec::from_str(
+            &record
+                .requested_version
+                .as_ref()
+                .map(|version| format!("{}@{version}", record.source))
+                .unwrap_or_else(|| record.source.clone()),
+        )?,
+        release_tag: record.release_tag.clone(),
+        target: HostTarget {
+            os: record.target_os,
+            arch: record.target_arch,
+            libc: record.target_libc,
+        },
+        decision: CandidateDecision {
+            asset_name: record.asset_name.clone(),
+            canonical_url: record.asset_url.clone(),
+            download_url: record.asset_url.clone(),
+            download_auth: None,
+            download_accept: None,
+            kind: crate::assets::classify_artifact(&record.asset_name, false),
+            detected_os: Some(record.target_os),
+            detected_arch: Some(record.target_arch),
+            detected_libc: Some(record.target_libc),
+            cpu_feature: None,
+            score: None,
+            eligible: true,
+            recognized_pattern: true,
+            rejection_reason: None,
+        },
+        archive_format: record.archive_format,
+        selected_binary: record.selected_binary.clone(),
+        provider_digest_sha256: record.provider_digest_sha256.clone(),
+        checksum_source: ChecksumSource::Local,
+        signature_sidecar: Some(signature_sidecar),
+        signature_available: true,
+        signature_verified: false,
+    };
+    verify_signature_sidecar(cache_paths, &mut resolved, asset_bytes, true)?;
+    Ok(resolved_has_verified_source(&resolved))
 }
 
 struct SigstoreTrustPolicy {
@@ -5546,15 +5663,15 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
                 cmd,
             });
         }
-        if args.require_verified && !record.has_verified_source() {
-            return Err(BinpmError::VerificationRequired {
-                package: record.package_spec,
-            });
-        }
         validate_provider_digest_evidence(&record)?;
         validate_package_record_current_provider_digest(&record)?;
         validate_package_record_metadata(&cache_paths, &record)?;
         verify_runtime_cache_bytes(&cache_paths, &record)?;
+        if args.require_verified && !locked_record_has_verified_source(&cache_paths, &record)? {
+            return Err(BinpmError::VerificationRequired {
+                package: record.package_spec,
+            });
+        }
         let installed_path = validate_installed_binary_path(&paths, &cmd, &record)?;
         require_regular_managed_file(&installed_path)?;
         require_executable_managed_file(&installed_path)?;
@@ -5897,13 +6014,13 @@ fn verify_lockfile_records(
             )?;
             let manifest_tool = manifest.and_then(|(manifest, _)| manifest.tools.get(&cmd));
             validate_locked_record_artifact(lockfile_path, &cmd, &record, &target, manifest_tool)?;
-            if require_verified && !record.has_verified_source() {
+            validate_provider_digest_evidence(&record)?;
+            validate_locked_record_current_release(lockfile_path, &cmd, &record)?;
+            if require_verified && !download_locked_record_verified_source(&record)? {
                 return Err(BinpmError::VerificationRequired {
                     package: record.package_spec,
                 });
             }
-            validate_provider_digest_evidence(&record)?;
-            validate_locked_record_current_release(lockfile_path, &cmd, &record)?;
             locked.insert(cmd.clone());
             checks.push(verify_check_output(
                 cmd.clone(),
