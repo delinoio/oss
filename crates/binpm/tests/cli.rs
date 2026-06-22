@@ -404,6 +404,48 @@ fn package_shortcut_without_command_keeps_source_explicit() {
 }
 
 #[test]
+fn package_shortcut_rejects_ambiguous_forwarded_args_without_command() {
+    let mut command = binpm();
+
+    command
+        .args(["x", "--package", "github:owner/tool", "--", "--version"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Ambiguous `--package` execution arguments",
+        ))
+        .stderr(predicate::str::contains(
+            "binpm x --package <source> <cmd> -- <args...>",
+        ))
+        .stderr(predicate::str::contains("binpm add <cmd> <source>"));
+}
+
+#[test]
+fn local_x_missing_command_points_to_explicit_remediation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["x", "missing"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Tool `missing` is not declared"))
+        .stderr(predicate::str::contains(
+            "binpm will not infer a package source from the command name",
+        ))
+        .stderr(predicate::str::contains("binpm add missing <source>"))
+        .stderr(predicate::str::contains(
+            "binpm x --package <source> missing",
+        ));
+}
+
+#[test]
 fn execution_aliases_accept_package_and_forwarded_flags() {
     for alias in ["exec", "run"] {
         let mut command = binpm();
@@ -841,6 +883,73 @@ fn cache_clean_output_states_removed_and_preserved_boundaries() {
         .stdout(predicate::str::contains("/cache/refs"))
         .stdout(predicate::str::contains("/packages"))
         .stdout(predicate::str::contains("/bin"));
+}
+
+#[test]
+fn cache_clean_json_states_removed_and_preserved_boundaries() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let entry = home.join("cache").join("sha256").join("abc");
+    fs::create_dir_all(&entry).expect("create cache entry");
+    fs::write(entry.join("asset"), b"bytes").expect("write cache asset");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["cache", "clean", "--json"])
+        .output()
+        .expect("cache clean --json");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse cache clean json");
+    assert_eq!(payload["command"], "cache clean");
+    assert_eq!(payload["removed_cache_entries"], 1);
+    assert!(payload["removed_boundary"]
+        .as_str()
+        .expect("removed boundary")
+        .ends_with("/cache/sha256"));
+    assert!(payload["preserved_boundaries"]["cache_refs"]
+        .as_str()
+        .expect("cache refs")
+        .ends_with("/cache/refs"));
+    assert!(payload["preserved_boundaries"]["package_records"]
+        .as_str()
+        .expect("package records")
+        .ends_with("/packages"));
+    assert!(payload["preserved_boundaries"]["executables"]
+        .as_str()
+        .expect("executables")
+        .ends_with("/bin"));
+}
+
+#[test]
+fn cache_prune_json_reports_legacy_ref_migration_boundary() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let refs = home.join("cache").join("refs");
+    fs::create_dir_all(&refs).expect("create refs");
+    fs::write(
+        refs.join("legacy.ref"),
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    )
+    .expect("write legacy ref");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["cache", "prune", "--json"])
+        .output()
+        .expect("cache prune --json");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse cache prune json");
+    assert_eq!(payload["command"], "cache prune");
+    assert_eq!(payload["preserved_legacy_cache_refs"], 1);
+    assert!(payload["migration_hint"]
+        .as_str()
+        .expect("migration hint")
+        .contains("rewrite them as structured refs"));
+    assert!(refs.join("legacy.ref").exists());
 }
 
 #[test]

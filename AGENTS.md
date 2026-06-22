@@ -5,6 +5,7 @@
 - List files in `docs/` before starting each task, and keep `docs/` up-to-date.
 - After completing each task, update the relevant `AGENTS.md` and `docs/` files in the same change when policies, structure, or contracts changed.
 - For documentation authoring and editing tasks, do not arbitrarily omit, delete, or simplify requested or source-backed content; if content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret; if the documentation change affects repository or domain policy boundaries, update or create the relevant `AGENTS.md` file in the same change when needed.
+- Public documentation surfaces must not document repository-internal implementation details. Keep internal source-of-truth contracts, architecture notes, repo-local paths, and operational internals in `docs/`; curate public docs under `apps/*-docs` and `apps/public-docs` around user-facing behavior, supported workflows, stable public interfaces, and maintainer-facing paths only when those paths are explicitly part of the public contract.
 - Write all code and comments in English.
 - When introducing a workaround, leave sufficient comments that explain why it exists, its scope, and the conditions for removing it.
 - Prefer enum types over strings whenever possible.
@@ -123,8 +124,8 @@ enum ProjectId {
 - `binpm` package signature verification is distinct from direct-installer verification for binpm's own release artifacts. Package signatures may satisfy strict verification only when a supported verifier validates the selected asset under the documented package trust policy; raw signature sidecar presence alone is not verification evidence.
 - Cache management and diagnostic command identifiers are `list`, `prune`, `clean`, and `key` under `binpm cache`.
 - `binpm cache prune` and `binpm cache clean` must not remove installed package records or executable links/copies under `~/.binpm/bin`.
-- `binpm cache clean` must state the removed cache asset boundary and the preserved `~/.binpm/cache/refs`, package-record, and executable boundaries.
-- `binpm cache prune` must remove stale structured local-project cache references before asset pruning while preserving active and legacy references.
+- `binpm cache clean` must state the removed cache asset boundary and the preserved `~/.binpm/cache/refs`, package-record, and executable boundaries in human and JSON output.
+- `binpm cache prune` must remove stale structured local-project cache references before asset pruning while preserving active and legacy references, and must guide legacy reference migration through future local install, update, or removal flows.
 - `binpm cache key` must be read-only and must not download, install, or populate cache entries.
 - `binpm cache key` must warn or expose structured status when `binpm.lock` is absent.
 
@@ -166,6 +167,8 @@ enum ProjectId {
 - `apps/binpm-docs` must use Cloudflare Pages as the default static deployment target unless `docs/project-binpm.md` and `docs/apps-binpm-docs-foundation.md` document a replacement.
 - binpm documentation content must be sourced from repository contracts and must not infer product behavior or page content from the live `https://binpm.delino.io` site.
 - `apps/binpm-docs` must expose a visible GitHub repository link to `https://github.com/delinoio/oss` in top-level social links and in the document-page footer.
+- binpm direct-installer documentation must include latest and pinned first-party raw GitHub installer commands, link `cosign` prerequisite guidance before installer commands, and keep binpm release verification separate from package verification.
+- binpm installation and release documentation must describe Homebrew as prebuilt-only, describe disabled `cargo-binstall` quick-install and compile fallbacks, and distinguish first-party binpm release platforms from broader third-party target parsing support.
 
 ### Nodeup Docs App Contract
 

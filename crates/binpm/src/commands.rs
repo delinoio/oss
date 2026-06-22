@@ -105,6 +105,32 @@ struct CacheListOutput {
 }
 
 #[derive(Debug, Serialize)]
+struct CachePruneOutput {
+    command: &'static str,
+    removed_cache_entries: usize,
+    removed_stale_local_project_cache_refs: usize,
+    preserved_legacy_cache_refs: usize,
+    removed_boundary: String,
+    preserved_boundaries: CachePreservedBoundariesOutput,
+    migration_hint: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheCleanOutput {
+    command: &'static str,
+    removed_cache_entries: usize,
+    removed_boundary: String,
+    preserved_boundaries: CachePreservedBoundariesOutput,
+}
+
+#[derive(Debug, Serialize)]
+struct CachePreservedBoundariesOutput {
+    cache_refs: String,
+    package_records: String,
+    executables: String,
+}
+
+#[derive(Debug, Serialize)]
 struct CacheEntryOutput {
     cache_key: String,
     byte_size: Option<u64>,
@@ -590,12 +616,21 @@ fn source_install_scope(requested_scope: Scope) -> Scope {
 fn exec(args: ExecArgs) -> Result<i32> {
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     let cmd = match args.cmd() {
-        Some(cmd) => cmd.to_string_lossy().to_string(),
+        Some(cmd) => {
+            if args.package.is_some() && cmd.to_string_lossy().starts_with('-') {
+                return Err(BinpmError::AmbiguousPackageShortcutArgs);
+            }
+            cmd.to_string_lossy().to_string()
+        }
         None if args.package.is_some() => {
+            if !args.args().is_empty() {
+                return Err(BinpmError::AmbiguousPackageShortcutArgs);
+            }
             package_shortcut_command(args.package.as_deref(), explicit_bin.as_deref())?
         }
         None => return Err(BinpmError::InvalidCommandName { cmd: String::new() }),
     };
+    validate_command_name(&cmd)?;
     let forwarded_arg_count = args.args().len();
 
     if let Some(source) = &args.package {
@@ -659,7 +694,6 @@ fn exec(args: ExecArgs) -> Result<i32> {
         );
     }
 
-    validate_command_name(&cmd)?;
     let root = require_manifest_root()?;
     let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
     let tool = manifest
@@ -777,12 +811,33 @@ fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
             let local_paths = manifest_project_root()?.map(ScopePaths::local);
             let scan = scan_cache_references(&cache_paths)?;
             let stale_refs_removed = remove_stale_cache_refs(&cache_paths, &scan.stale_refs)?;
+            let legacy_refs = scan.legacy_refs;
             let referenced =
                 referenced_cache_keys(&global_paths, local_paths.as_ref(), &cache_paths)?;
             let removed = prune_cache(&cache_paths, &referenced)?;
+            let preserved_boundaries = cache_preserved_boundaries(&cache_paths);
+            if output.is_json() {
+                return print_json(&CachePruneOutput {
+                    command: "cache prune",
+                    removed_cache_entries: removed,
+                    removed_stale_local_project_cache_refs: stale_refs_removed,
+                    preserved_legacy_cache_refs: legacy_refs,
+                    removed_boundary: cache_paths.root.join("sha256").display().to_string(),
+                    preserved_boundaries,
+                    migration_hint: legacy_cache_ref_migration_hint().to_string(),
+                });
+            }
             println!("pruned cache entries: {removed}");
             println!("removed stale local-project cache refs: {stale_refs_removed}");
-            println!("preserved referenced cache entries, package records, and executable links");
+            println!("preserved legacy cache refs: {legacy_refs}");
+            println!(
+                "removed boundary: {}",
+                cache_paths.root.join("sha256").display()
+            );
+            println!("preserved: {}", preserved_boundaries.cache_refs);
+            println!("preserved: {}", preserved_boundaries.package_records);
+            println!("preserved: {}", preserved_boundaries.executables);
+            println!("{}", legacy_cache_ref_migration_hint());
             Ok(0)
         }
         CacheCommand::Clean { .. } => {
@@ -793,15 +848,37 @@ fn cache(command: CacheCommand, output: OutputMode) -> Result<i32> {
             );
             let paths = CachePaths::new(&binpm_home()?);
             let removed = clean_cache(&paths)?;
+            let preserved_boundaries = cache_preserved_boundaries(&paths);
+            if output.is_json() {
+                return print_json(&CacheCleanOutput {
+                    command: "cache clean",
+                    removed_cache_entries: removed,
+                    removed_boundary: paths.root.join("sha256").display().to_string(),
+                    preserved_boundaries,
+                });
+            }
             println!("removed cache entries: {removed}");
-            println!("removed: {}", paths.root.join("sha256").display());
-            println!("preserved: {}", paths.refs.display());
-            println!("preserved: {}", paths.home.join("packages").display());
-            println!("preserved: {}", paths.home.join("bin").display());
+            println!("removed boundary: {}", paths.root.join("sha256").display());
+            println!("preserved: {}", preserved_boundaries.cache_refs);
+            println!("preserved: {}", preserved_boundaries.package_records);
+            println!("preserved: {}", preserved_boundaries.executables);
             Ok(0)
         }
         CacheCommand::Key => cache_key(output),
     }
+}
+
+fn cache_preserved_boundaries(paths: &CachePaths) -> CachePreservedBoundariesOutput {
+    CachePreservedBoundariesOutput {
+        cache_refs: paths.refs.display().to_string(),
+        package_records: paths.home.join("packages").display().to_string(),
+        executables: paths.home.join("bin").display().to_string(),
+    }
+}
+
+fn legacy_cache_ref_migration_hint() -> &'static str {
+    "legacy cache refs are preserved; run local install/update/remove in those projects to rewrite \
+     them as structured refs"
 }
 
 fn cache_key(output: OutputMode) -> Result<i32> {
@@ -1428,7 +1505,11 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
             for decision in selection.decisions {
                 println!("{}", decision.explain_line());
             }
-            println!("override_snippet:");
+            println!("override_snippet_unverified:");
+            println!(
+                "override_snippet_note: source explain has not downloaded or inspected archive \
+                 members; verify the asset and bin values before committing this override"
+            );
             println!(
                 "{}",
                 target_override_snippet(
@@ -1449,7 +1530,12 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
                 println!("{line}");
             }
             if let Some(candidate) = override_snippet_candidate(&all_decisions) {
-                println!("override_snippet:");
+                println!("override_snippet_unverified:");
+                println!(
+                    "override_snippet_note: source explain has not downloaded or inspected \
+                     archive members; verify compatibility and the bin value before committing \
+                     this override"
+                );
                 println!(
                     "{}",
                     target_override_snippet(
@@ -1488,6 +1574,34 @@ fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget
                 lines.push(format!("remediation: {remediation}"));
             }
             lines
+        })
+        .collect()
+}
+
+fn selection_failure_diagnostics(
+    decisions: &[CandidateDecision],
+    target: &HostTarget,
+) -> Vec<String> {
+    release_diagnostics(decisions, target)
+        .into_iter()
+        .map(|diagnostic| {
+            let mut parts = vec![diagnostic.message];
+            if !diagnostic.unsupported_installers.is_empty() {
+                parts.push(format!(
+                    "unsupported installers: {}",
+                    diagnostic.unsupported_installers.join(", ")
+                ));
+            }
+            if !diagnostic.sidecar_assets.is_empty() {
+                parts.push(format!(
+                    "sidecar assets: {}",
+                    diagnostic.sidecar_assets.join(", ")
+                ));
+            }
+            if let Some(remediation) = diagnostic.remediation {
+                parts.push(format!("remediation: {remediation}"));
+            }
+            parts.join("; ")
         })
         .collect()
 }
@@ -1761,12 +1875,12 @@ fn print_source_info(spec: &SourceSpec, output: OutputMode) -> Result<i32> {
 
 fn print_package_record_info(cmd: &str, record: &PackageRecord) {
     println!("binpm info");
-    println!("cmd: {cmd}");
+    println!("installed_command_alias: {cmd}");
     println!("source: {}", record.source);
     println!("package_spec: {}", record.package_spec);
     println!("release: {}", record.release_tag);
     println!("selected_asset: {}", record.asset_name);
-    println!("selected_binary: {}", record.selected_binary);
+    println!("upstream_binary: {}", record.selected_binary);
     println!("installed_path: {}", record.installed_path);
     println!("checksum_source: {}", record.checksum_source.as_str());
     println!("verification: {}", verification_state(record).as_str());
@@ -2495,7 +2609,13 @@ fn cleanup_failed_install_cache(
     install: &InstalledPackage,
 ) -> Result<()> {
     if install.populated_cache_entry {
-        remove_unreferenced_cache_entry(cache_paths, sha256, local_root)?;
+        debug!(
+            cache_key = crate::storage::cache_key(sha256),
+            cache_path = %cache_paths.entry_dir(sha256).display(),
+            local_root = local_root.map(|root| root.display().to_string()).unwrap_or_default(),
+            cache_action = "preserve-after-install-failure",
+            "Preserved verified cache entry after install finalization failed"
+        );
     } else if let Some(snapshot) = &install.cache_metadata_snapshot {
         restore_cache_metadata(cache_paths, snapshot)?;
     }
@@ -2701,9 +2821,7 @@ fn install_resolved(
         selected_binary,
     ) {
         let error = add_binary_retry_suggestions(error, cmd, spec, local_root.is_some());
-        if populated_cache_entry {
-            remove_unreferenced_cache_entry(cache_paths, &sha256, local_root)?;
-        } else if let Some(snapshot) = &cache_metadata_snapshot {
+        if let Some(snapshot) = &cache_metadata_snapshot {
             restore_cache_metadata(cache_paths, snapshot)?;
         }
         return Err(error);
@@ -2753,6 +2871,12 @@ fn binary_retry_suggestions(
         .iter()
         .flat_map(|candidate| {
             let mut suggestions = Vec::new();
+            suggestions.push(format!(
+                "`binpm install {} --as {} --bin {}`",
+                cli_quote(&spec.to_string()),
+                cli_quote(cmd),
+                cli_quote(candidate)
+            ));
             if include_add {
                 suggestions.push(format!(
                     "`binpm add {} {} --bin {}`",
@@ -4777,6 +4901,18 @@ fn select_manifest_asset(
                 target: target_key.clone(),
             })?;
         let kind = crate::assets::classify_artifact(&asset.name, asset.source_archive);
+        if archive_format(kind).is_none() {
+            return Err(BinpmError::AssetSelectionFailed {
+                package: spec.to_string(),
+                target: target_key.clone(),
+                diagnostics: vec![format!(
+                    "target override selected `{}` with kind `{}`; choose an archive or bare \
+                     executable release asset and keep installer packages out of overrides",
+                    asset.name,
+                    kind.as_str()
+                )],
+            });
+        }
         if spec.provider == crate::contract::SourceProvider::GitLab && !gitlab_https_eligible(asset)
         {
             return Err(BinpmError::UnsafeUrl {
@@ -4815,11 +4951,22 @@ fn select_manifest_asset(
         });
     }
 
-    let selection =
-        select_asset(spec.provider, target, assets).ok_or_else(|| BinpmError::AssetNotFound {
-            package: spec.to_string(),
-            target: target_key,
-        })?;
+    let selection = select_asset(spec.provider, target, assets).ok_or_else(|| {
+        let decisions = crate::assets::score_assets(spec.provider, target, assets);
+        let diagnostics = selection_failure_diagnostics(&decisions, target);
+        if diagnostics.is_empty() {
+            BinpmError::AssetNotFound {
+                package: spec.to_string(),
+                target: target_key,
+            }
+        } else {
+            BinpmError::AssetSelectionFailed {
+                package: spec.to_string(),
+                target: target_key,
+                diagnostics,
+            }
+        }
+    })?;
     Ok(selection.selected)
 }
 
@@ -4829,26 +4976,6 @@ fn rollback_failed_install(
     record: &PackageRecord,
 ) -> Result<()> {
     remove_installed_binary(scope_paths, cmd, record)?;
-    Ok(())
-}
-
-fn remove_unreferenced_cache_entry(
-    cache_paths: &CachePaths,
-    sha256: &str,
-    local_root: Option<&Path>,
-) -> Result<()> {
-    let cache_key = crate::storage::cache_key(sha256);
-    let home = cache_paths
-        .root
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or(BinpmError::MissingGlobalHome)?;
-    let global_paths = ScopePaths::global(home);
-    let local_paths = local_root.map(|root| ScopePaths::local(root.to_path_buf()));
-    let referenced = referenced_cache_keys(&global_paths, local_paths.as_ref(), cache_paths)?;
-    if !referenced.contains(&cache_key) {
-        remove_path_if_exists(&cache_paths.entry_dir(sha256))?;
-    }
     Ok(())
 }
 
@@ -4900,13 +5027,16 @@ fn print_list_tool(row: &ListToolOutput, output: OutputMode) {
     }
     match row.state {
         ToolState::Declared => println!(
-            "{} declared {} {} <unknown> <unknown> <unknown> <unknown>",
+            "installed_command_alias={} state=declared source={} requested_version={} \
+             release=<unknown> upstream_binary=<unknown> installed_path=<unknown> \
+             verification=<unknown>",
             row.cmd,
             row.source,
             row.requested_version.as_deref().unwrap_or("<latest>")
         ),
         ToolState::Installed => println!(
-            "{} installed {} {} {} {} {} {}",
+            "installed_command_alias={} state=installed source={} requested_version={} release={} \
+             upstream_binary={} installed_path={} verification={}",
             row.cmd,
             row.source,
             row.requested_version.as_deref().unwrap_or("<latest>"),
@@ -5390,6 +5520,11 @@ fn manifest_target_override<'tool>(
         if raw_key != &canonical_key {
             return Err(BinpmError::InvalidTargetKey {
                 raw: raw_key.clone(),
+                message: format!(
+                    "Manifest override keys must be canonical. Use \
+                     `[tools.<cmd>.targets.{canonical_key}]`; aliases are accepted in release \
+                     asset names, not as persisted override keys."
+                ),
             });
         }
         if canonical_key == target_key {
@@ -5943,6 +6078,11 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
         return Err(error);
     }
     println!("removed {cmd}");
+    println!("cleaned local manifest, lockfile, package record, cache ref, and executable state");
+    println!(
+        "cache assets preserved; run `binpm cache prune` for unreferenced assets or `binpm cache \
+         clean` for all cached assets"
+    );
     Ok(0)
 }
 
@@ -5955,6 +6095,11 @@ fn remove_global_tool(cmd: &str) -> Result<i32> {
     let paths = ScopePaths::global(binpm_home()?);
     remove_global_tool_from_paths(&paths, cmd)?;
     println!("removed {cmd}");
+    println!("cleaned global package record and executable state");
+    println!(
+        "cache assets preserved; run `binpm cache prune` for unreferenced assets or `binpm cache \
+         clean` for all cached assets"
+    );
     Ok(0)
 }
 
@@ -9242,6 +9387,8 @@ mod tests {
             manifest_target_override(Some(&tool), &target).expect_err("target aliases rejected");
 
         assert!(error.to_string().contains("Invalid target key"));
+        assert!(error.to_string().contains("linux-x86_64-gnu"));
+        assert!(error.to_string().contains("[tools.<cmd>.targets."));
 
         let invalid_tool = ManifestTool {
             targets: BTreeMap::from([(
@@ -9256,6 +9403,37 @@ mod tests {
         };
 
         assert!(manifest_target_override(Some(&invalid_tool), &target).is_err());
+    }
+
+    #[test]
+    fn target_override_rejects_non_installable_assets_with_actionable_message() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "Tool-1.0.0.dmg".to_string(),
+                    bin: "tool".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+
+        let error = select_manifest_asset(
+            &spec,
+            Some(&tool),
+            &target,
+            &[release_asset("Tool-1.0.0.dmg")],
+        )
+        .expect_err("installer override rejected");
+        let rendered = error.to_string();
+
+        assert!(rendered.contains("target override selected `Tool-1.0.0.dmg`"));
+        assert!(rendered.contains("choose an archive or bare executable"));
     }
 
     #[test]
@@ -9885,6 +10063,24 @@ mod tests {
             .as_str()
             .expect("remediation")
             .contains("portable archive or bare executable"));
+    }
+
+    #[test]
+    fn install_selection_failure_reports_installer_only_release_boundary() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let assets = [
+            release_asset("Tool-1.0.0.dmg"),
+            release_asset("Tool-1.0.0.msi"),
+        ];
+
+        let error =
+            select_manifest_asset(&spec, None, &target, &assets).expect_err("installer-only");
+        let rendered = error.to_string();
+
+        assert!(rendered.contains("unsupported desktop or system installer packages"));
+        assert!(rendered.contains("Tool-1.0.0.dmg, Tool-1.0.0.msi"));
+        assert!(rendered.contains("portable archive or bare executable"));
     }
 
     #[test]
@@ -11267,6 +11463,36 @@ mod tests {
             bytes
         );
         assert!(!cache.metadata_path(&sha256).exists());
+    }
+
+    #[test]
+    fn failed_install_cleanup_preserves_new_verified_cache_entry_for_retry() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        cache.ensure().expect("cache paths");
+        let bytes = b"downloaded tool";
+        let sha256 = format!("{:x}", Sha256::digest(bytes));
+        fs::create_dir_all(cache.entry_dir(&sha256)).expect("cache entry dir");
+        fs::write(cache.asset_path(&sha256), bytes).expect("cache asset");
+        write_cache_record(&cache, &cache_record(&sha256)).expect("cache record");
+        let mut record = package_record();
+        record.sha256 = sha256.clone();
+        record.cache_key = Some(crate::storage::cache_key(&sha256));
+        record.cache_path = Some(cache.asset_path(&sha256).display().to_string());
+        let install = InstalledPackage {
+            record,
+            populated_cache_entry: true,
+            deferred_cache_hit: None,
+            cache_metadata_snapshot: None,
+        };
+
+        cleanup_failed_install_cache(&cache, &sha256, None, &install).expect("cleanup cache");
+
+        assert_eq!(
+            fs::read(cache.asset_path(&sha256)).expect("cache asset"),
+            bytes
+        );
+        assert!(has_current_cache_record(&cache, &sha256).expect("cache record check"));
     }
 
     #[test]

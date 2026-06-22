@@ -548,6 +548,10 @@ impl FromStr for HostTarget {
         if segments.len() != 3 {
             return Err(BinpmError::InvalidTargetKey {
                 raw: raw.to_string(),
+                message: "Expected canonical `<os>-<arch>-<libc>` such as `linux-x86_64-gnu`; \
+                          target-specific manifest overrides belong under \
+                          `[tools.<cmd>.targets.<target-key>]`."
+                    .to_string(),
             });
         }
 
