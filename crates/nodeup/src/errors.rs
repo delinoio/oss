@@ -110,7 +110,8 @@ fn sanitize_unparseable_url_text(raw: &str) -> String {
 }
 
 fn strip_unparseable_url_userinfo(raw: &str, authority_start: usize) -> String {
-    let Some(userinfo_end) = raw[authority_start..]
+    let search_end = unparseable_userinfo_search_end(raw, authority_start);
+    let Some(userinfo_end) = raw[authority_start..search_end]
         .rfind('@')
         .map(|index| authority_start + index)
     else {
@@ -118,6 +119,26 @@ fn strip_unparseable_url_userinfo(raw: &str, authority_start: usize) -> String {
     };
 
     format!("{}{}", &raw[..authority_start], &raw[userinfo_end + 1..])
+}
+
+fn unparseable_userinfo_search_end(raw: &str, authority_start: usize) -> usize {
+    let Some(query_or_fragment_start) = raw[authority_start..]
+        .find(['?', '#'])
+        .map(|index| authority_start + index)
+    else {
+        return raw.len();
+    };
+
+    let has_path_before_query_or_fragment =
+        raw[authority_start..query_or_fragment_start].contains('/');
+    let has_credential_separator_before_query_or_fragment =
+        raw[authority_start..query_or_fragment_start].contains(':');
+
+    if has_path_before_query_or_fragment || !has_credential_separator_before_query_or_fragment {
+        query_or_fragment_start
+    } else {
+        raw.len()
+    }
 }
 
 fn reqwest_error_classification(error: &reqwest::Error) -> &'static str {
@@ -445,5 +466,12 @@ mod tests {
         let sanitized = sanitize_url_text("mirror/index.json?email=a@b&token=secret");
 
         assert_eq!(sanitized, "mirror/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_does_not_treat_scheme_query_at_as_userinfo() {
+        let sanitized = sanitize_url_text("https://bad host/index.json?email=a@b&token=secret");
+
+        assert_eq!(sanitized, "https://bad host/index.json");
     }
 }
