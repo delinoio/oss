@@ -245,6 +245,9 @@ fn global_update_dry_run_reports_all_global_records_without_mutation() {
         .assert()
         .success()
         .stdout(predicate::str::contains("update scope: global"))
+        .stdout(predicate::str::contains(
+            "update mode: all tools in global scope",
+        ))
         .stdout(predicate::str::contains("planned updates: 2"))
         .stdout(predicate::str::contains(
             "would update alpha from github:owner/alpha 1.0.0",
@@ -277,6 +280,7 @@ fn global_update_dry_run_reports_selected_global_records_without_mutation() {
         .assert()
         .success()
         .stdout(predicate::str::contains("update scope: global"))
+        .stdout(predicate::str::contains("update mode: selected tools (1)"))
         .stdout(predicate::str::contains("planned updates: 1"))
         .stdout(predicate::str::contains(
             "would update beta from github:owner/beta 2.0.0",
@@ -1040,6 +1044,30 @@ version = "1.0.0"
     assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
     assert_eq!(payload["tools"][0]["requested_version"], "1.0.0");
     assert!(payload["tools"][0]["release_tag"].is_null());
+}
+
+#[test]
+fn list_human_reports_selected_scope() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(
+        temp_dir.path().join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("list scope: local"));
 }
 
 #[test]
@@ -2511,6 +2539,9 @@ version = "1.0.0"
         .assert()
         .success()
         .stdout(predicate::str::contains("update scope: local"))
+        .stdout(predicate::str::contains(
+            "update mode: all tools in local scope",
+        ))
         .stdout(predicate::str::contains("planned updates: 2"))
         .stdout(predicate::str::contains(
             "would update alpha from github:owner/alpha <latest>",
