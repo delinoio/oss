@@ -6044,6 +6044,7 @@ mod tests {
         io::Write,
         path::{Path, PathBuf},
         str::FromStr,
+        sync::Mutex,
     };
 
     use sha2::{Digest, Sha256};
@@ -6099,6 +6100,8 @@ mod tests {
             LOCKFILE_FILE, MANIFEST_FILE,
         },
     };
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct StaticReleaseClient {
         tag: &'static str,
@@ -9181,6 +9184,7 @@ mod tests {
 
     #[test]
     fn locked_record_download_request_preserves_provider_auth_metadata() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "github:ghe.locked.example/owner/tool".to_string();
         record.source_host = "ghe.locked.example".to_string();
@@ -9204,6 +9208,7 @@ mod tests {
 
     #[test]
     fn locked_record_download_request_omits_provider_auth_for_external_asset_url() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
         record.source_provider = SourceProvider::GitLab;
@@ -9225,6 +9230,7 @@ mod tests {
 
     #[test]
     fn locked_record_download_request_preserves_gitlab_auth_for_provider_asset_url() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
         record.source_provider = SourceProvider::GitLab;
