@@ -110,22 +110,19 @@ fn sanitize_unparseable_url_text(raw: &str) -> String {
 }
 
 fn strip_unparseable_url_userinfo(raw: &str, authority_start: usize) -> String {
-    let authority_end = raw[authority_start..]
-        .find('/')
+    let Some(userinfo_end) = raw[authority_start..]
+        .rfind('@')
         .map(|index| authority_start + index)
-        .unwrap_or(raw.len());
-    let authority = &raw[authority_start..authority_end];
-
-    let Some(userinfo_end) = authority.rfind('@') else {
+    else {
         return raw.to_string();
     };
 
-    format!(
-        "{}{}{}",
-        &raw[..authority_start],
-        &authority[userinfo_end + 1..],
-        &raw[authority_end..]
-    )
+    let possible_userinfo = &raw[authority_start..userinfo_end];
+    if !possible_userinfo.contains(':') && possible_userinfo.contains('/') {
+        return raw.to_string();
+    }
+
+    format!("{}{}", &raw[..authority_start], &raw[userinfo_end + 1..])
 }
 
 fn reqwest_error_classification(error: &reqwest::Error) -> &'static str {
@@ -423,6 +420,13 @@ mod tests {
     #[test]
     fn sanitize_url_text_strips_userinfo_before_query_delimiter_from_unparseable_text() {
         let sanitized = sanitize_url_text("https://user:pa?ss@mirror/index.json#fragment");
+
+        assert_eq!(sanitized, "https://mirror/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_userinfo_before_slash_delimiter_from_unparseable_text() {
+        let sanitized = sanitize_url_text("https://user:pa/ss@mirror/index.json?token=secret");
 
         assert_eq!(sanitized, "https://mirror/index.json");
     }
