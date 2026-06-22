@@ -5,6 +5,7 @@ use crate::{
     cli::{OutputColorMode, OutputFormat},
     commands::print_output,
     errors::{ErrorKind, NodeupError, Result},
+    installer::InstallState,
     release_index::ReleaseIndexResolutionDiagnostic,
     resolver::ResolvedRuntimeTarget,
     selectors::stored_selector_metadata,
@@ -30,7 +31,16 @@ struct DefaultResponse {
     resolved_runtime: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     release_index: Option<ReleaseIndexResolutionDiagnostic>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    install_side_effect: Option<DefaultInstallSideEffect>,
     resolution_error: Option<DefaultResolutionError>,
+}
+
+#[derive(Debug, Serialize)]
+struct DefaultInstallSideEffect {
+    runtime: String,
+    status: String,
+    installed_by_default_command: bool,
 }
 
 impl From<NodeupError> for DefaultResolutionError {
@@ -53,9 +63,20 @@ pub fn execute(
             .resolver
             .resolve_selector_with_source(runtime_selector, RuntimeSelectorSource::Explicit)?;
 
-        if let ResolvedRuntimeTarget::Version { version } = &resolved.target {
-            app.installer.ensure_installed(version, &app.releases)?;
-        }
+        let install_side_effect =
+            if let ResolvedRuntimeTarget::Version { version } = &resolved.target {
+                let report = app.installer.ensure_installed(version, &app.releases)?;
+                Some(DefaultInstallSideEffect {
+                    runtime: report.version,
+                    status: match report.state {
+                        InstallState::Installed => "installed".to_string(),
+                        InstallState::AlreadyInstalled => "already-installed".to_string(),
+                    },
+                    installed_by_default_command: report.state == InstallState::Installed,
+                })
+            } else {
+                None
+            };
 
         let mut settings = app.store.load_settings()?;
         settings.default_selector = Some(runtime_selector.to_string());
@@ -76,15 +97,20 @@ pub fn execute(
             selector_alias_of: resolved.selector.alias_of(),
             resolved_runtime: Some(resolved.runtime_id()),
             release_index: app.resolver.release_index_diagnostic(),
+            install_side_effect,
             resolution_error: None,
         };
-        let human = append_release_index_human_note(
-            format!(
-                "Default runtime set to {}",
-                response.default_selector.as_deref().unwrap_or("")
-            ),
-            response.release_index.as_ref(),
+        let mut human = format!(
+            "Default runtime set to {}",
+            response.default_selector.as_deref().unwrap_or("")
         );
+        if let Some(side_effect) = response.install_side_effect.as_ref() {
+            human = format!(
+                "{human} (runtime {} {})",
+                side_effect.runtime, side_effect.status
+            );
+        }
+        let human = append_release_index_human_note(human, response.release_index.as_ref());
         print_output(output, color, &human, &response)?;
         return Ok(0);
     }
@@ -132,6 +158,7 @@ pub fn execute(
         selector_alias_of: selector_metadata.and_then(|metadata| metadata.alias_of),
         resolved_runtime,
         release_index,
+        install_side_effect: None,
         resolution_error,
     };
     let human = if let Some(selector) = default_selector.as_ref() {

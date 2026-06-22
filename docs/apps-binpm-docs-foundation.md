@@ -39,7 +39,9 @@
 - Published content must not expose internal-only secrets, unpublished release credentials, private CI environment details, or source-provider tokens.
 - Published content must not expose internal architecture, operational, CI, or repository-layout details that are not part of a stable public contract.
 - Installation guidance must preserve the binpm HTTPS, sanitized URL persistence, cache validation, and `--require-verified` contracts.
-- Direct-installer guidance must provide remote copy-paste POSIX and PowerShell commands using stable first-party `delinoio/oss` raw GitHub URLs, keep canonical in-repo script paths visible for maintainer workflows, present `cosign` as a required prerequisite, and clearly distinguish binpm release artifact verification from verification of packages installed by binpm.
+- Direct-installer guidance must provide latest and reproducible pinned remote copy-paste POSIX and PowerShell commands using stable first-party `delinoio/oss` raw GitHub URLs, keep canonical in-repo script paths visible for maintainer workflows, present `cosign` as a required prerequisite with official installation guidance before installer commands, and clearly distinguish binpm release artifact verification from verification of packages installed by binpm.
+- Installation and release guidance must describe Homebrew as a prebuilt-only binpm channel for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`, and must describe `cargo-binstall` as first-party release-asset-only with quick-install and compile fallbacks disabled.
+- Installation, release, troubleshooting, and reference guidance must distinguish first-party binpm binary distribution platforms from the broader third-party package target parsing model.
 - Cloudflare Pages deployment credentials must remain managed by CI or hosting configuration, not checked into the repository.
 - Published content must be sourced from repository contracts and app documentation, not from assumptions about the current live contents of `https://binpm.delino.io`.
 

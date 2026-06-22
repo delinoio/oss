@@ -49,8 +49,8 @@
 - Keep cache management and diagnostic command identifiers stable as `binpm cache list`, `binpm cache prune`, `binpm cache clean`, and `binpm cache key`.
 - Ensure cache reuse is always verified against provider asset digests, upstream checksum material, successfully verified signatures, or locally recorded SHA-256 metadata before extraction or install finalization.
 - Keep cache cleanup behavior separate from uninstall behavior: cache pruning and cleaning must not remove package records or executable links/copies under `~/.binpm/bin`.
-- Keep `binpm cache clean` output explicit about removing global cache asset entries while preserving cache references, package records, and executable links/copies.
-- Keep `binpm cache prune` responsible for stale structured local-project cache-reference cleanup before asset pruning; legacy plain-text references remain preserving until rewritten.
+- Keep `binpm cache clean` output explicit in human and JSON modes about removing global cache asset entries while preserving cache references, package records, and executable links/copies.
+- Keep `binpm cache prune` responsible for stale structured local-project cache-reference cleanup before asset pruning; legacy plain-text references remain preserving until rewritten by future local install, update, or removal flows and prune output must guide that migration.
 - Keep `binpm cache key` read-only; it must not download, install, or populate cache entries.
 - Keep `binpm cache key` explicit about missing lockfiles through a human warning or structured JSON status.
 - Keep source identifiers aligned with the documented enum contract: `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and `gitlab:<host>/<namespace...>/<project>[@version]`.
