@@ -117,11 +117,6 @@ fn strip_unparseable_url_userinfo(raw: &str, authority_start: usize) -> String {
         return raw.to_string();
     };
 
-    let possible_userinfo = &raw[authority_start..userinfo_end];
-    if !possible_userinfo.contains(':') && possible_userinfo.contains('/') {
-        return raw.to_string();
-    }
-
     format!("{}{}", &raw[..authority_start], &raw[userinfo_end + 1..])
 }
 
@@ -434,6 +429,13 @@ mod tests {
     #[test]
     fn sanitize_url_text_strips_userinfo_from_schemeless_text() {
         let sanitized = sanitize_url_text("user:token@mirror/index.json?secret=1#fragment");
+
+        assert_eq!(sanitized, "mirror/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_username_only_userinfo_from_schemeless_text() {
+        let sanitized = sanitize_url_text("token/part@mirror/index.json?secret=1");
 
         assert_eq!(sanitized, "mirror/index.json");
     }
