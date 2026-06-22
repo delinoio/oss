@@ -145,6 +145,10 @@ where
             continue;
         }
 
+        if arg == "--" {
+            break;
+        }
+
         if arg == "--output" {
             output_value_expected = true;
             continue;
@@ -469,6 +473,19 @@ mod tests {
     }
 
     #[test]
+    fn managed_alias_invocation_ignores_json_output_flags_after_delimiter() {
+        assert!(!json_error_output_requested_from_args(os_args(&[
+            "npm", "--", "--output", "json",
+        ])));
+
+        assert!(!json_error_output_requested_from_args(os_args(&[
+            "npm",
+            "--",
+            "--output=json",
+        ])));
+    }
+
+    #[test]
     fn managed_alias_invocation_selects_managed_alias_logging_context() {
         assert_eq!(
             logging_context_from_args(os_args(&["node"])),
@@ -506,6 +523,14 @@ mod tests {
                 "--output",
                 "json",
             ])),
+            LoggingContext::ManagedAlias
+        );
+    }
+
+    #[test]
+    fn managed_alias_delimited_json_output_keeps_managed_alias_logging_context() {
+        assert_eq!(
+            logging_context_from_args(os_args(&["npm", "--", "--output", "json"])),
             LoggingContext::ManagedAlias
         );
     }
