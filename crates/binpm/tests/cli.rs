@@ -881,8 +881,8 @@ fn env_cmd_escapes_percent_expansion_in_session_hints() {
         .expect("canonical temp dir")
         .join(".binpm")
         .join("bin");
-    let escaped_global = global_bin.display().to_string().replace('%', "^%");
-    let escaped_local = local_bin.display().to_string().replace('%', "^%");
+    let escaped_global = global_bin.display().to_string().replace('%', "%%cd:~,%");
+    let escaped_local = local_bin.display().to_string().replace('%', "%%cd:~,%");
     let mut command = binpm();
 
     command
@@ -898,6 +898,7 @@ fn env_cmd_escapes_percent_expansion_in_session_hints() {
         .stderr(predicate::str::contains(format!(
             "set \"PATH={escaped_local};{escaped_global};%PATH%\""
         )))
+        .stderr(predicate::str::contains("^%").not())
         .stderr(
             predicate::str::contains(format!("set \"PATH={};%PATH%\"", local_bin.display())).not(),
         )

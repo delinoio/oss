@@ -6933,7 +6933,7 @@ fn cmd_set_path(path: &Path) -> String {
 }
 
 fn cmd_escape(raw: &str) -> String {
-    raw.replace('^', "^^").replace('%', "^%")
+    raw.replace('^', "^^").replace('%', "%%cd:~,%")
 }
 
 fn shell_quote(shell: Shell, path: &Path) -> String {
