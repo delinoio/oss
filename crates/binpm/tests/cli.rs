@@ -291,6 +291,31 @@ fn global_update_dry_run_reports_selected_global_records_without_mutation() {
 }
 
 #[test]
+fn global_update_dry_run_validates_selected_global_records() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    write_global_package_record(&home, "beta", "owner/beta", "2.0.0");
+    let beta_record_path = home.join("packages").join("beta.toml");
+    let beta_record = fs::read_to_string(&beta_record_path).expect("read beta record");
+    fs::write(
+        &beta_record_path,
+        beta_record.replace("source = \"github:owner/beta\"", "source = \"github:\""),
+    )
+    .expect("write invalid beta record");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["update", "--global", "--dry-run", "beta"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("github:"))
+        .stdout(predicate::str::contains("planned updates").not())
+        .stdout(predicate::str::contains("dry run: no changes made").not());
+}
+
+#[test]
 fn add_manifest_only_writes_only_manifest_and_supports_additional_commands() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");

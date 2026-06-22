@@ -1149,6 +1149,7 @@ fn print_local_update_plan(selected: &[String]) -> Result<()> {
 fn print_global_update_plan(selected: &[String]) -> Result<()> {
     let paths = ScopePaths::global(binpm_home()?);
     let planned = selected_global_package_records(&paths, selected)?;
+    prepare_global_updates(planned.clone())?;
     println!("planned updates: {}", planned.len());
     for (cmd, record) in &planned {
         println!(
@@ -2088,11 +2089,7 @@ fn prepare_global_updates(
 }
 
 fn global_update_selected_binary(record: &PackageRecord) -> Result<Option<String>> {
-    let selected = match record.archive_format {
-        ArchiveFormat::BareExecutable => record.selected_binary.as_str(),
-        _ => archive_basename(&record.selected_binary),
-    };
-    normalize_bin_selection(Some(selected))
+    normalize_bin_selection(Some(&record.selected_binary))
 }
 
 fn selected_global_package_records(
@@ -6927,14 +6924,14 @@ mod tests {
     }
 
     #[test]
-    fn global_update_selected_binary_uses_archive_basename() {
+    fn global_update_selected_binary_preserves_archive_member_path() {
         let mut record = package_record();
         record.archive_format = ArchiveFormat::Zip;
-        record.selected_binary = "tool-1.0.0/bin/tool".to_string();
+        record.selected_binary = "bin/tool".to_string();
 
         assert_eq!(
             global_update_selected_binary(&record).expect("selection"),
-            Some("tool".to_string())
+            Some("bin/tool".to_string())
         );
     }
 
