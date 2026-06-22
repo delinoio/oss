@@ -4520,6 +4520,62 @@ fn checksum_mismatch_fails_install() {
 
 #[test]
 #[serial]
+fn checksum_mismatch_json_includes_sanitized_mirror_diagnostics() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+
+    let archive_name = "node-v22.1.0-linux-x64.tar.xz".to_string();
+    let mut shasums_override = HashMap::new();
+    shasums_override.insert(archive_name, "deadbeef".to_string());
+
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho bad\n")]),
+        Some(shasums_override),
+    );
+
+    let credentialed_download_base_url =
+        env.download_base_url
+            .replacen("http://", "http://user:secret@", 1);
+    let index_url = format!("{}/index.json?token=secret#fragment", env.server.base_url());
+
+    let output = env
+        .command()
+        .env("NODEUP_INDEX_URL", index_url)
+        .env("NODEUP_DOWNLOAD_BASE_URL", credentialed_download_base_url)
+        .args(["--output", "json", "toolchain", "install", "22.1.0"])
+        .output()
+        .expect("install checksum mismatch json diagnostics");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "conflict");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("verify NODEUP_INDEX_URL and NODEUP_DOWNLOAD_BASE_URL"));
+    assert_eq!(
+        payload["diagnostics"]["index_url"],
+        format!("{}/index.json", env.server.base_url())
+    );
+    assert_eq!(
+        payload["diagnostics"]["download_base_url"],
+        env.download_base_url
+    );
+    assert_eq!(payload["diagnostics"]["index_url_source"], "env");
+    assert_eq!(payload["diagnostics"]["download_base_url_source"], "env");
+    assert_eq!(payload["diagnostics"]["mirror_override_present"], true);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("secret"));
+    assert!(!stderr.contains("token="));
+    assert!(!stderr.contains("fragment"));
+}
+
+#[test]
+#[serial]
 fn unsupported_platform_is_reported() {
     let env = TestEnv::new();
 
@@ -6123,6 +6179,51 @@ fn json_output_does_not_include_ansi_when_color_is_forced() {
 
 #[test]
 #[serial]
+fn human_output_warns_about_invalid_color_env_values() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NODEUP_COLOR", "off")
+        .env("NODEUP_LOG_COLOR", "enabled")
+        .args(["show", "home"])
+        .output()
+        .expect("show home with invalid color env values");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup home:"));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("ignoring invalid NODEUP_COLOR"));
+    assert!(stderr.contains("valid values are auto, always, never"));
+    assert!(stderr.contains("ignoring invalid NODEUP_LOG_COLOR"));
+    assert!(stderr.contains("nodeup show color"));
+}
+
+#[test]
+#[serial]
+fn json_output_stays_parseable_with_invalid_color_env_values() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .env("NODEUP_COLOR", "off")
+        .env("NODEUP_LOG_COLOR", "enabled")
+        .args(["--output", "json", "show", "home"])
+        .output()
+        .expect("show home json with invalid color env values");
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("\u{1b}["));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["data_root"].is_string());
+}
+
+#[test]
+#[serial]
 fn invalid_release_index_ttl_does_not_log_for_commands_without_release_index() {
     let env = TestEnv::new();
     let output = env
@@ -6204,8 +6305,16 @@ fn color_diagnostics_reports_nodeup_color_overrides_no_color() {
     let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(payload["human_stdout"]["enabled"], true);
     assert_eq!(payload["human_stdout"]["source"], "NODEUP_COLOR");
+    assert_eq!(
+        payload["human_stdout"]["no_color_overridden_by_nodeup_color"],
+        true
+    );
     assert_eq!(payload["human_stderr"]["enabled"], true);
     assert_eq!(payload["human_stderr"]["source"], "NODEUP_COLOR");
+    assert_eq!(
+        payload["human_stderr"]["no_color_overridden_by_nodeup_color"],
+        true
+    );
     assert_eq!(payload["logs"]["enabled"], false);
     assert_eq!(payload["logs"]["source"], "NO_COLOR");
 }
@@ -6231,6 +6340,10 @@ fn color_diagnostics_reports_nodeup_log_color_overrides_no_color() {
     assert_eq!(payload["human_stderr"]["source"], "NO_COLOR");
     assert_eq!(payload["logs"]["enabled"], true);
     assert_eq!(payload["logs"]["source"], "NODEUP_LOG_COLOR");
+    assert_eq!(
+        payload["logs"]["no_color_overridden_by_nodeup_log_color"],
+        true
+    );
 }
 
 #[test]

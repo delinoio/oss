@@ -65,7 +65,9 @@
 - `toolchain uninstall` JSON error diagnostics must include deterministic `blocked_versions` and `blockers` fields so scripts do not parse prose.
 - Human output styling must support `--color auto|always|never` and `NODEUP_COLOR=auto|always|never`.
 - Human output color precedence must remain `--color` > `NODEUP_COLOR` > `NO_COLOR` > stream-aware `auto`.
-- `nodeup show color` must report effective color decisions for human stdout, human stderr, and logs, including ignored invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values.
+- `nodeup show color` must report effective color decisions for human stdout, human stderr, and logs, including ignored invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values and whether `NO_COLOR` is present but overridden by a Nodeup-specific color environment variable.
+- Human-mode commands must make invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values noticeable on stderr without writing those warnings to JSON stdout or otherwise adding ANSI styling to JSON payloads.
+- Checksum mismatch diagnostics must include sanitized release index and download-base source details when a mirror override is configured. URL diagnostics must strip credentials, query strings, and fragments, and the hint must tell users to verify that `NODEUP_INDEX_URL` and `NODEUP_DOWNLOAD_BASE_URL` point to matching Node.js release data.
 - User-facing `NodeupError` messages must follow the format `<cause>. Hint: <next action>`.
 - `NodeupError` cause text should include deterministic key-value diagnostics when available (for example `selector`, `runtime`, `path`, `url`, `status`, `attempt`).
 - JSON error envelopes must keep the stable fields `kind`, `message`, and `exit_code` while allowing optional structured `diagnostics`.

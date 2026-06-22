@@ -28,6 +28,8 @@ pub struct ReleaseIndexClient {
     http: Client,
     index_url: String,
     download_base_url: String,
+    index_url_source: ReleaseEndpointSource,
+    download_base_url_source: ReleaseEndpointSource,
     cache_file: PathBuf,
     cache_ttl: Duration,
     cache_ttl_warning: Option<ReleaseIndexTtlWarning>,
@@ -71,6 +73,16 @@ pub struct ReleaseIndexResolutionDiagnostic {
     pub source_url: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ReleaseMirrorDiagnostic {
+    pub index_url: String,
+    pub index_url_source: &'static str,
+    pub download_base_url: String,
+    pub download_base_url_source: &'static str,
+    pub mirror_override_present: bool,
+    pub mismatch_indicators: Vec<&'static str>,
+}
+
 #[derive(Debug, Clone)]
 struct ReleaseIndexStaleFallback {
     age_seconds: u64,
@@ -89,6 +101,21 @@ enum TtlParseError {
     Empty,
     Negative,
     NotInteger,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReleaseEndpointSource {
+    Default,
+    Env,
+}
+
+impl ReleaseEndpointSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Env => "env",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -116,15 +143,28 @@ impl ReleaseEntry {
 impl ReleaseIndexClient {
     pub fn new(cache_file: PathBuf, cache_ttl: Duration) -> Result<Self> {
         let http = Self::build_http_client()?;
-        let index_url =
-            std::env::var("NODEUP_INDEX_URL").unwrap_or_else(|_| DEFAULT_INDEX_URL.to_string());
-        let download_base_url = std::env::var("NODEUP_DOWNLOAD_BASE_URL")
-            .unwrap_or_else(|_| DEFAULT_DOWNLOAD_BASE_URL.to_string());
+        let (index_url, index_url_source) = match std::env::var("NODEUP_INDEX_URL") {
+            Ok(value) => (value, ReleaseEndpointSource::Env),
+            Err(_) => (
+                DEFAULT_INDEX_URL.to_string(),
+                ReleaseEndpointSource::Default,
+            ),
+        };
+        let (download_base_url, download_base_url_source) =
+            match std::env::var("NODEUP_DOWNLOAD_BASE_URL") {
+                Ok(value) => (value, ReleaseEndpointSource::Env),
+                Err(_) => (
+                    DEFAULT_DOWNLOAD_BASE_URL.to_string(),
+                    ReleaseEndpointSource::Default,
+                ),
+            };
 
         Ok(Self {
             http,
             index_url,
             download_base_url,
+            index_url_source,
+            download_base_url_source,
             cache_file,
             cache_ttl,
             cache_ttl_warning: None,
@@ -190,6 +230,8 @@ impl ReleaseIndexClient {
             http,
             index_url,
             download_base_url,
+            index_url_source: ReleaseEndpointSource::Env,
+            download_base_url_source: ReleaseEndpointSource::Env,
             cache_file,
             cache_ttl,
             cache_ttl_warning: None,
@@ -554,6 +596,28 @@ impl ReleaseIndexClient {
         &self.download_base_url
     }
 
+    pub fn mirror_diagnostic(&self) -> ReleaseMirrorDiagnostic {
+        let mismatch_indicators = release_mirror_mismatch_indicators(
+            &self.index_url,
+            &self.download_base_url,
+            self.mirror_override_present(),
+        );
+
+        ReleaseMirrorDiagnostic {
+            index_url: sanitize_url_text(&self.index_url),
+            index_url_source: self.index_url_source.as_str(),
+            download_base_url: sanitize_url_text(&self.download_base_url),
+            download_base_url_source: self.download_base_url_source.as_str(),
+            mirror_override_present: self.mirror_override_present(),
+            mismatch_indicators,
+        }
+    }
+
+    pub fn mirror_override_present(&self) -> bool {
+        self.index_url_source == ReleaseEndpointSource::Env
+            || self.download_base_url_source == ReleaseEndpointSource::Env
+    }
+
     pub fn http(&self) -> &Client {
         &self.http
     }
@@ -594,6 +658,61 @@ fn unix_epoch_seconds() -> u64 {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(duration) => duration.as_secs(),
         Err(_) => 0,
+    }
+}
+
+fn release_mirror_mismatch_indicators(
+    index_url: &str,
+    download_base_url: &str,
+    mirror_override_present: bool,
+) -> Vec<&'static str> {
+    if !mirror_override_present {
+        return Vec::new();
+    }
+
+    let (Ok(index), Ok(download)) = (
+        reqwest::Url::parse(index_url),
+        reqwest::Url::parse(download_base_url),
+    ) else {
+        return vec!["unparseable-url"];
+    };
+
+    let mut indicators = Vec::new();
+    if index.scheme() != download.scheme() {
+        indicators.push("different-scheme");
+    }
+    if index.host_str() != download.host_str()
+        || index.port_or_known_default() != download.port_or_known_default()
+    {
+        indicators.push("different-host");
+    }
+
+    if index_origin_path(&index) != normalized_url_path(&download) {
+        indicators.push("different-release-root");
+    }
+
+    indicators
+}
+
+fn index_origin_path(url: &reqwest::Url) -> String {
+    let path = normalized_url_path(url);
+    path.rsplit_once('/')
+        .map(|(parent, _)| {
+            if parent.is_empty() {
+                "/".to_string()
+            } else {
+                parent.to_string()
+            }
+        })
+        .unwrap_or(path)
+}
+
+fn normalized_url_path(url: &reqwest::Url) -> String {
+    let path = url.path().trim_end_matches('/');
+    if path.is_empty() {
+        "/".to_string()
+    } else {
+        path.to_string()
     }
 }
 

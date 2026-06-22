@@ -35,7 +35,7 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.
 - Invalid shell completion subcommand scopes must be rejected with hints that point back to the nearest valid top-level scope.
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.
-- `nodeup show color` must remain available as the color diagnostic command for human stdout, human stderr, and log color decisions.
+- `nodeup show color` must remain available as the color diagnostic command for human stdout, human stderr, log color decisions, ignored invalid color environment values, and `NO_COLOR` precedence conflicts.
 - `--output json` must render both application-level errors and clap parser failures as JSON error envelopes on stderr, except raw completion script output remains unwrapped on success.
 - Script-safe output guidance must remain discoverable from CLI help and docs: use `--output json` for structured automation, set `RUST_LOG=off` before `nodeup toolchain list --quiet` for raw runtime identifiers, and set `RUST_LOG=off` before `nodeup completions <shell> >file` for completion redirection.
 - Tracing logs must be written to stderr when enabled so stdout remains reserved for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts. Management `--output json` keeps tracing logs off by default so JSON stdout and stderr payloads remain parseable unless `RUST_LOG` explicitly enables tracing.

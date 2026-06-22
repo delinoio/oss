@@ -228,6 +228,14 @@ impl NodeupError {
         Self::with_hint(ErrorKind::Conflict, cause, hint)
     }
 
+    pub fn conflict_with_diagnostics(
+        cause: impl Into<String>,
+        hint: impl Into<String>,
+        diagnostics: ErrorDiagnostics,
+    ) -> Self {
+        Self::with_hint_and_diagnostics(ErrorKind::Conflict, cause, hint, diagnostics)
+    }
+
     pub fn not_implemented(cause: impl Into<String>) -> Self {
         Self::new(ErrorKind::NotImplemented, cause)
     }

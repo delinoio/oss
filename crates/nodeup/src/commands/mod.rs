@@ -28,6 +28,7 @@ use crate::{
 };
 
 pub fn execute(cli: Cli, app: &NodeupApp) -> Result<i32> {
+    emit_color_env_notices(&cli.command, cli.output);
     log_command_invocation(&cli.command, cli.output);
 
     match cli.command {
@@ -65,6 +66,33 @@ pub fn print_output<T: Serialize>(
     }
 
     Ok(())
+}
+
+fn emit_color_env_notices(command: &Command, output: OutputFormat) {
+    if output != OutputFormat::Human
+        || matches!(
+            command,
+            Command::Show {
+                command: ShowCommand::Color
+            }
+        )
+    {
+        return;
+    }
+
+    if let Some(value) = output_style::invalid_nodeup_color_value() {
+        eprintln!(
+            "nodeup warning: ignoring invalid NODEUP_COLOR={value:?}; valid values are auto, \
+             always, never. Run `nodeup show color` for diagnostics."
+        );
+    }
+
+    if let Some(value) = crate::logging::invalid_nodeup_log_color_value() {
+        eprintln!(
+            "nodeup warning: ignoring invalid NODEUP_LOG_COLOR={value:?}; valid values are auto, \
+             always, never. Run `nodeup show color` for diagnostics."
+        );
+    }
 }
 
 pub fn command_key(command: NodeupCommand) -> &'static str {

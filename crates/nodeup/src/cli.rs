@@ -59,7 +59,12 @@ impl ToolchainListDetail {
                   `nodeup toolchain list --quiet` with RUST_LOG=off in the environment for raw \
                   runtime identifiers.\n  Use `nodeup completions <shell> >file` with \
                   RUST_LOG=off in the environment for raw completion scripts.\n  Logs are written \
-                  to stderr and JSON mode keeps logging off for parseable automation output."
+                  to stderr and JSON mode keeps logging off for parseable automation \
+                  output.\n\nColor controls:\n  --color accepts auto, always, or never.\n  \
+                  NODEUP_COLOR accepts auto, always, or never for human stdout/stderr.\n  \
+                  NODEUP_LOG_COLOR accepts auto, always, or never for logs.\n  Precedence for \
+                  human output is --color > NODEUP_COLOR > NO_COLOR > stream-aware auto.\n  Run \
+                  `nodeup show color` to inspect ignored invalid values and NO_COLOR conflicts."
 )]
 pub struct Cli {
     /// Output format for command results. Use `json` for structured automation;
@@ -67,7 +72,8 @@ pub struct Cli {
     #[arg(long, global = true, value_enum, default_value_t = OutputFormat::Human)]
     pub output: OutputFormat,
 
-    /// Color mode for human output (`auto`, `always`, or `never`).
+    /// Color mode for human output (`auto`, `always`, or `never`). Overrides
+    /// NODEUP_COLOR and NO_COLOR.
     #[arg(long, global = true, value_enum)]
     pub color: Option<OutputColorMode>,
 
@@ -191,7 +197,8 @@ pub enum ShowCommand {
     ActiveRuntime,
     /// Show the nodeup home directory path.
     Home,
-    /// Show effective human output and log color decisions.
+    /// Show effective human output and log color decisions, including ignored
+    /// invalid color env values and NO_COLOR conflicts.
     Color,
 }
 
