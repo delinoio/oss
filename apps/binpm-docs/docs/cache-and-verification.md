@@ -9,10 +9,10 @@ Cache reuse is validated with the strongest available integrity source:
 - Provider asset digest.
 - Upstream checksum sidecar.
 - Upstream checksum manifest.
-- Successfully verified signature under a documented trust policy.
+- Successfully verified package signature under binpm's documented trust policy.
 - Locally recorded SHA-256 metadata when stronger upstream material is unavailable.
 
-When provider metadata exposes a trusted SHA-256 digest, binpm verifies the downloaded asset against that digest first. If no provider digest is available, binpm looks for upstream checksum sidecars such as `<asset>.sha256` and checksum manifests such as `SHA256SUMS` or `checksums.txt`, then verifies the selected asset against the matching SHA-256 entry. Signature verification remains implementation work.
+When provider metadata exposes a trusted SHA-256 digest, binpm verifies the downloaded asset against that digest first. If no provider digest is available, binpm looks for upstream checksum sidecars such as `<asset>.sha256` and checksum manifests such as `SHA256SUMS` or `checksums.txt`, then verifies the selected asset against the matching SHA-256 entry. If checksum material is unavailable, binpm may use a successfully verified package signature when supported. Otherwise, installs continue with locally recorded SHA-256 metadata and an explicit warning.
 
 Cache hits are revalidated before extraction or install finalization. If cache revalidation fails, binpm discards the corrupted entry and redownloads the asset.
 
@@ -32,4 +32,8 @@ Cache hits are revalidated before extraction or install finalization. If cache r
 
 Installs without provider digest, upstream checksum material, or successfully verified signature material continue with an explicit warning and locally recorded SHA-256 metadata.
 
-`--require-verified` and `binpm verify --require-verified` fail when no trusted provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature is available. Signature verification remains implementation work, so raw signature sidecars do not satisfy strict verification today.
+Package signature verification is separate from the release-installer verification used for binpm's own binary. For packages installed by binpm, the supported trust policy is GitHub.com release assets with Sigstore bundle sidecars named `<selected-asset>.sigstore.json`. The sidecar counts only after `cosign verify-blob --bundle` validates the selected asset with issuer `https://token.actions.githubusercontent.com` and a GitHub Actions certificate identity for the same repository and release tag.
+
+Raw `.sig`, `.asc`, `.minisig`, `.sigstore.json`, certificate, attestation, SBOM, checksum, or provenance sidecars do not count as verified bytes by presence alone and are not installable assets.
+
+`--require-verified` and `binpm verify --require-verified` fail when no trusted provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified package signature is available.

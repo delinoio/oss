@@ -120,6 +120,7 @@ enum ProjectId {
 - `~/.binpm/cache` is the user-level global asset cache shared by all `binpm` installs for the same account.
 - `binpm` CLI source input may normalize GitHub.com shorthands such as `owner/repo` and supported `https://github.com/owner/repo` release URLs, but persisted manifests, lockfiles, package records, cache metadata, logs, and JSON diagnostics must use canonical `github:` or `gitlab:` source strings.
 - `binpm` cache reuse must be validated with the strongest available integrity source: provider asset digest, upstream checksum material, successfully verified signature, or locally recorded SHA-256 metadata.
+- `binpm` package signature verification is distinct from direct-installer verification for binpm's own release artifacts. Package signatures may satisfy strict verification only when a supported verifier validates the selected asset under the documented package trust policy; raw signature sidecar presence alone is not verification evidence.
 - Cache management and diagnostic command identifiers are `list`, `prune`, `clean`, and `key` under `binpm cache`.
 - `binpm cache prune` and `binpm cache clean` must not remove installed package records or executable links/copies under `~/.binpm/bin`.
 - `binpm cache clean` must state the removed cache asset boundary and the preserved `~/.binpm/cache/refs`, package-record, and executable boundaries.

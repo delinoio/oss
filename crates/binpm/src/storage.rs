@@ -15,6 +15,7 @@ use crate::{
     assets::{ArtifactKind, CandidateDecision},
     contract::{ArchiveFormat, ChecksumSource, HostTarget, SourceProvider, SourceSpec, TargetOs},
     error::{BinpmError, Result},
+    release::ProviderAuth,
 };
 
 pub const MANIFEST_FILE: &str = "binpm.toml";
@@ -148,8 +149,10 @@ impl PackageRecord {
                 self.source_provider == SourceProvider::GitHub
                     && self.provider_digest_sha256.as_deref() == Some(self.sha256.as_str())
             }
-            ChecksumSource::Sidecar | ChecksumSource::Manifest => true,
+            // Signature booleans in persisted package and lock records are audit metadata, not
+            // proof that the current asset bytes have been verified in this process.
             ChecksumSource::Signature => false,
+            ChecksumSource::Sidecar | ChecksumSource::Manifest => true,
             ChecksumSource::Local => false,
         }
     }
@@ -248,8 +251,18 @@ pub struct ResolvedAsset {
     pub provider_digest_sha256: Option<String>,
     pub upstream_checksum_sha256: Option<String>,
     pub checksum_source: ChecksumSource,
+    pub signature_sidecar: Option<SignatureSidecar>,
     pub signature_available: bool,
     pub signature_verified: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignatureSidecar {
+    pub asset_name: String,
+    pub canonical_url: String,
+    pub download_url: String,
+    pub download_auth: Option<ProviderAuth>,
+    pub download_accept: Option<&'static str>,
 }
 
 pub fn read_manifest(path: &Path) -> Result<Manifest> {
@@ -1852,13 +1865,19 @@ mod tests {
     }
 
     #[test]
-    fn package_records_do_not_trust_persisted_signature_flags() {
+    fn package_records_do_not_trust_persisted_signature_flags_as_verified_source() {
         let mut record = package_record();
         record.sha256 =
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string();
         record.checksum_source = ChecksumSource::Signature;
         record.signature_verified = true;
 
+        assert!(!record.has_verified_source());
+
+        record.signature_available = true;
+        assert!(!record.has_verified_source());
+
+        record.signature_verified = false;
         assert!(!record.has_verified_source());
 
         record.checksum_source = ChecksumSource::Sidecar;
@@ -2523,6 +2542,7 @@ created_at = "2026-01-01T00:00:00Z"
             provider_digest_sha256: None,
             upstream_checksum_sha256: None,
             checksum_source: ChecksumSource::Local,
+            signature_sidecar: None,
             signature_available: false,
             signature_verified: false,
         }

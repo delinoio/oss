@@ -5,8 +5,9 @@ use std::{
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
     str::FromStr,
+    sync::atomic::{AtomicU64, Ordering},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use serde::Serialize;
@@ -35,7 +36,7 @@ use crate::{
     },
     storage::{
         archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
-        install_bare_executable, install_executable_bytes, installed_filename,
+        ensure_dir, install_bare_executable, install_executable_bytes, installed_filename,
         list_package_records, managed_installed_path, package_record_from_resolved,
         package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
         read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
@@ -46,7 +47,7 @@ use crate::{
         validate_command_name, validate_download_url, validate_installed_binary_path,
         validate_sha256_digest, write_cache_ref, write_lockfile, write_manifest,
         write_package_record, CachePaths, LockTool, Manifest, ManifestTool, PackageRecord,
-        ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
+        ResolvedAsset, ScopePaths, SignatureSidecar, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
 
@@ -326,6 +327,8 @@ const DOWNLOAD_PROGRESS_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
 const DOWNLOAD_PROGRESS_STEP_BYTES: u64 = 5 * 1024 * 1024;
 const DOWNLOAD_PROGRESS_INTERVAL: Duration = Duration::from_secs(2);
 const DOWNLOAD_INITIAL_CAPACITY_LIMIT: usize = 8 * 1024 * 1024;
+const GITHUB_ACTIONS_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";
+static SIGSTORE_TEMP_ATTEMPT: AtomicU64 = AtomicU64::new(0);
 
 pub fn run(cli: Cli) -> Result<i32> {
     let output = OutputMode::from_json_flag(cli.json);
@@ -2357,6 +2360,27 @@ struct InstalledPackage {
     cache_metadata_snapshot: Option<CacheMetadataSnapshot>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LockedRecordVerification {
+    verified: bool,
+    signature_reverified: bool,
+}
+
+impl LockedRecordVerification {
+    const SIGNATURE_REVERIFIED: Self = Self {
+        verified: true,
+        signature_reverified: true,
+    };
+    const UNVERIFIED: Self = Self {
+        verified: false,
+        signature_reverified: false,
+    };
+    const VERIFIED: Self = Self {
+        verified: true,
+        signature_reverified: false,
+    };
+}
+
 struct CompletedLocalInstall {
     cmd: String,
     install: InstalledPackage,
@@ -2534,17 +2558,13 @@ fn install_resolved(
 ) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
     let mut resolved = resolve_asset(spec, tool)?;
-    if require_verified && !resolved.checksum_source.is_upstream_verified() {
+    if require_verified
+        && !resolved.checksum_source.is_upstream_verified()
+        && !resolved_has_supported_signature_evidence(&resolved)
+    {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
         });
-    }
-    if resolved.checksum_source == ChecksumSource::Local {
-        eprintln!(
-            "warning: no upstream checksum or verified signature was available for {}; using a \
-             locally computed SHA-256",
-            spec
-        );
     }
     ensure_no_package_record_install_path_collision(scope_paths, cmd, resolved.target.os)?;
     let expected_upstream_sha256 = resolved
@@ -2612,6 +2632,19 @@ fn install_resolved(
                 actual: sha256,
             });
         }
+    }
+    verify_signature_sidecar(cache_paths, &mut resolved, &bytes, require_verified)?;
+    if require_verified && !resolved_has_verified_source(&resolved) {
+        return Err(BinpmError::VerificationRequired {
+            package: spec.to_string(),
+        });
+    }
+    if resolved.checksum_source == ChecksumSource::Local {
+        eprintln!(
+            "warning: no upstream checksum or verified signature was available for {}; using a \
+             locally computed SHA-256",
+            spec
+        );
     }
     let (sha256, cache_asset) = match populate_cache_from_bytes(cache_paths, &resolved, &bytes) {
         Ok(cache_entry) => cache_entry,
@@ -2757,11 +2790,6 @@ fn install_local_from_lock(
     }
     assert_lock_record_matches_source_and_target(&lockfile_path, cmd, spec, &target, &record)?;
     assert_lock_matches_manifest_tool(root, cmd, tool, &target, &record)?;
-    if require_verified && !record.has_verified_source() {
-        return Err(BinpmError::VerificationRequired {
-            package: record.package_spec,
-        });
-    }
     validate_provider_digest_evidence(&record)?;
     validate_locked_record_artifact(&lockfile_path, cmd, &record, &target, tool)?;
     let home = binpm_home()?;
@@ -2781,6 +2809,13 @@ fn install_local_from_lock(
     } else {
         None
     };
+    let mut repair_locked_verification = None;
+    if require_verified && !record.has_verified_source() && !record_has_signature_evidence(&record)
+    {
+        return Err(BinpmError::VerificationRequired {
+            package: record.package_spec,
+        });
+    }
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
         let repair_result = (|| {
             let download_request = locked_record_download_request(&record)?;
@@ -2796,6 +2831,15 @@ fn install_local_from_lock(
                     expected: record.sha256.clone(),
                     actual,
                 });
+            }
+            if require_verified && !record.has_verified_source() {
+                let verification = reverify_locked_record_signature(&cache_paths, &record, &bytes)?;
+                if !verification.verified {
+                    return Err(BinpmError::VerificationRequired {
+                        package: record.package_spec.clone(),
+                    });
+                }
+                repair_locked_verification = Some(verification);
             }
             let resolved = ResolvedAsset {
                 source: SourceSpec::from_str(
@@ -2828,6 +2872,7 @@ fn install_local_from_lock(
                 provider_digest_sha256: None,
                 upstream_checksum_sha256: None,
                 checksum_source: record.checksum_source,
+                signature_sidecar: None,
                 signature_available: record.signature_available,
                 signature_verified: record.signature_verified,
             };
@@ -2842,6 +2887,20 @@ fn install_local_from_lock(
         }
         populated_cache_entry = cache_metadata_snapshot.is_none();
     }
+    let locked_verification = if require_verified {
+        let verification = match repair_locked_verification {
+            Some(verification) => verification,
+            None => locked_record_verified_source(&cache_paths, &record)?,
+        };
+        if !verification.verified {
+            return Err(BinpmError::VerificationRequired {
+                package: record.package_spec.clone(),
+            });
+        }
+        Some(verification)
+    } else {
+        None
+    };
 
     let installed_path = managed_installed_path(&scope_paths, cmd, target.os);
     let mut resolved_for_install = ResolvedAsset {
@@ -2882,6 +2941,7 @@ fn install_local_from_lock(
             None
         },
         checksum_source: record.checksum_source,
+        signature_sidecar: None,
         signature_available: record.signature_available,
         signature_verified: record.signature_verified,
     };
@@ -2901,6 +2961,14 @@ fn install_local_from_lock(
         return Err(error);
     }
     let mut runtime_record = record;
+    if locked_verification
+        .map(|verification| verification.signature_reverified)
+        .unwrap_or(false)
+    {
+        runtime_record.checksum_source = ChecksumSource::Signature;
+        runtime_record.signature_available = true;
+        runtime_record.signature_verified = true;
+    }
     runtime_record.cache_key = Some(crate::storage::cache_key(&runtime_record.sha256));
     runtime_record.cache_path = Some(
         cache_paths
@@ -3316,6 +3384,29 @@ fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequ
     Ok(DownloadRequest { url, auth, accept })
 }
 
+fn locked_record_signature_sidecar(record: &PackageRecord) -> Result<SignatureSidecar> {
+    let url = sanitize_persisted_url(&format!("{}.sigstore.json", record.asset_url))?;
+    let source = SourceSpec {
+        provider: record.source_provider,
+        host: record.source_host.clone(),
+        path: record.source_path.clone(),
+        version: Some(record.release_tag.clone()),
+    };
+    let auth = provider_origin_download_auth(&source, &url, provider_auth_for_source(&source));
+    let accept = match (record.source_provider, auth.as_ref()) {
+        (SourceProvider::GitHub, Some(_)) => Some(GITHUB_ASSET_DOWNLOAD_ACCEPT),
+        _ => None,
+    };
+
+    Ok(SignatureSidecar {
+        asset_name: format!("{}.sigstore.json", record.asset_name),
+        canonical_url: url.clone(),
+        download_url: url,
+        download_auth: auth,
+        download_accept: accept,
+    })
+}
+
 fn locked_release_lookup_spec(record: &PackageRecord) -> Result<SourceSpec> {
     let mut spec = SourceSpec::from_str(&record.source)?;
     spec.version = Some(record.release_tag.clone());
@@ -3405,6 +3496,8 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
     } else {
         manifest_checksum_source
     };
+    let signature_sidecar = signature_sidecar_for_asset(&decision.asset_name, &release.assets);
+    let signature_available = signature_sidecar.is_some();
     Ok(ResolvedAsset {
         source: spec.clone(),
         release_tag: release.tag,
@@ -3415,9 +3508,429 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         provider_digest_sha256,
         upstream_checksum_sha256: upstream_checksum.map(|evidence| evidence.sha256),
         checksum_source,
-        signature_available: false,
+        signature_sidecar,
+        signature_available,
         signature_verified: false,
     })
+}
+
+fn signature_sidecar_for_asset(
+    asset_name: &str,
+    assets: &[ReleaseAsset],
+) -> Option<SignatureSidecar> {
+    let expected_name = format!("{asset_name}.sigstore.json");
+    assets
+        .iter()
+        .find(|asset| asset.name == expected_name)
+        .map(|asset| {
+            let download_url = asset
+                .download_url
+                .as_deref()
+                .or(asset.provider_url.as_deref())
+                .unwrap_or(&asset.url)
+                .to_string();
+            let canonical_url = asset
+                .provider_url
+                .as_deref()
+                .unwrap_or(&asset.url)
+                .split(['?', '#'])
+                .next()
+                .unwrap_or(&asset.url)
+                .to_string();
+            SignatureSidecar {
+                asset_name: asset.name.clone(),
+                canonical_url,
+                download_url,
+                download_auth: asset.download_auth.clone(),
+                download_accept: asset.download_accept,
+            }
+        })
+}
+
+fn verify_signature_sidecar(
+    cache_paths: &CachePaths,
+    resolved: &mut ResolvedAsset,
+    asset_bytes: &[u8],
+    require_verified: bool,
+) -> Result<()> {
+    if resolved.checksum_source.is_upstream_verified() {
+        return Ok(());
+    }
+    let Some(sidecar) = resolved.signature_sidecar.clone() else {
+        return Ok(());
+    };
+    resolved.signature_available = true;
+    let Some(policy) = sigstore_trust_policy(resolved) else {
+        warn!(
+            package = %resolved.source,
+            asset_name = %resolved.decision.asset_name,
+            signature_sidecar = %sidecar.asset_name,
+            "Skipping package signature verification because no trust policy applies"
+        );
+        if require_verified {
+            eprintln!(
+                "warning: signature sidecar {} is present for {}, but binpm has no applicable \
+                 trust policy for this package",
+                sidecar.asset_name, resolved.source
+            );
+        }
+        return Ok(());
+    };
+
+    let bundle_bytes = match download_asset(
+        &sidecar.download_url,
+        sidecar.download_auth.as_ref(),
+        sidecar.download_accept,
+    ) {
+        Ok(bytes) => bytes,
+        Err(error) if !require_verified => {
+            warn!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                error = %error,
+                "Skipping optional package signature verification because sidecar download failed"
+            );
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
+    let temp_paths = match write_sigstore_verification_inputs(
+        cache_paths,
+        resolved,
+        asset_bytes,
+        &bundle_bytes,
+    ) {
+        Ok(paths) => paths,
+        Err(error) if !require_verified => {
+            warn!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                error = %error,
+                "Skipping optional package signature verification because verifier input setup failed"
+            );
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
+    let output = ProcessCommand::new("cosign")
+        .arg("verify-blob")
+        .arg("--bundle")
+        .arg(&temp_paths.bundle_path)
+        .arg("--certificate-identity-regexp")
+        .arg(&policy.identity_regexp)
+        .arg("--certificate-oidc-issuer")
+        .arg(policy.issuer)
+        .arg(&temp_paths.asset_path)
+        .output();
+    let _ = remove_path_if_exists(&temp_paths.asset_path);
+    let _ = remove_path_if_exists(&temp_paths.bundle_path);
+
+    match output {
+        Ok(output) if output.status.success() => {
+            resolved.checksum_source = ChecksumSource::Signature;
+            resolved.signature_verified = true;
+            info!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                signature_policy = %policy.name,
+                "Verified package signature sidecar"
+            );
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                signature_policy = %policy.name,
+                status = output.status.code().unwrap_or_default(),
+                stderr = %stderr.trim(),
+                "Package signature sidecar did not verify"
+            );
+            if require_verified {
+                eprintln!(
+                    "warning: signature verification failed for {} using sidecar {}",
+                    resolved.source, sidecar.asset_name
+                );
+            }
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            warn!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                "Skipping package signature verification because cosign is not on PATH"
+            );
+            if require_verified {
+                eprintln!(
+                    "warning: --require-verified needs cosign on PATH to validate signature \
+                     sidecar {} for {}",
+                    sidecar.asset_name, resolved.source
+                );
+            }
+        }
+        Err(error) => {
+            if require_verified {
+                return Err(BinpmError::Execute {
+                    cmd: "cosign".to_string(),
+                    source: error,
+                });
+            }
+            warn!(
+                package = %resolved.source,
+                asset_name = %resolved.decision.asset_name,
+                signature_sidecar = %sidecar.asset_name,
+                error = %error,
+                "Skipping optional package signature verification because cosign could not execute"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn resolved_has_verified_source(resolved: &ResolvedAsset) -> bool {
+    resolved.checksum_source.is_upstream_verified()
+        || (resolved.checksum_source == ChecksumSource::Signature
+            && resolved.signature_available
+            && resolved.signature_verified)
+}
+
+fn resolved_has_supported_signature_evidence(resolved: &ResolvedAsset) -> bool {
+    resolved.signature_available && sigstore_trust_policy(resolved).is_some()
+}
+
+fn locked_record_verified_source(
+    cache_paths: &CachePaths,
+    record: &PackageRecord,
+) -> Result<LockedRecordVerification> {
+    if record.has_verified_source() {
+        return Ok(LockedRecordVerification::VERIFIED);
+    }
+    if !record_has_signature_evidence(record) {
+        return Ok(LockedRecordVerification::UNVERIFIED);
+    }
+    let asset_path = cache_paths.asset_path(&record.sha256);
+    let asset_bytes = fs::read(&asset_path).map_err(|source| BinpmError::ReadFile {
+        path: asset_path,
+        source,
+    })?;
+    reverify_locked_record_signature(cache_paths, record, &asset_bytes)
+}
+
+fn download_locked_record_verified_source(record: &PackageRecord) -> Result<bool> {
+    if record.has_verified_source() {
+        return Ok(true);
+    }
+    if !record_has_signature_evidence(record) {
+        return Ok(false);
+    }
+    let download_request = locked_record_download_request(record)?;
+    let asset_bytes = download_asset(
+        &download_request.url,
+        download_request.auth.as_ref(),
+        download_request.accept,
+    )?;
+    let actual = format!("{:x}", Sha256::digest(&asset_bytes));
+    if actual != record.sha256 {
+        return Err(BinpmError::DigestMismatch {
+            path: PathBuf::from(&record.asset_url),
+            expected: record.sha256.clone(),
+            actual,
+        });
+    }
+    Ok(reverify_locked_record_signature_in_temp(record, &asset_bytes)?.verified)
+}
+
+fn record_has_signature_evidence(record: &PackageRecord) -> bool {
+    record.signature_available
+        && record.source_provider == SourceProvider::GitHub
+        && record.source_host == "github.com"
+        && record.source_path.split_once('/').is_some()
+}
+
+fn reverify_locked_record_signature_in_temp(
+    record: &PackageRecord,
+    asset_bytes: &[u8],
+) -> Result<LockedRecordVerification> {
+    let temp_home = env::temp_dir().join(format!("binpm-signature-{}", sigstore_temp_attempt()));
+    let cache_paths = CachePaths::new(&temp_home);
+    let result = reverify_locked_record_signature(&cache_paths, record, asset_bytes);
+    let cleanup_result = fs::remove_dir_all(&temp_home);
+    match (result, cleanup_result) {
+        (Ok(verification), _) => Ok(verification),
+        (Err(error), _) => Err(error),
+    }
+}
+
+fn reverify_locked_record_signature(
+    cache_paths: &CachePaths,
+    record: &PackageRecord,
+    asset_bytes: &[u8],
+) -> Result<LockedRecordVerification> {
+    let signature_sidecar = locked_record_signature_sidecar(record)?;
+    let mut resolved = ResolvedAsset {
+        source: SourceSpec::from_str(
+            &record
+                .requested_version
+                .as_ref()
+                .map(|version| format!("{}@{version}", record.source))
+                .unwrap_or_else(|| record.source.clone()),
+        )?,
+        release_tag: record.release_tag.clone(),
+        target: HostTarget {
+            os: record.target_os,
+            arch: record.target_arch,
+            libc: record.target_libc,
+        },
+        decision: CandidateDecision {
+            asset_name: record.asset_name.clone(),
+            canonical_url: record.asset_url.clone(),
+            download_url: record.asset_url.clone(),
+            download_auth: None,
+            download_accept: None,
+            kind: crate::assets::classify_artifact(&record.asset_name, false),
+            detected_os: Some(record.target_os),
+            detected_arch: Some(record.target_arch),
+            detected_libc: Some(record.target_libc),
+            cpu_feature: None,
+            score: None,
+            eligible: true,
+            recognized_pattern: true,
+            rejection_reason: None,
+        },
+        archive_format: record.archive_format,
+        selected_binary: record.selected_binary.clone(),
+        provider_digest_sha256: record.provider_digest_sha256.clone(),
+        upstream_checksum_sha256: None,
+        checksum_source: ChecksumSource::Local,
+        signature_sidecar: Some(signature_sidecar),
+        signature_available: true,
+        signature_verified: false,
+    };
+    verify_signature_sidecar(cache_paths, &mut resolved, asset_bytes, true)?;
+    if resolved_has_verified_source(&resolved) {
+        Ok(LockedRecordVerification::SIGNATURE_REVERIFIED)
+    } else {
+        Ok(LockedRecordVerification::UNVERIFIED)
+    }
+}
+
+struct SigstoreTrustPolicy {
+    name: &'static str,
+    issuer: &'static str,
+    identity_regexp: String,
+}
+
+fn sigstore_trust_policy(resolved: &ResolvedAsset) -> Option<SigstoreTrustPolicy> {
+    if resolved.source.provider != SourceProvider::GitHub || resolved.source.host != "github.com" {
+        return None;
+    }
+    let (owner, repo) = resolved.source.path.split_once('/')?;
+    Some(SigstoreTrustPolicy {
+        name: "github-actions-tagged-release",
+        issuer: GITHUB_ACTIONS_OIDC_ISSUER,
+        identity_regexp: format!(
+            "^https://github\\.com/{}/{}/\\.github/workflows/[^@]+@refs/tags/{}$",
+            regex_escape(owner),
+            regex_escape(repo),
+            regex_escape(&resolved.release_tag)
+        ),
+    })
+}
+
+fn regex_escape(raw: &str) -> String {
+    let mut escaped = String::with_capacity(raw.len());
+    for character in raw.chars() {
+        if matches!(
+            character,
+            '.' | '+'
+                | '*'
+                | '?'
+                | '^'
+                | '$'
+                | '('
+                | ')'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '|'
+                | '\\'
+                | '/'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
+}
+
+#[derive(Debug)]
+struct SigstoreTempPaths {
+    asset_path: PathBuf,
+    bundle_path: PathBuf,
+}
+
+fn write_sigstore_verification_inputs(
+    cache_paths: &CachePaths,
+    resolved: &ResolvedAsset,
+    asset_bytes: &[u8],
+    bundle_bytes: &[u8],
+) -> Result<SigstoreTempPaths> {
+    ensure_dir(&cache_paths.tmp)?;
+    let nonce = sigstore_temp_attempt_for_resolved(resolved);
+    let asset_path = cache_paths.tmp.join(format!("sigstore-{nonce}.asset"));
+    let bundle_path = cache_paths.tmp.join(format!("sigstore-{nonce}.bundle"));
+    write_new_file(&asset_path, asset_bytes)?;
+    if let Err(error) = write_new_file(&bundle_path, bundle_bytes) {
+        let _ = remove_path_if_exists(&asset_path);
+        return Err(error);
+    }
+    Ok(SigstoreTempPaths {
+        asset_path,
+        bundle_path,
+    })
+}
+
+fn sigstore_temp_attempt_for_resolved(resolved: &ResolvedAsset) -> String {
+    let identity = format!(
+        "{}:{}:{}",
+        resolved.source, resolved.release_tag, resolved.decision.asset_name
+    );
+    format!(
+        "{}-{:x}",
+        sigstore_temp_attempt(),
+        Sha256::digest(identity.as_bytes())
+    )
+}
+
+fn sigstore_temp_attempt() -> String {
+    let sequence = SIGSTORE_TEMP_ATTEMPT.fetch_add(1, Ordering::Relaxed);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    format!("{}-{sequence}-{nanos:x}", std::process::id())
+}
+
+fn write_new_file(path: &Path, bytes: &[u8]) -> Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|source| BinpmError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    file.write_all(bytes)
+        .map_err(|source| BinpmError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        })
 }
 
 fn selected_binary_override(
@@ -4314,11 +4827,20 @@ fn verify_check_output(
     target: Option<HostTarget>,
     record: &PackageRecord,
 ) -> VerifyCheckOutput {
+    verify_check_output_with_state(cmd, target, record, verification_state(record))
+}
+
+fn verify_check_output_with_state(
+    cmd: String,
+    target: Option<HostTarget>,
+    record: &PackageRecord,
+    verification: VerificationState,
+) -> VerifyCheckOutput {
     VerifyCheckOutput {
         cmd,
         target,
         checksum_source: record.checksum_source,
-        verification: verification_state(record),
+        verification,
     }
 }
 
@@ -4435,11 +4957,17 @@ fn json_path_state(path: &Path) -> PathState {
 }
 
 fn verification_state(record: &PackageRecord) -> VerificationState {
-    if record.has_verified_source() {
+    if record.has_verified_source() || record_reports_verified_signature(record) {
         VerificationState::Verified
     } else {
         VerificationState::Unverified
     }
+}
+
+fn record_reports_verified_signature(record: &PackageRecord) -> bool {
+    record.checksum_source == ChecksumSource::Signature
+        && record.signature_available
+        && record.signature_verified
 }
 
 #[derive(Debug, Clone)]
@@ -5528,20 +6056,25 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
                 cmd,
             });
         }
-        if args.require_verified && !record.has_verified_source() {
-            return Err(BinpmError::VerificationRequired {
-                package: record.package_spec,
-            });
-        }
         validate_provider_digest_evidence(&record)?;
         validate_package_record_current_provider_digest(&record)?;
         validate_package_record_metadata(&cache_paths, &record)?;
         verify_runtime_cache_bytes(&cache_paths, &record)?;
+        let runtime_check = if args.require_verified {
+            if !locked_record_verified_source(&cache_paths, &record)?.verified {
+                return Err(BinpmError::VerificationRequired {
+                    package: record.package_spec,
+                });
+            }
+            verify_check_output_with_state(cmd.clone(), None, &record, VerificationState::Verified)
+        } else {
+            verify_check_output(cmd.clone(), None, &record)
+        };
         let installed_path = validate_installed_binary_path(&paths, &cmd, &record)?;
         require_regular_managed_file(&installed_path)?;
         require_executable_managed_file(&installed_path)?;
         verify_installed_binary_contents(&cache_paths, &record, &installed_path)?;
-        checks.push(verify_check_output(cmd.clone(), None, &record));
+        checks.push(runtime_check);
         if !output.is_json() {
             println!("{cmd} verified {}", record.checksum_source.as_str());
         }
@@ -5774,9 +6307,7 @@ fn assert_runtime_record_matches_lock(
         || runtime_record.archive_format != lock_record.archive_format
         || runtime_record.selected_binary != lock_record.selected_binary
         || runtime_record.sha256 != lock_record.sha256
-        || runtime_record.checksum_source != lock_record.checksum_source
-        || runtime_record.signature_available != lock_record.signature_available
-        || runtime_record.signature_verified != lock_record.signature_verified
+        || !runtime_integrity_metadata_matches_lock(lock_record, runtime_record)
     {
         return Err(BinpmError::StaleLockfile {
             path: root.join(LOCKFILE_FILE),
@@ -5784,6 +6315,25 @@ fn assert_runtime_record_matches_lock(
         });
     }
     Ok(())
+}
+
+fn runtime_integrity_metadata_matches_lock(
+    lock_record: &PackageRecord,
+    runtime_record: &PackageRecord,
+) -> bool {
+    if runtime_record.checksum_source == lock_record.checksum_source
+        && runtime_record.signature_available == lock_record.signature_available
+        && runtime_record.signature_verified == lock_record.signature_verified
+    {
+        return true;
+    }
+
+    !lock_record.has_verified_source()
+        && lock_record.signature_available
+        && !lock_record.signature_verified
+        && runtime_record.checksum_source == ChecksumSource::Signature
+        && runtime_record.signature_available
+        && runtime_record.signature_verified
 }
 
 fn verify_lockfile_records(
@@ -5879,19 +6429,25 @@ fn verify_lockfile_records(
             )?;
             let manifest_tool = manifest.and_then(|(manifest, _)| manifest.tools.get(&cmd));
             validate_locked_record_artifact(lockfile_path, &cmd, &record, &target, manifest_tool)?;
-            if require_verified && !record.has_verified_source() {
-                return Err(BinpmError::VerificationRequired {
-                    package: record.package_spec,
-                });
-            }
             validate_provider_digest_evidence(&record)?;
             validate_locked_record_current_release(lockfile_path, &cmd, &record)?;
+            let lock_check = if require_verified {
+                if !download_locked_record_verified_source(&record)? {
+                    return Err(BinpmError::VerificationRequired {
+                        package: record.package_spec,
+                    });
+                }
+                verify_check_output_with_state(
+                    cmd.clone(),
+                    Some(target.clone()),
+                    &record,
+                    VerificationState::Verified,
+                )
+            } else {
+                verify_check_output(cmd.clone(), Some(target.clone()), &record)
+            };
             locked.insert(cmd.clone());
-            checks.push(verify_check_output(
-                cmd.clone(),
-                Some(target.clone()),
-                &record,
-            ));
+            checks.push(lock_check);
             if !output.is_json() {
                 println!(
                     "{cmd} lock verified {target_key} {}",
@@ -6280,26 +6836,30 @@ mod tests {
         install_path_collision_key, is_retryable_status, local_runtime_lock_records,
         local_tool_execution_ready, lock_targets_conflict_with_manifest,
         lock_targets_conflict_with_record, locked_record_download_request,
-        locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
-        manifest_creation_root_from, manifest_project_root_from,
+        locked_record_signature_sidecar, locked_release_lookup_spec, lockfile_digest,
+        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         normalize_bin_selection, override_snippet_candidate, package_record_output,
         package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
         parse_source_argument, prepare_global_updates, project_root_from,
-        read_archive_selected_binary, record_matches_current_provider_digest,
-        release_asset_download_request, release_diagnostic_lines, release_diagnostics,
-        remove_global_tool_from_paths, remove_local_manifest_orphans,
-        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
-        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
-        selected_global_package_records, shell_path, shell_quote, snapshot_cache_metadata,
-        source_install_scope, target_override_snippet, update_manifest_tool_source,
-        validate_frozen_update_current_release, validate_locked_record_artifact,
-        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries, verify_check_output,
-        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
-        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
+        read_archive_selected_binary, record_has_signature_evidence,
+        record_matches_current_provider_digest, regex_escape, release_asset_download_request,
+        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
+        remove_local_manifest_orphans, require_executable_managed_file,
+        resolved_has_supported_signature_evidence, resolved_has_verified_source,
+        restore_local_remove_state, restore_runtime_tool_state, sanitize_download_diagnostic_url,
+        select_manifest_asset, selected_asset_display_url, selected_global_package_records,
+        shell_path, shell_quote, signature_sidecar_for_asset, sigstore_trust_policy,
+        snapshot_cache_metadata, source_install_scope, target_override_snippet,
+        update_manifest_tool_source, validate_frozen_update_current_release,
+        validate_locked_record_artifact, validate_locked_record_current_asset,
+        validate_locked_record_current_provider_digest, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verification_state, verify_check_output,
+        verify_check_output_with_state, verify_installed_binary_contents, verify_lockfile_records,
+        verify_runtime_cache_bytes, write_sigstore_verification_inputs, zip_file_is_regular,
+        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
         GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
@@ -6312,7 +6872,7 @@ mod tests {
         error::{BinpmError, Result},
         release::{Release, ReleaseAsset, ReleaseClient, ReleaseSelection},
         storage::{
-            managed_installed_path, read_cache_records, require_regular_managed_file,
+            ensure_dir, managed_installed_path, read_cache_records, require_regular_managed_file,
             validate_installed_binary_path, write_cache_record, write_lockfile, write_manifest,
             write_package_record, CachePaths, CacheRecord, LockTool, Lockfile, Manifest,
             ManifestTargetOverride, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths,
@@ -7890,6 +8450,24 @@ mod tests {
     }
 
     #[test]
+    fn json_verify_check_can_report_reverified_signature_record() {
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::Signature;
+        record.signature_available = true;
+        record.signature_verified = true;
+
+        let check = verify_check_output_with_state(
+            "tool".to_string(),
+            None,
+            &record,
+            VerificationState::Verified,
+        );
+
+        assert_eq!(check.checksum_source, ChecksumSource::Signature);
+        assert_eq!(check.verification, VerificationState::Verified);
+    }
+
+    #[test]
     fn strict_lockfile_verify_rejects_digest_label_without_evidence() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let mut record = package_record();
@@ -8684,6 +9262,22 @@ mod tests {
         .expect_err("stale runtime record");
 
         assert!(error.to_string().contains("stale"));
+    }
+
+    #[test]
+    fn reverified_runtime_signature_metadata_remains_lock_compatible() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let mut lock_record = package_record();
+        lock_record.signature_available = true;
+        lock_record.signature_verified = false;
+
+        let mut runtime_record = lock_record.clone();
+        runtime_record.checksum_source = ChecksumSource::Signature;
+        runtime_record.signature_available = true;
+        runtime_record.signature_verified = true;
+
+        assert_runtime_record_matches_lock(temp_dir.path(), "tool", &lock_record, &runtime_record)
+            .expect("reverified runtime signature metadata is compatible with the lock");
     }
 
     #[test]
@@ -9619,6 +10213,78 @@ mod tests {
     }
 
     #[test]
+    fn locked_record_signature_sidecar_uses_locked_asset_url() {
+        let mut record = package_record();
+        record.source = "github:ghe.no-token.example/owner/tool".to_string();
+        record.source_host = "ghe.no-token.example".to_string();
+        record.asset_url =
+            "https://ghe.no-token.example/owner/tool/releases/download/1.0.0/locked-tool-linux"
+                .to_string();
+        record.asset_name = "locked-tool-linux".to_string();
+
+        let sidecar = locked_record_signature_sidecar(&record).expect("signature sidecar");
+
+        assert_eq!(sidecar.asset_name, "locked-tool-linux.sigstore.json");
+        assert_eq!(
+            sidecar.canonical_url,
+            "https://ghe.no-token.example/owner/tool/releases/download/1.0.0/locked-tool-linux.sigstore.json"
+        );
+        assert_eq!(sidecar.download_url, sidecar.canonical_url);
+        assert_eq!(sidecar.download_auth, None);
+        assert_eq!(sidecar.download_accept, None);
+    }
+
+    #[test]
+    fn locked_record_signature_sidecar_preserves_provider_auth_metadata() {
+        let mut record = package_record();
+        record.source = "github:ghe.locked.example/owner/tool".to_string();
+        record.source_host = "ghe.locked.example".to_string();
+        record.asset_url =
+            "https://ghe.locked.example/owner/tool/releases/download/1.0.0/tool-linux".to_string();
+        std::env::set_var(
+            "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE",
+            "locked-token",
+        );
+
+        let sidecar = locked_record_signature_sidecar(&record).expect("signature sidecar");
+
+        std::env::remove_var("BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
+        assert_eq!(
+            sidecar.download_url,
+            "https://ghe.locked.example/owner/tool/releases/download/1.0.0/tool-linux.sigstore.json"
+        );
+        assert_eq!(sidecar.download_accept, Some(GITHUB_ASSET_DOWNLOAD_ACCEPT));
+        let auth = sidecar.download_auth.expect("provider auth");
+        assert_eq!(auth.header_name, "authorization");
+        assert_eq!(auth.header_value, "Bearer locked-token");
+        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
+    }
+
+    #[test]
+    fn locked_record_signature_sidecar_omits_provider_auth_for_external_asset_url() {
+        let mut record = package_record();
+        record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
+        record.source_provider = SourceProvider::GitLab;
+        record.source_host = "gitlab.locked.example".to_string();
+        record.source_path = "group/tool".to_string();
+        record.asset_url = "https://cdn.locked.example/group/tool/releases/tool-linux".to_string();
+        std::env::set_var(
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE",
+            "locked-token",
+        );
+
+        let sidecar = locked_record_signature_sidecar(&record).expect("signature sidecar");
+
+        std::env::remove_var("BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE");
+        assert_eq!(
+            sidecar.download_url,
+            "https://cdn.locked.example/group/tool/releases/tool-linux.sigstore.json"
+        );
+        assert_eq!(sidecar.download_auth, None);
+        assert_eq!(sidecar.download_accept, None);
+    }
+
+    #[test]
     fn frozen_lock_preserves_locked_asset_when_better_release_asset_appears() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let target = linux_target();
@@ -9941,6 +10607,202 @@ mod tests {
         }];
 
         assert!(!record_matches_current_provider_digest(&record, &assets));
+    }
+
+    #[test]
+    fn signature_sidecar_discovery_matches_selected_asset_sidecar_only() {
+        let record = package_record();
+        let mut selected = release_asset_from_record(&record);
+        selected.name = "tool-linux-amd64".to_string();
+        let sidecar = ReleaseAsset {
+            name: "tool-linux-amd64.sigstore.json".to_string(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-amd64.sigstore.json?token=secret".to_string(),
+            provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+            final_url: None,
+        };
+        let unrelated = ReleaseAsset {
+            name: "other-linux-amd64.sigstore.json".to_string(),
+            url: "https://github.com/owner/tool/releases/download/1.0.0/other-linux-amd64.sigstore.json".to_string(),
+            provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+            final_url: None,
+        };
+
+        let discovered =
+            signature_sidecar_for_asset("tool-linux-amd64", &[selected, unrelated, sidecar])
+                .expect("matching sigstore sidecar");
+
+        assert_eq!(discovered.asset_name, "tool-linux-amd64.sigstore.json");
+        assert_eq!(
+            discovered.canonical_url,
+            "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-amd64.sigstore.json"
+        );
+    }
+
+    #[test]
+    fn sigstore_trust_policy_is_github_actions_tag_scoped() {
+        let mut resolved = resolved_asset(&package_record().sha256);
+        resolved.source = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source");
+        resolved.release_tag = "tool@v1.0.0".to_string();
+
+        let policy = sigstore_trust_policy(&resolved).expect("github.com policy");
+
+        assert_eq!(policy.name, "github-actions-tagged-release");
+        assert_eq!(
+            policy.identity_regexp,
+            "^https://github\\.com/owner/tool/\\.github/workflows/[^@]+@refs/tags/tool@v1\\.0\\.0$"
+        );
+
+        resolved.source =
+            SourceSpec::from_str("github:ghe.example.com/owner/tool@1.0.0").expect("ghe source");
+        assert!(sigstore_trust_policy(&resolved).is_none());
+        assert_eq!(
+            regex_escape("tool+linux/v1.0.0"),
+            "tool\\+linux\\/v1\\.0\\.0"
+        );
+    }
+
+    #[test]
+    fn resolved_signature_requires_successful_verification() {
+        let mut resolved = resolved_asset(&package_record().sha256);
+        resolved.provider_digest_sha256 = None;
+        resolved.checksum_source = ChecksumSource::Signature;
+        resolved.signature_available = true;
+
+        assert!(!resolved_has_verified_source(&resolved));
+
+        resolved.signature_verified = true;
+        assert!(resolved_has_verified_source(&resolved));
+    }
+
+    #[test]
+    fn strict_signature_evidence_requires_supported_policy() {
+        let mut resolved = resolved_asset(&package_record().sha256);
+        resolved.provider_digest_sha256 = None;
+        resolved.checksum_source = ChecksumSource::Local;
+        resolved.signature_available = true;
+
+        assert!(resolved_has_supported_signature_evidence(&resolved));
+
+        resolved.source =
+            SourceSpec::from_str("github:ghe.example.com/owner/tool@1.0.0").expect("ghe source");
+        assert!(!resolved_has_supported_signature_evidence(&resolved));
+
+        resolved.source = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source");
+        resolved.signature_available = false;
+        assert!(!resolved_has_supported_signature_evidence(&resolved));
+    }
+
+    #[test]
+    fn verified_signature_record_reports_verified() {
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::Signature;
+        record.signature_available = true;
+        record.signature_verified = true;
+
+        assert!(!record.has_verified_source());
+        assert_eq!(verification_state(&record), VerificationState::Verified);
+    }
+
+    #[test]
+    fn signature_evidence_allows_strict_recheck_when_sidecar_was_not_verified() {
+        let mut record = package_record();
+        record.checksum_source = ChecksumSource::Local;
+        record.signature_available = true;
+        record.signature_verified = false;
+
+        assert!(record_has_signature_evidence(&record));
+        assert!(!record.has_verified_source());
+
+        record.signature_available = false;
+        assert!(!record_has_signature_evidence(&record));
+    }
+
+    #[test]
+    fn signature_evidence_requires_supported_record_policy() {
+        let mut record = package_record();
+        record.signature_available = true;
+
+        assert!(record_has_signature_evidence(&record));
+
+        record.source_host = "ghe.example.com".to_string();
+        assert!(!record_has_signature_evidence(&record));
+
+        record.source_host = "github.com".to_string();
+        record.source_provider = SourceProvider::GitLab;
+        assert!(!record_has_signature_evidence(&record));
+
+        record.source_provider = SourceProvider::GitHub;
+        record.source_path = "owner".to_string();
+        assert!(!record_has_signature_evidence(&record));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sigstore_verification_inputs_reject_symlinked_tmp_dir() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        std::os::unix::fs::symlink(outside.path(), &cache.tmp).expect("symlink tmp");
+        let resolved = resolved_asset(&package_record().sha256);
+
+        let error =
+            write_sigstore_verification_inputs(&cache, &resolved, b"asset bytes", b"bundle bytes")
+                .expect_err("symlinked temp dir");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedDirectory { .. }));
+        assert!(std::fs::read_dir(outside.path())
+            .expect("outside dir")
+            .next()
+            .is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sigstore_verification_inputs_ignore_stale_precreated_symlink_file() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let cache = CachePaths::new(temp_dir.path());
+        let resolved = resolved_asset(&package_record().sha256);
+        ensure_dir(&cache.tmp).expect("tmp dir");
+        let asset_path = cache.tmp.join("sigstore-stale.asset");
+        let outside_target = outside.path().join("asset-target");
+        std::os::unix::fs::symlink(&outside_target, &asset_path).expect("symlink asset");
+
+        let paths =
+            write_sigstore_verification_inputs(&cache, &resolved, b"asset bytes", b"bundle bytes")
+                .expect("input write");
+
+        assert_ne!(paths.asset_path, asset_path);
+        assert!(!outside_target.exists());
+    }
+
+    #[test]
+    fn sigstore_verification_inputs_use_attempt_unique_names() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let cache = CachePaths::new(temp_dir.path());
+        let resolved = resolved_asset(&package_record().sha256);
+
+        let first =
+            write_sigstore_verification_inputs(&cache, &resolved, b"asset bytes", b"bundle bytes")
+                .expect("first input write");
+        let second =
+            write_sigstore_verification_inputs(&cache, &resolved, b"asset bytes", b"bundle bytes")
+                .expect("second input write");
+
+        assert_ne!(first.asset_path, second.asset_path);
+        assert_ne!(first.bundle_path, second.bundle_path);
     }
 
     #[test]
@@ -10918,6 +11780,7 @@ mod tests {
             provider_digest_sha256: Some(sha256.to_string()),
             upstream_checksum_sha256: None,
             checksum_source: ChecksumSource::GitHubDigest,
+            signature_sidecar: None,
             signature_available: false,
             signature_verified: false,
         }

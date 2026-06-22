@@ -750,7 +750,13 @@ fn strip_known_suffixes(name: &str) -> &str {
         ".sha512",
         ".minisig",
         ".sigstore.json",
+        ".intoto.jsonl",
+        ".intoto.json",
         ".sbom.json",
+        ".cert",
+        ".crt",
+        ".pem",
+        ".pub",
         ".asc",
         ".sig",
     ] {
@@ -836,7 +842,13 @@ fn is_sidecar_name(lower: &str) -> bool {
         || lower.ends_with(".asc")
         || lower.ends_with(".minisig")
         || lower.ends_with(".sigstore.json")
+        || lower.ends_with(".intoto.json")
+        || lower.ends_with(".intoto.jsonl")
         || lower.ends_with(".sbom.json")
+        || lower.ends_with(".cert")
+        || lower.ends_with(".crt")
+        || lower.ends_with(".pem")
+        || lower.ends_with(".pub")
         || matches!(
             lower,
             "sha256sums"
@@ -1074,10 +1086,15 @@ mod tests {
 
     #[test]
     fn rejects_sidecars_and_desktop_installers() {
-        assert_eq!(
-            classify_artifact("tool.tar.gz.sha256", false),
-            ArtifactKind::Sidecar
-        );
+        for name in [
+            "tool.tar.gz.sha256",
+            "tool-linux-amd64.sigstore.json",
+            "tool-linux-amd64.intoto.jsonl",
+            "tool-linux-amd64.cert",
+            "tool-linux-amd64.pem",
+        ] {
+            assert_eq!(classify_artifact(name, false), ArtifactKind::Sidecar);
+        }
         assert_eq!(
             classify_artifact("tool.dmg", false),
             ArtifactKind::DesktopPackage
