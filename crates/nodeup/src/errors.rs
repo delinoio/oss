@@ -136,6 +136,12 @@ fn unparseable_userinfo_search_end(raw: &str, authority_start: usize) -> usize {
 
     if has_path_before_query_or_fragment || !has_credential_separator_before_query_or_fragment {
         query_or_fragment_start
+    } else if raw[query_or_fragment_start + 1..]
+        .split('@')
+        .next()
+        .is_some_and(|query_prefix| query_prefix.contains(['=', '&']))
+    {
+        query_or_fragment_start
     } else {
         raw.len()
     }
@@ -473,5 +479,12 @@ mod tests {
         let sanitized = sanitize_url_text("https://bad host/index.json?email=a@b&token=secret");
 
         assert_eq!(sanitized, "https://bad host/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_does_not_scan_colon_authority_query_for_userinfo() {
+        let sanitized = sanitize_url_text("https://mirror:bad?email=a@b&token=secret");
+
+        assert_eq!(sanitized, "https://mirror:bad");
     }
 }
