@@ -5,6 +5,7 @@ import {
   SearchPanel,
   SvgWrapper,
 } from "@rspress/core/theme-original";
+import "@rspress/core/dist/theme/components/Search/SearchButton.css";
 import { useEffect, useState } from "react";
 
 import "./accessibility.css";
@@ -40,13 +41,22 @@ function updateSidebarAccessibility(shouldRestoreFocus = false) {
   if (!sidebar.id) {
     sidebar.id = sidebarId;
   }
+
+  const isMobileDrawerControlVisible =
+    trigger.getClientRects().length > 0 && getComputedStyle(trigger).visibility !== "hidden";
   setAttributeIfChanged(
     trigger,
     "aria-label",
     isOpen ? "Close documentation navigation" : "Open documentation navigation",
   );
   setAttributeIfChanged(trigger, "aria-controls", sidebarId);
-  setAttributeIfChanged(trigger, "aria-expanded", String(isOpen));
+  setAttributeIfChanged(trigger, "aria-expanded", String(isMobileDrawerControlVisible && isOpen));
+
+  if (!isMobileDrawerControlVisible) {
+    removeAttributeIfPresent(sidebar, "aria-hidden");
+    removeAttributeIfPresent(sidebar, "inert");
+    return;
+  }
 
   if (isOpen) {
     removeAttributeIfPresent(sidebar, "aria-hidden");
@@ -68,8 +78,11 @@ function updateGeneratedControlAccessibility() {
     setAttributeIfChanged(anchor, "aria-hidden", "true");
   });
 
+  const isSiteNavigationOpen = Boolean(document.querySelector(".rp-nav-screen--open"));
   document.querySelectorAll<HTMLElement>(".rp-nav-hamburger__sm").forEach((button) => {
-    setAttributeIfChanged(button, "aria-label", "Open site navigation");
+    const isOpen = button.classList.contains("rp-nav-hamburger--active") || isSiteNavigationOpen;
+    setAttributeIfChanged(button, "aria-label", isOpen ? "Close site navigation" : "Open site navigation");
+    setAttributeIfChanged(button, "aria-expanded", String(isOpen));
   });
 
   document.querySelectorAll<HTMLElement>(".rp-nav-hamburger__md").forEach((button) => {
