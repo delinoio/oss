@@ -2547,7 +2547,11 @@ fn install_resolved(
         );
     }
     ensure_no_package_record_install_path_collision(scope_paths, cmd, resolved.target.os)?;
-    if let Some(expected) = resolved.provider_digest_sha256.clone() {
+    let expected_upstream_sha256 = resolved
+        .provider_digest_sha256
+        .clone()
+        .or_else(|| resolved.upstream_checksum_sha256.clone());
+    if let Some(expected) = expected_upstream_sha256 {
         let cache_asset = cache_paths.asset_path(&expected);
         reject_symlinked_cache_entry(cache_paths, &expected)?;
         if cache_asset_is_verified_regular(&cache_asset, &expected)? {
@@ -2593,6 +2597,14 @@ fn install_resolved(
         None
     };
     if let Some(expected) = &resolved.provider_digest_sha256 {
+        if &sha256 != expected {
+            return Err(BinpmError::DigestMismatch {
+                path: cache_paths.asset_path(expected),
+                expected: expected.clone(),
+                actual: sha256,
+            });
+        }
+    } else if let Some(expected) = &resolved.upstream_checksum_sha256 {
         if &sha256 != expected {
             return Err(BinpmError::DigestMismatch {
                 path: cache_paths.asset_path(expected),
@@ -2814,6 +2826,7 @@ fn install_local_from_lock(
                 archive_format: record.archive_format,
                 selected_binary: record.selected_binary.clone(),
                 provider_digest_sha256: None,
+                upstream_checksum_sha256: None,
                 checksum_source: record.checksum_source,
                 signature_available: record.signature_available,
                 signature_verified: record.signature_verified,
@@ -2860,6 +2873,14 @@ fn install_local_from_lock(
         archive_format: record.archive_format,
         selected_binary: record.selected_binary.clone(),
         provider_digest_sha256: record.provider_digest_sha256.clone(),
+        upstream_checksum_sha256: if matches!(
+            record.checksum_source,
+            ChecksumSource::Sidecar | ChecksumSource::Manifest
+        ) {
+            Some(record.sha256.clone())
+        } else {
+            None
+        },
         checksum_source: record.checksum_source,
         signature_available: record.signature_available,
         signature_verified: record.signature_verified,
@@ -3088,6 +3109,190 @@ fn record_matches_current_provider_digest(record: &PackageRecord, assets: &[Rele
     }
 }
 
+#[derive(Debug, Clone)]
+struct UpstreamChecksumEvidence {
+    sha256: String,
+    source: ChecksumSource,
+}
+
+fn discover_upstream_checksum(
+    selected_asset_name: &str,
+    assets: &[ReleaseAsset],
+) -> Result<Option<UpstreamChecksumEvidence>> {
+    info!(
+        asset_name = selected_asset_name,
+        "Discovering upstream checksum material"
+    );
+
+    for asset in checksum_sidecar_candidates(selected_asset_name, assets) {
+        if let Some(sha256) = download_checksum_evidence(asset, selected_asset_name, true)? {
+            info!(
+                asset_name = selected_asset_name,
+                checksum_asset = asset.name,
+                checksum_source = ChecksumSource::Sidecar.as_str(),
+                "Discovered upstream checksum sidecar"
+            );
+            return Ok(Some(UpstreamChecksumEvidence {
+                sha256,
+                source: ChecksumSource::Sidecar,
+            }));
+        }
+    }
+
+    for asset in checksum_manifest_candidates(selected_asset_name, assets) {
+        if let Some(sha256) = download_checksum_evidence(asset, selected_asset_name, false)? {
+            info!(
+                asset_name = selected_asset_name,
+                checksum_asset = asset.name,
+                checksum_source = ChecksumSource::Manifest.as_str(),
+                "Discovered upstream checksum manifest"
+            );
+            return Ok(Some(UpstreamChecksumEvidence {
+                sha256,
+                source: ChecksumSource::Manifest,
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
+fn checksum_sidecar_candidates<'a>(
+    selected_asset_name: &str,
+    assets: &'a [ReleaseAsset],
+) -> Vec<&'a ReleaseAsset> {
+    let selected_lower = selected_asset_name.to_ascii_lowercase();
+    let mut candidates = assets
+        .iter()
+        .filter(|asset| {
+            let lower = asset.name.to_ascii_lowercase();
+            matches!(
+                lower.strip_prefix(&selected_lower),
+                Some(".sha256" | ".sha256sum" | ".sha256.txt" | ".sha256sum.txt")
+            )
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| left.name.cmp(&right.name));
+    candidates
+}
+
+fn checksum_manifest_candidates<'a>(
+    selected_asset_name: &str,
+    assets: &'a [ReleaseAsset],
+) -> Vec<&'a ReleaseAsset> {
+    let sidecar_names = checksum_sidecar_candidates(selected_asset_name, assets)
+        .into_iter()
+        .map(|asset| asset.name.clone())
+        .collect::<BTreeSet<_>>();
+    let mut candidates = assets
+        .iter()
+        .filter(|asset| !sidecar_names.contains(&asset.name))
+        .filter(|asset| is_checksum_manifest_name(&asset.name))
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        checksum_manifest_priority(&left.name)
+            .cmp(&checksum_manifest_priority(&right.name))
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    candidates
+}
+
+fn is_checksum_manifest_name(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "sha256sums" | "sha256sums.txt" | "sha256.sum" | "sha256.txt" | "checksums.txt"
+    )
+}
+
+fn checksum_manifest_priority(name: &str) -> u8 {
+    match name.to_ascii_lowercase().as_str() {
+        "sha256sums" | "sha256sums.txt" => 0,
+        "sha256.sum" | "sha256.txt" => 1,
+        "checksums.txt" => 2,
+        _ => 3,
+    }
+}
+
+fn download_checksum_evidence(
+    asset: &ReleaseAsset,
+    selected_asset_name: &str,
+    allow_single_digest: bool,
+) -> Result<Option<String>> {
+    let request = release_asset_download_request(asset)?;
+    debug!(
+        asset_name = selected_asset_name,
+        checksum_asset = asset.name,
+        checksum_url = sanitize_download_diagnostic_url(&request.url),
+        "Downloading checksum metadata"
+    );
+    let bytes = download_asset(&request.url, request.auth.as_ref(), request.accept)?;
+    let text = String::from_utf8_lossy(&bytes);
+    checksum_digest_from_text(&text, selected_asset_name, allow_single_digest)
+}
+
+fn release_asset_download_request(asset: &ReleaseAsset) -> Result<DownloadRequest> {
+    let url = asset
+        .download_url
+        .as_deref()
+        .or(asset.provider_url.as_deref())
+        .unwrap_or(asset.url.as_str())
+        .to_string();
+    validate_download_url(&url)?;
+    Ok(DownloadRequest {
+        url,
+        auth: asset.download_auth.clone(),
+        accept: asset.download_accept,
+    })
+}
+
+fn checksum_digest_from_text(
+    text: &str,
+    selected_asset_name: &str,
+    allow_single_digest: bool,
+) -> Result<Option<String>> {
+    let mut single_digest = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some(digest) = leading_sha256_digest(line) else {
+            continue;
+        };
+        let remainder = line[digest.len()..].trim_start();
+        if checksum_line_matches_asset(remainder, selected_asset_name) {
+            return Ok(Some(digest.to_ascii_lowercase()));
+        }
+        if allow_single_digest && remainder.is_empty() {
+            single_digest = Some(digest.to_ascii_lowercase());
+        }
+    }
+    Ok(single_digest)
+}
+
+fn leading_sha256_digest(line: &str) -> Option<&str> {
+    let candidate = line.get(..64)?;
+    if candidate
+        .chars()
+        .all(|character| character.is_ascii_hexdigit())
+    {
+        return Some(candidate);
+    }
+    None
+}
+
+fn checksum_line_matches_asset(remainder: &str, selected_asset_name: &str) -> bool {
+    let normalized = remainder
+        .trim_start_matches('*')
+        .trim_start_matches("./")
+        .trim();
+    normalized == selected_asset_name
+        || Path::new(normalized)
+            .file_name()
+            .and_then(|name| name.to_str())
+            == Some(selected_asset_name)
+}
+
 struct DownloadRequest {
     url: String,
     auth: Option<ProviderAuth>,
@@ -3184,12 +3389,19 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         .iter()
         .find(|asset| asset.name == decision.asset_name)
         .and_then(|asset| github_sha256_digest(asset.digest.as_deref()));
+    let upstream_checksum = if provider_digest_sha256.is_none() {
+        discover_upstream_checksum(&decision.asset_name, &release.assets)?
+    } else {
+        None
+    };
     let manifest_checksum_source =
         manifest_checksum_source(tool, &target, provider_digest_sha256.as_deref())?;
     let checksum_source = if spec.provider == crate::contract::SourceProvider::GitHub
         && provider_digest_sha256.is_some()
     {
         ChecksumSource::GitHubDigest
+    } else if let Some(evidence) = &upstream_checksum {
+        evidence.source
     } else {
         manifest_checksum_source
     };
@@ -3201,6 +3413,7 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         archive_format,
         selected_binary,
         provider_digest_sha256,
+        upstream_checksum_sha256: upstream_checksum.map(|evidence| evidence.sha256),
         checksum_source,
         signature_available: false,
         signature_verified: false,
@@ -6058,6 +6271,7 @@ mod tests {
         assert_local_runtime_records_complete, assert_lock_matches_manifest_tool,
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
+        checksum_digest_from_text, checksum_manifest_candidates, checksum_sidecar_candidates,
         cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
         download_asset_name, download_initial_capacity,
         ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
@@ -6073,19 +6287,19 @@ mod tests {
         package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
         parse_source_argument, prepare_global_updates, project_root_from,
         read_archive_selected_binary, record_matches_current_provider_digest,
-        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
-        restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
-        selected_asset_display_url, selected_global_package_records, shell_path, shell_quote,
-        snapshot_cache_metadata, source_install_scope, target_override_snippet,
-        update_manifest_tool_source, validate_frozen_update_current_release,
-        validate_locked_record_artifact, validate_locked_record_current_asset,
-        validate_locked_record_current_provider_digest, validate_package_record_metadata,
-        validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verify_check_output, verify_installed_binary_contents,
-        verify_lockfile_records, verify_runtime_cache_bytes, zip_file_is_regular,
-        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
-        LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
+        release_asset_download_request, release_diagnostic_lines, release_diagnostics,
+        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
+        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
+        selected_global_package_records, shell_path, shell_quote, snapshot_cache_metadata,
+        source_install_scope, target_override_snippet, update_manifest_tool_source,
+        validate_frozen_update_current_release, validate_locked_record_artifact,
+        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries, verify_check_output,
+        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
+        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
+        InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
         GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
@@ -6225,6 +6439,119 @@ mod tests {
             "tool.tar.gz"
         );
         assert_eq!(download_asset_name("not a url"), "release asset");
+    }
+
+    #[test]
+    fn checksum_text_parses_single_digest_sidecar() {
+        let digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assert_eq!(
+            checksum_digest_from_text(digest, "tool-linux.tar.gz", true)
+                .expect("checksum text")
+                .as_deref(),
+            Some(digest)
+        );
+        assert_eq!(
+            checksum_digest_from_text(digest, "tool-linux.tar.gz", false).expect("checksum text"),
+            None
+        );
+    }
+
+    #[test]
+    fn checksum_text_matches_selected_asset_in_manifest() {
+        let selected = "tool-linux.tar.gz";
+        let digest = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let other = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let text = format!("{other}  tool-darwin.tar.gz\n{digest} *./dist/{selected}\n");
+
+        assert_eq!(
+            checksum_digest_from_text(&text, selected, false)
+                .expect("checksum text")
+                .as_deref(),
+            Some(digest)
+        );
+    }
+
+    #[test]
+    fn checksum_candidates_prefer_exact_sidecars_before_manifests() {
+        let assets = vec![
+            ReleaseAsset {
+                name: "SHA256SUMS".to_string(),
+                url: "https://example.com/SHA256SUMS".to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            },
+            ReleaseAsset {
+                name: "tool-linux.tar.gz.sha256".to_string(),
+                url: "https://example.com/tool-linux.tar.gz.sha256".to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            },
+            ReleaseAsset {
+                name: "checksums.txt".to_string(),
+                url: "https://example.com/checksums.txt".to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            },
+        ];
+
+        assert_eq!(
+            checksum_sidecar_candidates("tool-linux.tar.gz", &assets)
+                .iter()
+                .map(|asset| asset.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["tool-linux.tar.gz.sha256"]
+        );
+        assert_eq!(
+            checksum_manifest_candidates("tool-linux.tar.gz", &assets)
+                .iter()
+                .map(|asset| asset.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SHA256SUMS", "checksums.txt"]
+        );
+    }
+
+    #[test]
+    fn checksum_download_request_prefers_provider_url_before_link_url() {
+        let asset = ReleaseAsset {
+            name: "tool-linux.tar.gz.sha256".to_string(),
+            url: "https://cdn.example.com/tool-linux.tar.gz.sha256".to_string(),
+            provider_url: Some(
+                "https://gitlab.example.com/owner/tool/-/releases/v1/downloads/tool-linux.tar.gz.sha256"
+                    .to_string(),
+            ),
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+            final_url: None,
+        };
+
+        let request = release_asset_download_request(&asset).expect("download request");
+
+        assert_eq!(
+            request.url,
+            "https://gitlab.example.com/owner/tool/-/releases/v1/downloads/tool-linux.tar.gz.sha256"
+        );
     }
 
     #[test]
@@ -10589,6 +10916,7 @@ mod tests {
             archive_format: ArchiveFormat::BareExecutable,
             selected_binary: "tool-linux".to_string(),
             provider_digest_sha256: Some(sha256.to_string()),
+            upstream_checksum_sha256: None,
             checksum_source: ChecksumSource::GitHubDigest,
             signature_available: false,
             signature_verified: false,

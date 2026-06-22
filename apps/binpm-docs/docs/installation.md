@@ -161,4 +161,4 @@ Release installers verify binpm's own published release artifacts. That release 
 
 binpm package installs use HTTPS source-provider APIs and release asset URLs. Stored URLs are sanitized so query strings, fragments, credentials, and expiring signed URL details are not written into project files.
 
-When strict verification is requested for installed tools, `--require-verified` and `binpm verify --require-verified` fail unless a trusted provider digest is available. Checksum sidecar discovery, checksum manifest discovery, and signature verification for packages installed by binpm remain implementation work.
+When strict verification is requested for installed tools, `--require-verified` and `binpm verify --require-verified` fail unless a trusted provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature is available. Signature verification for packages installed by binpm remains implementation work, so raw signature sidecars do not satisfy strict verification today.

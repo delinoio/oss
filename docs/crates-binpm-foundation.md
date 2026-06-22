@@ -238,7 +238,7 @@ signature_verified = false
 - The local-project cache reference index lives under `~/.binpm/cache/refs`. New references are TOML records containing the project root, command name, and cache key. Existing legacy reference files containing only `sha256:<hex>` remain valid preserving references but cannot be classified as stale.
 - Cache entries must be content-addressed by `sha256:<hex>` when provider metadata exposes a trusted SHA-256 digest.
 - When provider metadata does not expose a trusted digest, `binpm` must compute SHA-256 after download and use the local digest as both the cache key and the install manifest verification value.
-- The current implementation records downloaded bare-executable assets with `checksum_source = "local"` unless a future provider digest, checksum sidecar, checksum manifest, or verified signature implementation supplies a stronger source.
+- The current implementation records downloaded assets with `checksum_source = "local"` only when provider digests and upstream checksum sidecars or manifests are unavailable. Signature verification remains future work.
 - Cache lookup for assets without provider-provided digests may use source metadata to find a prior local digest, but source provider, source host, source path, release tag, asset name, or URL alone must not make bytes reusable without SHA-256 revalidation.
 - Cache metadata must preserve the source provider, source host, source path, release tag, asset name, sanitized canonical asset URL, byte size when known, checksum source, creation timestamp, and last-used timestamp when known.
 - Cache metadata may reference more than one installed command or package record for the same verified asset bytes.

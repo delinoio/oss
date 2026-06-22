@@ -12,7 +12,7 @@ Cache reuse is validated with the strongest available integrity source:
 - Successfully verified signature under a documented trust policy.
 - Locally recorded SHA-256 metadata when stronger upstream material is unavailable.
 
-Checksum sidecar discovery, checksum manifest discovery, and signature verification remain implementation work. Current installs rely on provider digests when available or locally recorded SHA-256 metadata with a warning.
+When provider metadata exposes a trusted SHA-256 digest, binpm verifies the downloaded asset against that digest first. If no provider digest is available, binpm looks for upstream checksum sidecars such as `<asset>.sha256` and checksum manifests such as `SHA256SUMS` or `checksums.txt`, then verifies the selected asset against the matching SHA-256 entry. Signature verification remains implementation work.
 
 Cache hits are revalidated before extraction or install finalization. If cache revalidation fails, binpm discards the corrupted entry and redownloads the asset.
 
@@ -30,6 +30,6 @@ Cache hits are revalidated before extraction or install finalization. If cache r
 
 ## Verification
 
-Installs without upstream checksum material or successfully verified signature material continue with an explicit warning and locally recorded SHA-256 metadata.
+Installs without provider digest, upstream checksum material, or successfully verified signature material continue with an explicit warning and locally recorded SHA-256 metadata.
 
-`--require-verified` and `binpm verify --require-verified` fail when no trusted provider digest is available. Checksum sidecar discovery, checksum manifest discovery, and signature verification remain implementation work.
+`--require-verified` and `binpm verify --require-verified` fail when no trusted provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature is available. Signature verification remains implementation work, so raw signature sidecars do not satisfy strict verification today.
