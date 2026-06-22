@@ -11,7 +11,7 @@ use tracing::{debug, info};
 use crate::{
     assets::{classify_artifact, ArtifactKind},
     contract::{SourceProvider, SourceSpec},
-    error::{BinpmError, ReleaseLookupDiagnosticKind, Result},
+    error::{BinpmError, ReleaseLookupDiagnosticKind, ReleaseSkipDiagnostic, Result},
 };
 
 const USER_AGENT: &str = concat!("binpm/", env!("CARGO_PKG_VERSION"));
@@ -274,6 +274,7 @@ pub fn select_release(source: &SourceSpec, releases: Vec<Release>) -> Result<Rel
         return Err(BinpmError::ReleaseNotFound {
             package: source.to_string(),
             message: format!("no release tag matched `{version}`.{prefix_hint}"),
+            skipped_releases: Vec::new(),
         });
     }
 
@@ -308,6 +309,13 @@ pub fn select_release(source: &SourceSpec, releases: Vec<Release>) -> Result<Rel
     Err(BinpmError::ReleaseNotFound {
         package: source.to_string(),
         message: "no stable release found".to_string(),
+        skipped_releases: skipped
+            .into_iter()
+            .map(|release| ReleaseSkipDiagnostic {
+                tag: release.tag,
+                reason: release.reason,
+            })
+            .collect(),
     })
 }
 
@@ -883,10 +891,13 @@ fn is_known_prerelease_identifier(candidate: &str) -> bool {
         .next()
         .unwrap_or(candidate)
         .to_ascii_lowercase();
-    matches!(
-        identifier.as_str(),
-        "alpha" | "a" | "beta" | "b" | "pre" | "preview" | "rc"
-    )
+    const KNOWN_IDENTIFIERS: &[&str] = &["alpha", "a", "beta", "b", "pre", "preview", "rc"];
+    KNOWN_IDENTIFIERS.contains(&identifier.as_str())
+        || KNOWN_IDENTIFIERS.iter().any(|prefix| {
+            identifier
+                .strip_prefix(prefix)
+                .is_some_and(|suffix| !suffix.is_empty() && is_numeric_identifier(suffix))
+        })
 }
 
 fn is_semver_core(candidate: &str) -> bool {
@@ -1451,6 +1462,44 @@ mod tests {
     }
 
     #[test]
+    fn versionless_release_selection_reports_all_skipped_candidates() {
+        let source: SourceSpec = "github:owner/repo".parse().expect("source");
+        let error = select_release(
+            &source,
+            vec![
+                Release {
+                    tag: "v2.0.0-rc.1".to_string(),
+                    assets: vec![],
+                    stable: false,
+                    released_at: None,
+                    stability_reason: Some("github prerelease release".to_string()),
+                },
+                Release {
+                    tag: "v2.0.0-draft".to_string(),
+                    assets: vec![],
+                    stable: false,
+                    released_at: None,
+                    stability_reason: Some("github draft release".to_string()),
+                },
+            ],
+        )
+        .expect_err("all unstable releases should fail");
+
+        match error {
+            BinpmError::ReleaseNotFound {
+                skipped_releases, ..
+            } => {
+                assert_eq!(skipped_releases.len(), 2);
+                assert_eq!(skipped_releases[0].tag, "v2.0.0-rc.1");
+                assert_eq!(skipped_releases[0].reason, "github prerelease release");
+                assert_eq!(skipped_releases[1].tag, "v2.0.0-draft");
+                assert_eq!(skipped_releases[1].reason, "github draft release");
+            }
+            other => panic!("unexpected error: {other}"),
+        }
+    }
+
+    #[test]
     fn explicit_release_prefix_hint_preserves_exact_match_semantics() {
         let releases = [Release {
             tag: "1.2.3".to_string(),
@@ -1528,6 +1577,8 @@ mod tests {
         assert!(!has_prerelease_tag("release-2026-06-19"));
         assert!(!has_prerelease_tag("v1.2.3-linux-x64"));
         assert!(has_prerelease_tag("v1.2.3-rc.1"));
+        assert!(has_prerelease_tag("v1.2.3-rc1"));
+        assert!(has_prerelease_tag("v1.2.3-beta1"));
         assert!(has_prerelease_tag("tool-v1.2.3-beta.1"));
     }
 
