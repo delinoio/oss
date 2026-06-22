@@ -92,7 +92,21 @@ fn parse_source_spec(raw: &str) -> Result<SourceSpec, BinpmError> {
     match provider_raw {
         "github" => parse_github_source(raw, remainder, version),
         "gitlab" => parse_gitlab_source(raw, remainder, version),
-        _ => Err(invalid_source(raw, "provider must be `github` or `gitlab`")),
+        "npm" | "pnpm" | "yarn" | "bun" | "cargo" | "cargo-binstall" | "brew" | "homebrew"
+        | "apt" | "rpm" => Err(invalid_source(
+            raw,
+            format!(
+                "`{provider_raw}:` is a package-manager backend, but binpm v1 only installs \
+                 provider release assets. Supported source forms are \
+                 `github:owner/repo[@version]`, `github:<host>/owner/repo[@version]`, and \
+                 `gitlab:<host>/<namespace...>/<project>[@version]`."
+            ),
+        )),
+        _ => Err(invalid_source(
+            raw,
+            "provider must be `github` or `gitlab`; package-manager backends and direct URLs are \
+             not source providers in binpm v1",
+        )),
     }
 }
 
@@ -367,9 +381,18 @@ fn parse_gitlab_source(
 ) -> Result<SourceSpec, BinpmError> {
     let segments = path_segments(raw, remainder)?;
     if segments.len() < 3 {
+        let gitlab_com_hint = if segments.len() >= 2 {
+            format!("`gitlab:gitlab.com/{remainder}[@version]`")
+        } else {
+            "`gitlab:gitlab.com/<namespace...>/<project>[@version]`".to_string()
+        };
         return Err(invalid_source(
             raw,
-            "gitlab sources must be `gitlab:<host>/<namespace...>/<project>[@version]`",
+            format!(
+                "gitlab sources require an explicit host: \
+                 `gitlab:<host>/<namespace...>/<project>[@version]`. For GitLab.com use \
+                 {gitlab_com_hint}; `gitlab:group/project` is intentionally not accepted."
+            ),
         ));
     }
 

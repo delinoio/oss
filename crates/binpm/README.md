@@ -14,6 +14,17 @@ Host-specific token variables take precedence, and enterprise or self-managed
 hosts only use their host-specific token variable. Tokens and authorization
 headers are never logged or persisted.
 
+Sources are release-asset providers, not package-manager backends. GitHub.com
+shorthands may normalize to canonical `github:` specs, but GitLab specs always
+include the host, such as `gitlab:gitlab.com/group/project`. Prefixes such as
+`npm:`, `cargo:`, and `brew:` are rejected with explicit unsupported-backend
+diagnostics.
+
+`binpm explain <source>` is read-only and may contact the source provider to
+show release selection, skipped release reasons, and asset scoring. `binpm
+explain <cmd>` is both read-only and network-free because it inspects existing
+package records only.
+
 Cache commands keep asset cleanup separate from uninstall behavior:
 `binpm cache clean` removes global cache asset entries while preserving cache
 references, package records, and executable links or copies, and `binpm cache

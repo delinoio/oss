@@ -233,6 +233,8 @@ struct SelectedAssetOutput {
 enum ExplainOutput {
     Source {
         command: &'static str,
+        read_only: bool,
+        network_free: bool,
         source: String,
         normalized_source: String,
         provider: crate::contract::SourceProvider,
@@ -243,6 +245,8 @@ enum ExplainOutput {
         release_api: String,
         release: String,
         release_decision: String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        skipped_releases: Vec<SkippedReleaseOutput>,
         selected_asset: Option<SelectedAssetOutput>,
         candidates: Vec<CandidateOutput>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -250,11 +254,19 @@ enum ExplainOutput {
     },
     Package {
         command: &'static str,
+        read_only: bool,
+        network_free: bool,
         scope: Scope,
         cmd: String,
         record: PackageRecordOutput,
         override_snippet: String,
     },
+}
+
+#[derive(Debug, Serialize)]
+struct SkippedReleaseOutput {
+    tag: String,
+    reason: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1232,6 +1244,7 @@ fn explain(args: ExplainArgs, output: OutputMode) -> Result<i32> {
             info!(
                 command = "explain",
                 read_only = true,
+                network_free = false,
                 selected_scope = args.scope.scope().as_str(),
                 source_provider = spec.provider.as_str(),
                 source_host = spec.host,
@@ -1246,6 +1259,7 @@ fn explain(args: ExplainArgs, output: OutputMode) -> Result<i32> {
             info!(
                 command = "explain",
                 read_only = true,
+                network_free = true,
                 selected_scope = args.scope.scope().as_str(),
                 local_cmd = args.cmd_or_source,
                 "Prepared local command explanation"
@@ -1275,6 +1289,8 @@ fn explain(args: ExplainArgs, output: OutputMode) -> Result<i32> {
         );
         return print_json(&ExplainOutput::Package {
             command: "explain",
+            read_only: true,
+            network_free: true,
             scope,
             cmd: args.cmd_or_source,
             record: package_record_output(&record)?,
@@ -1282,6 +1298,8 @@ fn explain(args: ExplainArgs, output: OutputMode) -> Result<i32> {
         });
     }
     println!("binpm explain");
+    println!("read_only: true");
+    println!("network_free: true");
     println!("cmd: {}", args.cmd_or_source);
     println!("source: {}", record.source);
     println!("release: {}", record.release_tag);
@@ -1318,6 +1336,9 @@ fn parse_source_argument(raw: &str) -> Result<Option<SourceSpec>> {
     if raw.starts_with("github:") || raw.starts_with("gitlab:") {
         return SourceSpec::from_str(raw).map(Some);
     }
+    if raw.contains(':') {
+        return normalize_source_input(raw).map(Some);
+    }
     let raw_lower = raw.to_ascii_lowercase();
     if raw_lower.starts_with("https://") || raw_lower.starts_with("http://") {
         return normalize_source_input(raw).map(Some);
@@ -1343,6 +1364,8 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
         let release_api = release_api_url(&spec);
         return print_json(&ExplainOutput::Source {
             command: "explain",
+            read_only: true,
+            network_free: false,
             source: spec.to_string(),
             normalized_source: spec.source_without_version(),
             provider: spec.provider,
@@ -1353,6 +1376,14 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
             release_api,
             release: selection.release.tag,
             release_decision: selection.decision,
+            skipped_releases: selection
+                .skipped
+                .into_iter()
+                .map(|skipped| SkippedReleaseOutput {
+                    tag: skipped.tag,
+                    reason: skipped.reason,
+                })
+                .collect(),
             selected_asset: asset_selection
                 .as_ref()
                 .map(|selection| selected_asset_output(&selection.selected))
@@ -1363,6 +1394,8 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
     }
 
     println!("binpm explain");
+    println!("read_only: true");
+    println!("network_free: false");
     println!("source: {spec}");
     println!("normalized_source: {}", spec.source_without_version());
     println!("provider: {}", spec.provider.as_str());
@@ -1377,6 +1410,9 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
 
     println!("release: {}", selection.release.tag);
     println!("release_decision: {}", selection.decision);
+    for skipped in &selection.skipped {
+        println!("skipped_release: {} ({})", skipped.tag, skipped.reason);
+    }
 
     match asset_selection {
         Some(selection) => {
@@ -6908,6 +6944,7 @@ mod tests {
                     stability_reason: None,
                 },
                 decision: "test release".to_string(),
+                skipped: Vec::new(),
             })
         }
     }
