@@ -13,7 +13,10 @@ use crate::{
     NodeupApp,
 };
 
-pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> {
+pub fn dispatch_managed_alias_if_needed(
+    app: &NodeupApp,
+    json_error_output_requested: bool,
+) -> Result<Option<i32>> {
     let mut args = std::env::args_os();
     let Some(argv0) = args.next() else {
         return Ok(None);
@@ -111,8 +114,10 @@ pub fn dispatch_managed_alias_if_needed(app: &NodeupApp) -> Result<Option<i32>> 
         "Dispatching managed alias"
     );
 
-    if let Some(notice) = plan.npm_exec_human_notice() {
-        eprintln!("{notice}");
+    if !json_error_output_requested {
+        if let Some(notice) = plan.npm_exec_human_notice() {
+            eprintln!("{notice}");
+        }
     }
 
     let exit_code = run_command(

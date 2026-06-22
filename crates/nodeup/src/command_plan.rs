@@ -13,7 +13,7 @@ use crate::{
     command_diagnostics::RuntimeCommandAvailability,
     errors::{ErrorDiagnostics, NodeupError, Result},
     resolver::ResolvedRuntime,
-    store::Store,
+    store::{runtime_executable_is_runnable, Store},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -242,22 +242,21 @@ fn build_npm_exec_plan(
     reason: DelegatedCommandReason,
 ) -> Result<DelegatedCommandPlan> {
     let npm_executable = resolved.executable_path(store, "npm");
-    if !npm_executable.exists() {
+    if !runtime_executable_is_runnable(&npm_executable) {
         let availability = RuntimeCommandAvailability::for_resolved_runtime(
             resolved,
             store,
             "npm",
-            matches!(
-                &resolved.target,
-                crate::resolver::ResolvedRuntimeTarget::Version { .. }
-            ),
+            false,
             "package-manager-fallback-requires-runtime-npm",
         );
         let checked_paths = availability.checked_paths.join("|");
+        let direct_executable_exists = availability.direct_executable_exists;
         let diagnostics = availability.into_error_diagnostics();
         return Err(NodeupError::not_found_with_diagnostics(
             format!(
-                "Command 'npm' does not exist for runtime {} (required_for_package_manager={}, \
+                "Command 'npm' is not runnable for runtime {} (required_for_package_manager={}, \
+                 direct_executable_exists={direct_executable_exists}, \
                  checked_paths={checked_paths})",
                 resolved.runtime_id(),
                 manager.as_str(),
@@ -662,6 +661,8 @@ fn package_manager_diagnostics(input: PackageManagerDiagnosticsInput<'_>) -> Err
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use std::{
         fs,
         path::{Path, PathBuf},
@@ -728,10 +729,24 @@ mod tests {
         (Store::new(paths), runtime_dir)
     }
 
+    fn write_test_executable(path: impl AsRef<Path>, content: &str) {
+        let path = path.as_ref();
+        fs::write(path, content).expect("write test executable");
+
+        #[cfg(unix)]
+        {
+            let mut permissions = fs::metadata(path)
+                .expect("test executable metadata")
+                .permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(path, permissions).expect("set test executable permissions");
+        }
+    }
+
     #[test]
     fn yarn_major_one_maps_to_yarn_package_spec() {
         let (store, runtime_dir) = setup_store("yarn-major-one");
-        fs::write(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n").expect("write npm");
+        write_test_executable(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n");
 
         let project_dir = runtime_dir.join("workspace");
         fs::create_dir_all(&project_dir).expect("create project dir");
@@ -770,7 +785,7 @@ mod tests {
     #[test]
     fn yarn_major_two_or_later_maps_to_cli_dist_package_spec() {
         let (store, runtime_dir) = setup_store("yarn-major-two");
-        fs::write(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n").expect("write npm");
+        write_test_executable(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n");
 
         let project_dir = runtime_dir.join("workspace");
         fs::create_dir_all(&project_dir).expect("create project dir");
@@ -795,7 +810,7 @@ mod tests {
     #[test]
     fn package_manager_rejects_non_semver_versions() {
         let (store, runtime_dir) = setup_store("invalid-semver");
-        fs::write(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n").expect("write npm");
+        write_test_executable(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n");
 
         let project_dir = runtime_dir.join("workspace");
         fs::create_dir_all(&project_dir).expect("create project dir");
@@ -815,7 +830,7 @@ mod tests {
     #[test]
     fn package_manager_rejects_missing_versions_with_version_diagnostics() {
         let (store, runtime_dir) = setup_store("missing-version");
-        fs::write(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n").expect("write npm");
+        write_test_executable(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n");
 
         let project_dir = runtime_dir.join("workspace");
         fs::create_dir_all(&project_dir).expect("create project dir");
@@ -839,7 +854,7 @@ mod tests {
     #[test]
     fn package_manager_rejects_mismatched_requested_command() {
         let (store, runtime_dir) = setup_store("mismatch");
-        fs::write(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n").expect("write npm");
+        write_test_executable(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n");
 
         let project_dir = runtime_dir.join("workspace");
         fs::create_dir_all(&project_dir).expect("create project dir");
@@ -859,7 +874,7 @@ mod tests {
     #[test]
     fn missing_package_manager_field_prefers_direct_binary() {
         let (store, runtime_dir) = setup_store("field-missing-direct");
-        fs::write(runtime_dir.join("bin").join("yarn"), "#!/bin/sh\nexit 0\n").expect("write yarn");
+        write_test_executable(runtime_dir.join("bin").join("yarn"), "#!/bin/sh\nexit 0\n");
 
         let project_dir = runtime_dir.join("workspace");
         fs::create_dir_all(&project_dir).expect("create project dir");
@@ -880,7 +895,7 @@ mod tests {
     #[test]
     fn no_package_json_falls_back_to_npm_exec_when_binary_is_missing() {
         let (store, runtime_dir) = setup_store("no-package-json-fallback");
-        fs::write(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n").expect("write npm");
+        write_test_executable(runtime_dir.join("bin").join("npm"), "#!/bin/sh\nexit 0\n");
 
         let cwd = runtime_dir.join("workspace-without-package-json");
         fs::create_dir_all(&cwd).expect("create workspace dir");

@@ -53,7 +53,10 @@ fn main() {
 fn run() -> Result<i32, RunError> {
     let app = NodeupApp::new()?;
 
-    if let Some(exit_code) = dispatch::dispatch_managed_alias_if_needed(&app)? {
+    if let Some(exit_code) = dispatch::dispatch_managed_alias_if_needed(
+        &app,
+        management_output_preferences().json_error_output_requested,
+    )? {
         return Ok(exit_code);
     }
 

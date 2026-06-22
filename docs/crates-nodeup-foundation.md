@@ -41,7 +41,7 @@
 - `cargo-binstall` metadata must resolve only first-party GitHub Release assets and disable `quick-install` and `compile` strategies; docs must explain that unsupported hosts and missing first-party assets fail instead of using source compilation or third-party binary fallback.
 - Runtime archive selection must remain enum-driven: `tar.xz` for `darwin/*` and `linux/*`, `zip` for `windows/*`.
 - Windows runtime archives that unpack without a top-level directory must be normalized into the stable `bin/` runtime layout used by nodeup execution and linking flows.
-- Windows managed shim aliases may be extensionless, `.exe`, or `.cmd` by executable basename, while delegated Windows runtime package-manager executables normalize to `bin/<command>.cmd` for `npm`, `npx`, `yarn`, `pnpm`, and `corepack`.
+- Windows managed shim aliases should be copied or linked executable aliases such as `node.exe` and `npm.exe`; batch wrappers that call `nodeup.exe` must not be documented as supported shims because they do not preserve the wrapper name as Nodeup's `argv[0]`. Delegated Windows runtime package-manager executables normalize to `bin/<command>.cmd` for `npm`, `npx`, `yarn`, `pnpm`, and `corepack`.
 - Linked runtime validation must require a runnable `node` command during `toolchain link` and active-runtime availability checks.
 - Linked runtime names are case-sensitive, but names that differ from reserved channel selectors only by case, such as `LTS`, `Current`, or `LATEST`, must be rejected with `invalid-input`.
 - Legacy settings and overrides that already contain reserved-channel case variants as linked runtime selectors must remain removable and must continue to report linked-runtime metadata in JSON output.

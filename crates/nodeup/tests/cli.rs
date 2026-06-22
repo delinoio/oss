@@ -6557,6 +6557,55 @@ fn shim_dispatch_supports_yarn_alias_via_npm_exec_with_package_manager_field() {
 #[cfg(unix)]
 #[test]
 #[serial]
+fn shim_dispatch_json_output_suppresses_npm_exec_notice() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    let npm_script = make_npm_argv_script("npm-argv");
+    env.register_release(
+        "22.1.0",
+        make_archive(
+            "22.1.0",
+            "linux-x64",
+            &[
+                ("node", "#!/bin/sh\necho shim-node\n"),
+                ("npm", &npm_script),
+            ],
+        ),
+        None,
+    );
+
+    env.command().args(["default", "22.1.0"]).assert().success();
+
+    let project_dir = env.root.join("project-shim-yarn-json");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"shim-yarn-json","packageManager":"yarn@4.13.0"}"#,
+    )
+    .unwrap();
+
+    let real_bin = assert_cmd::cargo::cargo_bin!("nodeup");
+    let shim_path = env.root.join("yarn");
+    std::os::unix::fs::symlink(real_bin, &shim_path).unwrap();
+
+    let output = env
+        .command_with_program(&shim_path)
+        .current_dir(&project_dir)
+        .args(["--output", "json"])
+        .output()
+        .expect("run yarn shim binary with json output requested");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stdout
+        .contains("npm-argv:exec --yes --package @yarnpkg/cli-dist@4.13.0 -- yarn --output json"));
+    assert!(!stderr.contains("will run via npm exec"));
+}
+
+#[cfg(unix)]
+#[test]
+#[serial]
 fn shim_dispatch_supports_pnpm_alias_via_npm_exec_with_package_manager_field() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);
@@ -6649,7 +6698,7 @@ fn which_yarn_uses_runtime_npm_path_in_npm_exec_mode() {
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
     write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
-    fs::write(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n").unwrap();
+    write_runtime_executable(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n");
 
     env.command()
         .args([
@@ -6962,6 +7011,67 @@ fn run_yarn_falls_back_to_npm_exec_when_package_manager_field_is_missing_and_bin
         ));
 }
 
+#[cfg(unix)]
+#[test]
+#[serial]
+fn run_yarn_reports_not_runnable_runtime_npm_before_npm_exec_fallback() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-npm-not-runnable");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+    let npm_path = runtime_bin.join("npm");
+    fs::write(&npm_path, "#!/bin/sh\necho npm\n").unwrap();
+    let mut permissions = fs::metadata(&npm_path).unwrap().permissions();
+    permissions.set_mode(0o644);
+    fs::set_permissions(&npm_path, permissions).unwrap();
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-npm-not-runnable",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-run-npm-not-runnable");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"run-npm-not-runnable","packageManager":"yarn@4.13.0"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args([
+            "--output",
+            "json",
+            "run",
+            "linked-npm-not-runnable",
+            "yarn",
+            "--version",
+        ])
+        .output()
+        .expect("run yarn with not-runnable runtime npm");
+    assert_eq!(output.status.code(), Some(5));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "not-found");
+    assert_eq!(payload["diagnostics"]["command"], "npm");
+    assert_eq!(payload["diagnostics"]["direct_executable_exists"], true);
+    assert_eq!(payload["diagnostics"]["direct_executable_runnable"], false);
+    assert_eq!(payload["diagnostics"]["install_on_demand_eligible"], false);
+    assert_eq!(
+        payload["diagnostics"]["install_on_demand_scope"],
+        "package-manager-fallback-requires-runtime-npm"
+    );
+}
+
 #[test]
 #[serial]
 fn which_pnpm_uses_runtime_npm_path_in_npm_exec_mode() {
@@ -6970,7 +7080,7 @@ fn which_pnpm_uses_runtime_npm_path_in_npm_exec_mode() {
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
     write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
-    fs::write(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n").unwrap();
+    write_runtime_executable(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n");
 
     env.command()
         .args([
@@ -7020,7 +7130,7 @@ fn which_pnpm_json_exposes_npm_exec_planning_fields() {
     let runtime_bin = runtime_dir.join("bin");
     fs::create_dir_all(&runtime_bin).unwrap();
     write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
-    fs::write(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n").unwrap();
+    write_runtime_executable(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n");
 
     env.command()
         .args([
