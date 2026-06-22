@@ -15,21 +15,23 @@ use tracing::{debug, info, warn};
 
 use crate::{
     assets::{
-        discover_archive_binary, gitlab_https_eligible, select_asset, target_archive_candidates,
-        ArchiveMember, ArtifactKind, BinaryDiscovery, CandidateDecision,
+        discover_archive_binary, gitlab_https_diagnostic_url, gitlab_https_eligible,
+        gitlab_https_rejection_reason, select_asset, target_archive_candidates, ArchiveMember,
+        ArtifactKind, BinaryDiscovery, CandidateDecision,
     },
     cli::{
         AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
         InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs, VerifyArgs,
     },
     contract::{
-        validate_version_selector, ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceSpec,
-        TargetArch, TargetLibc, TargetOs, VerificationState,
+        normalize_source_input, validate_version_selector, ArchiveFormat, ChecksumSource,
+        HostTarget, Scope, SourceProvider, SourceSpec, TargetArch, TargetLibc, TargetOs,
+        VerificationState,
     },
     error::{BinpmError, Result},
     release::{
-        client_for_source, GitHubReleaseClient, GitLabReleaseClient, ProviderAuth, ReleaseAsset,
-        ReleaseClient,
+        client_for_source, provider_auth_for_source, GitHubReleaseClient, GitLabReleaseClient,
+        ProviderAuth, ReleaseAsset, ReleaseClient, GITHUB_ASSET_DOWNLOAD_ACCEPT,
     },
     storage::{
         archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
@@ -262,6 +264,7 @@ struct CandidateOutput {
     detected_os: Option<TargetOs>,
     detected_arch: Option<TargetArch>,
     detected_libc: Option<TargetLibc>,
+    cpu_feature: Option<crate::assets::CpuFeatureVariant>,
     score: Option<i32>,
     eligible: bool,
     recognized_pattern: bool,
@@ -289,6 +292,8 @@ enum ReleaseDiagnosticKind {
     UnsupportedInstallers,
     #[serde(rename = "target-scoring-remediation")]
     TargetScoringRemediation,
+    #[serde(rename = "gitlab-https-rejection")]
+    GitLabHttpsRejection,
 }
 
 #[derive(Debug, Serialize)]
@@ -348,7 +353,7 @@ fn install(args: InstallArgs) -> Result<i32> {
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
 
     if let Some(source) = &args.source {
-        let spec = SourceSpec::from_str(source)?;
+        let spec = normalize_source_input(source)?;
         let scope = source_install_scope(requested_scope);
         let alias = args
             .alias
@@ -407,7 +412,7 @@ fn install(args: InstallArgs) -> Result<i32> {
 }
 
 fn add(args: AddArgs) -> Result<i32> {
-    let spec = SourceSpec::from_str(&args.source)?;
+    let spec = normalize_source_input(&args.source)?;
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     let additional = parse_additional_declarations(&args.also)?;
     let mut declarations = Vec::with_capacity(1 + additional.len());
@@ -579,7 +584,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
     let forwarded_arg_count = args.args().len();
 
     if let Some(source) = &args.package {
-        let spec = SourceSpec::from_str(source)?;
+        let spec = normalize_source_input(source)?;
         info!(
             command = "x",
             resolved_command = %cmd,
@@ -679,7 +684,7 @@ fn package_shortcut_command(source: Option<&str>, explicit_bin: Option<&str>) ->
         return Ok(basename.to_string());
     }
     let source = source.ok_or_else(|| BinpmError::InvalidCommandName { cmd: String::new() })?;
-    let spec = SourceSpec::from_str(source)?;
+    let spec = normalize_source_input(source)?;
     let cmd = repo_name(&spec).to_string();
     validate_command_name(&cmd)?;
     Ok(cmd)
@@ -1320,6 +1325,14 @@ fn parse_source_argument(raw: &str) -> Result<Option<SourceSpec>> {
     if raw.starts_with("github:") || raw.starts_with("gitlab:") {
         return SourceSpec::from_str(raw).map(Some);
     }
+    let raw_lower = raw.to_ascii_lowercase();
+    if raw_lower.starts_with("https://") || raw_lower.starts_with("http://") {
+        return normalize_source_input(raw).map(Some);
+    }
+    let path = raw.split_once('@').map_or(raw, |(path, _)| path);
+    if path.split('/').count() == 2 && path.split('/').all(|segment| !segment.is_empty()) {
+        return normalize_source_input(raw).map(Some);
+    }
 
     Ok(None)
 }
@@ -1531,6 +1544,65 @@ fn release_diagnostics(
         });
     }
 
+    let gitlab_https_rejections = decisions
+        .iter()
+        .filter(|decision| {
+            decision.rejection_reason.as_deref().is_some_and(|reason| {
+                reason.contains("gitlab asset link URL is not HTTPS")
+                    || reason.contains("gitlab direct asset URL is not HTTPS")
+                    || reason.contains("gitlab asset redirect target is not HTTPS")
+            })
+        })
+        .map(|decision| decision.asset_name.as_str())
+        .collect::<Vec<_>>();
+    if !gitlab_https_rejections.is_empty() {
+        diagnostics.push(ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::GitLabHttpsRejection,
+            target: target.clone(),
+            message: "GitLab release assets were rejected before target scoring because every \
+                      download URL and redirect target must use HTTPS"
+                .to_string(),
+            unsupported_installers: gitlab_https_rejections
+                .iter()
+                .map(|asset_name| (*asset_name).to_string())
+                .collect(),
+            sidecar_assets: Vec::new(),
+            remediation: Some(
+                "configure GitLab release links to use HTTPS URLs and HTTPS redirect targets; \
+                 prefer secure direct asset URLs when GitLab exposes them"
+                    .to_string(),
+            ),
+        });
+    }
+
+    let has_eligible_installable = decisions
+        .iter()
+        .any(|decision| decision.kind.is_installable() && decision.eligible);
+    if !has_eligible_installable
+        && decisions.iter().any(|decision| {
+            decision.cpu_feature == Some(crate::assets::CpuFeatureVariant::Modern)
+                && decision.rejection_reason.as_deref().is_some_and(|reason| {
+                    reason
+                        .contains("CPU feature variant `modern` requires explicit host capability")
+                })
+        })
+    {
+        diagnostics.push(ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::TargetScoringRemediation,
+            target: target.clone(),
+            message: "CPU feature variants were detected; binpm defaults to baseline-compatible \
+                      assets because host CPU capability selection is not implemented"
+                .to_string(),
+            unsupported_installers: Vec::new(),
+            sidecar_assets: Vec::new(),
+            remediation: Some(
+                "publish a baseline asset alongside higher-feature variants, or use an explicit \
+                 target override only after verifying host compatibility"
+                    .to_string(),
+            ),
+        });
+    }
+
     diagnostics
 }
 
@@ -1539,6 +1611,10 @@ fn override_snippet_candidate(decisions: &[CandidateDecision]) -> Option<&Candid
         decision.kind.is_installable()
             && decision.rejection_reason.as_deref().is_some_and(|reason| {
                 reason.contains("linux musl target requires an explicit libc signal")
+                    || (decision.score.is_some()
+                        && reason.contains(
+                            "CPU feature variant `modern` requires explicit host capability",
+                        ))
             })
     })
 }
@@ -2636,7 +2712,12 @@ fn install_local_from_lock(
     };
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
         let repair_result = (|| {
-            let bytes = download_asset(&record.asset_url, None, None)?;
+            let download_request = locked_record_download_request(&record)?;
+            let bytes = download_asset(
+                &download_request.url,
+                download_request.auth.as_ref(),
+                download_request.accept,
+            )?;
             let actual = format!("{:x}", Sha256::digest(&bytes));
             if actual != record.sha256 {
                 return Err(BinpmError::DigestMismatch {
@@ -2658,13 +2739,14 @@ fn install_local_from_lock(
                 decision: crate::assets::CandidateDecision {
                     asset_name: record.asset_name.clone(),
                     canonical_url: record.asset_url.clone(),
-                    download_url: record.asset_url.clone(),
-                    download_auth: None,
-                    download_accept: None,
+                    download_url: download_request.url,
+                    download_auth: download_request.auth,
+                    download_accept: download_request.accept,
                     kind: crate::assets::classify_artifact(&record.asset_name, false),
                     detected_os: Some(record.target_os),
                     detected_arch: Some(record.target_arch),
                     detected_libc: Some(record.target_libc),
+                    cpu_feature: None,
                     score: None,
                     eligible: true,
                     recognized_pattern: true,
@@ -2710,6 +2792,7 @@ fn install_local_from_lock(
             detected_os: Some(record.target_os),
             detected_arch: Some(record.target_arch),
             detected_libc: Some(record.target_libc),
+            cpu_feature: None,
             score: None,
             eligible: true,
             recognized_pattern: true,
@@ -2854,6 +2937,7 @@ fn validate_locked_record_artifact(
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             }],
         );
         if !scored
@@ -2943,6 +3027,29 @@ fn record_matches_current_provider_digest(record: &PackageRecord, assets: &[Rele
         Some(current_digest) => current_digest == record.sha256,
         None => record.checksum_source != ChecksumSource::GitHubDigest,
     }
+}
+
+struct DownloadRequest {
+    url: String,
+    auth: Option<ProviderAuth>,
+    accept: Option<&'static str>,
+}
+
+fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
+    let source = SourceSpec {
+        provider: record.source_provider,
+        host: record.source_host.clone(),
+        path: record.source_path.clone(),
+        version: Some(record.release_tag.clone()),
+    };
+    let url = sanitize_persisted_url(&record.asset_url)?;
+    let auth = provider_origin_download_auth(&source, &url, provider_auth_for_source(&source));
+    let accept = match (record.source_provider, auth.as_ref()) {
+        (SourceProvider::GitHub, Some(_)) => Some(GITHUB_ASSET_DOWNLOAD_ACCEPT),
+        _ => None,
+    };
+
+    Ok(DownloadRequest { url, auth, accept })
 }
 
 fn locked_release_lookup_spec(record: &PackageRecord) -> Result<SourceSpec> {
@@ -3851,17 +3958,10 @@ fn select_manifest_asset(
         let kind = crate::assets::classify_artifact(&asset.name, asset.source_archive);
         if spec.provider == crate::contract::SourceProvider::GitLab && !gitlab_https_eligible(asset)
         {
-            let diagnostic_url = asset
-                .provider_url
-                .as_deref()
-                .unwrap_or(&asset.url)
-                .split(['?', '#'])
-                .next()
-                .unwrap_or(&asset.url)
-                .to_string();
             return Err(BinpmError::UnsafeUrl {
-                url: diagnostic_url,
-                message: "gitlab asset link is not HTTPS eligible".to_string(),
+                url: gitlab_https_diagnostic_url(asset),
+                message: gitlab_https_rejection_reason(asset)
+                    .unwrap_or_else(|| "gitlab asset link is not HTTPS eligible".to_string()),
             });
         }
         return Ok(crate::assets::CandidateDecision {
@@ -3886,6 +3986,7 @@ fn select_manifest_asset(
             detected_os: Some(target.os),
             detected_arch: Some(target.arch),
             detected_libc: Some(target.libc),
+            cpu_feature: None,
             score: None,
             eligible: true,
             recognized_pattern: true,
@@ -4037,6 +4138,7 @@ fn candidate_output(decision: &crate::assets::CandidateDecision) -> CandidateOut
         detected_os: decision.detected_os,
         detected_arch: decision.detected_arch,
         detected_libc: decision.detected_libc,
+        cpu_feature: decision.cpu_feature,
         score: decision.score,
         eligible: decision.eligible,
         recognized_pattern: decision.recognized_pattern,
@@ -4768,6 +4870,18 @@ fn same_download_origin(left: &reqwest::Url, right: &reqwest::Url) -> bool {
     left.scheme() == right.scheme()
         && left.host_str() == right.host_str()
         && left.port_or_known_default() == right.port_or_known_default()
+}
+
+fn provider_origin_download_auth(
+    source: &SourceSpec,
+    url: &str,
+    auth: Option<ProviderAuth>,
+) -> Option<ProviderAuth> {
+    let auth = auth?;
+    let source_origin = reqwest::Url::parse(&format!("https://{}/", source.host)).ok()?;
+    let request_origin = reqwest::Url::parse(url).ok()?;
+
+    same_download_origin(&source_origin, &request_origin).then_some(auth)
 }
 
 fn is_retryable_download_error(error: &BinpmError) -> bool {
@@ -5891,17 +6005,18 @@ mod tests {
         has_local_runtime_or_lock_state, install_local_from_lock, install_path_collision_key,
         is_retryable_status, local_runtime_lock_records, local_tool_execution_ready,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
-        locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
-        manifest_creation_root_from, manifest_project_root_from,
+        locked_record_download_request, locked_release_lookup_spec, lockfile_digest,
+        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         normalize_bin_selection, override_snippet_candidate, package_record_output,
-        parse_manifest_source, parse_manifest_tool_source, project_root_from,
-        read_archive_selected_binary, record_matches_current_provider_digest,
-        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, require_executable_managed_file, restore_local_remove_state,
-        restore_runtime_tool_state, sanitize_download_diagnostic_url, select_manifest_asset,
-        selected_asset_display_url, shell_path, shell_quote, snapshot_cache_metadata,
-        source_install_scope, target_override_snippet, update_manifest_tool_source,
+        package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
+        parse_source_argument, project_root_from, read_archive_selected_binary,
+        record_matches_current_provider_digest, release_diagnostic_lines, release_diagnostics,
+        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        require_executable_managed_file, restore_local_remove_state, restore_runtime_tool_state,
+        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
+        shell_path, shell_quote, snapshot_cache_metadata, source_install_scope,
+        target_override_snippet, update_manifest_tool_source,
         validate_frozen_update_current_release, validate_locked_record_artifact,
         validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
         validate_package_record_metadata, validate_package_record_source_identity,
@@ -5909,6 +6024,7 @@ mod tests {
         verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
         zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
         InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
+        GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
         assets::CandidateDecision,
@@ -5958,6 +6074,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn read_only_source_argument_accepts_shorthand_with_slash_bearing_tag() {
+        let spec = parse_source_argument("owner/tool@nightly/2026-06-21")
+            .expect("parse source argument")
+            .expect("source spec");
+
+        assert_eq!(spec.provider, SourceProvider::GitHub);
+        assert_eq!(spec.host, "github.com");
+        assert_eq!(spec.path, "owner/tool");
+        assert_eq!(spec.version.as_deref(), Some("nightly/2026-06-21"));
+    }
+
+    #[test]
+    fn package_shortcut_command_accepts_normalized_github_shorthand() {
+        assert_eq!(
+            package_shortcut_command(Some("owner/tool"), None).expect("owner/repo shorthand"),
+            "tool"
+        );
+        assert_eq!(
+            package_shortcut_command(Some("https://github.com/owner/tool"), None)
+                .expect("url shorthand"),
+            "tool"
+        );
+    }
+
     fn release_asset_from_record(record: &PackageRecord) -> ReleaseAsset {
         ReleaseAsset {
             name: record.asset_name.clone(),
@@ -5972,6 +6113,7 @@ mod tests {
                 .map(|sha256| format!("sha256:{sha256}")),
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }
     }
 
@@ -7087,6 +7229,15 @@ mod tests {
             .expect_err("versioned manifest source");
 
         assert!(error.to_string().contains("must be versionless"));
+    }
+
+    #[test]
+    fn manifest_source_rejects_shorthand_sources() {
+        for raw in ["owner/tool", "https://github.com/owner/tool"] {
+            let error = parse_manifest_source(raw).expect_err("manifest shorthand");
+
+            assert!(matches!(error, BinpmError::InvalidSourceSpec { .. }));
+        }
     }
 
     #[test]
@@ -8347,12 +8498,16 @@ mod tests {
             digest: None,
             source_archive: false,
             final_url_https: Some(false),
+            final_url: Some("http://cdn.example.com/tool-linux?token=secret".to_string()),
         }];
 
         let error =
             select_manifest_asset(&spec, Some(&tool), &target, &assets).expect_err("unsafe URL");
 
-        assert!(error.to_string().contains("not HTTPS eligible"));
+        assert!(error
+            .to_string()
+            .contains("gitlab asset redirect target is not HTTPS"));
+        assert!(error.to_string().contains("http://cdn.example.com"));
         assert!(!error.to_string().contains("secret"));
     }
 
@@ -8372,6 +8527,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             },
             ReleaseAsset {
                 name: "tool-linux-x64".to_string(),
@@ -8384,6 +8540,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             },
         ];
 
@@ -8416,6 +8573,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             },
             ReleaseAsset {
                 name: "tool-linux-x64".to_string(),
@@ -8428,6 +8586,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             },
         ];
 
@@ -8458,6 +8617,7 @@ mod tests {
             digest: None,
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }];
 
         let selected =
@@ -8480,6 +8640,7 @@ mod tests {
             digest: None,
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }];
 
         let selected = select_manifest_asset(&spec, None, &target, &assets)
@@ -8504,6 +8665,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             },
             ReleaseAsset {
                 name: "tool-linux-x64".to_string(),
@@ -8516,6 +8678,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             },
         ];
         let selection =
@@ -8542,6 +8705,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             },
             ReleaseAsset {
                 name: "Tool-1.0.0.msi".to_string(),
@@ -8553,6 +8717,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             },
         ];
         let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
@@ -8584,6 +8749,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             },
             ReleaseAsset {
                 name: "Tool-1.0.0.msi".to_string(),
@@ -8595,6 +8761,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             },
         ];
         let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
@@ -8631,6 +8798,7 @@ mod tests {
             digest: None,
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }];
         let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
 
@@ -8643,6 +8811,54 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line.contains("Linux musl releases should include")));
+    }
+
+    #[test]
+    fn explain_diagnostics_suggest_override_for_modern_only_compatible_assets() {
+        let target = linux_target();
+        let assets = [release_asset("tool-linux-x64-modern.tar.gz")];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(decisions.iter().all(|decision| !decision.eligible));
+        assert_eq!(
+            override_snippet_candidate(&decisions).map(|decision| decision.asset_name.as_str()),
+            Some("tool-linux-x64-modern.tar.gz")
+        );
+        let lines = release_diagnostic_lines(&decisions, &target);
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("CPU feature variants were detected")));
+    }
+
+    #[test]
+    fn explain_diagnostics_suppress_modern_remediation_after_baseline_selection() {
+        let target = linux_target();
+        let assets = [
+            release_asset("tool-linux-x64-baseline.tar.gz"),
+            release_asset("tool-linux-x64-modern.tar.gz"),
+        ];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(decisions.iter().any(|decision| decision.asset_name
+            == "tool-linux-x64-baseline.tar.gz"
+            && decision.eligible));
+        let lines = release_diagnostic_lines(&decisions, &target);
+        assert!(!lines
+            .iter()
+            .any(|line| line.contains("CPU feature variants were detected")));
+    }
+
+    #[test]
+    fn explain_diagnostics_do_not_suggest_modern_override_for_incompatible_target_assets() {
+        let target = linux_target();
+        let assets = [release_asset("tool-darwin-aarch64-modern.tar.gz")];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(decisions.iter().all(|decision| !decision.eligible));
+        assert!(decisions.iter().any(|decision| {
+            decision.rejection_reason.as_deref() == Some("asset target does not match host target")
+        }));
+        assert!(override_snippet_candidate(&decisions).is_none());
     }
 
     #[test]
@@ -8663,6 +8879,7 @@ mod tests {
             digest: None,
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }];
         let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
 
@@ -8718,6 +8935,7 @@ mod tests {
             detected_os: Some(TargetOs::Linux),
             detected_arch: Some(TargetArch::X86_64),
             detected_libc: Some(TargetLibc::Gnu),
+            cpu_feature: None,
             score: Some(1),
             eligible: true,
             recognized_pattern: true,
@@ -8832,6 +9050,96 @@ mod tests {
     }
 
     #[test]
+    fn locked_record_download_request_uses_locked_asset_url() {
+        let mut record = package_record();
+        record.source = "github:ghe.no-token.example/owner/tool".to_string();
+        record.source_host = "ghe.no-token.example".to_string();
+        record.asset_url =
+            "https://ghe.no-token.example/owner/tool/releases/download/1.0.0/locked-tool-linux"
+                .to_string();
+        record.asset_name = "tool-linux".to_string();
+
+        let request = locked_record_download_request(&record).expect("download request");
+
+        assert_eq!(request.url, record.asset_url);
+        assert_eq!(request.auth, None);
+        assert_eq!(request.accept, None);
+    }
+
+    #[test]
+    fn locked_record_download_request_preserves_provider_auth_metadata() {
+        let mut record = package_record();
+        record.source = "github:ghe.locked.example/owner/tool".to_string();
+        record.source_host = "ghe.locked.example".to_string();
+        record.asset_url =
+            "https://ghe.locked.example/owner/tool/releases/download/1.0.0/tool-linux".to_string();
+        std::env::set_var(
+            "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE",
+            "locked-token",
+        );
+
+        let request = locked_record_download_request(&record).expect("download request");
+
+        std::env::remove_var("BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
+        assert_eq!(request.url, record.asset_url);
+        assert_eq!(request.accept, Some(GITHUB_ASSET_DOWNLOAD_ACCEPT));
+        let auth = request.auth.expect("provider auth");
+        assert_eq!(auth.header_name, "authorization");
+        assert_eq!(auth.header_value, "Bearer locked-token");
+        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
+    }
+
+    #[test]
+    fn locked_record_download_request_omits_provider_auth_for_external_asset_url() {
+        let mut record = package_record();
+        record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
+        record.source_provider = SourceProvider::GitLab;
+        record.source_host = "gitlab.locked.example".to_string();
+        record.source_path = "group/tool".to_string();
+        record.asset_url = "https://cdn.locked.example/group/tool/releases/tool-linux".to_string();
+        std::env::set_var(
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE",
+            "locked-token",
+        );
+
+        let request = locked_record_download_request(&record).expect("download request");
+
+        std::env::remove_var("BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE");
+        assert_eq!(request.url, record.asset_url);
+        assert_eq!(request.auth, None);
+        assert_eq!(request.accept, None);
+    }
+
+    #[test]
+    fn locked_record_download_request_preserves_gitlab_auth_for_provider_asset_url() {
+        let mut record = package_record();
+        record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
+        record.source_provider = SourceProvider::GitLab;
+        record.source_host = "gitlab.locked.example".to_string();
+        record.source_path = "group/tool".to_string();
+        record.asset_url =
+            "https://gitlab.locked.example/group/tool/-/releases/1.0.0/downloads/tool-linux"
+                .to_string();
+        std::env::set_var(
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE",
+            "locked-token",
+        );
+
+        let request = locked_record_download_request(&record).expect("download request");
+
+        std::env::remove_var("BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE");
+        assert_eq!(request.url, record.asset_url);
+        assert_eq!(request.accept, None);
+        let auth = request.auth.expect("provider auth");
+        assert_eq!(auth.header_name, "PRIVATE-TOKEN");
+        assert_eq!(auth.header_value, "locked-token");
+        assert_eq!(
+            auth.env_var,
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE"
+        );
+    }
+
+    #[test]
     fn frozen_lock_preserves_locked_asset_when_better_release_asset_appears() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let target = linux_target();
@@ -8848,6 +9156,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+            final_url: None,
             },
             ReleaseAsset {
                 name: "tool-x86_64-unknown-linux-gnu".to_string(),
@@ -8860,6 +9169,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+            final_url: None,
             },
         ];
         let selected =
@@ -8890,6 +9200,7 @@ mod tests {
             digest: None,
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }];
 
         let error = validate_locked_record_current_asset(
@@ -9070,6 +9381,7 @@ mod tests {
             digest: Some(format!("sha256:{changed_digest}")),
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }];
 
         let error = validate_locked_record_current_provider_digest(
@@ -9098,6 +9410,7 @@ mod tests {
             digest: Some(format!("sha256:{changed_digest}")),
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }];
 
         let error = validate_locked_record_current_provider_digest(
@@ -9125,6 +9438,7 @@ mod tests {
             digest: Some(format!("sha256:{}", record.sha256)),
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }];
 
         assert!(record_matches_current_provider_digest(&record, &assets));
@@ -9144,6 +9458,7 @@ mod tests {
             digest: None,
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }];
 
         assert!(!record_matches_current_provider_digest(&record, &assets));
@@ -9162,6 +9477,7 @@ mod tests {
             digest: Some(format!("sha256:{}", record.sha256)),
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }];
 
         assert!(record_matches_current_provider_digest(&record, &assets));
@@ -10032,6 +10348,21 @@ mod tests {
         }
     }
 
+    fn release_asset(name: &str) -> ReleaseAsset {
+        ReleaseAsset {
+            name: name.to_string(),
+            url: format!("https://github.com/owner/tool/releases/download/1.0.0/{name}"),
+            provider_url: None,
+            download_url: None,
+            download_auth: None,
+            download_accept: None,
+            digest: None,
+            source_archive: false,
+            final_url_https: None,
+            final_url: None,
+        }
+    }
+
     fn package_record() -> PackageRecord {
         PackageRecord {
             package_spec: "github:owner/tool@1.0.0".to_string(),
@@ -10097,6 +10428,7 @@ mod tests {
                 detected_os: Some(TargetOs::Linux),
                 detected_arch: Some(TargetArch::X86_64),
                 detected_libc: Some(TargetLibc::Gnu),
+                cpu_feature: None,
                 score: None,
                 eligible: true,
                 recognized_pattern: true,

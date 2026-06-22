@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
@@ -24,6 +25,30 @@ pub enum ArtifactKind {
     PackageMetadata,
     #[serde(rename = "unknown")]
     Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CpuFeatureVariant {
+    #[serde(rename = "baseline")]
+    Baseline,
+    #[serde(rename = "modern")]
+    Modern,
+}
+
+impl CpuFeatureVariant {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Baseline => "baseline",
+            Self::Modern => "modern",
+        }
+    }
+
+    fn score_adjustment(self) -> i32 {
+        match self {
+            Self::Baseline => 4,
+            Self::Modern => -4,
+        }
+    }
 }
 
 impl ArtifactKind {
@@ -55,6 +80,7 @@ pub struct CandidateDecision {
     pub detected_os: Option<TargetOs>,
     pub detected_arch: Option<TargetArch>,
     pub detected_libc: Option<TargetLibc>,
+    pub cpu_feature: Option<CpuFeatureVariant>,
     pub score: Option<i32>,
     pub eligible: bool,
     pub recognized_pattern: bool,
@@ -64,8 +90,12 @@ pub struct CandidateDecision {
 impl CandidateDecision {
     pub fn explain_line(&self) -> String {
         if self.eligible {
+            let cpu_feature = self
+                .cpu_feature
+                .map(|variant| format!(" cpu_feature={}", variant.as_str()))
+                .unwrap_or_default();
             format!(
-                "candidate {} kind={} score={} target={}/{}/{}",
+                "candidate {} kind={} score={} target={}/{}/{}{}",
                 self.asset_name,
                 self.kind.as_str(),
                 self.score.unwrap_or_default(),
@@ -75,7 +105,8 @@ impl CandidateDecision {
                     .unwrap_or("unknown"),
                 self.detected_libc
                     .map(TargetLibc::as_str)
-                    .unwrap_or("unknown")
+                    .unwrap_or("unknown"),
+                cpu_feature
             )
         } else {
             format!(
@@ -305,7 +336,11 @@ pub(crate) fn target_archive_candidates(
 }
 
 fn archive_member_target_score(target: &HostTarget, path: &str) -> Option<i32> {
-    let signal = detect_target(path);
+    let signal = detect_archive_member_target(path);
+    let modern_basename_product_token = archive_member_modern_basename_product_token(path);
+    if signal.cpu_feature == Some(CpuFeatureVariant::Modern) && !modern_basename_product_token {
+        return None;
+    }
     if signal.os.is_none() && signal.arch.is_none() && signal.libc.is_none() {
         return Some(0);
     }
@@ -335,7 +370,29 @@ fn archive_member_target_score(target: &HostTarget, path: &str) -> Option<i32> {
     if signal.recognized_pattern {
         score += 5;
     }
+    if let Some(cpu_feature) = signal
+        .cpu_feature
+        .filter(|_| !modern_basename_product_token)
+    {
+        score += cpu_feature.score_adjustment();
+    }
     Some(score)
+}
+
+fn archive_member_modern_basename_product_token(path: &str) -> bool {
+    let lower_path = path.to_ascii_lowercase().replace("x86_64", "x64");
+    let lower_path = strip_known_suffixes(&lower_path);
+    let modern_token_count = lower_path
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|token| *token == "modern")
+        .count();
+    if modern_token_count != 1 {
+        return false;
+    }
+
+    let lower_basename = basename(path).to_ascii_lowercase().replace("x86_64", "x64");
+    let lower_basename = strip_known_suffixes(&lower_basename);
+    lower_basename == "modern"
 }
 
 fn score_asset(
@@ -371,16 +428,19 @@ fn score_asset(
         detected_os: target_signal.os,
         detected_arch: target_signal.arch,
         detected_libc: target_signal.libc,
+        cpu_feature: target_signal.cpu_feature,
         score: None,
         eligible: false,
         recognized_pattern: target_signal.recognized_pattern,
         rejection_reason: None,
     };
 
-    if provider == SourceProvider::GitLab && !gitlab_https_eligible(asset) {
-        decision.rejection_reason = Some("gitlab asset link is not HTTPS eligible".to_string());
-        log_candidate(target, &decision);
-        return decision;
+    if provider == SourceProvider::GitLab {
+        if let Some(reason) = gitlab_https_rejection_reason(asset) {
+            decision.rejection_reason = Some(reason);
+            log_candidate(target, &decision);
+            return decision;
+        }
     }
 
     match kind {
@@ -419,6 +479,17 @@ fn score_asset(
         return decision;
     };
 
+    if target_signal.cpu_feature == Some(CpuFeatureVariant::Modern) {
+        decision.score = Some(score);
+        decision.rejection_reason = Some(
+            "CPU feature variant `modern` requires explicit host capability selection; baseline \
+             or unspecified assets are preferred by default"
+                .to_string(),
+        );
+        log_candidate(target, &decision);
+        return decision;
+    }
+
     decision.score = Some(score);
     decision.eligible = true;
     log_candidate(target, &decision);
@@ -426,13 +497,78 @@ fn score_asset(
 }
 
 pub(crate) fn gitlab_https_eligible(asset: &ReleaseAsset) -> bool {
-    is_https_url(&asset.url)
-        && asset
-            .provider_url
+    gitlab_https_rejection_reason(asset).is_none()
+}
+
+pub(crate) fn gitlab_https_rejection_reason(asset: &ReleaseAsset) -> Option<String> {
+    if !is_https_url(&asset.url) {
+        return Some(format!(
+            "gitlab asset link URL is not HTTPS: {}; configure the GitLab release link to use \
+             HTTPS or a secure direct asset URL",
+            sanitized_origin(&asset.url)
+        ));
+    }
+
+    if let Some(provider_url) = &asset.provider_url {
+        if !is_https_url(provider_url) {
+            return Some(format!(
+                "gitlab direct asset URL is not HTTPS: {}; configure the GitLab release link to \
+                 use HTTPS or omit the insecure direct asset URL",
+                sanitized_origin(provider_url)
+            ));
+        }
+    }
+
+    if asset.final_url_https == Some(false) {
+        let target = asset
+            .final_url
             .as_deref()
-            .map(is_https_url)
-            .unwrap_or(true)
-        && asset.final_url_https.unwrap_or(true)
+            .map(sanitized_origin)
+            .unwrap_or_else(|| "unknown redirect target".to_string());
+        return Some(format!(
+            "gitlab asset redirect target is not HTTPS: {target}; configure the GitLab release \
+             link to redirect to HTTPS"
+        ));
+    }
+
+    None
+}
+
+pub(crate) fn gitlab_https_diagnostic_url(asset: &ReleaseAsset) -> String {
+    if asset.final_url_https == Some(false) {
+        if let Some(final_url) = &asset.final_url {
+            return sanitized_origin(final_url);
+        }
+    }
+    let url = asset.provider_url.as_deref().unwrap_or(&asset.url);
+    sanitized_origin(url)
+}
+
+fn sanitized_origin(raw: &str) -> String {
+    let Ok(parsed) = Url::parse(raw) else {
+        return sanitize_unparsed_url_like_input(raw);
+    };
+    let Some(host) = parsed.host_str() else {
+        return format!("{}:", parsed.scheme());
+    };
+    match parsed.port() {
+        Some(port) => format!("{}://{}:{}", parsed.scheme(), host, port),
+        None => format!("{}://{}", parsed.scheme(), host),
+    }
+}
+
+fn sanitize_unparsed_url_like_input(raw: &str) -> String {
+    let without_query = raw.split(['?', '#']).next().unwrap_or(raw);
+    let Some((scheme, rest)) = without_query.split_once("://") else {
+        return without_query.to_string();
+    };
+    let authority_end = rest.find('/').unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    let Some((_, hostish)) = authority.rsplit_once('@') else {
+        return without_query.to_string();
+    };
+
+    format!("{scheme}://<redacted>@{hostish}{}", &rest[authority_end..])
 }
 
 fn is_https_url(url: &str) -> bool {
@@ -480,6 +616,9 @@ fn target_score(target: &HostTarget, signal: &TargetSignal) -> Option<i32> {
     if signal.recognized_pattern {
         score += 5;
     }
+    if let Some(cpu_feature) = signal.cpu_feature {
+        score += cpu_feature.score_adjustment();
+    }
 
     Some(score)
 }
@@ -521,11 +660,23 @@ struct TargetSignal {
     os: Option<TargetOs>,
     arch: Option<TargetArch>,
     libc: Option<TargetLibc>,
+    cpu_feature: Option<CpuFeatureVariant>,
     recognized_pattern: bool,
     universal_macos: bool,
 }
 
 fn detect_target(name: &str) -> TargetSignal {
+    detect_target_with_options(name, true)
+}
+
+fn detect_archive_member_target(path: &str) -> TargetSignal {
+    detect_target_with_options(path, false)
+}
+
+fn detect_target_with_options(
+    name: &str,
+    allow_leading_cpu_feature_product_token: bool,
+) -> TargetSignal {
     let lower_name = name.to_ascii_lowercase().replace("x86_64", "x64");
     let is_windows_executable = lower_name.ends_with(".exe");
     let lower = strip_known_suffixes(&lower_name);
@@ -539,7 +690,7 @@ fn detect_target(name: &str) -> TargetSignal {
         signal.os = Some(TargetOs::Windows);
     }
 
-    for token in &tokens {
+    for (index, token) in tokens.iter().enumerate() {
         if signal.os.is_none() {
             signal.os = os_alias(token);
         }
@@ -548,6 +699,15 @@ fn detect_target(name: &str) -> TargetSignal {
         }
         if signal.libc.is_none() {
             signal.libc = libc_alias(token);
+        }
+        if signal.cpu_feature.is_none()
+            && cpu_feature_token_has_target_context(
+                &tokens,
+                index,
+                allow_leading_cpu_feature_product_token,
+            )
+        {
+            signal.cpu_feature = cpu_feature_alias(token);
         }
     }
 
@@ -629,6 +789,37 @@ fn libc_alias(token: &str) -> Option<TargetLibc> {
         "static" | "portable" | "universal" | "any" => Some(TargetLibc::Any),
         _ => None,
     }
+}
+
+fn cpu_feature_alias(token: &str) -> Option<CpuFeatureVariant> {
+    match token {
+        "baseline" => Some(CpuFeatureVariant::Baseline),
+        "modern" => Some(CpuFeatureVariant::Modern),
+        _ => None,
+    }
+}
+
+fn cpu_feature_token_has_target_context(
+    tokens: &[&str],
+    index: usize,
+    allow_leading_cpu_feature_product_token: bool,
+) -> bool {
+    if cpu_feature_alias(tokens[index]).is_none() {
+        return false;
+    }
+    if index == 0 && allow_leading_cpu_feature_product_token {
+        return false;
+    }
+    let has_target_context = |token: &str| {
+        os_alias(token).is_some() || arch_alias(token).is_some() || libc_alias(token).is_some()
+    };
+    index
+        .checked_sub(1)
+        .and_then(|previous| tokens.get(previous))
+        .is_some_and(|token| has_target_context(token))
+        || tokens
+            .get(index + 1)
+            .is_some_and(|token| has_target_context(token))
 }
 
 fn is_source_archive_name(lower: &str) -> bool {
@@ -754,6 +945,10 @@ fn log_candidate(target: &HostTarget, decision: &CandidateDecision) {
         detected_os = decision.detected_os.map(TargetOs::as_str).unwrap_or(""),
         detected_arch = decision.detected_arch.map(TargetArch::as_str).unwrap_or(""),
         detected_libc = decision.detected_libc.map(TargetLibc::as_str).unwrap_or(""),
+        detected_cpu_feature = decision
+            .cpu_feature
+            .map(CpuFeatureVariant::as_str)
+            .unwrap_or(""),
         artifact_kind = decision.kind.as_str(),
         score = decision.score.unwrap_or_default(),
         rejection_reason = decision.rejection_reason.as_deref().unwrap_or(""),
@@ -774,8 +969,8 @@ fn normalized_binary_name(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_artifact, discover_archive_binary, score_assets, select_asset, ArchiveMember,
-        ArtifactKind, BinaryDiscovery,
+        classify_artifact, discover_archive_binary, score_assets, select_asset,
+        target_archive_candidates, ArchiveMember, ArtifactKind, BinaryDiscovery, CpuFeatureVariant,
     };
     use crate::{
         contract::{ArchiveFormat, HostTarget, SourceProvider, TargetArch, TargetLibc, TargetOs},
@@ -793,6 +988,7 @@ mod tests {
             digest: None,
             source_archive: false,
             final_url_https: None,
+            final_url: None,
         }
     }
 
@@ -1087,22 +1283,181 @@ mod tests {
         link.url = "http://example.com/tool.tar.gz".to_string();
         let mut direct = asset("tool-x86_64-unknown-linux-gnu.zip");
         direct.provider_url = Some("http://gitlab.example.com/direct.zip".to_string());
+        let mut malformed_link = asset("tool-x86_64-unknown-linux-gnu.tar.xz");
+        malformed_link.url = "http://user:secret@[::1/tool.tar.xz?token=secret".to_string();
+        let mut malformed_direct = asset("tool-x86_64-unknown-linux-gnu");
+        malformed_direct.provider_url =
+            Some("http://user:secret@[::1/tool?token=secret".to_string());
         let mut redirected = asset("tool-x86_64-unknown-linux-gnu.tgz");
         redirected.final_url_https = Some(false);
-        let decisions = score_assets(SourceProvider::GitLab, &host, &[link, direct]);
+        redirected.final_url = Some("http://cdn.example.com/tool.tgz?token=secret".to_string());
+        let decisions = score_assets(
+            SourceProvider::GitLab,
+            &host,
+            &[link, direct, malformed_link, malformed_direct],
+        );
 
         assert!(decisions.iter().all(|decision| !decision.eligible));
-        assert!(decisions
-            .iter()
-            .all(|decision| decision.rejection_reason.as_deref()
-                == Some("gitlab asset link is not HTTPS eligible")));
+        assert!(decisions.iter().any(|decision| {
+            decision
+                .rejection_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("gitlab asset link URL is not HTTPS"))
+        }));
+        assert!(decisions.iter().any(|decision| {
+            decision
+                .rejection_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("gitlab direct asset URL is not HTTPS"))
+        }));
+        assert!(decisions.iter().any(|decision| {
+            decision
+                .rejection_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("http://<redacted>@[::1/tool"))
+        }));
+        assert!(decisions.iter().all(|decision| decision
+            .rejection_reason
+            .as_deref()
+            .is_none_or(|reason| !reason.contains("secret"))));
 
         let redirected_decisions = score_assets(SourceProvider::GitLab, &host, &[redirected]);
         assert!(!redirected_decisions[0].eligible);
-        assert_eq!(
-            redirected_decisions[0].rejection_reason.as_deref(),
-            Some("gitlab asset link is not HTTPS eligible")
+        let reason = redirected_decisions[0]
+            .rejection_reason
+            .as_deref()
+            .expect("redirect rejection reason");
+        assert!(reason.contains("gitlab asset redirect target is not HTTPS"));
+        assert!(reason.contains("http://cdn.example.com"));
+        assert!(!reason.contains("secret"));
+    }
+
+    #[test]
+    fn cpu_feature_variants_prefer_baseline_and_reject_modern_by_default() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let decisions = score_assets(
+            SourceProvider::GitHub,
+            &host,
+            &[
+                asset("bun-linux-x64-modern.zip"),
+                asset("bun-linux-x64-baseline.zip"),
+            ],
         );
+
+        assert_eq!(decisions[0].asset_name, "bun-linux-x64-baseline.zip");
+        assert_eq!(decisions[0].cpu_feature, Some(CpuFeatureVariant::Baseline));
+        let modern = decisions
+            .iter()
+            .find(|decision| decision.asset_name == "bun-linux-x64-modern.zip")
+            .expect("modern decision");
+        assert_eq!(modern.cpu_feature, Some(CpuFeatureVariant::Modern));
+        assert!(!modern.eligible);
+        assert!(modern
+            .rejection_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("CPU feature variant `modern`")));
+    }
+
+    #[test]
+    fn cpu_feature_variants_are_detected_before_adjacent_target_tokens() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let decisions = score_assets(
+            SourceProvider::GitHub,
+            &host,
+            &[
+                asset("bun-modern-linux-x64.zip"),
+                asset("bun-baseline-linux-x64.zip"),
+            ],
+        );
+
+        assert_eq!(decisions[0].asset_name, "bun-baseline-linux-x64.zip");
+        assert_eq!(decisions[0].cpu_feature, Some(CpuFeatureVariant::Baseline));
+        let modern = decisions
+            .iter()
+            .find(|decision| decision.asset_name == "bun-modern-linux-x64.zip")
+            .expect("modern decision");
+        assert_eq!(modern.cpu_feature, Some(CpuFeatureVariant::Modern));
+        assert!(!modern.eligible);
+    }
+
+    #[test]
+    fn modern_product_name_token_is_not_rejected_as_cpu_feature() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let decisions = score_assets(
+            SourceProvider::GitHub,
+            &host,
+            &[asset("modern-tool-linux-x64.tar.gz")],
+        );
+
+        assert_eq!(decisions[0].cpu_feature, None);
+        assert!(decisions[0].eligible);
+    }
+
+    #[test]
+    fn modern_product_name_before_target_suffix_is_not_rejected_as_cpu_feature() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let decisions = score_assets(
+            SourceProvider::GitHub,
+            &host,
+            &[asset("modern-linux-x64.tar.gz")],
+        );
+
+        assert_eq!(decisions[0].cpu_feature, None);
+        assert!(decisions[0].eligible);
+    }
+
+    #[test]
+    fn archive_member_discovery_rejects_modern_cpu_variant_by_default() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let candidates = target_archive_candidates(
+            &host,
+            vec![
+                "pkg/bin/linux-x64-modern/tool".to_string(),
+                "pkg/bin/linux-x64-baseline/tool".to_string(),
+            ],
+        );
+
+        assert_eq!(candidates, vec!["pkg/bin/linux-x64-baseline/tool"]);
+
+        let modern_only =
+            target_archive_candidates(&host, vec!["pkg/bin/linux-x64-modern/tool".to_string()]);
+        assert!(modern_only.is_empty());
+    }
+
+    #[test]
+    fn archive_member_discovery_preserves_modern_basename_in_target_directory() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let candidates = target_archive_candidates(
+            &host,
+            vec![
+                "pkg/bin/linux-x64/modern".to_string(),
+                "pkg/bin/darwin-arm64/modern".to_string(),
+            ],
+        );
+
+        assert_eq!(candidates, vec!["pkg/bin/linux-x64/modern"]);
+
+        let variant_directory =
+            target_archive_candidates(&host, vec!["pkg/bin/linux-x64-modern/modern".to_string()]);
+        assert!(variant_directory.is_empty());
+    }
+
+    #[test]
+    fn archive_member_discovery_rejects_leading_modern_cpu_variant_by_default() {
+        let host = target(TargetOs::Linux, TargetArch::X86_64, TargetLibc::Gnu);
+        let candidates = target_archive_candidates(
+            &host,
+            vec![
+                "modern/linux-x64/tool".to_string(),
+                "baseline/linux-x64/tool".to_string(),
+            ],
+        );
+
+        assert_eq!(candidates, vec!["baseline/linux-x64/tool"]);
+
+        let modern_only =
+            target_archive_candidates(&host, vec!["modern/linux-x64/tool".to_string()]);
+        assert!(modern_only.is_empty());
     }
 
     #[test]

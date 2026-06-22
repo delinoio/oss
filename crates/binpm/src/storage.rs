@@ -2477,6 +2477,7 @@ created_at = "2026-01-01T00:00:00Z"
                 detected_os: Some(TargetOs::Linux),
                 detected_arch: Some(TargetArch::X86_64),
                 detected_libc: Some(TargetLibc::Gnu),
+                cpu_feature: None,
                 score: Some(235),
                 eligible: true,
                 recognized_pattern: true,

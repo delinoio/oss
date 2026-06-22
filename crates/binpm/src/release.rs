@@ -61,6 +61,7 @@ pub struct ReleaseAsset {
     pub digest: Option<String>,
     pub source_archive: bool,
     pub final_url_https: Option<bool>,
+    pub final_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +161,7 @@ impl ReleaseClient for GitHubReleaseClient {
                             digest: asset.digest,
                             source_archive: false,
                             final_url_https: None,
+                            final_url: None,
                         })
                         .collect(),
                 }
@@ -322,7 +324,7 @@ fn sanitize_url(url: &str) -> String {
     parsed.to_string()
 }
 
-fn provider_auth_for_source(source: &SourceSpec) -> Option<ProviderAuth> {
+pub(crate) fn provider_auth_for_source(source: &SourceSpec) -> Option<ProviderAuth> {
     provider_auth_for_source_with(source, |name| env::var(name).ok())
 }
 
@@ -741,6 +743,7 @@ impl GitLabRelease {
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
+                    final_url: None,
                 })
                 .chain(self.assets.sources.into_iter().map(|source| ReleaseAsset {
                     name: source.format,
@@ -752,6 +755,7 @@ impl GitLabRelease {
                     digest: None,
                     source_archive: true,
                     final_url_https: None,
+                    final_url: None,
                 }))
                 .collect(),
         }
@@ -903,6 +907,7 @@ fn verify_gitlab_asset_redirects(releases: &mut [Release]) -> Result<()> {
                 "Resolved GitLab asset redirect target"
             );
             asset.final_url_https = Some(final_url_https);
+            asset.final_url = Some(final_url);
         }
     }
 
@@ -1487,6 +1492,7 @@ mod tests {
                 digest: None,
                 source_archive: true,
                 final_url_https: None,
+                final_url: None,
             }],
             stable: true,
             released_at: None,
@@ -1514,6 +1520,7 @@ mod tests {
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
+                    final_url: None,
                 },
                 ReleaseAsset {
                     name: "tool.dmg".to_string(),
@@ -1525,6 +1532,7 @@ mod tests {
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
+                    final_url: None,
                 },
                 ReleaseAsset {
                     name: "latest.json".to_string(),
@@ -1536,6 +1544,7 @@ mod tests {
                     digest: None,
                     source_archive: false,
                     final_url_https: None,
+                    final_url: None,
                 },
             ],
             stable: true,
@@ -1566,6 +1575,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             }],
             stable: true,
             released_at: None,
@@ -1592,6 +1602,7 @@ mod tests {
                 digest: None,
                 source_archive: false,
                 final_url_https: None,
+                final_url: None,
             }],
             stable: true,
             released_at: None,
