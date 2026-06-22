@@ -92,6 +92,7 @@ impl SelfUpdateOutcome {
 enum SelfUninstallOutcome {
     Removed,
     AlreadyClean,
+    OwnershipRefused,
 }
 
 impl SelfUninstallOutcome {
@@ -99,6 +100,7 @@ impl SelfUninstallOutcome {
         match self {
             Self::Removed => "removed",
             Self::AlreadyClean => "already-clean",
+            Self::OwnershipRefused => "ownership-refused",
         }
     }
 }
@@ -154,6 +156,8 @@ struct SelfUninstallResponse {
     action: SelfAction,
     status: SelfUninstallOutcome,
     removed_paths: Vec<String>,
+    manual_leftover_paths: Vec<String>,
+    ownership_refused_paths: Vec<String>,
     cleanup_boundaries: Vec<SelfUninstallCleanupBoundary>,
     remaining_manual_steps: Vec<String>,
     likely_leftover_paths: Vec<String>,
@@ -259,10 +263,12 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
     let action = SelfAction::Uninstall;
 
     let mut deletion_targets = Vec::new();
+    let mut ownership_refused_paths = Vec::new();
     for root in uninstall_roots(app) {
         let normalized_path =
             normalize_target_path(&root.path).map_err(|error| log_failure(action, error))?;
-        ensure_safe_uninstall_path(&normalized_path).map_err(|error| log_failure(action, error))?;
+        ensure_uninstall_path_has_parent(&normalized_path)
+            .map_err(|error| log_failure(action, error))?;
         ensure_uninstall_path_excludes_running_binary(&normalized_path)
             .map_err(|error| log_failure(action, error))?;
 
@@ -274,10 +280,14 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
         };
 
         if has_artifacts {
-            deletion_targets.push(SelfUninstallTarget {
-                category: root.category,
-                path: normalized_path,
-            });
+            if is_nodeup_owned_path(&normalized_path) {
+                deletion_targets.push(SelfUninstallTarget {
+                    category: root.category,
+                    path: normalized_path,
+                });
+            } else {
+                ownership_refused_paths.push(normalized_path.display().to_string());
+            }
         }
     }
 
@@ -298,11 +308,16 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
         removed_targets.push(target);
     }
 
-    let status = if removed_paths.is_empty() {
-        SelfUninstallOutcome::AlreadyClean
-    } else {
+    ownership_refused_paths.sort();
+    ownership_refused_paths.dedup();
+
+    let status = if !removed_paths.is_empty() {
         removed_paths.sort();
         SelfUninstallOutcome::Removed
+    } else if !ownership_refused_paths.is_empty() {
+        SelfUninstallOutcome::OwnershipRefused
+    } else {
+        SelfUninstallOutcome::AlreadyClean
     };
 
     info!(
@@ -313,21 +328,26 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
         "Processed self uninstall"
     );
 
-    let likely_leftover_paths = likely_leftover_paths(app);
-    let remaining_manual_steps = remaining_manual_steps(&likely_leftover_paths);
+    let manual_leftover_paths = likely_leftover_paths(app);
+    let remaining_manual_steps = remaining_manual_steps(&manual_leftover_paths);
     let response = SelfUninstallResponse {
         action,
         status,
-        cleanup_boundaries: cleanup_boundaries(&removed_targets, &likely_leftover_paths),
+        cleanup_boundaries: cleanup_boundaries(&removed_targets, &manual_leftover_paths),
         removed_paths,
+        manual_leftover_paths: manual_leftover_paths.clone(),
+        ownership_refused_paths,
         remaining_manual_steps,
-        likely_leftover_paths,
+        likely_leftover_paths: manual_leftover_paths,
     };
 
     let human = format!(
-        "Self uninstall status: {} | removed paths: {} | manual steps: {}",
+        "Self uninstall status: {} | removed paths: {} | manual leftovers: {} | ownership-refused \
+         paths: {} | manual steps: {}",
         status.as_str(),
         human_list(&response.removed_paths),
+        human_list(&response.manual_leftover_paths),
+        human_list(&response.ownership_refused_paths),
         human_list(&response.remaining_manual_steps)
     );
     print_output(output, color, &human, &response)?;
@@ -529,7 +549,7 @@ fn absolute_target_path(path: &Path) -> Result<PathBuf> {
     Ok(std::env::current_dir()?.join(path))
 }
 
-fn ensure_safe_uninstall_path(path: &Path) -> Result<()> {
+fn ensure_uninstall_path_has_parent(path: &Path) -> Result<()> {
     if path.parent().is_none() {
         return Err(self_invalid_input(format!(
             "Refusing to uninstall unsafe path: {}",
@@ -537,19 +557,14 @@ fn ensure_safe_uninstall_path(path: &Path) -> Result<()> {
         )));
     }
 
-    let owned_by_nodeup = path.components().any(|component| match component {
+    Ok(())
+}
+
+fn is_nodeup_owned_path(path: &Path) -> bool {
+    path.components().any(|component| match component {
         Component::Normal(value) => value.to_str().is_some_and(is_nodeup_owned_component),
         _ => false,
-    });
-
-    if !owned_by_nodeup {
-        return Err(self_invalid_input(format!(
-            "Refusing to uninstall non-nodeup-owned path: {}",
-            path.display()
-        )));
-    }
-
-    Ok(())
+    })
 }
 
 fn ensure_uninstall_path_excludes_running_binary(path: &Path) -> Result<()> {

@@ -22,6 +22,7 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - Shim behavior must remain deterministic across supported operating systems.
 - Windows shim alias filenames and delegated runtime executable filenames are separate concepts: Nodeup recognizes managed alias basenames through extensionless, `.exe`, and `.cmd` invocations, while Windows runtime package-manager delegation checks the selected runtime's `bin/<command>.cmd` files.
 - `nodeup shim setup` is the stable idempotent setup/repair command for Nodeup-managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims, and must not replace unrelated existing commands.
+- `nodeup shim setup` conflicts must identify the conflicting path, ownership classification, and remediation in human output and JSON diagnostics.
 - Windows copied shims must use adjacent Nodeup ownership markers so stale Nodeup copies can be repaired without replacing unrelated executables.
 - Linked runtime lifecycle commands must preserve external runtime directories: `toolchain link` registers settings records and `toolchain unlink` removes those records only.
 - Linked runtime names are case-sensitive, but reserved-channel case variants such as `LTS`, `Current`, and `LATEST` are invalid linked names.
@@ -31,7 +32,8 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 - `nodeup run` missing-version errors must keep installation opt-in with `--install`, while managed alias dispatch may install a missing selected version runtime on demand. Human and JSON diagnostics must make that distinction explicit.
 - `package.json` `packageManager` support for `yarn|pnpm` must remain strict and deterministic: supported values are exact `yarn@<semver>` or `pnpm@<semver>` strings only, and invalid values must report the failed part plus JSON diagnostics.
 - `yarn` and `pnpm` npm-exec delegation must be visible in human output, JSON output, and planning logs, including whether the package spec is pinned or an unpinned fallback.
-- `nodeup self uninstall` cleanup boundaries are data/cache/config only; binary, shims, and shell profile/PATH cleanup must remain manual and visible in human and JSON output.
+- `nodeup override unset --path <path>` and `nodeup override unset --nonexistent` are mutually exclusive so scripts cannot mix path-scoped removal with global stale-entry cleanup.
+- `nodeup self uninstall` cleanup boundaries are data/cache/config only; binary, shims, and shell profile/PATH cleanup must remain manual and visible in human and JSON output, and non-Nodeup-owned configured roots must be reported as ownership-refused instead of deleted.
 - Shell completion generation must remain deterministic for supported shells and top-level command scopes.
 - Invalid shell completion subcommand scopes must be rejected with hints that point back to the nearest valid top-level scope.
 - Human output styling controls (`--color`, `NODEUP_COLOR`, and `NO_COLOR` precedence) must remain stable across CLI and public documentation.

@@ -2942,6 +2942,8 @@ fn self_uninstall_reports_cleanup_boundaries_and_manual_steps() {
         .assert()
         .success()
         .stdout(predicates::str::contains("\"removed_paths\""))
+        .stdout(predicates::str::contains("\"manual_leftover_paths\""))
+        .stdout(predicates::str::contains("\"ownership_refused_paths\""))
         .stdout(predicates::str::contains("\"cleanup_boundaries\""))
         .stdout(predicates::str::contains("\"category\": \"binary\""))
         .stdout(predicates::str::contains("\"category\": \"shims\""))
@@ -3360,7 +3362,7 @@ fn self_uninstall_refuses_root_containing_running_binary() {
 
 #[test]
 #[serial]
-fn self_uninstall_rejects_non_nodeup_owned_paths() {
+fn self_uninstall_reports_non_nodeup_owned_paths_without_removing_them() {
     let env = TestEnv::new();
     let unsafe_root = env.root.join("unsafe-home");
     let unsafe_cache = env.root.join("nodeup-cache");
@@ -3379,13 +3381,20 @@ fn self_uninstall_rejects_non_nodeup_owned_paths() {
         .env("NODEUP_DOWNLOAD_BASE_URL", &env.download_base_url)
         .env("NODEUP_FORCE_PLATFORM", "linux-x64");
 
-    command
-        .args(["self", "uninstall"])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains(
-            "Refusing to uninstall non-nodeup-owned path",
-        ));
+    let output = command
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall reports ownership-refused root");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["status"], "ownership-refused");
+    assert!(payload["removed_paths"].as_array().unwrap().is_empty());
+    assert!(payload["ownership_refused_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == unsafe_root.to_str().unwrap()));
 
     assert!(unsafe_root.exists());
     assert!(unsafe_root.join("keep.txt").exists());
@@ -3393,7 +3402,7 @@ fn self_uninstall_rejects_non_nodeup_owned_paths() {
 
 #[test]
 #[serial]
-fn self_uninstall_validates_all_roots_before_deleting() {
+fn self_uninstall_separates_removed_and_ownership_refused_roots() {
     let env = TestEnv::new();
     let safe_data_root = env.root.join("nodeup-data-safe");
     let safe_cache_root = env.root.join("nodeup-cache-safe");
@@ -3404,6 +3413,7 @@ fn self_uninstall_validates_all_roots_before_deleting() {
     fs::create_dir_all(&unsafe_config_root).unwrap();
     fs::write(safe_data_root.join("keep-data.txt"), "keep-data").unwrap();
     fs::write(safe_cache_root.join("keep-cache.txt"), "keep-cache").unwrap();
+    fs::write(unsafe_config_root.join("keep-config.txt"), "keep-config").unwrap();
 
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!("nodeup"));
     command
@@ -3414,18 +3424,33 @@ fn self_uninstall_validates_all_roots_before_deleting() {
         .env("NODEUP_DOWNLOAD_BASE_URL", &env.download_base_url)
         .env("NODEUP_FORCE_PLATFORM", "linux-x64");
 
-    command
-        .args(["self", "uninstall"])
-        .assert()
-        .failure()
-        .stderr(predicates::str::contains(
-            "Refusing to uninstall non-nodeup-owned path",
-        ));
+    let output = command
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall separates refused and removed roots");
 
-    assert!(safe_data_root.exists());
-    assert!(safe_data_root.join("keep-data.txt").exists());
-    assert!(safe_cache_root.exists());
-    assert!(safe_cache_root.join("keep-cache.txt").exists());
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["status"], "removed");
+    assert!(payload["removed_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == safe_data_root.to_str().unwrap()));
+    assert!(payload["removed_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == safe_cache_root.to_str().unwrap()));
+    assert!(payload["ownership_refused_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == unsafe_config_root.to_str().unwrap()));
+
+    assert!(!safe_data_root.exists());
+    assert!(!safe_cache_root.exists());
+    assert!(unsafe_config_root.exists());
 }
 
 #[test]
@@ -3691,6 +3716,42 @@ fn shim_setup_refuses_existing_windows_executable() {
             "Refusing to replace existing shim target with different content",
         ));
 
+    assert_eq!(fs::read_to_string(existing_node).unwrap(), "existing-node");
+}
+
+#[test]
+#[serial]
+fn json_shim_setup_conflict_reports_ownership_and_remediation() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-json-conflict");
+    fs::create_dir_all(&shim_dir).unwrap();
+    let existing_node = shim_dir.join("node.exe");
+    fs::write(&existing_node, "existing-node").unwrap();
+
+    let output = env
+        .command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("json shim setup conflict");
+
+    assert_eq!(output.status.code(), Some(6));
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "conflict");
+    let conflict = &payload["diagnostics"]["conflicts"][0];
+    assert_eq!(conflict["path"], existing_node.to_str().unwrap());
+    assert_eq!(conflict["ownership"], "external-command");
+    assert!(conflict["remediation"]
+        .as_str()
+        .unwrap()
+        .contains("choose another shim directory"));
     assert_eq!(fs::read_to_string(existing_node).unwrap(), "existing-node");
 }
 
@@ -5280,6 +5341,30 @@ fn override_unset_nonexistent_removes_only_stale_entries() {
         .to_string();
     assert_eq!(entries[0]["path"], canonical_live);
     assert_eq!(entries[0]["selector"], "v22.1.0");
+}
+
+#[test]
+#[serial]
+fn override_unset_rejects_path_with_nonexistent_cleanup() {
+    let env = TestEnv::new();
+    let project = env.root.join("project-override-ambiguous-unset");
+    fs::create_dir_all(&project).unwrap();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "override",
+            "unset",
+            "--path",
+            project.to_str().unwrap(),
+            "--nonexistent",
+        ])
+        .output()
+        .expect("override unset rejects ambiguous cleanup flags");
+
+    assert_json_parser_error(output, "cannot be used with");
 }
 
 #[test]

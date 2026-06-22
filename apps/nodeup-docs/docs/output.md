@@ -93,11 +93,13 @@ The Nodeup process exits with the delegated command's exit code.
 Stable JSON fields:
 
 - `removed_paths`
+- `manual_leftover_paths`
+- `ownership_refused_paths`
 - `cleanup_boundaries`
 - `remaining_manual_steps`
 - `likely_leftover_paths`
 
-The command removes Nodeup-owned data, cache, and config roots only. Binary removal, managed shim cleanup, and shell profile or PATH edits are always manual.
+The command removes Nodeup-owned data, cache, and config roots only. Binary removal, managed shim cleanup, and shell profile or PATH edits are always manual. Configured roots that are not clearly Nodeup-owned are refused without deletion and reported in `ownership_refused_paths`.
 
 ## Completion Output
 

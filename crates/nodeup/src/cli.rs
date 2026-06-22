@@ -210,10 +210,10 @@ pub enum OverrideCommand {
     /// Remove a runtime override for a directory.
     Unset {
         /// Override target directory. Defaults to current working directory.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "nonexistent")]
         path: Option<String>,
         /// Remove stale entries whose directories no longer exist.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "path")]
         nonexistent: bool,
     },
 }

@@ -4,12 +4,13 @@ use std::{
 };
 
 use serde::Serialize;
+use serde_json::json;
 use tracing::info;
 
 use crate::{
     cli::{OutputColorMode, OutputFormat, ShimCommand},
     commands::print_output,
-    errors::{NodeupError, Result},
+    errors::{ErrorDiagnostics, ErrorKind, NodeupError, Result},
     types::{ManagedAlias, PlatformTarget},
     NodeupApp,
 };
@@ -234,11 +235,15 @@ fn plan_symlink(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
                     return Ok(ShimPlanAction::Keep);
                 }
                 if !looks_like_nodeup_binary_path(&existing_target, nodeup_binary) {
-                    return Err(shim_conflict(format!(
-                        "Refusing to replace non-nodeup shim target: {} -> {}",
-                        path.display(),
-                        existing_target.display()
-                    )));
+                    return Err(shim_conflict_with_ownership(
+                        path,
+                        "external-symlink",
+                        "move the existing symlink or choose another shim directory",
+                        format!(
+                            "Refusing to replace non-nodeup shim target; existing_target={}",
+                            existing_target.display()
+                        ),
+                    ));
                 }
                 return Ok(ShimPlanAction::Repair);
             }
@@ -247,10 +252,13 @@ fn plan_symlink(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
                 return Ok(ShimPlanAction::Repair);
             }
 
-            Err(shim_conflict(format!(
-                "Refusing to replace non-nodeup shim target: {}",
-                path.display()
-            )))
+            Err(shim_conflict_with_ownership(
+                path,
+                "external-command",
+                "move the existing command or choose another shim directory",
+                "Refusing to replace non-nodeup shim target; existing target is not a \
+                 Nodeup-managed shim",
+            ))
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(ShimPlanAction::Create),
         Err(error) => Err(error.into()),
@@ -261,17 +269,22 @@ fn plan_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => {
             if metadata.file_type().is_symlink() {
-                return Err(shim_conflict(format!(
-                    "Refusing to replace symlink shim target in copy mode: {}",
-                    path.display()
-                )));
+                return Err(shim_conflict_with_ownership(
+                    path,
+                    "external-symlink",
+                    "remove the symlink or choose another shim directory",
+                    "Refusing to replace symlink shim target in copy mode; copy-mode Windows \
+                     shims require a regular .exe file with a Nodeup ownership marker",
+                ));
             }
 
             if !metadata.is_file() {
-                return Err(shim_conflict(format!(
-                    "Refusing to replace non-file shim target: {}",
-                    path.display()
-                )));
+                return Err(shim_conflict_with_ownership(
+                    path,
+                    "external-non-file",
+                    "move the existing filesystem entry or choose another shim directory",
+                    "Refusing to replace non-file shim target; shim target is not a regular file",
+                ));
             }
 
             let has_copy_marker = has_regular_copy_marker(path)?;
@@ -284,10 +297,14 @@ fn plan_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
                 return Ok(ShimPlanAction::Repair);
             }
 
-            Err(shim_conflict(format!(
-                "Refusing to replace existing shim target with different content: {}",
-                path.display()
-            )))
+            Err(shim_conflict_with_ownership(
+                path,
+                "external-command",
+                "move the existing command, add the matching Nodeup ownership marker only for a \
+                 Nodeup-created copy, or choose another shim directory",
+                "Refusing to replace existing shim target with different content; existing file \
+                 differs from the Nodeup binary and has no Nodeup ownership marker",
+            ))
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             has_regular_copy_marker(path)?;
@@ -300,11 +317,14 @@ fn plan_copy(path: &Path, nodeup_binary: &Path) -> Result<ShimPlanAction> {
 fn preflight_windows_alias_conflicts(path: &Path) -> Result<()> {
     for candidate in windows_alias_conflict_paths(path) {
         if candidate.exists() {
-            return Err(shim_conflict(format!(
+            return Err(shim_conflict_with_ownership(
+                &candidate,
+                "external-pathext-command",
+                "move the existing PATHEXT command or choose another shim directory",
                 "Refusing to create Windows .exe shim because another command name already \
-                 exists: {}",
-                candidate.display()
-            )));
+                 exists; Windows command resolution would prefer or collide with this existing \
+                 command name",
+            ));
         }
     }
 
@@ -479,15 +499,21 @@ fn copy_marker_path(path: &Path) -> PathBuf {
 fn has_regular_copy_marker(path: &Path) -> Result<bool> {
     let marker = copy_marker_path(path);
     match fs::symlink_metadata(&marker) {
-        Ok(metadata) if metadata.file_type().is_symlink() => Err(shim_conflict(format!(
-            "Refusing to use symlink Windows shim ownership marker: {}",
-            marker.display()
-        ))),
+        Ok(metadata) if metadata.file_type().is_symlink() => Err(shim_conflict_with_ownership(
+            &marker,
+            "external-marker-symlink",
+            "remove the symlink marker and retry; Nodeup only trusts regular marker files it can \
+             overwrite",
+            "Refusing to use symlink Windows shim ownership marker; ownership marker is a symlink",
+        )),
         Ok(metadata) if metadata.is_file() => Ok(true),
-        Ok(_) => Err(shim_conflict(format!(
-            "Refusing to use non-file Windows shim ownership marker: {}",
-            marker.display()
-        ))),
+        Ok(_) => Err(shim_conflict_with_ownership(
+            &marker,
+            "external-marker-non-file",
+            "move the non-file marker and retry; Nodeup only trusts regular marker files",
+            "Refusing to use non-file Windows shim ownership marker; ownership marker is not a \
+             regular file",
+        )),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.into()),
     }
@@ -568,10 +594,34 @@ fn shim_internal(cause: impl Into<String>) -> NodeupError {
     )
 }
 
-fn shim_conflict(cause: impl Into<String>) -> NodeupError {
-    NodeupError::conflict_with_hint(
-        cause,
-        "Move the existing file or choose a different shim directory with `nodeup shim setup \
-         --dir <path>`.",
+fn shim_conflict_with_ownership(
+    path: &Path,
+    ownership: &'static str,
+    remediation: &'static str,
+    detail: impl Into<String>,
+) -> NodeupError {
+    let path = path.display().to_string();
+    let detail = detail.into();
+    let mut diagnostics = ErrorDiagnostics::new();
+    diagnostics.insert(
+        "conflicts".to_string(),
+        json!([
+            {
+                "path": path,
+                "ownership": ownership,
+                "remediation": remediation,
+                "detail": detail,
+            }
+        ]),
+    );
+    NodeupError::with_hint_and_diagnostics(
+        ErrorKind::Conflict,
+        format!(
+            "Shim setup conflict: path={path}, ownership={ownership}, remediation={remediation}, \
+             detail={detail}"
+        ),
+        "Resolve the listed shim conflict and rerun `nodeup shim setup`; use `nodeup shim setup \
+         --dir <path>` to choose a different shim directory.",
+        diagnostics,
     )
 }

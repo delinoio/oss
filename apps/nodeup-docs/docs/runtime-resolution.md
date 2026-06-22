@@ -45,6 +45,8 @@ nodeup override unset --path ~/src/service
 nodeup override unset --nonexistent
 ```
 
+`--path` removes one target. `--nonexistent` performs global stale-entry cleanup. The two flags cannot be combined.
+
 ## Global Default
 
 The global default is used when no explicit selector or matching override exists:
