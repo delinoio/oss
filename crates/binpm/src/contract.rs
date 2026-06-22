@@ -87,11 +87,7 @@ fn parse_source_spec(raw: &str) -> Result<SourceSpec, BinpmError> {
         .split_once(':')
         .ok_or_else(|| invalid_source(raw, "missing provider prefix"))?;
 
-    let (remainder, version) = split_version(raw, remainder)?;
-
     match provider_raw {
-        "github" => parse_github_source(raw, remainder, version),
-        "gitlab" => parse_gitlab_source(raw, remainder, version),
         "npm" | "pnpm" | "yarn" | "bun" | "cargo" | "cargo-binstall" | "brew" | "homebrew"
         | "apt" | "rpm" => Err(invalid_source(
             raw,
@@ -102,11 +98,19 @@ fn parse_source_spec(raw: &str) -> Result<SourceSpec, BinpmError> {
                  `gitlab:<host>/<namespace...>/<project>[@version]`."
             ),
         )),
-        _ => Err(invalid_source(
-            raw,
-            "provider must be `github` or `gitlab`; package-manager backends and direct URLs are \
-             not source providers in binpm v1",
-        )),
+        _ => {
+            let (remainder, version) = split_version(raw, remainder)?;
+
+            match provider_raw {
+                "github" => parse_github_source(raw, remainder, version),
+                "gitlab" => parse_gitlab_source(raw, remainder, version),
+                _ => Err(invalid_source(
+                    raw,
+                    "provider must be `github` or `gitlab`; package-manager backends and direct \
+                     URLs are not source providers in binpm v1",
+                )),
+            }
+        }
     }
 }
 
