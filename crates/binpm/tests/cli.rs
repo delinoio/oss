@@ -404,6 +404,48 @@ fn package_shortcut_without_command_keeps_source_explicit() {
 }
 
 #[test]
+fn package_shortcut_rejects_ambiguous_forwarded_args_without_command() {
+    let mut command = binpm();
+
+    command
+        .args(["x", "--package", "github:owner/tool", "--", "--version"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "Ambiguous `--package` execution arguments",
+        ))
+        .stderr(predicate::str::contains(
+            "binpm x --package <source> <cmd> -- <args...>",
+        ))
+        .stderr(predicate::str::contains("binpm add <cmd> <source>"));
+}
+
+#[test]
+fn local_x_missing_command_points_to_explicit_remediation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    fs::write(temp_dir.path().join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["x", "missing"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Tool `missing` is not declared"))
+        .stderr(predicate::str::contains(
+            "binpm will not infer a package source from the command name",
+        ))
+        .stderr(predicate::str::contains("binpm add missing <source>"))
+        .stderr(predicate::str::contains(
+            "binpm x --package <source> missing",
+        ));
+}
+
+#[test]
 fn execution_aliases_accept_package_and_forwarded_flags() {
     for alias in ["exec", "run"] {
         let mut command = binpm();
