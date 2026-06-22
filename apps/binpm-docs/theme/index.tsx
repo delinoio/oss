@@ -11,6 +11,8 @@ import "./repository-footer.css";
 const SEARCH_LABEL = "Search documentation";
 const MOBILE_SEARCH_LABEL = "Open documentation search";
 const REPOSITORY_LABEL = "Open Delino OSS repository on GitHub";
+const SIDEBAR_DRAWER_QUERY = "(max-width: 768px)";
+const OUTLINE_DRAWER_QUERY = "(max-width: 1279px)";
 
 function setButtonName(element: Element | null, label: string) {
   if (!(element instanceof HTMLElement)) {
@@ -39,30 +41,48 @@ function setInteractiveDiv(element: Element | null, label: string) {
   setButtonName(element, label);
 }
 
+function isDrawerOpen(
+  drawer: Element | null,
+  openClassName: string,
+): boolean {
+  return drawer?.classList.contains(openClassName) ?? false;
+}
+
+function setDrawerVisibility(
+  drawer: Element | null,
+  isDrawerBreakpoint: boolean,
+  isOpen: boolean,
+) {
+  if (!(drawer instanceof HTMLElement)) {
+    return;
+  }
+
+  const shouldHideFromFocus = isDrawerBreakpoint && !isOpen;
+
+  if (drawer.inert !== shouldHideFromFocus) {
+    drawer.inert = shouldHideFromFocus;
+  }
+
+  const ariaHidden = shouldHideFromFocus ? "true" : "false";
+  if (drawer.getAttribute("aria-hidden") !== ariaHidden) {
+    drawer.setAttribute("aria-hidden", ariaHidden);
+  }
+}
+
 function setMobileDrawerState() {
-  const isMobile = window.matchMedia("(max-width: 1279px)").matches;
   const sidebar = document.querySelector(".rp-doc-layout__sidebar");
   const outline = document.querySelector(".rp-doc-layout__outline");
 
-  for (const drawer of [sidebar, outline]) {
-    if (!(drawer instanceof HTMLElement)) {
-      continue;
-    }
-
-    const isOpen =
-      drawer.classList.contains("rp-doc-layout__sidebar--open") ||
-      drawer.classList.contains("rp-doc-layout__outline--open");
-    const shouldHideFromFocus = isMobile && !isOpen;
-
-    if (drawer.inert !== shouldHideFromFocus) {
-      drawer.inert = shouldHideFromFocus;
-    }
-
-    const ariaHidden = shouldHideFromFocus ? "true" : "false";
-    if (drawer.getAttribute("aria-hidden") !== ariaHidden) {
-      drawer.setAttribute("aria-hidden", ariaHidden);
-    }
-  }
+  setDrawerVisibility(
+    sidebar,
+    window.matchMedia(SIDEBAR_DRAWER_QUERY).matches,
+    isDrawerOpen(sidebar, "rp-doc-layout__sidebar--open"),
+  );
+  setDrawerVisibility(
+    outline,
+    window.matchMedia(OUTLINE_DRAWER_QUERY).matches,
+    isDrawerOpen(outline, "rp-doc-layout__outline--open"),
+  );
 }
 
 function syncAccessibleControls() {
@@ -98,10 +118,19 @@ function syncAccessibleControls() {
     setButtonName(link, REPOSITORY_LABEL);
   }
 
-  setButtonName(document.querySelector(".rp-sidebar-menu__left"), "Open menu");
+  const sidebar = document.querySelector(".rp-doc-layout__sidebar");
+  const outline = document.querySelector(".rp-doc-layout__outline");
+  setButtonName(
+    document.querySelector(".rp-sidebar-menu__left"),
+    isDrawerOpen(sidebar, "rp-doc-layout__sidebar--open")
+      ? "Close menu"
+      : "Open menu",
+  );
   setButtonName(
     document.querySelector(".rp-sidebar-menu__right"),
-    "Open page outline",
+    isDrawerOpen(outline, "rp-doc-layout__outline--open")
+      ? "Close page outline"
+      : "Open page outline",
   );
 
   for (const button of document.querySelectorAll(".rp-nav-hamburger")) {
@@ -145,6 +174,10 @@ function AccessibilitySync() {
       attributes: true,
       childList: true,
       subtree: true,
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {

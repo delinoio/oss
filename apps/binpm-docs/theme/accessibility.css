@@ -89,8 +89,13 @@
 }
 
 @media (width <= 1279px) {
-  .rp-doc-layout__sidebar:not(.rp-doc-layout__sidebar--open),
   .rp-doc-layout__outline:not(.rp-doc-layout__outline--open) {
+    visibility: hidden;
+  }
+}
+
+@media (width <= 768px) {
+  .rp-doc-layout__sidebar:not(.rp-doc-layout__sidebar--open) {
     visibility: hidden;
   }
 }
