@@ -94,12 +94,12 @@ pub fn sanitize_url_text(raw: &str) -> String {
 }
 
 fn sanitize_unparseable_url_text(raw: &str) -> String {
-    let without_userinfo = match raw.find("://") {
-        Some(scheme_end) => {
-            let authority_start = scheme_end + 3;
-            strip_unparseable_url_userinfo(raw, authority_start)
-        }
-        None => strip_unparseable_url_userinfo(raw, 0),
+    let without_userinfo = if let Some(scheme_end) = raw.find("://") {
+        let authority_start = scheme_end + 3;
+        strip_unparseable_url_userinfo(raw, authority_start)
+    } else {
+        let without_query_or_fragment = raw.split(['?', '#']).next().unwrap_or_default();
+        strip_unparseable_url_userinfo(without_query_or_fragment, 0)
     };
 
     without_userinfo
@@ -436,6 +436,13 @@ mod tests {
     #[test]
     fn sanitize_url_text_strips_username_only_userinfo_from_schemeless_text() {
         let sanitized = sanitize_url_text("token/part@mirror/index.json?secret=1");
+
+        assert_eq!(sanitized, "mirror/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_does_not_treat_query_at_as_schemeless_userinfo() {
+        let sanitized = sanitize_url_text("mirror/index.json?email=a@b&token=secret");
 
         assert_eq!(sanitized, "mirror/index.json");
     }
