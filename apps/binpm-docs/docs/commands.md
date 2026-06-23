@@ -12,7 +12,7 @@ binpm update [cmd...] [--local|--global] [--dry-run]
 binpm remove <cmd> [--local|--global]
 ```
 
-`binpm install <source>` installs globally by default, even inside a repository with `binpm.toml`. Pass `--local` to add the source to the project-local manifest instead. Use `--as <cmd>` when the global command name should differ from the repository name, and `--bin <upstream-binary>` when an archive needs explicit binary selection. `binpm install` without a package spec syncs the local `binpm.toml` manifest.
+`binpm install <source>` installs globally by default, even inside a repository with `binpm.toml`. Pass `--local` to add the source to the project-local manifest instead. Use `--as <cmd>` when the global command name should differ from the repository name, and `--bin <upstream-binary>` when an archive needs explicit binary selection. Successful installs print the installed command alias separately from the selected upstream binary, so a repository like `ripgrep` can expose a command such as `rg` when you choose it explicitly. `binpm install` without a package spec syncs the local `binpm.toml` manifest.
 
 Use `binpm add <cmd> <source> --bin <upstream-binary>` when the release archive contains multiple executables or when the upstream executable name differs from the local command name. The selected binary is persisted in `binpm.toml`.
 
@@ -23,6 +23,8 @@ Use `--also <cmd=upstream-binary>` to declare several commands from one source w
 ```bash
 binpm add foo github:owner/tools@v1.2.3 --bin bin/foo --also bar=bin/bar --also baz=bin/baz
 ```
+
+In each `cmd=upstream-binary` value, `cmd` is the local command alias and `upstream-binary` is the executable name or archive member selected from the upstream release. binpm still writes separate `[tools.<cmd>]` manifest tables for each command.
 
 Commands that support both local and global scope default to local when a local `binpm.toml` is discovered. Otherwise they default to global. `--local` and `--global` are explicit overrides.
 

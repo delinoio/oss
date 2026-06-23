@@ -736,6 +736,13 @@ fn ambiguous_archive_binaries_message(
         message.push_str(&suggestions.join(" or "));
         message.push('.');
     }
+    if candidates.len() > 1 {
+        message.push_str(
+            " For local multi-binary archives, declare the primary command with `--bin` and add \
+             other commands with repeated `--also <cmd=upstream-binary>` values; binpm will write \
+             separate `[tools.<cmd>]` manifest tables.",
+        );
+    }
     message
 }
 
