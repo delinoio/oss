@@ -2443,7 +2443,7 @@ fn install_local_manifest(
         "install",
         &root,
         &completed,
-        !completed.is_empty() || !orphan_states.is_empty(),
+        !frozen_lockfile && (!completed.is_empty() || !orphan_states.is_empty()),
         MutationAction::Installed,
     );
     result.changed_files.extend(local_orphan_changed_files(

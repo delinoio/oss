@@ -2825,6 +2825,64 @@ fn frozen_local_install_restores_missing_runtime_from_verified_cache() {
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[test]
+fn frozen_local_install_json_restore_omits_lockfile_changed_file() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'restored install\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+    let lock_before = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+            "--json",
+        ])
+        .output()
+        .expect("install --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse install json");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let lockfile_path = project.join("binpm.lock").display().to_string();
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+
+    assert!(!changed_files.contains(&lockfile_path.as_str()));
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert_eq!(
+        fs::read_to_string(project.join("binpm.lock")).expect("read lockfile"),
+        lock_before
+    );
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
 fn local_install_json_suppresses_orphan_cleanup_stdout() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
