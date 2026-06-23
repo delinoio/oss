@@ -6871,6 +6871,7 @@ fn mutation_tool_from_lock_tool(
     }
 }
 
+#[cfg(test)]
 fn verify_check_output(
     cmd: String,
     target: Option<HostTarget>,
@@ -6879,6 +6880,7 @@ fn verify_check_output(
     verify_check_output_with_state(cmd, target, record, verification_state(record))
 }
 
+#[cfg(test)]
 fn verify_check_output_with_state(
     cmd: String,
     target: Option<HostTarget>,
