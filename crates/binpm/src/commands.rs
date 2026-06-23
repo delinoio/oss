@@ -1862,7 +1862,7 @@ fn preview_local_update_record_from_resolved(
     require_verified: bool,
     current_target: HostTarget,
 ) -> Result<PackageRecord> {
-    ensure_resolved_asset_satisfies_require_verified(&spec, &resolved, require_verified)?;
+    ensure_resolved_asset_satisfies_require_verified(spec, &resolved, require_verified)?;
     ensure_no_package_record_install_path_collision(paths, cmd, current_target.os)?;
     let preview_sha256 = resolved
         .provider_digest_sha256
