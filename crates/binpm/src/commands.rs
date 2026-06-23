@@ -6026,16 +6026,13 @@ fn download_asset_with_options(
 
     let mut last_error = None;
     for attempt in 1..=DOWNLOAD_RETRY_ATTEMPTS {
-        match download_asset_attempt(
-            &client,
-            url,
-            auth,
-            accept,
+        let context = DownloadAssetAttemptContext {
             attempt,
-            &sanitized_url,
-            &asset_name,
+            sanitized_url: &sanitized_url,
+            asset_name: &asset_name,
             options,
-        ) {
+        };
+        match download_asset_attempt(&client, url, auth, accept, context) {
             Ok(bytes) => return Ok(bytes),
             Err(error)
                 if attempt < DOWNLOAD_RETRY_ATTEMPTS && is_retryable_download_error(&error) =>
@@ -6067,16 +6064,27 @@ fn download_asset_with_options(
     Err(last_error.expect("download retry loop always returns before exhaustion"))
 }
 
+#[derive(Clone, Copy, Debug)]
+struct DownloadAssetAttemptContext<'a> {
+    attempt: usize,
+    sanitized_url: &'a str,
+    asset_name: &'a str,
+    options: DownloadAssetOptions,
+}
+
 fn download_asset_attempt(
     client: &reqwest::blocking::Client,
     url: &str,
     auth: Option<&ProviderAuth>,
     accept: Option<&'static str>,
-    attempt: usize,
-    sanitized_url: &str,
-    asset_name: &str,
-    options: DownloadAssetOptions,
+    context: DownloadAssetAttemptContext<'_>,
 ) -> Result<Vec<u8>> {
+    let DownloadAssetAttemptContext {
+        attempt,
+        sanitized_url,
+        asset_name,
+        options,
+    } = context;
     let origin = reqwest::Url::parse(url).expect("download URL was already validated");
     let mut current_url = url.to_string();
     let mut visited_urls = BTreeSet::new();
