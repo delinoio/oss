@@ -1142,7 +1142,7 @@ fn cache_key_warns_when_lockfile_is_missing_without_mutating_state() {
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
     let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
-    assert!(stdout.contains(&format!("missing-lockfile cache key: binpm-v1-")));
+    assert!(stdout.contains("missing-lockfile cache key: binpm-v1-"));
     assert!(stdout.contains(&empty_digest));
     assert!(stdout.contains("next command: binpm install"));
     assert!(stderr.contains("cache key uses the empty lockfile digest"));
