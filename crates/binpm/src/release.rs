@@ -11,7 +11,10 @@ use tracing::{debug, info};
 use crate::{
     assets::{classify_artifact, ArtifactKind},
     contract::{SourceProvider, SourceSpec},
-    error::{BinpmError, ReleaseLookupDiagnosticKind, ReleaseSkipDiagnostic, Result},
+    error::{
+        BinpmError, ReleaseLookupDiagnostic, ReleaseLookupDiagnosticKind, ReleaseSkipDiagnostic,
+        Result,
+    },
 };
 
 const USER_AGENT: &str = concat!("binpm/", env!("CARGO_PKG_VERSION"));
@@ -544,17 +547,19 @@ fn release_lookup_diagnostic(
     };
     let hint = release_lookup_hint(source, auth, kind);
 
-    Some(BinpmError::ReleaseLookupDiagnostic {
-        package: source.to_string(),
-        provider: source.provider.as_str(),
-        host: source.host.clone(),
-        status: status.as_u16(),
-        kind,
-        message,
-        hint,
-        expected_auth_env_vars,
-        configured_auth_env_var,
-    })
+    Some(BinpmError::ReleaseLookupDiagnostic(Box::new(
+        ReleaseLookupDiagnostic {
+            package: source.to_string(),
+            provider: source.provider.as_str(),
+            host: source.host.clone(),
+            status: status.as_u16(),
+            kind,
+            message,
+            hint,
+            expected_auth_env_vars,
+            configured_auth_env_var,
+        },
+    )))
 }
 
 fn classify_release_lookup_status(
@@ -1059,7 +1064,7 @@ mod tests {
     };
     use crate::{
         contract::{SourceProvider, SourceSpec},
-        error::{BinpmError, ReleaseLookupDiagnosticKind},
+        error::{BinpmError, ReleaseLookupDiagnostic, ReleaseLookupDiagnosticKind},
         release::ReleaseAsset,
     };
 
@@ -1356,13 +1361,14 @@ mod tests {
             .expect("missing auth diagnostic");
 
         match missing {
-            BinpmError::ReleaseLookupDiagnostic {
-                kind,
-                hint,
-                expected_auth_env_vars,
-                configured_auth_env_var,
-                ..
-            } => {
+            BinpmError::ReleaseLookupDiagnostic(diagnostic) => {
+                let ReleaseLookupDiagnostic {
+                    kind,
+                    hint,
+                    expected_auth_env_vars,
+                    configured_auth_env_var,
+                    ..
+                } = *diagnostic;
                 assert_eq!(kind, ReleaseLookupDiagnosticKind::MissingAuth);
                 assert!(hint.contains("BINPM_GITHUB_TOKEN_GITHUB_COM"));
                 assert_eq!(
@@ -1414,12 +1420,13 @@ mod tests {
             .expect("missing auth diagnostic");
 
         match diagnostic {
-            BinpmError::ReleaseLookupDiagnostic {
-                hint,
-                expected_auth_env_vars,
-                configured_auth_env_var,
-                ..
-            } => {
+            BinpmError::ReleaseLookupDiagnostic(diagnostic) => {
+                let ReleaseLookupDiagnostic {
+                    hint,
+                    expected_auth_env_vars,
+                    configured_auth_env_var,
+                    ..
+                } = *diagnostic;
                 assert_eq!(
                     expected_auth_env_vars,
                     ["BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM"]
