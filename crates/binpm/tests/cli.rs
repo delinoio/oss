@@ -989,6 +989,7 @@ fn env_setup_appends_only_global_path_line() {
     );
 }
 
+#[cfg(any(target_os = "macos", windows))]
 #[test]
 fn env_setup_bash_uses_existing_login_profile_fixture() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -1015,6 +1016,73 @@ fn env_setup_bash_uses_existing_login_profile_fixture() {
 
     assert!(!bash_profile.exists());
     assert!(profile.is_file());
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+#[test]
+fn env_setup_bash_refuses_login_profile_without_bashrc_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bashrc = home_dir.join(".bashrc");
+    let profile = home_dir.join(".profile");
+    fs::write(&profile, "# existing").expect("write profile");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("bash profile target is ambiguous"))
+        .stderr(predicate::str::contains(
+            "non-login interactive bash reads ~/.bashrc",
+        ));
+
+    assert!(!bashrc.exists());
+    assert_eq!(
+        fs::read_to_string(&profile).expect("read profile"),
+        "# existing"
+    );
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+#[test]
+fn env_setup_bash_uses_existing_bashrc_when_login_profiles_exist_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bashrc = home_dir.join(".bashrc");
+    let profile = home_dir.join(".profile");
+    fs::write(&profile, "# existing profile").expect("write profile");
+    fs::write(&bashrc, "# existing bashrc").expect("write bashrc");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "profile: {}",
+            bashrc.display()
+        )))
+        .stdout(predicate::str::contains("status: appended"));
+
+    assert!(fs::read_to_string(&bashrc)
+        .expect("read bashrc")
+        .contains("export PATH="));
+    assert_eq!(
+        fs::read_to_string(&profile).expect("read profile"),
+        "# existing profile"
+    );
 }
 
 #[test]

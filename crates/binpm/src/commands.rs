@@ -7488,7 +7488,7 @@ fn profile_setup_plan(shell: Shell, global_bin: &Path) -> Result<ProfileSetupPla
 fn profile_path(shell: Shell) -> Result<PathBuf> {
     let home = profile_home(shell)?;
     match shell {
-        Shell::Bash => Ok(bash_profile_path(&home)),
+        Shell::Bash => bash_profile_path(&home),
         Shell::Zsh => Ok(home.join(".zshrc")),
         Shell::Fish => Ok(home
             .join(".config")
@@ -7513,19 +7513,37 @@ fn profile_path(shell: Shell) -> Result<PathBuf> {
     }
 }
 
-fn bash_profile_path(home: &Path) -> PathBuf {
+fn bash_profile_path(home: &Path) -> Result<PathBuf> {
+    if !cfg!(any(target_os = "macos", windows)) {
+        let bashrc = home.join(".bashrc");
+        if bashrc.exists() || !bash_login_profiles(home).any(|profile| profile.exists()) {
+            return Ok(bashrc);
+        }
+
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: Shell::Bash.as_str(),
+            path: home.to_path_buf(),
+            message: "bash profile target is ambiguous because an existing login profile is \
+                      present but non-login interactive bash reads ~/.bashrc; create ~/.bashrc \
+                      before running setup"
+                .to_string(),
+        });
+    }
+
     for profile_name in [".bash_profile", ".bash_login", ".profile"] {
         let profile = home.join(profile_name);
         if profile.exists() {
-            return profile;
+            return Ok(profile);
         }
     }
 
-    if cfg!(any(target_os = "macos", windows)) {
-        return home.join(".bash_profile");
-    }
+    Ok(home.join(".bash_profile"))
+}
 
-    home.join(".bashrc")
+fn bash_login_profiles(home: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+    [".bash_profile", ".bash_login", ".profile"]
+        .into_iter()
+        .map(|profile_name| home.join(profile_name))
 }
 
 fn profile_home(shell: Shell) -> Result<PathBuf> {
@@ -8138,18 +8156,56 @@ mod tests {
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn bash_profile_path_prefers_existing_login_profile() {
+    fn bash_profile_path_selects_supported_platform_profile() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let home = temp_dir.path();
-        fs::write(home.join(".profile"), "").expect("write profile");
 
-        assert_eq!(super::bash_profile_path(home), home.join(".profile"));
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".bashrc")
+            );
 
-        fs::write(home.join(".bash_login"), "").expect("write bash login");
-        assert_eq!(super::bash_profile_path(home), home.join(".bash_login"));
+            fs::write(home.join(".profile"), "").expect("write profile");
+            assert!(matches!(
+                super::bash_profile_path(home),
+                Err(BinpmError::ProfileSetupRefused { .. })
+            ));
 
-        fs::write(home.join(".bash_profile"), "").expect("write bash profile");
-        assert_eq!(super::bash_profile_path(home), home.join(".bash_profile"));
+            fs::write(home.join(".bashrc"), "").expect("write bashrc");
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".bashrc")
+            );
+        }
+
+        #[cfg(any(target_os = "macos", windows))]
+        {
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".bash_profile")
+            );
+
+            fs::write(home.join(".profile"), "").expect("write profile");
+
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".profile")
+            );
+
+            fs::write(home.join(".bash_login"), "").expect("write bash login");
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".bash_login")
+            );
+
+            fs::write(home.join(".bash_profile"), "").expect("write bash profile");
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".bash_profile")
+            );
+        }
     }
 
     struct StaticReleaseClient {
