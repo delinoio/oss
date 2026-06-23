@@ -1884,8 +1884,11 @@ fn release_diagnostics(
         .iter()
         .filter(|decision| {
             decision.kind.is_installable()
-                && decision.rejection_reason.as_deref()
-                    == Some("asset target does not match host target")
+                && !decision.eligible
+                && decision
+                    .rejection_reason
+                    .as_deref()
+                    .is_some_and(is_target_mismatch_rejection)
         })
         .map(|decision| decision.asset_name.as_str())
         .collect::<Vec<_>>();
@@ -1916,6 +1919,14 @@ fn release_diagnostics(
     }
 
     diagnostics
+}
+
+fn is_target_mismatch_rejection(reason: &str) -> bool {
+    !reason.contains("linux musl target requires an explicit libc signal")
+        && !reason.contains("CPU feature variant `modern` requires explicit host capability")
+        && !reason.contains("gitlab asset link URL is not HTTPS")
+        && !reason.contains("gitlab direct asset URL is not HTTPS")
+        && !reason.contains("gitlab asset redirect target is not HTTPS")
 }
 
 fn override_snippet_candidate(decisions: &[CandidateDecision]) -> Option<&CandidateDecision> {
@@ -10686,6 +10697,27 @@ mod tests {
             .as_str()
             .expect("message")
             .contains("none match target darwin-aarch64-any"));
+    }
+
+    #[test]
+    fn explain_diagnostics_reports_armv7_assets_missing_arch_token_as_target_mismatch() {
+        let target = HostTarget {
+            os: TargetOs::Linux,
+            arch: TargetArch::Armv7,
+            libc: TargetLibc::Gnu,
+        };
+        let assets = [release_asset("tool-linux.tar.gz")];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+        let diagnostics = release_diagnostics(&decisions, &target);
+        let payload = serde_json::to_value(&diagnostics[0]).expect("serialize diagnostic");
+
+        assert_eq!(payload["kind"], "target-mismatch");
+        assert_eq!(payload["target"]["arch"], "armv7");
+        assert_eq!(payload["target_mismatches"][0], "tool-linux.tar.gz");
+        assert!(payload["message"]
+            .as_str()
+            .expect("message")
+            .contains("none match target linux-armv7-gnu"));
     }
 
     #[test]

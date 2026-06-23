@@ -140,39 +140,7 @@ impl ReleaseClient for GitHubReleaseClient {
 
         Ok(releases
             .into_iter()
-            .map(|release| {
-                let stable = !release.draft && !release.prerelease;
-                let stability_reason = if stable {
-                    None
-                } else if release.draft {
-                    Some("github draft release".to_string())
-                } else {
-                    Some("github prerelease release".to_string())
-                };
-
-                Release {
-                    tag: release.tag_name,
-                    stable,
-                    released_at: None,
-                    stability_reason,
-                    assets: release
-                        .assets
-                        .into_iter()
-                        .map(|asset| ReleaseAsset {
-                            name: asset.name,
-                            url: asset.browser_download_url,
-                            provider_url: None,
-                            download_url: auth.as_ref().map(|_| asset.url.clone()),
-                            download_auth: auth.clone(),
-                            download_accept: auth.as_ref().map(|_| GITHUB_ASSET_DOWNLOAD_ACCEPT),
-                            digest: asset.digest,
-                            source_archive: false,
-                            final_url_https: None,
-                            final_url: None,
-                        })
-                        .collect(),
-                }
-            })
+            .map(|release| release.into_release_with_auth(auth.as_ref()))
             .collect())
     }
 }
@@ -711,8 +679,70 @@ struct GitHubRelease {
     tag_name: String,
     draft: bool,
     prerelease: bool,
+    zipball_url: Option<String>,
+    tarball_url: Option<String>,
     #[serde(default)]
     assets: Vec<GitHubAsset>,
+}
+
+impl GitHubRelease {
+    fn into_release_with_auth(self, auth: Option<&ProviderAuth>) -> Release {
+        let stable = !self.draft && !self.prerelease;
+        let stability_reason = if stable {
+            None
+        } else if self.draft {
+            Some("github draft release".to_string())
+        } else {
+            Some("github prerelease release".to_string())
+        };
+
+        let mut assets = self
+            .assets
+            .into_iter()
+            .map(|asset| ReleaseAsset {
+                name: asset.name,
+                url: asset.browser_download_url,
+                provider_url: None,
+                download_url: auth.map(|_| asset.url.clone()),
+                download_auth: auth.cloned(),
+                download_accept: auth.map(|_| GITHUB_ASSET_DOWNLOAD_ACCEPT),
+                digest: asset.digest,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            })
+            .collect::<Vec<_>>();
+
+        if let Some(zipball_url) = self.zipball_url {
+            assets.push(github_source_archive_asset("source.zip", zipball_url));
+        }
+        if let Some(tarball_url) = self.tarball_url {
+            assets.push(github_source_archive_asset("source.tar.gz", tarball_url));
+        }
+
+        Release {
+            tag: self.tag_name,
+            stable,
+            released_at: None,
+            stability_reason,
+            assets,
+        }
+    }
+}
+
+fn github_source_archive_asset(name: &str, url: String) -> ReleaseAsset {
+    ReleaseAsset {
+        name: name.to_string(),
+        url,
+        provider_url: None,
+        download_url: None,
+        download_auth: None,
+        download_accept: None,
+        digest: None,
+        source_archive: true,
+        final_url_https: None,
+        final_url: None,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1050,8 +1080,8 @@ mod tests {
         classify_release_lookup_status, exact_tag_prefix_hint, has_prerelease_tag, next_page_url,
         provider_auth_for_source_with, provider_token_env_candidates, release_lookup_diagnostic,
         release_request, releases_page_url, sanitize_url, select_release, sort_gitlab_releases,
-        validate_pagination_url, verify_gitlab_asset_redirects, GitHubReleaseClient, GitLabRelease,
-        GitLabReleaseClient, Release,
+        validate_pagination_url, verify_gitlab_asset_redirects, GitHubRelease, GitHubReleaseClient,
+        GitLabRelease, GitLabReleaseClient, Release,
     };
     use crate::{
         contract::{SourceProvider, SourceSpec},
@@ -1077,6 +1107,25 @@ mod tests {
             GitHubReleaseClient::releases_api_url(&source),
             "https://ghe.example.com/api/v3/repos/owner/repo/releases"
         );
+    }
+
+    #[test]
+    fn github_generated_sources_are_modeled_as_source_archives() {
+        let release = GitHubRelease {
+            tag_name: "v1.0.0".to_string(),
+            draft: false,
+            prerelease: false,
+            zipball_url: Some("https://api.github.com/repos/owner/tool/zipball/v1.0.0".to_string()),
+            tarball_url: Some("https://api.github.com/repos/owner/tool/tarball/v1.0.0".to_string()),
+            assets: Vec::new(),
+        }
+        .into_release_with_auth(None);
+
+        assert_eq!(release.assets.len(), 2);
+        assert_eq!(release.assets[0].name, "source.zip");
+        assert!(release.assets[0].source_archive);
+        assert_eq!(release.assets[1].name, "source.tar.gz");
+        assert!(release.assets[1].source_archive);
     }
 
     #[test]
