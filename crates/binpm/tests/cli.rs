@@ -80,12 +80,45 @@ fn install_help_distinguishes_global_source_and_local_declaration_forms() {
         .args(["install", "--help"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("Local sync"))
+        .stdout(predicate::str::contains("Local declaration"))
+        .stdout(predicate::str::contains("Global source install"))
         .stdout(predicate::str::contains("binpm install <source>"))
-        .stdout(predicate::str::contains("Install a source globally"))
+        .stdout(predicate::str::contains("install into the user-global"))
         .stdout(predicate::str::contains("binpm add <cmd> <source>"))
         .stdout(predicate::str::contains(
             "binpm install <source> --local` is not supported",
         ));
+}
+
+#[test]
+fn source_install_inside_project_announces_global_scope_before_failure() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", "relative-home")
+        .args(["install", "github:owner/tool"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("install scope: global"))
+        .stdout(predicate::str::contains(
+            "install mode: global source install",
+        ))
+        .stdout(predicate::str::contains(format!(
+            "project manifest detected: {}",
+            project.join("binpm.toml").display()
+        )))
+        .stdout(predicate::str::contains("project manifest: not modified"))
+        .stdout(predicate::str::contains(
+            "use `binpm add <cmd> github:owner/tool`",
+        ))
+        .stderr(predicate::str::contains("BINPM_HOME"));
 }
 
 fn structured_cache_ref_path(home: &Path, project: &Path, cmd: &str) -> PathBuf {
@@ -3078,6 +3111,11 @@ fn frozen_local_install_restores_missing_runtime_from_verified_cache() {
         ])
         .assert()
         .success()
+        .stdout(predicate::str::contains("install scope: local"))
+        .stdout(predicate::str::contains(
+            "install mode: local manifest sync",
+        ))
+        .stdout(predicate::str::contains("manifest:"))
         .stdout(predicate::str::contains("installed tool"));
 
     assert!(project.join(".binpm").join("bin").join("tool").exists());
