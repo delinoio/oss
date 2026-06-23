@@ -3646,7 +3646,7 @@ version = "1.0.0"
 }
 
 #[test]
-fn local_update_dry_run_json_reports_manifest_for_pinned_tools() {
+fn local_update_dry_run_json_reports_package_record_for_floating_tools() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
@@ -3657,7 +3657,6 @@ fn local_update_dry_run_json_reports_manifest_for_pinned_tools() {
 
 [tools.tool]
 source = "github:owner/tool"
-version = "1.0.0"
 "#,
     )
     .expect("write manifest");
@@ -3685,11 +3684,11 @@ version = "1.0.0"
         .join("tool.toml")
         .display()
         .to_string();
-    assert!(changed_files.contains(&manifest_path.as_str()));
+    assert!(!changed_files.contains(&manifest_path.as_str()));
     assert!(changed_files.contains(&package_record_path.as_str()));
     assert!(fs::read_to_string(project.join("binpm.toml"))
         .expect("read manifest")
-        .contains("version = \"1.0.0\""));
+        .contains("source = \"github:owner/tool\""));
     assert!(!project.join(".binpm").exists());
 }
 

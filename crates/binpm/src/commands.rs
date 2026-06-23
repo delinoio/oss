@@ -1505,12 +1505,8 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
     ));
     changed_files.sort();
     changed_files.dedup();
-    let selected_pinned_tool_may_update = manifest
-        .tools
-        .iter()
-        .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
-        .any(|(_, tool)| tool.version.is_some());
-    if selected_pinned_tool_may_update {
+    let (_, manifest_changed) = local_update_manifest_with_latest_versions(&manifest, selected)?;
+    if manifest_changed {
         changed_files.insert(0, path_display(&manifest_path));
     }
     Ok(MutationOutput {
@@ -8178,6 +8174,36 @@ mod tests {
             .expect("floating tool")
             .version
             .is_none());
+    }
+
+    #[test]
+    fn local_update_manifest_reports_unchanged_for_current_pinned_versions() {
+        let mut manifest = Manifest {
+            version: 1,
+            tools: BTreeMap::new(),
+        };
+        manifest.tools.insert(
+            "tool".to_string(),
+            ManifestTool {
+                source: "github:owner/tool".to_string(),
+                version: Some("1.0.0".to_string()),
+                bin: None,
+                targets: BTreeMap::new(),
+            },
+        );
+
+        let (next_manifest, changed) =
+            local_update_manifest_with_latest_versions_from(&manifest, &[], |tool| {
+                assert_eq!(tool.source, "github:owner/tool");
+                Ok("1.0.0".to_string())
+            })
+            .expect("update manifest");
+
+        assert!(!changed);
+        assert_eq!(
+            next_manifest.tools["tool"].version.as_deref(),
+            Some("1.0.0")
+        );
     }
 
     #[test]
