@@ -15,11 +15,37 @@ Explaining a source may contact the source provider for release information, but
 
 GitHub.com shorthand input such as `BurntSushi/ripgrep` or `https://github.com/BurntSushi/ripgrep` is normalized to `github:BurntSushi/ripgrep`. If you paste a GitLab URL, rewrite it as `gitlab:<host>/<namespace...>/<project>`; direct URL installs are not a binpm source backend.
 
+## Fix Missing Provider Authentication
+
+Private GitHub Enterprise and self-managed GitLab releases require a host-scoped token variable. Missing-auth errors print the exact variable name to set and `--json` errors include it as `error.diagnostic.expected_auth_env_var`.
+
+```bash
+export BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM=<token>
+binpm explain github:ghe.example.com/owner/repo
+
+export BINPM_GITLAB_TOKEN_GITLAB_2E_INTERNAL_2E_EXAMPLE=<token>
+binpm explain gitlab:gitlab.internal.example/group/project
+```
+
+GitHub Enterprise does not use generic `BINPM_GITHUB_TOKEN` or `GITHUB_TOKEN`, and self-managed GitLab does not use generic `BINPM_GITLAB_TOKEN` or `GITLAB_TOKEN`. This keeps SaaS tokens from being sent to explicit private hosts.
+
 ## Fix GitLab HTTPS Rejections
 
 GitLab assets are scored only after binpm verifies that the release link URL, any direct asset URL, and the final redirect target are HTTPS. `binpm explain` distinguishes those rejection reasons before target scoring.
 
 If every matching GitLab asset is rejected for HTTPS, update the GitLab release link to use HTTPS or publish a secure direct asset URL. Redirect diagnostics show only the origin, so query strings, credentials, and tokens are not echoed.
+
+## Fix Source-Archive-Only Releases
+
+`source.tar.gz`, `source.zip`, GitHub generated source downloads, and GitLab `assets.sources` entries are source snapshots, not installable binary packages. binpm ignores them for installation and reports `source-archive-only` when no portable binary asset is available.
+
+Publish a prebuilt archive or bare executable named for the target instead, such as `tool-linux-x86_64-musl.tar.gz`, `tool-linux-x86_64-gnu.tar.gz`, `tool-darwin-aarch64.tar.gz`, or `tool-windows-x86_64.zip`. Keep checksums, signatures, SBOMs, and source archives as sidecar downloads rather than the only release artifacts.
+
+## Fix Alpine And Musl Assets
+
+On Linux musl hosts, binpm rejects Linux assets whose names omit libc or portability signals. An asset named only `tool-linux-x64.tar.gz` may be a glibc binary, so automatic selection requires a token such as `musl`, `static`, `portable`, `universal`, or `any`.
+
+Prefer an upstream fix first: publish or rename a compatible asset with an explicit signal, for example `tool-linux-x86_64-musl.tar.gz`. If you must override locally, download and inspect the binary outside binpm with tools such as `file`, `ldd`, or `readelf`, confirm it is musl-linked or static, then use the unverified `[tools.<cmd>.targets.linux-x86_64-musl]` snippet from `binpm explain <source>` as a starting point.
 
 ## Resolve CPU Feature Variants
 
@@ -48,6 +74,10 @@ Homebrew installs consume first-party prebuilt binpm archives for macOS and Linu
 `cargo-binstall` for binpm also resolves first-party release assets only. Quick-install and compile fallbacks are disabled, so an unsupported cargo-binstall target should be treated as a distribution boundary instead of a prompt to bypass verification or use an unowned binary source.
 
 Direct installer failures before any artifact download usually mean the host is outside the first-party binpm release matrix or `cosign` is missing from `PATH`. Install `cosign`, choose a supported macOS/Linux/Windows x64 or arm64 host, or build from source for other runtime targets.
+
+When the direct installer reports an unsupported host, it has stopped before release lookup and before artifact download. The message includes the detected OS and architecture, the supported direct-install targets (`darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`, `windows/amd64`, and `windows/arm64`), and alternatives for the current host. It should not print release URLs, artifact URLs, query strings, fragments, credentials, or tokens.
+
+An unsupported-host message means there is no first-party direct-installer artifact for that detected host. It does not mean binpm is unsupported as a project on every possible path. Use a supported x64/arm64 host or CI image for direct install, try Homebrew or `cargo-binstall` where they support your host, or build binpm from source.
 
 ## Validate Local State
 

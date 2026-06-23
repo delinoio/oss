@@ -89,7 +89,7 @@ nodeup which --runtime 22.1.0 npm
 
 For linked runtimes, verify the runtime root contains a runnable `bin/node` or `bin/node.exe`. On Unix, `bin/node` must have an executable permission bit.
 
-`toolchain link` reports a managed shim availability matrix for `node`, `npm`, `npx`, `yarn`, and `pnpm`. The minimum link requirement is still only runnable `node`; package-manager commands can be missing and fail later when a shim or `nodeup which <command>` needs them.
+`toolchain link` reports the required runnable `node` check separately from optional managed shim availability for `node`, `npm`, `npx`, `yarn`, and `pnpm`. The minimum link requirement is still only runnable `node`; package-manager commands can be missing and fail later when a shim or `nodeup which <command>` needs them.
 
 JSON missing-command diagnostics include:
 
@@ -164,9 +164,9 @@ Invalid examples:
 
 How Nodeup reports them:
 
-- `pnpm@10.x` fails on `failed_part: "version"` with `problem: "non-exact-semver"` and suggests `pnpm@<major>.<minor>.<patch>`.
-- `npm@10.0.0` fails on `failed_part: "manager"` with `problem: "unsupported-manager"` because only `yarn` and `pnpm` participate in package-manager dispatch.
-- `10` fails on `failed_part: "value"` with `problem: "non-string"` and reports the expected JSON string shape.
+- `pnpm@10.x` fails on `failed_part: "version"` with `problem: "non-exact-semver"` and suggests an exact value such as `pnpm@10.32.1`.
+- `npm@10.0.0` fails on `failed_part: "manager"` with `problem: "unsupported-manager"` because only `yarn` and `pnpm` participate in package-manager dispatch, and suggests exact values such as `yarn@4.13.0` or `pnpm@10.32.1`.
+- `10` fails on `failed_part: "value"` with `problem: "non-string"` and reports exact string examples.
 
 JSON errors keep `kind`, `message`, and `exit_code`, and add deterministic diagnostics such as `package_json_path`, `expected`, `supported_managers`, `failed_part`, `problem`, `correction`, and type or version details when applicable.
 
@@ -178,18 +178,18 @@ Corepack descriptors, ranges, tags, and `npm@...` values are not accepted. Use a
 
 ## yarn or pnpm Uses npm exec
 
-Nodeup intentionally delegates `yarn` and `pnpm` through the selected runtime's `npm exec` when a pinned `packageManager` value is present or when no direct package-manager binary exists.
+Nodeup runs `yarn` and `pnpm` as a direct runtime binary when `packageManager` is absent and the selected runtime provides the requested binary. It delegates through the selected runtime's `npm exec` when a pinned `packageManager` value is present or when no direct package-manager binary exists.
 
-Human output names the package spec and reason. JSON output includes `planning.mode`, `planning.package_spec`, `planning.package_json_path`, `planning.reason`, and `planning.package_spec_pinned`.
+Human output names the strategy and reason. npm-exec human output also names the package spec. JSON output includes `planning.mode`, `planning.package_manager_strategy`, `planning.corepack_supported`, `planning.package_spec`, `planning.package_json_path`, `planning.reason`, and `planning.package_spec_pinned`.
 
 If `packageManager` is absent and the runtime has no direct `bin/yarn` or `bin/pnpm`, Nodeup uses an unpinned fallback:
 
 - `yarn` -> `@yarnpkg/cli-dist`
 - `pnpm` -> `pnpm`
 
-Unpinned fallback versions can drift as the npm registry changes. Add an exact `packageManager` value for reproducible projects.
+Unpinned fallback versions can drift as the npm registry changes. Add an exact `packageManager` value such as `"packageManager": "yarn@4.13.0"` or `"packageManager": "pnpm@10.32.1"` for reproducible projects.
 
-Because npm-exec mode uses npm resolution, npm registry outages, npm authentication, proxy settings, `.npmrc`, and npm cache configuration can affect `yarn` and `pnpm` dispatch. Fix the underlying npm configuration or switch to a runtime that provides a direct package-manager binary.
+Because npm-exec mode uses npm resolution, npm registry outages, npm authentication, proxy settings, `.npmrc`, and npm cache configuration can affect `yarn` and `pnpm` dispatch. Fix the underlying npm configuration or switch to a runtime that provides a direct package-manager binary. Corepack is not used for this behavior; planning reports it as unsupported.
 
 ## Install Fails on Unsupported Host
 
@@ -282,7 +282,7 @@ NODEUP_DOWNLOAD_BASE_URL=https://mirror.example/download/release \
 nodeup toolchain install 22.1.0
 ```
 
-Checksum mismatch JSON errors include sanitized `index_url`, `download_base_url`, source fields, and mirror mismatch indicators when a mirror override is present. Credentials, query strings, and fragments are stripped from those diagnostics.
+Checksum mismatch and runtime download JSON errors include sanitized `index_url`, `download_base_url`, source fields, and mirror mismatch indicators when a mirror override is present. Credentials, query strings, and fragments are stripped from those diagnostics.
 
 ## Stale Release Index Cache
 
