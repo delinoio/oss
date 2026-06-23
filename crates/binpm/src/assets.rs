@@ -584,6 +584,10 @@ fn target_score(target: &HostTarget, signal: &TargetSignal) -> Option<i32> {
         return None;
     }
 
+    if target.arch == TargetArch::Armv7 && arch.is_none() {
+        return None;
+    }
+
     let mut score = 100;
 
     match (arch, target.arch, os) {
