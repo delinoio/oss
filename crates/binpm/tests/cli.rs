@@ -264,6 +264,42 @@ fn global_update_dry_run_reports_all_global_records_without_mutation() {
 }
 
 #[test]
+fn global_update_dry_run_json_reports_one_parseable_plan_without_mutation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    write_global_package_record(&home, "alpha", "owner/alpha", "1.0.0");
+    write_global_package_record(&home, "beta", "owner/beta", "2.0.0");
+    let alpha_record_path = home.join("packages").join("alpha.toml");
+    let alpha_before = fs::read_to_string(&alpha_record_path).expect("read alpha record");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["update", "--global", "--dry-run", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["scope"], "global");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 2);
+    assert_eq!(payload["tools"][0]["cmd"], "alpha");
+    assert_eq!(payload["tools"][0]["action"], "planned-update");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/alpha");
+    assert_eq!(payload["tools"][0]["release_tag"], "1.0.0");
+    assert_eq!(payload["tools"][0]["selected_binary"], "alpha-linux-x64");
+    assert_eq!(payload["tools"][0]["checksum_source"], "local");
+    assert_eq!(payload["tools"][0]["verification"], "unverified");
+    assert_eq!(
+        fs::read_to_string(alpha_record_path).expect("read alpha record after"),
+        alpha_before
+    );
+}
+
+#[test]
 fn global_update_dry_run_reports_selected_global_records_without_mutation() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -292,6 +328,65 @@ fn global_update_dry_run_reports_selected_global_records_without_mutation() {
         fs::read_to_string(beta_record_path).expect("read beta record after"),
         beta_before
     );
+}
+
+#[test]
+fn add_manifest_only_json_reports_declarations_without_human_stdout() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "tool",
+            "owner/tool@1.0.0",
+            "--bin",
+            "tool-linux-x64",
+            "--manifest-only",
+            "--json",
+        ])
+        .output()
+        .expect("add --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse add json");
+    assert_eq!(payload["command"], "add");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["dry_run"], false);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "declared");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    assert_eq!(payload["tools"][0]["requested_version"], "1.0.0");
+    assert!(payload["tools"][0]["release_tag"].is_null());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("manifest-only:"));
+    assert!(temp_dir.path().join("binpm.toml").exists());
+    assert!(!temp_dir.path().join("binpm.lock").exists());
+    assert!(!temp_dir.path().join(".binpm").exists());
+}
+
+#[test]
+fn failing_mutating_json_command_emits_stable_error_envelope_on_stderr() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["add", "tool", "npm:tool", "--manifest-only", "--json"])
+        .output()
+        .expect("add failure --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 2);
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("is a package-manager backend"));
 }
 
 #[test]
@@ -2888,6 +2983,64 @@ source = "github:owner/tool"
     let lockfile = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
     assert!(manifest.contains("tools.tool"));
     assert!(lockfile.contains("tools.tool"));
+}
+
+#[test]
+fn local_remove_dry_run_json_reports_one_parseable_plan_without_mutation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(project.join(".binpm").join("bin")).expect("create bin");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    fs::write(project.join(".binpm").join("bin").join("tool"), "manual")
+        .expect("write manual executable");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "--dry-run", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("remove scope"));
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    assert_eq!(payload["command"], "remove");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "planned-remove");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    assert!(payload["tools"][0]["release_tag"].is_null());
+    assert_eq!(
+        fs::read_to_string(project.join(".binpm").join("bin").join("tool"))
+            .expect("read manual executable"),
+        "manual"
+    );
+    assert!(fs::read_to_string(project.join("binpm.toml"))
+        .expect("read manifest")
+        .contains("tools.tool"));
+    assert!(fs::read_to_string(project.join("binpm.lock"))
+        .expect("read lockfile")
+        .contains("tools.tool"));
 }
 
 #[test]

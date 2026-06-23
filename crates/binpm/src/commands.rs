@@ -153,6 +153,40 @@ enum CacheReferenceState {
 }
 
 #[derive(Debug, Serialize)]
+struct MutationOutput {
+    command: &'static str,
+    scope: Scope,
+    dry_run: bool,
+    changed_files: Vec<String>,
+    tools: Vec<MutationToolOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct MutationToolOutput {
+    cmd: String,
+    action: MutationAction,
+    source: Option<String>,
+    requested_version: Option<String>,
+    release_tag: Option<String>,
+    selected_asset: Option<String>,
+    selected_binary: Option<String>,
+    installed_path: Option<String>,
+    checksum_source: Option<ChecksumSource>,
+    verification: Option<VerificationState>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum MutationAction {
+    Declared,
+    Installed,
+    Updated,
+    Removed,
+    PlannedUpdate,
+    PlannedRemove,
+}
+
+#[derive(Debug, Serialize)]
 struct OutdatedOutput {
     command: &'static str,
     scope: Scope,
@@ -378,15 +412,15 @@ enum EnvPathScope {
 pub fn run(cli: Cli) -> Result<i32> {
     let output = OutputMode::from_json_flag(cli.json);
     match cli.command {
-        Command::Install(args) => install(args),
-        Command::Add(args) => add(args),
+        Command::Install(args) => install(args, output),
+        Command::Add(args) => add(args, output),
         Command::Exec(args) => exec(args),
         Command::Cache(args) => cache(args.command, output),
         Command::List(args) => list(args, output),
-        Command::Remove(args) => remove(args),
+        Command::Remove(args) => remove(args, output),
         Command::Info(args) => info_cmd(args, output),
         Command::Outdated(args) => outdated(args, output),
-        Command::Update(args) => update(args),
+        Command::Update(args) => update(args, output),
         Command::Doctor => doctor(output),
         Command::Explain(args) => explain(args, output),
         Command::Verify(args) => verify(args, output),
@@ -395,7 +429,7 @@ pub fn run(cli: Cli) -> Result<i32> {
     }
 }
 
-fn install(args: InstallArgs) -> Result<i32> {
+fn install(args: InstallArgs, output: OutputMode) -> Result<i32> {
     let requested_scope = args.scope.scope();
     let frozen_lockfile = args.lockfile.frozen_lockfile();
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
@@ -423,18 +457,21 @@ fn install(args: InstallArgs) -> Result<i32> {
             "Prepared source install request"
         );
         if scope == Scope::Local {
-            if args.alias.is_some() || explicit_bin.is_some() {
-                return install_local_source_as(
+            let result = if args.alias.is_some() || explicit_bin.is_some() {
+                install_local_source_as(
                     spec,
                     &alias,
                     explicit_bin,
                     frozen_lockfile,
                     args.require_verified,
-                );
-            }
-            return install_local_source(spec, frozen_lockfile, args.require_verified);
+                )?
+            } else {
+                install_local_source(spec, frozen_lockfile, args.require_verified)?
+            };
+            return print_mutation_output(result, output);
         }
-        install_global_source(spec, &alias, explicit_bin, args.require_verified)
+        let result = install_global_source(spec, &alias, explicit_bin, args.require_verified)?;
+        print_mutation_output(result, output)
     } else {
         if args.alias.is_some() || explicit_bin.is_some() {
             return Err(BinpmError::InvalidSourceSpec {
@@ -455,11 +492,12 @@ fn install(args: InstallArgs) -> Result<i32> {
             no_confirm = args.no_confirm,
             "Prepared local manifest sync request"
         );
-        install_local_manifest(frozen_lockfile, args.require_verified, &[])
+        let result = install_local_manifest(frozen_lockfile, args.require_verified, &[])?;
+        print_mutation_output(result, output)
     }
 }
 
-fn add(args: AddArgs) -> Result<i32> {
+fn add(args: AddArgs, output: OutputMode) -> Result<i32> {
     let spec = normalize_source_input(&args.source)?;
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     let additional = parse_additional_declarations(&args.also)?;
@@ -527,6 +565,19 @@ fn add(args: AddArgs) -> Result<i32> {
     ensure_no_selected_install_path_collisions(&manifest, &selected)?;
     if args.manifest_only {
         write_manifest(&manifest_path, &manifest)?;
+        let result = MutationOutput {
+            command: "add",
+            scope: Scope::Local,
+            dry_run: false,
+            changed_files: vec![path_display(&manifest_path)],
+            tools: selected
+                .iter()
+                .map(|cmd| mutation_tool_from_manifest(cmd, &spec, MutationAction::Declared))
+                .collect(),
+        };
+        if output.is_json() {
+            return print_json(&result);
+        }
         println!("declared {}", selected.join(", "));
         println!("manifest-only: wrote {}", manifest_path.display());
         println!(
@@ -602,6 +653,12 @@ fn add(args: AddArgs) -> Result<i32> {
             return Err(rollback_error);
         }
         return Err(error);
+    }
+    let mut result =
+        local_completed_mutation_output("add", &root, &completed, MutationAction::Installed);
+    result.changed_files.insert(0, path_display(&manifest_path));
+    if output.is_json() {
+        return print_json(&result);
     }
     println!("added {}", selected.join(", "));
     for cmd in &selected {
@@ -993,7 +1050,7 @@ fn list(args: ScopedArgs, output: OutputMode) -> Result<i32> {
     Ok(0)
 }
 
-fn remove(args: RemoveArgs) -> Result<i32> {
+fn remove(args: RemoveArgs, output: OutputMode) -> Result<i32> {
     info!(
         command = "remove",
         selected_scope = args.scope.scope().as_str(),
@@ -1003,15 +1060,19 @@ fn remove(args: RemoveArgs) -> Result<i32> {
         "Prepared remove request"
     );
     let scope = select_scope(args.scope.scope())?;
-    print_selected_mutation_scope("remove", scope);
+    if !output.is_json() {
+        print_selected_mutation_scope("remove", scope);
+    }
     if args.dry_run {
-        return preview_remove(scope, &args.cmd);
+        let result = preview_remove(scope, &args.cmd, output)?;
+        return print_mutation_output(result, output);
     }
-    match scope {
-        Scope::Local => remove_local_tool(&args.cmd),
-        Scope::Global => remove_global_tool(&args.cmd),
+    let result = match scope {
+        Scope::Local => remove_local_tool(&args.cmd, output)?,
+        Scope::Global => remove_global_tool(&args.cmd, output)?,
         Scope::Auto => unreachable!("select_scope never returns auto"),
-    }
+    };
+    print_mutation_output(result, output)
 }
 
 fn info_cmd(args: InfoArgs, output: OutputMode) -> Result<i32> {
@@ -1145,7 +1206,7 @@ fn format_outdated_tool_line(cmd: &str, current: &str, latest: &str, source: &st
     format!("{cmd} {current} -> {latest} ({source})")
 }
 
-fn update(args: UpdateArgs) -> Result<i32> {
+fn update(args: UpdateArgs, output: OutputMode) -> Result<i32> {
     let frozen_lockfile = args.lockfile.frozen_lockfile();
     info!(
         command = "update",
@@ -1158,17 +1219,23 @@ fn update(args: UpdateArgs) -> Result<i32> {
         "Prepared update request"
     );
     let scope = select_scope(args.scope.scope())?;
-    print_selected_mutation_scope("update", scope);
-    print_update_mode(scope, &args.cmd);
+    if !output.is_json() {
+        print_selected_mutation_scope("update", scope);
+        print_update_mode(scope, &args.cmd);
+    }
     if args.dry_run {
-        return preview_update(scope, &args.cmd);
+        let result = preview_update(scope, &args.cmd, output)?;
+        return print_mutation_output(result, output);
     }
-    print_update_plan(scope, &args.cmd)?;
-    match scope {
-        Scope::Local => update_local_manifest(frozen_lockfile, args.require_verified, &args.cmd),
-        Scope::Global => update_global_packages(args.require_verified, &args.cmd),
+    if !output.is_json() {
+        print_update_plan(scope, &args.cmd)?;
+    }
+    let result = match scope {
+        Scope::Local => update_local_manifest(frozen_lockfile, args.require_verified, &args.cmd)?,
+        Scope::Global => update_global_packages(args.require_verified, &args.cmd)?,
         Scope::Auto => unreachable!("select_scope never returns auto"),
-    }
+    };
+    print_mutation_output(result, output)
 }
 
 fn print_selected_mutation_scope(command: &str, scope: Scope) {
@@ -1183,7 +1250,7 @@ fn print_update_mode(scope: Scope, selected: &[String]) {
     }
 }
 
-fn preview_remove(scope: Scope, cmd: &str) -> Result<i32> {
+fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<MutationOutput> {
     validate_command_name(cmd)?;
     match scope {
         Scope::Local => {
@@ -1199,28 +1266,70 @@ fn preview_remove(scope: Scope, cmd: &str) -> Result<i32> {
                     manifest: manifest_path,
                 });
             }
-            println!("would remove {cmd} from local scope");
-            println!("would update {}", root.join(MANIFEST_FILE).display());
-            println!("would update {}", root.join(LOCKFILE_FILE).display());
-            println!("would clean {}", ScopePaths::local(root).root.display());
+            if !output.is_json() {
+                println!("would remove {cmd} from local scope");
+                println!("would update {}", root.join(MANIFEST_FILE).display());
+                println!("would update {}", root.join(LOCKFILE_FILE).display());
+                println!(
+                    "would clean {}",
+                    ScopePaths::local(root.clone()).root.display()
+                );
+            }
+            let tool = prior_state
+                .runtime
+                .package_record
+                .as_ref()
+                .map(|record| mutation_tool_from_record(cmd, MutationAction::PlannedRemove, record))
+                .or_else(|| {
+                    manifest.tools.get(cmd).map(|tool| {
+                        mutation_tool_from_manifest_tool(cmd, tool, MutationAction::PlannedRemove)
+                    })
+                })
+                .into_iter()
+                .collect();
+            let result = MutationOutput {
+                command: "remove",
+                scope,
+                dry_run: true,
+                changed_files: vec![
+                    path_display(&root.join(MANIFEST_FILE)),
+                    path_display(&root.join(LOCKFILE_FILE)),
+                    path_display(&ScopePaths::local(root).root),
+                ],
+                tools: tool,
+            };
+            return Ok(result);
         }
         Scope::Global => {
             let paths = ScopePaths::global(binpm_home()?);
-            read_package_record(&package_record_path(&paths, cmd))?;
-            println!("would remove {cmd} from global scope");
-            println!("would update {}", paths.packages.display());
-            println!("would update {}", paths.bin.display());
+            let record = read_package_record(&package_record_path(&paths, cmd))?;
+            if !output.is_json() {
+                println!("would remove {cmd} from global scope");
+                println!("would update {}", paths.packages.display());
+                println!("would update {}", paths.bin.display());
+            }
+            return Ok(MutationOutput {
+                command: "remove",
+                scope,
+                dry_run: true,
+                changed_files: vec![path_display(&paths.packages), path_display(&paths.bin)],
+                tools: vec![mutation_tool_from_record(
+                    cmd,
+                    MutationAction::PlannedRemove,
+                    &record,
+                )],
+            });
         }
         Scope::Auto => unreachable!("select_scope never returns auto"),
     }
-    println!("dry run: no changes made");
-    Ok(0)
 }
 
-fn preview_update(scope: Scope, selected: &[String]) -> Result<i32> {
-    print_update_plan(scope, selected)?;
-    println!("dry run: no changes made");
-    Ok(0)
+fn preview_update(scope: Scope, selected: &[String], output: OutputMode) -> Result<MutationOutput> {
+    if !output.is_json() {
+        print_update_plan(scope, selected)?;
+        println!("dry run: no changes made");
+    }
+    preview_update_result(scope, selected)
 }
 
 fn print_update_plan(scope: Scope, selected: &[String]) -> Result<()> {
@@ -1283,6 +1392,76 @@ fn print_global_update_plan(selected: &[String]) -> Result<()> {
     println!("would update {}", paths.packages.display());
     println!("would update {}", paths.bin.display());
     Ok(())
+}
+
+fn preview_update_result(scope: Scope, selected: &[String]) -> Result<MutationOutput> {
+    match scope {
+        Scope::Local => preview_local_update_result(selected),
+        Scope::Global => preview_global_update_result(selected),
+        Scope::Auto => unreachable!("select_scope never returns auto"),
+    }
+}
+
+fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
+    let root = require_manifest_root()?;
+    let manifest_path = root.join(MANIFEST_FILE);
+    let manifest = read_manifest(&manifest_path)?;
+    for cmd in selected {
+        validate_command_name(cmd)?;
+        if !manifest.tools.contains_key(cmd) {
+            return Err(BinpmError::MissingTool {
+                cmd: cmd.clone(),
+                manifest: manifest_path.clone(),
+            });
+        }
+    }
+    validate_selected_manifest_entries(&manifest, selected)?;
+    ensure_no_selected_install_path_collisions(&manifest, selected)?;
+
+    let tools = manifest
+        .tools
+        .iter()
+        .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
+        .map(|(cmd, tool)| {
+            mutation_tool_from_manifest_tool(cmd, tool, MutationAction::PlannedUpdate)
+        })
+        .collect();
+    let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
+    let changed_files = if manifest.tools.is_empty()
+        && local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty()
+    {
+        Vec::new()
+    } else {
+        vec![
+            path_display(&root.join(LOCKFILE_FILE)),
+            path_display(&ScopePaths::local(root).bin),
+        ]
+    };
+    Ok(MutationOutput {
+        command: "update",
+        scope: Scope::Local,
+        dry_run: true,
+        changed_files,
+        tools,
+    })
+}
+
+fn preview_global_update_result(selected: &[String]) -> Result<MutationOutput> {
+    let paths = ScopePaths::global(binpm_home()?);
+    let planned = selected_global_package_records(&paths, selected)?;
+    prepare_global_updates(planned.clone())?;
+    Ok(MutationOutput {
+        command: "update",
+        scope: Scope::Global,
+        dry_run: true,
+        changed_files: vec![path_display(&paths.packages), path_display(&paths.bin)],
+        tools: planned
+            .iter()
+            .map(|(cmd, record)| {
+                mutation_tool_from_record(cmd, MutationAction::PlannedUpdate, record)
+            })
+            .collect(),
+    })
 }
 
 fn doctor(output: OutputMode) -> Result<i32> {
@@ -1934,7 +2113,7 @@ fn install_global_source(
     cmd: &str,
     explicit_bin: Option<String>,
     require_verified: bool,
-) -> Result<i32> {
+) -> Result<MutationOutput> {
     validate_command_name(cmd)?;
     let home = binpm_home()?;
     let scope_paths = ScopePaths::global(home.clone());
@@ -1967,18 +2146,19 @@ fn install_global_source(
         cache_cleanup_result?;
         return Err(error);
     }
-    println!("installed {cmd} {}", record.installed_path);
-    if !path_contains_entry(&scope_paths.bin) {
-        print_global_path_setup_guidance(&scope_paths.bin);
-    }
-    Ok(0)
+    Ok(global_install_mutation_output(
+        "install",
+        cmd,
+        &scope_paths,
+        &record,
+    ))
 }
 
 fn install_local_source(
     spec: SourceSpec,
     frozen_lockfile: bool,
     require_verified: bool,
-) -> Result<i32> {
+) -> Result<MutationOutput> {
     let root = require_manifest_root()?;
     let cmd = repo_name(&spec).to_string();
     validate_command_name(&cmd)?;
@@ -2022,7 +2202,10 @@ fn install_local_source(
         )?;
         return Err(error);
     }
-    Ok(0)
+    let mut result =
+        local_install_mutation_output("install", &root, &cmd, &record, frozen_lockfile);
+    result.changed_files.insert(0, path_display(&manifest_path));
+    Ok(result)
 }
 
 fn install_local_source_as(
@@ -2031,7 +2214,7 @@ fn install_local_source_as(
     explicit_bin: Option<String>,
     frozen_lockfile: bool,
     require_verified: bool,
-) -> Result<i32> {
+) -> Result<MutationOutput> {
     let root = require_manifest_root()?;
     validate_command_name(cmd)?;
     let manifest_path = root.join(MANIFEST_FILE);
@@ -2079,16 +2262,16 @@ fn install_local_source_as(
         )?;
         return Err(error);
     }
-    println!("added {cmd}");
-    println!("run: binpm x {cmd}");
-    Ok(0)
+    let mut result = local_install_mutation_output("install", &root, cmd, &record, frozen_lockfile);
+    result.changed_files.insert(0, path_display(&manifest_path));
+    Ok(result)
 }
 
 fn install_local_manifest(
     frozen_lockfile: bool,
     require_verified: bool,
     selected: &[String],
-) -> Result<i32> {
+) -> Result<MutationOutput> {
     let root = require_manifest_root()?;
     let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
     for cmd in selected {
@@ -2216,33 +2399,58 @@ fn install_local_manifest(
             }
         }
     }
-    Ok(0)
+    Ok(local_completed_mutation_output(
+        "install",
+        &root,
+        &completed,
+        MutationAction::Installed,
+    ))
 }
 
 fn update_local_manifest(
     frozen_lockfile: bool,
     require_verified: bool,
     selected: &[String],
-) -> Result<i32> {
+) -> Result<MutationOutput> {
     let root = require_manifest_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
     let manifest = read_manifest(&manifest_path)?;
     if frozen_lockfile {
         validate_frozen_local_update_latest(&root, &manifest, selected)?;
-        return install_local_manifest(frozen_lockfile, require_verified, selected);
+        let mut result = install_local_manifest(frozen_lockfile, require_verified, selected)?;
+        result.command = "update";
+        for tool in &mut result.tools {
+            tool.action = MutationAction::Updated;
+        }
+        return Ok(result);
     }
 
     let (next_manifest, manifest_changed) =
         local_update_manifest_with_latest_versions(&manifest, selected)?;
     if manifest_changed {
         write_manifest(&manifest_path, &next_manifest)?;
-        if let Err(error) = install_local_manifest(frozen_lockfile, require_verified, selected) {
-            let _ = write_manifest(&manifest_path, &manifest);
-            return Err(error);
+        let mut result = match install_local_manifest(frozen_lockfile, require_verified, selected) {
+            Ok(result) => result,
+            Err(error) => {
+                let _ = write_manifest(&manifest_path, &manifest);
+                return Err(error);
+            }
+        };
+        result.command = "update";
+        if !result.changed_files.contains(&path_display(&manifest_path)) {
+            result.changed_files.insert(0, path_display(&manifest_path));
         }
-        return Ok(0);
+        for tool in &mut result.tools {
+            tool.action = MutationAction::Updated;
+        }
+        return Ok(result);
     }
-    install_local_manifest(frozen_lockfile, require_verified, selected)
+    let mut result = install_local_manifest(frozen_lockfile, require_verified, selected)?;
+    result.command = "update";
+    for tool in &mut result.tools {
+        tool.action = MutationAction::Updated;
+    }
+    Ok(result)
 }
 
 fn local_update_manifest_with_latest_versions(
@@ -2292,20 +2500,33 @@ fn latest_stable_tag_for_update(tool: &ManifestTool) -> Result<String> {
         .tag)
 }
 
-fn update_global_packages(require_verified: bool, selected: &[String]) -> Result<i32> {
+fn update_global_packages(require_verified: bool, selected: &[String]) -> Result<MutationOutput> {
     let home = binpm_home()?;
     let scope_paths = ScopePaths::global(home.clone());
     let records = selected_global_package_records(&scope_paths, selected)?;
     let updates = prepare_global_updates(records)?;
+    let mut tools = Vec::new();
+    let mut changed_files = BTreeSet::new();
     for update in updates {
-        install_global_source(
+        let result = install_global_source(
             update.spec,
             &update.cmd,
             update.selected_binary,
             require_verified,
         )?;
+        changed_files.extend(result.changed_files);
+        tools.extend(result.tools.into_iter().map(|mut tool| {
+            tool.action = MutationAction::Updated;
+            tool
+        }));
     }
-    Ok(0)
+    Ok(MutationOutput {
+        command: "update",
+        scope: Scope::Global,
+        dry_run: false,
+        changed_files: changed_files.into_iter().collect(),
+        tools,
+    })
 }
 
 #[derive(Debug)]
@@ -5096,6 +5317,194 @@ fn print_json(value: &impl Serialize) -> Result<i32> {
     Ok(0)
 }
 
+fn print_mutation_output(result: MutationOutput, output: OutputMode) -> Result<i32> {
+    if output.is_json() {
+        return print_json(&result);
+    }
+    if result.dry_run {
+        println!("dry run: no changes made");
+        return Ok(0);
+    }
+    for tool in &result.tools {
+        match tool.action {
+            MutationAction::Installed => {
+                if let Some(path) = &tool.installed_path {
+                    println!("installed {} {path}", tool.cmd);
+                }
+            }
+            MutationAction::Updated => {
+                if let Some(path) = &tool.installed_path {
+                    println!("updated {} {path}", tool.cmd);
+                }
+            }
+            MutationAction::Removed => println!("removed {}", tool.cmd),
+            MutationAction::Declared
+            | MutationAction::PlannedUpdate
+            | MutationAction::PlannedRemove => {}
+        }
+    }
+    if result.scope == Scope::Global && result.command == "install" {
+        if let Some(path) = result
+            .tools
+            .first()
+            .and_then(|tool| tool.installed_path.as_deref())
+            .and_then(|installed_path| Path::new(installed_path).parent())
+        {
+            if !path_contains_entry(path) {
+                print_global_path_setup_guidance(path);
+            }
+        }
+    }
+    Ok(0)
+}
+
+fn path_display(path: &Path) -> String {
+    path.display().to_string()
+}
+
+fn local_install_mutation_output(
+    command: &'static str,
+    root: &Path,
+    cmd: &str,
+    record: &PackageRecord,
+    frozen_lockfile: bool,
+) -> MutationOutput {
+    let mut changed_files = vec![
+        path_display(&package_record_path(
+            &ScopePaths::local(root.to_path_buf()),
+            cmd,
+        )),
+        record.installed_path.clone(),
+    ];
+    if !frozen_lockfile {
+        changed_files.insert(0, path_display(&root.join(LOCKFILE_FILE)));
+    }
+    MutationOutput {
+        command,
+        scope: Scope::Local,
+        dry_run: false,
+        changed_files,
+        tools: vec![mutation_tool_from_record(
+            cmd,
+            MutationAction::Installed,
+            record,
+        )],
+    }
+}
+
+fn local_completed_mutation_output(
+    command: &'static str,
+    root: &Path,
+    completed: &[CompletedLocalInstall],
+    action: MutationAction,
+) -> MutationOutput {
+    let paths = ScopePaths::local(root.to_path_buf());
+    let mut changed_files = BTreeSet::new();
+    changed_files.insert(path_display(&root.join(LOCKFILE_FILE)));
+    for completed_install in completed {
+        changed_files.insert(path_display(&package_record_path(
+            &paths,
+            &completed_install.cmd,
+        )));
+        changed_files.insert(completed_install.install.record.installed_path.clone());
+    }
+    MutationOutput {
+        command,
+        scope: Scope::Local,
+        dry_run: false,
+        changed_files: changed_files.into_iter().collect(),
+        tools: completed
+            .iter()
+            .map(|completed_install| {
+                mutation_tool_from_record(
+                    &completed_install.cmd,
+                    action,
+                    &completed_install.install.record,
+                )
+            })
+            .collect(),
+    }
+}
+
+fn global_install_mutation_output(
+    command: &'static str,
+    cmd: &str,
+    paths: &ScopePaths,
+    record: &PackageRecord,
+) -> MutationOutput {
+    MutationOutput {
+        command,
+        scope: Scope::Global,
+        dry_run: false,
+        changed_files: vec![
+            path_display(&package_record_path(paths, cmd)),
+            record.installed_path.clone(),
+        ],
+        tools: vec![mutation_tool_from_record(
+            cmd,
+            MutationAction::Installed,
+            record,
+        )],
+    }
+}
+
+fn mutation_tool_from_manifest(
+    cmd: &str,
+    spec: &SourceSpec,
+    action: MutationAction,
+) -> MutationToolOutput {
+    MutationToolOutput {
+        cmd: cmd.to_string(),
+        action,
+        source: Some(spec.source_without_version()),
+        requested_version: spec.version.clone(),
+        release_tag: None,
+        selected_asset: None,
+        selected_binary: None,
+        installed_path: None,
+        checksum_source: None,
+        verification: None,
+    }
+}
+
+fn mutation_tool_from_manifest_tool(
+    cmd: &str,
+    tool: &ManifestTool,
+    action: MutationAction,
+) -> MutationToolOutput {
+    MutationToolOutput {
+        cmd: cmd.to_string(),
+        action,
+        source: Some(tool.source.clone()),
+        requested_version: tool.version.clone(),
+        release_tag: None,
+        selected_asset: None,
+        selected_binary: tool.bin.clone(),
+        installed_path: None,
+        checksum_source: None,
+        verification: None,
+    }
+}
+
+fn mutation_tool_from_record(
+    cmd: &str,
+    action: MutationAction,
+    record: &PackageRecord,
+) -> MutationToolOutput {
+    MutationToolOutput {
+        cmd: cmd.to_string(),
+        action,
+        source: Some(record.source.clone()),
+        requested_version: record.requested_version.clone(),
+        release_tag: Some(record.release_tag.clone()),
+        selected_asset: Some(record.asset_name.clone()),
+        selected_binary: Some(record.selected_binary.clone()),
+        installed_path: Some(record.installed_path.clone()),
+        checksum_source: Some(record.checksum_source),
+        verification: Some(verification_state(record)),
+    }
+}
+
 fn verify_check_output(
     cmd: String,
     target: Option<HostTarget>,
@@ -6112,7 +6521,7 @@ fn prepend_path_entries(entries: &[PathBuf]) -> Result<std::ffi::OsString> {
     })
 }
 
-fn remove_local_tool(cmd: &str) -> Result<i32> {
+fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
     let root = require_manifest_root()?;
     validate_command_name(cmd)?;
     let manifest_path = root.join(MANIFEST_FILE);
@@ -6126,6 +6535,19 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
             manifest: manifest_path,
         });
     }
+    let removed_tool = prior_state
+        .runtime
+        .package_record
+        .as_ref()
+        .map(|record| mutation_tool_from_record(cmd, MutationAction::Removed, record))
+        .or_else(|| {
+            manifest
+                .tools
+                .get(cmd)
+                .map(|tool| mutation_tool_from_manifest_tool(cmd, tool, MutationAction::Removed))
+        })
+        .into_iter()
+        .collect();
     let record_path = package_record_path(&paths, cmd);
     let cleanup_result = (|| {
         let mut remaining_manifest = manifest.clone();
@@ -6186,30 +6608,58 @@ fn remove_local_tool(cmd: &str) -> Result<i32> {
         restore_local_remove_state(&root, cmd, prior_state);
         return Err(error);
     }
-    println!("removed {cmd}");
-    println!("cleaned local manifest, lockfile, package record, cache ref, and executable state");
-    println!(
-        "cache assets preserved; run `binpm cache prune` for unreferenced assets or `binpm cache \
-         clean` for all cached assets"
-    );
-    Ok(0)
+    if !output.is_json() {
+        println!(
+            "cleaned local manifest, lockfile, package record, cache ref, and executable state"
+        );
+        println!(
+            "cache assets preserved; run `binpm cache prune` for unreferenced assets or `binpm \
+             cache clean` for all cached assets"
+        );
+    }
+    Ok(MutationOutput {
+        command: "remove",
+        scope: Scope::Local,
+        dry_run: false,
+        changed_files: vec![
+            path_display(&root.join(MANIFEST_FILE)),
+            path_display(&root.join(LOCKFILE_FILE)),
+            path_display(&record_path),
+        ],
+        tools: removed_tool,
+    })
 }
 
 fn has_local_runtime_or_lock_state(cmd: &str, state: &LocalRemoveState) -> bool {
     state.lockfile.tools.contains_key(cmd) || state.runtime.package_record.is_some()
 }
 
-fn remove_global_tool(cmd: &str) -> Result<i32> {
+fn remove_global_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
     validate_command_name(cmd)?;
     let paths = ScopePaths::global(binpm_home()?);
+    let record = read_package_record(&package_record_path(&paths, cmd))?;
     remove_global_tool_from_paths(&paths, cmd)?;
-    println!("removed {cmd}");
-    println!("cleaned global package record and executable state");
-    println!(
-        "cache assets preserved; run `binpm cache prune` for unreferenced assets or `binpm cache \
-         clean` for all cached assets"
-    );
-    Ok(0)
+    if !output.is_json() {
+        println!("cleaned global package record and executable state");
+        println!(
+            "cache assets preserved; run `binpm cache prune` for unreferenced assets or `binpm \
+             cache clean` for all cached assets"
+        );
+    }
+    Ok(MutationOutput {
+        command: "remove",
+        scope: Scope::Global,
+        dry_run: false,
+        changed_files: vec![
+            path_display(&package_record_path(&paths, cmd)),
+            record.installed_path.clone(),
+        ],
+        tools: vec![mutation_tool_from_record(
+            cmd,
+            MutationAction::Removed,
+            &record,
+        )],
+    })
 }
 
 fn remove_global_tool_from_paths(paths: &ScopePaths, cmd: &str) -> Result<()> {
