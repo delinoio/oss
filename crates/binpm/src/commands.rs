@@ -11126,6 +11126,7 @@ mod tests {
 
     #[test]
     fn locked_record_signature_sidecar_preserves_provider_auth_metadata() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "github:ghe.locked.example/owner/tool".to_string();
         record.source_host = "ghe.locked.example".to_string();
@@ -11152,6 +11153,7 @@ mod tests {
 
     #[test]
     fn locked_record_signature_sidecar_omits_provider_auth_for_external_asset_url() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
         record.source_provider = SourceProvider::GitLab;
