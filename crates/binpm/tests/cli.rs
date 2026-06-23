@@ -1376,10 +1376,7 @@ version = "1.0.0"
     assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
     assert_eq!(payload["tools"][0]["requested_version"], "1.0.0");
     assert!(payload["tools"][0]["release_tag"].is_null());
-    assert_eq!(
-        payload["tools"][0]["next_step"],
-        "binpm install --local tool"
-    );
+    assert_eq!(payload["tools"][0]["next_step"], "binpm install --local");
 }
 
 #[test]
@@ -1408,9 +1405,7 @@ source = "github:owner/tool"
         .stdout(predicate::str::contains(
             "status=declared-but-not-installed",
         ))
-        .stdout(predicate::str::contains(
-            "next=`binpm install --local tool`",
-        ));
+        .stdout(predicate::str::contains("next=`binpm install --local`"));
 }
 
 #[test]
@@ -2213,7 +2208,7 @@ version = "1.0.0"
             "On-demand install attempt: `binpm x`",
         ))
         .stderr(predicate::str::contains(
-            "Safest next command: `binpm install --local tool`",
+            "Safest next command: `binpm install --local`",
         ))
         .stderr(predicate::str::contains("would change"))
         .stderr(predicate::str::contains("--no-frozen-lockfile"));
@@ -2252,7 +2247,7 @@ source = "github:BurntSushi/ripgrep"
             "On-demand install attempt: `binpm x`",
         ))
         .stderr(predicate::str::contains(
-            "Safest next command: `binpm install --local rg`",
+            "Safest next command: `binpm install --local`",
         ));
 
     assert!(!project.join("binpm.lock").exists());

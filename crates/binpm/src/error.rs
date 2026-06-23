@@ -671,8 +671,8 @@ fn frozen_lockfile_safest_next_command(cmd: Option<&str>) -> String {
             }
             parts.join(" ")
         }
-        Some(FrozenLockfileCommandContext::Exec { cmd: Some(cmd), .. }) => {
-            format!("binpm install --local {}", cli_quote(cmd))
+        Some(FrozenLockfileCommandContext::Exec { cmd: Some(_), .. }) => {
+            "binpm install --local".to_string()
         }
         _ => "binpm install --local".to_string(),
     }
