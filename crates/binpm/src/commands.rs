@@ -1355,7 +1355,8 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<i32> {
             return print_update_plan_json(scope, &args.cmd, frozen_lockfile, args.dry_run, plan);
         }
     }
-    if output.is_json() && args.dry_run && args.lockfile.no_frozen_lockfile {
+    let explicit_lockfile_mode = args.lockfile.no_frozen_lockfile || args.lockfile.frozen_lockfile;
+    if output.is_json() && args.dry_run && explicit_lockfile_mode {
         return preview_update_json(scope, &args.cmd, frozen_lockfile);
     }
     if !output.is_json() {
@@ -1365,7 +1366,7 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<i32> {
     if args.dry_run {
         let result = preview_update(
             scope,
-            frozen_lockfile,
+            frozen_lockfile && !output.is_json(),
             args.require_verified,
             &args.cmd,
             output,
