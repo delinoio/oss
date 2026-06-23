@@ -274,24 +274,103 @@ fn logging_context_from_args<I>(args: I) -> logging::LoggingContext
 where
     I: IntoIterator<Item = OsString>,
 {
-    let mut args = args.into_iter();
-    let Some(argv0) = args.next() else {
+    let args = args.into_iter().collect::<Vec<_>>();
+    let Some(argv0) = args.first() else {
         return logging::LoggingContext::ManagementHuman;
     };
 
     if ManagedAlias::from_argv0(argv0.as_os_str()).is_some() {
-        return if managed_alias_output_preferences_from_args(args).json_error_output_requested {
+        return if managed_alias_output_preferences_from_args(args.iter().skip(1).cloned())
+            .json_error_output_requested
+        {
             logging::LoggingContext::ManagementJson
         } else {
             logging::LoggingContext::ManagedAlias
         };
     }
 
-    if management_output_preferences_from_management_args(args).json_error_output_requested {
+    if management_output_preferences_from_management_args(args.iter().skip(1).cloned())
+        .json_error_output_requested
+    {
         logging::LoggingContext::ManagementJson
+    } else if management_script_safe_default_logging_from_args(&args) {
+        logging::LoggingContext::ManagementScriptSafe
     } else {
         logging::LoggingContext::ManagementHuman
     }
+}
+
+fn management_script_safe_default_logging_from_args(args: &[OsString]) -> bool {
+    let normalized_args = normalized_management_args(args.iter().cloned());
+    let Some(command_index) = management_subcommand_index(&normalized_args) else {
+        return false;
+    };
+    let Some(command) = normalized_args[command_index].to_str() else {
+        return false;
+    };
+
+    match command {
+        "completions" => true,
+        "toolchain" => toolchain_list_quiet_requested(&normalized_args[command_index + 1..]),
+        _ => false,
+    }
+}
+
+fn toolchain_list_quiet_requested(args: &[OsString]) -> bool {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum ScanState {
+        BeforeToolchainCommand,
+        InListCommand,
+    }
+
+    let mut state = ScanState::BeforeToolchainCommand;
+    let mut global_value_expected = false;
+
+    for arg in args {
+        let Some(arg) = arg.to_str() else {
+            global_value_expected = false;
+            continue;
+        };
+
+        if global_value_expected {
+            global_value_expected = false;
+            continue;
+        }
+
+        if arg == "--" {
+            return false;
+        }
+
+        if arg == "--output" || arg == "--color" {
+            global_value_expected = true;
+            continue;
+        }
+
+        if arg.starts_with("--output=") || arg.starts_with("--color=") {
+            continue;
+        }
+
+        match state {
+            ScanState::BeforeToolchainCommand => {
+                if arg.starts_with('-') {
+                    continue;
+                }
+
+                if arg != "list" {
+                    return false;
+                }
+
+                state = ScanState::InListCommand;
+            }
+            ScanState::InListCommand => {
+                if arg == "--quiet" {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
@@ -713,6 +792,77 @@ mod tests {
         assert_eq!(
             logging_context_from_args(os_args(&["nodeup", "show", "home"])),
             LoggingContext::ManagementHuman
+        );
+    }
+
+    #[test]
+    fn completions_defaults_to_script_safe_logging_context() {
+        assert_eq!(
+            logging_context_from_args(os_args(&["nodeup", "completions", "bash"])),
+            LoggingContext::ManagementScriptSafe
+        );
+        assert_eq!(
+            logging_context_from_args(os_args(&[
+                "nodeup",
+                "completions",
+                "bash",
+                "toolchain",
+                "--color",
+                "never",
+            ])),
+            LoggingContext::ManagementScriptSafe
+        );
+    }
+
+    #[test]
+    fn toolchain_list_quiet_defaults_to_script_safe_logging_context() {
+        assert_eq!(
+            logging_context_from_args(os_args(&["nodeup", "toolchain", "list", "--quiet"])),
+            LoggingContext::ManagementScriptSafe
+        );
+        assert_eq!(
+            logging_context_from_args(os_args(&[
+                "nodeup",
+                "toolchain",
+                "--color",
+                "never",
+                "list",
+                "--quiet",
+            ])),
+            LoggingContext::ManagementScriptSafe
+        );
+    }
+
+    #[test]
+    fn toolchain_list_without_quiet_keeps_human_logging_context() {
+        assert_eq!(
+            logging_context_from_args(os_args(&["nodeup", "toolchain", "list"])),
+            LoggingContext::ManagementHuman
+        );
+        assert_eq!(
+            logging_context_from_args(os_args(&["nodeup", "toolchain", "list", "--verbose"])),
+            LoggingContext::ManagementHuman
+        );
+    }
+
+    #[test]
+    fn script_safe_json_output_keeps_json_logging_context() {
+        assert_eq!(
+            logging_context_from_args(os_args(&[
+                "nodeup",
+                "--output",
+                "json",
+                "toolchain",
+                "list",
+                "--quiet",
+            ])),
+            LoggingContext::ManagementJson
+        );
+        assert_eq!(
+            logging_context_from_args(os_args(
+                &["nodeup", "--output=json", "completions", "bash",]
+            )),
+            LoggingContext::ManagementJson
         );
     }
 
