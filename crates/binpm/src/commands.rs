@@ -3113,6 +3113,11 @@ fn update_global_packages(require_verified: bool, selected: &[String]) -> Result
             Ok(result) => result,
             Err(error) => {
                 for completed_update in completed.into_iter().rev() {
+                    let _ = rollback_failed_install(
+                        &scope_paths,
+                        &completed_update.cmd,
+                        &completed_update.installed_record,
+                    );
                     restore_runtime_tool_state(
                         &scope_paths,
                         &completed_update.cmd,
@@ -3127,9 +3132,12 @@ fn update_global_packages(require_verified: bool, selected: &[String]) -> Result
             tool.action = MutationAction::Updated;
             tool
         }));
+        let installed_record =
+            read_package_record(&package_record_path(&scope_paths, &update.cmd))?;
         completed.push(CompletedGlobalUpdate {
             cmd: update.cmd,
             prior_state,
+            installed_record,
         });
     }
     Ok(MutationOutput {
@@ -3151,6 +3159,7 @@ struct PreparedGlobalUpdate {
 struct CompletedGlobalUpdate {
     cmd: String,
     prior_state: RuntimeToolState,
+    installed_record: PackageRecord,
 }
 
 fn prepare_global_updates(
@@ -6088,7 +6097,9 @@ fn print_mutation_output(result: MutationOutput, output: OutputMode) -> Result<i
         match tool.action {
             MutationAction::Installed => {
                 if let Some(path) = &tool.installed_path {
-                    println!("installed {} {path}", tool.cmd);
+                    for line in installed_mutation_lines(&result, tool, path) {
+                        println!("{line}");
+                    }
                 }
             }
             MutationAction::Updated => {
@@ -6115,6 +6126,32 @@ fn print_mutation_output(result: MutationOutput, output: OutputMode) -> Result<i
         }
     }
     Ok(0)
+}
+
+fn installed_mutation_lines(
+    result: &MutationOutput,
+    tool: &MutationToolOutput,
+    path: &str,
+) -> Vec<String> {
+    if result.scope != Scope::Global || result.command != "install" {
+        return vec![format!("installed {} {path}", tool.cmd)];
+    }
+    let mut lines = vec![
+        format!("installed {} {path}", tool.cmd),
+        format!("installed command: {}", tool.cmd),
+    ];
+    if let Some(selected_binary) = &tool.selected_binary {
+        lines.push(format!("selected binary: {selected_binary}"));
+        if command_alias_differs_from_upstream(&tool.cmd, selected_binary) {
+            lines.push(format!(
+                "alias note: installed command `{}` invokes upstream binary `{selected_binary}`; \
+                 use `--as <cmd>` to choose the local/global command alias and `--bin \
+                 <upstream-binary>` to choose the upstream executable.",
+                tool.cmd
+            ));
+        }
+    }
+    lines
 }
 
 fn path_display(path: &Path) -> String {
@@ -8699,7 +8736,7 @@ mod tests {
         global_install_mutation_output, global_remove_changed_files,
         global_update_changed_files_for_record, global_update_selected_binary,
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
-        install_path_collision_key, is_retryable_status,
+        install_path_collision_key, installed_mutation_lines, is_retryable_status,
         local_cache_ref_changed_file_for_cached_record, local_install_mutation_output,
         local_manifest_orphan_cmds, local_orphan_changed_files, local_runtime_lock_records,
         local_tool_execution_ready, local_update_changed_files_for_record,
@@ -8719,19 +8756,20 @@ mod tests {
         remove_global_tool, remove_global_tool_from_paths, remove_local_manifest_orphans,
         require_executable_managed_file, resolved_has_supported_signature_evidence,
         resolved_has_verified_source, restore_local_remove_state, restore_runtime_tool_state,
-        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
-        selected_global_package_records, shell_path, shell_quote, signature_sidecar_for_asset,
-        sigstore_trust_policy, snapshot_cache_metadata, target_override_snippet,
-        update_manifest_tool_source, validate_frozen_update_current_release,
-        validate_locked_record_artifact, validate_locked_record_current_asset,
-        validate_locked_record_current_provider_digest, validate_package_record_metadata,
-        validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verification_state, verify_check_output,
-        verify_check_output_with_state, verify_installed_binary_contents, verify_lockfile_records,
-        verify_runtime_cache_bytes, write_sigstore_verification_inputs, zip_file_is_regular,
-        zip_file_is_symlink, ArtifactKind, HostTarget, InstalledPackage, InstalledPathSnapshot,
-        LocalRemoveState, MutationAction, MutationOutput, OutdatedToolOutput, OutputMode,
-        RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT, SUPPRESS_DIAGNOSTIC_STDERR,
+        rollback_failed_install, sanitize_download_diagnostic_url, select_manifest_asset,
+        selected_asset_display_url, selected_global_package_records, shell_path, shell_quote,
+        signature_sidecar_for_asset, sigstore_trust_policy, snapshot_cache_metadata,
+        target_override_snippet, update_manifest_tool_source,
+        validate_frozen_update_current_release, validate_locked_record_artifact,
+        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries, verification_state,
+        verify_check_output, verify_check_output_with_state, verify_installed_binary_contents,
+        verify_lockfile_records, verify_runtime_cache_bytes, write_sigstore_verification_inputs,
+        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, HostTarget, InstalledPackage,
+        InstalledPathSnapshot, LocalRemoveState, MutationAction, MutationOutput,
+        MutationToolOutput, OutdatedToolOutput, OutputMode, RuntimeToolState,
+        GITHUB_ASSET_DOWNLOAD_ACCEPT, SUPPRESS_DIAGNOSTIC_STDERR,
     };
     use crate::{
         assets::CandidateDecision,
@@ -11447,6 +11485,47 @@ mod tests {
         assert_eq!(restored.installed_path, outside.display().to_string());
     }
 
+    #[test]
+    fn completed_global_update_rollback_removes_new_managed_binary_before_legacy_restore() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
+        paths.ensure().expect("scope paths");
+        let outside = temp_dir.path().join("outside-tool");
+        std::fs::write(&outside, "original").expect("write outside file");
+        let mut legacy_record = package_record();
+        legacy_record.installed_path = outside.display().to_string();
+        let mut installed_record = package_record();
+        installed_record.installed_path = paths.bin.join("tool").display().to_string();
+        std::fs::write(&installed_record.installed_path, "new managed")
+            .expect("write new managed binary");
+
+        rollback_failed_install(&paths, "tool", &installed_record).expect("rollback install");
+        restore_runtime_tool_state(
+            &paths,
+            "tool",
+            RuntimeToolState {
+                package_record: Some(legacy_record.clone()),
+                installed_path: Some(outside.clone()),
+                installed_snapshot: Some(InstalledPathSnapshot::RegularFile {
+                    bytes: b"changed".to_vec(),
+                    #[cfg(unix)]
+                    mode: 0o755,
+                }),
+            },
+        );
+
+        assert!(!paths.bin.join("tool").exists());
+        assert_eq!(
+            std::fs::read_to_string(&outside).expect("read outside file"),
+            "original"
+        );
+        let restored = crate::storage::read_package_record(&crate::storage::package_record_path(
+            &paths, "tool",
+        ))
+        .expect("restored package record");
+        assert_eq!(restored.installed_path, legacy_record.installed_path);
+    }
+
     #[cfg(unix)]
     #[test]
     fn rollback_restores_regular_file_mode() {
@@ -11634,6 +11713,38 @@ mod tests {
         assert!(result.changed_files.contains(&path_display(
             &crate::storage::CachePaths::new(&paths.root).metadata_path(&record.sha256)
         )));
+    }
+
+    #[test]
+    fn global_install_human_mutation_lines_preserve_alias_details() {
+        let output = MutationOutput {
+            command: "install",
+            scope: Scope::Global,
+            dry_run: false,
+            changed_files: Vec::new(),
+            tools: Vec::new(),
+        };
+        let tool = MutationToolOutput {
+            cmd: "foo".to_string(),
+            action: MutationAction::Installed,
+            source: Some("github:owner/repo".to_string()),
+            requested_version: None,
+            release_tag: Some("v1.0.0".to_string()),
+            selected_asset: Some("repo-linux.tar.gz".to_string()),
+            selected_binary: Some("bin/bar".to_string()),
+            installed_path: Some("/tmp/bin/foo".to_string()),
+            checksum_source: Some(ChecksumSource::Local),
+            verification: Some(VerificationState::Unverified),
+        };
+
+        let lines = installed_mutation_lines(&output, &tool, "/tmp/bin/foo");
+
+        assert_eq!(lines[0], "installed foo /tmp/bin/foo");
+        assert_eq!(lines[1], "installed command: foo");
+        assert_eq!(lines[2], "selected binary: bin/bar");
+        assert!(lines[3].contains("installed command `foo` invokes upstream binary `bin/bar`"));
+        assert!(lines[3].contains("`--as <cmd>`"));
+        assert!(lines[3].contains("`--bin <upstream-binary>`"));
     }
 
     #[test]
