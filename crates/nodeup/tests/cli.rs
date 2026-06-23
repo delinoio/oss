@@ -7302,10 +7302,11 @@ fn package_manager_range_json_error_identifies_failed_version_part() {
     assert_eq!(payload["diagnostics"]["problem"], "non-exact-semver");
     assert_eq!(payload["diagnostics"]["manager"], "pnpm");
     assert_eq!(payload["diagnostics"]["version"], "10.x");
+    assert_eq!(payload["diagnostics"]["correction"], "pnpm@10.32.1");
     assert!(payload["message"]
         .as_str()
         .unwrap()
-        .contains("pnpm@<major>.<minor>.<patch>"));
+        .contains("\"packageManager\": \"pnpm@10.32.1\""));
 }
 
 #[test]
@@ -7355,10 +7356,18 @@ fn unsupported_package_manager_json_error_identifies_manager_part() {
     assert_eq!(payload["diagnostics"]["failed_part"], "manager");
     assert_eq!(payload["diagnostics"]["problem"], "unsupported-manager");
     assert_eq!(payload["diagnostics"]["manager"], "npm");
+    assert_eq!(
+        payload["diagnostics"]["correction"],
+        serde_json::json!(["yarn@4.13.0", "pnpm@10.32.1"])
+    );
     assert!(payload["message"]
         .as_str()
         .unwrap()
         .contains("Unsupported packageManager manager 'npm'"));
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("only for `yarn` and `pnpm`"));
 }
 
 #[test]
@@ -7412,6 +7421,10 @@ fn non_string_package_manager_json_error_identifies_expected_shape() {
         payload["diagnostics"]["expected"],
         "<manager>@<exact-semver>"
     );
+    assert_eq!(
+        payload["diagnostics"]["correction"],
+        serde_json::json!(["yarn@4.13.0", "pnpm@10.32.1"])
+    );
 }
 
 #[test]
@@ -7452,6 +7465,52 @@ fn run_yarn_prefers_direct_binary_when_package_manager_field_is_missing() {
 
 #[test]
 #[serial]
+fn which_yarn_direct_mode_labels_runtime_binary_strategy() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-which-direct-yarn");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+    write_runtime_executable(runtime_bin.join("yarn"), "#!/bin/sh\necho yarn\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-direct-yarn",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-direct-yarn"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-which-direct-yarn");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"which-direct-yarn"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args(["which", "yarn"])
+        .output()
+        .expect("which yarn direct mode");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("will run as direct runtime binary"));
+    assert!(stdout.contains("strategy=direct-runtime-binary"));
+    assert!(stdout.contains("corepack=unsupported"));
+}
+
+#[test]
+#[serial]
 fn run_yarn_falls_back_to_npm_exec_when_package_manager_field_is_missing_and_binary_is_missing() {
     let env = TestEnv::new();
     env.register_index(&[("22.1.0", Some("Jod"))]);
@@ -7483,8 +7542,68 @@ fn run_yarn_falls_back_to_npm_exec_when_package_manager_field_is_missing_and_bin
             "npm-argv:exec --yes --package @yarnpkg/cli-dist -- yarn --version",
         ))
         .stderr(predicates::str::contains(
-            "unpinned fallback; add exact packageManager",
+            "unpinned fallback; less reproducible; add exact packageManager",
         ));
+}
+
+#[test]
+#[serial]
+fn which_yarn_unpinned_fallback_json_exposes_strategy_and_corepack_state() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-which-fallback-yarn");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+    write_runtime_executable(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-which-fallback-yarn",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-which-fallback-yarn"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-which-fallback-yarn");
+    fs::create_dir_all(&project_dir).unwrap();
+    fs::write(
+        project_dir.join("package.json"),
+        r#"{"name":"which-fallback-yarn"}"#,
+    )
+    .unwrap();
+
+    let output = env
+        .command()
+        .current_dir(&project_dir)
+        .args(["--output", "json", "which", "yarn"])
+        .output()
+        .expect("which yarn fallback json");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["mode"], "npm-exec");
+    assert_eq!(
+        payload["reason"],
+        "package-json-missing-field-fallback-npm-exec"
+    );
+    assert_eq!(payload["package_spec"], "@yarnpkg/cli-dist");
+    assert_eq!(payload["package_spec_pinned"], false);
+    assert_eq!(
+        payload["package_manager_strategy"],
+        "unpinned-npm-exec-fallback"
+    );
+    assert_eq!(payload["corepack_supported"], false);
+    assert_eq!(
+        payload["planning"]["package_manager_strategy"],
+        "unpinned-npm-exec-fallback"
+    );
+    assert_eq!(payload["planning"]["corepack_supported"], false);
 }
 
 #[cfg(unix)]

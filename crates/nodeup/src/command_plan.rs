@@ -74,6 +74,10 @@ pub struct DelegatedCommandPlanDiagnostics {
     pub reason: String,
     pub executable_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_manager_strategy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub corepack_supported: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub package_spec: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub package_spec_pinned: Option<bool>,
@@ -88,6 +92,8 @@ impl DelegatedCommandPlan {
             mode: self.mode.as_str().to_string(),
             reason: self.reason.as_str().to_string(),
             executable_path: self.executable.to_string_lossy().to_string(),
+            package_manager_strategy: self.package_manager_strategy().map(str::to_string),
+            corepack_supported: self.corepack_supported(),
             package_spec: self.package_spec.clone(),
             package_spec_pinned: self.package_spec_pinned(),
             package_json_path: self
@@ -108,6 +114,44 @@ impl DelegatedCommandPlan {
         }
     }
 
+    pub fn package_manager_strategy(&self) -> Option<&'static str> {
+        match self.reason {
+            DelegatedCommandReason::PackageManagerPinned => Some("pinned-npm-exec"),
+            DelegatedCommandReason::PackageJsonMissingFieldFallbackNpmExec
+            | DelegatedCommandReason::PackageJsonNotFoundFallbackNpmExec => {
+                Some("unpinned-npm-exec-fallback")
+            }
+            DelegatedCommandReason::PackageJsonMissingFieldDirect
+            | DelegatedCommandReason::PackageJsonNotFoundDirect => Some("direct-runtime-binary"),
+            DelegatedCommandReason::NonPackageManagerCommand => None,
+        }
+    }
+
+    pub fn corepack_supported(&self) -> Option<bool> {
+        self.package_manager_strategy().map(|_| false)
+    }
+
+    pub fn direct_package_manager_human_notice(&self) -> Option<String> {
+        if self.mode != DelegatedCommandMode::Direct {
+            return None;
+        }
+
+        self.package_manager_strategy().map(|strategy| {
+            let package_json = self
+                .package_json_path
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| "none".to_string());
+            format!(
+                "nodeup: {} will run as direct runtime binary {} (strategy={strategy}; \
+                 package_json={package_json}; reason={}; corepack=unsupported)",
+                self.requested_command,
+                self.executable.display(),
+                self.reason.as_str()
+            )
+        })
+    }
+
     pub fn npm_exec_human_notice(&self) -> Option<String> {
         if self.mode != DelegatedCommandMode::NpmExec {
             return None;
@@ -116,9 +160,15 @@ impl DelegatedCommandPlan {
         let package_spec = self.package_spec.as_deref().unwrap_or("<unknown>");
         let pinned = match self.package_spec_pinned() {
             Some(true) => "pinned",
-            Some(false) => "unpinned fallback; add exact packageManager for reproducible projects",
+            Some(false) => {
+                "unpinned fallback; less reproducible; add exact packageManager such as \
+                 \"packageManager\": \"yarn@4.13.0\" or \"packageManager\": \"pnpm@10.32.1\""
+            }
             None => "unknown pin state",
         };
+        let strategy = self
+            .package_manager_strategy()
+            .unwrap_or("unknown-package-manager-strategy");
         let package_json = self
             .package_json_path
             .as_ref()
@@ -126,8 +176,8 @@ impl DelegatedCommandPlan {
             .unwrap_or_else(|| "none".to_string());
 
         Some(format!(
-            "nodeup: {} will run via npm exec using package {} ({pinned}; \
-             package_json={package_json}; npm={}; reason={})",
+            "nodeup: {} will run via npm exec using package {} ({pinned}; strategy={strategy}; \
+             package_json={package_json}; npm={}; reason={}; corepack=unsupported)",
             self.requested_command,
             package_spec,
             self.executable.display(),
@@ -163,9 +213,10 @@ pub fn plan_delegated_command(
                         configured_manager.raw, package_json_path
                     ),
                     format!(
-                        "Use `{}` in this project, or update packageManager to match \
-                         `{delegated_command}`.",
-                        configured_manager.manager.as_str()
+                        "Use `{}` in this project, or update package.json to an exact value such \
+                         as `\"packageManager\": \"{}\"`.",
+                        configured_manager.manager.as_str(),
+                        requested_manager.example_package_manager_value()
                     ),
                 ));
             }
@@ -294,6 +345,11 @@ fn log_command_plan(
     plan: &DelegatedCommandPlan,
 ) {
     let package_spec = plan.package_spec.as_deref().unwrap_or("none");
+    let package_manager_strategy = plan.package_manager_strategy().unwrap_or("none");
+    let corepack_supported = plan
+        .corepack_supported()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "none".to_string());
     let package_json_path = plan
         .package_json_path
         .as_ref()
@@ -306,6 +362,8 @@ fn log_command_plan(
         delegated_command,
         mode = plan.mode.as_str(),
         package_spec,
+        package_manager_strategy,
+        corepack_supported,
         package_json_path = %package_json_path,
         reason = plan.reason.as_str(),
         package_spec_pinned = plan
@@ -346,6 +404,13 @@ impl SupportedPackageManager {
             Self::Pnpm => "pnpm",
         }
     }
+
+    fn example_package_manager_value(self) -> &'static str {
+        match self {
+            Self::Yarn => "yarn@4.13.0",
+            Self::Pnpm => "pnpm@10.32.1",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -361,12 +426,15 @@ impl ConfiguredPackageManager {
 
         let separator_count = raw.matches('@').count();
         if separator_count == 0 && matches!(raw, "yarn" | "pnpm") {
+            let correction = SupportedPackageManager::from_command(raw)
+                .expect("validated supported package manager")
+                .example_package_manager_value();
             return Err(package_manager_invalid_input(
                 format!(
                     "Missing packageManager version for manager '{raw}' in {}",
                     package_json_path.display()
                 ),
-                format!("Use an exact value such as `{raw}@<major>.<minor>.<patch>`."),
+                format!("Use an exact value such as `\"packageManager\": \"{correction}\"`."),
                 package_manager_diagnostics(PackageManagerDiagnosticsInput {
                     package_json_path,
                     raw_value: Some(raw),
@@ -375,7 +443,7 @@ impl ConfiguredPackageManager {
                     problem: "missing-version",
                     manager: Some(raw),
                     version: None,
-                    correction: json!(format!("{raw}@<major>.<minor>.<patch>")),
+                    correction: json!(correction),
                 }),
             ));
         }
@@ -411,7 +479,8 @@ impl ConfiguredPackageManager {
                     "Invalid packageManager manager in {} (value={raw})",
                     package_json_path.display()
                 ),
-                "Set packageManager to `yarn@<exact-semver>` or `pnpm@<exact-semver>`.",
+                "Set packageManager to an exact value such as `\"packageManager\": \
+                 \"yarn@4.13.0\"` or `\"packageManager\": \"pnpm@10.32.1\"`.",
                 package_manager_diagnostics(PackageManagerDiagnosticsInput {
                     package_json_path,
                     raw_value: Some(raw),
@@ -426,12 +495,15 @@ impl ConfiguredPackageManager {
         }
 
         if version_raw.is_empty() {
+            let correction = SupportedPackageManager::from_command(manager_raw)
+                .map(SupportedPackageManager::example_package_manager_value)
+                .unwrap_or("pnpm@10.32.1");
             return Err(package_manager_invalid_input(
                 format!(
                     "Missing packageManager version for manager '{manager_raw}' in {}",
                     package_json_path.display()
                 ),
-                format!("Use an exact value such as `{manager_raw}@<major>.<minor>.<patch>`."),
+                format!("Use an exact value such as `\"packageManager\": \"{correction}\"`."),
                 package_manager_diagnostics(PackageManagerDiagnosticsInput {
                     package_json_path,
                     raw_value: Some(raw),
@@ -440,7 +512,7 @@ impl ConfiguredPackageManager {
                     problem: "missing-version",
                     manager: Some(manager_raw),
                     version: None,
-                    correction: json!(format!("{manager_raw}@<major>.<minor>.<patch>")),
+                    correction: json!(correction),
                 }),
             ));
         }
@@ -454,7 +526,9 @@ impl ConfiguredPackageManager {
                         "Unsupported packageManager manager '{manager_raw}' in {}",
                         package_json_path.display()
                     ),
-                    "Use `yarn@<exact-semver>` or `pnpm@<exact-semver>`.",
+                    "Nodeup manages packageManager dispatch only for `yarn` and `pnpm`; use an \
+                     exact value such as `\"packageManager\": \"yarn@4.13.0\"` or \
+                     `\"packageManager\": \"pnpm@10.32.1\"`.",
                     package_manager_diagnostics(PackageManagerDiagnosticsInput {
                         package_json_path,
                         raw_value: Some(raw),
@@ -476,8 +550,9 @@ impl ConfiguredPackageManager {
                     package_json_path.display()
                 ),
                 format!(
-                    "Use an exact `{manager_raw}@<major>.<minor>.<patch>` value, for example \
-                     `{manager_raw}@10.32.1`."
+                    "Use an exact value such as `\"packageManager\": \"{}\"`; ranges, tags, and \
+                     Corepack descriptors are not supported.",
+                    manager.example_package_manager_value()
                 ),
                 {
                     let mut diagnostics =
@@ -489,7 +564,7 @@ impl ConfiguredPackageManager {
                             problem: "non-exact-semver",
                             manager: Some(manager_raw),
                             version: Some(version_raw),
-                            correction: json!(format!("{manager_raw}@<major>.<minor>.<patch>")),
+                            correction: json!(manager.example_package_manager_value()),
                         });
                     diagnostics.insert("semver_error".to_string(), json!(error.to_string()));
                     diagnostics
@@ -568,7 +643,7 @@ fn discover_package_manager(cwd: &Path) -> Result<PackageManagerDiscovery> {
                     problem: "non-string",
                     manager: None,
                     version: None,
-                    correction: json!("<manager>@<exact-semver>"),
+                    correction: json!(["yarn@4.13.0", "pnpm@10.32.1"]),
                 }),
             )
         })?;

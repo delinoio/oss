@@ -58,11 +58,11 @@
 - `yarn`/`pnpm` delegated execution must honor nearest `package.json` `packageManager` when present.
 - `packageManager` parsing contract is strict: `<manager>@<exact-semver>` with manager limited to `yarn|pnpm`.
 - `packageManager` manager-command mismatch must fail with `conflict`; malformed values must fail with `invalid-input`.
-- Invalid `packageManager` errors must identify the failed part (`value`, `separator`, `manager`, or `version`), name the problem (`non-string`, `malformed-separator`, `missing-manager`, `missing-version`, `unsupported-manager`, or `non-exact-semver`), and include actionable examples. JSON errors must keep `kind`, `message`, and `exit_code` and add deterministic `diagnostics` fields such as `package_json_path`, `expected`, `supported_managers`, `failed_part`, `problem`, optional `manager`, optional `version`, optional `received_type`, and `correction`.
-- `packageManager`-aware execution must use runtime `npm exec` (Corepack is out of scope).
-- `yarn`/`pnpm` npm-exec planning must be visible in human output, JSON output, and structured planning logs. Diagnostics must include requested command, mode, reason, executable path, package spec, package JSON path when known, and whether the package spec is pinned.
-- When `packageManager` is absent and no direct runtime package-manager binary exists, unpinned npm-exec fallback specs (`@yarnpkg/cli-dist` or `pnpm`) must be surfaced and must recommend adding an exact `packageManager` value for reproducibility.
-- `which yarn|pnpm` in npm-exec mode must resolve to the runtime `npm` executable path and must label that path as npm-exec delegation rather than a direct package-manager binary.
+- Invalid `packageManager` errors must identify the failed part (`value`, `separator`, `manager`, or `version`), name the problem (`non-string`, `malformed-separator`, `missing-manager`, `missing-version`, `unsupported-manager`, or `non-exact-semver`), and include exact correction examples such as `yarn@4.13.0` or `pnpm@10.32.1`. JSON errors must keep `kind`, `message`, and `exit_code` and add deterministic `diagnostics` fields such as `package_json_path`, `expected`, `supported_managers`, `failed_part`, `problem`, optional `manager`, optional `version`, optional `received_type`, and `correction`.
+- `packageManager`-aware execution must use direct runtime binaries when no `packageManager` value exists and the runtime provides the requested package-manager binary, or runtime `npm exec` when a pinned `packageManager` value exists or no direct runtime package-manager binary exists. Corepack behavior is out of scope and must be surfaced as unsupported in package-manager planning output.
+- `yarn`/`pnpm` package-manager planning must be visible in human output, JSON output, and structured planning logs. Diagnostics must include requested command, mode, reason, executable path, package manager strategy, Corepack support state, package spec when npm-exec is used, package JSON path when known, and whether the package spec is pinned.
+- When `packageManager` is absent and no direct runtime package-manager binary exists, unpinned npm-exec fallback specs (`@yarnpkg/cli-dist` or `pnpm`) must be surfaced as less reproducible and must recommend adding an exact `packageManager` value for reproducible projects.
+- `which yarn|pnpm` in direct mode must print the runtime package-manager executable and label it as a direct runtime binary. In npm-exec mode it must resolve to the runtime `npm` executable path and label that path as npm-exec delegation rather than a direct package-manager binary.
 - `toolchain install` and `toolchain uninstall` runtime selector lists are required command-line arguments.
 - `toolchain install` must reject linked-name selectors before linked-runtime lookup; the error kind must be `invalid-input` whether or not a linked runtime by that name exists.
 - `toolchain uninstall` must remove exact installed versions only; channel selectors and linked-name selectors must fail with `invalid-input` before reference-blocker checks.
@@ -110,7 +110,7 @@
 - Use structured `tracing` logs for install, resolve, and dispatch flows.
 - Default log filters must remain `nodeup=warn` for managed alias dispatch, `nodeup=warn` for human management commands, and `nodeup=off` for JSON management commands unless `RUST_LOG` explicitly overrides them.
 - Include resolution source, requested channel, selected version, result state, release-index cache fallback state, and sanitized URL diagnostics.
-- Delegated command planning logs must include `mode=direct|npm-exec`, `package_spec`, `package_spec_pinned`, `package_json_path`, and `reason`.
+- Delegated command planning logs must include `mode=direct|npm-exec`, `package_manager_strategy`, `corepack_supported`, `package_spec`, `package_spec_pinned`, `package_json_path`, and `reason`.
 - Completion generation logs must include shell, command scope, and `generated|failed` outcome state.
 
 ## Build and Test
@@ -126,7 +126,7 @@
 - Completion coverage must include successful script generation, invalid shell/scope validation, and JSON-mode raw output behavior.
 - Output color coverage must include flag/env precedence, diagnostic reporting, invalid env fallback, stream-aware auto-mode behavior, and JSON/completion ANSI exclusion.
 - Parser-error coverage must include human clap output and JSON envelopes for root, nested subcommand, required argument, conflicting flag, unknown command, and unexpected extra argument failures.
-- `packageManager` coverage must include strict parsing diagnostics, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference, pinned npm-exec planning output, unpinned npm-exec fallback output, and `which` npm-exec JSON fields.
+- `packageManager` coverage must include strict parsing diagnostics, mismatch conflicts, yarn v1 vs v2+ mapping, direct-binary preference and output, pinned npm-exec planning output, unpinned npm-exec fallback output, unsupported Corepack visibility, and `which` package-manager JSON fields.
 - Runtime install coverage must include `linux-arm64`, `windows-x64`, and `windows-arm64` archive selection and extraction behavior plus unsupported x86 CLI override failures.
 - Shim setup coverage must include fresh setup, idempotent reruns, stale shim repair, Windows copy mode, and structured conflict ownership/remediation diagnostics.
 - Self uninstall coverage must include removed path reporting, manual cleanup fields for binary, shims, and shell profile/PATH boundaries, and ownership-refused root reporting.
