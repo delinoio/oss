@@ -80,7 +80,36 @@ winget install sigstore.cosign
 scoop install cosign
 ```
 
-macOS and Linux:
+macOS and Linux short URL:
+
+```bash
+curl -fsSL https://nodeup.delino.io/install.sh | bash -s -- --version latest --method direct
+```
+
+Windows PowerShell short URL:
+
+```powershell
+$InstallerUrl = "https://nodeup.delino.io/install.ps1"
+$Installer = Join-Path ([System.IO.Path]::GetTempPath()) ("nodeup-install-" + [System.Guid]::NewGuid().ToString("N") + ".ps1")
+try {
+  Invoke-WebRequest -Uri $InstallerUrl -OutFile $Installer -UseBasicParsing
+  Unblock-File -LiteralPath $Installer -ErrorAction SilentlyContinue
+  $PowerShell = (Get-Process -Id $PID).Path
+  & $PowerShell -NoProfile -ExecutionPolicy Bypass -File $Installer -Version latest -Method direct
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+}
+finally {
+  Remove-Item -LiteralPath $Installer -Force -ErrorAction SilentlyContinue
+}
+```
+
+The short URLs are public Nodeup docs-site entrypoints backed by the canonical installer scripts in `delinoio/oss`.
+
+Raw GitHub current installer commands are also supported.
+
+macOS and Linux raw GitHub:
 
 ```bash
 (
@@ -94,7 +123,7 @@ macOS and Linux:
 )
 ```
 
-Windows PowerShell:
+Windows PowerShell raw GitHub:
 
 ```powershell
 $InstallerUrl = "https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/nodeup.ps1"
@@ -113,7 +142,7 @@ finally {
 }
 ```
 
-These commands fetch the current first-party installer scripts from `delinoio/oss`.
+These raw GitHub commands fetch the current first-party installer scripts from `delinoio/oss`.
 
 Use pinned commands when reproducibility matters, especially in CI, bootstrap scripts, and audited environments. Pin the same first-party raw GitHub paths to a reviewed repository tag or commit, and replace `latest` with an explicit Nodeup semver.
 
