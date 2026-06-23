@@ -586,7 +586,10 @@ fn linked_runtime_reference_blockers(
     blockers
 }
 
-fn linked_runtime_reference_blockers_error(blockers: Vec<RuntimeReferenceBlocker>) -> NodeupError {
+fn linked_runtime_reference_blockers_error(
+    blockers: Vec<RuntimeReferenceBlocker>,
+    requested_names: &[String],
+) -> NodeupError {
     let blocked_name_list = blockers
         .iter()
         .map(|blocker| blocker.runtime.as_str())
@@ -620,10 +623,15 @@ fn linked_runtime_reference_blockers_error(blockers: Vec<RuntimeReferenceBlocker
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let retry_commands = blocked_name_list
-        .iter()
-        .map(|name| format!("nodeup toolchain unlink {}", shell_quote(name)))
-        .collect::<Vec<_>>();
+    let retry_command = format!(
+        "nodeup toolchain unlink {}",
+        requested_names
+            .iter()
+            .map(|name| shell_quote(name))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    let retry_commands = vec![retry_command];
 
     let mut diagnostics = ErrorDiagnostics::new();
     diagnostics.insert(
@@ -957,7 +965,10 @@ fn unlink(
                 .then_with(|| left.path.cmp(&right.path))
                 .then_with(|| left.selector.cmp(&right.selector))
         });
-        return Err(linked_runtime_reference_blockers_error(blockers));
+        return Err(linked_runtime_reference_blockers_error(
+            blockers,
+            &unique_names,
+        ));
     }
 
     for name in &unique_names {

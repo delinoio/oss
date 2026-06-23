@@ -1522,6 +1522,75 @@ fn toolchain_unlink_json_reports_all_blockers_with_remediation_commands() {
 
 #[test]
 #[serial]
+fn toolchain_unlink_blocked_retry_includes_all_requested_links() {
+    let env = TestEnv::new();
+    let blocked_runtime_dir = env.root.join("linked-runtime-unlink-blocked-mixed");
+    let blocked_runtime_bin = blocked_runtime_dir.join("bin");
+    fs::create_dir_all(&blocked_runtime_bin).unwrap();
+    write_runtime_executable(
+        blocked_runtime_bin.join("node"),
+        "#!/bin/sh\necho blocked\n",
+    );
+    let free_runtime_dir = env.root.join("linked-runtime-unlink-free-mixed");
+    let free_runtime_bin = free_runtime_dir.join("bin");
+    fs::create_dir_all(&free_runtime_bin).unwrap();
+    write_runtime_executable(free_runtime_bin.join("node"), "#!/bin/sh\necho free\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-unlink-blocked-mixed",
+            blocked_runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-unlink-free-mixed",
+            free_runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-unlink-blocked-mixed"])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "unlink",
+            "linked-unlink-blocked-mixed",
+            "linked-unlink-free-mixed",
+            "linked-unlink-blocked-mixed",
+        ])
+        .output()
+        .expect("toolchain unlink blocked mixed json");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(
+        payload["diagnostics"]["blocked_linked_runtimes"],
+        serde_json::json!(["linked-unlink-blocked-mixed"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["retry_commands"],
+        serde_json::json!([
+            "nodeup toolchain unlink linked-unlink-blocked-mixed linked-unlink-free-mixed"
+        ])
+    );
+}
+
+#[test]
+#[serial]
 fn toolchain_unlink_conflicts_when_legacy_reserved_case_link_is_used_by_override() {
     let env = TestEnv::new();
     let runtime_dir = env.root.join("legacy-reserved-case-override");
