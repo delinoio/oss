@@ -4342,6 +4342,7 @@ fn local_update_json_dry_run_reports_orphan_cleanup_paths() {
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
     fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    fs::create_dir_all(project.join(".binpm").join("bin")).expect("create bin directory");
     fs::create_dir_all(home.join("cache").join("refs")).expect("create cache refs");
     fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
     fs::write(
@@ -4381,6 +4382,11 @@ signature_verified = false
         ),
     )
     .expect("write package record");
+    fs::write(
+        project.join(".binpm").join("bin").join("tool"),
+        b"#!/bin/sh\nprintf 'installed tool\\n'\n",
+    )
+    .expect("write installed binary");
     let cache_ref = structured_cache_ref_path(&home, &project, "tool");
     fs::write(&cache_ref, "cache ref").expect("write cache ref");
 
