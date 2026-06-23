@@ -2871,6 +2871,7 @@ fn local_tool_execution_ready(
         Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
             return Ok(false)
         }
+        Err(BinpmError::UnsafeManagedFile { .. }) => return Ok(false),
         Err(error) => return Err(error),
     }
     match require_executable_managed_file(&installed_path) {
@@ -5713,9 +5714,13 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
             }
             Err(error) => return Err(error),
         };
-        let has_runtime_record = local_runtime_tool_record(root, &cmd)?.is_some();
+        let runtime_record = local_runtime_tool_record(root, &cmd)?;
+        let has_manifest_runtime_record = runtime_record
+            .as_ref()
+            .is_some_and(|record| local_runtime_record_matches_manifest(&spec, record));
         match local_tool_execution_ready(root, &cmd, &spec, Some(&tool)) {
             Ok(true) => continue,
+            Ok(false) if has_manifest_runtime_record => continue,
             Ok(false) => {}
             Err(
                 ref error @ (BinpmError::ParseToml { ref path, .. }
@@ -5736,7 +5741,7 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
                 return Ok(Vec::new());
             }
             Err(error) => {
-                if has_runtime_record {
+                if runtime_record.is_some() {
                     return Err(error);
                 }
                 warn!(
@@ -5761,6 +5766,20 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
     Ok(declared_only_tools)
 }
 
+fn local_runtime_record_matches_manifest(spec: &SourceSpec, record: &PackageRecord) -> bool {
+    let Ok(target) = HostTarget::current() else {
+        return false;
+    };
+    record.source == spec.source_without_version()
+        && record.source_provider == spec.provider
+        && record.source_host == spec.host
+        && record.source_path == spec.path
+        && record.requested_version == spec.version
+        && record.target_os == target.os
+        && record.target_arch == target.arch
+        && record.target_libc == target.libc
+}
+
 fn local_runtime_tool_record(root: &Path, cmd: &str) -> Result<Option<PackageRecord>> {
     let paths = ScopePaths::local(root.to_path_buf());
     let record = match read_package_record(&package_record_path(&paths, cmd)) {
@@ -5781,6 +5800,7 @@ fn local_runtime_tool_record(root: &Path, cmd: &str) -> Result<Option<PackageRec
         Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
             return Ok(None)
         }
+        Err(BinpmError::UnsafeManagedFile { .. }) => return Ok(None),
         Err(error) => return Err(error),
     }
     match require_executable_managed_file(&installed_path) {
@@ -12884,6 +12904,47 @@ mod tests {
     }
 
     #[test]
+    fn local_tool_execution_ready_treats_non_regular_binary_as_stale() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        let target = HostTarget::current().expect("current target");
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("local scope dirs");
+        let installed_path = managed_installed_path(&paths, "tool", target.os);
+        fs::create_dir(&installed_path).expect("create installed path directory");
+
+        let mut lock_record = package_record();
+        lock_record.target_os = target.os;
+        lock_record.target_arch = target.arch;
+        lock_record.target_libc = target.libc;
+        lock_record.installed_path = deterministic_installed_path("tool", target.os);
+        let mut runtime_record = lock_record.clone();
+        runtime_record.installed_path = installed_path.display().to_string();
+        write_lockfile(
+            &root.join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([(target.key(), lock_record)]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+        write_package_record(&paths, "tool", &runtime_record).expect("write runtime record");
+        let mut spec = SourceSpec::from_str("github:owner/tool").expect("parse source");
+        spec.version = Some("1.0.0".to_string());
+
+        assert!(
+            !local_tool_execution_ready(root, "tool", &spec, None).expect("readiness check"),
+            "non-regular managed binaries should be repairable by diagnostics"
+        );
+    }
+
+    #[test]
     fn doctor_declared_only_scan_ignores_malformed_manifest() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         fs::write(temp_dir.path().join(MANIFEST_FILE), "version = [").expect("write manifest");
@@ -13040,6 +13101,74 @@ mod tests {
         assert_eq!(tools[0].cmd, "tool");
         assert_eq!(tools[0].source, "github:owner/replacement");
         assert_eq!(tools[0].requested_version.as_deref(), Some("2.0.0"));
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_skips_manifest_matching_runtime_without_lockfile() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        let target = HostTarget::current().expect("current target");
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/tool".to_string(),
+                        version: Some("1.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("ensure scope paths");
+        let installed_path = managed_installed_path(&paths, "tool", target.os);
+        fs::write(&installed_path, b"#!/bin/sh\n").expect("write executable");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mut permissions = fs::metadata(&installed_path)
+                .expect("metadata")
+                .permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&installed_path, permissions).expect("chmod executable");
+        }
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        record.installed_path = installed_path.display().to_string();
+        write_package_record(&paths, "tool", &record).expect("write runtime record");
+
+        let tools = declared_only_local_tools(root).expect("declared-only scan");
+
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn local_runtime_tool_record_treats_non_regular_binary_as_missing() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        let target = HostTarget::current().expect("current target");
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("ensure scope paths");
+        let installed_path = managed_installed_path(&paths, "tool", target.os);
+        fs::create_dir(&installed_path).expect("create installed path directory");
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        record.installed_path = installed_path.display().to_string();
+        write_package_record(&paths, "tool", &record).expect("write runtime record");
+
+        let record = local_runtime_tool_record(root, "tool").expect("runtime record");
+
+        assert!(record.is_none());
     }
 
     #[test]
