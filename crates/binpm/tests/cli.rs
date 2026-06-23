@@ -300,6 +300,34 @@ fn global_update_dry_run_json_reports_one_parseable_plan_without_mutation() {
 }
 
 #[test]
+fn global_update_dry_run_json_empty_scope_reports_no_changed_files() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["update", "--global", "--dry-run", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["scope"], "global");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(
+        payload["changed_files"]
+            .as_array()
+            .expect("changed files")
+            .len(),
+        0
+    );
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 0);
+}
+
+#[test]
 fn global_update_dry_run_reports_selected_global_records_without_mutation() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -3380,8 +3408,65 @@ source = "github:owner/tool"
     assert_eq!(payload["tools"][0]["cmd"], "tool");
     assert_eq!(payload["tools"][0]["action"], "removed");
     assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    assert!(!changed_files.contains(&package_record_path.as_str()));
+    assert!(!project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
     assert!(!fs::read_to_string(project.join("binpm.lock"))
         .expect("read lockfile")
+        .contains("tools.tool"));
+}
+
+#[test]
+fn local_remove_json_manifest_only_tool_skips_invalid_target_alias() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+
+[tools.tool.targets.linux-amd64-glibc]
+asset = "tool-linux"
+bin = "tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(project.join("binpm.lock"), "version = 1\n").expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "removed");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    assert!(!fs::read_to_string(project.join("binpm.toml"))
+        .expect("read manifest")
         .contains("tools.tool"));
 }
 

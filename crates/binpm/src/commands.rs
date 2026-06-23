@@ -1307,12 +1307,11 @@ fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<Mutatio
                 .map(Ok)
                 .or_else(|| {
                     manifest.tools.get(cmd).map(|tool| {
-                        let target = HostTarget::current()?;
                         mutation_tool_from_manifest_tool(
                             cmd,
                             tool,
                             MutationAction::PlannedRemove,
-                            Some(&target),
+                            None,
                         )
                     })
                 })
@@ -1505,11 +1504,16 @@ fn preview_global_update_result(selected: &[String]) -> Result<MutationOutput> {
     let paths = ScopePaths::global(binpm_home()?);
     let planned = selected_global_package_records(&paths, selected)?;
     prepare_global_updates(planned.clone())?;
+    let changed_files = if planned.is_empty() {
+        Vec::new()
+    } else {
+        vec![path_display(&paths.packages), path_display(&paths.bin)]
+    };
     Ok(MutationOutput {
         command: "update",
         scope: Scope::Global,
         dry_run: true,
-        changed_files: vec![path_display(&paths.packages), path_display(&paths.bin)],
+        changed_files,
         tools: planned
             .iter()
             .map(|(cmd, record)| {
@@ -6694,8 +6698,7 @@ fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
         .map(Ok)
         .or_else(|| {
             manifest.tools.get(cmd).map(|tool| {
-                let target = HostTarget::current()?;
-                mutation_tool_from_manifest_tool(cmd, tool, MutationAction::Removed, Some(&target))
+                mutation_tool_from_manifest_tool(cmd, tool, MutationAction::Removed, None)
             })
         })
         .or_else(|| {
@@ -6798,8 +6801,10 @@ fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
     let mut changed_files = vec![
         path_display(&root.join(MANIFEST_FILE)),
         path_display(&root.join(LOCKFILE_FILE)),
-        path_display(&record_path),
     ];
+    if prior_state.runtime.package_record.is_some() {
+        changed_files.push(path_display(&record_path));
+    }
     if let Some(installed_path) = removed_installed_path {
         changed_files.push(installed_path);
     }
