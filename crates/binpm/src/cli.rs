@@ -75,6 +75,14 @@ pub enum Command {
     /// Sync local tools, or install a source globally.
     Install(InstallArgs),
     /// Declare a local tool and install it into the project bin directory.
+    #[command(after_help = "\
+Examples:
+  binpm add rg github:BurntSushi/ripgrep --bin rg
+  binpm add foo github:owner/tools --bin bin/foo --also bar=bin/bar --also baz=bin/baz
+
+In --also CMD=BIN, CMD is the local command alias and BIN is the upstream binary or archive member.
+Each command is written as a separate [tools.<cmd>] manifest table.
+")]
     Add(AddArgs),
     /// Execute a local manifest command or one-off package command.
     #[command(name = "x", visible_aliases = ["exec", "run"])]
@@ -366,7 +374,8 @@ impl ScopeArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct LockfileArgs {
-    /// Fail if binpm.lock would need to be created or modified.
+    /// Fail if binpm.lock would need to be created or modified. Frozen mode is
+    /// not offline; restore may download locked asset URLs.
     #[arg(long, conflicts_with = "no_frozen_lockfile")]
     pub frozen_lockfile: bool,
 

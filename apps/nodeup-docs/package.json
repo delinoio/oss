@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "prepare:app": "echo 'nodeup-docs: no prepare step'",
-    "dev": "rspress dev --port 46250",
+    "dev": "node scripts/run-rspress-port.mjs dev 46250 NODEUP_DOCS_DEV_PORT",
     "build": "rspress build",
-    "preview": "rspress preview --port 46251",
+    "preview": "node scripts/run-rspress-port.mjs preview 46251 NODEUP_DOCS_PREVIEW_PORT",
     "test": "rspress build && node scripts/validate-clean-urls.mjs"
   },
   "devDependencies": {

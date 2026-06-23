@@ -16,6 +16,7 @@ const documentedRouteIds = [
 ];
 
 const outputDir = path.resolve("doc_build");
+const requiredPublicFiles = ["install.sh", "install.ps1"];
 const htmlHrefPatterns = documentedRouteIds.map((routeId) => {
   if (routeId === "/") {
     return {
@@ -58,6 +59,18 @@ async function collectHtmlFiles(directory) {
 const htmlFiles = await collectHtmlFiles(outputDir);
 const failures = [];
 
+for (const publicFile of requiredPublicFiles) {
+  try {
+    const publicFilePath = path.join(outputDir, publicFile);
+    const publicFileStat = await stat(publicFilePath);
+    if (!publicFileStat.isFile()) {
+      failures.push(`missing public installer file: ${publicFile}`);
+    }
+  } catch {
+    failures.push(`missing public installer file: ${publicFile}`);
+  }
+}
+
 for (const htmlFile of htmlFiles) {
   const contents = await readFile(htmlFile, "utf8");
 
@@ -69,11 +82,11 @@ for (const htmlFile of htmlFiles) {
 }
 
 if (failures.length > 0) {
-  console.error("Nodeup docs build emitted .html hrefs for documented route IDs:");
+  console.error("Nodeup docs validation failed:");
   for (const failure of failures) {
     console.error(`- ${failure}`);
   }
   process.exit(1);
 }
 
-console.log("Nodeup docs clean URL validation passed.");
+console.log("Nodeup docs validation passed.");
