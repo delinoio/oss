@@ -432,6 +432,8 @@ fn global_remove_dry_run_json_reports_package_record_and_executable_paths() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
     write_global_package_record(&home, "alpha", "owner/alpha", "1.0.0");
+    fs::create_dir_all(home.join("bin")).expect("create global bin");
+    fs::write(home.join("bin").join("alpha"), "alpha").expect("write installed binary");
 
     let output = binpm()
         .current_dir(temp_dir.path())
