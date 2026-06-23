@@ -135,6 +135,23 @@ pub enum BinpmError {
         #[source]
         source: io::Error,
     },
+    #[error(
+        "Frozen restore failed while downloading locked asset URL `{url}` for `{cmd}` after cache \
+         state `{cache_state}` at `{}`. Network access was attempted in frozen mode; provider \
+         authentication attached: {authenticated}. This is a frozen lockfile restore, not an \
+         offline/cache-only run. Source error: {source}. Hint: pre-populate the binpm cache for \
+         the locked SHA-256, configure the host-scoped provider token for private same-origin \
+         assets, or refresh the lockfile/cache outside frozen mode.",
+        cache_path.display()
+    )]
+    FrozenRestoreDownload {
+        cmd: String,
+        cache_path: PathBuf,
+        cache_state: &'static str,
+        url: String,
+        authenticated: bool,
+        source: Box<BinpmError>,
+    },
     #[error("Release pagination loop detected at `{url}`.")]
     ReleasePaginationLoop { url: String },
     #[error("{}", release_not_found_message(package, message, skipped_releases))]
@@ -327,6 +344,7 @@ impl BinpmError {
             Self::ReleaseLookup(_)
                 | Self::ReleaseAssetStatus { .. }
                 | Self::DownloadStream { .. }
+                | Self::FrozenRestoreDownload { .. }
                 | Self::ReleaseNotFound { .. }
                 | Self::AssetNotFound { .. }
                 | Self::AssetSelectionFailed { .. }
@@ -394,6 +412,31 @@ impl BinpmError {
                     "local_development_escape_hatch": "--no-frozen-lockfile"
                 })
             }),
+            Self::FrozenRestoreDownload {
+                cmd,
+                cache_path,
+                cache_state,
+                url,
+                authenticated,
+                ..
+            } => Some(serde_json::json!({
+                "kind": "frozen_restore",
+                "mode": frozen_lockfile_mode_label(),
+                "reason": "locked_asset_download_failed",
+                "cmd": cmd,
+                "cache_path": cache_path.display().to_string(),
+                "cache_state": cache_state,
+                "restore_source": "locked_sanitized_asset_url",
+                "locked_asset_url": url,
+                "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
+                "would_change": cache_path.display().to_string(),
+                "network_access_attempted": true,
+                "provider_authentication_attached": authenticated,
+                "offline_or_cache_only": false,
+                "release_list_pagination_attempted": false,
+                "safest_next_command": "pre-populate the binpm cache for the locked SHA-256 or run binpm install --local outside frozen mode with the required provider token",
+                "local_development_escape_hatch": "--no-frozen-lockfile"
+            })),
             Self::ReleaseNotFound {
                 skipped_releases, ..
             } if !skipped_releases.is_empty() => Some(serde_json::json!({
@@ -455,6 +498,7 @@ impl BinpmError {
             | Self::ReleaseLookupDiagnostic(_)
             | Self::ReleaseAssetStatus { .. }
             | Self::DownloadStream { .. }
+            | Self::FrozenRestoreDownload { .. }
             | Self::ReleasePaginationLoop { .. } => 1,
             Self::FrozenLockfile { .. }
             | Self::FrozenLockfileMissingRecord { .. }
@@ -778,4 +822,37 @@ fn asset_selection_failed_message(package: &str, target: &str, diagnostics: &[St
         message.push_str(&diagnostics.join(" "));
     }
     message
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frozen_restore_download_diagnostic_preserves_common_frozen_fields() {
+        let cache_path = PathBuf::from("/tmp/binpm/cache/sha256/abc/asset");
+        let error = BinpmError::FrozenRestoreDownload {
+            cmd: "tool".to_string(),
+            cache_path: cache_path.clone(),
+            cache_state: "missing",
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux".to_string(),
+            authenticated: false,
+            source: Box::new(BinpmError::ReleaseAssetStatus {
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux".to_string(),
+                status: 503,
+            }),
+        };
+
+        let diagnostic = error
+            .structured_diagnostic()
+            .expect("frozen restore diagnostic");
+        assert_eq!(diagnostic["kind"], "frozen_restore");
+        assert_eq!(diagnostic["reason"], "locked_asset_download_failed");
+        assert_eq!(diagnostic["on_demand_install_attempt"], false);
+        assert_eq!(diagnostic["would_change"], cache_path.display().to_string());
+        assert_eq!(
+            diagnostic["local_development_escape_hatch"],
+            "--no-frozen-lockfile"
+        );
+    }
 }

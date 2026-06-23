@@ -1,4 +1,7 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -7,6 +10,16 @@ use sha2::{Digest, Sha256};
 
 fn binpm() -> Command {
     Command::new(env!("CARGO_BIN_EXE_binpm"))
+}
+
+fn assert_success(output: &std::process::Output) {
+    assert!(
+        output.status.success(),
+        "status: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn bash_path(path: &Path) -> String {
@@ -59,6 +72,13 @@ fn posix_single_quote(raw: &str) -> String {
 
 fn bash_quote_path(path: &Path) -> String {
     posix_single_quote(&bash_path(path))
+}
+
+fn structured_cache_ref_path(home: &Path, project: &Path, cmd: &str) -> PathBuf {
+    let digest = Sha256::digest(format!("{}:{cmd}", project.display()).as_bytes());
+    home.join("cache")
+        .join("refs")
+        .join(format!("{digest:x}.ref"))
 }
 
 fn expected_project_path(project: &Path, relative: impl AsRef<Path>) -> std::path::PathBuf {
@@ -1959,7 +1979,7 @@ fn frozen_local_update_allows_empty_manifest_without_lockfile() {
         .success()
         .stdout(predicate::str::contains("planned updates: 0"))
         .stdout(predicate::str::contains(
-            "empty manifest: no lockfile or local executable changes needed",
+            "empty manifest declares no tools; no lockfile was created",
         ))
         .stdout(predicate::str::contains("would update").not());
 
@@ -1985,7 +2005,7 @@ fn ci_local_update_allows_empty_manifest_without_lockfile() {
         .success()
         .stdout(predicate::str::contains("planned updates: 0"))
         .stdout(predicate::str::contains(
-            "empty manifest: no lockfile or local executable changes needed",
+            "empty manifest declares no tools; no lockfile was created",
         ))
         .stdout(predicate::str::contains("would update").not());
 
@@ -2994,13 +3014,307 @@ fn local_update_dry_run_suppresses_empty_manifest_file_change_plan() {
         .stdout(predicate::str::contains("update scope: local"))
         .stdout(predicate::str::contains("planned updates: 0"))
         .stdout(predicate::str::contains(
-            "empty manifest: no lockfile or local executable changes needed",
+            "empty manifest declares no tools; no lockfile was created",
         ))
         .stdout(predicate::str::contains("would update").not())
         .stdout(predicate::str::contains("dry run: no changes made"));
 
     assert!(!project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
+}
+
+#[test]
+fn local_update_json_dry_run_reports_empty_manifest_no_op_reason() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    let output = command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args([
+            "--json",
+            "update",
+            "--local",
+            "--dry-run",
+            "--frozen-lockfile",
+        ])
+        .output()
+        .expect("update json dry-run");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(payload["frozen_lockfile"], true);
+    assert_eq!(
+        payload["no_op"]["reason"],
+        "empty_manifest_no_tools_no_lockfile_changes"
+    );
+    assert_eq!(payload["no_op"]["declared_tools"], 0);
+    assert_eq!(payload["no_op"]["lockfile_created"], false);
+    assert_eq!(payload["planned_updates"].as_array().unwrap().len(), 0);
+    assert_eq!(payload["file_changes"].as_array().unwrap().len(), 0);
+    assert_eq!(payload["runtime_changes"].as_array().unwrap().len(), 0);
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn local_update_json_dry_run_honors_frozen_lockfile_validation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args([
+            "--json",
+            "update",
+            "--local",
+            "--dry-run",
+            "--frozen-lockfile",
+        ])
+        .output()
+        .expect("update json dry-run");
+
+    assert!(!output.status.success());
+    assert!(
+        output.stdout.is_empty(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["diagnostic"]["kind"], "frozen_lockfile");
+    assert_eq!(payload["error"]["diagnostic"]["reason"], "missing_lockfile");
+    assert_eq!(
+        payload["error"]["diagnostic"]["safest_next_command"],
+        "binpm install --local"
+    );
+    assert!(!project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
+}
+
+#[test]
+fn local_update_json_reports_empty_manifest_no_op_without_human_prefix() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    let output = command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["--json", "update", "--local", "--frozen-lockfile"])
+        .output()
+        .expect("update json");
+
+    assert!(output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["dry_run"], false);
+    assert_eq!(payload["frozen_lockfile"], true);
+    assert_eq!(
+        payload["no_op"]["reason"],
+        "empty_manifest_no_tools_no_lockfile_changes"
+    );
+    assert_eq!(payload["planned_updates"].as_array().unwrap().len(), 0);
+    assert_eq!(payload["file_changes"].as_array().unwrap().len(), 0);
+    assert_eq!(payload["runtime_changes"].as_array().unwrap().len(), 0);
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn local_update_json_dry_run_reports_manifest_and_lockfile_file_changes() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+version = "1.0.0"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args([
+            "--json",
+            "update",
+            "--local",
+            "--dry-run",
+            "--no-frozen-lockfile",
+        ])
+        .output()
+        .expect("update json dry-run");
+
+    assert_success(&output);
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(
+        payload["file_changes"],
+        serde_json::json!([
+            project.join("binpm.toml").display().to_string(),
+            project.join("binpm.lock").display().to_string()
+        ])
+    );
+    assert!(!project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
+}
+
+#[test]
+fn local_update_json_dry_run_omits_manifest_for_versionless_tools() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args([
+            "--json",
+            "update",
+            "--local",
+            "--dry-run",
+            "--no-frozen-lockfile",
+        ])
+        .output()
+        .expect("update json dry-run");
+
+    assert_success(&output);
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(
+        payload["file_changes"],
+        serde_json::json!([project.join("binpm.lock").display().to_string()])
+    );
+    assert!(!project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
+}
+
+#[test]
+fn local_update_json_dry_run_reports_orphan_cleanup_paths() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    fs::create_dir_all(home.join("cache").join("refs")).expect("create cache refs");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    fs::write(
+        project.join(".binpm").join("packages").join("tool.toml"),
+        format!(
+            r#"package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux-x64"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux-x64"
+installed_path = "{}"
+cache_key = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+checksum_source = "local"
+signature_available = false
+signature_verified = false
+"#,
+            project.join(".binpm").join("bin").join("tool").display()
+        ),
+    )
+    .expect("write package record");
+    let cache_ref = structured_cache_ref_path(&home, &project, "tool");
+    fs::write(&cache_ref, "cache ref").expect("write cache ref");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args([
+            "--json",
+            "update",
+            "--local",
+            "--dry-run",
+            "--no-frozen-lockfile",
+        ])
+        .output()
+        .expect("update json dry-run");
+
+    assert_success(&output);
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(
+        payload["file_changes"],
+        serde_json::json!([project.join("binpm.lock").display().to_string()])
+    );
+    assert_eq!(
+        payload["runtime_changes"],
+        serde_json::json!([
+            project.join(".binpm").join("bin").display().to_string(),
+            project
+                .join(".binpm")
+                .join("packages")
+                .join("tool.toml")
+                .display()
+                .to_string(),
+            cache_ref.display().to_string(),
+        ])
+    );
+    assert!(project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
+    assert!(cache_ref.exists());
 }
 
 #[test]
@@ -3030,10 +3344,8 @@ source = "github:owner/tool"
         .stdout(predicate::str::contains("update scope: local"))
         .stdout(predicate::str::contains("planned updates: 0"))
         .stdout(
-            predicate::str::contains(
-                "empty manifest: no lockfile or local executable changes needed",
-            )
-            .not(),
+            predicate::str::contains("empty manifest declares no tools; no lockfile was created")
+                .not(),
         )
         .stdout(predicate::str::contains(format!(
             "would update {}",

@@ -367,7 +367,8 @@ impl ScopeArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct LockfileArgs {
-    /// Fail if binpm.lock would need to be created or modified.
+    /// Fail if binpm.lock would need to be created or modified. Frozen mode is
+    /// not offline; restore may download locked asset URLs.
     #[arg(long, conflicts_with = "no_frozen_lockfile")]
     pub frozen_lockfile: bool,
 

@@ -35,19 +35,19 @@ use crate::{
         ProviderAuth, ReleaseAsset, ReleaseClient, GITHUB_ASSET_DOWNLOAD_ACCEPT,
     },
     storage::{
-        archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
-        ensure_dir, install_bare_executable, install_executable_bytes, installed_filename,
-        list_package_records, managed_installed_path, package_record_from_resolved,
-        package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
-        read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
-        referenced_cache_keys, reject_symlinked_cache_entry, reject_symlinked_package_record_dirs,
-        remove_cache_ref, remove_installed_binary, remove_package_record, remove_path_if_exists,
-        remove_stale_cache_refs, require_regular_managed_file,
-        require_verified_regular_cache_asset, sanitize_persisted_url, scan_cache_references,
-        validate_command_name, validate_download_url, validate_installed_binary_path,
-        validate_sha256_digest, write_cache_ref, write_lockfile, write_manifest,
-        write_package_record, CachePaths, LockTool, Manifest, ManifestTool, PackageRecord,
-        ResolvedAsset, ScopePaths, SignatureSidecar, LOCKFILE_FILE, MANIFEST_FILE,
+        archive_format, cache_asset_is_verified_regular, cache_ref_path, clean_cache,
+        deterministic_installed_path, ensure_dir, install_bare_executable,
+        install_executable_bytes, installed_filename, list_package_records, managed_installed_path,
+        package_record_from_resolved, package_record_path, populate_cache_from_bytes, prune_cache,
+        read_cache_records, read_lockfile, read_manifest, read_package_record,
+        record_verified_cache_hit, referenced_cache_keys, reject_symlinked_cache_entry,
+        reject_symlinked_package_record_dirs, remove_cache_ref, remove_installed_binary,
+        remove_package_record, remove_path_if_exists, remove_stale_cache_refs,
+        require_regular_managed_file, require_verified_regular_cache_asset, sanitize_persisted_url,
+        scan_cache_references, validate_command_name, validate_download_url,
+        validate_installed_binary_path, validate_sha256_digest, write_cache_ref, write_lockfile,
+        write_manifest, write_package_record, CachePaths, LockTool, Manifest, ManifestTool,
+        PackageRecord, ResolvedAsset, ScopePaths, SignatureSidecar, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
 
@@ -377,6 +377,42 @@ struct PackageRecordOutput {
     signature_verified: bool,
 }
 
+#[derive(Debug, Serialize)]
+struct UpdatePlanOutput {
+    command: &'static str,
+    scope: Scope,
+    dry_run: bool,
+    frozen_lockfile: bool,
+    selected_all_tools: bool,
+    planned_updates: Vec<UpdatePlannedToolOutput>,
+    file_changes: Vec<String>,
+    runtime_changes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    no_op: Option<UpdateNoOpOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct UpdatePlannedToolOutput {
+    cmd: String,
+    source: String,
+    version: String,
+}
+
+#[derive(Debug, Serialize)]
+struct UpdateNoOpOutput {
+    reason: &'static str,
+    declared_tools: usize,
+    lockfile_created: bool,
+    message: &'static str,
+}
+
+struct UpdatePlan {
+    planned_updates: Vec<UpdatePlannedToolOutput>,
+    file_changes: Vec<String>,
+    runtime_changes: Vec<String>,
+    no_op: Option<UpdateNoOpOutput>,
+}
+
 const DOWNLOAD_RETRY_ATTEMPTS: usize = 3;
 const DOWNLOAD_RETRY_BASE_DELAY: Duration = Duration::from_millis(200);
 const DOWNLOAD_PROGRESS_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
@@ -396,15 +432,15 @@ enum EnvPathScope {
 pub fn run(cli: Cli) -> Result<i32> {
     let output = OutputMode::from_json_flag(cli.json);
     match cli.command {
-        Command::Install(args) => install(args),
-        Command::Add(args) => add(args),
-        Command::Exec(args) => exec(args),
+        Command::Install(args) => install(args, output),
+        Command::Add(args) => add(args, output),
+        Command::Exec(args) => exec(args, output),
         Command::Cache(args) => cache(args.command, output),
         Command::List(args) => list(args, output),
         Command::Remove(args) => remove(args),
         Command::Info(args) => info_cmd(args, output),
         Command::Outdated(args) => outdated(args, output),
-        Command::Update(args) => update(args),
+        Command::Update(args) => update(args, output),
         Command::Doctor => doctor(output),
         Command::Explain(args) => explain(args, output),
         Command::Verify(args) => verify(args, output),
@@ -413,7 +449,7 @@ pub fn run(cli: Cli) -> Result<i32> {
     }
 }
 
-fn install(args: InstallArgs) -> Result<i32> {
+fn install(args: InstallArgs, output: OutputMode) -> Result<i32> {
     let requested_scope = args.scope.scope();
     let frozen_lockfile = args.lockfile.frozen_lockfile();
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
@@ -448,9 +484,10 @@ fn install(args: InstallArgs) -> Result<i32> {
                     explicit_bin,
                     frozen_lockfile,
                     args.require_verified,
+                    output,
                 );
             }
-            return install_local_source(spec, frozen_lockfile, args.require_verified);
+            return install_local_source(spec, frozen_lockfile, args.require_verified, output);
         }
         install_global_source(spec, &alias, explicit_bin, args.require_verified)
     } else {
@@ -473,11 +510,11 @@ fn install(args: InstallArgs) -> Result<i32> {
             no_confirm = args.no_confirm,
             "Prepared local manifest sync request"
         );
-        install_local_manifest(frozen_lockfile, args.require_verified, &[])
+        install_local_manifest(frozen_lockfile, args.require_verified, &[], output)
     }
 }
 
-fn add(args: AddArgs) -> Result<i32> {
+fn add(args: AddArgs, output: OutputMode) -> Result<i32> {
     let spec = normalize_source_input(&args.source)?;
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     let additional = parse_additional_declarations(&args.also)?;
@@ -583,6 +620,7 @@ fn add(args: AddArgs) -> Result<i32> {
             Some(&tool),
             args.lockfile.frozen_lockfile(),
             args.require_verified,
+            output,
         ) {
             Ok(install) => install,
             Err(error) => {
@@ -639,7 +677,7 @@ fn source_install_scope(requested_scope: Scope) -> Scope {
     }
 }
 
-fn exec(args: ExecArgs) -> Result<i32> {
+fn exec(args: ExecArgs, output: OutputMode) -> Result<i32> {
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     let cmd = match args.cmd() {
         Some(cmd) => {
@@ -742,6 +780,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
         Some(&tool),
         args.lockfile.frozen_lockfile(),
         false,
+        output,
     )?;
     let cache_paths = CachePaths::new(&binpm_home()?);
     if let Err(error) = commit_deferred_cache_hit(&cache_paths, &install) {
@@ -1181,7 +1220,7 @@ fn format_outdated_tool_line(cmd: &str, current: &str, latest: &str, source: &st
     format!("{cmd} {current} -> {latest} ({source})")
 }
 
-fn update(args: UpdateArgs) -> Result<i32> {
+fn update(args: UpdateArgs, output: OutputMode) -> Result<i32> {
     let frozen_lockfile = args.lockfile.frozen_lockfile();
     info!(
         command = "update",
@@ -1194,6 +1233,15 @@ fn update(args: UpdateArgs) -> Result<i32> {
         "Prepared update request"
     );
     let scope = select_scope(args.scope.scope())?;
+    if output.is_json() && args.dry_run {
+        return preview_update_json(scope, &args.cmd, frozen_lockfile);
+    }
+    if output.is_json() && scope == Scope::Local {
+        let plan = build_local_update_plan(&args.cmd)?;
+        if plan.no_op.is_some() {
+            return print_update_plan_json(scope, &args.cmd, frozen_lockfile, false, plan);
+        }
+    }
     print_selected_mutation_scope("update", scope);
     print_update_mode(scope, &args.cmd);
     if args.dry_run {
@@ -1201,7 +1249,9 @@ fn update(args: UpdateArgs) -> Result<i32> {
     }
     print_update_plan(scope, &args.cmd)?;
     match scope {
-        Scope::Local => update_local_manifest(frozen_lockfile, args.require_verified, &args.cmd),
+        Scope::Local => {
+            update_local_manifest(frozen_lockfile, args.require_verified, &args.cmd, output)
+        }
         Scope::Global => update_global_packages(args.require_verified, &args.cmd),
         Scope::Auto => unreachable!("select_scope never returns auto"),
     }
@@ -1259,6 +1309,41 @@ fn preview_update(scope: Scope, selected: &[String]) -> Result<i32> {
     Ok(0)
 }
 
+fn preview_update_json(scope: Scope, selected: &[String], frozen_lockfile: bool) -> Result<i32> {
+    let plan = match scope {
+        Scope::Local => {
+            let plan = build_local_update_plan(selected)?;
+            if frozen_lockfile {
+                validate_frozen_local_update_dry_run(selected)?;
+            }
+            plan
+        }
+        Scope::Global => build_global_update_plan(selected)?,
+        Scope::Auto => unreachable!("select_scope never returns auto"),
+    };
+    print_update_plan_json(scope, selected, frozen_lockfile, true, plan)
+}
+
+fn print_update_plan_json(
+    scope: Scope,
+    selected: &[String],
+    frozen_lockfile: bool,
+    dry_run: bool,
+    plan: UpdatePlan,
+) -> Result<i32> {
+    print_json(&UpdatePlanOutput {
+        command: "update",
+        scope,
+        dry_run,
+        frozen_lockfile,
+        selected_all_tools: selected.is_empty(),
+        planned_updates: plan.planned_updates,
+        file_changes: plan.file_changes,
+        runtime_changes: plan.runtime_changes,
+        no_op: plan.no_op,
+    })
+}
+
 fn print_update_plan(scope: Scope, selected: &[String]) -> Result<()> {
     match scope {
         Scope::Local => print_local_update_plan(selected),
@@ -1268,6 +1353,28 @@ fn print_update_plan(scope: Scope, selected: &[String]) -> Result<()> {
 }
 
 fn print_local_update_plan(selected: &[String]) -> Result<()> {
+    let plan = build_local_update_plan(selected)?;
+    print_update_plan_details(&plan);
+    Ok(())
+}
+
+fn validate_frozen_local_update_dry_run(selected: &[String]) -> Result<()> {
+    let root = require_manifest_root()?;
+    let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
+    validate_frozen_local_update_latest(&root, &manifest, selected)?;
+    if selected.is_empty() {
+        let lockfile_path = root.join(LOCKFILE_FILE);
+        let lockfile = read_lockfile(&lockfile_path)?;
+        if !local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty() {
+            return Err(BinpmError::FrozenLockfileOrphanCleanup {
+                path: lockfile_path,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn build_local_update_plan(selected: &[String]) -> Result<UpdatePlan> {
     let root = require_manifest_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
     let manifest = read_manifest(&manifest_path)?;
@@ -1288,37 +1395,104 @@ fn print_local_update_plan(selected: &[String]) -> Result<()> {
         .iter()
         .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
         .collect();
-    println!("planned updates: {}", planned.len());
-    for (cmd, tool) in planned {
-        let version = tool.version.as_deref().unwrap_or("<latest>");
-        println!("would update {cmd} from {} {version}", tool.source);
-    }
+    let manifest_can_change = planned.iter().any(|(_, tool)| tool.version.is_some());
+    let planned_updates = planned
+        .into_iter()
+        .map(|(cmd, tool)| UpdatePlannedToolOutput {
+            cmd: cmd.clone(),
+            source: tool.source.clone(),
+            version: tool.version.as_deref().unwrap_or("<latest>").to_string(),
+        })
+        .collect();
     let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
-    if manifest.tools.is_empty()
-        && local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty()
-    {
-        println!("empty manifest: no lockfile or local executable changes needed");
-        return Ok(());
+    let orphan_cmds = local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?;
+    if manifest.tools.is_empty() && orphan_cmds.is_empty() {
+        return Ok(UpdatePlan {
+            planned_updates,
+            file_changes: Vec::new(),
+            runtime_changes: Vec::new(),
+            no_op: Some(UpdateNoOpOutput {
+                reason: "empty_manifest_no_tools_no_lockfile_changes",
+                declared_tools: 0,
+                lockfile_created: false,
+                message: "empty manifest declares no tools; no lockfile was created",
+            }),
+        });
     }
-    println!("would update {}", root.join(LOCKFILE_FILE).display());
-    println!("would update {}", ScopePaths::local(root).bin.display());
-    Ok(())
+    let mut file_changes = Vec::new();
+    if manifest_can_change {
+        file_changes.push(root.join(MANIFEST_FILE).display().to_string());
+    }
+    file_changes.push(root.join(LOCKFILE_FILE).display().to_string());
+    let scope_paths = ScopePaths::local(root.clone());
+    let mut runtime_changes = vec![scope_paths.bin.display().to_string()];
+    if !orphan_cmds.is_empty() {
+        let cache_paths = CachePaths::new(&binpm_home()?);
+        for cmd in orphan_cmds {
+            runtime_changes.push(
+                package_record_path(&scope_paths, &cmd)
+                    .display()
+                    .to_string(),
+            );
+            runtime_changes.push(
+                cache_ref_path(&cache_paths, &root, &cmd)
+                    .display()
+                    .to_string(),
+            );
+        }
+    }
+    Ok(UpdatePlan {
+        planned_updates,
+        file_changes,
+        runtime_changes,
+        no_op: None,
+    })
 }
 
 fn print_global_update_plan(selected: &[String]) -> Result<()> {
+    let plan = build_global_update_plan(selected)?;
+    print_update_plan_details(&plan);
+    Ok(())
+}
+
+fn build_global_update_plan(selected: &[String]) -> Result<UpdatePlan> {
     let paths = ScopePaths::global(binpm_home()?);
     let planned = selected_global_package_records(&paths, selected)?;
     prepare_global_updates(planned.clone())?;
-    println!("planned updates: {}", planned.len());
-    for (cmd, record) in &planned {
+    let planned_updates = planned
+        .into_iter()
+        .map(|(cmd, record)| UpdatePlannedToolOutput {
+            cmd,
+            source: record.source,
+            version: record.release_tag,
+        })
+        .collect();
+    Ok(UpdatePlan {
+        planned_updates,
+        file_changes: vec![paths.packages.display().to_string()],
+        runtime_changes: vec![paths.bin.display().to_string()],
+        no_op: None,
+    })
+}
+
+fn print_update_plan_details(plan: &UpdatePlan) {
+    println!("planned updates: {}", plan.planned_updates.len());
+    for update in &plan.planned_updates {
         println!(
-            "would update {cmd} from {} {}",
-            record.source, record.release_tag
+            "would update {} from {} {}",
+            update.cmd, update.source, update.version
         );
     }
-    println!("would update {}", paths.packages.display());
-    println!("would update {}", paths.bin.display());
-    Ok(())
+    if let Some(no_op) = &plan.no_op {
+        println!("{}", no_op.message);
+        return;
+    }
+    for path in &plan.file_changes {
+        println!("would update {path}");
+    }
+    for path in &plan.runtime_changes {
+        println!("would update {path}");
+    }
 }
 
 fn doctor(output: OutputMode) -> Result<i32> {
@@ -2154,6 +2328,7 @@ fn install_local_source(
     spec: SourceSpec,
     frozen_lockfile: bool,
     require_verified: bool,
+    output: OutputMode,
 ) -> Result<i32> {
     let root = require_manifest_root()?;
     let cmd = repo_name(&spec).to_string();
@@ -2175,6 +2350,7 @@ fn install_local_source(
         Some(&next_manifest_tool),
         frozen_lockfile,
         require_verified,
+        output,
     )?;
     let record = install.record.clone();
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
@@ -2207,6 +2383,7 @@ fn install_local_source_as(
     explicit_bin: Option<String>,
     frozen_lockfile: bool,
     require_verified: bool,
+    output: OutputMode,
 ) -> Result<i32> {
     let root = require_manifest_root()?;
     validate_command_name(cmd)?;
@@ -2232,6 +2409,7 @@ fn install_local_source_as(
         Some(&next_manifest_tool),
         frozen_lockfile,
         require_verified,
+        output,
     )?;
     let record = install.record.clone();
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
@@ -2264,6 +2442,7 @@ fn install_local_manifest(
     frozen_lockfile: bool,
     require_verified: bool,
     selected: &[String],
+    output: OutputMode,
 ) -> Result<i32> {
     let root = require_manifest_root()?;
     let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
@@ -2303,6 +2482,7 @@ fn install_local_manifest(
             Some(tool),
             frozen_lockfile,
             require_verified,
+            output,
         ) {
             Ok(install) => completed.push(CompletedLocalInstall {
                 cmd: cmd.clone(),
@@ -2399,26 +2579,29 @@ fn update_local_manifest(
     frozen_lockfile: bool,
     require_verified: bool,
     selected: &[String],
+    output: OutputMode,
 ) -> Result<i32> {
     let root = require_manifest_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
     let manifest = read_manifest(&manifest_path)?;
     if frozen_lockfile {
         validate_frozen_local_update_latest(&root, &manifest, selected)?;
-        return install_local_manifest(frozen_lockfile, require_verified, selected);
+        return install_local_manifest(frozen_lockfile, require_verified, selected, output);
     }
 
     let (next_manifest, manifest_changed) =
         local_update_manifest_with_latest_versions(&manifest, selected)?;
     if manifest_changed {
         write_manifest(&manifest_path, &next_manifest)?;
-        if let Err(error) = install_local_manifest(frozen_lockfile, require_verified, selected) {
+        if let Err(error) =
+            install_local_manifest(frozen_lockfile, require_verified, selected, output)
+        {
             let _ = write_manifest(&manifest_path, &manifest);
             return Err(error);
         }
         return Ok(0);
     }
-    install_local_manifest(frozen_lockfile, require_verified, selected)
+    install_local_manifest(frozen_lockfile, require_verified, selected, output)
 }
 
 fn local_update_manifest_with_latest_versions(
@@ -2466,6 +2649,24 @@ fn latest_stable_tag_for_update(tool: &ManifestTool) -> Result<String> {
         .resolve_release(&spec)?
         .release
         .tag)
+}
+
+fn frozen_restore_download_error(
+    cmd: &str,
+    cache_path: &Path,
+    cache_state: &'static str,
+    url: &str,
+    authenticated: bool,
+    source: BinpmError,
+) -> BinpmError {
+    BinpmError::FrozenRestoreDownload {
+        cmd: cmd.to_string(),
+        cache_path: cache_path.to_path_buf(),
+        cache_state,
+        url: sanitize_download_diagnostic_url(url),
+        authenticated,
+        source: Box::new(source),
+    }
 }
 
 fn update_global_packages(require_verified: bool, selected: &[String]) -> Result<i32> {
@@ -2652,11 +2853,12 @@ fn install_local_tool(
     tool: Option<&ManifestTool>,
     frozen_lockfile: bool,
     require_verified: bool,
+    output: OutputMode,
 ) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
     let lockfile_path = root.join(LOCKFILE_FILE);
     if frozen_lockfile {
-        return install_local_from_lock(root, cmd, spec, tool, require_verified);
+        return install_local_from_lock(root, cmd, spec, tool, require_verified, output);
     }
 
     let home = binpm_home()?;
@@ -3094,7 +3296,13 @@ fn install_resolved(
             });
         }
     }
-    verify_signature_sidecar(cache_paths, &mut resolved, &bytes, require_verified)?;
+    verify_signature_sidecar(
+        cache_paths,
+        &mut resolved,
+        &bytes,
+        require_verified,
+        SignatureVerificationOptions::default(),
+    )?;
     if require_verified && !resolved_has_verified_source(&resolved) {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
@@ -3220,6 +3428,7 @@ fn install_local_from_lock(
     spec: &SourceSpec,
     tool: Option<&ManifestTool>,
     require_verified: bool,
+    output: OutputMode,
 ) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
     let lockfile_path = root.join(LOCKFILE_FILE);
@@ -3282,27 +3491,86 @@ fn install_local_from_lock(
         });
     }
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
+        let cache_state = if had_existing_cache_entry {
+            "invalid"
+        } else {
+            "missing"
+        };
         let repair_result = (|| {
             let download_request = locked_record_download_request(&record)?;
-            let bytes = download_asset(
+            let download_url = download_request.url.clone();
+            let download_authenticated = download_request.auth.is_some();
+            if !output.is_json() {
+                eprintln!(
+                    "binpm: frozen restore cache {cache_state} for {cmd}; downloading locked \
+                     asset URL (network_access_attempted=true, \
+                     provider_authentication_attached={})",
+                    download_authenticated
+                );
+            }
+            let bytes = download_asset_with_options(
                 &download_request.url,
                 download_request.auth.as_ref(),
                 download_request.accept,
-            )?;
+                DownloadAssetOptions {
+                    silent: output.is_json(),
+                },
+            )
+            .map_err(|source| {
+                frozen_restore_download_error(
+                    cmd,
+                    &cache_asset,
+                    cache_state,
+                    &download_url,
+                    download_authenticated,
+                    source,
+                )
+            })?;
             let actual = format!("{:x}", Sha256::digest(&bytes));
             if actual != record.sha256 {
-                return Err(BinpmError::DigestMismatch {
-                    path: cache_asset.clone(),
-                    expected: record.sha256.clone(),
-                    actual,
-                });
+                return Err(frozen_restore_download_error(
+                    cmd,
+                    &cache_asset,
+                    cache_state,
+                    &download_url,
+                    download_authenticated,
+                    BinpmError::DigestMismatch {
+                        path: cache_asset.clone(),
+                        expected: record.sha256.clone(),
+                        actual,
+                    },
+                ));
             }
             if require_verified && !record.has_verified_source() {
-                let verification = reverify_locked_record_signature(&cache_paths, &record, &bytes)?;
+                let verification = reverify_locked_record_signature_with_options(
+                    &cache_paths,
+                    &record,
+                    &bytes,
+                    SignatureVerificationOptions {
+                        silent: output.is_json(),
+                    },
+                )
+                .map_err(|source| {
+                    frozen_restore_download_error(
+                        cmd,
+                        &cache_asset,
+                        cache_state,
+                        &download_url,
+                        download_authenticated,
+                        source,
+                    )
+                })?;
                 if !verification.verified {
-                    return Err(BinpmError::VerificationRequired {
-                        package: record.package_spec.clone(),
-                    });
+                    return Err(frozen_restore_download_error(
+                        cmd,
+                        &cache_asset,
+                        cache_state,
+                        &download_url,
+                        download_authenticated,
+                        BinpmError::VerificationRequired {
+                            package: record.package_spec.clone(),
+                        },
+                    ));
                 }
                 repair_locked_verification = Some(verification);
             }
@@ -3341,7 +3609,16 @@ fn install_local_from_lock(
                 signature_available: record.signature_available,
                 signature_verified: record.signature_verified,
             };
-            populate_cache_from_bytes(&cache_paths, &resolved, &bytes)?;
+            populate_cache_from_bytes(&cache_paths, &resolved, &bytes).map_err(|source| {
+                frozen_restore_download_error(
+                    cmd,
+                    &cache_asset,
+                    cache_state,
+                    &download_url,
+                    download_authenticated,
+                    source,
+                )
+            })?;
             Ok(())
         })();
         if let Err(error) = repair_result {
@@ -3351,6 +3628,11 @@ fn install_local_from_lock(
             return Err(error);
         }
         populated_cache_entry = cache_metadata_snapshot.is_none();
+    } else if !output.is_json() {
+        eprintln!(
+            "binpm: frozen restore reused verified cache for {cmd} \
+             (network_access_attempted=false)"
+        );
     }
     let locked_verification = if require_verified {
         let verification = match repair_locked_verification {
@@ -3833,12 +4115,19 @@ struct DownloadRequest {
 }
 
 fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
+    let source = SourceSpec {
+        provider: record.source_provider,
+        host: record.source_host.clone(),
+        path: record.source_path.clone(),
+        version: Some(record.release_tag.clone()),
+    };
     let url = sanitize_persisted_url(&record.asset_url)?;
-    Ok(DownloadRequest {
-        url,
-        auth: None,
-        accept: None,
-    })
+    let auth = provider_origin_download_auth(&source, &url, provider_auth_for_source(&source));
+    let accept = match (record.source_provider, auth.as_ref()) {
+        (SourceProvider::GitHub, Some(_)) => Some(GITHUB_ASSET_DOWNLOAD_ACCEPT),
+        _ => None,
+    };
+    Ok(DownloadRequest { url, auth, accept })
 }
 
 fn locked_record_verified_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
@@ -4026,6 +4315,7 @@ fn verify_signature_sidecar(
     resolved: &mut ResolvedAsset,
     asset_bytes: &[u8],
     require_verified: bool,
+    options: SignatureVerificationOptions,
 ) -> Result<()> {
     if resolved.checksum_source.is_upstream_verified() {
         return Ok(());
@@ -4041,7 +4331,7 @@ fn verify_signature_sidecar(
             signature_sidecar = %sidecar.asset_name,
             "Skipping package signature verification because no trust policy applies"
         );
-        if require_verified {
+        if require_verified && !options.silent {
             eprintln!(
                 "warning: signature sidecar {} is present for {}, but binpm has no applicable \
                  trust policy for this package",
@@ -4051,10 +4341,13 @@ fn verify_signature_sidecar(
         return Ok(());
     };
 
-    let bundle_bytes = match download_asset(
+    let bundle_bytes = match download_asset_with_options(
         &sidecar.download_url,
         sidecar.download_auth.as_ref(),
         sidecar.download_accept,
+        DownloadAssetOptions {
+            silent: options.silent,
+        },
     ) {
         Ok(bytes) => bytes,
         Err(error) if !require_verified => {
@@ -4124,7 +4417,7 @@ fn verify_signature_sidecar(
                 stderr = %stderr.trim(),
                 "Package signature sidecar did not verify"
             );
-            if require_verified {
+            if require_verified && !options.silent {
                 eprintln!(
                     "warning: signature verification failed for {} using sidecar {}",
                     resolved.source, sidecar.asset_name
@@ -4138,7 +4431,7 @@ fn verify_signature_sidecar(
                 signature_sidecar = %sidecar.asset_name,
                 "Skipping package signature verification because cosign is not on PATH"
             );
-            if require_verified {
+            if require_verified && !options.silent {
                 eprintln!(
                     "warning: --require-verified needs cosign on PATH to validate signature \
                      sidecar {} for {}",
@@ -4164,6 +4457,11 @@ fn verify_signature_sidecar(
     }
 
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct SignatureVerificationOptions {
+    silent: bool,
 }
 
 fn resolved_has_verified_source(resolved: &ResolvedAsset) -> bool {
@@ -4245,6 +4543,20 @@ fn reverify_locked_record_signature(
     record: &PackageRecord,
     asset_bytes: &[u8],
 ) -> Result<LockedRecordVerification> {
+    reverify_locked_record_signature_with_options(
+        cache_paths,
+        record,
+        asset_bytes,
+        SignatureVerificationOptions::default(),
+    )
+}
+
+fn reverify_locked_record_signature_with_options(
+    cache_paths: &CachePaths,
+    record: &PackageRecord,
+    asset_bytes: &[u8],
+    options: SignatureVerificationOptions,
+) -> Result<LockedRecordVerification> {
     let signature_sidecar = locked_record_signature_sidecar(record)?;
     let mut resolved = ResolvedAsset {
         source: SourceSpec::from_str(
@@ -4285,7 +4597,7 @@ fn reverify_locked_record_signature(
         signature_available: true,
         signature_verified: false,
     };
-    verify_signature_sidecar(cache_paths, &mut resolved, asset_bytes, true)?;
+    verify_signature_sidecar(cache_paths, &mut resolved, asset_bytes, true, options)?;
     if resolved_has_verified_source(&resolved) {
         Ok(LockedRecordVerification::SIGNATURE_REVERIFIED)
     } else {
@@ -5960,6 +6272,20 @@ fn download_asset(
     auth: Option<&ProviderAuth>,
     accept: Option<&'static str>,
 ) -> Result<Vec<u8>> {
+    download_asset_with_options(url, auth, accept, DownloadAssetOptions::default())
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct DownloadAssetOptions {
+    silent: bool,
+}
+
+fn download_asset_with_options(
+    url: &str,
+    auth: Option<&ProviderAuth>,
+    accept: Option<&'static str>,
+    options: DownloadAssetOptions,
+) -> Result<Vec<u8>> {
     validate_download_url(url)?;
     let sanitized_url = sanitize_download_diagnostic_url(url);
     let asset_name = download_asset_name(&sanitized_url);
@@ -5977,15 +6303,13 @@ fn download_asset(
 
     let mut last_error = None;
     for attempt in 1..=DOWNLOAD_RETRY_ATTEMPTS {
-        match download_asset_attempt(
-            &client,
-            url,
-            auth,
-            accept,
+        let context = DownloadAssetAttemptContext {
             attempt,
-            &sanitized_url,
-            &asset_name,
-        ) {
+            sanitized_url: &sanitized_url,
+            asset_name: &asset_name,
+            options,
+        };
+        match download_asset_attempt(&client, url, auth, accept, context) {
             Ok(bytes) => return Ok(bytes),
             Err(error)
                 if attempt < DOWNLOAD_RETRY_ATTEMPTS && is_retryable_download_error(&error) =>
@@ -5999,12 +6323,14 @@ fn download_asset(
                     error = %error,
                     "Retrying release asset download"
                 );
-                eprintln!(
-                    "binpm: retrying download of {asset_name} after a transient failure (attempt \
-                     {}/{})",
-                    attempt + 1,
-                    DOWNLOAD_RETRY_ATTEMPTS
-                );
+                if !options.silent {
+                    eprintln!(
+                        "binpm: retrying download of {asset_name} after a transient failure \
+                         (attempt {}/{})",
+                        attempt + 1,
+                        DOWNLOAD_RETRY_ATTEMPTS
+                    );
+                }
                 thread::sleep(delay);
                 last_error = Some(error);
             }
@@ -6015,15 +6341,27 @@ fn download_asset(
     Err(last_error.expect("download retry loop always returns before exhaustion"))
 }
 
+#[derive(Clone, Copy, Debug)]
+struct DownloadAssetAttemptContext<'a> {
+    attempt: usize,
+    sanitized_url: &'a str,
+    asset_name: &'a str,
+    options: DownloadAssetOptions,
+}
+
 fn download_asset_attempt(
     client: &reqwest::blocking::Client,
     url: &str,
     auth: Option<&ProviderAuth>,
     accept: Option<&'static str>,
-    attempt: usize,
-    sanitized_url: &str,
-    asset_name: &str,
+    context: DownloadAssetAttemptContext<'_>,
 ) -> Result<Vec<u8>> {
+    let DownloadAssetAttemptContext {
+        attempt,
+        sanitized_url,
+        asset_name,
+        options,
+    } = context;
     let origin = reqwest::Url::parse(url).expect("download URL was already validated");
     let mut current_url = url.to_string();
     let mut visited_urls = BTreeSet::new();
@@ -6087,7 +6425,7 @@ fn download_asset_attempt(
     }
 
     let total_bytes = response.content_length();
-    let show_progress = download_progress_enabled(total_bytes);
+    let show_progress = !options.silent && download_progress_enabled(total_bytes);
     if show_progress {
         eprintln!(
             "binpm: downloading {asset_name}{}",
@@ -8876,7 +9214,14 @@ mod tests {
         )
         .expect("write lockfile");
 
-        let error = match install_local_from_lock(temp_dir.path(), "tool", &spec, None, false) {
+        let error = match install_local_from_lock(
+            temp_dir.path(),
+            "tool",
+            &spec,
+            None,
+            false,
+            OutputMode::Human,
+        ) {
             Ok(_) => panic!("expected stale lockfile"),
             Err(error) => error,
         };
@@ -11038,7 +11383,7 @@ mod tests {
     }
 
     #[test]
-    fn locked_record_download_request_omits_provider_auth_for_provider_asset_url() {
+    fn locked_record_download_request_uses_provider_auth_for_provider_asset_url() {
         let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "github:ghe.locked.example/owner/tool".to_string();
@@ -11054,8 +11399,11 @@ mod tests {
 
         std::env::remove_var("BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
         assert_eq!(request.url, record.asset_url);
-        assert_eq!(request.auth, None);
-        assert_eq!(request.accept, None);
+        assert_eq!(request.accept, Some(GITHUB_ASSET_DOWNLOAD_ACCEPT));
+        let auth = request.auth.expect("provider auth");
+        assert_eq!(auth.header_name, "authorization");
+        assert_eq!(auth.header_value, "Bearer locked-token");
+        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
     }
 
     #[test]
@@ -11081,7 +11429,7 @@ mod tests {
     }
 
     #[test]
-    fn locked_record_download_request_omits_gitlab_auth_for_provider_asset_url() {
+    fn locked_record_download_request_uses_gitlab_auth_for_provider_asset_url() {
         let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
@@ -11100,7 +11448,13 @@ mod tests {
 
         std::env::remove_var("BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE");
         assert_eq!(request.url, record.asset_url);
-        assert_eq!(request.auth, None);
+        let auth = request.auth.expect("provider auth");
+        assert_eq!(auth.header_name, "PRIVATE-TOKEN");
+        assert_eq!(auth.header_value, "locked-token");
+        assert_eq!(
+            auth.env_var,
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE"
+        );
         assert_eq!(request.accept, None);
     }
 
@@ -11174,6 +11528,7 @@ mod tests {
 
     #[test]
     fn locked_record_signature_sidecar_preserves_provider_auth_metadata() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "github:ghe.locked.example/owner/tool".to_string();
         record.source_host = "ghe.locked.example".to_string();
@@ -11200,6 +11555,7 @@ mod tests {
 
     #[test]
     fn locked_record_signature_sidecar_omits_provider_auth_for_external_asset_url() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
         record.source_provider = SourceProvider::GitLab;
