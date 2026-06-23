@@ -6318,13 +6318,15 @@ fn local_orphan_changed_files(
     let paths = ScopePaths::local(root.to_path_buf());
     let mut changed_files = BTreeSet::new();
     for (cmd, state, _) in orphan_states {
+        if let Some(cache_ref) =
+            local_removed_cache_ref_changed_file(root, cmd, state.package_record.as_ref())?
+        {
+            changed_files.insert(cache_ref);
+        }
         let Some(record) = &state.package_record else {
             continue;
         };
         changed_files.insert(path_display(&package_record_path(&paths, cmd)));
-        if let Some(cache_ref) = local_cache_ref_changed_file(root, cmd, record)? {
-            changed_files.insert(cache_ref);
-        }
         let installed_path = managed_installed_path(&paths, cmd, record.target_os);
         if !is_manifest_managed_installed_path(
             &paths,
@@ -7763,9 +7765,11 @@ fn global_remove_changed_files(
     record: &PackageRecord,
 ) -> Result<Vec<String>> {
     let mut changed_files = vec![path_display(&package_record_path(paths, cmd))];
-    validate_installed_binary_path(paths, cmd, record)?;
+    let expected = validate_installed_binary_path(paths, cmd, record)?;
     let installed_path = managed_installed_path(paths, cmd, record.target_os);
-    if !is_global_managed_installed_path(paths, cmd, &installed_path)? {
+    if path_exists_or_unreadable(&expected)
+        && !is_global_managed_installed_path(paths, cmd, &installed_path)?
+    {
         changed_files.push(record.installed_path.clone());
     }
     Ok(changed_files)
@@ -11883,6 +11887,25 @@ mod tests {
     }
 
     #[test]
+    fn global_remove_changed_files_omit_missing_executable() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
+        let mut record = package_record();
+        record.installed_path = paths.bin.join("tool").display().to_string();
+        write_package_record(&paths, "tool", &record).expect("write record");
+
+        let changed_files =
+            global_remove_changed_files(&paths, "tool", &record).expect("changed files");
+
+        assert_eq!(
+            changed_files,
+            vec![path_display(&crate::storage::package_record_path(
+                &paths, "tool"
+            ))]
+        );
+    }
+
+    #[test]
     fn global_remove_validates_unsafe_persisted_path_before_cleanup() {
         let _env_lock = ENV_LOCK.lock().expect("env lock");
         let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -13460,6 +13483,36 @@ mod tests {
         .expect_err("unsafe path");
 
         assert!(matches!(error, BinpmError::UnsafeInstalledPath { .. }));
+    }
+
+    #[test]
+    fn local_update_preview_orphan_changed_files_include_stale_cache_ref_without_package_record() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let home = temp_dir.path().join("home");
+        let root = temp_dir.path().join("project");
+        std::env::set_var("BINPM_HOME", &home);
+        let cache_ref =
+            local_cache_ref_changed_file_for_cached_record(&root, "tool").expect("cache ref");
+        let cache_ref_path = PathBuf::from(&cache_ref);
+        fs::create_dir_all(cache_ref_path.parent().expect("cache ref parent"))
+            .expect("create refs dir");
+        fs::write(&cache_ref_path, b"stale ref").expect("write stale ref");
+        let state = RuntimeToolState {
+            package_record: None,
+            installed_path: None,
+            installed_snapshot: None,
+        };
+
+        let changed_files = local_orphan_changed_files(
+            &root,
+            &BTreeMap::new(),
+            &[("tool".to_string(), state, None)],
+        )
+        .expect("changed files");
+
+        assert_eq!(changed_files, vec![cache_ref]);
+        std::env::remove_var("BINPM_HOME");
     }
 
     #[test]
