@@ -1363,7 +1363,10 @@ fn build_local_update_plan(selected: &[String]) -> Result<UpdatePlan> {
     }
     Ok(UpdatePlan {
         planned_updates,
-        file_changes: vec![root.join(LOCKFILE_FILE).display().to_string()],
+        file_changes: vec![
+            root.join(MANIFEST_FILE).display().to_string(),
+            root.join(LOCKFILE_FILE).display().to_string(),
+        ],
         runtime_changes: vec![ScopePaths::local(root).bin.display().to_string()],
         no_op: None,
     })
@@ -3235,10 +3238,13 @@ fn install_local_from_lock(
                     download_request.auth.is_some()
                 );
             }
-            let bytes = download_asset(
+            let bytes = download_asset_with_options(
                 &download_request.url,
                 download_request.auth.as_ref(),
                 download_request.accept,
+                DownloadAssetOptions {
+                    silent: output.is_json(),
+                },
             )
             .map_err(|source| BinpmError::FrozenRestoreDownload {
                 cmd: cmd.to_string(),
@@ -5931,6 +5937,20 @@ fn download_asset(
     auth: Option<&ProviderAuth>,
     accept: Option<&'static str>,
 ) -> Result<Vec<u8>> {
+    download_asset_with_options(url, auth, accept, DownloadAssetOptions::default())
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct DownloadAssetOptions {
+    silent: bool,
+}
+
+fn download_asset_with_options(
+    url: &str,
+    auth: Option<&ProviderAuth>,
+    accept: Option<&'static str>,
+    options: DownloadAssetOptions,
+) -> Result<Vec<u8>> {
     validate_download_url(url)?;
     let sanitized_url = sanitize_download_diagnostic_url(url);
     let asset_name = download_asset_name(&sanitized_url);
@@ -5956,6 +5976,7 @@ fn download_asset(
             attempt,
             &sanitized_url,
             &asset_name,
+            options,
         ) {
             Ok(bytes) => return Ok(bytes),
             Err(error)
@@ -5970,12 +5991,14 @@ fn download_asset(
                     error = %error,
                     "Retrying release asset download"
                 );
-                eprintln!(
-                    "binpm: retrying download of {asset_name} after a transient failure (attempt \
-                     {}/{})",
-                    attempt + 1,
-                    DOWNLOAD_RETRY_ATTEMPTS
-                );
+                if !options.silent {
+                    eprintln!(
+                        "binpm: retrying download of {asset_name} after a transient failure \
+                         (attempt {}/{})",
+                        attempt + 1,
+                        DOWNLOAD_RETRY_ATTEMPTS
+                    );
+                }
                 thread::sleep(delay);
                 last_error = Some(error);
             }
@@ -5994,6 +6017,7 @@ fn download_asset_attempt(
     attempt: usize,
     sanitized_url: &str,
     asset_name: &str,
+    options: DownloadAssetOptions,
 ) -> Result<Vec<u8>> {
     let origin = reqwest::Url::parse(url).expect("download URL was already validated");
     let mut current_url = url.to_string();
@@ -6058,7 +6082,7 @@ fn download_asset_attempt(
     }
 
     let total_bytes = response.content_length();
-    let show_progress = download_progress_enabled(total_bytes);
+    let show_progress = !options.silent && download_progress_enabled(total_bytes);
     if show_progress {
         eprintln!(
             "binpm: downloading {asset_name}{}",
