@@ -1338,7 +1338,7 @@ fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<Mutatio
                     cmd,
                     &prior_state,
                     &remaining_manifest_tools,
-                ),
+                )?,
                 tools: tool,
             };
             Ok(result)
@@ -1471,7 +1471,10 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
     ensure_no_selected_install_path_collisions(&manifest, selected)?;
 
     let current_target = HostTarget::current()?;
-    let mut tools = manifest
+    let paths = ScopePaths::local(root.clone());
+    let (planned_manifest, manifest_changed) =
+        local_update_manifest_with_latest_versions(&manifest, selected)?;
+    let mut tools = planned_manifest
         .tools
         .iter()
         .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
@@ -1484,7 +1487,6 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
             )
         })
         .collect::<Result<Vec<_>>>()?;
-    let paths = ScopePaths::local(root.clone());
     let orphan_states = if selected.is_empty() {
         capture_local_manifest_orphan_states(&root, &manifest.tools)?
     } else {
@@ -1495,16 +1497,17 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
     } else {
         vec![path_display(&root.join(LOCKFILE_FILE))]
     };
-    changed_files.extend(tools.iter().flat_map(|tool| {
-        [
-            path_display(&package_record_path(&paths, &tool.cmd)),
-            path_display(&managed_installed_path(
-                &paths,
-                &tool.cmd,
-                current_target.os,
-            )),
-        ]
-    }));
+    for tool in &tools {
+        changed_files.push(path_display(&package_record_path(&paths, &tool.cmd)));
+        changed_files.push(path_display(&managed_installed_path(
+            &paths,
+            &tool.cmd,
+            current_target.os,
+        )));
+        changed_files.push(local_cache_ref_changed_file_for_cached_record(
+            &root, &tool.cmd,
+        )?);
+    }
     changed_files.extend(local_orphan_changed_files(
         &root,
         &manifest.tools,
@@ -1516,7 +1519,6 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
     ));
     changed_files.sort();
     changed_files.dedup();
-    let (_, manifest_changed) = local_update_manifest_with_latest_versions(&manifest, selected)?;
     if manifest_changed {
         changed_files.insert(0, path_display(&manifest_path));
     }
@@ -5591,11 +5593,17 @@ fn local_cache_ref_changed_file(
     if record.cache_key.is_none() {
         return Ok(None);
     }
+    Ok(Some(local_cache_ref_changed_file_for_cached_record(
+        root, cmd,
+    )?))
+}
+
+fn local_cache_ref_changed_file_for_cached_record(root: &Path, cmd: &str) -> Result<String> {
     let cache_paths = CachePaths::new(&binpm_home()?);
     let digest = Sha256::digest(format!("{}:{cmd}", root.display()).as_bytes());
-    Ok(Some(path_display(
+    Ok(path_display(
         &cache_paths.refs.join(format!("{digest:x}.ref")),
-    )))
+    ))
 }
 
 fn local_orphan_changed_files(
@@ -5648,7 +5656,7 @@ fn local_remove_changed_files(
     cmd: &str,
     prior_state: &LocalRemoveState,
     remaining_manifest_tools: &BTreeMap<String, ManifestTool>,
-) -> Vec<String> {
+) -> Result<Vec<String>> {
     let paths = ScopePaths::local(root.to_path_buf());
     let mut changed_files = vec![
         path_display(&root.join(MANIFEST_FILE)),
@@ -5656,6 +5664,7 @@ fn local_remove_changed_files(
     ];
     if prior_state.runtime.package_record.is_some() {
         changed_files.push(path_display(&package_record_path(&paths, cmd)));
+        changed_files.push(local_cache_ref_changed_file_for_cached_record(root, cmd)?);
     }
     if let Some(installed_path) = prior_state
         .runtime
@@ -5674,7 +5683,7 @@ fn local_remove_changed_files(
     {
         changed_files.push(installed_path);
     }
-    changed_files
+    Ok(changed_files)
 }
 
 fn global_install_mutation_output(
@@ -6877,7 +6886,7 @@ fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
 
     let mut manifest = manifest;
     manifest.tools.remove(cmd);
-    let changed_files = local_remove_changed_files(&root, cmd, &prior_state, &manifest.tools);
+    let changed_files = local_remove_changed_files(&root, cmd, &prior_state, &manifest.tools)?;
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         restore_local_remove_state(&root, cmd, prior_state);
         return Err(error);
@@ -8013,10 +8022,10 @@ mod tests {
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        normalize_bin_selection, override_snippet_candidate, package_record_output,
-        package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
-        parse_source_argument, prepare_global_updates, project_root_from,
-        read_archive_selected_binary, record_has_signature_evidence,
+        mutation_tool_from_manifest_tool, normalize_bin_selection, override_snippet_candidate,
+        package_record_output, package_shortcut_command, parse_manifest_source,
+        parse_manifest_tool_source, parse_source_argument, prepare_global_updates,
+        project_root_from, read_archive_selected_binary, record_has_signature_evidence,
         record_matches_current_provider_digest, regex_escape, release_asset_download_request,
         release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
         remove_local_manifest_orphans, require_executable_managed_file,
@@ -8032,16 +8041,16 @@ mod tests {
         validate_selected_manifest_entries, verification_state, verify_check_output,
         verify_check_output_with_state, verify_installed_binary_contents, verify_lockfile_records,
         verify_runtime_cache_bytes, write_sigstore_verification_inputs, zip_file_is_regular,
-        zip_file_is_symlink, ArtifactKind, InstalledPackage, InstalledPathSnapshot,
-        LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
+        zip_file_is_symlink, ArtifactKind, HostTarget, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, MutationAction, OutdatedToolOutput, OutputMode, RuntimeToolState,
         GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
         assets::CandidateDecision,
         cli::Shell,
         contract::{
-            ArchiveFormat, ChecksumSource, HostTarget, Scope, SourceProvider, SourceSpec,
-            TargetArch, TargetLibc, TargetOs, VerificationState,
+            ArchiveFormat, ChecksumSource, Scope, SourceProvider, SourceSpec, TargetArch,
+            TargetLibc, TargetOs, VerificationState,
         },
         error::{BinpmError, Result},
         release::{Release, ReleaseAsset, ReleaseClient, ReleaseSelection},
@@ -8211,6 +8220,40 @@ mod tests {
             .expect("floating tool")
             .version
             .is_none());
+    }
+
+    #[test]
+    fn planned_local_update_tool_output_uses_latest_manifest_version() {
+        let mut manifest = Manifest {
+            version: 1,
+            tools: BTreeMap::new(),
+        };
+        manifest.tools.insert(
+            "pinned".to_string(),
+            ManifestTool {
+                source: "github:owner/pinned".to_string(),
+                version: Some("1.0.0".to_string()),
+                bin: None,
+                targets: BTreeMap::new(),
+            },
+        );
+
+        let (next_manifest, changed) =
+            local_update_manifest_with_latest_versions_from(&manifest, &[], |_| {
+                Ok("2.0.0".to_string())
+            })
+            .expect("update manifest");
+        let target = HostTarget::current().expect("host target");
+        let planned_tool = mutation_tool_from_manifest_tool(
+            "pinned",
+            next_manifest.tools.get("pinned").expect("planned tool"),
+            MutationAction::PlannedUpdate,
+            Some(&target),
+        )
+        .expect("planned tool output");
+
+        assert!(changed);
+        assert_eq!(planned_tool.requested_version.as_deref(), Some("2.0.0"));
     }
 
     #[test]

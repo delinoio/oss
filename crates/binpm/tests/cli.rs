@@ -3440,8 +3440,10 @@ fn local_remove_dry_run_json_reports_package_record_and_executable_paths() {
         .join("tool")
         .display()
         .to_string();
+    let cache_ref = cache_ref_path(&home, &project, "tool");
     assert!(changed_files.contains(&package_record_path.as_str()));
     assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref.as_str()));
     assert_eq!(payload["tools"][0]["action"], "planned-remove");
     assert!(project.join(".binpm").join("bin").join("tool").exists());
     assert!(project
@@ -3552,7 +3554,9 @@ signature_verified = false
         .join("tool")
         .display()
         .to_string();
+    let cache_ref = cache_ref_path(&home, &project, "tool");
     assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref.as_str()));
     assert!(!project.join(".binpm").join("bin").join("tool").exists());
 }
 
@@ -3757,10 +3761,12 @@ source = "github:owner/tool"
         .join("tool")
         .display()
         .to_string();
+    let cache_ref = cache_ref_path(&home, &project, "tool");
     let bin_dir = project.join(".binpm").join("bin").display().to_string();
     assert!(!changed_files.contains(&manifest_path.as_str()));
     assert!(changed_files.contains(&package_record_path.as_str()));
     assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref.as_str()));
     assert!(!changed_files.contains(&bin_dir.as_str()));
     assert!(fs::read_to_string(project.join("binpm.toml"))
         .expect("read manifest")
