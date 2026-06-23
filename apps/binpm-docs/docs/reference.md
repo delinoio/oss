@@ -18,6 +18,20 @@ GitHub.com shorthand input is accepted for ergonomics:
 
 binpm normalizes those inputs to canonical `github:` source strings before writing manifests, lockfiles, package records, or JSON diagnostics. GitLab URL shorthands and arbitrary direct URLs are not source identifiers; use canonical `gitlab:<host>/<namespace...>/<project>[@version]` instead.
 
+## Provider Token Variables
+
+GitHub.com may use `BINPM_GITHUB_TOKEN_GITHUB_COM`, `BINPM_GITHUB_TOKEN`, or `GITHUB_TOKEN`. GitLab.com may use `BINPM_GITLAB_TOKEN_GITLAB_COM`, `BINPM_GITLAB_TOKEN`, or `GITLAB_TOKEN`.
+
+GitHub Enterprise and self-managed GitLab use only host-scoped token variables. The host suffix uppercases ASCII letters and digits, and encodes every other UTF-8 byte as `_HH_` uppercase hexadecimal.
+
+| Source host | Expected variable |
+| --- | --- |
+| `ghe.example.com` | `BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM` |
+| `ghe-example.com` | `BINPM_GITHUB_TOKEN_GHE_2D_EXAMPLE_2E_COM` |
+| `gitlab.例え.com` | `BINPM_GITLAB_TOKEN_GITLAB_2E__E4__BE__8B__E3__81__88__2E_COM` |
+
+Missing-auth diagnostics print the exact expected variable for explicit hosts. JSON error output exposes the same value in `error.diagnostic.expected_auth_env_var` and lists all safe candidates in `error.diagnostic.expected_auth_env_vars`; token values are not printed.
+
 ## Target Model
 
 binpm resolves release assets against the current host target:
@@ -35,6 +49,8 @@ The target model is broader than binpm's own first-party release matrix. Direct 
 ## GitLab HTTPS Assets
 
 GitLab release links must use HTTPS for the release link URL, the direct asset URL when present, and the final redirect target. `binpm explain` reports those cases separately so maintainers can fix the GitLab release link or publish a secure direct asset URL. Redirect diagnostics show only a sanitized origin and omit credentials, query strings, and fragments.
+
+Generated source archives are not binary package assets. GitHub source downloads, GitLab `assets.sources`, and files such as `source.tar.gz` or `source.zip` are reported as ignored source archives and are never selected automatically or through target overrides. Releases need a portable prebuilt archive or bare executable for the target.
 
 ## Global Update Status
 

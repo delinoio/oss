@@ -91,6 +91,11 @@ pub fn dispatch_managed_alias_if_needed(
     }
 
     let package_spec = plan.package_spec.as_deref().unwrap_or("none");
+    let package_manager_strategy = plan.package_manager_strategy().unwrap_or("none");
+    let corepack_supported = plan
+        .corepack_supported()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "none".to_string());
     let package_spec_pinned = plan
         .package_spec_pinned()
         .map(|value| value.to_string())
@@ -107,6 +112,8 @@ pub fn dispatch_managed_alias_if_needed(
         runtime = %resolved.runtime_id(),
         mode = plan.mode.as_str(),
         package_spec,
+        package_manager_strategy,
+        corepack_supported,
         package_spec_pinned,
         package_json_path = %package_json_path,
         reason = plan.reason.as_str(),
@@ -115,6 +122,9 @@ pub fn dispatch_managed_alias_if_needed(
     );
 
     if !json_error_output_requested {
+        if let Some(notice) = plan.direct_package_manager_human_notice() {
+            eprintln!("{notice}");
+        }
         if let Some(notice) = plan.npm_exec_human_notice() {
             eprintln!("{notice}");
         }

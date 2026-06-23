@@ -263,6 +263,14 @@ impl NodeupError {
         Self::with_hint(ErrorKind::Network, cause, hint)
     }
 
+    pub fn network_with_diagnostics(
+        cause: impl Into<String>,
+        hint: impl Into<String>,
+        diagnostics: ErrorDiagnostics,
+    ) -> Self {
+        Self::with_hint_and_diagnostics(ErrorKind::Network, cause, hint, diagnostics)
+    }
+
     pub fn not_found(cause: impl Into<String>) -> Self {
         Self::new(ErrorKind::NotFound, cause)
     }
@@ -347,16 +355,15 @@ impl From<reqwest::Error> for NodeupError {
         if value.is_timeout() || value.is_connect() {
             return Self::network_with_hint(
                 format!(
-                    "Network request failed: {value} (classification={classification}, \
-                     status={status}, url={url})"
+                    "Network request failed (classification={classification}, status={status}, \
+                     url={url})"
                 ),
                 "Check your internet connection and retry the command.",
             );
         }
         Self::internal_with_hint(
             format!(
-                "HTTP client failed: {value} (classification={classification}, status={status}, \
-                 url={url})"
+                "HTTP client failed (classification={classification}, status={status}, url={url})"
             ),
             "Retry the command. If it still fails, run again with `RUST_LOG=nodeup=debug`.",
         )
