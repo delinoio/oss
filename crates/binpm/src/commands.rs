@@ -6789,6 +6789,9 @@ fn env_cmd(args: EnvArgs) -> Result<i32> {
         if args.global || args.local {
             return Err(BinpmError::ProfileSetupRejectsScopeFlags);
         }
+        if args.shell.is_some() {
+            return Err(BinpmError::ProfileSetupRejectsParentShellFlag);
+        }
         return match command {
             EnvCommand::Setup(setup) => env_setup(setup),
         };
@@ -7013,7 +7016,7 @@ fn profile_setup_plan(shell: Shell, global_bin: &Path) -> Result<ProfileSetupPla
 fn profile_path(shell: Shell) -> Result<PathBuf> {
     let home = profile_home(shell)?;
     match shell {
-        Shell::Bash => Ok(home.join(bash_profile_name())),
+        Shell::Bash => Ok(bash_profile_path(&home)),
         Shell::Zsh => Ok(home.join(".zshrc")),
         Shell::Fish => Ok(home
             .join(".config")
@@ -7038,12 +7041,18 @@ fn profile_path(shell: Shell) -> Result<PathBuf> {
     }
 }
 
-fn bash_profile_name() -> &'static str {
+fn bash_profile_path(home: &Path) -> PathBuf {
     if cfg!(target_os = "macos") {
-        ".bash_profile"
-    } else {
-        ".bashrc"
+        for profile_name in [".bash_profile", ".bash_login", ".profile"] {
+            let profile = home.join(profile_name);
+            if profile.exists() {
+                return profile;
+            }
+        }
+        return home.join(".bash_profile");
     }
+
+    home.join(".bashrc")
 }
 
 fn profile_home(shell: Shell) -> Result<PathBuf> {
@@ -7496,7 +7505,7 @@ fn print_global_path_setup_guidance(global_bin: &Path) {
     );
     println!(
         "path_setup: profile changes are opt-in; run `binpm env setup --shell \
-         <bash|zsh|fish|powershell>` to preview and apply only the global bin line"
+         <bash|zsh|fish|powershell|pwsh>` to preview and apply only the global bin line"
     );
     println!("path_setup: the project-local PATH line is for the current project/session only");
 }
@@ -7574,6 +7583,22 @@ mod tests {
     };
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn bash_profile_path_prefers_existing_login_profile() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let home = temp_dir.path();
+        fs::write(home.join(".profile"), "").expect("write profile");
+
+        assert_eq!(super::bash_profile_path(home), home.join(".profile"));
+
+        fs::write(home.join(".bash_login"), "").expect("write bash login");
+        assert_eq!(super::bash_profile_path(home), home.join(".bash_login"));
+
+        fs::write(home.join(".bash_profile"), "").expect("write bash profile");
+        assert_eq!(super::bash_profile_path(home), home.join(".bash_profile"));
+    }
 
     struct StaticReleaseClient {
         tag: &'static str,

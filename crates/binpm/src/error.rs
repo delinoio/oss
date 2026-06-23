@@ -115,6 +115,11 @@ pub enum BinpmError {
     )]
     ProfileSetupRejectsScopeFlags,
     #[error(
+        "`binpm env setup` requires its own `setup --shell <shell>` value; do not pass parent \
+         `binpm env --shell` with setup."
+    )]
+    ProfileSetupRejectsParentShellFlag,
+    #[error(
         "Refusing to update {shell} profile `{}`: {message}",
         path.display()
     )]
@@ -437,6 +442,7 @@ impl BinpmError {
             | Self::ShellRequired
             | Self::ProfileSetupUnsupportedShell { .. }
             | Self::ProfileSetupRejectsScopeFlags
+            | Self::ProfileSetupRejectsParentShellFlag
             | Self::ProfileSetupRefused { .. }
             | Self::ReleaseNotFound { .. }
             | Self::ManifestExists { .. }

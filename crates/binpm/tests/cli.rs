@@ -61,6 +61,25 @@ fn bash_quote_path(path: &Path) -> String {
     posix_single_quote(&bash_path(path))
 }
 
+fn fish_single_quote(raw: &str) -> String {
+    format!("'{}'", raw.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+fn fish_quote_path(path: &Path) -> String {
+    fish_single_quote(&path.display().to_string())
+}
+
+fn bash_setup_profile(home: &Path) -> std::path::PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        home.join(".bash_profile")
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        home.join(".bashrc")
+    }
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 fn write_locked_tool_project(project: &Path, sha256: &str) {
     fs::create_dir_all(project).expect("create project");
@@ -815,7 +834,7 @@ fn env_setup_dry_run_reports_profile_and_line_without_mutation() {
     fs::create_dir_all(&home_dir).expect("home dir");
     let binpm_home = temp_dir.path().join("binpm-home");
     let global_bin = binpm_home.join("bin");
-    let profile = home_dir.join(".bashrc");
+    let profile = bash_setup_profile(&home_dir);
     let expected_line = format!(
         "export PATH={}${{PATH:+:$PATH}}",
         bash_quote_path(&global_bin)
@@ -847,7 +866,7 @@ fn env_setup_appends_only_global_path_line() {
     let binpm_home = temp_dir.path().join("binpm-home");
     let global_bin = binpm_home.join("bin");
     let local_bin = temp_dir.path().join(".binpm").join("bin");
-    let profile = home_dir.join(".bashrc");
+    let profile = bash_setup_profile(&home_dir);
     fs::write(&profile, "# existing").expect("write profile");
     let expected_line = format!(
         "export PATH={}${{PATH:+:$PATH}}",
@@ -880,7 +899,7 @@ fn env_setup_rejects_parent_scope_flags() {
     let home_dir = temp_dir.path().join("home");
     fs::create_dir_all(&home_dir).expect("home dir");
     let binpm_home = temp_dir.path().join("binpm-home");
-    let profile = home_dir.join(".bashrc");
+    let profile = bash_setup_profile(&home_dir);
     let mut command = binpm();
 
     command
@@ -899,6 +918,36 @@ fn env_setup_rejects_parent_scope_flags() {
         !profile.exists(),
         "scoped setup invocations must not mutate profile files"
     );
+}
+
+#[test]
+fn env_setup_rejects_parent_shell_flag() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bash_profile = bash_setup_profile(&home_dir);
+    let fish_profile = home_dir
+        .join(".config")
+        .join("fish")
+        .join("conf.d")
+        .join("binpm.fish");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "--shell", "fish", "setup", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "do not pass parent `binpm env --shell` with setup",
+        ));
+
+    assert!(!bash_profile.exists());
+    assert!(!fish_profile.exists());
 }
 
 #[test]
@@ -941,7 +990,7 @@ fn env_setup_supports_fish_profile_fixture() {
         .join("fish")
         .join("conf.d")
         .join("binpm.fish");
-    let expected_line = format!("set -gx PATH {} $PATH", bash_quote_path(&global_bin));
+    let expected_line = format!("set -gx PATH {} $PATH", fish_quote_path(&global_bin));
     let mut command = binpm();
 
     command
