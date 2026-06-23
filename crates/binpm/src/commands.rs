@@ -7454,7 +7454,7 @@ fn profile_path(shell: Shell) -> Result<PathBuf> {
 }
 
 fn bash_profile_path(home: &Path) -> PathBuf {
-    if cfg!(target_os = "macos") {
+    if cfg!(any(target_os = "macos", windows)) {
         for profile_name in [".bash_profile", ".bash_login", ".profile"] {
             let profile = home.join(profile_name);
             if profile.exists() {

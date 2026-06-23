@@ -83,11 +83,11 @@ fn fish_quote_path(path: &Path) -> String {
 }
 
 fn bash_setup_profile(home: &Path) -> std::path::PathBuf {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     {
         home.join(".bash_profile")
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", windows)))]
     {
         home.join(".bashrc")
     }
@@ -939,6 +939,35 @@ fn env_setup_appends_only_global_path_line() {
         !contents.contains(&local_bin.display().to_string()),
         "profile setup must not persist project-local bin paths"
     );
+}
+
+#[cfg(any(target_os = "macos", windows))]
+#[test]
+fn env_setup_bash_uses_existing_login_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bash_profile = home_dir.join(".bash_profile");
+    let profile = home_dir.join(".profile");
+    fs::write(&profile, "# existing").expect("write profile");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "profile: {}",
+            profile.display()
+        )))
+        .stdout(predicate::str::contains("status: appended"));
+
+    assert!(!bash_profile.exists());
+    assert!(profile.is_file());
 }
 
 #[test]
