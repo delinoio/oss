@@ -21,8 +21,9 @@ use crate::{
         ArtifactKind, BinaryDiscovery, CandidateDecision,
     },
     cli::{
-        AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
-        InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs, VerifyArgs,
+        AddArgs, CacheCommand, Cli, Command, EnvArgs, EnvCommand, EnvSetupArgs, ExecArgs,
+        ExplainArgs, InfoArgs, InitArgs, InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs,
+        VerifyArgs,
     },
     contract::{
         normalize_source_input, validate_version_selector, ArchiveFormat, ChecksumSource,
@@ -6784,6 +6785,12 @@ fn init(args: InitArgs) -> Result<i32> {
 }
 
 fn env_cmd(args: EnvArgs) -> Result<i32> {
+    if let Some(command) = args.command {
+        return match command {
+            EnvCommand::Setup(setup) => env_setup(setup),
+        };
+    }
+
     let shell = args.shell.map(Ok).unwrap_or_else(infer_env_shell)?;
     let scope = env_path_scope(&args);
 
@@ -6825,6 +6832,58 @@ fn env_cmd(args: EnvArgs) -> Result<i32> {
     );
 
     print_env(shell, scope, global_bin.as_deref(), local_bin.as_deref());
+    Ok(0)
+}
+
+fn env_setup(args: EnvSetupArgs) -> Result<i32> {
+    if matches!(args.shell, Shell::Cmd) {
+        return Err(BinpmError::ProfileSetupUnsupportedShell {
+            shell: args.shell.as_str().to_string(),
+        });
+    }
+
+    let global_bin = binpm_home()?.join("bin");
+    let plan = profile_setup_plan(args.shell, &global_bin)?;
+
+    info!(
+        command = "env setup",
+        shell = args.shell.as_str(),
+        dry_run = args.dry_run,
+        profile = %plan.profile.display(),
+        line = plan.line,
+        global_bin = %global_bin.display(),
+        "Prepared opt-in global PATH profile setup"
+    );
+
+    println!("binpm env setup");
+    println!("profile: {}", plan.profile.display());
+    println!("line: {}", plan.line);
+
+    let existing = read_profile_if_present(&plan.profile)?;
+    if profile_contains_line(existing.as_deref(), &plan.line) {
+        println!("status: already present");
+        println!(
+            "rollback: remove the line above from {}",
+            plan.profile.display()
+        );
+        return Ok(0);
+    }
+
+    if args.dry_run {
+        println!("status: would append");
+        println!(
+            "rollback: after applying, remove the line above from {}",
+            plan.profile.display()
+        );
+        return Ok(0);
+    }
+
+    append_profile_line(&plan.profile, existing.as_deref(), &plan.line)?;
+    println!("status: appended");
+    println!(
+        "rollback: remove the line above from {}",
+        plan.profile.display()
+    );
     Ok(0)
 }
 
@@ -6930,6 +6989,162 @@ fn print_env(
         }
         Shell::Cmd => unreachable!("cmd shell is explicitly deferred before rendering"),
     }
+}
+
+#[derive(Debug)]
+struct ProfileSetupPlan {
+    profile: PathBuf,
+    line: String,
+}
+
+fn profile_setup_plan(shell: Shell, global_bin: &Path) -> Result<ProfileSetupPlan> {
+    let profile = profile_path(shell)?;
+    ensure_supported_profile(shell, &profile)?;
+    Ok(ProfileSetupPlan {
+        profile,
+        line: global_profile_path_line(shell, global_bin),
+    })
+}
+
+fn profile_path(shell: Shell) -> Result<PathBuf> {
+    let home = profile_home(shell)?;
+    match shell {
+        Shell::Bash => Ok(home.join(".bashrc")),
+        Shell::Zsh => Ok(home.join(".zshrc")),
+        Shell::Fish => Ok(home
+            .join(".config")
+            .join("fish")
+            .join("conf.d")
+            .join("binpm.fish")),
+        Shell::Powershell => Ok(home
+            .join("Documents")
+            .join("PowerShell")
+            .join("Microsoft.PowerShell_profile.ps1")),
+        Shell::Cmd => Err(BinpmError::ProfileSetupUnsupportedShell {
+            shell: shell.as_str().to_string(),
+        }),
+    }
+}
+
+fn profile_home(shell: Shell) -> Result<PathBuf> {
+    let home = match shell {
+        Shell::Powershell => env_path("USERPROFILE").or_else(|| env_path("HOME")),
+        Shell::Bash | Shell::Zsh | Shell::Fish => env_path("HOME"),
+        Shell::Cmd => None,
+    };
+    let Some(home) = home else {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: PathBuf::from("~"),
+            message: "could not determine a home directory for this shell".to_string(),
+        });
+    };
+    if !home.is_absolute() {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: home,
+            message: "home directory must be absolute".to_string(),
+        });
+    }
+    Ok(home)
+}
+
+fn global_profile_path_line(shell: Shell, global_bin: &Path) -> String {
+    let global = shell_quote(shell, global_bin);
+    match shell {
+        Shell::Bash | Shell::Zsh => format!("export PATH={global}${{PATH:+:$PATH}}"),
+        Shell::Fish => format!("set -gx PATH {global} $PATH"),
+        Shell::Powershell => format!(
+            "$env:PATH = {global} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
+             $env:PATH }} else {{ '' }})"
+        ),
+        Shell::Cmd => unreachable!("cmd shell is refused before profile setup rendering"),
+    }
+}
+
+fn ensure_supported_profile(shell: Shell, profile: &Path) -> Result<()> {
+    let parent = profile
+        .parent()
+        .ok_or_else(|| BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: profile.to_path_buf(),
+            message: "profile path has no parent directory".to_string(),
+        })?;
+    if parent.exists() && !parent.is_dir() {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: profile.to_path_buf(),
+            message: "profile parent exists but is not a directory".to_string(),
+        });
+    }
+    if !parent.exists() && !matches!(shell, Shell::Fish | Shell::Powershell) {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: profile.to_path_buf(),
+            message: "profile parent directory does not exist".to_string(),
+        });
+    }
+    if let Ok(metadata) = fs::symlink_metadata(profile) {
+        if metadata.file_type().is_symlink() {
+            return Err(BinpmError::ProfileSetupRefused {
+                shell: shell.as_str(),
+                path: profile.to_path_buf(),
+                message: "profile files must not be symlinks".to_string(),
+            });
+        }
+        if !metadata.is_file() {
+            return Err(BinpmError::ProfileSetupRefused {
+                shell: shell.as_str(),
+                path: profile.to_path_buf(),
+                message: "profile path exists but is not a regular file".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn read_profile_if_present(profile: &Path) -> Result<Option<String>> {
+    match fs::read_to_string(profile) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(source) if source.kind() == ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(BinpmError::ReadFile {
+            path: profile.to_path_buf(),
+            source,
+        }),
+    }
+}
+
+fn profile_contains_line(contents: Option<&str>, line: &str) -> bool {
+    contents
+        .map(|contents| contents.lines().any(|candidate| candidate == line))
+        .unwrap_or(false)
+}
+
+fn append_profile_line(profile: &Path, existing: Option<&str>, line: &str) -> Result<()> {
+    if let Some(parent) = profile.parent() {
+        fs::create_dir_all(parent).map_err(|source| BinpmError::CreateDirectory {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(profile)
+        .map_err(|source| BinpmError::WriteFile {
+            path: profile.to_path_buf(),
+            source,
+        })?;
+    if existing.is_some_and(|contents| !contents.is_empty() && !contents.ends_with('\n')) {
+        writeln!(file).map_err(|source| BinpmError::WriteFile {
+            path: profile.to_path_buf(),
+            source,
+        })?;
+    }
+    writeln!(file, "{line}").map_err(|source| BinpmError::WriteFile {
+        path: profile.to_path_buf(),
+        source,
+    })
 }
 
 fn cmd_path_hint(

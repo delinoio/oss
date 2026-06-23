@@ -57,7 +57,7 @@ Use `binpm doctor` to inspect manifest discovery, lockfile readability, cache st
 binpm doctor
 ```
 
-When `~/.binpm/bin` is not on `PATH`, doctor prints setup guidance that points to `binpm env --global --shell <bash|zsh|fish|powershell>`. binpm does not edit profile files from doctor or env output; persistent profile changes are opt-in. Persist only the printed global bin command in shell profiles; the project-local command is for the current project or shell session only.
+When `~/.binpm/bin` is not on `PATH`, doctor prints setup guidance that points to `binpm env --global --shell <bash|zsh|fish|powershell>`. binpm does not edit profile files from doctor or plain env output. To opt in, preview the exact profile file and global PATH line with `binpm env setup --shell <shell> --dry-run`, then run `binpm env setup --shell <shell>` to append only that global line. The project-local command is for the current project or shell session only.
 
 ## Verify Installed Records
 
