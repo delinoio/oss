@@ -487,7 +487,8 @@ enum ShellKind {
     Bash,
     Zsh,
     Fish,
-    PowerShell,
+    PowerShellWindows,
+    PowerShellUnix,
     Posix,
 }
 
@@ -501,8 +502,9 @@ impl ShellKind {
             Some("bash") => Self::Bash,
             Some("zsh") => Self::Zsh,
             Some("fish") => Self::Fish,
-            Some("pwsh") | Some("powershell") => Self::PowerShell,
-            _ if host_is_windows() => Self::PowerShell,
+            Some("pwsh") | Some("powershell") if host_is_windows() => Self::PowerShellWindows,
+            Some("pwsh") | Some("powershell") => Self::PowerShellUnix,
+            _ if host_is_windows() => Self::PowerShellWindows,
             _ => Self::Posix,
         }
     }
@@ -512,7 +514,7 @@ impl ShellKind {
             Self::Bash => "bash",
             Self::Zsh => "zsh",
             Self::Fish => "fish",
-            Self::PowerShell => "powershell",
+            Self::PowerShellWindows | Self::PowerShellUnix => "powershell",
             Self::Posix => "posix",
         }
     }
@@ -521,8 +523,12 @@ impl ShellKind {
 fn path_instruction(dir: &Path, shell: ShellKind) -> String {
     let dir = dir.display().to_string();
     match shell {
-        ShellKind::PowerShell => format!(
+        ShellKind::PowerShellWindows => format!(
             "$env:Path = '{};' + $env:Path",
+            escape_powershell_single_quoted(&dir)
+        ),
+        ShellKind::PowerShellUnix => format!(
+            "$env:PATH = '{}:' + $env:PATH",
             escape_powershell_single_quoted(&dir)
         ),
         ShellKind::Fish => format!("set -gx PATH {} $PATH", shell_single_quote(&dir)),
@@ -558,7 +564,7 @@ fn path_next_steps(dir: &Path, shell: ShellKind, path_active: bool) -> Vec<Strin
 
 fn profile_persistence_hint(dir: &str, shell: ShellKind) -> String {
     match shell {
-        ShellKind::PowerShell => format!(
+        ShellKind::PowerShellWindows | ShellKind::PowerShellUnix => format!(
             "For future PowerShell sessions, add {} to the user PATH or PowerShell profile \
              manually.",
             dir
@@ -586,7 +592,7 @@ fn profile_persistence_hint(dir: &str, shell: ShellKind) -> String {
 fn verification_commands(dir: &Path, shell: ShellKind) -> Vec<String> {
     let dir = dir.display().to_string();
     match shell {
-        ShellKind::PowerShell => vec![format!(
+        ShellKind::PowerShellWindows | ShellKind::PowerShellUnix => vec![format!(
             "Get-Command node,npm,npx,yarn,pnpm | Select-Object Name,Source # Source should start \
              with '{}'",
             escape_powershell_single_quoted(&dir)

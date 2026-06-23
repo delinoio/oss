@@ -3410,7 +3410,7 @@ fn self_uninstall_reports_cleanup_boundaries_and_manual_steps() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|command| command.as_str().unwrap().contains("rm -f")));
+        .any(|command| command.as_str().unwrap().contains("rm -f --")));
     assert!(payload["verification_commands"]
         .as_array()
         .unwrap()
@@ -3523,12 +3523,20 @@ fn self_uninstall_reports_powershell_core_cleanup_and_verification_commands() {
             .unwrap()
             .contains("Remove-Item -LiteralPath")
     }));
-    assert!(manual_cleanup_commands.iter().any(|command| {
-        command
-            .as_str()
-            .unwrap()
-            .contains("$env:Path = (($env:Path -split ';')")
-    }));
+    let path_cleanup = manual_cleanup_commands
+        .iter()
+        .find_map(|command| {
+            let command = command.as_str().unwrap();
+            command.contains("Where-Object").then_some(command)
+        })
+        .unwrap();
+    if cfg!(windows) {
+        assert!(path_cleanup.contains("$env:Path = (($env:Path -split ';')"));
+        assert!(path_cleanup.contains(") -join ';'"));
+    } else {
+        assert!(path_cleanup.contains("$env:PATH = (($env:PATH -split ':')"));
+        assert!(path_cleanup.contains(") -join ':'"));
+    }
     assert!(!manual_cleanup_commands
         .iter()
         .any(|command| command.as_str().unwrap().contains("rm -f")));
@@ -4328,10 +4336,15 @@ fn shim_setup_reports_powershell_core_path_guidance() {
     assert_eq!(output.status.code(), Some(0));
     let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(payload["detected_shell"], "powershell");
-    assert!(payload["path_instruction"]
-        .as_str()
-        .unwrap()
-        .starts_with("$env:Path ="));
+    let path_instruction = payload["path_instruction"].as_str().unwrap();
+    if cfg!(windows) {
+        assert!(path_instruction.starts_with("$env:Path ="));
+        assert!(path_instruction.contains(";"));
+    } else {
+        assert!(path_instruction.starts_with("$env:PATH ="));
+        assert!(path_instruction.contains(":"));
+        assert!(!path_instruction.contains("$env:Path"));
+    }
     assert!(!payload["path_instruction"]
         .as_str()
         .unwrap()

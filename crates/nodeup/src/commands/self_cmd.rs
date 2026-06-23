@@ -961,7 +961,8 @@ enum ShellKind {
     Bash,
     Zsh,
     Fish,
-    PowerShell,
+    PowerShellWindows,
+    PowerShellUnix,
     Posix,
 }
 
@@ -975,8 +976,9 @@ impl ShellKind {
             Some("bash") => Self::Bash,
             Some("zsh") => Self::Zsh,
             Some("fish") => Self::Fish,
-            Some("pwsh") | Some("powershell") => Self::PowerShell,
-            _ if host_is_windows() => Self::PowerShell,
+            Some("pwsh") | Some("powershell") if host_is_windows() => Self::PowerShellWindows,
+            Some("pwsh") | Some("powershell") => Self::PowerShellUnix,
+            _ if host_is_windows() => Self::PowerShellWindows,
             _ => Self::Posix,
         }
     }
@@ -986,7 +988,7 @@ impl ShellKind {
             Self::Bash => "bash",
             Self::Zsh => "zsh",
             Self::Fish => "fish",
-            Self::PowerShell => "powershell",
+            Self::PowerShellWindows | Self::PowerShellUnix => "powershell",
             Self::Posix => "posix",
         }
     }
@@ -1006,7 +1008,7 @@ fn manual_cleanup_commands(likely_leftover_paths: &[String], shell: ShellKind) -
 
 fn remove_paths_command(paths: &[String], shell: ShellKind) -> String {
     match shell {
-        ShellKind::PowerShell => format!(
+        ShellKind::PowerShellWindows | ShellKind::PowerShellUnix => format!(
             "Remove-Item -LiteralPath {} -Force -ErrorAction SilentlyContinue",
             paths
                 .iter()
@@ -1015,7 +1017,7 @@ fn remove_paths_command(paths: &[String], shell: ShellKind) -> String {
                 .join(",")
         ),
         ShellKind::Bash | ShellKind::Zsh | ShellKind::Fish | ShellKind::Posix => format!(
-            "rm -f {}",
+            "rm -f -- {}",
             paths
                 .iter()
                 .map(|path| shell_single_quote(path))
@@ -1027,8 +1029,16 @@ fn remove_paths_command(paths: &[String], shell: ShellKind) -> String {
 
 fn current_session_path_cleanup_command(shim_dirs: &[String], shell: ShellKind) -> String {
     match shell {
-        ShellKind::PowerShell => format!(
+        ShellKind::PowerShellWindows => format!(
             "$env:Path = (($env:Path -split ';') | Where-Object {{ {} }}) -join ';'",
+            shim_dirs
+                .iter()
+                .map(|path| format!("$_ -ne '{}'", escape_powershell_single_quoted(path)))
+                .collect::<Vec<_>>()
+                .join(" -and ")
+        ),
+        ShellKind::PowerShellUnix => format!(
+            "$env:PATH = (($env:PATH -split ':') | Where-Object {{ {} }}) -join ':'",
             shim_dirs
                 .iter()
                 .map(|path| format!("$_ -ne '{}'", escape_powershell_single_quoted(path)))
@@ -1086,7 +1096,7 @@ fn cleanup_shim_directories(likely_leftover_paths: &[String]) -> Vec<String> {
 
 fn uninstall_verification_commands(shell: ShellKind) -> Vec<String> {
     match shell {
-        ShellKind::PowerShell => vec![
+        ShellKind::PowerShellWindows | ShellKind::PowerShellUnix => vec![
             "Get-Command nodeup -ErrorAction SilentlyContinue".to_string(),
             "Get-Command node,npm,npx,yarn,pnpm -ErrorAction SilentlyContinue | Select-Object \
              Name,Source"
@@ -1105,9 +1115,10 @@ fn uninstall_verification_commands(shell: ShellKind) -> Vec<String> {
 
 fn shell_profile_cleanup_hint(shell: ShellKind) -> String {
     match shell {
-        ShellKind::PowerShell => "Remove Nodeup shim directories from the user PATH or PowerShell \
-                                  profile manually."
-            .to_string(),
+        ShellKind::PowerShellWindows | ShellKind::PowerShellUnix => {
+            "Remove Nodeup shim directories from the user PATH or PowerShell profile manually."
+                .to_string()
+        }
         ShellKind::Fish => "Remove Nodeup shim directories from fish_user_paths or config.fish \
                             manually."
             .to_string(),
