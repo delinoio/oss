@@ -1584,7 +1584,7 @@ fn preview_local_update_result(
         &root,
         &manifest.tools,
         &orphan_states,
-    ));
+    )?);
     tools.extend(local_orphan_mutation_tools(
         &orphan_states,
         MutationAction::PlannedRemove,
@@ -2634,7 +2634,7 @@ fn install_local_manifest(
         &root,
         &manifest.tools,
         &orphan_states,
-    ));
+    )?);
     result.tools.extend(local_orphan_mutation_tools(
         &orphan_states,
         MutationAction::Removed,
@@ -5735,7 +5735,7 @@ fn local_orphan_changed_files(
     root: &Path,
     manifest_tools: &BTreeMap<String, ManifestTool>,
     orphan_states: &[(String, RuntimeToolState, Option<LockTool>)],
-) -> Vec<String> {
+) -> Result<Vec<String>> {
     let paths = ScopePaths::local(root.to_path_buf());
     let mut changed_files = BTreeSet::new();
     for (cmd, state, _) in orphan_states {
@@ -5743,6 +5743,9 @@ fn local_orphan_changed_files(
             continue;
         };
         changed_files.insert(path_display(&package_record_path(&paths, cmd)));
+        if let Some(cache_ref) = local_cache_ref_changed_file(root, cmd, record)? {
+            changed_files.insert(cache_ref);
+        }
         let installed_path = managed_installed_path(&paths, cmd, record.target_os);
         if !is_manifest_managed_installed_path(
             &paths,
@@ -5753,7 +5756,7 @@ fn local_orphan_changed_files(
             changed_files.insert(record.installed_path.clone());
         }
     }
-    changed_files.into_iter().collect()
+    Ok(changed_files.into_iter().collect())
 }
 
 fn local_orphan_mutation_tools(
@@ -5817,20 +5820,35 @@ fn global_install_mutation_output(
     paths: &ScopePaths,
     record: &PackageRecord,
 ) -> MutationOutput {
+    let mut changed_files = vec![
+        path_display(&package_record_path(paths, cmd)),
+        record.installed_path.clone(),
+    ];
+    changed_files.extend(global_cache_entry_changed_files(paths, record));
     MutationOutput {
         command,
         scope: Scope::Global,
         dry_run: false,
-        changed_files: vec![
-            path_display(&package_record_path(paths, cmd)),
-            record.installed_path.clone(),
-        ],
+        changed_files,
         tools: vec![mutation_tool_from_record(
             cmd,
             MutationAction::Installed,
             record,
         )],
     }
+}
+
+fn global_cache_entry_changed_files(paths: &ScopePaths, record: &PackageRecord) -> Vec<String> {
+    let mut changed_files = BTreeSet::new();
+    if let Some(cache_path) = &record.cache_path {
+        changed_files.insert(cache_path.clone());
+    }
+    if record.cache_key.is_some() {
+        changed_files.insert(path_display(
+            &CachePaths::new(&paths.root).metadata_path(&record.sha256),
+        ));
+    }
+    changed_files.into_iter().collect()
 }
 
 fn mutation_tool_from_manifest_tool(
@@ -8148,15 +8166,15 @@ mod tests {
         cleanup_failed_install_cache, clear_mutation_warnings, commit_deferred_cache_hit,
         deterministic_installed_path, download_asset_name, download_initial_capacity,
         ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
-        format_outdated_tool_line, github_sha256_digest, global_remove_changed_files,
-        global_update_selected_binary, has_current_cache_record, has_local_runtime_or_lock_state,
-        install_local_from_lock, install_path_collision_key, is_retryable_status,
-        local_manifest_orphan_cmds, local_runtime_lock_records, local_tool_execution_ready,
-        local_update_manifest_with_latest_versions_from, lock_targets_conflict_with_manifest,
-        lock_targets_conflict_with_record, locked_record_download_request,
-        locked_record_signature_sidecar, locked_record_verified_download_request,
-        locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
-        manifest_creation_root_from, manifest_project_root_from,
+        format_outdated_tool_line, github_sha256_digest, global_install_mutation_output,
+        global_remove_changed_files, global_update_selected_binary, has_current_cache_record,
+        has_local_runtime_or_lock_state, install_local_from_lock, install_path_collision_key,
+        is_retryable_status, local_manifest_orphan_cmds, local_runtime_lock_records,
+        local_tool_execution_ready, local_update_manifest_with_latest_versions_from,
+        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
+        locked_record_download_request, locked_record_signature_sidecar,
+        locked_record_verified_download_request, locked_release_lookup_spec, lockfile_digest,
+        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         mutation_tool_from_manifest_tool, mutation_warning, normalize_bin_selection,
         override_snippet_candidate, package_record_output, package_shortcut_command,
@@ -11027,6 +11045,34 @@ mod tests {
                 &paths, "tool"
             ))]
         );
+    }
+
+    #[test]
+    fn global_install_mutation_output_reports_cache_entry_paths() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = crate::storage::ScopePaths::global(temp_dir.path().join("home"));
+        let mut record = package_record();
+        record.installed_path = paths.bin.join("tool").display().to_string();
+        record.cache_key = Some(crate::storage::cache_key(&record.sha256));
+        record.cache_path = Some(
+            crate::storage::CachePaths::new(&paths.root)
+                .asset_path(&record.sha256)
+                .display()
+                .to_string(),
+        );
+
+        let result = global_install_mutation_output("install", "tool", &paths, &record);
+
+        assert!(result.changed_files.contains(&path_display(
+            &crate::storage::package_record_path(&paths, "tool")
+        )));
+        assert!(result.changed_files.contains(&record.installed_path));
+        assert!(result
+            .changed_files
+            .contains(record.cache_path.as_ref().expect("cache path")));
+        assert!(result.changed_files.contains(&path_display(
+            &crate::storage::CachePaths::new(&paths.root).metadata_path(&record.sha256)
+        )));
     }
 
     #[test]

@@ -3074,9 +3074,11 @@ fn local_install_json_suppresses_orphan_cleanup_stdout() {
         .join("tool")
         .display()
         .to_string();
+    let cache_ref = cache_ref_path(&home, &project, "tool");
     assert!(changed_files.contains(&lockfile_path.as_str()));
     assert!(changed_files.contains(&package_record_path.as_str()));
     assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref.as_str()));
     assert_eq!(payload["tools"].as_array().expect("tools").len(), 1);
     assert_eq!(payload["tools"][0]["cmd"], "tool");
     assert_eq!(payload["tools"][0]["action"], "removed");
@@ -3987,8 +3989,10 @@ fn local_update_dry_run_json_reports_orphan_cleanup_plan() {
         .join("tool")
         .display()
         .to_string();
+    let cache_ref = cache_ref_path(&home, &project, "tool");
     assert!(changed_files.contains(&package_record_path.as_str()));
     assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref.as_str()));
     assert!(project.join(".binpm").join("bin").join("tool").exists());
     assert!(fs::read_to_string(project.join("binpm.lock"))
         .expect("read lockfile")
