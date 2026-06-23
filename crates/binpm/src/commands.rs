@@ -198,6 +198,8 @@ struct MutationToolOutput {
     installed_path: Option<String>,
     checksum_source: Option<ChecksumSource>,
     verification: Option<VerificationState>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    unsupported_verification_sidecars: Vec<UnsupportedVerificationSidecar>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -6827,6 +6829,7 @@ fn mutation_tool_from_manifest_tool(
         installed_path: None,
         checksum_source: None,
         verification: None,
+        unsupported_verification_sidecars: Vec::new(),
     })
 }
 
@@ -6846,6 +6849,7 @@ fn mutation_tool_from_record(
         installed_path: Some(record.installed_path.clone()),
         checksum_source: Some(record.checksum_source),
         verification: Some(verification_state(record)),
+        unsupported_verification_sidecars: record.unsupported_verification_sidecars.clone(),
     }
 }
 
@@ -6868,6 +6872,7 @@ fn mutation_tool_from_lock_tool(
         installed_path: None,
         checksum_source: None,
         verification: None,
+        unsupported_verification_sidecars: Vec::new(),
     }
 }
 
@@ -9616,14 +9621,15 @@ mod tests {
         manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         merge_unsupported_verification_sidecars, mutation_tool_from_manifest_tool,
-        mutation_warning, normalize_bin_selection, override_snippet_candidate,
-        package_record_output, package_shortcut_command, parse_manifest_source,
-        parse_manifest_tool_source, parse_source_argument, path_display, prepare_global_updates,
-        preview_global_update_records_with, preview_local_update_record_from_resolved,
-        preview_local_update_tool_from_resolved, project_root_from, read_archive_selected_binary,
-        record_has_signature_evidence, record_matches_current_provider_digest, regex_escape,
-        release_asset_download_request, release_diagnostic_lines, release_diagnostics,
-        remove_global_tool, remove_global_tool_from_paths, remove_local_manifest_orphans,
+        mutation_tool_from_record, mutation_warning, normalize_bin_selection,
+        override_snippet_candidate, package_record_output, package_shortcut_command,
+        parse_manifest_source, parse_manifest_tool_source, parse_source_argument, path_display,
+        prepare_global_updates, preview_global_update_records_with,
+        preview_local_update_record_from_resolved, preview_local_update_tool_from_resolved,
+        project_root_from, read_archive_selected_binary, record_has_signature_evidence,
+        record_matches_current_provider_digest, regex_escape, release_asset_download_request,
+        release_diagnostic_lines, release_diagnostics, remove_global_tool,
+        remove_global_tool_from_paths, remove_local_manifest_orphans,
         require_executable_managed_file, resolved_has_supported_signature_evidence,
         resolved_has_verified_source, restore_local_remove_state, restore_runtime_tool_state,
         rollback_failed_install, sanitize_download_diagnostic_url, select_manifest_asset,
@@ -12881,6 +12887,7 @@ mod tests {
             installed_path: Some("/tmp/bin/foo".to_string()),
             checksum_source: Some(ChecksumSource::Local),
             verification: Some(VerificationState::Unverified),
+            unsupported_verification_sidecars: Vec::new(),
         };
 
         let lines = installed_mutation_lines(&output, &tool, "/tmp/bin/foo");
@@ -15055,6 +15062,28 @@ mod tests {
                 "tool-linux.asc".to_string(),
                 "tool-linux.sbom.json".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn mutation_tool_output_reports_unsupported_verification_sidecars() {
+        let mut record = package_record();
+        record.unsupported_verification_sidecars = vec![UnsupportedVerificationSidecar {
+            asset_name: "tool-linux.asc".to_string(),
+            kind: UnsupportedVerificationSidecarKind::GpgSignature,
+        }];
+
+        let output = mutation_tool_from_record("tool", MutationAction::Installed, &record);
+        let value = serde_json::to_value(output).expect("mutation tool json");
+
+        assert_eq!(
+            value["unsupported_verification_sidecars"],
+            serde_json::json!([
+                {
+                    "asset_name": "tool-linux.asc",
+                    "kind": "gpg-signature"
+                }
+            ])
         );
     }
 
