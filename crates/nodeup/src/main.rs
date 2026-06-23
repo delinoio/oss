@@ -114,16 +114,18 @@ fn management_output_preferences_from_args<I>(args: I) -> ManagementOutputPrefer
 where
     I: IntoIterator<Item = OsString>,
 {
-    let mut args = args.into_iter();
-    let Some(argv0) = args.next() else {
+    let args = args.into_iter().collect::<Vec<_>>();
+    let Some(argv0) = args.first() else {
         return ManagementOutputPreferences::default();
     };
 
     if ManagedAlias::from_argv0(argv0.as_os_str()).is_some() {
-        return managed_alias_output_preferences_from_args(args);
+        return managed_alias_output_preferences_from_args(args.into_iter().skip(1));
     }
 
-    management_output_preferences_from_management_args(args)
+    management_output_preferences_from_management_args(
+        normalized_management_args(args).into_iter().skip(1),
+    )
 }
 
 fn managed_alias_output_preferences_from_args<I>(args: I) -> ManagementOutputPreferences
@@ -289,9 +291,7 @@ where
         };
     }
 
-    if management_output_preferences_from_management_args(args.iter().skip(1).cloned())
-        .json_error_output_requested
-    {
+    if management_output_preferences_from_args(args.iter().cloned()).json_error_output_requested {
         logging::LoggingContext::ManagementJson
     } else if management_script_safe_default_logging_from_args(&args) {
         logging::LoggingContext::ManagementScriptSafe
@@ -734,6 +734,40 @@ mod tests {
                 "bash",
                 "shim",
             ])
+        );
+    }
+
+    #[test]
+    fn completions_positioned_output_after_shell_is_respected() {
+        assert!(json_error_output_requested_from_args(os_args(&[
+            "nodeup",
+            "completions",
+            "bad-shell",
+            "--output",
+            "json",
+        ])));
+
+        assert!(json_error_output_requested_from_args(os_args(&[
+            "nodeup",
+            "completions",
+            "bash",
+            "invalid-scope",
+            "--output=json",
+        ])));
+    }
+
+    #[test]
+    fn completions_positioned_output_selects_management_json_logging_context() {
+        assert_eq!(
+            logging_context_from_args(os_args(&[
+                "nodeup",
+                "completions",
+                "bash",
+                "shim",
+                "--output",
+                "json",
+            ])),
+            LoggingContext::ManagementJson
         );
     }
 

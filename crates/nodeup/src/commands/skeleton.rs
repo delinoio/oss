@@ -192,7 +192,7 @@ fn generate_completion_script(
 ) -> Result<Vec<u8>> {
     let mut root = Cli::command();
     if let Some(scope) = scope {
-        apply_scope(&mut root, scope)?;
+        root = scoped_completion_command(&root, scope)?;
     }
 
     let mut buffer = Vec::new();
@@ -200,27 +200,36 @@ fn generate_completion_script(
     Ok(buffer)
 }
 
-fn apply_scope(root: &mut clap::Command, scope: CompletionScope) -> Result<()> {
+fn scoped_completion_command(
+    root: &clap::Command,
+    scope: CompletionScope,
+) -> Result<clap::Command> {
     let selected = scope.as_str();
-    if !root
+    let selected_subcommand = root
         .get_subcommands()
-        .any(|subcommand| subcommand.get_name() == selected)
-    {
-        return Err(NodeupError::invalid_input_with_hint(
-            format!("Unsupported command scope '{selected}'"),
-            "Choose a supported top-level command scope and retry.",
-        ));
+        .find(|subcommand| subcommand.get_name() == selected)
+        .cloned()
+        .ok_or_else(|| {
+            NodeupError::invalid_input_with_hint(
+                format!("Unsupported command scope '{selected}'"),
+                "Choose a supported top-level command scope and retry.",
+            )
+        })?;
+
+    let mut scoped = clap::Command::new("nodeup")
+        .version(env!("CARGO_PKG_VERSION"))
+        .args(root.get_arguments().cloned())
+        .subcommand(selected_subcommand);
+
+    if let Some(about) = root.get_about() {
+        scoped = scoped.about(about.clone());
     }
 
-    *root = root.clone().mut_subcommands(|subcommand| {
-        if subcommand.get_name() == selected {
-            subcommand
-        } else {
-            subcommand.hide(true)
-        }
-    });
+    if let Some(after_help) = root.get_after_help() {
+        scoped = scoped.after_help(after_help.clone());
+    }
 
-    Ok(())
+    Ok(scoped)
 }
 
 fn unsupported_scope_error(

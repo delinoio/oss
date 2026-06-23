@@ -312,4 +312,4 @@ JSON output includes the action, top-level status, and per-file migration result
 nodeup completions <shell> [command]
 ```
 
-Generates raw completion scripts. See [Completions](/completions).
+Generates raw completion scripts. The optional command scope is top-level only and produces a script scoped to that command. Successful scripts stay raw on stdout even with `--output json`; invalid shells and unsupported scopes use JSON error envelopes on stderr when JSON mode is requested. See [Completions](/completions).

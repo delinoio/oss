@@ -141,7 +141,14 @@ pub enum Command {
         #[command(subcommand)]
         command: SelfCommand,
     },
-    /// Generate shell completion scripts.
+    /// Generate raw shell completion scripts.
+    #[command(
+        after_help = "Completion output is always raw script text on stdout, even with `--output \
+                      json`. Invalid shells or unsupported scopes still emit JSON error envelopes \
+                      on stderr when `--output json` is requested.\n\n`nodeup completions <shell> \
+                      <command>` generates a script scoped to one supported top-level command. \
+                      Nested subcommand scopes are not supported."
+    )]
     Completions {
         /// Target shell (for example: `bash`, `zsh`, or `fish`).
         shell: String,
