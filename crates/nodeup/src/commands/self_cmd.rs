@@ -999,7 +999,10 @@ fn manual_cleanup_commands(likely_leftover_paths: &[String], shell: ShellKind) -
     if !likely_leftover_paths.is_empty() {
         commands.push(remove_paths_command(likely_leftover_paths, shell));
     }
-    commands.push(current_session_path_cleanup_command(shell));
+    commands.push(current_session_path_cleanup_command(
+        likely_leftover_paths,
+        shell,
+    ));
     commands
 }
 
@@ -1024,11 +1027,11 @@ fn remove_paths_command(paths: &[String], shell: ShellKind) -> String {
     }
 }
 
-fn current_session_path_cleanup_command(shell: ShellKind) -> String {
-    let shim_dirs = shim_directories()
-        .into_iter()
-        .map(|path| path.display().to_string())
-        .collect::<Vec<_>>();
+fn current_session_path_cleanup_command(
+    likely_leftover_paths: &[String],
+    shell: ShellKind,
+) -> String {
+    let shim_dirs = cleanup_shim_directories(likely_leftover_paths);
 
     match shell {
         ShellKind::PowerShell => format!(
@@ -1040,12 +1043,12 @@ fn current_session_path_cleanup_command(shell: ShellKind) -> String {
                 .join(" -and ")
         ),
         ShellKind::Fish => format!(
-            "set -gx PATH (string split : $PATH | string match -v {})",
+            "set -gx PATH (string split : $PATH{})",
             shim_dirs
                 .iter()
-                .map(|path| shell_single_quote(path))
+                .map(|path| format!(" | string match -v -e {}", shell_single_quote(path)))
                 .collect::<Vec<_>>()
-                .join(" ")
+                .join("")
         ),
         ShellKind::Bash | ShellKind::Zsh | ShellKind::Posix => format!(
             "export PATH=\"$(printf '%s\\n' \"$PATH\" | tr ':' '\\n' | awk {} {} | paste -sd: -)\"",
@@ -1068,6 +1071,25 @@ fn current_session_path_cleanup_command(shell: ShellKind) -> String {
     }
 }
 
+fn cleanup_shim_directories(likely_leftover_paths: &[String]) -> Vec<String> {
+    shim_directories()
+        .into_iter()
+        .chain(likely_leftover_paths.iter().filter_map(|path| {
+            if is_likely_shim_path(path) {
+                Path::new(path).parent().map(Path::to_path_buf)
+            } else {
+                None
+            }
+        }))
+        .map(|path| path.display().to_string())
+        .fold(Vec::new(), |mut unique, path| {
+            if !unique.iter().any(|existing| existing == &path) {
+                unique.push(path);
+            }
+            unique
+        })
+}
+
 fn uninstall_verification_commands(shell: ShellKind) -> Vec<String> {
     match shell {
         ShellKind::PowerShell => vec![
@@ -1076,7 +1098,11 @@ fn uninstall_verification_commands(shell: ShellKind) -> Vec<String> {
              Name,Source"
                 .to_string(),
         ],
-        ShellKind::Bash | ShellKind::Zsh | ShellKind::Fish | ShellKind::Posix => vec![
+        ShellKind::Fish => vec![
+            "command -v nodeup; or true".to_string(),
+            "for cmd in node npm npx yarn pnpm; command -v $cmd; or true; end".to_string(),
+        ],
+        ShellKind::Bash | ShellKind::Zsh | ShellKind::Posix => vec![
             "command -v nodeup || true".to_string(),
             "for cmd in node npm npx yarn pnpm; do command -v \"$cmd\" || true; done".to_string(),
         ],

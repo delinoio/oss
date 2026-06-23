@@ -3061,6 +3061,58 @@ fn self_uninstall_reports_cleanup_boundaries_and_manual_steps() {
 
 #[test]
 #[serial]
+fn self_uninstall_reports_fish_cleanup_and_verification_commands() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("fish-shims-leftover");
+    let binary_path = env.root.join("bin").join("nodeup");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&binary_path, shim_dir.join("node")).unwrap();
+    #[cfg(not(unix))]
+    {
+        fs::write(shim_dir.join("node.exe"), "shim").unwrap();
+        fs::write(shim_dir.join(".node.exe.nodeup-shim"), "nodeup shim copy\n").unwrap();
+    }
+
+    let output = env
+        .command()
+        .env("SHELL", "/usr/bin/fish")
+        .env("NODEUP_SHIM_DIR", &shim_dir)
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("json self uninstall fish cleanup guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["detected_shell"], "fish");
+
+    let manual_cleanup_commands = payload["manual_cleanup_commands"].as_array().unwrap();
+    let path_cleanup = manual_cleanup_commands
+        .iter()
+        .find_map(|command| {
+            let command = command.as_str().unwrap();
+            command.starts_with("set -gx PATH").then_some(command)
+        })
+        .unwrap();
+    assert!(path_cleanup.contains("string split : $PATH | string match -v -e"));
+    assert!(!path_cleanup.contains("string match -v '"));
+
+    let verification_commands = payload["verification_commands"].as_array().unwrap();
+    assert!(verification_commands.iter().any(|command| {
+        command.as_str().unwrap()
+            == "for cmd in node npm npx yarn pnpm; command -v $cmd; or true; end"
+    }));
+    assert!(!verification_commands
+        .iter()
+        .any(|command| command.as_str().unwrap().contains(" do ")));
+}
+
+#[test]
+#[serial]
 fn self_uninstall_reports_default_setup_shim_leftovers() {
     let env = TestEnv::new();
     let shim_dir = env.root.join(".local").join("bin");
@@ -3203,6 +3255,14 @@ fn self_uninstall_preserves_custom_managed_shim_dir_inside_removed_root() {
         .unwrap()
         .iter()
         .any(|path| path == node_shim.to_str().unwrap()));
+    assert!(payload["manual_cleanup_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command
+            .as_str()
+            .unwrap()
+            .contains(shim_dir.to_str().unwrap())));
     assert!(payload["removed_paths"]
         .as_array()
         .unwrap()
