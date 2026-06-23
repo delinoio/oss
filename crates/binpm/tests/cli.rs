@@ -12,6 +12,16 @@ fn binpm() -> Command {
     Command::new(env!("CARGO_BIN_EXE_binpm"))
 }
 
+fn assert_success(output: &std::process::Output) {
+    assert!(
+        output.status.success(),
+        "status: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn bash_path(path: &Path) -> String {
     let raw = path.display().to_string();
     #[cfg(windows)]
@@ -3161,7 +3171,7 @@ version = "1.0.0"
         .output()
         .expect("update json dry-run");
 
-    assert!(output.status.success());
+    assert_success(&output);
     let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
     assert_eq!(
         payload["file_changes"],
@@ -3197,7 +3207,7 @@ source = "github:owner/tool"
         .output()
         .expect("update json dry-run");
 
-    assert!(output.status.success());
+    assert_success(&output);
     let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
     assert_eq!(
         payload["file_changes"],
@@ -3262,7 +3272,7 @@ signature_verified = false
         .output()
         .expect("update json dry-run");
 
-    assert!(output.status.success());
+    assert_success(&output);
     let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
     assert_eq!(
         payload["file_changes"],
