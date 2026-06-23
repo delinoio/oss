@@ -84,6 +84,12 @@ pub enum BinpmError {
          yet."
     )]
     NotImplemented { command: &'static str },
+    #[error(
+        "`--json` is not supported for `binpm {command}`. Stable JSON output is available for \
+         read-only diagnostic commands, cache cleanup summaries, and mutating final-result \
+         commands: install, add, update, and remove."
+    )]
+    UnsupportedJsonOutput { command: &'static str },
     #[error("Invalid source spec `{raw}`: {message}")]
     InvalidSourceSpec { raw: String, message: String },
     #[error("Invalid target key `{raw}`. {message}")]
@@ -487,7 +493,7 @@ impl BinpmError {
 
     pub fn exit_code(&self) -> i32 {
         match self {
-            Self::NotImplemented { .. } => 2,
+            Self::NotImplemented { .. } | Self::UnsupportedJsonOutput { .. } => 2,
             Self::InvalidSourceSpec { .. }
             | Self::InvalidTargetKey { .. }
             | Self::InvalidCommandName { .. }

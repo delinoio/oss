@@ -514,7 +514,7 @@ pub fn run(cli: Cli) -> Result<i32> {
         Command::Doctor => doctor(output),
         Command::Explain(args) => explain(args, output),
         Command::Verify(args) => verify(args, output),
-        Command::Init(args) => init(args),
+        Command::Init(args) => init(args, output),
         Command::Env(args) => env_cmd(args),
     }
 }
@@ -8306,7 +8306,11 @@ fn verify_lockfile_records(
     Ok((checked, locked, checks))
 }
 
-fn init(args: InitArgs) -> Result<i32> {
+fn init(args: InitArgs, output: OutputMode) -> Result<i32> {
+    if output.is_json() {
+        return Err(BinpmError::UnsupportedJsonOutput { command: "init" });
+    }
+
     let explicit_destination = args.manifest_path.is_some();
     let manifest_path = init_manifest_path(args.manifest_path)?;
 
