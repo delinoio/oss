@@ -275,7 +275,10 @@ pub enum BinpmError {
         "`--require-verified` requires upstream digest, checksum, or verified signature material \
          for `{package}`."
     )]
-    VerificationRequired { package: String },
+    VerificationRequired {
+        package: String,
+        unsupported_sidecars: Vec<String>,
+    },
     #[error(
         "Manifest checksum_source `{checksum_source}` is declarative only and cannot be used as \
          verified checksum evidence."
@@ -348,6 +351,22 @@ impl BinpmError {
                     "would_change": path.display().to_string(),
                     "safest_next_command": safest_next_command,
                     "local_development_escape_hatch": "--no-frozen-lockfile"
+                }))
+            }
+            Self::VerificationRequired {
+                package,
+                unsupported_sidecars,
+            } => {
+                let reason = if unsupported_sidecars.is_empty() {
+                    "missing_trusted_evidence"
+                } else {
+                    "unsupported_sidecar_presence"
+                };
+                Some(serde_json::json!({
+                    "kind": "verification_required",
+                    "package": package,
+                    "reason": reason,
+                    "unsupported_sidecars": unsupported_sidecars,
                 }))
             }
             Self::FrozenLockfileMissingRecord { path, cmd } => {

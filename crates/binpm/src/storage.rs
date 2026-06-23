@@ -132,6 +132,8 @@ pub struct PackageRecord {
     pub installed_at: Option<String>,
     pub signature_available: bool,
     pub signature_verified: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unsupported_verification_sidecars: Vec<UnsupportedVerificationSidecar>,
 }
 
 impl PackageRecord {
@@ -254,6 +256,7 @@ pub struct ResolvedAsset {
     pub signature_sidecar: Option<SignatureSidecar>,
     pub signature_available: bool,
     pub signature_verified: bool,
+    pub unsupported_verification_sidecars: Vec<UnsupportedVerificationSidecar>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,6 +266,24 @@ pub struct SignatureSidecar {
     pub download_url: String,
     pub download_auth: Option<ProviderAuth>,
     pub download_accept: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnsupportedVerificationSidecar {
+    pub asset_name: String,
+    pub kind: UnsupportedVerificationSidecarKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UnsupportedVerificationSidecarKind {
+    GpgSignature,
+    MinisignSignature,
+    RawSigstoreMetadata,
+    Certificate,
+    Attestation,
+    Sbom,
+    Provenance,
 }
 
 pub fn read_manifest(path: &Path) -> Result<Manifest> {
@@ -1172,6 +1193,7 @@ pub fn package_record_from_resolved(
         installed_at,
         signature_available: resolved.signature_available,
         signature_verified: resolved.signature_verified,
+        unsupported_verification_sidecars: resolved.unsupported_verification_sidecars.clone(),
     })
 }
 
@@ -2545,6 +2567,7 @@ created_at = "2026-01-01T00:00:00Z"
             signature_sidecar: None,
             signature_available: false,
             signature_verified: false,
+            unsupported_verification_sidecars: Vec::new(),
         }
     }
 
@@ -2574,6 +2597,7 @@ created_at = "2026-01-01T00:00:00Z"
             installed_at: None,
             signature_available: false,
             signature_verified: false,
+            unsupported_verification_sidecars: Vec::new(),
         }
     }
 

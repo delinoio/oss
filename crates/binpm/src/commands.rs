@@ -47,7 +47,8 @@ use crate::{
         validate_command_name, validate_download_url, validate_installed_binary_path,
         validate_sha256_digest, write_cache_ref, write_lockfile, write_manifest,
         write_package_record, CachePaths, LockTool, Manifest, ManifestTool, PackageRecord,
-        ResolvedAsset, ScopePaths, SignatureSidecar, LOCKFILE_FILE, MANIFEST_FILE,
+        ResolvedAsset, ScopePaths, SignatureSidecar, UnsupportedVerificationSidecar,
+        UnsupportedVerificationSidecarKind, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
 
@@ -210,6 +211,8 @@ struct VerifyCheckOutput {
     target: Option<HostTarget>,
     checksum_source: ChecksumSource,
     verification: VerificationState,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    unsupported_verification_sidecars: Vec<UnsupportedVerificationSidecar>,
 }
 
 #[derive(Debug, Serialize)]
@@ -357,6 +360,8 @@ struct PackageRecordOutput {
     verification: VerificationState,
     signature_available: bool,
     signature_verified: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    unsupported_verification_sidecars: Vec<UnsupportedVerificationSidecar>,
 }
 
 const DOWNLOAD_RETRY_ATTEMPTS: usize = 3;
@@ -2822,6 +2827,9 @@ fn install_resolved(
     {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
+            unsupported_sidecars: unsupported_sidecar_names(
+                &resolved.unsupported_verification_sidecars,
+            ),
         });
     }
     ensure_no_package_record_install_path_collision(scope_paths, cmd, resolved.target.os)?;
@@ -2895,9 +2903,13 @@ fn install_resolved(
     if require_verified && !resolved_has_verified_source(&resolved) {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
+            unsupported_sidecars: unsupported_sidecar_names(
+                &resolved.unsupported_verification_sidecars,
+            ),
         });
     }
     if resolved.checksum_source == ChecksumSource::Local {
+        warn_unsupported_verification_sidecars(spec, &resolved.unsupported_verification_sidecars);
         eprintln!(
             "warning: no upstream checksum or verified signature was available for {}; using a \
              locally computed SHA-256",
@@ -3076,6 +3088,9 @@ fn install_local_from_lock(
     {
         return Err(BinpmError::VerificationRequired {
             package: record.package_spec,
+            unsupported_sidecars: unsupported_sidecar_names(
+                &record.unsupported_verification_sidecars,
+            ),
         });
     }
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
@@ -3099,6 +3114,9 @@ fn install_local_from_lock(
                 if !verification.verified {
                     return Err(BinpmError::VerificationRequired {
                         package: record.package_spec.clone(),
+                        unsupported_sidecars: unsupported_sidecar_names(
+                            &record.unsupported_verification_sidecars,
+                        ),
                     });
                 }
                 repair_locked_verification = Some(verification);
@@ -3137,6 +3155,7 @@ fn install_local_from_lock(
                 signature_sidecar: None,
                 signature_available: record.signature_available,
                 signature_verified: record.signature_verified,
+                unsupported_verification_sidecars: record.unsupported_verification_sidecars.clone(),
             };
             populate_cache_from_bytes(&cache_paths, &resolved, &bytes)?;
             Ok(())
@@ -3157,6 +3176,9 @@ fn install_local_from_lock(
         if !verification.verified {
             return Err(BinpmError::VerificationRequired {
                 package: record.package_spec.clone(),
+                unsupported_sidecars: unsupported_sidecar_names(
+                    &record.unsupported_verification_sidecars,
+                ),
             });
         }
         Some(verification)
@@ -3206,6 +3228,7 @@ fn install_local_from_lock(
         signature_sidecar: None,
         signature_available: record.signature_available,
         signature_verified: record.signature_verified,
+        unsupported_verification_sidecars: record.unsupported_verification_sidecars.clone(),
     };
     if let Err(error) = install_selected_executable(
         &cache_paths.asset_path(&record.sha256),
@@ -3769,7 +3792,9 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
     };
     let signature_sidecar = signature_sidecar_for_asset(&decision.asset_name, &release.assets);
     let signature_available = signature_sidecar.is_some();
-    Ok(ResolvedAsset {
+    let unsupported_verification_sidecars =
+        unsupported_verification_sidecars_for_asset(&decision.asset_name, &release.assets);
+    let mut resolved = ResolvedAsset {
         source: spec.clone(),
         release_tag: release.tag,
         target,
@@ -3782,7 +3807,10 @@ fn resolve_asset(spec: &SourceSpec, tool: Option<&ManifestTool>) -> Result<Resol
         signature_sidecar,
         signature_available,
         signature_verified: false,
-    })
+        unsupported_verification_sidecars,
+    };
+    add_unsupported_signature_sidecar_without_policy(&mut resolved);
+    Ok(resolved)
 }
 
 fn signature_sidecar_for_asset(
@@ -3816,6 +3844,120 @@ fn signature_sidecar_for_asset(
                 download_accept: asset.download_accept,
             }
         })
+}
+
+fn unsupported_verification_sidecars_for_asset(
+    asset_name: &str,
+    assets: &[ReleaseAsset],
+) -> Vec<UnsupportedVerificationSidecar> {
+    let mut sidecars = assets
+        .iter()
+        .filter_map(|asset| unsupported_verification_sidecar_for_asset(asset_name, &asset.name))
+        .collect::<Vec<_>>();
+    sidecars.sort_by(|left, right| left.asset_name.cmp(&right.asset_name));
+    sidecars.dedup_by(|left, right| left.asset_name == right.asset_name);
+    sidecars
+}
+
+fn unsupported_verification_sidecar_for_asset(
+    asset_name: &str,
+    sidecar_name: &str,
+) -> Option<UnsupportedVerificationSidecar> {
+    if sidecar_name == format!("{asset_name}.sigstore.json") {
+        return None;
+    }
+    let lower = sidecar_name.to_ascii_lowercase();
+    let asset_lower = asset_name.to_ascii_lowercase();
+    if sidecar_name == asset_name || !sidecar_matches_asset(&asset_lower, &lower) {
+        return None;
+    }
+    let kind = unsupported_verification_sidecar_kind(&lower)?;
+    Some(UnsupportedVerificationSidecar {
+        asset_name: sidecar_name.to_string(),
+        kind,
+    })
+}
+
+fn sidecar_matches_asset(asset_lower: &str, sidecar_lower: &str) -> bool {
+    sidecar_lower.starts_with(&format!("{asset_lower}."))
+        || sidecar_lower.starts_with(&format!(
+            "{}.",
+            strip_archive_suffix_for_sidecar(asset_lower)
+        ))
+}
+
+fn strip_archive_suffix_for_sidecar(asset_lower: &str) -> &str {
+    for suffix in [
+        ".tar.gz", ".tar.xz", ".tar.zst", ".tgz", ".txz", ".zip", ".exe",
+    ] {
+        if let Some(stripped) = asset_lower.strip_suffix(suffix) {
+            return stripped;
+        }
+    }
+    asset_lower
+}
+
+fn unsupported_verification_sidecar_kind(
+    lower: &str,
+) -> Option<UnsupportedVerificationSidecarKind> {
+    if lower.ends_with(".asc") || lower.ends_with(".sig") {
+        Some(UnsupportedVerificationSidecarKind::GpgSignature)
+    } else if lower.ends_with(".minisig") {
+        Some(UnsupportedVerificationSidecarKind::MinisignSignature)
+    } else if lower.ends_with(".sigstore")
+        || lower.ends_with(".sigstore.json")
+        || lower.ends_with(".sigstore.bundle")
+    {
+        Some(UnsupportedVerificationSidecarKind::RawSigstoreMetadata)
+    } else if lower.ends_with(".cert")
+        || lower.ends_with(".crt")
+        || lower.ends_with(".pem")
+        || lower.ends_with(".pub")
+    {
+        Some(UnsupportedVerificationSidecarKind::Certificate)
+    } else if lower.ends_with(".intoto.json")
+        || lower.ends_with(".intoto.jsonl")
+        || lower.ends_with(".attestation")
+        || lower.ends_with(".attestation.json")
+        || lower.ends_with(".attestation.jsonl")
+    {
+        Some(UnsupportedVerificationSidecarKind::Attestation)
+    } else if lower.ends_with(".sbom")
+        || lower.ends_with(".sbom.json")
+        || lower.ends_with(".spdx")
+        || lower.ends_with(".spdx.json")
+        || lower.ends_with(".cyclonedx.json")
+    {
+        Some(UnsupportedVerificationSidecarKind::Sbom)
+    } else if lower.ends_with(".provenance")
+        || lower.ends_with(".provenance.json")
+        || lower.ends_with(".provenance.jsonl")
+    {
+        Some(UnsupportedVerificationSidecarKind::Provenance)
+    } else {
+        None
+    }
+}
+
+fn add_unsupported_signature_sidecar_without_policy(resolved: &mut ResolvedAsset) {
+    let Some(sidecar) = &resolved.signature_sidecar else {
+        return;
+    };
+    if resolved_has_supported_signature_evidence(resolved) {
+        return;
+    }
+    resolved
+        .unsupported_verification_sidecars
+        .push(UnsupportedVerificationSidecar {
+            asset_name: sidecar.asset_name.clone(),
+            kind: UnsupportedVerificationSidecarKind::RawSigstoreMetadata,
+        });
+    resolved
+        .unsupported_verification_sidecars
+        .sort_by(|left, right| left.asset_name.cmp(&right.asset_name));
+    resolved
+        .unsupported_verification_sidecars
+        .dedup_by(|left, right| left.asset_name == right.asset_name);
 }
 
 fn verify_signature_sidecar(
@@ -3974,6 +4116,32 @@ fn resolved_has_supported_signature_evidence(resolved: &ResolvedAsset) -> bool {
     resolved.signature_available && sigstore_trust_policy(resolved).is_some()
 }
 
+fn unsupported_sidecar_names(sidecars: &[UnsupportedVerificationSidecar]) -> Vec<String> {
+    sidecars
+        .iter()
+        .map(|sidecar| sidecar.asset_name.clone())
+        .collect()
+}
+
+fn warn_unsupported_verification_sidecars(
+    spec: &SourceSpec,
+    sidecars: &[UnsupportedVerificationSidecar],
+) {
+    if sidecars.is_empty() {
+        return;
+    }
+    let names = unsupported_sidecar_names(sidecars).join(", ");
+    warn!(
+        package = %spec,
+        unsupported_sidecars = %names,
+        "Unsupported verification sidecars were present but not trusted"
+    );
+    eprintln!(
+        "warning: unsupported verification sidecars were found for {spec} but are not trusted by \
+         binpm: {names}"
+    );
+}
+
 fn locked_record_verified_source(
     cache_paths: &CachePaths,
     record: &PackageRecord,
@@ -4081,6 +4249,7 @@ fn reverify_locked_record_signature(
         signature_sidecar: Some(signature_sidecar),
         signature_available: true,
         signature_verified: false,
+        unsupported_verification_sidecars: record.unsupported_verification_sidecars.clone(),
     };
     verify_signature_sidecar(cache_paths, &mut resolved, asset_bytes, true)?;
     if resolved_has_verified_source(&resolved) {
@@ -5115,6 +5284,7 @@ fn verify_check_output_with_state(
         target,
         checksum_source: record.checksum_source,
         verification,
+        unsupported_verification_sidecars: record.unsupported_verification_sidecars.clone(),
     }
 }
 
@@ -5187,6 +5357,7 @@ fn package_record_output(record: &PackageRecord) -> Result<PackageRecordOutput> 
         verification: verification_state(record),
         signature_available: record.signature_available,
         signature_verified: record.signature_verified,
+        unsupported_verification_sidecars: record.unsupported_verification_sidecars.clone(),
     })
 }
 
@@ -6357,6 +6528,9 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
             if !locked_record_verified_source(&cache_paths, &record)?.verified {
                 return Err(BinpmError::VerificationRequired {
                     package: record.package_spec,
+                    unsupported_sidecars: unsupported_sidecar_names(
+                        &record.unsupported_verification_sidecars,
+                    ),
                 });
             }
             verify_check_output_with_state(cmd.clone(), None, &record, VerificationState::Verified)
@@ -6600,6 +6774,8 @@ fn assert_runtime_record_matches_lock(
         || runtime_record.archive_format != lock_record.archive_format
         || runtime_record.selected_binary != lock_record.selected_binary
         || runtime_record.sha256 != lock_record.sha256
+        || runtime_record.unsupported_verification_sidecars
+            != lock_record.unsupported_verification_sidecars
         || !runtime_integrity_metadata_matches_lock(lock_record, runtime_record)
     {
         return Err(BinpmError::StaleLockfile {
@@ -6728,6 +6904,9 @@ fn verify_lockfile_records(
                 if !download_locked_record_verified_source(&record)? {
                     return Err(BinpmError::VerificationRequired {
                         package: record.package_spec,
+                        unsupported_sidecars: unsupported_sidecar_names(
+                            &record.unsupported_verification_sidecars,
+                        ),
                     });
                 }
                 verify_check_output_with_state(
@@ -7263,12 +7442,12 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use super::{
-        assert_local_runtime_records_complete, assert_lock_matches_manifest_tool,
-        assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
-        binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
-        checksum_digest_from_text, checksum_manifest_candidates, checksum_sidecar_candidates,
-        cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
-        download_asset_name, download_initial_capacity,
+        add_unsupported_signature_sidecar_without_policy, assert_local_runtime_records_complete,
+        assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
+        assert_runtime_record_matches_lock, binpm_home_from_values, capture_local_remove_state,
+        capture_runtime_tool_state, checksum_digest_from_text, checksum_manifest_candidates,
+        checksum_sidecar_candidates, cleanup_failed_install_cache, commit_deferred_cache_hit,
+        deterministic_installed_path, download_asset_name, download_initial_capacity,
         ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
         format_outdated_tool_line, github_sha256_digest, global_update_selected_binary,
         has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
@@ -7292,6 +7471,7 @@ mod tests {
         select_manifest_asset, selected_asset_display_url, selected_global_package_records,
         shell_path, shell_quote, signature_sidecar_for_asset, sigstore_trust_policy,
         snapshot_cache_metadata, source_install_scope, target_override_snippet,
+        unsupported_sidecar_names, unsupported_verification_sidecars_for_asset,
         update_manifest_tool_source, validate_frozen_update_current_release,
         validate_locked_record_artifact, validate_locked_record_current_asset,
         validate_locked_record_current_provider_digest, validate_package_record_metadata,
@@ -7317,7 +7497,7 @@ mod tests {
             validate_installed_binary_path, write_cache_record, write_lockfile, write_manifest,
             write_package_record, CachePaths, CacheRecord, LockTool, Lockfile, Manifest,
             ManifestTargetOverride, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths,
-            LOCKFILE_FILE, MANIFEST_FILE,
+            SignatureSidecar, UnsupportedVerificationSidecarKind, LOCKFILE_FILE, MANIFEST_FILE,
         },
     };
 
@@ -11261,6 +11441,128 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_verification_sidecars_are_reported_separately() {
+        let record = package_record();
+        let mut selected = release_asset_from_record(&record);
+        selected.name = "tool-linux-amd64.tar.gz".to_string();
+        let mut asc = selected.clone();
+        asc.name = "tool-linux-amd64.tar.gz.asc".to_string();
+        let mut minisig = selected.clone();
+        minisig.name = "tool-linux-amd64.minisig".to_string();
+        let mut sbom = selected.clone();
+        sbom.name = "tool-linux-amd64.tar.gz.sbom.json".to_string();
+        let mut provenance = selected.clone();
+        provenance.name = "tool-linux-amd64.tar.gz.provenance.json".to_string();
+        let mut supported_sigstore = selected.clone();
+        supported_sigstore.name = "tool-linux-amd64.tar.gz.sigstore.json".to_string();
+        let mut unrelated = selected.clone();
+        unrelated.name = "other-linux-amd64.tar.gz.asc".to_string();
+
+        let sidecars = unsupported_verification_sidecars_for_asset(
+            "tool-linux-amd64.tar.gz",
+            &[
+                selected,
+                asc,
+                minisig,
+                sbom,
+                provenance,
+                supported_sigstore,
+                unrelated,
+            ],
+        );
+
+        assert_eq!(
+            unsupported_sidecar_names(&sidecars),
+            vec![
+                "tool-linux-amd64.minisig".to_string(),
+                "tool-linux-amd64.tar.gz.asc".to_string(),
+                "tool-linux-amd64.tar.gz.provenance.json".to_string(),
+                "tool-linux-amd64.tar.gz.sbom.json".to_string(),
+            ]
+        );
+        assert!(sidecars
+            .iter()
+            .any(|sidecar| sidecar.kind == UnsupportedVerificationSidecarKind::GpgSignature));
+        assert!(sidecars
+            .iter()
+            .any(|sidecar| sidecar.kind == UnsupportedVerificationSidecarKind::MinisignSignature));
+        assert!(sidecars
+            .iter()
+            .any(|sidecar| sidecar.kind == UnsupportedVerificationSidecarKind::Sbom));
+        assert!(sidecars
+            .iter()
+            .any(|sidecar| sidecar.kind == UnsupportedVerificationSidecarKind::Provenance));
+    }
+
+    #[test]
+    fn exact_sigstore_sidecar_without_policy_is_reported_as_unsupported() {
+        let mut resolved = resolved_asset(&package_record().sha256);
+        resolved.source =
+            SourceSpec::from_str("gitlab:gitlab.com/owner/tool@1.0.0").expect("source");
+        resolved.signature_sidecar = Some(SignatureSidecar {
+            asset_name: "tool-linux.sigstore.json".to_string(),
+            canonical_url:
+                "https://gitlab.com/owner/tool/-/releases/1.0.0/downloads/tool-linux.sigstore.json"
+                    .to_string(),
+            download_url:
+                "https://gitlab.com/owner/tool/-/releases/1.0.0/downloads/tool-linux.sigstore.json"
+                    .to_string(),
+            download_auth: None,
+            download_accept: None,
+        });
+        resolved.signature_available = true;
+
+        add_unsupported_signature_sidecar_without_policy(&mut resolved);
+
+        assert_eq!(
+            unsupported_sidecar_names(&resolved.unsupported_verification_sidecars),
+            vec!["tool-linux.sigstore.json".to_string()]
+        );
+        assert_eq!(
+            resolved.unsupported_verification_sidecars[0].kind,
+            UnsupportedVerificationSidecarKind::RawSigstoreMetadata
+        );
+    }
+
+    #[test]
+    fn verification_required_diagnostic_distinguishes_unsupported_sidecars() {
+        let error = BinpmError::VerificationRequired {
+            package: "github:owner/tool@1.0.0".to_string(),
+            unsupported_sidecars: vec![
+                "tool-linux-amd64.asc".to_string(),
+                "tool-linux-amd64.minisig".to_string(),
+            ],
+        };
+
+        let diagnostic = error
+            .structured_diagnostic()
+            .expect("verification diagnostic");
+
+        assert_eq!(diagnostic["kind"], "verification_required");
+        assert_eq!(diagnostic["reason"], "unsupported_sidecar_presence");
+        assert_eq!(
+            diagnostic["unsupported_sidecars"],
+            serde_json::json!(["tool-linux-amd64.asc", "tool-linux-amd64.minisig"])
+        );
+    }
+
+    #[test]
+    fn verification_required_diagnostic_distinguishes_missing_evidence() {
+        let error = BinpmError::VerificationRequired {
+            package: "github:owner/tool@1.0.0".to_string(),
+            unsupported_sidecars: Vec::new(),
+        };
+
+        let diagnostic = error
+            .structured_diagnostic()
+            .expect("verification diagnostic");
+
+        assert_eq!(diagnostic["kind"], "verification_required");
+        assert_eq!(diagnostic["reason"], "missing_trusted_evidence");
+        assert_eq!(diagnostic["unsupported_sidecars"], serde_json::json!([]));
+    }
+
+    #[test]
     fn sigstore_trust_policy_is_github_actions_tag_scoped() {
         let mut resolved = resolved_asset(&package_record().sha256);
         resolved.source = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source");
@@ -12370,6 +12672,7 @@ mod tests {
             installed_at: None,
             signature_available: false,
             signature_verified: false,
+            unsupported_verification_sidecars: Vec::new(),
         }
     }
 
@@ -12423,6 +12726,7 @@ mod tests {
             signature_sidecar: None,
             signature_available: false,
             signature_verified: false,
+            unsupported_verification_sidecars: Vec::new(),
         }
     }
 
