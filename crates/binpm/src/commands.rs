@@ -1327,15 +1327,18 @@ fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<Mutatio
                 .transpose()?
                 .into_iter()
                 .collect();
+            let mut remaining_manifest_tools = manifest.tools.clone();
+            remaining_manifest_tools.remove(cmd);
             let result = MutationOutput {
                 command: "remove",
                 scope,
                 dry_run: true,
-                changed_files: vec![
-                    path_display(&root.join(MANIFEST_FILE)),
-                    path_display(&root.join(LOCKFILE_FILE)),
-                    path_display(&ScopePaths::local(root).root),
-                ],
+                changed_files: local_remove_changed_files(
+                    &root,
+                    cmd,
+                    &prior_state,
+                    &remaining_manifest_tools,
+                ),
                 tools: tool,
             };
             Ok(result)
@@ -1459,7 +1462,7 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
     ensure_no_selected_install_path_collisions(&manifest, selected)?;
 
     let current_target = HostTarget::current()?;
-    let tools = manifest
+    let mut tools = manifest
         .tools
         .iter()
         .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
@@ -1473,10 +1476,12 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
         })
         .collect::<Result<Vec<_>>>()?;
     let paths = ScopePaths::local(root.clone());
-    let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
-    let mut changed_files = if manifest.tools.is_empty()
-        && local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty()
-    {
+    let orphan_states = if selected.is_empty() {
+        capture_local_manifest_orphan_states(&root, &manifest.tools)?
+    } else {
+        Vec::new()
+    };
+    let mut changed_files = if manifest.tools.is_empty() && orphan_states.is_empty() {
         Vec::new()
     } else {
         vec![
@@ -1489,6 +1494,17 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
             .iter()
             .map(|tool| path_display(&package_record_path(&paths, &tool.cmd))),
     );
+    changed_files.extend(local_orphan_changed_files(
+        &root,
+        &manifest.tools,
+        &orphan_states,
+    ));
+    tools.extend(local_orphan_mutation_tools(
+        &orphan_states,
+        MutationAction::PlannedRemove,
+    ));
+    changed_files.sort();
+    changed_files.dedup();
     let selected_pinned_tool_may_update = manifest
         .tools
         .iter()
@@ -2484,9 +2500,10 @@ fn install_local_manifest(
         &manifest.tools,
         &orphan_states,
     ));
-    result
-        .tools
-        .extend(local_orphan_mutation_tools(&orphan_states));
+    result.tools.extend(local_orphan_mutation_tools(
+        &orphan_states,
+        MutationAction::Removed,
+    ));
     result.changed_files.sort();
     result.changed_files.dedup();
     Ok(result)
@@ -2506,9 +2523,7 @@ fn update_local_manifest(
         let mut result =
             install_local_manifest(frozen_lockfile, require_verified, selected, output)?;
         result.command = "update";
-        for tool in &mut result.tools {
-            tool.action = MutationAction::Updated;
-        }
+        retag_installed_tools_as_updated(&mut result.tools);
         return Ok(result);
     }
 
@@ -2528,17 +2543,21 @@ fn update_local_manifest(
         if !result.changed_files.contains(&path_display(&manifest_path)) {
             result.changed_files.insert(0, path_display(&manifest_path));
         }
-        for tool in &mut result.tools {
-            tool.action = MutationAction::Updated;
-        }
+        retag_installed_tools_as_updated(&mut result.tools);
         return Ok(result);
     }
     let mut result = install_local_manifest(frozen_lockfile, require_verified, selected, output)?;
     result.command = "update";
-    for tool in &mut result.tools {
-        tool.action = MutationAction::Updated;
-    }
+    retag_installed_tools_as_updated(&mut result.tools);
     Ok(result)
+}
+
+fn retag_installed_tools_as_updated(tools: &mut [MutationToolOutput]) {
+    for tool in tools {
+        if matches!(tool.action, MutationAction::Installed) {
+            tool.action = MutationAction::Updated;
+        }
+    }
 }
 
 fn local_update_manifest_with_latest_versions(
@@ -5573,6 +5592,7 @@ fn local_orphan_changed_files(
 
 fn local_orphan_mutation_tools(
     orphan_states: &[(String, RuntimeToolState, Option<LockTool>)],
+    action: MutationAction,
 ) -> Vec<MutationToolOutput> {
     orphan_states
         .iter()
@@ -5580,14 +5600,48 @@ fn local_orphan_mutation_tools(
             state
                 .package_record
                 .as_ref()
-                .map(|record| mutation_tool_from_record(cmd, MutationAction::Removed, record))
+                .map(|record| mutation_tool_from_record(cmd, action, record))
                 .or_else(|| {
-                    lock_tool.as_ref().map(|tool| {
-                        mutation_tool_from_lock_tool(cmd, tool, MutationAction::Removed)
-                    })
+                    lock_tool
+                        .as_ref()
+                        .map(|tool| mutation_tool_from_lock_tool(cmd, tool, action))
                 })
         })
         .collect()
+}
+
+fn local_remove_changed_files(
+    root: &Path,
+    cmd: &str,
+    prior_state: &LocalRemoveState,
+    remaining_manifest_tools: &BTreeMap<String, ManifestTool>,
+) -> Vec<String> {
+    let paths = ScopePaths::local(root.to_path_buf());
+    let mut changed_files = vec![
+        path_display(&root.join(MANIFEST_FILE)),
+        path_display(&root.join(LOCKFILE_FILE)),
+    ];
+    if prior_state.runtime.package_record.is_some() {
+        changed_files.push(path_display(&package_record_path(&paths, cmd)));
+    }
+    if let Some(installed_path) = prior_state
+        .runtime
+        .package_record
+        .as_ref()
+        .and_then(|record| {
+            let managed_path = managed_installed_path(&paths, cmd, record.target_os);
+            (!is_manifest_managed_installed_path(
+                &paths,
+                remaining_manifest_tools,
+                &managed_path,
+                record.target_os,
+            ))
+            .then(|| record.installed_path.clone())
+        })
+    {
+        changed_files.push(installed_path);
+    }
+    changed_files
 }
 
 fn global_install_mutation_output(
@@ -6748,22 +6802,6 @@ fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
         .into_iter()
         .collect();
     let record_path = package_record_path(&paths, cmd);
-    let removed_installed_path = prior_state
-        .runtime
-        .package_record
-        .as_ref()
-        .and_then(|record| {
-            let mut remaining_manifest = manifest.clone();
-            remaining_manifest.tools.remove(cmd);
-            let installed_path = managed_installed_path(&paths, cmd, record.target_os);
-            (!is_manifest_managed_installed_path(
-                &paths,
-                &remaining_manifest.tools,
-                &installed_path,
-                record.target_os,
-            ))
-            .then(|| record.installed_path.clone())
-        });
     let cleanup_result = (|| {
         let mut remaining_manifest = manifest.clone();
         remaining_manifest.tools.remove(cmd);
@@ -6806,6 +6844,7 @@ fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
 
     let mut manifest = manifest;
     manifest.tools.remove(cmd);
+    let changed_files = local_remove_changed_files(&root, cmd, &prior_state, &manifest.tools);
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
         restore_local_remove_state(&root, cmd, prior_state);
         return Err(error);
@@ -6831,16 +6870,6 @@ fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
             "cache assets preserved; run `binpm cache prune` for unreferenced assets or `binpm \
              cache clean` for all cached assets"
         );
-    }
-    let mut changed_files = vec![
-        path_display(&root.join(MANIFEST_FILE)),
-        path_display(&root.join(LOCKFILE_FILE)),
-    ];
-    if prior_state.runtime.package_record.is_some() {
-        changed_files.push(path_display(&record_path));
-    }
-    if let Some(installed_path) = removed_installed_path {
-        changed_files.push(installed_path);
     }
     Ok(MutationOutput {
         command: "remove",

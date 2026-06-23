@@ -2988,6 +2988,49 @@ fn local_install_json_suppresses_orphan_cleanup_stdout() {
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[test]
+fn local_update_json_preserves_orphan_removed_action() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'installed tool\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+
+    binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .assert()
+        .success();
+
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write empty manifest");
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 1);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "removed");
+    assert!(!project.join(".binpm").join("bin").join("tool").exists());
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
 fn frozen_x_restores_missing_runtime_from_verified_cache() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -3275,6 +3318,70 @@ source = "github:owner/tool"
     assert!(fs::read_to_string(project.join("binpm.lock"))
         .expect("read lockfile")
         .contains("tools.tool"));
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn local_remove_dry_run_json_reports_package_record_and_executable_paths() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'installed tool\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+
+    binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .assert()
+        .success();
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "--dry-run", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert_eq!(payload["tools"][0]["action"], "planned-remove");
+    assert!(project.join(".binpm").join("bin").join("tool").exists());
+    assert!(project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
 }
 
 #[test]
@@ -3699,6 +3806,73 @@ source = "github:owner/tool"
 
     assert!(project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn local_update_dry_run_json_reports_orphan_cleanup_plan() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'installed tool\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+
+    binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .assert()
+        .success();
+
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write empty manifest");
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--dry-run", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 1);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "planned-remove");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(project.join(".binpm").join("bin").join("tool").exists());
+    assert!(fs::read_to_string(project.join("binpm.lock"))
+        .expect("read lockfile")
+        .contains("tools.tool"));
 }
 
 #[test]
