@@ -3519,7 +3519,6 @@ fn local_tool_execution_ready(
         Err(BinpmError::ReadFile { source, .. }) if source.kind() == ErrorKind::NotFound => {
             return Ok(false)
         }
-        Err(BinpmError::UnsafeManagedFile { .. }) => return Ok(false),
         Err(error) => return Err(error),
     }
     match require_executable_managed_file(&installed_path) {
@@ -6829,7 +6828,8 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
                 return Ok(Vec::new());
             }
             Err(error) => {
-                if runtime_record.is_some() {
+                if runtime_record.is_some() || matches!(error, BinpmError::UnsafeManagedFile { .. })
+                {
                     return Err(error);
                 }
                 warn!(
@@ -6859,11 +6859,7 @@ fn local_runtime_record_matches_manifest(
     record: &PackageRecord,
 ) -> Result<bool> {
     let spec = parse_manifest_tool_source(tool)?;
-    let target = HostTarget {
-        os: record.target_os,
-        arch: record.target_arch,
-        libc: record.target_libc,
-    };
+    let target = HostTarget::current()?;
     let source_and_target_match = record.source == spec.source_without_version()
         && record.source_provider == spec.provider
         && record.source_host == spec.host
@@ -15514,7 +15510,7 @@ mod tests {
     }
 
     #[test]
-    fn local_tool_execution_ready_treats_non_regular_binary_as_stale() {
+    fn local_tool_execution_ready_surfaces_non_regular_binary() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let root = temp_dir.path();
         let target = HostTarget::current().expect("current target");
@@ -15548,10 +15544,10 @@ mod tests {
         let mut spec = SourceSpec::from_str("github:owner/tool").expect("parse source");
         spec.version = Some("1.0.0".to_string());
 
-        assert!(
-            !local_tool_execution_ready(root, "tool", &spec, None).expect("readiness check"),
-            "non-regular managed binaries should be repairable by diagnostics"
-        );
+        let error =
+            local_tool_execution_ready(root, "tool", &spec, None).expect_err("readiness check");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
     }
 
     #[test]
@@ -15680,6 +15676,59 @@ mod tests {
         let error = declared_only_local_tools(root).expect_err("corrupt package record");
 
         assert!(matches!(error, BinpmError::ParseToml { .. }));
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_surfaces_non_regular_binary() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        let target = HostTarget::current().expect("current target");
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/tool".to_string(),
+                        version: Some("1.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        let paths = ScopePaths::local(root.to_path_buf());
+        paths.ensure().expect("ensure scope paths");
+        let installed_path = managed_installed_path(&paths, "tool", target.os);
+        fs::create_dir(&installed_path).expect("create installed path directory");
+        let mut lock_record = package_record();
+        lock_record.target_os = target.os;
+        lock_record.target_arch = target.arch;
+        lock_record.target_libc = target.libc;
+        lock_record.installed_path = deterministic_installed_path("tool", target.os);
+        let mut runtime_record = lock_record.clone();
+        runtime_record.installed_path = installed_path.display().to_string();
+        write_lockfile(
+            &root.join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([(target.key(), lock_record)]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+        write_package_record(&paths, "tool", &runtime_record).expect("write runtime record");
+
+        let error = declared_only_local_tools(root).expect_err("declared-only scan");
+
+        assert!(matches!(error, BinpmError::UnsafeManagedFile { .. }));
     }
 
     #[test]
@@ -15853,6 +15902,28 @@ mod tests {
         assert!(
             !local_runtime_record_matches_manifest(&changed_bin, &record).expect("bin mismatch")
         );
+    }
+
+    #[test]
+    fn local_runtime_record_matches_manifest_rejects_stale_target() {
+        let target = HostTarget::current().expect("current target");
+        let mut record = package_record();
+        if target.os == TargetOs::Windows {
+            record.target_os = TargetOs::Darwin;
+            record.target_libc = TargetLibc::Any;
+        } else {
+            record.target_os = TargetOs::Windows;
+            record.target_libc = TargetLibc::Msvc;
+        }
+        record.target_arch = target.arch;
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::new(),
+        };
+
+        assert!(!local_runtime_record_matches_manifest(&tool, &record).expect("target mismatch"));
     }
 
     #[test]
