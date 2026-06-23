@@ -72,7 +72,7 @@ pub enum LogVerbosity {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Sync local tools or install a source globally.
+    /// Sync local tools, or install a source globally.
     Install(InstallArgs),
     /// Declare a local tool and install it into the project bin directory.
     Add(AddArgs),
@@ -106,8 +106,15 @@ pub enum Command {
 }
 
 #[derive(Debug, Clone, Args)]
+#[command(
+    after_help = "Supported forms:\n  binpm install\n      Sync the local binpm.toml manifest.\n  \
+                  binpm install <source> [--as <cmd>] [--bin <upstream-binary>]\n      Install a \
+                  source globally, even inside a project.\n\nUse `binpm add <cmd> <source>` for \
+                  project-local tools. `binpm install <source> --local` is not supported."
+)]
 pub struct InstallArgs {
-    /// Optional source spec. Omit to sync the local binpm.toml manifest.
+    /// Source spec for a global install. Omit to sync the local binpm.toml
+    /// manifest.
     pub source: Option<String>,
 
     /// Command name to expose for a global source install.

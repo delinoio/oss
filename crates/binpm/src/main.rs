@@ -32,16 +32,6 @@ fn frozen_lockfile_command_context(command: &Command) -> FrozenLockfileCommandCo
             require_verified: args.require_verified,
             mode: args.lockfile.frozen_lockfile_mode(),
         },
-        Command::Install(args) if args.scope.local && args.source.is_some() => {
-            FrozenLockfileCommandContext::InstallLocalSource {
-                source: args
-                    .source
-                    .clone()
-                    .expect("checked source is present for local source install"),
-                require_verified: args.require_verified,
-                mode: args.lockfile.frozen_lockfile_mode(),
-            }
-        }
         Command::Install(args) if !args.scope.global => {
             FrozenLockfileCommandContext::InstallLocal {
                 require_verified: args.require_verified,

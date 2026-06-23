@@ -148,7 +148,7 @@ enum ProjectId {
 - `binpm.lock` must not include install timestamps, last-used timestamps, absolute cache paths, or other machine-local operational metadata.
 - `binpm.lock` must store sanitized canonical asset URLs only, never query strings, fragments, credential-bearing URLs, or expiring signed download URLs.
 - Project-local executable files must be installed under `$repoRoot/.binpm/bin`.
-- `binpm install <source> --as <cmd> --bin <upstream-binary>` must preserve explicit global command aliases and upstream binary selection in global package records without changing source identity.
+- `binpm install <source> --as <cmd> --bin <upstream-binary>` must preserve explicit global command aliases and upstream binary selection in global package records without changing source identity. Source-form install is global-only; `binpm install <source> --local` must be rejected with guidance to use `binpm add <cmd> <source>` for project-local tools.
 - `binpm add <cmd> <source> --bin <upstream-binary>` must persist the upstream binary selection in `binpm.toml`; `binpm add --manifest-only` must only mutate `binpm.toml`; `binpm add ... --also <cmd=upstream-binary>` must expand to separate deterministic `[tools.<cmd>]` declarations; and `binpm x --package <source> --bin <upstream-binary> [cmd]` must use that upstream binary for one-off execution without inferring a source from command names.
 - Local `binpm remove` must clean project-local package records when they exist.
 - Local target-specific asset overrides must use `[tools.<cmd>.targets.<target-key>]` in `binpm.toml`.

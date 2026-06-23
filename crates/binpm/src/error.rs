@@ -15,11 +15,6 @@ pub enum FrozenLockfileCommandContext {
         require_verified: bool,
         mode: Option<&'static str>,
     },
-    InstallLocalSource {
-        source: String,
-        require_verified: bool,
-        mode: Option<&'static str>,
-    },
     InstallLocal {
         require_verified: bool,
         mode: Option<&'static str>,
@@ -80,6 +75,12 @@ pub enum BinpmError {
     InvalidCommandName { cmd: String },
     #[error("Duplicate local command declaration `{cmd}` in binpm add arguments.")]
     DuplicateAddDeclaration { cmd: String },
+    #[error(
+        "`binpm install {package_source} --local` is not supported. Use `binpm add <cmd> \
+         {package_source}` to declare and install a project-local tool, or run `binpm install \
+         {package_source}` for a global source install."
+    )]
+    UnsupportedLocalSourceInstall { package_source: String },
     #[error(
         "Tool `{cmd}` and `{other_cmd}` both install to `{}` on this target.",
         path.display()
@@ -412,6 +413,7 @@ impl BinpmError {
             | Self::InvalidCommandName { .. }
             | Self::AmbiguousPackageShortcutArgs
             | Self::DuplicateAddDeclaration { .. }
+            | Self::UnsupportedLocalSourceInstall { .. }
             | Self::InvalidBinSelection { .. }
             | Self::UnsupportedTargetComponent { .. }
             | Self::UnsupportedShell { .. }
@@ -588,7 +590,6 @@ fn frozen_lockfile_record(reason: &str) -> &'static str {
 fn frozen_lockfile_mode() -> Option<&'static str> {
     match FROZEN_LOCKFILE_CONTEXT.get() {
         Some(FrozenLockfileCommandContext::Add { mode, .. })
-        | Some(FrozenLockfileCommandContext::InstallLocalSource { mode, .. })
         | Some(FrozenLockfileCommandContext::InstallLocal { mode, .. })
         | Some(FrozenLockfileCommandContext::UpdateLocal { mode, .. })
         | Some(FrozenLockfileCommandContext::Exec { mode })
@@ -640,23 +641,6 @@ fn frozen_lockfile_safest_next_command(cmd: Option<&str>) -> String {
             let selected = cmds.iter().map(String::as_str).collect::<Vec<_>>();
             frozen_update_local_command(&selected)
         }
-        Some(FrozenLockfileCommandContext::InstallLocalSource {
-            source,
-            require_verified,
-            ..
-        }) => {
-            let mut parts = vec![
-                "binpm".to_string(),
-                "install".to_string(),
-                cli_quote(source),
-                "--local".to_string(),
-            ];
-            if *require_verified {
-                parts.push("--require-verified".to_string());
-            }
-            parts.push("--no-frozen-lockfile".to_string());
-            parts.join(" ")
-        }
         Some(FrozenLockfileCommandContext::InstallLocal {
             require_verified, ..
         }) => {
@@ -695,10 +679,7 @@ fn frozen_update_local_command(cmds: &[&str]) -> String {
 
 fn frozen_lockfile_commit_target() -> &'static str {
     match FROZEN_LOCKFILE_CONTEXT.get() {
-        Some(
-            FrozenLockfileCommandContext::Add { .. }
-            | FrozenLockfileCommandContext::InstallLocalSource { .. },
-        ) => "`binpm.toml` and `binpm.lock`",
+        Some(FrozenLockfileCommandContext::Add { .. }) => "`binpm.toml` and `binpm.lock`",
         _ => "`binpm.lock`",
     }
 }

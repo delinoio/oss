@@ -61,6 +61,20 @@ fn bash_quote_path(path: &Path) -> String {
     posix_single_quote(&bash_path(path))
 }
 
+#[test]
+fn install_help_distinguishes_global_source_and_local_declaration_forms() {
+    binpm()
+        .args(["install", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("binpm install <source>"))
+        .stdout(predicate::str::contains("Install a source globally"))
+        .stdout(predicate::str::contains("binpm add <cmd> <source>"))
+        .stdout(predicate::str::contains(
+            "binpm install <source> --local` is not supported",
+        ));
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 fn write_locked_tool_project(project: &Path, sha256: &str) {
     fs::create_dir_all(project).expect("create project");
@@ -2385,7 +2399,7 @@ signature_verified = false
 }
 
 #[test]
-fn frozen_local_source_install_reports_source_specific_recovery() {
+fn local_source_install_is_rejected_with_add_guidance() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
@@ -2409,14 +2423,16 @@ fn frozen_local_source_install_reports_source_specific_recovery() {
 
     assert!(!output.status.success());
     let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
-    assert_eq!(
-        payload["error"]["diagnostic"]["safest_next_command"],
-        "binpm install github:owner/tool --local --require-verified --no-frozen-lockfile"
-    );
+    assert_eq!(payload["error"]["exit_code"], 2);
+    assert!(payload["error"]["diagnostic"].is_null());
     assert!(payload["error"]["message"]
         .as_str()
         .expect("message")
-        .contains("then commit `binpm.toml` and `binpm.lock`"));
+        .contains("Use `binpm add <cmd> github:owner/tool`"));
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("run `binpm install github:owner/tool` for a global source install"));
 }
 
 #[test]
