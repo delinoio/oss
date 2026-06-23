@@ -197,6 +197,12 @@ fn add_and_x_help_include_explicit_bin_selection() {
         .success()
         .stdout(predicate::str::contains("--bin <BIN>"))
         .stdout(predicate::str::contains("--also <CMD=BIN>"))
+        .stdout(predicate::str::contains(
+            "binpm add foo github:owner/tools --bin bin/foo --also bar=bin/bar --also baz=bin/baz",
+        ))
+        .stdout(predicate::str::contains(
+            "CMD is the local command alias and BIN is the upstream binary",
+        ))
         .stdout(predicate::str::contains("--manifest-only"));
 
     let mut install = binpm();
