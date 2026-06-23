@@ -17,6 +17,7 @@ use crate::{
     errors::{NodeupError, Result},
     overrides::{OverrideEntry, OverridesFile, OVERRIDES_SCHEMA_VERSION},
     store::{SettingsFile, SETTINGS_SCHEMA_VERSION},
+    types::PlatformTarget,
     NodeupApp,
 };
 
@@ -160,6 +161,10 @@ struct SelfUninstallResponse {
     ownership_refused_paths: Vec<String>,
     cleanup_boundaries: Vec<SelfUninstallCleanupBoundary>,
     remaining_manual_steps: Vec<String>,
+    detected_shell: &'static str,
+    operating_system: &'static str,
+    manual_cleanup_commands: Vec<String>,
+    verification_commands: Vec<String>,
     likely_leftover_paths: Vec<String>,
 }
 
@@ -334,7 +339,10 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
     );
 
     let manual_leftover_paths = likely_leftover_paths(app, &ownership_refused_paths);
-    let remaining_manual_steps = remaining_manual_steps(&manual_leftover_paths);
+    let shell = ShellKind::detect();
+    let remaining_manual_steps = remaining_manual_steps(&manual_leftover_paths, shell);
+    let manual_cleanup_commands = manual_cleanup_commands(&manual_leftover_paths, shell);
+    let verification_commands = uninstall_verification_commands(shell);
     let response = SelfUninstallResponse {
         action,
         status,
@@ -343,17 +351,24 @@ fn uninstall(output: OutputFormat, color: Option<OutputColorMode>, app: &NodeupA
         manual_leftover_paths: manual_leftover_paths.clone(),
         ownership_refused_paths: ownership_refused_path_strings,
         remaining_manual_steps,
+        detected_shell: shell.as_str(),
+        operating_system: operating_system_label(),
+        manual_cleanup_commands,
+        verification_commands,
         likely_leftover_paths: manual_leftover_paths,
     };
 
     let human = format!(
-        "Self uninstall status: {} | removed paths: {} | manual leftovers: {} | ownership-refused \
-         paths: {} | manual steps: {}",
+        "Self uninstall status: {} | removed Nodeup-owned data/cache/config: {} | remaining \
+         manual shim/binary/PATH cleanup: {} | ownership-refused paths: {} | next manual steps: \
+         {} | cleanup commands: {} | verify: {}",
         status.as_str(),
         human_list(&response.removed_paths),
         human_list(&response.manual_leftover_paths),
         human_list(&response.ownership_refused_paths),
-        human_list(&response.remaining_manual_steps)
+        human_list(&response.remaining_manual_steps),
+        human_list(&response.manual_cleanup_commands),
+        human_list(&response.verification_commands)
     );
     print_output(output, color, &human, &response)?;
 
@@ -922,14 +937,13 @@ fn shim_directories() -> Vec<PathBuf> {
     paths
 }
 
-fn remaining_manual_steps(likely_leftover_paths: &[String]) -> Vec<String> {
+fn remaining_manual_steps(likely_leftover_paths: &[String], shell: ShellKind) -> Vec<String> {
     let mut steps = vec![
         "Remove the nodeup binary from its installation directory if it is no longer needed."
             .to_string(),
         "Remove managed shim files created by `nodeup shim setup` if they are no longer needed."
             .to_string(),
-        "Remove the Nodeup shim directory from shell profile files or the user PATH manually."
-            .to_string(),
+        shell_profile_cleanup_hint(shell),
     ];
 
     if !likely_leftover_paths.is_empty() {
@@ -940,6 +954,182 @@ fn remaining_manual_steps(likely_leftover_paths: &[String]) -> Vec<String> {
     }
 
     steps
+}
+
+#[derive(Clone, Copy)]
+enum ShellKind {
+    Bash,
+    Zsh,
+    Fish,
+    PowerShell,
+    Posix,
+}
+
+impl ShellKind {
+    fn detect() -> Self {
+        if host_is_windows() {
+            return Self::PowerShell;
+        }
+
+        let shell_name = env::var_os("SHELL")
+            .and_then(|value| PathBuf::from(value).file_name().map(|name| name.to_owned()))
+            .and_then(|name| name.to_str().map(|value| value.to_ascii_lowercase()));
+
+        match shell_name.as_deref() {
+            Some("bash") => Self::Bash,
+            Some("zsh") => Self::Zsh,
+            Some("fish") => Self::Fish,
+            _ => Self::Posix,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Bash => "bash",
+            Self::Zsh => "zsh",
+            Self::Fish => "fish",
+            Self::PowerShell => "powershell",
+            Self::Posix => "posix",
+        }
+    }
+}
+
+fn manual_cleanup_commands(likely_leftover_paths: &[String], shell: ShellKind) -> Vec<String> {
+    let mut commands = Vec::new();
+    if !likely_leftover_paths.is_empty() {
+        commands.push(remove_paths_command(likely_leftover_paths, shell));
+    }
+    commands.push(current_session_path_cleanup_command(shell));
+    commands
+}
+
+fn remove_paths_command(paths: &[String], shell: ShellKind) -> String {
+    match shell {
+        ShellKind::PowerShell => format!(
+            "Remove-Item -LiteralPath {} -Force -ErrorAction SilentlyContinue",
+            paths
+                .iter()
+                .map(|path| format!("'{}'", escape_powershell_single_quoted(path)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        ShellKind::Bash | ShellKind::Zsh | ShellKind::Fish | ShellKind::Posix => format!(
+            "rm -f {}",
+            paths
+                .iter()
+                .map(|path| shell_single_quote(path))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ),
+    }
+}
+
+fn current_session_path_cleanup_command(shell: ShellKind) -> String {
+    let shim_dirs = shim_directories()
+        .into_iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+
+    match shell {
+        ShellKind::PowerShell => format!(
+            "$env:Path = (($env:Path -split ';') | Where-Object {{ {} }}) -join ';'",
+            shim_dirs
+                .iter()
+                .map(|path| format!("$_ -ne '{}'", escape_powershell_single_quoted(path)))
+                .collect::<Vec<_>>()
+                .join(" -and ")
+        ),
+        ShellKind::Fish => format!(
+            "set -gx PATH (string split : $PATH | string match -v {})",
+            shim_dirs
+                .iter()
+                .map(|path| shell_single_quote(path))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ),
+        ShellKind::Bash | ShellKind::Zsh | ShellKind::Posix => format!(
+            "export PATH=\"$(printf '%s\\n' \"$PATH\" | tr ':' '\\n' | awk {} {} | paste -sd: -)\"",
+            shim_dirs
+                .iter()
+                .enumerate()
+                .map(|(index, path)| format!("-v d{index}={}", shell_single_quote(path)))
+                .collect::<Vec<_>>()
+                .join(" "),
+            shell_single_quote(&format!(
+                "{} {{ print }}",
+                shim_dirs
+                    .iter()
+                    .enumerate()
+                    .map(|(index, _)| format!("$0 != d{index}"))
+                    .collect::<Vec<_>>()
+                    .join(" && ")
+            ))
+        ),
+    }
+}
+
+fn uninstall_verification_commands(shell: ShellKind) -> Vec<String> {
+    match shell {
+        ShellKind::PowerShell => vec![
+            "Get-Command nodeup -ErrorAction SilentlyContinue".to_string(),
+            "Get-Command node,npm,npx,yarn,pnpm -ErrorAction SilentlyContinue | Select-Object \
+             Name,Source"
+                .to_string(),
+        ],
+        ShellKind::Bash | ShellKind::Zsh | ShellKind::Fish | ShellKind::Posix => vec![
+            "command -v nodeup || true".to_string(),
+            "for cmd in node npm npx yarn pnpm; do command -v \"$cmd\" || true; done".to_string(),
+        ],
+    }
+}
+
+fn shell_profile_cleanup_hint(shell: ShellKind) -> String {
+    match shell {
+        ShellKind::PowerShell => "Remove Nodeup shim directories from the user PATH or PowerShell \
+                                  profile manually."
+            .to_string(),
+        ShellKind::Fish => "Remove Nodeup shim directories from fish_user_paths or config.fish \
+                            manually."
+            .to_string(),
+        ShellKind::Bash => "Remove Nodeup shim directories from ~/.bashrc, ~/.bash_profile, or \
+                            your chosen bash profile manually."
+            .to_string(),
+        ShellKind::Zsh => "Remove Nodeup shim directories from ~/.zshrc or your chosen zsh \
+                           profile manually."
+            .to_string(),
+        ShellKind::Posix => "Remove Nodeup shim directories from your shell profile or user PATH \
+                             manually."
+            .to_string(),
+    }
+}
+
+fn host_is_windows() -> bool {
+    PlatformTarget::from_host().is_some_and(|target| {
+        matches!(
+            target,
+            PlatformTarget::WindowsX64 | PlatformTarget::WindowsArm64
+        )
+    }) || cfg!(windows)
+}
+
+fn operating_system_label() -> &'static str {
+    match PlatformTarget::from_host() {
+        Some(PlatformTarget::WindowsX64 | PlatformTarget::WindowsArm64) => "windows",
+        Some(PlatformTarget::DarwinX64 | PlatformTarget::DarwinArm64) => "macos",
+        Some(PlatformTarget::LinuxX64 | PlatformTarget::LinuxArm64) => "linux",
+        None if cfg!(target_os = "windows") => "windows",
+        None if cfg!(target_os = "macos") => "macos",
+        None if cfg!(target_os = "linux") => "linux",
+        None => "unix",
+    }
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn escape_powershell_single_quoted(value: &str) -> String {
+    value.replace('\'', "''")
 }
 
 fn default_shim_dir() -> PathBuf {

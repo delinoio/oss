@@ -49,7 +49,7 @@ The command is idempotent:
 - Stale Nodeup symlinks are repaired.
 - Ambiguous non-Nodeup files and different existing Windows executables are refused instead of overwritten.
 
-If the shim directory is not active on `PATH`, human and JSON output include a `path_instruction` value for the current session. Add the shim directory to your shell profile or user PATH for future sessions.
+If the shim directory is not active on `PATH`, human and JSON output include a `path_instruction` value for the current session, shell-specific next steps, and verification commands for `node`, `npm`, `npx`, `yarn`, and `pnpm`. Add the shim directory to your shell profile or user PATH manually for future sessions.
 
 Windows behavior differs because symlink creation may require privileges. Nodeup uses copied `.exe` aliases on Windows, so rerun `nodeup shim setup` after moving or updating the `nodeup.exe` binary.
 

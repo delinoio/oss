@@ -3004,24 +3004,56 @@ fn self_uninstall_reports_cleanup_boundaries_and_manual_steps() {
     };
     fs::write(env.config_root.join("config-marker.txt"), "config").unwrap();
 
-    env.command()
+    let output = env
+        .command()
+        .env("SHELL", "/bin/bash")
         .env("NODEUP_SHIM_DIR", &shim_dir)
         .env("NODEUP_SELF_BIN_PATH", &binary_path)
         .args(["--output", "json", "self", "uninstall"])
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("\"removed_paths\""))
-        .stdout(predicates::str::contains("\"manual_leftover_paths\""))
-        .stdout(predicates::str::contains("\"ownership_refused_paths\""))
-        .stdout(predicates::str::contains("\"cleanup_boundaries\""))
-        .stdout(predicates::str::contains("\"category\": \"binary\""))
-        .stdout(predicates::str::contains("\"category\": \"shims\""))
-        .stdout(predicates::str::contains(
-            "\"category\": \"shell-profile-path\"",
-        ))
-        .stdout(predicates::str::contains("\"remaining_manual_steps\""))
-        .stdout(predicates::str::contains(binary_path.to_str().unwrap()))
-        .stdout(predicates::str::contains(shim_path.to_str().unwrap()));
+        .output()
+        .expect("json self uninstall cleanup guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["removed_paths"].is_array());
+    assert!(payload["manual_leftover_paths"].is_array());
+    assert!(payload["ownership_refused_paths"].is_array());
+    assert!(payload["cleanup_boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|boundary| boundary["category"] == "binary"));
+    assert!(payload["cleanup_boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|boundary| boundary["category"] == "shims"));
+    assert!(payload["cleanup_boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|boundary| boundary["category"] == "shell-profile-path"));
+    assert!(payload["remaining_manual_steps"].is_array());
+    assert!(payload["manual_cleanup_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("rm -f")));
+    assert!(payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("command -v")));
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == binary_path.to_str().unwrap()));
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == shim_path.to_str().unwrap()));
 
     assert!(binary_path.exists());
     assert!(shim_path.exists() || fs::symlink_metadata(&shim_path).is_ok());
@@ -3684,7 +3716,9 @@ fn shim_setup_creates_all_aliases_and_reports_path_guidance() {
     let env = TestEnv::new();
     let shim_dir = env.root.join("nodeup-shims");
 
-    env.command()
+    let output = env
+        .command()
+        .env("SHELL", "/bin/bash")
         .args([
             "--output",
             "json",
@@ -3693,10 +3727,27 @@ fn shim_setup_creates_all_aliases_and_reports_path_guidance() {
             "--dir",
             shim_dir.to_str().unwrap(),
         ])
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("\"status\": \"created\""))
-        .stdout(predicates::str::contains("\"path_active\": false"));
+        .output()
+        .expect("json shim setup guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["status"], "created");
+    assert_eq!(payload["path_active"], false);
+    assert!(payload["path_instruction"]
+        .as_str()
+        .unwrap()
+        .contains("PATH"));
+    assert!(payload["path_next_steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|step| step.as_str().unwrap().contains("current shell")));
+    assert!(payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("command -v")));
 
     if cfg!(windows) {
         env.command()

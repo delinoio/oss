@@ -103,6 +103,10 @@ struct ShimSetupResponse {
     nodeup_binary: String,
     path_active: bool,
     path_instruction: Option<String>,
+    detected_shell: &'static str,
+    operating_system: &'static str,
+    path_next_steps: Vec<String>,
+    verification_commands: Vec<String>,
     shims: Vec<ShimEntry>,
 }
 
@@ -178,11 +182,14 @@ fn setup(
 
     let status = summarize_status(&shims);
     let path_active = path_contains_dir(&shim_dir);
+    let shell = ShellKind::detect();
     let path_instruction = if path_active {
         None
     } else {
-        Some(path_instruction(&shim_dir))
+        Some(path_instruction(&shim_dir, shell))
     };
+    let path_next_steps = path_next_steps(&shim_dir, shell, path_active);
+    let verification_commands = verification_commands(&shim_dir, shell);
 
     info!(
         command_path = action.command_path(),
@@ -202,6 +209,10 @@ fn setup(
         nodeup_binary: nodeup_binary.display().to_string(),
         path_active,
         path_instruction,
+        detected_shell: shell.as_str(),
+        operating_system: operating_system_label(),
+        path_next_steps,
+        verification_commands,
         shims,
     };
 
@@ -211,9 +222,17 @@ fn setup(
         response.shim_dir,
         response.shims.len()
     );
-    if let Some(instruction) = &response.path_instruction {
-        human.push_str(&format!(" | PATH: {instruction}"));
+    if response.path_active {
+        human.push_str(" | PATH: active");
+    } else if let Some(instruction) = &response.path_instruction {
+        human.push_str(&format!(
+            " | PATH next step: {instruction} | persist it in your shell profile manually"
+        ));
     }
+    human.push_str(&format!(
+        " | verify shims: {}",
+        response.verification_commands.join(" && ")
+    ));
 
     print_output(output, color, &human, &response)?;
     Ok(0)
@@ -463,17 +482,141 @@ fn paths_equal(left: &Path, right: &Path) -> bool {
     left == right
 }
 
-fn path_instruction(dir: &Path) -> String {
-    if host_is_windows() {
-        format!(
+#[derive(Clone, Copy)]
+enum ShellKind {
+    Bash,
+    Zsh,
+    Fish,
+    PowerShell,
+    Posix,
+}
+
+impl ShellKind {
+    fn detect() -> Self {
+        if host_is_windows() {
+            return Self::PowerShell;
+        }
+
+        let shell_name = env::var_os("SHELL")
+            .and_then(|value| PathBuf::from(value).file_name().map(|name| name.to_owned()))
+            .and_then(|name| name.to_str().map(|value| value.to_ascii_lowercase()));
+
+        match shell_name.as_deref() {
+            Some("bash") => Self::Bash,
+            Some("zsh") => Self::Zsh,
+            Some("fish") => Self::Fish,
+            _ => Self::Posix,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Bash => "bash",
+            Self::Zsh => "zsh",
+            Self::Fish => "fish",
+            Self::PowerShell => "powershell",
+            Self::Posix => "posix",
+        }
+    }
+}
+
+fn path_instruction(dir: &Path, shell: ShellKind) -> String {
+    let dir = dir.display().to_string();
+    match shell {
+        ShellKind::PowerShell => format!(
             "$env:Path = '{};' + $env:Path",
-            escape_powershell_single_quoted(&dir.display().to_string())
-        )
+            escape_powershell_single_quoted(&dir)
+        ),
+        ShellKind::Fish => format!("set -gx PATH {} $PATH", shell_single_quote(&dir)),
+        ShellKind::Bash | ShellKind::Zsh | ShellKind::Posix => {
+            format!("export PATH={}:\"$PATH\"", shell_single_quote(&dir))
+        }
+    }
+}
+
+fn path_next_steps(dir: &Path, shell: ShellKind, path_active: bool) -> Vec<String> {
+    let dir = dir.display().to_string();
+    let mut steps = Vec::new();
+
+    if path_active {
+        steps.push(format!(
+            "PATH is active for this process; commands should resolve from {}.",
+            dir
+        ));
     } else {
-        format!(
-            "export PATH={}:\"$PATH\"",
-            shell_single_quote(&dir.display().to_string())
-        )
+        steps.push(format!(
+            "Run this command in the current shell: {}",
+            path_instruction(Path::new(&dir), shell)
+        ));
+        steps.push(profile_persistence_hint(&dir, shell));
+    }
+
+    steps.push(format!(
+        "Verify that node, npm, npx, yarn, and pnpm print paths under {}.",
+        dir
+    ));
+    steps
+}
+
+fn profile_persistence_hint(dir: &str, shell: ShellKind) -> String {
+    match shell {
+        ShellKind::PowerShell => format!(
+            "For future PowerShell sessions, add {} to the user PATH or PowerShell profile \
+             manually.",
+            dir
+        ),
+        ShellKind::Fish => format!(
+            "For future fish sessions, add {} to fish_user_paths or config.fish manually.",
+            dir
+        ),
+        ShellKind::Bash => format!(
+            "For future bash sessions, add {} to ~/.bashrc, ~/.bash_profile, or your chosen \
+             profile manually.",
+            dir
+        ),
+        ShellKind::Zsh => format!(
+            "For future zsh sessions, add {} to ~/.zshrc or your chosen profile manually.",
+            dir
+        ),
+        ShellKind::Posix => format!(
+            "For future shell sessions, add {} to the appropriate shell profile manually.",
+            dir
+        ),
+    }
+}
+
+fn verification_commands(dir: &Path, shell: ShellKind) -> Vec<String> {
+    let dir = dir.display().to_string();
+    match shell {
+        ShellKind::PowerShell => vec![format!(
+            "Get-Command node,npm,npx,yarn,pnpm | Select-Object Name,Source # Source should start \
+             with '{}'",
+            escape_powershell_single_quoted(&dir)
+        )],
+        ShellKind::Fish => vec![
+            "for cmd in node npm npx yarn pnpm; command -v $cmd; end".to_string(),
+            format!("string match -q '{}/*' (command -v node)", dir),
+        ],
+        ShellKind::Bash | ShellKind::Zsh | ShellKind::Posix => vec![
+            "for cmd in node npm npx yarn pnpm; do command -v \"$cmd\"; done".to_string(),
+            format!(
+                "case \"$(command -v node)\" in {}/*) echo nodeup-shim-active;; *) echo \
+                 nodeup-shim-inactive;; esac",
+                shell_single_quote(&dir)
+            ),
+        ],
+    }
+}
+
+fn operating_system_label() -> &'static str {
+    match PlatformTarget::from_host() {
+        Some(PlatformTarget::WindowsX64 | PlatformTarget::WindowsArm64) => "windows",
+        Some(PlatformTarget::DarwinX64 | PlatformTarget::DarwinArm64) => "macos",
+        Some(PlatformTarget::LinuxX64 | PlatformTarget::LinuxArm64) => "linux",
+        None if cfg!(target_os = "windows") => "windows",
+        None if cfg!(target_os = "macos") => "macos",
+        None if cfg!(target_os = "linux") => "linux",
+        None => "unix",
     }
 }
 
