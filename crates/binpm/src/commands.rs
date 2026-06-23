@@ -6786,6 +6786,9 @@ fn init(args: InitArgs) -> Result<i32> {
 
 fn env_cmd(args: EnvArgs) -> Result<i32> {
     if let Some(command) = args.command {
+        if args.global || args.local {
+            return Err(BinpmError::ProfileSetupRejectsScopeFlags);
+        }
         return match command {
             EnvCommand::Setup(setup) => env_setup(setup),
         };
@@ -7016,9 +7019,13 @@ fn profile_path(shell: Shell) -> Result<PathBuf> {
             .join("fish")
             .join("conf.d")
             .join("binpm.fish")),
-        Shell::Powershell => Ok(home
+        Shell::Powershell if cfg!(windows) => Ok(home
             .join("Documents")
             .join("PowerShell")
+            .join("Microsoft.PowerShell_profile.ps1")),
+        Shell::Powershell => Ok(home
+            .join(".config")
+            .join("powershell")
             .join("Microsoft.PowerShell_profile.ps1")),
         Shell::Cmd => Err(BinpmError::ProfileSetupUnsupportedShell {
             shell: shell.as_str().to_string(),
@@ -7028,7 +7035,8 @@ fn profile_path(shell: Shell) -> Result<PathBuf> {
 
 fn profile_home(shell: Shell) -> Result<PathBuf> {
     let home = match shell {
-        Shell::Powershell => env_path("USERPROFILE").or_else(|| env_path("HOME")),
+        Shell::Powershell if cfg!(windows) => env_path("USERPROFILE").or_else(|| env_path("HOME")),
+        Shell::Powershell => env_path("HOME"),
         Shell::Bash | Shell::Zsh | Shell::Fish => env_path("HOME"),
         Shell::Cmd => None,
     };
@@ -7044,6 +7052,20 @@ fn profile_home(shell: Shell) -> Result<PathBuf> {
             shell: shell.as_str(),
             path: home,
             message: "home directory must be absolute".to_string(),
+        });
+    }
+    if !home.exists() {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: home,
+            message: "home directory does not exist".to_string(),
+        });
+    }
+    if !home.is_dir() {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: home,
+            message: "home path is not a directory".to_string(),
         });
     }
     Ok(home)
@@ -7458,8 +7480,8 @@ fn print_global_path_setup_guidance(global_bin: &Path) {
          setup commands"
     );
     println!(
-        "path_setup: profile changes are opt-in; persist only the global bin line in shell \
-         profiles"
+        "path_setup: profile changes are opt-in; run `binpm env setup --shell \
+         <bash|zsh|fish|powershell>` to preview and apply only the global bin line"
     );
     println!("path_setup: the project-local PATH line is for the current project/session only");
 }

@@ -110,6 +110,11 @@ pub enum BinpmError {
     )]
     ProfileSetupUnsupportedShell { shell: String },
     #[error(
+        "`binpm env setup` only persists the global bin PATH line; do not pass `--global` or \
+         `--local` with setup."
+    )]
+    ProfileSetupRejectsScopeFlags,
+    #[error(
         "Refusing to update {shell} profile `{}`: {message}",
         path.display()
     )]
@@ -431,6 +436,7 @@ impl BinpmError {
             | Self::UnsupportedShell { .. }
             | Self::ShellRequired
             | Self::ProfileSetupUnsupportedShell { .. }
+            | Self::ProfileSetupRejectsScopeFlags
             | Self::ProfileSetupRefused { .. }
             | Self::ReleaseNotFound { .. }
             | Self::ManifestExists { .. }

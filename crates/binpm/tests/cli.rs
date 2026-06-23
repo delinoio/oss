@@ -875,6 +875,33 @@ fn env_setup_appends_only_global_path_line() {
 }
 
 #[test]
+fn env_setup_rejects_parent_scope_flags() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let profile = home_dir.join(".bashrc");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "--local", "setup", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "`binpm env setup` only persists the global bin PATH line",
+        ));
+
+    assert!(
+        !profile.exists(),
+        "scoped setup invocations must not mutate profile files"
+    );
+}
+
+#[test]
 fn env_setup_is_idempotent_for_existing_line() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home_dir = temp_dir.path().join("home");
@@ -935,11 +962,19 @@ fn env_setup_supports_powershell_profile_fixture() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let userprofile = temp_dir.path().join("userprofile");
     fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
     let binpm_home = temp_dir.path().join("binpm-home");
     let global_bin = binpm_home.join("bin");
+    #[cfg(windows)]
     let profile = userprofile
         .join("Documents")
         .join("PowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    #[cfg(not(windows))]
+    let profile = home_dir
+        .join(".config")
+        .join("powershell")
         .join("Microsoft.PowerShell_profile.ps1");
     let expected_line = format!(
         "$env:PATH = '{}' + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} \
@@ -951,6 +986,7 @@ fn env_setup_supports_powershell_profile_fixture() {
     command
         .env_clear()
         .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
         .env("BINPM_HOME", &binpm_home)
         .args(["env", "setup", "--shell", "powershell"])
         .assert()
@@ -988,9 +1024,35 @@ fn env_setup_refuses_cmd_and_ambiguous_profile_targets() {
         .assert()
         .failure()
         .code(2)
-        .stderr(predicate::str::contains(
-            "profile parent exists but is not a directory",
-        ));
+        .stderr(predicate::str::contains("home path is not a directory"));
+}
+
+#[test]
+fn env_setup_refuses_missing_home_directories() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let missing_home = temp_dir.path().join("missing-home");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let would_be_profile = missing_home
+        .join(".config")
+        .join("fish")
+        .join("conf.d")
+        .join("binpm.fish");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &missing_home)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "fish"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("home directory does not exist"));
+
+    assert!(
+        !would_be_profile.exists(),
+        "missing homes must be refused before profile directories are created"
+    );
 }
 
 #[test]
@@ -1905,7 +1967,8 @@ fn doctor_guides_path_setup_when_global_bin_is_absent_from_path() {
         .stdout(predicate::str::contains("global_bin_on_path: no"))
         .stdout(predicate::str::contains("binpm env --global --shell"))
         .stdout(predicate::str::contains("profile changes are opt-in"))
-        .stdout(predicate::str::contains("persist only the global bin line"))
+        .stdout(predicate::str::contains("binpm env setup --shell"))
+        .stdout(predicate::str::contains("apply only the global bin line"))
         .stdout(predicate::str::contains(
             "project-local PATH line is for the current project/session only",
         ));
