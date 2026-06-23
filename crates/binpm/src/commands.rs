@@ -35,19 +35,19 @@ use crate::{
         ProviderAuth, ReleaseAsset, ReleaseClient, GITHUB_ASSET_DOWNLOAD_ACCEPT,
     },
     storage::{
-        archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
-        ensure_dir, install_bare_executable, install_executable_bytes, installed_filename,
-        list_package_records, managed_installed_path, package_record_from_resolved,
-        package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
-        read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
-        referenced_cache_keys, reject_symlinked_cache_entry, reject_symlinked_package_record_dirs,
-        remove_cache_ref, remove_installed_binary, remove_package_record, remove_path_if_exists,
-        remove_stale_cache_refs, require_regular_managed_file,
-        require_verified_regular_cache_asset, sanitize_persisted_url, scan_cache_references,
-        validate_command_name, validate_download_url, validate_installed_binary_path,
-        validate_sha256_digest, write_cache_ref, write_lockfile, write_manifest,
-        write_package_record, CachePaths, LockTool, Manifest, ManifestTool, PackageRecord,
-        ResolvedAsset, ScopePaths, SignatureSidecar, LOCKFILE_FILE, MANIFEST_FILE,
+        archive_format, cache_asset_is_verified_regular, cache_ref_path, clean_cache,
+        deterministic_installed_path, ensure_dir, install_bare_executable,
+        install_executable_bytes, installed_filename, list_package_records, managed_installed_path,
+        package_record_from_resolved, package_record_path, populate_cache_from_bytes, prune_cache,
+        read_cache_records, read_lockfile, read_manifest, read_package_record,
+        record_verified_cache_hit, referenced_cache_keys, reject_symlinked_cache_entry,
+        reject_symlinked_package_record_dirs, remove_cache_ref, remove_installed_binary,
+        remove_package_record, remove_path_if_exists, remove_stale_cache_refs,
+        require_regular_managed_file, require_verified_regular_cache_asset, sanitize_persisted_url,
+        scan_cache_references, validate_command_name, validate_download_url,
+        validate_installed_binary_path, validate_sha256_digest, write_cache_ref, write_lockfile,
+        write_manifest, write_package_record, CachePaths, LockTool, Manifest, ManifestTool,
+        PackageRecord, ResolvedAsset, ScopePaths, SignatureSidecar, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
 
@@ -1275,7 +1275,13 @@ fn preview_update(scope: Scope, selected: &[String]) -> Result<i32> {
 
 fn preview_update_json(scope: Scope, selected: &[String], frozen_lockfile: bool) -> Result<i32> {
     let plan = match scope {
-        Scope::Local => build_local_update_plan(selected)?,
+        Scope::Local => {
+            let plan = build_local_update_plan(selected)?;
+            if frozen_lockfile {
+                validate_frozen_local_update_dry_run(selected)?;
+            }
+            plan
+        }
         Scope::Global => build_global_update_plan(selected)?,
         Scope::Auto => unreachable!("select_scope never returns auto"),
     };
@@ -1316,6 +1322,22 @@ fn print_local_update_plan(selected: &[String]) -> Result<()> {
     Ok(())
 }
 
+fn validate_frozen_local_update_dry_run(selected: &[String]) -> Result<()> {
+    let root = require_manifest_root()?;
+    let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
+    validate_frozen_local_update_latest(&root, &manifest, selected)?;
+    if selected.is_empty() {
+        let lockfile_path = root.join(LOCKFILE_FILE);
+        let lockfile = read_lockfile(&lockfile_path)?;
+        if !local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty() {
+            return Err(BinpmError::FrozenLockfileOrphanCleanup {
+                path: lockfile_path,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn build_local_update_plan(selected: &[String]) -> Result<UpdatePlan> {
     let root = require_manifest_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
@@ -1347,9 +1369,8 @@ fn build_local_update_plan(selected: &[String]) -> Result<UpdatePlan> {
         })
         .collect();
     let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
-    if manifest.tools.is_empty()
-        && local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty()
-    {
+    let orphan_cmds = local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?;
+    if manifest.tools.is_empty() && orphan_cmds.is_empty() {
         return Ok(UpdatePlan {
             planned_updates,
             file_changes: Vec::new(),
@@ -1367,10 +1388,27 @@ fn build_local_update_plan(selected: &[String]) -> Result<UpdatePlan> {
         file_changes.push(root.join(MANIFEST_FILE).display().to_string());
     }
     file_changes.push(root.join(LOCKFILE_FILE).display().to_string());
+    let scope_paths = ScopePaths::local(root.clone());
+    let mut runtime_changes = vec![scope_paths.bin.display().to_string()];
+    if !orphan_cmds.is_empty() {
+        let cache_paths = CachePaths::new(&binpm_home()?);
+        for cmd in orphan_cmds {
+            runtime_changes.push(
+                package_record_path(&scope_paths, &cmd)
+                    .display()
+                    .to_string(),
+            );
+            runtime_changes.push(
+                cache_ref_path(&cache_paths, &root, &cmd)
+                    .display()
+                    .to_string(),
+            );
+        }
+    }
     Ok(UpdatePlan {
         planned_updates,
         file_changes,
-        runtime_changes: vec![ScopePaths::local(root).bin.display().to_string()],
+        runtime_changes,
         no_op: None,
     })
 }
