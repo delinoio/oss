@@ -3167,7 +3167,13 @@ version = "1.0.0"
     let output = binpm()
         .current_dir(&project)
         .env("BINPM_HOME", &home)
-        .args(["--json", "update", "--local", "--dry-run"])
+        .args([
+            "--json",
+            "update",
+            "--local",
+            "--dry-run",
+            "--no-frozen-lockfile",
+        ])
         .output()
         .expect("update json dry-run");
 
@@ -3203,7 +3209,13 @@ source = "github:owner/tool"
     let output = binpm()
         .current_dir(&project)
         .env("BINPM_HOME", &home)
-        .args(["--json", "update", "--local", "--dry-run"])
+        .args([
+            "--json",
+            "update",
+            "--local",
+            "--dry-run",
+            "--no-frozen-lockfile",
+        ])
         .output()
         .expect("update json dry-run");
 
@@ -3268,7 +3280,13 @@ signature_verified = false
     let output = binpm()
         .current_dir(&project)
         .env("BINPM_HOME", &home)
-        .args(["--json", "update", "--local", "--dry-run"])
+        .args([
+            "--json",
+            "update",
+            "--local",
+            "--dry-run",
+            "--no-frozen-lockfile",
+        ])
         .output()
         .expect("update json dry-run");
 
