@@ -311,6 +311,8 @@ struct CandidateOutput {
     eligible: bool,
     recognized_pattern: bool,
     rejection_reason: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    unsupported_verification_sidecars: Vec<UnsupportedVerificationSidecar>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1502,7 +1504,10 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
                 .as_ref()
                 .map(|selection| selected_asset_output(&selection.selected))
                 .transpose()?,
-            candidates: all_decisions.iter().map(candidate_output).collect(),
+            candidates: all_decisions
+                .iter()
+                .map(|decision| candidate_output(decision, &selection.release.assets))
+                .collect(),
             release_diagnostics: release_diagnostics(&all_decisions, &target),
         });
     }
@@ -2827,9 +2832,7 @@ fn install_resolved(
     {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
-            unsupported_sidecars: unsupported_sidecar_names(
-                &resolved.unsupported_verification_sidecars,
-            ),
+            unsupported_sidecars: resolved.unsupported_verification_sidecars.clone(),
         });
     }
     ensure_no_package_record_install_path_collision(scope_paths, cmd, resolved.target.os)?;
@@ -2903,9 +2906,7 @@ fn install_resolved(
     if require_verified && !resolved_has_verified_source(&resolved) {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
-            unsupported_sidecars: unsupported_sidecar_names(
-                &resolved.unsupported_verification_sidecars,
-            ),
+            unsupported_sidecars: resolved.unsupported_verification_sidecars.clone(),
         });
     }
     if resolved.checksum_source == ChecksumSource::Local {
@@ -3088,9 +3089,7 @@ fn install_local_from_lock(
     {
         return Err(BinpmError::VerificationRequired {
             package: record.package_spec,
-            unsupported_sidecars: unsupported_sidecar_names(
-                &record.unsupported_verification_sidecars,
-            ),
+            unsupported_sidecars: record.unsupported_verification_sidecars.clone(),
         });
     }
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
@@ -3114,9 +3113,7 @@ fn install_local_from_lock(
                 if !verification.verified {
                     return Err(BinpmError::VerificationRequired {
                         package: record.package_spec.clone(),
-                        unsupported_sidecars: unsupported_sidecar_names(
-                            &record.unsupported_verification_sidecars,
-                        ),
+                        unsupported_sidecars: record.unsupported_verification_sidecars.clone(),
                     });
                 }
                 repair_locked_verification = Some(verification);
@@ -3176,9 +3173,7 @@ fn install_local_from_lock(
         if !verification.verified {
             return Err(BinpmError::VerificationRequired {
                 package: record.package_spec.clone(),
-                unsupported_sidecars: unsupported_sidecar_names(
-                    &record.unsupported_verification_sidecars,
-                ),
+                unsupported_sidecars: record.unsupported_verification_sidecars.clone(),
             });
         }
         Some(verification)
@@ -5372,7 +5367,10 @@ fn selected_asset_output(
     })
 }
 
-fn candidate_output(decision: &crate::assets::CandidateDecision) -> CandidateOutput {
+fn candidate_output(
+    decision: &crate::assets::CandidateDecision,
+    assets: &[ReleaseAsset],
+) -> CandidateOutput {
     CandidateOutput {
         asset_name: decision.asset_name.clone(),
         kind: decision.kind.as_str().to_string(),
@@ -5385,6 +5383,10 @@ fn candidate_output(decision: &crate::assets::CandidateDecision) -> CandidateOut
         eligible: decision.eligible,
         recognized_pattern: decision.recognized_pattern,
         rejection_reason: decision.rejection_reason.clone(),
+        unsupported_verification_sidecars: unsupported_verification_sidecars_for_asset(
+            &decision.asset_name,
+            assets,
+        ),
     }
 }
 
@@ -6528,9 +6530,7 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
             if !locked_record_verified_source(&cache_paths, &record)?.verified {
                 return Err(BinpmError::VerificationRequired {
                     package: record.package_spec,
-                    unsupported_sidecars: unsupported_sidecar_names(
-                        &record.unsupported_verification_sidecars,
-                    ),
+                    unsupported_sidecars: record.unsupported_verification_sidecars.clone(),
                 });
             }
             verify_check_output_with_state(cmd.clone(), None, &record, VerificationState::Verified)
@@ -6904,9 +6904,7 @@ fn verify_lockfile_records(
                 if !download_locked_record_verified_source(&record)? {
                     return Err(BinpmError::VerificationRequired {
                         package: record.package_spec,
-                        unsupported_sidecars: unsupported_sidecar_names(
-                            &record.unsupported_verification_sidecars,
-                        ),
+                        unsupported_sidecars: record.unsupported_verification_sidecars.clone(),
                     });
                 }
                 verify_check_output_with_state(
@@ -7444,15 +7442,15 @@ mod tests {
     use super::{
         add_unsupported_signature_sidecar_without_policy, assert_local_runtime_records_complete,
         assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
-        assert_runtime_record_matches_lock, binpm_home_from_values, capture_local_remove_state,
-        capture_runtime_tool_state, checksum_digest_from_text, checksum_manifest_candidates,
-        checksum_sidecar_candidates, cleanup_failed_install_cache, commit_deferred_cache_hit,
-        deterministic_installed_path, download_asset_name, download_initial_capacity,
-        ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
-        format_outdated_tool_line, github_sha256_digest, global_update_selected_binary,
-        has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
-        install_path_collision_key, is_retryable_status, local_manifest_orphan_cmds,
-        local_runtime_lock_records, local_tool_execution_ready,
+        assert_runtime_record_matches_lock, binpm_home_from_values, candidate_output,
+        capture_local_remove_state, capture_runtime_tool_state, checksum_digest_from_text,
+        checksum_manifest_candidates, checksum_sidecar_candidates, cleanup_failed_install_cache,
+        commit_deferred_cache_hit, deterministic_installed_path, download_asset_name,
+        download_initial_capacity, ensure_no_package_record_install_path_collision,
+        execute_command, format_download_progress, format_outdated_tool_line, github_sha256_digest,
+        global_update_selected_binary, has_current_cache_record, has_local_runtime_or_lock_state,
+        install_local_from_lock, install_path_collision_key, is_retryable_status,
+        local_manifest_orphan_cmds, local_runtime_lock_records, local_tool_execution_ready,
         local_update_manifest_with_latest_versions_from, lock_targets_conflict_with_manifest,
         lock_targets_conflict_with_record, locked_record_download_request,
         locked_record_signature_sidecar, locked_record_verified_download_request,
@@ -7497,7 +7495,8 @@ mod tests {
             validate_installed_binary_path, write_cache_record, write_lockfile, write_manifest,
             write_package_record, CachePaths, CacheRecord, LockTool, Lockfile, Manifest,
             ManifestTargetOverride, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths,
-            SignatureSidecar, UnsupportedVerificationSidecarKind, LOCKFILE_FILE, MANIFEST_FILE,
+            SignatureSidecar, UnsupportedVerificationSidecar, UnsupportedVerificationSidecarKind,
+            LOCKFILE_FILE, MANIFEST_FILE,
         },
     };
 
@@ -10497,6 +10496,53 @@ mod tests {
     }
 
     #[test]
+    fn explain_candidate_output_reports_unsupported_verification_sidecars() {
+        let target = linux_target();
+        let assets = [
+            ReleaseAsset {
+                name: "tool-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz"
+                    .to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            },
+            ReleaseAsset {
+                name: "tool-x86_64-unknown-linux-gnu.tar.gz.asc".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz.asc"
+                    .to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            },
+        ];
+        let selection =
+            crate::assets::select_asset(SourceProvider::GitHub, &target, &assets).expect("asset");
+
+        let output = candidate_output(&selection.selected, &assets);
+
+        assert_eq!(output.unsupported_verification_sidecars.len(), 1);
+        assert_eq!(
+            output.unsupported_verification_sidecars[0].asset_name,
+            "tool-x86_64-unknown-linux-gnu.tar.gz.asc"
+        );
+        assert_eq!(
+            output.unsupported_verification_sidecars[0].kind,
+            UnsupportedVerificationSidecarKind::GpgSignature
+        );
+    }
+
+    #[test]
     fn explain_diagnostics_distinguish_installer_only_releases() {
         let target = linux_target();
         let assets = [
@@ -11529,8 +11575,14 @@ mod tests {
         let error = BinpmError::VerificationRequired {
             package: "github:owner/tool@1.0.0".to_string(),
             unsupported_sidecars: vec![
-                "tool-linux-amd64.asc".to_string(),
-                "tool-linux-amd64.minisig".to_string(),
+                UnsupportedVerificationSidecar {
+                    asset_name: "tool-linux-amd64.asc".to_string(),
+                    kind: UnsupportedVerificationSidecarKind::GpgSignature,
+                },
+                UnsupportedVerificationSidecar {
+                    asset_name: "tool-linux-amd64.minisig".to_string(),
+                    kind: UnsupportedVerificationSidecarKind::MinisignSignature,
+                },
             ],
         };
 
@@ -11542,8 +11594,20 @@ mod tests {
         assert_eq!(diagnostic["reason"], "unsupported_sidecar_presence");
         assert_eq!(
             diagnostic["unsupported_sidecars"],
-            serde_json::json!(["tool-linux-amd64.asc", "tool-linux-amd64.minisig"])
+            serde_json::json!([
+                {
+                    "asset_name": "tool-linux-amd64.asc",
+                    "kind": "gpg-signature"
+                },
+                {
+                    "asset_name": "tool-linux-amd64.minisig",
+                    "kind": "minisign-signature"
+                }
+            ])
         );
+        let message = error.to_string();
+        assert!(message.contains("Unsupported verification sidecars were present"));
+        assert!(message.contains("tool-linux-amd64.asc (gpg-signature)"));
     }
 
     #[test]

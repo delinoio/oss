@@ -2,6 +2,8 @@ use std::{fmt, io, path::PathBuf, sync::OnceLock};
 
 use thiserror::Error;
 
+use crate::storage::{UnsupportedVerificationSidecar, UnsupportedVerificationSidecarKind};
+
 pub type Result<T> = std::result::Result<T, BinpmError>;
 
 static FROZEN_LOCKFILE_CONTEXT: OnceLock<FrozenLockfileCommandContext> = OnceLock::new();
@@ -271,13 +273,10 @@ pub enum BinpmError {
         manifest.display()
     )]
     ExecToolMissing { cmd: String, manifest: PathBuf },
-    #[error(
-        "`--require-verified` requires upstream digest, checksum, or verified signature material \
-         for `{package}`."
-    )]
+    #[error("{}", verification_required_message(package, unsupported_sidecars))]
     VerificationRequired {
         package: String,
-        unsupported_sidecars: Vec<String>,
+        unsupported_sidecars: Vec<UnsupportedVerificationSidecar>,
     },
     #[error(
         "Manifest checksum_source `{checksum_source}` is declarative only and cannot be used as \
@@ -485,6 +484,48 @@ impl BinpmError {
             | Self::CommandFailed { .. } => 2,
             Self::Execute { .. } => 1,
         }
+    }
+}
+
+fn verification_required_message(
+    package: &str,
+    unsupported_sidecars: &[UnsupportedVerificationSidecar],
+) -> String {
+    let base = format!(
+        "`--require-verified` requires upstream digest, checksum, or verified signature material \
+         for `{package}`."
+    );
+    if unsupported_sidecars.is_empty() {
+        return base;
+    }
+
+    let sidecars = unsupported_sidecars
+        .iter()
+        .map(|sidecar| {
+            format!(
+                "{} ({})",
+                sidecar.asset_name,
+                unsupported_verification_sidecar_kind_label(sidecar.kind)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "{base} Unsupported verification sidecars were present but are not trusted: {sidecars}."
+    )
+}
+
+fn unsupported_verification_sidecar_kind_label(
+    kind: UnsupportedVerificationSidecarKind,
+) -> &'static str {
+    match kind {
+        UnsupportedVerificationSidecarKind::GpgSignature => "gpg-signature",
+        UnsupportedVerificationSidecarKind::MinisignSignature => "minisign-signature",
+        UnsupportedVerificationSidecarKind::RawSigstoreMetadata => "raw-sigstore-metadata",
+        UnsupportedVerificationSidecarKind::Certificate => "certificate",
+        UnsupportedVerificationSidecarKind::Attestation => "attestation",
+        UnsupportedVerificationSidecarKind::Sbom => "sbom",
+        UnsupportedVerificationSidecarKind::Provenance => "provenance",
     }
 }
 
