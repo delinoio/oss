@@ -508,16 +508,21 @@ fn json_output_help_still_uses_clap_help_output() {
 
 #[test]
 #[serial]
-fn delegated_run_arguments_do_not_request_json_parser_errors() {
+fn delegated_run_arguments_do_not_request_json_application_errors() {
     let env = TestEnv::new();
 
-    env.command()
-        .args(["run", "lts", "node", "--output", "json"])
-        .assert()
-        .failure()
-        .code(4)
-        .stderr(predicates::str::contains("nodeup error:"))
-        .stderr(predicates::str::contains("Release index request failed"));
+    for args in [
+        vec!["run", "current", "node", "--output", "json"],
+        vec!["run", "current", "node", "--output=json"],
+    ] {
+        env.command()
+            .args(&args)
+            .assert()
+            .failure()
+            .code(4)
+            .stderr(predicates::str::contains("nodeup error:"))
+            .stderr(predicates::str::contains("Release index request failed"));
+    }
 }
 
 #[test]
