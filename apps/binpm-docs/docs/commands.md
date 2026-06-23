@@ -30,6 +30,8 @@ Commands that support both local and global scope default to local when a local 
 
 `binpm update [cmd...] [--local|--global]` updates selected tools, or every tool in the selected scope when no command names are supplied. Output states the selected scope and whether the request is all-tools or command-scoped before printing the planned update list. Global updates use existing global package records, preserve each command alias and selected upstream binary, resolve the latest stable release for the recorded source, and finalize through the same cache, install, rollback, and verification behavior as global installs. Add `--dry-run` to preview the selected scope, update mode, and planned runtime changes without mutating package records, cache references, or executables.
 
+`--json` is stable for final-result envelopes from `install`, `add`, `update`, and `remove`. It is not a progress stream. `binpm init --json` is not supported and fails before creating files.
+
 ## Execution
 
 ```bash

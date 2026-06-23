@@ -299,8 +299,34 @@ fn help_includes_initial_command_surface() {
         .stdout(predicate::str::contains("cache"))
         .stdout(predicate::str::contains("verify"))
         .stdout(predicate::str::contains("env"))
+        .stdout(predicate::str::contains(
+            "supported diagnostics, cache cleanup summaries",
+        ))
+        .stdout(predicate::str::contains("mutation final-result commands"))
         .stdout(predicate::str::contains("--verbose"))
         .stdout(predicate::str::contains("--debug"));
+}
+
+#[test]
+fn init_json_is_rejected_without_mutating_manifest() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["init", "--json"])
+        .output()
+        .expect("init --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 2);
+    let message = payload["error"]["message"].as_str().expect("message");
+    assert!(message.contains("`--json` is not supported for `binpm init`"));
+    assert!(message.contains("install, add, update, and remove"));
+    assert!(!temp_dir.path().join("binpm.toml").exists());
 }
 
 #[test]
