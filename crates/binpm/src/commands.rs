@@ -1298,7 +1298,7 @@ fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<Mutatio
                 ],
                 tools: tool,
             };
-            return Ok(result);
+            Ok(result)
         }
         Scope::Global => {
             let paths = ScopePaths::global(binpm_home()?);
@@ -1308,7 +1308,7 @@ fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<Mutatio
                 println!("would update {}", paths.packages.display());
                 println!("would update {}", paths.bin.display());
             }
-            return Ok(MutationOutput {
+            Ok(MutationOutput {
                 command: "remove",
                 scope,
                 dry_run: true,
@@ -1318,7 +1318,7 @@ fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<Mutatio
                     MutationAction::PlannedRemove,
                     &record,
                 )],
-            });
+            })
         }
         Scope::Auto => unreachable!("select_scope never returns auto"),
     }
