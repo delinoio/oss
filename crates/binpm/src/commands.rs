@@ -194,6 +194,14 @@ enum PathState {
     Missing,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+enum CacheKeyStatus {
+    #[serde(rename = "lockfile-backed")]
+    LockfileBacked,
+    #[serde(rename = "missing-lockfile")]
+    MissingLockfile,
+}
+
 #[derive(Debug, Serialize)]
 struct VerifyOutput {
     command: &'static str,
@@ -215,12 +223,14 @@ struct VerifyCheckOutput {
 #[derive(Debug, Serialize)]
 struct CacheKeyOutput {
     command: &'static str,
+    status: CacheKeyStatus,
     cache_key: String,
     target: HostTarget,
     target_key: String,
     lockfile_path: String,
     lockfile: PathState,
     lockfile_digest: String,
+    recommended_next_command: Option<&'static str>,
     read_only: bool,
 }
 
@@ -933,6 +943,16 @@ fn cache_key(output: OutputMode) -> Result<i32> {
     let lockfile_path = project_root.join(LOCKFILE_FILE);
     let target = HostTarget::current()?;
     let lockfile = json_path_state(&lockfile_path);
+    let status = if lockfile == PathState::Missing {
+        CacheKeyStatus::MissingLockfile
+    } else {
+        CacheKeyStatus::LockfileBacked
+    };
+    let recommended_next_command = if status == CacheKeyStatus::MissingLockfile {
+        Some("binpm install")
+    } else {
+        None
+    };
     let digest = lockfile_digest(&lockfile_path)?;
     let target_key = target.key();
     let cache_key = format!("binpm-v1-{target_key}-{digest}");
@@ -947,12 +967,14 @@ fn cache_key(output: OutputMode) -> Result<i32> {
     if output.is_json() {
         return print_json(&CacheKeyOutput {
             command: "cache key",
+            status,
             cache_key,
             target,
             target_key,
             lockfile_path: lockfile_path.display().to_string(),
             lockfile,
             lockfile_digest: digest,
+            recommended_next_command,
             read_only: true,
         });
     }
@@ -961,6 +983,12 @@ fn cache_key(output: OutputMode) -> Result<i32> {
             "warning: {} is missing; cache key uses the empty lockfile digest",
             lockfile_path.display()
         );
+        println!("missing-lockfile cache key: {cache_key}");
+        println!(
+            "next command: {}",
+            recommended_next_command.unwrap_or("binpm install")
+        );
+        return Ok(0);
     }
     println!("{cache_key}");
     Ok(0)
@@ -2141,7 +2169,7 @@ fn install_global_source(
         cache_cleanup_result?;
         return Err(error);
     }
-    println!("installed {cmd} {}", record.installed_path);
+    print_install_summary(Scope::Global, cmd, &record);
     if !path_contains_entry(&scope_paths.bin) {
         print_global_path_setup_guidance(&scope_paths.bin);
     }
@@ -2739,7 +2767,7 @@ fn install_local_tool(
         cleanup_failed_install_cache(&cache_paths, &record.sha256, Some(root), &install)?;
         return Err(error);
     }
-    println!("installed {cmd} {}", record.installed_path);
+    print_install_summary(Scope::Local, cmd, &record);
     Ok(InstalledPackage {
         record,
         populated_cache_entry: install.populated_cache_entry,
@@ -2812,6 +2840,33 @@ struct InstalledPackage {
     populated_cache_entry: bool,
     deferred_cache_hit: Option<ResolvedAsset>,
     cache_metadata_snapshot: Option<CacheMetadataSnapshot>,
+}
+
+fn print_install_summary(scope: Scope, cmd: &str, record: &PackageRecord) {
+    println!("installed {cmd} {}", record.installed_path);
+    println!("installed command: {cmd}");
+    println!("selected binary: {}", record.selected_binary);
+    if scope == Scope::Global && command_alias_differs_from_upstream(cmd, &record.selected_binary) {
+        println!(
+            "alias note: installed command `{cmd}` invokes upstream binary `{}`; use `--as <cmd>` \
+             to choose the local/global command alias and `--bin <upstream-binary>` to choose the \
+             upstream executable.",
+            record.selected_binary
+        );
+    }
+}
+
+fn command_alias_differs_from_upstream(cmd: &str, selected_binary: &str) -> bool {
+    upstream_binary_basename(selected_binary)
+        .map(|basename| basename != cmd)
+        .unwrap_or(false)
+}
+
+fn upstream_binary_basename(selected_binary: &str) -> Option<&str> {
+    selected_binary
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|basename| !basename.is_empty())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3535,7 +3590,7 @@ fn install_local_from_lock(
         cleanup_failed_install_cache(&cache_paths, &runtime_record.sha256, Some(root), &install)?;
         return Err(error);
     }
-    println!("installed {cmd} {}", runtime_record.installed_path);
+    print_install_summary(Scope::Local, cmd, &runtime_record);
     Ok(InstalledPackage {
         record: runtime_record,
         populated_cache_entry,
@@ -7605,13 +7660,13 @@ mod tests {
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
         checksum_digest_from_text, checksum_manifest_candidates, checksum_sidecar_candidates,
-        cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
-        download_asset_name, download_initial_capacity,
-        ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
-        format_outdated_tool_line, github_sha256_digest, global_update_selected_binary,
-        has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
-        install_path_collision_key, is_retryable_status, local_manifest_orphan_cmds,
-        local_runtime_lock_records, local_tool_execution_ready,
+        cleanup_failed_install_cache, command_alias_differs_from_upstream,
+        commit_deferred_cache_hit, deterministic_installed_path, download_asset_name,
+        download_initial_capacity, ensure_no_package_record_install_path_collision,
+        execute_command, format_download_progress, format_outdated_tool_line, github_sha256_digest,
+        global_update_selected_binary, has_current_cache_record, has_local_runtime_or_lock_state,
+        install_local_from_lock, install_path_collision_key, is_retryable_status,
+        local_manifest_orphan_cmds, local_runtime_lock_records, local_tool_execution_ready,
         local_update_manifest_with_latest_versions_from, lock_targets_conflict_with_manifest,
         lock_targets_conflict_with_record, locked_record_download_request,
         locked_record_signature_sidecar, locked_record_verified_download_request,
@@ -8789,6 +8844,15 @@ mod tests {
         assert!(message.contains("bin/beta"));
         assert!(message.contains("binpm add tool github:owner/tool@1.0.0 --bin bin/alpha"));
         assert!(message.contains("binpm x --package github:owner/tool@1.0.0 --bin bin/beta tool"));
+        assert!(message.contains("--also <cmd=upstream-binary>"));
+        assert!(message.contains("separate `[tools.<cmd>]`"));
+    }
+
+    #[test]
+    fn install_summary_alias_comparison_uses_upstream_basename() {
+        assert!(!command_alias_differs_from_upstream("rg", "rg"));
+        assert!(!command_alias_differs_from_upstream("rg", "bin/rg"));
+        assert!(command_alias_differs_from_upstream("ripgrep", "bin/rg"));
     }
 
     #[test]

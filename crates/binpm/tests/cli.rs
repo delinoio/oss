@@ -71,6 +71,12 @@ fn structured_cache_ref_path(home: &Path, project: &Path, cmd: &str) -> PathBuf 
         .join(format!("{digest:x}.ref"))
 }
 
+fn expected_project_path(project: &Path, relative: impl AsRef<Path>) -> std::path::PathBuf {
+    fs::canonicalize(project)
+        .expect("canonical project root")
+        .join(relative)
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 fn write_locked_tool_project(project: &Path, sha256: &str) {
     fs::create_dir_all(project).expect("create project");
@@ -207,6 +213,12 @@ fn add_and_x_help_include_explicit_bin_selection() {
         .success()
         .stdout(predicate::str::contains("--bin <BIN>"))
         .stdout(predicate::str::contains("--also <CMD=BIN>"))
+        .stdout(predicate::str::contains(
+            "binpm add foo github:owner/tools --bin bin/foo --also bar=bin/bar --also baz=bin/baz",
+        ))
+        .stdout(predicate::str::contains(
+            "CMD is the local command alias and BIN is the upstream binary",
+        ))
         .stdout(predicate::str::contains("--manifest-only"));
 
     let mut install = binpm();
@@ -485,7 +497,7 @@ fn execution_aliases_accept_package_and_forwarded_flags() {
 #[test]
 fn init_writes_minimal_manifest() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let manifest_path = temp_dir.path().join("binpm.toml");
+    let manifest_path = expected_project_path(temp_dir.path(), "binpm.toml");
     let mut command = binpm();
 
     command
@@ -512,7 +524,7 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
     fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
     let nested_dir = temp_dir.path().join("packages").join("cli");
     fs::create_dir_all(&nested_dir).expect("create nested dir");
-    let manifest_path = temp_dir.path().join("binpm.toml");
+    let manifest_path = expected_project_path(temp_dir.path(), "binpm.toml");
     let mut command = binpm();
 
     command
@@ -629,6 +641,7 @@ fn init_force_is_rejected() {
 fn init_from_nested_directory_detects_existing_manifest_without_git() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let manifest_path = temp_dir.path().join("binpm.toml");
+    let expected_manifest_path = expected_project_path(temp_dir.path(), "binpm.toml");
     fs::write(&manifest_path, "version = 1\n").expect("write manifest");
     let nested_dir = temp_dir.path().join("packages").join("cli");
     fs::create_dir_all(&nested_dir).expect("create nested dir");
@@ -642,7 +655,7 @@ fn init_from_nested_directory_detects_existing_manifest_without_git() {
         .code(2)
         .stdout(predicate::str::contains(format!(
             "manifest destination: {}",
-            manifest_path.display()
+            expected_manifest_path.display()
         )))
         .stdout(predicate::str::contains("created manifest:").not())
         .stderr(predicate::str::contains(
@@ -657,6 +670,7 @@ fn init_from_nested_directory_detects_existing_manifest_without_git() {
 fn init_treats_broken_manifest_symlink_as_existing_manifest() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let manifest_path = temp_dir.path().join("binpm.toml");
+    let expected_manifest_path = expected_project_path(temp_dir.path(), "binpm.toml");
     std::os::unix::fs::symlink(
         temp_dir.path().join("missing-manifest-target"),
         &manifest_path,
@@ -674,7 +688,7 @@ fn init_treats_broken_manifest_symlink_as_existing_manifest() {
         .code(2)
         .stdout(predicate::str::contains(format!(
             "manifest destination: {}",
-            manifest_path.display()
+            expected_manifest_path.display()
         )))
         .stdout(predicate::str::contains("created manifest:").not())
         .stderr(predicate::str::contains(
@@ -1084,15 +1098,20 @@ fn cache_key_from_nested_directory_uses_git_root_lockfile() {
     fs::create_dir_all(&nested_dir).expect("create nested dir");
     let expected_digest = format!("{:x}", Sha256::digest(b"root lock\n"));
     let empty_digest = format!("{:x}", Sha256::digest([]));
-    let mut command = binpm();
-
-    command
+    let output = binpm()
         .current_dir(&nested_dir)
         .args(["cache", "key"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(expected_digest))
-        .stdout(predicate::str::contains(empty_digest).not());
+        .output()
+        .expect("cache key");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.starts_with("binpm-v1-"));
+    assert!(stdout.ends_with(&format!("{expected_digest}\n")));
+    assert_eq!(stdout.lines().count(), 1);
+    assert!(!stdout.contains("missing-lockfile"));
+    assert!(!stdout.contains(&empty_digest));
 }
 
 #[test]
@@ -1138,17 +1157,19 @@ fn cache_key_from_nested_directory_uses_manifest_ancestor_lockfile_without_git()
 fn cache_key_warns_when_lockfile_is_missing_without_mutating_state() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let empty_digest = format!("{:x}", Sha256::digest([]));
-    let mut command = binpm();
-
-    command
+    let output = binpm()
         .current_dir(temp_dir.path())
         .args(["cache", "key"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(empty_digest))
-        .stderr(predicate::str::contains(
-            "cache key uses the empty lockfile digest",
-        ));
+        .output()
+        .expect("cache key");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
+    assert!(stdout.contains("missing-lockfile cache key: binpm-v1-"));
+    assert!(stdout.contains(&empty_digest));
+    assert!(stdout.contains("next command: binpm install"));
+    assert!(stderr.contains("cache key uses the empty lockfile digest"));
 
     assert!(!temp_dir.path().join("binpm.lock").exists());
 }
@@ -1166,7 +1187,9 @@ fn cache_key_json_reports_lockfile_status() {
     assert!(output.stderr.is_empty());
     let payload: Value = serde_json::from_slice(&output.stdout).expect("parse cache key json");
     assert_eq!(payload["command"], "cache key");
+    assert_eq!(payload["status"], "missing-lockfile");
     assert_eq!(payload["lockfile"], "missing");
+    assert_eq!(payload["recommended_next_command"], "binpm install");
     assert_eq!(payload["read_only"], true);
     assert!(payload["cache_key"]
         .as_str()
@@ -1307,10 +1330,7 @@ fn doctor_json_reports_path_states() {
     );
     assert_eq!(
         payload["local_bin"],
-        temp_dir
-            .path()
-            .join(".binpm")
-            .join("bin")
+        expected_project_path(temp_dir.path(), ".binpm/bin")
             .display()
             .to_string()
     );
@@ -2046,7 +2066,9 @@ version = "1.0.0"
     assert_eq!(payload["error"]["diagnostic"]["reason"], "missing_lockfile");
     assert_eq!(
         payload["error"]["diagnostic"]["would_change"],
-        project.join("binpm.lock").display().to_string()
+        expected_project_path(&project, "binpm.lock")
+            .display()
+            .to_string()
     );
     assert_eq!(
         payload["error"]["diagnostic"]["safest_next_command"],
@@ -3299,7 +3321,7 @@ source = "github:owner/tool"
         )
         .stdout(predicate::str::contains(format!(
             "would update {}",
-            project.join("binpm.lock").display()
+            expected_project_path(&project, "binpm.lock").display()
         )))
         .stdout(predicate::str::contains("dry run: no changes made"));
 

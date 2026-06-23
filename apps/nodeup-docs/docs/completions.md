@@ -77,7 +77,7 @@ Generating a completion script only writes the script text. Your shell must sour
 For the current shell:
 
 ```bash
-RUST_LOG=off nodeup completions bash >"$HOME/.nodeup.bash"
+nodeup completions bash >"$HOME/.nodeup.bash"
 source "$HOME/.nodeup.bash"
 ```
 
@@ -85,7 +85,7 @@ For future shells, install the file in a directory loaded by your bash completio
 
 ```bash
 install -d "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
-RUST_LOG=off nodeup completions bash >"${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/nodeup"
+nodeup completions bash >"${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/nodeup"
 ```
 
 Some bash setups require adding a `source` line to `~/.bashrc` instead of using a completion directory.
@@ -96,7 +96,7 @@ Install the generated `_nodeup` file in a directory that appears in `fpath`, the
 
 ```bash
 install -d "$HOME/.zfunc"
-RUST_LOG=off nodeup completions zsh >"$HOME/.zfunc/_nodeup"
+nodeup completions zsh >"$HOME/.zfunc/_nodeup"
 ```
 
 Add this to `~/.zshrc` if `$HOME/.zfunc` is not already in `fpath`:
@@ -113,7 +113,7 @@ Fish loads user completions from `~/.config/fish/completions`:
 
 ```fish
 mkdir -p ~/.config/fish/completions
-env RUST_LOG=off nodeup completions fish > ~/.config/fish/completions/nodeup.fish
+nodeup completions fish > ~/.config/fish/completions/nodeup.fish
 ```
 
 Open a new fish session, or run `complete --erase nodeup` before testing a regenerated script.
@@ -123,7 +123,6 @@ Open a new fish session, or run `complete --erase nodeup` before testing a regen
 For the current PowerShell session:
 
 ```powershell
-$env:RUST_LOG = "off"
 nodeup completions powershell > "$HOME\nodeup-completions.ps1"
 . "$HOME\nodeup-completions.ps1"
 ```
@@ -144,7 +143,7 @@ Execution policy and profile location vary by Windows and PowerShell edition. Ru
 For the current shell:
 
 ```text
-E:RUST_LOG=off nodeup completions elvish > ~/.nodeup-completions.elv
+nodeup completions elvish > ~/.nodeup-completions.elv
 use ~/.nodeup-completions.elv
 ```
 
@@ -152,4 +151,4 @@ For future sessions, add the `use ~/.nodeup-completions.elv` line to your Elvish
 
 ## Logging
 
-Completion generation logs include shell, command scope, and whether generation succeeded or failed. Logs are written to stderr when enabled, so redirected completion files contain only the generated script. Use `RUST_LOG=off` only when a wrapper also needs stderr to stay quiet.
+Completion generation logs include shell, command scope, and whether generation succeeded or failed. Nodeup logging defaults off for completion generation, so redirected completion files contain only the generated script. Set `RUST_LOG=nodeup=debug` or another explicit filter to enable tracing on stderr. Use `RUST_LOG=off` only when a wrapper also needs stderr to stay quiet after setting a logging filter elsewhere.

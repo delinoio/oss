@@ -65,6 +65,23 @@ pub struct ReleaseSkipDiagnostic {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+#[error(
+    "Failed to look up release metadata for `{package}` on {provider} host `{host}`: {kind} (HTTP \
+     {status}). {message} Hint: {hint}"
+)]
+pub struct ReleaseLookupDiagnostic {
+    pub package: String,
+    pub provider: &'static str,
+    pub host: String,
+    pub status: u16,
+    pub kind: ReleaseLookupDiagnosticKind,
+    pub message: String,
+    pub hint: String,
+    pub expected_auth_env_vars: Vec<String>,
+    pub configured_auth_env_var: Option<String>,
+}
+
 #[derive(Debug, Error)]
 pub enum BinpmError {
     #[error(
@@ -108,19 +125,8 @@ pub enum BinpmError {
     ReleaseHttpClient(#[source] reqwest::Error),
     #[error("Failed to look up release metadata: {0}")]
     ReleaseLookup(#[source] reqwest::Error),
-    #[error(
-        "Failed to look up release metadata for `{package}` on {provider} host `{host}`: {kind} \
-         (HTTP {status}). {message} Hint: {hint}"
-    )]
-    ReleaseLookupDiagnostic {
-        package: String,
-        provider: &'static str,
-        host: String,
-        status: u16,
-        kind: ReleaseLookupDiagnosticKind,
-        message: String,
-        hint: String,
-    },
+    #[error("{0}")]
+    ReleaseLookupDiagnostic(Box<ReleaseLookupDiagnostic>),
     #[error("Release asset `{url}` returned unexpected HTTP status {status}.")]
     ReleaseAssetStatus { url: String, status: u16 },
     #[error("Failed to stream release asset `{url}`: {source}")]
@@ -443,6 +449,17 @@ impl BinpmError {
                     }))
                     .collect::<Vec<_>>()
             })),
+            Self::ReleaseLookupDiagnostic(diagnostic) => Some(serde_json::json!({
+                "kind": "release_lookup",
+                "diagnostic": release_lookup_diagnostic_kind_json(diagnostic.kind),
+                "package": diagnostic.package,
+                "provider": diagnostic.provider,
+                "host": diagnostic.host,
+                "status": diagnostic.status,
+                "expected_auth_env_var": diagnostic.expected_auth_env_vars.first(),
+                "expected_auth_env_vars": diagnostic.expected_auth_env_vars,
+                "configured_auth_env_var": diagnostic.configured_auth_env_var,
+            })),
             _ => None,
         }
     }
@@ -478,7 +495,7 @@ impl BinpmError {
             | Self::InvalidGlobalHome { .. }
             | Self::ReleaseHttpClient(_)
             | Self::ReleaseLookup(_)
-            | Self::ReleaseLookupDiagnostic { .. }
+            | Self::ReleaseLookupDiagnostic(_)
             | Self::ReleaseAssetStatus { .. }
             | Self::DownloadStream { .. }
             | Self::FrozenRestoreDownload { .. }
@@ -510,6 +527,14 @@ impl BinpmError {
             | Self::CommandFailed { .. } => 2,
             Self::Execute { .. } => 1,
         }
+    }
+}
+
+fn release_lookup_diagnostic_kind_json(kind: ReleaseLookupDiagnosticKind) -> &'static str {
+    match kind {
+        ReleaseLookupDiagnosticKind::MissingAuth => "missing_auth",
+        ReleaseLookupDiagnosticKind::InsufficientPermissions => "insufficient_permissions",
+        ReleaseLookupDiagnosticKind::RateLimited => "rate_limited",
     }
 }
 
@@ -779,6 +804,13 @@ fn ambiguous_archive_binaries_message(
         message.push_str(" Retry with ");
         message.push_str(&suggestions.join(" or "));
         message.push('.');
+    }
+    if candidates.len() > 1 {
+        message.push_str(
+            " For local multi-binary archives, declare the primary command with `--bin` and add \
+             other commands with repeated `--also <cmd=upstream-binary>` values; binpm will write \
+             separate `[tools.<cmd>]` manifest tables.",
+        );
     }
     message
 }
