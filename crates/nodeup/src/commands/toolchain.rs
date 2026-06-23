@@ -550,6 +550,126 @@ fn runtime_reference_blockers_error(blockers: Vec<RuntimeReferenceBlocker>) -> N
     )
 }
 
+fn linked_runtime_reference_blockers(
+    name: &str,
+    default_selector: Option<&str>,
+    overrides: &[crate::overrides::OverrideEntry],
+    app: &NodeupApp,
+) -> Vec<RuntimeReferenceBlocker> {
+    let mut blockers = Vec::new();
+
+    if let Some(default) = default_selector {
+        if selector_references_linked_name(default, name) {
+            blockers.push(RuntimeReferenceBlocker {
+                reference_type: RuntimeReferenceBlockerKind::GlobalDefault,
+                runtime: name.to_string(),
+                selector: default.to_string(),
+                path: app.store.paths().settings_file.display().to_string(),
+                clear_command: "nodeup default <runtime>".to_string(),
+                change_command: "nodeup default <runtime>".to_string(),
+                action: "Set the global default to a different runtime before unlinking."
+                    .to_string(),
+            });
+        }
+    }
+
+    for entry in overrides {
+        if selector_references_linked_name(&entry.selector, name) {
+            blockers.push(RuntimeReferenceBlocker {
+                reference_type: RuntimeReferenceBlockerKind::DirectoryOverride,
+                runtime: name.to_string(),
+                selector: entry.selector.clone(),
+                path: entry.path.clone(),
+                clear_command: format!("nodeup override unset --path {}", shell_quote(&entry.path)),
+                change_command: format!(
+                    "nodeup override set <runtime> --path {}",
+                    shell_quote(&entry.path)
+                ),
+                action: "Unset this directory override or set it to a different runtime before \
+                         unlinking."
+                    .to_string(),
+            });
+        }
+    }
+
+    blockers
+}
+
+fn linked_runtime_reference_blockers_error(
+    blockers: Vec<RuntimeReferenceBlocker>,
+    requested_names: &[String],
+) -> NodeupError {
+    let blocked_name_list = blockers
+        .iter()
+        .map(|blocker| blocker.runtime.as_str())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let blocked_names = blocked_name_list.join(", ");
+    let blocker_summary = blockers
+        .iter()
+        .map(|blocker| {
+            format!(
+                "{} path={} selector={}",
+                blocker.reference_type.as_str(),
+                blocker.path,
+                blocker.selector
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let follow_up_commands = blockers
+        .iter()
+        .map(|blocker| match blocker.reference_type {
+            RuntimeReferenceBlockerKind::GlobalDefault => "`nodeup default <runtime>`".to_string(),
+            RuntimeReferenceBlockerKind::DirectoryOverride => {
+                format!(
+                    "`{}` or `{}`",
+                    blocker.clear_command, blocker.change_command
+                )
+            }
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let retry_command = format!(
+        "nodeup toolchain unlink {}",
+        requested_names
+            .iter()
+            .map(|name| shell_quote(name))
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    let retry_commands = vec![retry_command];
+
+    let mut diagnostics = ErrorDiagnostics::new();
+    diagnostics.insert(
+        "blocked_linked_runtimes".to_string(),
+        json!(blocked_name_list),
+    );
+    diagnostics.insert("blockers".to_string(), json!(blockers));
+    diagnostics.insert("retry_commands".to_string(), json!(retry_commands));
+
+    NodeupError::with_hint_and_diagnostics(
+        ErrorKind::Conflict,
+        format!(
+            "Cannot unlink {blocked_names}; referenced by blocking runtime selectors \
+             ({blocker_summary})"
+        ),
+        format!(
+            "Clear or change the blocking references first with {}, then retry with {}. External \
+             linked runtime directories are not deleted by unlink.",
+            follow_up_commands.join(", "),
+            retry_commands
+                .iter()
+                .map(|command| format!("`{command}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        diagnostics,
+    )
+}
+
 fn shell_quote(value: &str) -> String {
     if !value.is_empty()
         && value
@@ -575,6 +695,10 @@ fn canonical_version_selector(selector: &str) -> Option<String> {
         RuntimeSelector::Version(version) => Some(format!("v{version}")),
         _ => None,
     }
+}
+
+fn suggested_linked_name_for_reserved(input: &str) -> String {
+    format!("local-{}", input.to_ascii_lowercase())
 }
 
 fn link(
@@ -611,9 +735,13 @@ fn link(
         );
         return Err(NodeupError::invalid_input_with_hint(
             format!("Invalid linked runtime name: {name}"),
-            "Reserved channel selectors (`lts`, `current`, `latest`) cannot be used as linked \
-             runtime names. Choose a distinct name such as `local-lts`, then select channels with \
-             `nodeup default lts` or `nodeup toolchain install lts`.",
+            format!(
+                "Reserved channel selectors (`lts`, `current`, `latest`) cannot be used as linked \
+                 runtime names. Choose a distinct name such as `{}` or `work-node`; for channel \
+                 selection, keep using commands like `nodeup default lts` or `nodeup toolchain \
+                 install lts`.",
+                suggested_linked_name_for_reserved(name)
+            ),
         ));
     }
 
@@ -628,9 +756,13 @@ fn link(
         );
         return Err(NodeupError::invalid_input_with_hint(
             format!("Invalid linked runtime name: {name}"),
-            "Linked runtime names are case-sensitive, but names that differ from reserved channel \
-             selectors (`lts`, `current`, `latest`) only by case are not allowed. Choose a \
-             distinct name such as `local-lts`.",
+            format!(
+                "Linked runtime names are case-sensitive, but names that differ from reserved \
+                 channel selectors (`lts`, `current`, `latest`) only by case are not allowed \
+                 because they are ambiguous in runtime selection. Choose a distinct name such as \
+                 `{}` or `work-node`.",
+                suggested_linked_name_for_reserved(name)
+            ),
         ));
     }
 
@@ -733,8 +865,35 @@ fn link(
 
     let managed_shim_commands = managed_alias_availability_for_linked_runtime(name, &absolute);
     let availability_matrix = render_availability_matrix(&managed_shim_commands);
+    let node_check = managed_shim_commands
+        .iter()
+        .find(|entry| entry.command == "node")
+        .map(|entry| {
+            if entry.direct_executable_runnable {
+                format!("passed (runnable: {})", entry.selected_path)
+            } else {
+                format!("failed (checked: {})", entry.checked_paths.join(", "))
+            }
+        })
+        .unwrap_or_else(|| "passed".to_string());
+    let missing_optional_commands = managed_shim_commands
+        .iter()
+        .filter(|entry| entry.command != "node" && !entry.managed_shim_available)
+        .map(|entry| entry.command.as_str())
+        .collect::<Vec<_>>();
+    let optional_summary = if missing_optional_commands.is_empty() {
+        "Optional package-manager shims: all available.".to_string()
+    } else {
+        format!(
+            "Optional package-manager shims missing: {}. Linking still succeeds because only \
+             runnable `node` is required; these commands will fail later unless the external \
+             runtime provides them or npm-backed delegation is available.",
+            missing_optional_commands.join(", ")
+        )
+    };
     let message = format!(
-        "Linked runtime '{name}' -> {}\nManaged shim command availability:\n{}\nInstall on \
+        "Linked runtime '{name}' -> {}\nRequired node check: \
+         {node_check}\n{optional_summary}\nOptional managed shim availability:\n{}\nInstall on \
          demand: not eligible for linked runtimes; install-on-demand only provisions missing \
          Nodeup-managed version runtimes selected by a shim.\nWindows PATH/PATHEXT guidance: {}",
         absolute.display(),
@@ -789,6 +948,7 @@ fn unlink(
         }
     }
 
+    let mut blockers = Vec::new();
     for name in &unique_names {
         if !settings.linked_runtimes.contains_key(name) {
             return Err(NodeupError::not_found_with_hint(
@@ -798,28 +958,26 @@ fn unlink(
             ));
         }
 
-        if settings
-            .default_selector
-            .as_ref()
-            .is_some_and(|default| selector_references_linked_name(default, name))
-        {
-            return Err(NodeupError::conflict_with_hint(
-                format!("Cannot unlink '{name}'; it is used as the default runtime"),
-                "Set a different default first with `nodeup default <runtime>`, then retry unlink.",
-            ));
-        }
+        blockers.extend(linked_runtime_reference_blockers(
+            name,
+            settings.default_selector.as_deref(),
+            &overrides.entries,
+            app,
+        ));
+    }
 
-        if overrides
-            .entries
-            .iter()
-            .any(|entry| selector_references_linked_name(&entry.selector, name))
-        {
-            return Err(NodeupError::conflict_with_hint(
-                format!("Cannot unlink '{name}'; it is referenced by a directory override"),
-                "Update or remove the blocking override with `nodeup override set <runtime> \
-                 --path <path>` or `nodeup override unset --path <path>`.",
-            ));
-        }
+    if !blockers.is_empty() {
+        blockers.sort_by(|left, right| {
+            left.runtime
+                .cmp(&right.runtime)
+                .then_with(|| left.reference_type.cmp(&right.reference_type))
+                .then_with(|| left.path.cmp(&right.path))
+                .then_with(|| left.selector.cmp(&right.selector))
+        });
+        return Err(linked_runtime_reference_blockers_error(
+            blockers,
+            &unique_names,
+        ));
     }
 
     for name in &unique_names {

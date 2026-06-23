@@ -154,12 +154,22 @@ Node executable under `bin/`: `bin/node` on Unix-like hosts or `bin/node.exe`
 when Windows platform behavior is selected. Unix hosts require an executable
 permission bit on `bin/node`.
 
+Linked runtime names cannot be reserved channel selectors (`lts`, `current`,
+`latest`) or case variants such as `LTS`, `Current`, or `LATEST`. Use distinct
+names such as `local-lts` or `work-node`.
+
+Successful link output separates the required runnable `node` check from
+optional managed shim availability. Missing package-manager shims (`npm`,
+`npx`, `yarn`, or `pnpm`) are reported at link time but do not make linking
+fail.
+
 `nodeup toolchain unlink <name>...` removes linked runtime records from nodeup
 settings and tracked selectors without deleting external runtime directories.
 Unlinking fails with `conflict` when the linked name is the current default or
 is referenced by a directory override; change the default or remove/update the
-override before unlinking. Missing linked names fail with deterministic
-`not-found` errors.
+override before unlinking. Conflict diagnostics include blocker details,
+remediation commands, and retry commands. Missing linked names fail with
+deterministic `not-found` errors.
 
 ## `packageManager` Support
 

@@ -896,6 +896,8 @@ fn toolchain_link_rejects_reserved_channel_name_and_does_not_persist_selector() 
         "Reserved channel selectors (`lts`, `current`, `latest`) cannot be used as linked runtime \
          names.",
     ));
+    assert!(stderr.contains("local-lts"));
+    assert!(stderr.contains("work-node"));
 
     let list_output = env
         .command()
@@ -962,6 +964,7 @@ fn toolchain_link_rejects_case_variant_reserved_channel_name() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains(&format!("Invalid linked runtime name: {name}")));
         assert!(stderr.contains("differ from reserved channel selectors"));
+        assert!(stderr.contains(&format!("local-{}", name.to_ascii_lowercase())));
     }
 }
 
@@ -1143,6 +1146,7 @@ fn toolchain_link_json_reports_managed_shim_command_availability() {
     fs::create_dir_all(&runtime_bin).unwrap();
     write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
     write_runtime_executable(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n");
+    write_runtime_executable(runtime_bin.join("npx"), "#!/bin/sh\necho npx\n");
 
     let output = env
         .command()
@@ -1191,6 +1195,32 @@ fn toolchain_link_json_reports_managed_shim_command_availability() {
 
 #[test]
 #[serial]
+fn toolchain_link_human_separates_required_node_from_optional_missing_shims() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-node-only");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-node-only",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Required node check: passed"))
+        .stdout(predicates::str::contains(
+            "Optional package-manager shims missing: npm, npx, yarn, pnpm",
+        ))
+        .stdout(predicates::str::contains("npm: missing"))
+        .stdout(predicates::str::contains("pnpm: missing"));
+}
+
+#[test]
+#[serial]
 fn toolchain_link_human_reports_npm_exec_backed_managed_shims_available() {
     let env = TestEnv::new();
     let runtime_dir = env.root.join("linked-runtime-human-command-availability");
@@ -1198,6 +1228,7 @@ fn toolchain_link_human_reports_npm_exec_backed_managed_shims_available() {
     fs::create_dir_all(&runtime_bin).unwrap();
     write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho node\n");
     write_runtime_executable(runtime_bin.join("npm"), "#!/bin/sh\necho npm\n");
+    write_runtime_executable(runtime_bin.join("npx"), "#!/bin/sh\necho npx\n");
 
     env.command()
         .args([
@@ -1208,6 +1239,9 @@ fn toolchain_link_human_reports_npm_exec_backed_managed_shims_available() {
         ])
         .assert()
         .success()
+        .stdout(predicates::str::contains(
+            "Optional package-manager shims: all available.",
+        ))
         .stdout(predicates::str::contains("yarn: available (via npm exec)"))
         .stdout(predicates::str::contains("pnpm: available (via npm exec)"));
 }
@@ -1332,7 +1366,12 @@ fn toolchain_unlink_conflicts_when_link_is_default() {
         .failure()
         .code(6)
         .stderr(predicates::str::contains(
-            "Cannot unlink 'linked-unlink-default'; it is used as the default runtime",
+            "Cannot unlink linked-unlink-default; referenced by blocking runtime selectors",
+        ))
+        .stderr(predicates::str::contains("global-default"))
+        .stderr(predicates::str::contains("nodeup default <runtime>"))
+        .stderr(predicates::str::contains(
+            "nodeup toolchain unlink linked-unlink-default",
         ));
 }
 
@@ -1358,8 +1397,9 @@ fn toolchain_unlink_conflicts_when_legacy_reserved_case_link_is_default() {
         .failure()
         .code(6)
         .stderr(predicates::str::contains(
-            "Cannot unlink 'LTS'; it is used as the default runtime",
-        ));
+            "Cannot unlink LTS; referenced by blocking runtime selectors",
+        ))
+        .stderr(predicates::str::contains("global-default"));
 }
 
 #[test]
@@ -1400,8 +1440,172 @@ fn toolchain_unlink_conflicts_when_link_is_used_by_override() {
         .failure()
         .code(6)
         .stderr(predicates::str::contains(
-            "Cannot unlink 'linked-unlink-override'; it is referenced by a directory override",
+            "Cannot unlink linked-unlink-override; referenced by blocking runtime selectors",
+        ))
+        .stderr(predicates::str::contains("directory-override"))
+        .stderr(predicates::str::contains(format!(
+            "nodeup override unset --path {}",
+            project_dir.display()
+        )))
+        .stderr(predicates::str::contains(
+            "nodeup toolchain unlink linked-unlink-override",
         ));
+}
+
+#[test]
+#[serial]
+fn toolchain_unlink_json_reports_all_blockers_with_remediation_commands() {
+    let env = TestEnv::new();
+    let runtime_dir = env.root.join("linked-runtime-unlink-all-blockers");
+    let runtime_bin = runtime_dir.join("bin");
+    fs::create_dir_all(&runtime_bin).unwrap();
+    write_runtime_executable(runtime_bin.join("node"), "#!/bin/sh\necho blockers\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-unlink-blocked",
+            runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-unlink-blocked"])
+        .assert()
+        .success();
+
+    let project_dir = env.root.join("project-unlink-all-blockers");
+    fs::create_dir_all(&project_dir).unwrap();
+    env.command()
+        .args([
+            "override",
+            "set",
+            "linked-unlink-blocked",
+            "--path",
+            project_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "unlink",
+            "linked-unlink-blocked",
+        ])
+        .output()
+        .expect("toolchain unlink blocked json");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "conflict");
+    assert_eq!(
+        payload["diagnostics"]["blocked_linked_runtimes"],
+        serde_json::json!(["linked-unlink-blocked"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["retry_commands"],
+        serde_json::json!(["nodeup toolchain unlink linked-unlink-blocked"])
+    );
+
+    let blockers = payload["diagnostics"]["blockers"].as_array().unwrap();
+    assert_eq!(blockers.len(), 2);
+    assert_eq!(blockers[0]["reference_type"], "global-default");
+    assert_eq!(blockers[0]["runtime"], "linked-unlink-blocked");
+    assert_eq!(blockers[0]["selector"], "linked-unlink-blocked");
+    assert_eq!(blockers[0]["change_command"], "nodeup default <runtime>");
+    assert_eq!(blockers[1]["reference_type"], "directory-override");
+    assert_eq!(blockers[1]["runtime"], "linked-unlink-blocked");
+    assert_eq!(blockers[1]["selector"], "linked-unlink-blocked");
+    assert_eq!(
+        blockers[1]["clear_command"],
+        format!("nodeup override unset --path {}", project_dir.display())
+    );
+    assert_eq!(
+        blockers[1]["change_command"],
+        format!(
+            "nodeup override set <runtime> --path {}",
+            project_dir.display()
+        )
+    );
+
+    assert!(runtime_dir.exists());
+    assert!(runtime_bin.join("node").exists());
+}
+
+#[test]
+#[serial]
+fn toolchain_unlink_blocked_retry_includes_all_requested_links() {
+    let env = TestEnv::new();
+    let blocked_runtime_dir = env.root.join("linked-runtime-unlink-blocked-mixed");
+    let blocked_runtime_bin = blocked_runtime_dir.join("bin");
+    fs::create_dir_all(&blocked_runtime_bin).unwrap();
+    write_runtime_executable(
+        blocked_runtime_bin.join("node"),
+        "#!/bin/sh\necho blocked\n",
+    );
+    let free_runtime_dir = env.root.join("linked-runtime-unlink-free-mixed");
+    let free_runtime_bin = free_runtime_dir.join("bin");
+    fs::create_dir_all(&free_runtime_bin).unwrap();
+    write_runtime_executable(free_runtime_bin.join("node"), "#!/bin/sh\necho free\n");
+
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-unlink-blocked-mixed",
+            blocked_runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args([
+            "toolchain",
+            "link",
+            "linked-unlink-free-mixed",
+            free_runtime_dir.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    env.command()
+        .args(["default", "linked-unlink-blocked-mixed"])
+        .assert()
+        .success();
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "unlink",
+            "linked-unlink-blocked-mixed",
+            "linked-unlink-free-mixed",
+            "linked-unlink-blocked-mixed",
+        ])
+        .output()
+        .expect("toolchain unlink blocked mixed json");
+
+    assert_eq!(output.status.code(), Some(6));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(
+        payload["diagnostics"]["blocked_linked_runtimes"],
+        serde_json::json!(["linked-unlink-blocked-mixed"])
+    );
+    assert_eq!(
+        payload["diagnostics"]["retry_commands"],
+        serde_json::json!([
+            "nodeup toolchain unlink linked-unlink-blocked-mixed linked-unlink-free-mixed"
+        ])
+    );
 }
 
 #[test]
@@ -1436,8 +1640,9 @@ fn toolchain_unlink_conflicts_when_legacy_reserved_case_link_is_used_by_override
         .failure()
         .code(6)
         .stderr(predicates::str::contains(
-            "Cannot unlink 'LATEST'; it is referenced by a directory override",
-        ));
+            "Cannot unlink LATEST; referenced by blocking runtime selectors",
+        ))
+        .stderr(predicates::str::contains("directory-override"));
 }
 
 #[test]

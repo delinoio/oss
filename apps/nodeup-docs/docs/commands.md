@@ -72,11 +72,11 @@ nodeup toolchain link <name> <path>
 
 Registers an existing runtime directory. The directory must contain `bin/node` or `bin/node.exe`.
 
-Linked names must match `[A-Za-z0-9][A-Za-z0-9_-]*`. Reserved channel names `lts`, `current`, and `latest` cannot be used as linked runtime names.
+Linked names must match `[A-Za-z0-9][A-Za-z0-9_-]*`. Reserved channel names `lts`, `current`, and `latest` cannot be used as linked runtime names. Case variants such as `LTS`, `Current`, and `LATEST` are also rejected because they are ambiguous with channel selectors. Use a distinct name such as `local-lts` or `work-node`.
 
 The linked `node` command must be runnable. Unix hosts require an executable permission bit on `bin/node`; Windows platform behavior uses `bin/node.exe`.
 
-Linking validates the minimum runtime requirement only. It does not require every managed alias command to exist. Successful human output includes a managed shim command availability matrix for `node`, `npm`, `npx`, `yarn`, and `pnpm`, including the checked runtime paths.
+Linking validates the minimum runtime requirement only: the linked `node` command is runnable. It does not require every managed alias command to exist. Successful human output separates the required `node` check from optional managed shim availability, warns when optional package-manager shims are missing, and includes checked runtime paths for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
 
 JSON output includes `name`, `path`, `status: "linked"`, `managed_shim_commands`, `install_on_demand_eligible`, and `path_precedence_guidance`. Each `managed_shim_commands` entry includes:
 
@@ -100,9 +100,9 @@ nodeup toolchain unlink <name>...
 
 Removes linked runtime records from nodeup settings and tracked selectors without deleting the external runtime directories.
 
-Unlinking fails with `conflict` when a linked name is the current default or is referenced by a directory override. Change the default or remove/update the override before unlinking.
+Unlinking fails with `conflict` when a linked name is the current default or is referenced by a directory override. The conflict output names every blocker, includes remediation commands such as `nodeup default <runtime>` or `nodeup override unset --path <path>`, and includes the retry command. External runtime directories are not deleted.
 
-Missing linked names fail with `not-found`. JSON output is the removed linked-name list.
+Missing linked names fail with `not-found`. JSON output is the removed linked-name list. Blocked JSON errors include `diagnostics.blocked_linked_runtimes`, `diagnostics.blockers`, and `diagnostics.retry_commands`; each blocker includes `reference_type`, `runtime`, `selector`, `path`, `clear_command`, `change_command`, and `action`.
 
 ## default
 
