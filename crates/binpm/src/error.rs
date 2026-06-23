@@ -75,11 +75,7 @@ pub enum BinpmError {
     InvalidCommandName { cmd: String },
     #[error("Duplicate local command declaration `{cmd}` in binpm add arguments.")]
     DuplicateAddDeclaration { cmd: String },
-    #[error(
-        "`binpm install {package_source} --local` is not supported. Use `binpm add <cmd> \
-         {package_source}` to declare and install a project-local tool, or run `binpm install \
-         {package_source}` for a global source install."
-    )]
+    #[error("{}", unsupported_local_source_install_message(package_source))]
     UnsupportedLocalSourceInstall { package_source: String },
     #[error(
         "Tool `{cmd}` and `{other_cmd}` both install to `{}` on this target.",
@@ -682,6 +678,15 @@ fn frozen_lockfile_commit_target() -> &'static str {
         Some(FrozenLockfileCommandContext::Add { .. }) => "`binpm.toml` and `binpm.lock`",
         _ => "`binpm.lock`",
     }
+}
+
+fn unsupported_local_source_install_message(package_source: &str) -> String {
+    let quoted_source = cli_quote(package_source);
+    format!(
+        "`binpm install {quoted_source} --local` is not supported. Use `binpm add <cmd> \
+         {quoted_source}` to declare and install a project-local tool, or run `binpm install \
+         {quoted_source}` for a global source install."
+    )
 }
 
 fn cli_quote(raw: &str) -> String {
