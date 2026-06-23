@@ -3020,6 +3020,29 @@ fn json_completions_invalid_shell_emits_invalid_input_error_envelope() {
 
 #[test]
 #[serial]
+fn json_completions_invalid_shell_emits_json_when_output_follows_shell() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bad-shell", "--output", "json"])
+        .output()
+        .expect("completions invalid shell --output json");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported shell"));
+}
+
+#[test]
+#[serial]
 fn json_completions_invalid_scope_emits_invalid_input_error_envelope() {
     let env = TestEnv::new();
 
@@ -3028,6 +3051,34 @@ fn json_completions_invalid_scope_emits_invalid_input_error_envelope() {
         .args(["--output", "json", "completions", "bash", "invalid-scope"])
         .output()
         .expect("completions --output json invalid scope");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert_eq!(payload["exit_code"], 2);
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported command scope"));
+    assert_eq!(
+        payload["diagnostics"]["allowed_scope_category"],
+        "top-level-command"
+    );
+    assert_eq!(payload["diagnostics"]["rejected_scope"], "invalid-scope");
+}
+
+#[test]
+#[serial]
+fn json_completions_invalid_scope_emits_json_when_output_follows_scope() {
+    let env = TestEnv::new();
+
+    let output = env
+        .command()
+        .args(["completions", "bash", "invalid-scope", "--output", "json"])
+        .output()
+        .expect("completions invalid scope --output json");
 
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
