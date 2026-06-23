@@ -472,6 +472,12 @@ struct UpdatePlan {
     no_op: Option<UpdateNoOpOutput>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct LocalInstallMode {
+    output: OutputMode,
+    print_summary: bool,
+}
+
 const DOWNLOAD_RETRY_ATTEMPTS: usize = 3;
 const DOWNLOAD_RETRY_BASE_DELAY: Duration = Duration::from_millis(200);
 const DOWNLOAD_PROGRESS_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
@@ -766,8 +772,10 @@ fn add(args: AddArgs, output: OutputMode) -> Result<i32> {
             Some(&tool),
             args.lockfile.frozen_lockfile(),
             args.require_verified,
-            output,
-            true,
+            LocalInstallMode {
+                output,
+                print_summary: true,
+            },
         ) {
             Ok(install) => install,
             Err(error) => {
@@ -931,8 +939,10 @@ fn exec(args: ExecArgs, output: OutputMode) -> Result<i32> {
         Some(&tool),
         args.lockfile.frozen_lockfile(),
         false,
-        output,
-        true,
+        LocalInstallMode {
+            output,
+            print_summary: true,
+        },
     )?;
     let cache_paths = CachePaths::new(&binpm_home()?);
     if let Err(error) = commit_deferred_cache_hit(&cache_paths, &install) {
@@ -1400,9 +1410,10 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<i32> {
         print_update_mode(scope, &args.cmd);
     }
     if args.dry_run {
+        let preview_frozen_lockfile = args.lockfile.frozen_lockfile;
         let result = preview_update(
             scope,
-            frozen_lockfile,
+            preview_frozen_lockfile,
             args.require_verified,
             &args.cmd,
             output,
@@ -2880,8 +2891,10 @@ fn install_local_manifest_at(
             Some(tool),
             frozen_lockfile,
             require_verified,
-            output,
-            false,
+            LocalInstallMode {
+                output,
+                print_summary: false,
+            },
         ) {
             Ok(install) => completed.push(CompletedLocalInstall {
                 cmd: cmd.clone(),
@@ -3339,8 +3352,7 @@ fn install_local_tool(
     tool: Option<&ManifestTool>,
     frozen_lockfile: bool,
     require_verified: bool,
-    output: OutputMode,
-    print_summary: bool,
+    mode: LocalInstallMode,
 ) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
     let lockfile_path = root.join(LOCKFILE_FILE);
@@ -3351,8 +3363,8 @@ fn install_local_tool(
             spec,
             tool,
             require_verified,
-            output,
-            print_summary,
+            mode.output,
+            mode.print_summary,
         );
     }
 
@@ -3410,7 +3422,7 @@ fn install_local_tool(
         cleanup_failed_install_cache(&cache_paths, &record.sha256, Some(root), &install)?;
         return Err(error);
     }
-    if print_summary && !output.is_json() {
+    if mode.print_summary && !mode.output.is_json() {
         print_install_summary(Scope::Local, cmd, &record);
     }
     Ok(InstalledPackage {
