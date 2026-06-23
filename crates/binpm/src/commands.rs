@@ -7514,13 +7514,14 @@ fn profile_path(shell: Shell) -> Result<PathBuf> {
 }
 
 fn bash_profile_path(home: &Path) -> PathBuf {
-    if cfg!(any(target_os = "macos", windows)) {
-        for profile_name in [".bash_profile", ".bash_login", ".profile"] {
-            let profile = home.join(profile_name);
-            if profile.exists() {
-                return profile;
-            }
+    for profile_name in [".bash_profile", ".bash_login", ".profile"] {
+        let profile = home.join(profile_name);
+        if profile.exists() {
+            return profile;
         }
+    }
+
+    if cfg!(any(target_os = "macos", windows)) {
         return home.join(".bash_profile");
     }
 
@@ -8136,7 +8137,6 @@ mod tests {
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn bash_profile_path_prefers_existing_login_profile() {
         let temp_dir = tempfile::tempdir().expect("tempdir");

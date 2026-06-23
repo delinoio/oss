@@ -989,7 +989,6 @@ fn env_setup_appends_only_global_path_line() {
     );
 }
 
-#[cfg(any(target_os = "macos", windows))]
 #[test]
 fn env_setup_bash_uses_existing_login_profile_fixture() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
