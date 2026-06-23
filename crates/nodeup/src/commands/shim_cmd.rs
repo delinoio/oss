@@ -591,11 +591,15 @@ fn profile_persistence_hint(dir: &str, shell: ShellKind) -> String {
 
 fn verification_commands(dir: &Path, shell: ShellKind) -> Vec<String> {
     let dir = shell_path_text(&dir.display().to_string(), shell);
+    let dir_prefix = dir.trim_end_matches(['/', '\\']);
     match shell {
         ShellKind::PowerShellWindows | ShellKind::PowerShellUnix => vec![format!(
-            "Get-Command node,npm,npx,yarn,pnpm | Select-Object Name,Source # Source should start \
-             with '{}'",
-            escape_powershell_single_quoted(&dir)
+            "$nodeupShimDir = '{}'; foreach ($cmd in 'node','npm','npx','yarn','pnpm') {{ \
+             $resolved = Get-Command $cmd -ErrorAction Stop; if (-not \
+             $resolved.Source.StartsWith($nodeupShimDir + [IO.Path]::DirectorySeparatorChar)) {{ \
+             Write-Output \"nodeup-shim-inactive:$cmd\"; exit 1 }}; $resolved | Select-Object \
+             Name,Source }}; Write-Output nodeup-shim-active",
+            escape_powershell_single_quoted(dir_prefix)
         )],
         ShellKind::Fish => vec![
             "for cmd in node npm npx yarn pnpm; command -v $cmd; end".to_string(),
@@ -614,7 +618,7 @@ fn verification_commands(dir: &Path, shell: ShellKind) -> Vec<String> {
                 "for cmd in node npm npx yarn pnpm; do resolved=$(command -v \"$cmd\") || exit 1; \
                  case \"$resolved\" in {}/*) ;; *) echo nodeup-shim-inactive:$cmd; exit 1;; esac; \
                  printf '%s\\n' \"$resolved\"; done; echo nodeup-shim-active",
-                shell_single_quote(&dir)
+                shell_single_quote(dir_prefix)
             ),
         ],
     }

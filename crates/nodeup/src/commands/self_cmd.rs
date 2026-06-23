@@ -1041,7 +1041,7 @@ fn current_session_path_cleanup_command(shim_dirs: &[String], shell: ShellKind) 
             "$env:PATH = (($env:PATH -split ':') | Where-Object {{ {} }}) -join ':'",
             shim_dirs
                 .iter()
-                .map(|path| format!("$_ -ne '{}'", escape_powershell_single_quoted(path)))
+                .map(|path| format!("$_ -cne '{}'", escape_powershell_single_quoted(path)))
                 .collect::<Vec<_>>()
                 .join(" -and ")
         ),
@@ -1225,10 +1225,12 @@ fn home_dir() -> PathBuf {
 }
 
 fn is_likely_shim_path(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    let file_name = normalized.rsplit('/').next().unwrap_or(path);
     ["node", "npm", "npx", "yarn", "pnpm"].iter().any(|alias| {
-        path.ends_with(alias)
-            || path.ends_with(&format!("{alias}.exe"))
-            || path.ends_with(&format!(".{alias}.exe.nodeup-shim"))
+        let windows_alias = format!("{alias}.exe");
+        let windows_marker = format!(".{alias}.exe.nodeup-shim");
+        file_name == *alias || file_name == windows_alias || file_name == windows_marker
     })
 }
 
