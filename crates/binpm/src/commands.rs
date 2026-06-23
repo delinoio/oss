@@ -7277,8 +7277,8 @@ fn env_setup(args: EnvSetupArgs) -> Result<i32> {
     println!("profile: {}", plan.profile.display());
     println!("line: {}", plan.line);
 
-    let existing = read_profile_if_present(&plan.profile)?;
-    if profile_contains_line(existing.as_deref(), &plan.line) {
+    let existing = read_profile_if_present(args.shell, &plan.profile)?;
+    if profile_contains_line(existing.as_ref(), &plan.line) {
         println!("status: already present");
         println!(
             "rollback: remove the line above from {}",
@@ -7296,7 +7296,7 @@ fn env_setup(args: EnvSetupArgs) -> Result<i32> {
         return Ok(0);
     }
 
-    append_profile_line(&plan.profile, existing.as_deref(), &plan.line)?;
+    append_profile_line(&plan.profile, existing.as_ref(), &plan.line)?;
     println!("status: appended");
     println!(
         "rollback: remove the line above from {}",
@@ -7414,6 +7414,19 @@ fn print_env(
 struct ProfileSetupPlan {
     profile: PathBuf,
     line: String,
+}
+
+#[derive(Debug)]
+struct ProfileContents {
+    text: String,
+    encoding: ProfileEncoding,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ProfileEncoding {
+    Utf8,
+    Utf16Le,
+    Utf16Be,
 }
 
 fn profile_setup_plan(shell: Shell, global_bin: &Path) -> Result<ProfileSetupPlan> {
@@ -7561,24 +7574,83 @@ fn ensure_supported_profile(shell: Shell, profile: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read_profile_if_present(profile: &Path) -> Result<Option<String>> {
-    match fs::read_to_string(profile) {
-        Ok(contents) => Ok(Some(contents)),
-        Err(source) if source.kind() == ErrorKind::NotFound => Ok(None),
-        Err(source) => Err(BinpmError::ReadFile {
+fn read_profile_if_present(shell: Shell, profile: &Path) -> Result<Option<ProfileContents>> {
+    let bytes = match fs::read(profile) {
+        Ok(bytes) => bytes,
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(BinpmError::ReadFile {
+                path: profile.to_path_buf(),
+                source,
+            });
+        }
+    };
+    decode_profile_contents(shell, profile, bytes).map(Some)
+}
+
+fn decode_profile_contents(
+    shell: Shell,
+    profile: &Path,
+    bytes: Vec<u8>,
+) -> Result<ProfileContents> {
+    if bytes.starts_with(&[0xff, 0xfe]) {
+        return decode_utf16_profile(shell, profile, &bytes[2..], ProfileEncoding::Utf16Le);
+    }
+    if bytes.starts_with(&[0xfe, 0xff]) {
+        return decode_utf16_profile(shell, profile, &bytes[2..], ProfileEncoding::Utf16Be);
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) => Ok(ProfileContents {
+            text,
+            encoding: ProfileEncoding::Utf8,
+        }),
+        Err(_) => Err(BinpmError::ProfileSetupRefused {
             path: profile.to_path_buf(),
-            source,
+            shell: shell.as_str(),
+            message: "profile encoding must be UTF-8 or UTF-16 with a byte-order mark".to_string(),
         }),
     }
 }
 
-fn profile_contains_line(contents: Option<&str>, line: &str) -> bool {
+fn decode_utf16_profile(
+    shell: Shell,
+    profile: &Path,
+    bytes: &[u8],
+    encoding: ProfileEncoding,
+) -> Result<ProfileContents> {
+    if bytes.len() % 2 != 0 {
+        return Err(BinpmError::ProfileSetupRefused {
+            path: profile.to_path_buf(),
+            shell: shell.as_str(),
+            message: "UTF-16 profile has an odd byte length".to_string(),
+        });
+    }
+    let units = bytes.chunks_exact(2).map(|chunk| match encoding {
+        ProfileEncoding::Utf16Le => u16::from_le_bytes([chunk[0], chunk[1]]),
+        ProfileEncoding::Utf16Be => u16::from_be_bytes([chunk[0], chunk[1]]),
+        ProfileEncoding::Utf8 => unreachable!("UTF-8 profiles are decoded separately"),
+    });
+    let text = String::from_utf16(&units.collect::<Vec<_>>()).map_err(|_| {
+        BinpmError::ProfileSetupRefused {
+            path: profile.to_path_buf(),
+            shell: shell.as_str(),
+            message: "UTF-16 profile contains invalid code units".to_string(),
+        }
+    })?;
+    Ok(ProfileContents { text, encoding })
+}
+
+fn profile_contains_line(contents: Option<&ProfileContents>, line: &str) -> bool {
     contents
-        .map(|contents| contents.lines().any(|candidate| candidate == line))
+        .map(|contents| contents.text.lines().any(|candidate| candidate == line))
         .unwrap_or(false)
 }
 
-fn append_profile_line(profile: &Path, existing: Option<&str>, line: &str) -> Result<()> {
+fn append_profile_line(
+    profile: &Path,
+    existing: Option<&ProfileContents>,
+    line: &str,
+) -> Result<()> {
     if let Some(parent) = profile.parent() {
         fs::create_dir_all(parent).map_err(|source| BinpmError::CreateDirectory {
             path: parent.to_path_buf(),
@@ -7593,16 +7665,38 @@ fn append_profile_line(profile: &Path, existing: Option<&str>, line: &str) -> Re
             path: profile.to_path_buf(),
             source,
         })?;
-    if existing.is_some_and(|contents| !contents.is_empty() && !contents.ends_with('\n')) {
-        writeln!(file).map_err(|source| BinpmError::WriteFile {
+    let encoding = existing
+        .map(|contents| contents.encoding)
+        .unwrap_or(ProfileEncoding::Utf8);
+    if existing.is_some_and(|contents| !contents.text.is_empty() && !contents.text.ends_with('\n'))
+    {
+        write_profile_text(&mut file, profile, encoding, "\n")?;
+    }
+    write_profile_text(&mut file, profile, encoding, &format!("{line}\n"))
+}
+
+fn write_profile_text(
+    file: &mut fs::File,
+    profile: &Path,
+    encoding: ProfileEncoding,
+    text: &str,
+) -> Result<()> {
+    let bytes = match encoding {
+        ProfileEncoding::Utf8 => text.as_bytes().to_vec(),
+        ProfileEncoding::Utf16Le => text
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>(),
+        ProfileEncoding::Utf16Be => text
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect::<Vec<_>>(),
+    };
+    file.write_all(&bytes)
+        .map_err(|source| BinpmError::WriteFile {
             path: profile.to_path_buf(),
             source,
-        })?;
-    }
-    writeln!(file, "{line}").map_err(|source| BinpmError::WriteFile {
-        path: profile.to_path_buf(),
-        source,
-    })
+        })
 }
 
 fn cmd_path_hint(

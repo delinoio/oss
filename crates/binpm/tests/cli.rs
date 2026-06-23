@@ -12,6 +12,21 @@ fn binpm() -> Command {
     Command::new(env!("CARGO_BIN_EXE_binpm"))
 }
 
+fn utf16le_bom(text: &str) -> Vec<u8> {
+    let mut bytes = vec![0xff, 0xfe];
+    bytes.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+    bytes
+}
+
+fn decode_utf16le_bom(bytes: &[u8]) -> String {
+    assert!(bytes.starts_with(&[0xff, 0xfe]));
+    let units = bytes[2..]
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<_>>();
+    String::from_utf16(&units).expect("utf16le profile")
+}
+
 fn assert_success(output: &std::process::Output) {
     assert!(
         output.status.success(),
@@ -1120,6 +1135,54 @@ fn env_setup_supports_powershell_profile_fixture() {
         .stdout(predicate::str::contains("status: appended"));
 
     let contents = fs::read_to_string(&profile).expect("read powershell profile");
+    assert!(contents.contains(&expected_line));
+}
+
+#[test]
+fn env_setup_appends_to_utf16le_powershell_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let userprofile = temp_dir.path().join("userprofile");
+    fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    #[cfg(windows)]
+    let profile = userprofile
+        .join("Documents")
+        .join("WindowsPowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    #[cfg(not(windows))]
+    let profile = home_dir
+        .join(".config")
+        .join("powershell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    fs::create_dir_all(profile.parent().expect("profile parent")).expect("profile parent dir");
+    fs::write(
+        &profile,
+        utf16le_bom("# existing Windows PowerShell profile"),
+    )
+    .expect("write utf16 profile");
+    let expected_line = format!(
+        "$env:PATH = '{}' + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} \
+         else {{ '' }})",
+        global_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "powershell"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    let bytes = fs::read(&profile).expect("read powershell profile");
+    let contents = decode_utf16le_bom(&bytes);
+    assert!(contents.contains("# existing Windows PowerShell profile"));
     assert!(contents.contains(&expected_line));
 }
 
