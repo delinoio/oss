@@ -60,6 +60,32 @@
   padding-right: 104px;
 }
 
+.delino-heading-permalink-keyboard {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.delino-heading-permalink-keyboard:focus-visible {
+  position: static;
+  display: inline-block;
+  width: auto;
+  height: auto;
+  clip: auto;
+  margin: 4px 0 12px;
+  border-radius: var(--rp-radius-small);
+  padding: 4px 8px;
+  background: var(--rp-c-bg-soft);
+  color: var(--rp-c-link);
+  font-size: 14px;
+  font-weight: 600;
+  outline: 2px solid var(--rp-c-brand);
+  outline-offset: 2px;
+}
+
 .rp-doc h2 + .rp-codeblock .rp-codeblock__content :where(code) {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -97,5 +123,11 @@
 @media (width <= 768px) {
   .rp-doc-layout__sidebar:not(.rp-doc-layout__sidebar--open) {
     visibility: hidden;
+  }
+}
+
+@media (width > 768px) {
+  .rp-nav-hamburger__md {
+    display: none;
   }
 }
