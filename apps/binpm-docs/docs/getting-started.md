@@ -36,10 +36,10 @@ Use `--bin <upstream-binary>` when the upstream executable or archive member has
 
 ## Frozen Lockfiles
 
-Local `binpm install`, `binpm update`, and `binpm x` honor `--frozen-lockfile`. `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit local-development escape hatch. Frozen mode prevents lockfile creation or modification; it is not an offline or cache-only mode.
+Local `binpm install`, `binpm update`, and `binpm x` honor `--frozen-lockfile`. `CI=true` enables frozen behavior by default, and `--no-frozen-lockfile` is the explicit local-development escape hatch. Frozen mode prevents lockfile creation or modification; it is reproducible, but it is not an offline or cache-only mode.
 
-An empty `binpm.toml` has no tools to resolve. `binpm update --local --frozen-lockfile` succeeds for that no-op case without creating `binpm.lock` and reports that no lockfile or local executable changes are needed.
+An empty `binpm.toml` has no tools to resolve. `binpm update --local --frozen-lockfile` succeeds for that no-op case without creating `binpm.lock` and reports that no tools are declared and no lockfile was created. JSON dry-run output exposes `no_op.reason = "empty_manifest_no_tools_no_lockfile_changes"`.
 
 Frozen failures explain the mode, missing or stale `binpm.lock` file or target record, any `binpm x` on-demand install attempt, the exact lockfile path that would change, and the safest next command. In CI this usually means running `binpm install --local` or `binpm update --local <cmd>` locally and committing `binpm.lock`.
 
-When a frozen local install or `binpm x` only needs to restore a missing project-local executable or package record, binpm first uses SHA-256-verified global cache bytes. If the cache entry is absent or corrupt, it may download the sanitized asset URL already stored in `binpm.lock`, validate the locked SHA-256, and restore from those bytes without provider release-list pagination or provider authentication headers.
+When a frozen local install or `binpm x` only needs to restore a missing project-local executable or package record, binpm first uses SHA-256-verified global cache bytes. If the cache entry is absent or corrupt, it may download the sanitized asset URL already stored in `binpm.lock`, validate the locked SHA-256, and restore from those bytes without provider release-list pagination. For private GitHub or GitLab releases, configure the host-scoped provider token in CI or pre-populate the global cache; binpm may attach that runtime-only token to same-origin locked provider URLs, but it never writes credentials or expiring signed URLs to `binpm.lock`.

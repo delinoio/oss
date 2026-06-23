@@ -359,6 +359,42 @@ struct PackageRecordOutput {
     signature_verified: bool,
 }
 
+#[derive(Debug, Serialize)]
+struct UpdatePlanOutput {
+    command: &'static str,
+    scope: Scope,
+    dry_run: bool,
+    frozen_lockfile: bool,
+    selected_all_tools: bool,
+    planned_updates: Vec<UpdatePlannedToolOutput>,
+    file_changes: Vec<String>,
+    runtime_changes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    no_op: Option<UpdateNoOpOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct UpdatePlannedToolOutput {
+    cmd: String,
+    source: String,
+    version: String,
+}
+
+#[derive(Debug, Serialize)]
+struct UpdateNoOpOutput {
+    reason: &'static str,
+    declared_tools: usize,
+    lockfile_created: bool,
+    message: &'static str,
+}
+
+struct UpdatePlan {
+    planned_updates: Vec<UpdatePlannedToolOutput>,
+    file_changes: Vec<String>,
+    runtime_changes: Vec<String>,
+    no_op: Option<UpdateNoOpOutput>,
+}
+
 const DOWNLOAD_RETRY_ATTEMPTS: usize = 3;
 const DOWNLOAD_RETRY_BASE_DELAY: Duration = Duration::from_millis(200);
 const DOWNLOAD_PROGRESS_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
@@ -386,7 +422,7 @@ pub fn run(cli: Cli) -> Result<i32> {
         Command::Remove(args) => remove(args),
         Command::Info(args) => info_cmd(args, output),
         Command::Outdated(args) => outdated(args, output),
-        Command::Update(args) => update(args),
+        Command::Update(args) => update(args, output),
         Command::Doctor => doctor(output),
         Command::Explain(args) => explain(args, output),
         Command::Verify(args) => verify(args, output),
@@ -1145,7 +1181,7 @@ fn format_outdated_tool_line(cmd: &str, current: &str, latest: &str, source: &st
     format!("{cmd} {current} -> {latest} ({source})")
 }
 
-fn update(args: UpdateArgs) -> Result<i32> {
+fn update(args: UpdateArgs, output: OutputMode) -> Result<i32> {
     let frozen_lockfile = args.lockfile.frozen_lockfile();
     info!(
         command = "update",
@@ -1158,10 +1194,19 @@ fn update(args: UpdateArgs) -> Result<i32> {
         "Prepared update request"
     );
     let scope = select_scope(args.scope.scope())?;
+    if output.is_json() && args.dry_run {
+        return preview_update_json(scope, &args.cmd, frozen_lockfile);
+    }
     print_selected_mutation_scope("update", scope);
     print_update_mode(scope, &args.cmd);
     if args.dry_run {
         return preview_update(scope, &args.cmd);
+    }
+    if output.is_json() && scope == Scope::Local {
+        let plan = build_local_update_plan(&args.cmd)?;
+        if plan.no_op.is_some() {
+            return print_update_plan_json(scope, &args.cmd, frozen_lockfile, false, plan);
+        }
     }
     print_update_plan(scope, &args.cmd)?;
     match scope {
@@ -1223,6 +1268,35 @@ fn preview_update(scope: Scope, selected: &[String]) -> Result<i32> {
     Ok(0)
 }
 
+fn preview_update_json(scope: Scope, selected: &[String], frozen_lockfile: bool) -> Result<i32> {
+    let plan = match scope {
+        Scope::Local => build_local_update_plan(selected)?,
+        Scope::Global => build_global_update_plan(selected)?,
+        Scope::Auto => unreachable!("select_scope never returns auto"),
+    };
+    print_update_plan_json(scope, selected, frozen_lockfile, true, plan)
+}
+
+fn print_update_plan_json(
+    scope: Scope,
+    selected: &[String],
+    frozen_lockfile: bool,
+    dry_run: bool,
+    plan: UpdatePlan,
+) -> Result<i32> {
+    print_json(&UpdatePlanOutput {
+        command: "update",
+        scope,
+        dry_run,
+        frozen_lockfile,
+        selected_all_tools: selected.is_empty(),
+        planned_updates: plan.planned_updates,
+        file_changes: plan.file_changes,
+        runtime_changes: plan.runtime_changes,
+        no_op: plan.no_op,
+    })
+}
+
 fn print_update_plan(scope: Scope, selected: &[String]) -> Result<()> {
     match scope {
         Scope::Local => print_local_update_plan(selected),
@@ -1232,6 +1306,12 @@ fn print_update_plan(scope: Scope, selected: &[String]) -> Result<()> {
 }
 
 fn print_local_update_plan(selected: &[String]) -> Result<()> {
+    let plan = build_local_update_plan(selected)?;
+    print_update_plan_details(&plan);
+    Ok(())
+}
+
+fn build_local_update_plan(selected: &[String]) -> Result<UpdatePlan> {
     let root = require_manifest_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
     let manifest = read_manifest(&manifest_path)?;
@@ -1252,37 +1332,82 @@ fn print_local_update_plan(selected: &[String]) -> Result<()> {
         .iter()
         .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
         .collect();
-    println!("planned updates: {}", planned.len());
-    for (cmd, tool) in planned {
-        let version = tool.version.as_deref().unwrap_or("<latest>");
-        println!("would update {cmd} from {} {version}", tool.source);
-    }
+    let planned_updates = planned
+        .into_iter()
+        .map(|(cmd, tool)| UpdatePlannedToolOutput {
+            cmd: cmd.clone(),
+            source: tool.source.clone(),
+            version: tool.version.as_deref().unwrap_or("<latest>").to_string(),
+        })
+        .collect();
     let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
     if manifest.tools.is_empty()
         && local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty()
     {
-        println!("empty manifest: no lockfile or local executable changes needed");
-        return Ok(());
+        return Ok(UpdatePlan {
+            planned_updates,
+            file_changes: Vec::new(),
+            runtime_changes: Vec::new(),
+            no_op: Some(UpdateNoOpOutput {
+                reason: "empty_manifest_no_tools_no_lockfile_changes",
+                declared_tools: 0,
+                lockfile_created: false,
+                message: "empty manifest declares no tools; no lockfile was created",
+            }),
+        });
     }
-    println!("would update {}", root.join(LOCKFILE_FILE).display());
-    println!("would update {}", ScopePaths::local(root).bin.display());
-    Ok(())
+    Ok(UpdatePlan {
+        planned_updates,
+        file_changes: vec![root.join(LOCKFILE_FILE).display().to_string()],
+        runtime_changes: vec![ScopePaths::local(root).bin.display().to_string()],
+        no_op: None,
+    })
 }
 
 fn print_global_update_plan(selected: &[String]) -> Result<()> {
+    let plan = build_global_update_plan(selected)?;
+    print_update_plan_details(&plan);
+    Ok(())
+}
+
+fn build_global_update_plan(selected: &[String]) -> Result<UpdatePlan> {
     let paths = ScopePaths::global(binpm_home()?);
     let planned = selected_global_package_records(&paths, selected)?;
     prepare_global_updates(planned.clone())?;
-    println!("planned updates: {}", planned.len());
-    for (cmd, record) in &planned {
+    let planned_updates = planned
+        .into_iter()
+        .map(|(cmd, record)| UpdatePlannedToolOutput {
+            cmd,
+            source: record.source,
+            version: record.release_tag,
+        })
+        .collect();
+    Ok(UpdatePlan {
+        planned_updates,
+        file_changes: vec![paths.packages.display().to_string()],
+        runtime_changes: vec![paths.bin.display().to_string()],
+        no_op: None,
+    })
+}
+
+fn print_update_plan_details(plan: &UpdatePlan) {
+    println!("planned updates: {}", plan.planned_updates.len());
+    for update in &plan.planned_updates {
         println!(
-            "would update {cmd} from {} {}",
-            record.source, record.release_tag
+            "would update {} from {} {}",
+            update.cmd, update.source, update.version
         );
     }
-    println!("would update {}", paths.packages.display());
-    println!("would update {}", paths.bin.display());
-    Ok(())
+    if let Some(no_op) = &plan.no_op {
+        println!("{}", no_op.message);
+        return;
+    }
+    for path in &plan.file_changes {
+        println!("would update {path}");
+    }
+    for path in &plan.runtime_changes {
+        println!("would update {path}");
+    }
 }
 
 fn doctor(output: OutputMode) -> Result<i32> {
@@ -3079,13 +3204,31 @@ fn install_local_from_lock(
         });
     }
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
+        let cache_state = if had_existing_cache_entry {
+            "invalid"
+        } else {
+            "missing"
+        };
         let repair_result = (|| {
             let download_request = locked_record_download_request(&record)?;
+            eprintln!(
+                "binpm: frozen restore cache {cache_state} for {cmd}; downloading locked asset \
+                 URL (network_access_attempted=true, provider_authentication_attached={})",
+                download_request.auth.is_some()
+            );
             let bytes = download_asset(
                 &download_request.url,
                 download_request.auth.as_ref(),
                 download_request.accept,
-            )?;
+            )
+            .map_err(|source| BinpmError::FrozenRestoreDownload {
+                cmd: cmd.to_string(),
+                cache_path: cache_asset.clone(),
+                cache_state,
+                url: sanitize_download_diagnostic_url(&download_request.url),
+                authenticated: download_request.auth.is_some(),
+                source: Box::new(source),
+            })?;
             let actual = format!("{:x}", Sha256::digest(&bytes));
             if actual != record.sha256 {
                 return Err(BinpmError::DigestMismatch {
@@ -3148,6 +3291,11 @@ fn install_local_from_lock(
             return Err(error);
         }
         populated_cache_entry = cache_metadata_snapshot.is_none();
+    } else {
+        eprintln!(
+            "binpm: frozen restore reused verified cache for {cmd} \
+             (network_access_attempted=false)"
+        );
     }
     let locked_verification = if require_verified {
         let verification = match repair_locked_verification {
@@ -3630,12 +3778,19 @@ struct DownloadRequest {
 }
 
 fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
+    let source = SourceSpec {
+        provider: record.source_provider,
+        host: record.source_host.clone(),
+        path: record.source_path.clone(),
+        version: Some(record.release_tag.clone()),
+    };
     let url = sanitize_persisted_url(&record.asset_url)?;
-    Ok(DownloadRequest {
-        url,
-        auth: None,
-        accept: None,
-    })
+    let auth = provider_origin_download_auth(&source, &url, provider_auth_for_source(&source));
+    let accept = match (record.source_provider, auth.as_ref()) {
+        (SourceProvider::GitHub, Some(_)) => Some(GITHUB_ASSET_DOWNLOAD_ACCEPT),
+        _ => None,
+    };
+    Ok(DownloadRequest { url, auth, accept })
 }
 
 fn locked_record_verified_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
@@ -10710,7 +10865,7 @@ mod tests {
     }
 
     #[test]
-    fn locked_record_download_request_omits_provider_auth_for_provider_asset_url() {
+    fn locked_record_download_request_uses_provider_auth_for_provider_asset_url() {
         let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "github:ghe.locked.example/owner/tool".to_string();
@@ -10726,8 +10881,11 @@ mod tests {
 
         std::env::remove_var("BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
         assert_eq!(request.url, record.asset_url);
-        assert_eq!(request.auth, None);
-        assert_eq!(request.accept, None);
+        assert_eq!(request.accept, Some(GITHUB_ASSET_DOWNLOAD_ACCEPT));
+        let auth = request.auth.expect("provider auth");
+        assert_eq!(auth.header_name, "authorization");
+        assert_eq!(auth.header_value, "Bearer locked-token");
+        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
     }
 
     #[test]
@@ -10753,7 +10911,7 @@ mod tests {
     }
 
     #[test]
-    fn locked_record_download_request_omits_gitlab_auth_for_provider_asset_url() {
+    fn locked_record_download_request_uses_gitlab_auth_for_provider_asset_url() {
         let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
@@ -10772,7 +10930,13 @@ mod tests {
 
         std::env::remove_var("BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE");
         assert_eq!(request.url, record.asset_url);
-        assert_eq!(request.auth, None);
+        let auth = request.auth.expect("provider auth");
+        assert_eq!(auth.header_name, "PRIVATE-TOKEN");
+        assert_eq!(auth.header_value, "locked-token");
+        assert_eq!(
+            auth.env_var,
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE"
+        );
         assert_eq!(request.accept, None);
     }
 

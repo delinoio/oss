@@ -1939,7 +1939,7 @@ fn frozen_local_update_allows_empty_manifest_without_lockfile() {
         .success()
         .stdout(predicate::str::contains("planned updates: 0"))
         .stdout(predicate::str::contains(
-            "empty manifest: no lockfile or local executable changes needed",
+            "empty manifest declares no tools; no lockfile was created",
         ))
         .stdout(predicate::str::contains("would update").not());
 
@@ -1965,7 +1965,7 @@ fn ci_local_update_allows_empty_manifest_without_lockfile() {
         .success()
         .stdout(predicate::str::contains("planned updates: 0"))
         .stdout(predicate::str::contains(
-            "empty manifest: no lockfile or local executable changes needed",
+            "empty manifest declares no tools; no lockfile was created",
         ))
         .stdout(predicate::str::contains("would update").not());
 
@@ -2972,13 +2972,53 @@ fn local_update_dry_run_suppresses_empty_manifest_file_change_plan() {
         .stdout(predicate::str::contains("update scope: local"))
         .stdout(predicate::str::contains("planned updates: 0"))
         .stdout(predicate::str::contains(
-            "empty manifest: no lockfile or local executable changes needed",
+            "empty manifest declares no tools; no lockfile was created",
         ))
         .stdout(predicate::str::contains("would update").not())
         .stdout(predicate::str::contains("dry run: no changes made"));
 
     assert!(!project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
+}
+
+#[test]
+fn local_update_json_dry_run_reports_empty_manifest_no_op_reason() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    let output = command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args([
+            "--json",
+            "update",
+            "--local",
+            "--dry-run",
+            "--frozen-lockfile",
+        ])
+        .output()
+        .expect("update json dry-run");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(payload["frozen_lockfile"], true);
+    assert_eq!(
+        payload["no_op"]["reason"],
+        "empty_manifest_no_tools_no_lockfile_changes"
+    );
+    assert_eq!(payload["no_op"]["declared_tools"], 0);
+    assert_eq!(payload["no_op"]["lockfile_created"], false);
+    assert_eq!(payload["planned_updates"].as_array().unwrap().len(), 0);
+    assert_eq!(payload["file_changes"].as_array().unwrap().len(), 0);
+    assert_eq!(payload["runtime_changes"].as_array().unwrap().len(), 0);
+    assert!(!project.join("binpm.lock").exists());
 }
 
 #[test]
@@ -3008,10 +3048,8 @@ source = "github:owner/tool"
         .stdout(predicate::str::contains("update scope: local"))
         .stdout(predicate::str::contains("planned updates: 0"))
         .stdout(
-            predicate::str::contains(
-                "empty manifest: no lockfile or local executable changes needed",
-            )
-            .not(),
+            predicate::str::contains("empty manifest declares no tools; no lockfile was created")
+                .not(),
         )
         .stdout(predicate::str::contains(format!(
             "would update {}",

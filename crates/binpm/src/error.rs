@@ -129,6 +129,23 @@ pub enum BinpmError {
         #[source]
         source: io::Error,
     },
+    #[error(
+        "Frozen restore failed while downloading locked asset URL `{url}` for `{cmd}` after cache \
+         state `{cache_state}` at `{}`. Network access was attempted in frozen mode; provider \
+         authentication attached: {authenticated}. This is a frozen lockfile restore, not an \
+         offline/cache-only run. Source error: {source}. Hint: pre-populate the binpm cache for \
+         the locked SHA-256, configure the host-scoped provider token for private same-origin \
+         assets, or refresh the lockfile/cache outside frozen mode.",
+        cache_path.display()
+    )]
+    FrozenRestoreDownload {
+        cmd: String,
+        cache_path: PathBuf,
+        cache_state: &'static str,
+        url: String,
+        authenticated: bool,
+        source: Box<BinpmError>,
+    },
     #[error("Release pagination loop detected at `{url}`.")]
     ReleasePaginationLoop { url: String },
     #[error("{}", release_not_found_message(package, message, skipped_releases))]
@@ -321,6 +338,7 @@ impl BinpmError {
             Self::ReleaseLookup(_)
                 | Self::ReleaseAssetStatus { .. }
                 | Self::DownloadStream { .. }
+                | Self::FrozenRestoreDownload { .. }
                 | Self::ReleaseNotFound { .. }
                 | Self::AssetNotFound { .. }
                 | Self::AssetSelectionFailed { .. }
@@ -388,6 +406,28 @@ impl BinpmError {
                     "local_development_escape_hatch": "--no-frozen-lockfile"
                 })
             }),
+            Self::FrozenRestoreDownload {
+                cmd,
+                cache_path,
+                cache_state,
+                url,
+                authenticated,
+                ..
+            } => Some(serde_json::json!({
+                "kind": "frozen_restore",
+                "mode": frozen_lockfile_mode_label(),
+                "reason": "locked_asset_download_failed",
+                "cmd": cmd,
+                "cache_path": cache_path.display().to_string(),
+                "cache_state": cache_state,
+                "restore_source": "locked_sanitized_asset_url",
+                "locked_asset_url": url,
+                "network_access_attempted": true,
+                "provider_authentication_attached": authenticated,
+                "offline_or_cache_only": false,
+                "release_list_pagination_attempted": false,
+                "safest_next_command": "pre-populate the binpm cache for the locked SHA-256 or run binpm install --local outside frozen mode with the required provider token"
+            })),
             Self::ReleaseNotFound {
                 skipped_releases, ..
             } if !skipped_releases.is_empty() => Some(serde_json::json!({
@@ -438,6 +478,7 @@ impl BinpmError {
             | Self::ReleaseLookupDiagnostic { .. }
             | Self::ReleaseAssetStatus { .. }
             | Self::DownloadStream { .. }
+            | Self::FrozenRestoreDownload { .. }
             | Self::ReleasePaginationLoop { .. } => 1,
             Self::FrozenLockfile { .. }
             | Self::FrozenLockfileMissingRecord { .. }
