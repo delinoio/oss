@@ -98,9 +98,10 @@ pub enum Command {
         #[command(subcommand)]
         command: ShowCommand,
     },
-    /// Update selected runtimes or tracked selectors.
+    /// Update channels/tracked selectors; exact versions are immutable pins.
     Update {
-        /// Runtime selectors to update. If omitted, updates tracked selectors.
+        /// Runtime selectors to update. Exact versions are skipped as immutable
+        /// pins; use a newer exact selector to move pins.
         runtimes: Vec<String>,
     },
     /// Check for available updates without installing them.

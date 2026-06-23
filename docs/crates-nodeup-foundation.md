@@ -30,7 +30,7 @@
 - `current` is the canonical selector for the newest Node.js release-index entry; `latest` is a supported alias of `current` and must report alias metadata in JSON selector-bearing output.
 - Tracked exact-version selectors must be stored and processed by their canonical `v<semver>` identity, so `22.1.0` and `v22.1.0` are the same tracked selector.
 - Tracked channel aliases must be stored and processed by canonical selector identity, so `latest` and `current` are one tracked selector, `current`.
-- `nodeup update` treats exact-version selectors as immutable pins and reports them with `skipped-exact-version` rather than installing or reporting a newer runtime for that selector.
+- `nodeup update` treats exact-version selectors as immutable pins and reports them with `skipped-exact-version` rather than installing or reporting a newer runtime for that selector. Human output must call them pinned, and JSON entries must keep the stable status while including diagnostics and a next action that points users to install or select a newer exact runtime with `nodeup toolchain install <version>`, `nodeup default <version>`, or `nodeup override set <version> --path <path>`.
 - `nodeup update` without explicit selectors must expose the implicit target source in JSON entries (`tracked-selectors` or `installed-runtimes`) and include structured empty-target diagnostics with selector source, counts, and selector preview.
 - Host support must include `macOS`, `Linux`, and `Windows` x64/arm64, while x86 hosts remain unsupported.
 - Public Nodeup docs must explain that release asset names use `amd64` for the same CPU family commonly called `x64`.

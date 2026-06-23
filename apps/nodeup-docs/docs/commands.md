@@ -161,13 +161,13 @@ Behavior by selector:
 
 - Linked runtime names are skipped with `skipped-linked-runtime`.
 - Channels resolve to the current channel version and install it if needed.
-- Exact versions are immutable pins. They are skipped with `skipped-exact-version`, and `previous_runtime` and `updated_runtime` both report the pinned runtime.
+- Exact versions are immutable pins. They are skipped with `skipped-exact-version`, and `previous_runtime` and `updated_runtime` both report the pinned runtime. Human output calls these pinned selectors out and suggests installing or selecting a newer exact runtime with `nodeup toolchain install <version>`, `nodeup default <version>`, or `nodeup override set <version> --path <path>`.
 
 Tracked exact versions are canonicalized and deduplicated by semantic version. For example, tracking both `22.1.0` and `v22.1.0` results in one tracked selector, `v22.1.0`.
 
 `current` and `latest` resolve to the same newest release-index entry; `latest` is reported as an alias of canonical selector `current`.
 
-JSON output is an array with `selector`, optional `selector_source`, optional `implicit_target`, `selector_kind`, `canonical_selector`, optional `selector_alias_of`, `previous_runtime`, `updated_runtime`, and `status`. Empty no-argument updates include structured error diagnostics with selector source, selector counts, and a selector preview.
+JSON output is an array with `selector`, optional `selector_source`, optional `implicit_target`, `selector_kind`, `canonical_selector`, optional `selector_alias_of`, `previous_runtime`, `updated_runtime`, `status`, optional `diagnostic`, and optional `next_action`. Exact-version pins keep `status: "skipped-exact-version"` and include diagnostics that explain the immutable pin plus a next action for moving to a newer exact runtime. Empty no-argument updates include structured error diagnostics with selector source, selector counts, and a selector preview.
 
 ## check
 

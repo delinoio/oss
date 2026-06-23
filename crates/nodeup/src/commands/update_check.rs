@@ -36,6 +36,10 @@ struct UpdateEntry {
     updated_runtime: Option<String>,
     status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    diagnostic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     release_index: Option<ReleaseIndexResolutionDiagnostic>,
 }
 
@@ -146,6 +150,8 @@ pub fn update(
                     previous_runtime: None,
                     updated_runtime: None,
                     status: "skipped-linked-runtime".to_string(),
+                    diagnostic: None,
+                    next_action: None,
                     release_index: None,
                 });
             }
@@ -173,6 +179,8 @@ pub fn update(
                     } else {
                         "updated".to_string()
                     },
+                    diagnostic: None,
+                    next_action: None,
                     release_index,
                 });
                 if let Some(entry) = updates.last() {
@@ -187,6 +195,8 @@ pub fn update(
             }
             RuntimeSelector::Version(version) => {
                 let current = format!("v{version}");
+                let next_action =
+                    exact_version_pin_next_action(&current, selector_context.implicit_targets);
                 updates.push(UpdateEntry {
                     selector,
                     selector_source: selector_source.clone(),
@@ -197,6 +207,11 @@ pub fn update(
                     previous_runtime: Some(current.clone()),
                     updated_runtime: Some(current),
                     status: "skipped-exact-version".to_string(),
+                    diagnostic: Some(
+                        "exact-version selectors are immutable pins during nodeup update"
+                            .to_string(),
+                    ),
+                    next_action: Some(next_action),
                     release_index: None,
                 });
                 if let Some(entry) = updates.last() {
@@ -214,13 +229,56 @@ pub fn update(
     }
 
     let human = append_release_index_human_notes(
-        format!("Processed updates for {} selector(s)", updates.len()),
+        append_exact_version_pin_human_notes(
+            format!("Processed updates for {} selector(s)", updates.len()),
+            &updates,
+        ),
         updates
             .iter()
             .filter_map(|entry| entry.release_index.as_ref()),
     );
     print_output(output, color, &human, &updates)?;
     Ok(0)
+}
+
+fn append_exact_version_pin_human_notes(human: String, updates: &[UpdateEntry]) -> String {
+    let exact_pins = updates
+        .iter()
+        .filter(|entry| entry.status == "skipped-exact-version")
+        .map(|entry| {
+            format!(
+                "{} is an immutable exact-version pin ({})",
+                entry.canonical_selector, entry.status
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if exact_pins.is_empty() {
+        return human;
+    }
+
+    format!(
+        "{human}\nExact-version pins skipped: {}.\nNext action: install or select a newer exact \
+         runtime, for example `nodeup toolchain install <version>` and then `nodeup default \
+         <version>` or `nodeup override set <version> --path <path>`.",
+        exact_pins.join(", ")
+    )
+}
+
+fn exact_version_pin_next_action(current: &str, implicit_target: bool) -> String {
+    if implicit_target {
+        format!(
+            "{current} is pinned. To move to a newer exact runtime, install or select that exact \
+             version with `nodeup toolchain install <version>` and update the default or override \
+             with `nodeup default <version>` or `nodeup override set <version> --path <path>`."
+        )
+    } else {
+        format!(
+            "{current} is pinned. To move to a newer exact runtime, install or select that exact \
+             version with `nodeup toolchain install <version>`, `nodeup default <version>`, or \
+             `nodeup override set <version> --path <path>`."
+        )
+    }
 }
 
 fn append_release_index_human_notes<'a>(
