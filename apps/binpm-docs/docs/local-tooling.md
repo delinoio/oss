@@ -39,7 +39,7 @@ Declaration-only add writes `binpm.toml` and skips release lookup, downloads, ca
 binpm install
 ```
 
-Until that install runs, `binpm list --local` and `binpm doctor` show the tool as declared but not installed. In frozen mode, including `CI=true`, a later `binpm x <cmd>` cannot create `binpm.lock`; it reports the blocked on-demand install and points back to `binpm install --local <cmd>`.
+Until that install runs, `binpm list --local` and `binpm doctor` show the tool as declared but not installed. In frozen mode, including `CI=true`, a later `binpm x <cmd>` cannot create `binpm.lock`; it reports the blocked on-demand install and points back to `binpm install --local`.
 
 For multi-binary releases, use `--also <cmd=upstream-binary>` instead of hand-copying repeated source tables:
 

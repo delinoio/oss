@@ -5799,6 +5799,7 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
     if !manifest_path.exists() {
         return Ok(Vec::new());
     }
+    let lockfile_path = root.join(LOCKFILE_FILE);
 
     let manifest = match read_manifest(&manifest_path) {
         Ok(manifest) => manifest,
@@ -5848,6 +5849,24 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
         match local_tool_execution_ready(root, &cmd, &spec, Some(&tool)) {
             Ok(true) => continue,
             Ok(false) => {}
+            Err(
+                ref error @ (BinpmError::ParseToml { ref path, .. }
+                | BinpmError::UnsupportedStorageVersion {
+                    kind: "lockfile",
+                    ref path,
+                    ..
+                }),
+            ) if path == &lockfile_path => {
+                warn!(
+                    command = "doctor",
+                    manifest_path = %manifest_path.display(),
+                    lockfile_path = %lockfile_path.display(),
+                    tool_cmd = %cmd,
+                    error = %error,
+                    "Skipping declared-only tool scan because the lockfile could not be parsed"
+                );
+                return Ok(Vec::new());
+            }
             Err(error) => {
                 warn!(
                     command = "doctor",
@@ -12983,7 +13002,7 @@ mod tests {
     }
 
     #[test]
-    fn doctor_declared_only_scan_reports_when_lockfile_is_malformed() {
+    fn doctor_declared_only_scan_ignores_malformed_lockfile() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let root = temp_dir.path();
         write_manifest(
@@ -13006,10 +13025,34 @@ mod tests {
 
         let tools = declared_only_local_tools(root).expect("declared-only scan");
 
-        assert_eq!(tools.len(), 1);
-        assert_eq!(tools[0].cmd, "tool");
-        assert_eq!(tools[0].source, "github:owner/tool");
-        assert_eq!(tools[0].requested_version.as_deref(), Some("1.0.0"));
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_ignores_unsupported_lockfile_version() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/tool".to_string(),
+                        version: Some("1.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        fs::write(root.join(LOCKFILE_FILE), "version = 2\n").expect("write unsupported lockfile");
+
+        let tools = declared_only_local_tools(root).expect("declared-only scan");
+
+        assert!(tools.is_empty());
     }
 
     #[test]
