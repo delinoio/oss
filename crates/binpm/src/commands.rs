@@ -5839,7 +5839,11 @@ fn local_runtime_record_matches_manifest(
     record: &PackageRecord,
 ) -> Result<bool> {
     let spec = parse_manifest_tool_source(tool)?;
-    let target = HostTarget::current()?;
+    let target = HostTarget {
+        os: record.target_os,
+        arch: record.target_arch,
+        libc: record.target_libc,
+    };
     let source_and_target_match = record.source == spec.source_without_version()
         && record.source_provider == spec.provider
         && record.source_host == spec.host
@@ -5851,7 +5855,14 @@ fn local_runtime_record_matches_manifest(
     if !source_and_target_match {
         return Ok(false);
     }
-    if let Some(override_target) = manifest_target_override(Some(tool), &target)? {
+    let override_target = match manifest_target_override(Some(tool), &target) {
+        Ok(override_target) => override_target,
+        Err(
+            BinpmError::InvalidTargetKey { .. } | BinpmError::UnsupportedTargetComponent { .. },
+        ) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if let Some(override_target) = override_target {
         return Ok(
             manifest_checksum_source_matches_record(override_target, record)
                 && record.asset_name == override_target.asset
@@ -13397,6 +13408,31 @@ mod tests {
         };
 
         assert!(local_runtime_record_matches_manifest(&tool, &record).expect("basename bin match"));
+    }
+
+    #[test]
+    fn local_runtime_record_matches_manifest_treats_invalid_target_override_as_stale() {
+        let target = HostTarget::current().expect("current target");
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                "linux-amd64-surprise".to_string(),
+                ManifestTargetOverride {
+                    asset: "tool-linux".to_string(),
+                    bin: "tool-linux".to_string(),
+                    checksum_source: None,
+                },
+            )]),
+        };
+
+        assert!(!local_runtime_record_matches_manifest(&tool, &record)
+            .expect("invalid override is a non-current diagnostic state"));
     }
 
     #[test]
