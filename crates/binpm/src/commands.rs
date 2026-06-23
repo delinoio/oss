@@ -551,7 +551,12 @@ fn install(args: InstallArgs, output: OutputMode) -> Result<i32> {
 
     if let Some(source) = &args.source {
         let spec = normalize_source_input(source)?;
-        let scope = source_install_scope(requested_scope);
+        if requested_scope == Scope::Local {
+            return Err(BinpmError::UnsupportedLocalSourceInstall {
+                package_source: spec.to_string(),
+            });
+        }
+        let scope = Scope::Global;
         let alias = args
             .alias
             .clone()
@@ -571,21 +576,6 @@ fn install(args: InstallArgs, output: OutputMode) -> Result<i32> {
             source_version = spec.version.as_deref().unwrap_or(""),
             "Prepared source install request"
         );
-        if scope == Scope::Local {
-            let result = if args.alias.is_some() || explicit_bin.is_some() {
-                install_local_source_as(
-                    spec,
-                    &alias,
-                    explicit_bin,
-                    frozen_lockfile,
-                    args.require_verified,
-                    output,
-                )?
-            } else {
-                install_local_source(spec, frozen_lockfile, args.require_verified, output)?
-            };
-            return print_mutation_output(result, output);
-        }
         let result = install_global_source(spec, &alias, explicit_bin, args.require_verified)?;
         print_mutation_output(result, output)
     } else {
@@ -797,13 +787,6 @@ fn add(args: AddArgs, output: OutputMode) -> Result<i32> {
          access"
     );
     Ok(0)
-}
-
-fn source_install_scope(requested_scope: Scope) -> Scope {
-    match requested_scope {
-        Scope::Local => Scope::Local,
-        Scope::Global | Scope::Auto => Scope::Global,
-    }
 }
 
 fn exec(args: ExecArgs, output: OutputMode) -> Result<i32> {
@@ -2835,124 +2818,6 @@ fn install_global_source(
         &scope_paths,
         &record,
     ))
-}
-
-fn install_local_source(
-    spec: SourceSpec,
-    frozen_lockfile: bool,
-    require_verified: bool,
-    _output: OutputMode,
-) -> Result<MutationOutput> {
-    let root = require_manifest_root()?;
-    let cmd = repo_name(&spec).to_string();
-    validate_command_name(&cmd)?;
-    let manifest_path = root.join(MANIFEST_FILE);
-    let mut manifest = read_manifest(&manifest_path)?;
-    let prior_manifest = manifest.clone();
-    let manifest_tool = manifest.tools.get(&cmd).cloned();
-    let next_manifest_tool = update_manifest_tool_source(manifest_tool.clone(), &spec, None, None);
-    manifest
-        .tools
-        .insert(cmd.clone(), next_manifest_tool.clone());
-    ensure_no_selected_install_path_collisions(&manifest, std::slice::from_ref(&cmd))?;
-    let prior_state = capture_local_tool_state(&root, &cmd)?;
-    let install = install_local_tool(
-        &root,
-        &cmd,
-        &spec,
-        Some(&next_manifest_tool),
-        frozen_lockfile,
-        require_verified,
-        OutputMode::Json,
-    )?;
-    let record = install.record.clone();
-    if let Err(error) = write_manifest(&manifest_path, &manifest) {
-        rollback_local_install_state(&root, &cmd, &record, prior_state);
-        cleanup_failed_install_cache(
-            &CachePaths::new(&binpm_home()?),
-            &record.sha256,
-            Some(&root),
-            &install,
-        )?;
-        return Err(error);
-    }
-    if let Err(error) = commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install) {
-        rollback_local_install_state(&root, &cmd, &record, prior_state);
-        let _ = write_manifest(&manifest_path, &prior_manifest);
-        cleanup_failed_install_cache(
-            &CachePaths::new(&binpm_home()?),
-            &record.sha256,
-            Some(&root),
-            &install,
-        )?;
-        return Err(error);
-    }
-    let mut result =
-        local_install_mutation_output("install", &root, &cmd, &record, frozen_lockfile)?;
-    result.changed_files.insert(0, path_display(&manifest_path));
-    Ok(result)
-}
-
-fn install_local_source_as(
-    spec: SourceSpec,
-    cmd: &str,
-    explicit_bin: Option<String>,
-    frozen_lockfile: bool,
-    require_verified: bool,
-    _output: OutputMode,
-) -> Result<MutationOutput> {
-    let root = require_manifest_root()?;
-    validate_command_name(cmd)?;
-    let manifest_path = root.join(MANIFEST_FILE);
-    let mut manifest = read_manifest(&manifest_path)?;
-    let prior_manifest = manifest.clone();
-    let manifest_tool = manifest.tools.get(cmd).cloned();
-    let next_manifest_tool = update_manifest_tool_source(
-        manifest_tool,
-        &spec,
-        explicit_bin,
-        Some(&HostTarget::current()?),
-    );
-    manifest
-        .tools
-        .insert(cmd.to_string(), next_manifest_tool.clone());
-    ensure_no_selected_install_path_collisions(&manifest, &[cmd.to_string()])?;
-    let prior_state = capture_local_tool_state(&root, cmd)?;
-    let install = install_local_tool(
-        &root,
-        cmd,
-        &spec,
-        Some(&next_manifest_tool),
-        frozen_lockfile,
-        require_verified,
-        OutputMode::Json,
-    )?;
-    let record = install.record.clone();
-    if let Err(error) = write_manifest(&manifest_path, &manifest) {
-        rollback_local_install_state(&root, cmd, &record, prior_state);
-        cleanup_failed_install_cache(
-            &CachePaths::new(&binpm_home()?),
-            &record.sha256,
-            Some(&root),
-            &install,
-        )?;
-        return Err(error);
-    }
-    if let Err(error) = commit_deferred_cache_hit(&CachePaths::new(&binpm_home()?), &install) {
-        rollback_local_install_state(&root, cmd, &record, prior_state);
-        let _ = write_manifest(&manifest_path, &prior_manifest);
-        cleanup_failed_install_cache(
-            &CachePaths::new(&binpm_home()?),
-            &record.sha256,
-            Some(&root),
-            &install,
-        )?;
-        return Err(error);
-    }
-    let mut result =
-        local_install_mutation_output("install", &root, cmd, &record, frozen_lockfile)?;
-    result.changed_files.insert(0, path_display(&manifest_path));
-    Ok(result)
 }
 
 fn install_local_manifest(
@@ -6255,6 +6120,7 @@ fn path_display(path: &Path) -> String {
     path.display().to_string()
 }
 
+#[cfg(test)]
 fn local_install_mutation_output(
     command: &'static str,
     root: &Path,
@@ -8854,18 +8720,17 @@ mod tests {
         resolved_has_verified_source, restore_local_remove_state, restore_runtime_tool_state,
         sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
         selected_global_package_records, shell_path, shell_quote, signature_sidecar_for_asset,
-        sigstore_trust_policy, snapshot_cache_metadata, source_install_scope,
-        target_override_snippet, update_manifest_tool_source,
-        validate_frozen_update_current_release, validate_locked_record_artifact,
-        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries, verification_state,
-        verify_check_output, verify_check_output_with_state, verify_installed_binary_contents,
-        verify_lockfile_records, verify_runtime_cache_bytes, write_sigstore_verification_inputs,
-        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, HostTarget, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, MutationAction, MutationOutput,
-        OutdatedToolOutput, OutputMode, RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT,
-        SUPPRESS_DIAGNOSTIC_STDERR,
+        sigstore_trust_policy, snapshot_cache_metadata, target_override_snippet,
+        update_manifest_tool_source, validate_frozen_update_current_release,
+        validate_locked_record_artifact, validate_locked_record_current_asset,
+        validate_locked_record_current_provider_digest, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verification_state, verify_check_output,
+        verify_check_output_with_state, verify_installed_binary_contents, verify_lockfile_records,
+        verify_runtime_cache_bytes, write_sigstore_verification_inputs, zip_file_is_regular,
+        zip_file_is_symlink, ArtifactKind, HostTarget, InstalledPackage, InstalledPathSnapshot,
+        LocalRemoveState, MutationAction, MutationOutput, OutdatedToolOutput, OutputMode,
+        RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT, SUPPRESS_DIAGNOSTIC_STDERR,
     };
     use crate::{
         assets::CandidateDecision,
@@ -9106,13 +8971,6 @@ mod tests {
             next_manifest.tools["tool"].version.as_deref(),
             Some("1.0.0")
         );
-    }
-
-    #[test]
-    fn source_installs_default_to_global_scope() {
-        assert_eq!(source_install_scope(Scope::Auto), Scope::Global);
-        assert_eq!(source_install_scope(Scope::Global), Scope::Global);
-        assert_eq!(source_install_scope(Scope::Local), Scope::Local);
     }
 
     #[test]

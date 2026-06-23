@@ -312,7 +312,7 @@ fn help_lists_top_level_subcommand_descriptions() {
             "Show runtime resolution details and nodeup directories",
         ))
         .stdout(predicates::str::contains(
-            "Update selected runtimes or tracked selectors",
+            "Update channels/tracked selectors; exact versions are immutable pins",
         ))
         .stdout(predicates::str::contains(
             "Manage directory-scoped runtime overrides",
@@ -5086,12 +5086,37 @@ fn update_reports_skipped_exact_version_when_latest_is_already_installed() {
     env.command().args(["update", "22.1.0"]).assert().success();
 
     env.command()
-        .args(["--output", "json", "update", "22.1.0"])
+        .args(["update", "22.1.0"])
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "\"status\": \"skipped-exact-version\"",
+            "Exact-version pins skipped: v22.1.0 is an immutable exact-version pin \
+             (skipped-exact-version)",
+        ))
+        .stdout(predicates::str::contains(
+            "Next action: install or select a newer exact runtime",
+        ))
+        .stdout(predicates::str::contains(
+            "nodeup toolchain install <version>",
         ));
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update", "22.1.0"])
+        .output()
+        .expect("update exact version JSON diagnostics");
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries[0]["status"], "skipped-exact-version");
+    assert_eq!(
+        entries[0]["diagnostic"],
+        "exact-version selectors are immutable pins during nodeup update"
+    );
+    assert!(entries[0]["next_action"]
+        .as_str()
+        .unwrap()
+        .contains("nodeup toolchain install <version>"));
 }
 
 #[test]
@@ -6888,6 +6913,14 @@ fn tracked_exact_selectors_are_canonicalized_across_install_and_override() {
     assert_eq!(entries[0]["status"], "skipped-exact-version");
     assert_eq!(entries[0]["previous_runtime"], "v22.1.0");
     assert_eq!(entries[0]["updated_runtime"], "v22.1.0");
+    assert_eq!(
+        entries[0]["diagnostic"],
+        "exact-version selectors are immutable pins during nodeup update"
+    );
+    assert!(entries[0]["next_action"]
+        .as_str()
+        .unwrap()
+        .contains("nodeup default <version>"));
 }
 
 #[test]
