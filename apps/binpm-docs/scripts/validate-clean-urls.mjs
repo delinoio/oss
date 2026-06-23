@@ -14,6 +14,19 @@ const documentedRouteIds = [
 ];
 
 const outputDir = path.resolve("doc_build");
+const repoRoot = path.resolve("../..");
+const publicInstallerEntrypoints = [
+  {
+    routeId: "/install.sh",
+    sourceFile: path.join(repoRoot, "scripts/install/binpm.sh"),
+    outputFile: path.join(outputDir, "install.sh"),
+  },
+  {
+    routeId: "/install.ps1",
+    sourceFile: path.join(repoRoot, "scripts/install/binpm.ps1"),
+    outputFile: path.join(outputDir, "install.ps1"),
+  },
+];
 const htmlHrefPatterns = documentedRouteIds.map((routeId) => {
   if (routeId === "/") {
     return {
@@ -84,6 +97,26 @@ for (const { routeId, outputFile } of routeOutputFiles) {
   if (!(await pathExists(outputFile))) {
     failures.push(
       `${routeId} was not emitted at ${path.relative(outputDir, outputFile)}`,
+    );
+  }
+}
+
+for (const { routeId, sourceFile, outputFile } of publicInstallerEntrypoints) {
+  if (!(await pathExists(outputFile))) {
+    failures.push(
+      `${routeId} was not emitted at ${path.relative(outputDir, outputFile)}`,
+    );
+    continue;
+  }
+
+  const [sourceContents, outputContents] = await Promise.all([
+    readFile(sourceFile, "utf8"),
+    readFile(outputFile, "utf8"),
+  ]);
+
+  if (sourceContents !== outputContents) {
+    failures.push(
+      `${routeId} does not match ${path.relative(repoRoot, sourceFile)}`,
     );
   }
 }

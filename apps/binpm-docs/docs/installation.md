@@ -35,9 +35,44 @@ brew install cosign
 winget install sigstore.cosign
 ```
 
-Use the latest-from-main commands for interactive installs where you want the current first-party installer script. Use the pinned commands for automation after reviewing a repository tag or commit.
+Use the short docs-site URLs for interactive installs where you want the current public first-party installer script. These entrypoints are served from `https://binpm.delino.io` and are backed by the same maintained installer scripts as the repository paths.
 
 macOS and Linux:
+
+```bash
+(
+  installer_url="https://binpm.delino.io/install.sh"
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  if ! curl -fsSL "$installer_url" -o "$tmp_dir/binpm.sh"; then
+    exit 1
+  fi
+  bash "$tmp_dir/binpm.sh" --version latest --method direct
+)
+```
+
+Windows PowerShell:
+
+```powershell
+$InstallerUrl = "https://binpm.delino.io/install.ps1"
+$Installer = Join-Path ([System.IO.Path]::GetTempPath()) ("binpm-install-" + [System.Guid]::NewGuid().ToString("N") + ".ps1")
+try {
+  Invoke-WebRequest -Uri $InstallerUrl -OutFile $Installer -UseBasicParsing
+  Unblock-File -LiteralPath $Installer -ErrorAction SilentlyContinue
+  $PowerShell = (Get-Process -Id $PID).Path
+  & $PowerShell -NoProfile -ExecutionPolicy Bypass -File $Installer -Version latest -Method direct
+  if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+  }
+}
+finally {
+  Remove-Item -LiteralPath $Installer -Force -ErrorAction SilentlyContinue
+}
+```
+
+The raw GitHub current installer URLs remain available when you want to fetch directly from the `delinoio/oss` repository.
+
+macOS and Linux raw GitHub current installer:
 
 ```bash
 (
@@ -51,7 +86,7 @@ macOS and Linux:
 )
 ```
 
-Windows PowerShell:
+Windows PowerShell raw GitHub current installer:
 
 ```powershell
 $InstallerUrl = "https://raw.githubusercontent.com/delinoio/oss/refs/heads/main/scripts/install/binpm.ps1"
@@ -69,6 +104,8 @@ finally {
   Remove-Item -LiteralPath $Installer -Force -ErrorAction SilentlyContinue
 }
 ```
+
+Use the pinned commands for automation after reviewing a repository tag or commit. Pinned examples use raw GitHub paths because the short docs-site URLs always represent the currently deployed public installer entrypoints.
 
 Pinned macOS and Linux pattern:
 
@@ -107,7 +144,7 @@ finally {
 }
 ```
 
-These commands fetch first-party installer scripts from `delinoio/oss`. For reproducible automation, pin the same raw URL paths to a reviewed commit or repository tag instead of `refs/heads/main`, and replace `latest` with an explicit binpm semver.
+These commands fetch first-party installer scripts from `delinoio/oss`. For reproducible automation, pin raw URL paths to a reviewed commit or repository tag and replace `latest` with an explicit binpm semver.
 
 The canonical in-repo installer paths remain:
 
