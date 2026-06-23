@@ -6748,22 +6748,24 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
 
     let manifest = match read_manifest(&manifest_path) {
         Ok(manifest) => manifest,
-        Err(BinpmError::ParseToml { .. }) => {
+        Err(
+            ref error @ (BinpmError::ParseToml { ref path, .. }
+            | BinpmError::UnsupportedStorageVersion {
+                kind: "manifest",
+                ref path,
+                ..
+            }
+            | BinpmError::ReadFile { ref path, .. }),
+        ) if path == &manifest_path => {
             warn!(
                 command = "doctor",
                 manifest_path = %manifest_path.display(),
-                error_kind = "parse toml",
-                "Skipping declared-only tool scan because the manifest could not be parsed"
-            );
-            return Ok(Vec::new());
-        }
-        Err(BinpmError::UnsupportedStorageVersion {
-            kind: "manifest", ..
-        }) => {
-            warn!(
-                command = "doctor",
-                manifest_path = %manifest_path.display(),
-                error_kind = "unsupported storage version",
+                error_kind = match error {
+                    BinpmError::ParseToml { .. } => "parse toml",
+                    BinpmError::UnsupportedStorageVersion { .. } => "unsupported storage version",
+                    BinpmError::ReadFile { .. } => "read file",
+                    _ => "unknown",
+                },
                 "Skipping declared-only tool scan because the manifest could not be parsed"
             );
             return Ok(Vec::new());
@@ -6811,7 +6813,8 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
                     kind: "lockfile",
                     ref path,
                     ..
-                }),
+                }
+                | BinpmError::ReadFile { ref path, .. }),
             ) if path == &lockfile_path => {
                 warn!(
                     command = "doctor",
@@ -6821,6 +6824,7 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
                     error_kind = match error {
                         BinpmError::ParseToml { .. } => "parse toml",
                         BinpmError::UnsupportedStorageVersion { .. } => "unsupported storage version",
+                        BinpmError::ReadFile { .. } => "read file",
                         _ => "unknown",
                     },
                     "Skipping declared-only tool scan because the lockfile could not be parsed"
@@ -15561,6 +15565,16 @@ mod tests {
     }
 
     #[test]
+    fn doctor_declared_only_scan_ignores_unreadable_manifest() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(temp_dir.path().join(MANIFEST_FILE)).expect("create manifest directory");
+
+        let tools = declared_only_local_tools(temp_dir.path()).expect("declared-only scan");
+
+        assert!(tools.is_empty());
+    }
+
+    #[test]
     fn doctor_declared_only_scan_ignores_malformed_lockfile() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let root = temp_dir.path();
@@ -15581,6 +15595,33 @@ mod tests {
         )
         .expect("write manifest");
         fs::write(root.join(LOCKFILE_FILE), "version = [").expect("write malformed lockfile");
+
+        let tools = declared_only_local_tools(root).expect("declared-only scan");
+
+        assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_ignores_unreadable_lockfile() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/tool".to_string(),
+                        version: Some("1.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        fs::create_dir(root.join(LOCKFILE_FILE)).expect("create lockfile directory");
 
         let tools = declared_only_local_tools(root).expect("declared-only scan");
 
