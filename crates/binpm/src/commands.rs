@@ -3055,7 +3055,13 @@ fn install_resolved(
             });
         }
     }
-    verify_signature_sidecar(cache_paths, &mut resolved, &bytes, require_verified)?;
+    verify_signature_sidecar(
+        cache_paths,
+        &mut resolved,
+        &bytes,
+        require_verified,
+        SignatureVerificationOptions::default(),
+    )?;
     if require_verified && !resolved_has_verified_source(&resolved) {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
@@ -3295,17 +3301,24 @@ fn install_local_from_lock(
                 ));
             }
             if require_verified && !record.has_verified_source() {
-                let verification = reverify_locked_record_signature(&cache_paths, &record, &bytes)
-                    .map_err(|source| {
-                        frozen_restore_download_error(
-                            cmd,
-                            &cache_asset,
-                            cache_state,
-                            &download_url,
-                            download_authenticated,
-                            source,
-                        )
-                    })?;
+                let verification = reverify_locked_record_signature_with_options(
+                    &cache_paths,
+                    &record,
+                    &bytes,
+                    SignatureVerificationOptions {
+                        silent: output.is_json(),
+                    },
+                )
+                .map_err(|source| {
+                    frozen_restore_download_error(
+                        cmd,
+                        &cache_asset,
+                        cache_state,
+                        &download_url,
+                        download_authenticated,
+                        source,
+                    )
+                })?;
                 if !verification.verified {
                     return Err(frozen_restore_download_error(
                         cmd,
@@ -4061,6 +4074,7 @@ fn verify_signature_sidecar(
     resolved: &mut ResolvedAsset,
     asset_bytes: &[u8],
     require_verified: bool,
+    options: SignatureVerificationOptions,
 ) -> Result<()> {
     if resolved.checksum_source.is_upstream_verified() {
         return Ok(());
@@ -4076,7 +4090,7 @@ fn verify_signature_sidecar(
             signature_sidecar = %sidecar.asset_name,
             "Skipping package signature verification because no trust policy applies"
         );
-        if require_verified {
+        if require_verified && !options.silent {
             eprintln!(
                 "warning: signature sidecar {} is present for {}, but binpm has no applicable \
                  trust policy for this package",
@@ -4086,10 +4100,13 @@ fn verify_signature_sidecar(
         return Ok(());
     };
 
-    let bundle_bytes = match download_asset(
+    let bundle_bytes = match download_asset_with_options(
         &sidecar.download_url,
         sidecar.download_auth.as_ref(),
         sidecar.download_accept,
+        DownloadAssetOptions {
+            silent: options.silent,
+        },
     ) {
         Ok(bytes) => bytes,
         Err(error) if !require_verified => {
@@ -4159,7 +4176,7 @@ fn verify_signature_sidecar(
                 stderr = %stderr.trim(),
                 "Package signature sidecar did not verify"
             );
-            if require_verified {
+            if require_verified && !options.silent {
                 eprintln!(
                     "warning: signature verification failed for {} using sidecar {}",
                     resolved.source, sidecar.asset_name
@@ -4173,7 +4190,7 @@ fn verify_signature_sidecar(
                 signature_sidecar = %sidecar.asset_name,
                 "Skipping package signature verification because cosign is not on PATH"
             );
-            if require_verified {
+            if require_verified && !options.silent {
                 eprintln!(
                     "warning: --require-verified needs cosign on PATH to validate signature \
                      sidecar {} for {}",
@@ -4199,6 +4216,11 @@ fn verify_signature_sidecar(
     }
 
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct SignatureVerificationOptions {
+    silent: bool,
 }
 
 fn resolved_has_verified_source(resolved: &ResolvedAsset) -> bool {
@@ -4280,6 +4302,20 @@ fn reverify_locked_record_signature(
     record: &PackageRecord,
     asset_bytes: &[u8],
 ) -> Result<LockedRecordVerification> {
+    reverify_locked_record_signature_with_options(
+        cache_paths,
+        record,
+        asset_bytes,
+        SignatureVerificationOptions::default(),
+    )
+}
+
+fn reverify_locked_record_signature_with_options(
+    cache_paths: &CachePaths,
+    record: &PackageRecord,
+    asset_bytes: &[u8],
+    options: SignatureVerificationOptions,
+) -> Result<LockedRecordVerification> {
     let signature_sidecar = locked_record_signature_sidecar(record)?;
     let mut resolved = ResolvedAsset {
         source: SourceSpec::from_str(
@@ -4320,7 +4356,7 @@ fn reverify_locked_record_signature(
         signature_available: true,
         signature_verified: false,
     };
-    verify_signature_sidecar(cache_paths, &mut resolved, asset_bytes, true)?;
+    verify_signature_sidecar(cache_paths, &mut resolved, asset_bytes, true, options)?;
     if resolved_has_verified_source(&resolved) {
         Ok(LockedRecordVerification::SIGNATURE_REVERIFIED)
     } else {
