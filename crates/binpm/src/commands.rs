@@ -3927,20 +3927,14 @@ fn validate_locked_record_current_release(
     }
     validate_locked_record_current_asset(lockfile_path, cmd, record, &release.assets)?;
     validate_locked_record_current_provider_digest(lockfile_path, cmd, record, &release.assets)?;
-    Ok(unsupported_verification_sidecars_for_record(
-        record,
-        &release.assets,
-    )?)
+    unsupported_verification_sidecars_for_record(record, &release.assets)
 }
 
 fn current_unsupported_verification_sidecars_for_record(
     record: &PackageRecord,
 ) -> Result<Vec<UnsupportedVerificationSidecar>> {
     let release = current_release_for_record(record)?;
-    Ok(unsupported_verification_sidecars_for_record(
-        record,
-        &release.assets,
-    )?)
+    unsupported_verification_sidecars_for_record(record, &release.assets)
 }
 
 fn current_release_for_record(record: &PackageRecord) -> Result<Release> {
