@@ -150,8 +150,8 @@ function closeSearchDialog() {
   const closeControl = document.querySelector(".rp-search-panel__close");
   const mask = document.querySelector(".rp-search-panel__mask");
 
-  if (!dispatchSyntheticClick(closeControl)) {
-    dispatchSyntheticClick(mask);
+  if (!dispatchSyntheticClick(mask)) {
+    dispatchSyntheticClick(closeControl);
   }
 
   returnFocusToSearchTrigger();
@@ -186,8 +186,12 @@ function syncSearchDialogAccessibility() {
     ".rp-search-panel__close",
   );
   if (rspressClose) {
-    rspressClose.setAttribute("aria-hidden", "true");
-    rspressClose.tabIndex = -1;
+    if (rspressClose.getAttribute("aria-hidden") !== "true") {
+      rspressClose.setAttribute("aria-hidden", "true");
+    }
+    if (rspressClose.tabIndex !== -1) {
+      rspressClose.tabIndex = -1;
+    }
   }
 
   let closeButton = dialog.querySelector<HTMLButtonElement>(
