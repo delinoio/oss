@@ -4188,7 +4188,7 @@ fn local_update_json_reports_empty_manifest_no_op_without_human_prefix() {
 }
 
 #[test]
-fn local_update_json_dry_run_reports_manifest_and_lockfile_file_changes() {
+fn local_update_json_dry_run_no_frozen_resolves_versioned_tools() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
@@ -4217,21 +4217,27 @@ version = "1.0.0"
         .output()
         .expect("update json dry-run");
 
-    assert_success(&output);
-    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert!(!output.status.success());
+    assert!(
+        output.stdout.is_empty(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse update error json");
     assert_eq!(
-        payload["file_changes"],
-        serde_json::json!([
-            project.join("binpm.toml").display().to_string(),
-            project.join("binpm.lock").display().to_string()
-        ])
+        payload["error"]["diagnostic"]["kind"],
+        serde_json::json!("release_lookup")
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["package"],
+        serde_json::json!("github:owner/tool")
     );
     assert!(!project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
 }
 
 #[test]
-fn local_update_json_dry_run_omits_manifest_for_versionless_tools() {
+fn local_update_json_dry_run_no_frozen_resolves_versionless_tools() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
@@ -4259,11 +4265,20 @@ source = "github:owner/tool"
         .output()
         .expect("update json dry-run");
 
-    assert_success(&output);
-    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert!(!output.status.success());
+    assert!(
+        output.stdout.is_empty(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse update error json");
     assert_eq!(
-        payload["file_changes"],
-        serde_json::json!([project.join("binpm.lock").display().to_string()])
+        payload["error"]["diagnostic"]["kind"],
+        serde_json::json!("release_lookup")
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["package"],
+        serde_json::json!("github:owner/tool")
     );
     assert!(!project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
@@ -4332,23 +4347,32 @@ signature_verified = false
 
     assert_success(&output);
     let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
-    assert_eq!(
-        payload["file_changes"],
-        serde_json::json!([project.join("binpm.lock").display().to_string()])
-    );
-    assert_eq!(
-        payload["runtime_changes"],
-        serde_json::json!([
-            project.join(".binpm").join("bin").display().to_string(),
-            project
-                .join(".binpm")
-                .join("packages")
-                .join("tool.toml")
-                .display()
-                .to_string(),
-            cache_ref.display().to_string(),
-        ])
-    );
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["dry_run"], true);
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let lockfile_path = project.join("binpm.lock").display().to_string();
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+    let cache_ref_path = cache_ref.display().to_string();
+    assert!(changed_files.contains(&lockfile_path.as_str()));
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref_path.as_str()));
     assert!(project
         .join(".binpm")
         .join("packages")
@@ -4464,6 +4488,37 @@ fn local_update_dry_run_json_reports_orphan_cleanup_plan() {
     assert!(fs::read_to_string(project.join("binpm.lock"))
         .expect("read lockfile")
         .contains("tools.tool"));
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn frozen_local_install_human_restore_reports_network_attempt() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    write_locked_tool_project(&project, sha256);
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .output()
+        .expect("install --local --frozen-lockfile");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("frozen restore cache missing for tool"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("network_access_attempted=true"), "{stderr}");
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
