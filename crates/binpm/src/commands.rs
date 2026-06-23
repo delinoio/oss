@@ -6977,8 +6977,6 @@ fn assert_runtime_record_matches_lock(
         || runtime_record.archive_format != lock_record.archive_format
         || runtime_record.selected_binary != lock_record.selected_binary
         || runtime_record.sha256 != lock_record.sha256
-        || runtime_record.unsupported_verification_sidecars
-            != lock_record.unsupported_verification_sidecars
         || !runtime_integrity_metadata_matches_lock(lock_record, runtime_record)
     {
         return Err(BinpmError::StaleLockfile {
@@ -10236,6 +10234,20 @@ mod tests {
 
         assert_runtime_record_matches_lock(temp_dir.path(), "tool", &lock_record, &runtime_record)
             .expect("reverified runtime signature metadata is compatible with the lock");
+    }
+
+    #[test]
+    fn sidecar_only_runtime_metadata_changes_remain_lock_compatible() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let lock_record = package_record();
+        let mut runtime_record = lock_record.clone();
+        runtime_record.unsupported_verification_sidecars = vec![UnsupportedVerificationSidecar {
+            asset_name: "tool-linux.asc".to_string(),
+            kind: UnsupportedVerificationSidecarKind::GpgSignature,
+        }];
+
+        assert_runtime_record_matches_lock(temp_dir.path(), "tool", &lock_record, &runtime_record)
+            .expect("diagnostic-only sidecar metadata is compatible with the lock");
     }
 
     #[test]
