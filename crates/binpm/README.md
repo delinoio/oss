@@ -57,6 +57,12 @@ states that all-tools mode before printing the planned update list. Local
 updates advance exact-version manifest entries to the latest stable release and
 write `binpm.toml`, `binpm.lock`, and project-local executables consistently.
 
+`binpm add --manifest-only` is an advanced declaration-review workflow. It
+writes only `binpm.toml` and reports the skipped lockfile and executable paths;
+run `binpm install` to resolve, lock, and install before expecting `binpm x` to
+work in frozen environments such as CI. Until then, `binpm list --local` and
+`binpm doctor` report the tool as declared but not installed.
+
 Use `-v`/`--verbose` for info-level tracing diagnostics and `--debug` for
 debug-level tracing diagnostics. `BINPM_LOG` remains supported when no CLI
 verbosity flag is provided; CLI verbosity flags take precedence.

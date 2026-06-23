@@ -88,6 +88,8 @@ struct ListToolOutput {
     selected_binary: Option<String>,
     installed_path: Option<String>,
     verification: Option<VerificationState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_step: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -184,6 +186,16 @@ struct DoctorOutput {
     global_bin_on_path: bool,
     stale_cache_refs: usize,
     legacy_cache_refs: usize,
+    declared_only_tools: Vec<DeclaredOnlyToolOutput>,
+    declared_only_next_step: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct DeclaredOnlyToolOutput {
+    cmd: String,
+    source: String,
+    requested_version: Option<String>,
+    expected_executable_path: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -527,16 +539,19 @@ fn add(args: AddArgs) -> Result<i32> {
     ensure_no_selected_install_path_collisions(&manifest, &selected)?;
     if args.manifest_only {
         write_manifest(&manifest_path, &manifest)?;
+        let scope_paths = ScopePaths::local(root.clone());
         println!("declared {}", selected.join(", "));
         println!("manifest-only: wrote {}", manifest_path.display());
         println!(
             "manifest-only: did not update {}",
             root.join(LOCKFILE_FILE).display()
         );
-        println!(
-            "manifest-only: did not install executables under {}",
-            ScopePaths::local(root).bin.display()
-        );
+        for cmd in &selected {
+            println!(
+                "manifest-only: did not install executable {}",
+                current_platform_installed_path(&scope_paths, cmd).display()
+            );
+        }
         println!("next: run `binpm install` to resolve, lock, and install declared tools");
         return Ok(0);
     }
@@ -950,6 +965,7 @@ fn list(args: ScopedArgs, output: OutputMode) -> Result<i32> {
                     print_list_tool(&row, output);
                     tools.push(row);
                 } else {
+                    let next_step = format!("binpm install --local {}", cli_quote(&cmd));
                     let row = ListToolOutput {
                         cmd,
                         state: ToolState::Declared,
@@ -959,6 +975,7 @@ fn list(args: ScopedArgs, output: OutputMode) -> Result<i32> {
                         selected_binary: None,
                         installed_path: None,
                         verification: None,
+                        next_step: Some(next_step),
                     };
                     print_list_tool(&row, output);
                     tools.push(row);
@@ -1296,6 +1313,7 @@ fn doctor(output: OutputMode) -> Result<i32> {
     let global_bin_on_path = path_contains_entry(&global_bin);
     let cache_paths = CachePaths::new(&home);
     let cache_ref_scan = scan_cache_references(&cache_paths)?;
+    let declared_only_tools = declared_only_local_tools(&project_root)?;
 
     info!(
         command = "doctor",
@@ -1310,8 +1328,14 @@ fn doctor(output: OutputMode) -> Result<i32> {
         global_bin_on_path,
         stale_cache_refs = cache_ref_scan.stale_count(),
         legacy_cache_refs = cache_ref_scan.legacy_refs,
+        declared_only_tools = declared_only_tools.len(),
         "Prepared doctor inspection"
     );
+    let declared_only_next_step = if declared_only_tools.is_empty() {
+        None
+    } else {
+        Some("binpm install")
+    };
     if output.is_json() {
         return print_json(&DoctorOutput {
             command: "doctor",
@@ -1327,6 +1351,8 @@ fn doctor(output: OutputMode) -> Result<i32> {
             global_bin_on_path,
             stale_cache_refs: cache_ref_scan.stale_count(),
             legacy_cache_refs: cache_ref_scan.legacy_refs,
+            declared_only_tools,
+            declared_only_next_step,
         });
     }
     println!("binpm doctor");
@@ -1339,6 +1365,21 @@ fn doctor(output: OutputMode) -> Result<i32> {
     println!("global_bin_on_path: {}", yes_no(global_bin_on_path));
     println!("stale_cache_refs: {}", cache_ref_scan.stale_count());
     println!("legacy_cache_refs: {}", cache_ref_scan.legacy_refs);
+    println!("declared_only_tools: {}", declared_only_tools.len());
+    for tool in &declared_only_tools {
+        println!(
+            "declared_only_tool: cmd={} state=declared-but-not-installed source={} \
+             requested_version={} expected_executable_path={} next=`binpm install --local {}`",
+            tool.cmd,
+            tool.source,
+            tool.requested_version.as_deref().unwrap_or("<latest>"),
+            tool.expected_executable_path,
+            cli_quote(&tool.cmd)
+        );
+    }
+    if declared_only_next_step.is_some() {
+        println!("declared_only_next_step: binpm install");
+    }
     if !global_bin_on_path {
         print_global_path_setup_guidance(&global_bin);
     }
@@ -5129,6 +5170,7 @@ fn list_installed_tool(cmd: String, record: PackageRecord) -> ListToolOutput {
         selected_binary: Some(record.selected_binary),
         installed_path: Some(record.installed_path),
         verification: Some(verification),
+        next_step: None,
     }
 }
 
@@ -5138,12 +5180,13 @@ fn print_list_tool(row: &ListToolOutput, output: OutputMode) {
     }
     match row.state {
         ToolState::Declared => println!(
-            "installed_command_alias={} state=declared source={} requested_version={} \
-             release=<unknown> upstream_binary=<unknown> installed_path=<unknown> \
-             verification=<unknown>",
+            "installed_command_alias={} state=declared status=declared-but-not-installed \
+             source={} requested_version={} release=<unknown> upstream_binary=<unknown> \
+             installed_path=<unknown> verification=<unknown> next=`{}`",
             row.cmd,
             row.source,
-            row.requested_version.as_deref().unwrap_or("<latest>")
+            row.requested_version.as_deref().unwrap_or("<latest>"),
+            row.next_step.as_deref().unwrap_or("binpm install")
         ),
         ToolState::Installed => println!(
             "installed_command_alias={} state=installed source={} requested_version={} release={} \
@@ -5231,6 +5274,38 @@ fn json_path_state(path: &Path) -> PathState {
     } else {
         PathState::Missing
     }
+}
+
+fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>> {
+    let manifest_path = root.join(MANIFEST_FILE);
+    if !manifest_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let manifest = read_manifest(&manifest_path)?;
+    let paths = ScopePaths::local(root.to_path_buf());
+    manifest
+        .tools
+        .into_iter()
+        .filter_map(|(cmd, tool)| {
+            if package_record_path(&paths, &cmd).exists() {
+                None
+            } else {
+                Some((cmd, tool))
+            }
+        })
+        .map(|(cmd, tool)| {
+            validate_command_name(&cmd)?;
+            Ok(DeclaredOnlyToolOutput {
+                expected_executable_path: current_platform_installed_path(&paths, &cmd)
+                    .display()
+                    .to_string(),
+                cmd,
+                source: tool.source,
+                requested_version: tool.version,
+            })
+        })
+        .collect()
 }
 
 fn verification_state(record: &PackageRecord) -> VerificationState {

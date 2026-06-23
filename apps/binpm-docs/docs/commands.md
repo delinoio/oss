@@ -16,7 +16,7 @@ binpm remove <cmd> [--local|--global]
 
 Use `binpm add <cmd> <source> --bin <upstream-binary>` when the release archive contains multiple executables or when the upstream executable name differs from the local command name. The selected binary is persisted in `binpm.toml`.
 
-Use `binpm add <cmd> <source> --manifest-only` to write only `binpm.toml`. This does not resolve releases, write `binpm.lock`, populate cache entries, or install executables; run `binpm install` later to resolve and install.
+Use `binpm add <cmd> <source> --manifest-only` only for advanced declaration-review workflows. It writes only `binpm.toml`; it does not resolve releases, write `binpm.lock`, populate cache entries, write package records, or install executables. Success output names the manifest path, skipped lockfile path, skipped executable paths, and the exact follow-up command: `binpm install`.
 
 Use `--also <cmd=upstream-binary>` to declare several commands from one source without repeating the source and version:
 
@@ -37,6 +37,8 @@ binpm x --package <source> [--bin <upstream-binary>] [CMD] [args...]
 
 `binpm x` runs commands from the local manifest or from an explicitly supplied `--package`.
 
+If a command was added with `--manifest-only`, `binpm x <cmd>` attempts an on-demand install before running it. Frozen mode, including the default `CI=true` behavior, blocks that lockfile work and reports the blocked on-demand install with `binpm install --local <cmd>` as the safest next command.
+
 With `--package`, use `--bin` to choose the upstream executable for one-off execution. `CMD` remains the command name placed in the temporary execution context. If `CMD` is omitted, the one-off shortcut keeps the source explicit and exposes the repository basename, or the `--bin` basename when `--bin` is supplied. The shortcut form does not forward args; provide an explicit `CMD` when you need to pass args, for example `binpm x --package <source> <cmd> -- <args...>`. `binpm x rg` without a local manifest entry still does not infer a remote package.
 
 ## Diagnostics
@@ -49,7 +51,7 @@ binpm info <cmd-or-source> [--local|--global]
 binpm outdated [--local|--global]
 ```
 
-`binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, and `binpm outdated` inspect state without changing manifests, lockfiles, cached assets, or installed executables. Scoped read-only commands show the selected local or global scope in human output when that scope affects results, and include `scope` in JSON output. `binpm outdated` includes each tool source in stale human rows and JSON tool entries so global tools can be reinstalled from the reported source.
+`binpm doctor`, `binpm explain`, `binpm verify`, `binpm info`, and `binpm outdated` inspect state without changing manifests, lockfiles, cached assets, or installed executables. Scoped read-only commands show the selected local or global scope in human output when that scope affects results, and include `scope` in JSON output. `binpm list --local` and `binpm doctor` identify tools declared in `binpm.toml` without package records or executables as declared but not installed and point back to `binpm install`. `binpm outdated` includes each tool source in stale human rows and JSON tool entries so global tools can be reinstalled from the reported source.
 
 ## Environment
 

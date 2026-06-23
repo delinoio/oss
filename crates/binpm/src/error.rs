@@ -30,6 +30,7 @@ pub enum FrozenLockfileCommandContext {
         mode: Option<&'static str>,
     },
     Exec {
+        cmd: Option<String>,
         mode: Option<&'static str>,
     },
     Other {
@@ -591,7 +592,7 @@ fn frozen_lockfile_mode() -> Option<&'static str> {
         | Some(FrozenLockfileCommandContext::InstallLocalSource { mode, .. })
         | Some(FrozenLockfileCommandContext::InstallLocal { mode, .. })
         | Some(FrozenLockfileCommandContext::UpdateLocal { mode, .. })
-        | Some(FrozenLockfileCommandContext::Exec { mode })
+        | Some(FrozenLockfileCommandContext::Exec { mode, .. })
         | Some(FrozenLockfileCommandContext::Other { mode }) => *mode,
         Some(FrozenLockfileCommandContext::NotFrozen) | None => None,
     }
@@ -669,6 +670,9 @@ fn frozen_lockfile_safest_next_command(cmd: Option<&str>) -> String {
                 parts.push("--require-verified".to_string());
             }
             parts.join(" ")
+        }
+        Some(FrozenLockfileCommandContext::Exec { cmd: Some(cmd), .. }) => {
+            format!("binpm install --local {}", cli_quote(cmd))
         }
         _ => "binpm install --local".to_string(),
     }

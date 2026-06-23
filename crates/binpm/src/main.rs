@@ -52,6 +52,7 @@ fn frozen_lockfile_command_context(command: &Command) -> FrozenLockfileCommandCo
             mode: args.lockfile.frozen_lockfile_mode(),
         },
         Command::Exec(args) => FrozenLockfileCommandContext::Exec {
+            cmd: args.cmd().map(|cmd| cmd.to_string_lossy().into_owned()),
             mode: args.lockfile.frozen_lockfile_mode(),
         },
         Command::Update(args) if !args.scope.global => FrozenLockfileCommandContext::UpdateLocal {

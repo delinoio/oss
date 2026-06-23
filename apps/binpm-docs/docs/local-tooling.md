@@ -27,13 +27,19 @@ binpm add rg github:BurntSushi/ripgrep@14.1.1 --bin rg
 
 Use `--bin` when a package archive contains more than one plausible executable or when the executable selected from the release differs from the local command name.
 
-Use `--manifest-only` when you only want to review or commit a declaration:
+Use `--manifest-only` only for advanced declaration review workflows where you want to review or commit `binpm.toml` before resolving a release:
 
 ```bash
 binpm add rg github:BurntSushi/ripgrep@14.1.1 --bin rg --manifest-only
 ```
 
-Declaration-only add writes `binpm.toml` and skips release lookup, downloads, cache mutation, `binpm.lock`, package records, and `.binpm/bin`. Run `binpm install` later to resolve, lock, and install.
+Declaration-only add writes `binpm.toml` and skips release lookup, downloads, cache mutation, `binpm.lock`, package records, and each `.binpm/bin/<cmd>` executable. Its success output names the manifest path, skipped lockfile path, skipped executable paths, and the exact next step:
+
+```bash
+binpm install
+```
+
+Until that install runs, `binpm list --local` and `binpm doctor` show the tool as declared but not installed. In frozen mode, including `CI=true`, a later `binpm x <cmd>` cannot create `binpm.lock`; it reports the blocked on-demand install and points back to `binpm install --local <cmd>`.
 
 For multi-binary releases, use `--also <cmd=upstream-binary>` instead of hand-copying repeated source tables:
 
