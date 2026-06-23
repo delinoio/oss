@@ -3758,7 +3758,7 @@ version = "1.0.0"
 }
 
 #[test]
-fn local_update_dry_run_json_reports_package_record_for_floating_tools() {
+fn local_update_dry_run_json_resolves_floating_tools_before_planning() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
@@ -3780,35 +3780,14 @@ source = "github:owner/tool"
         .output()
         .expect("update --json");
 
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
-    let changed_files = payload["changed_files"]
-        .as_array()
-        .expect("changed files")
-        .iter()
-        .filter_map(|value| value.as_str())
-        .collect::<Vec<_>>();
-    let manifest_path = project.join("binpm.toml").display().to_string();
-    let package_record_path = project
-        .join(".binpm")
-        .join("packages")
-        .join("tool.toml")
-        .display()
-        .to_string();
-    let installed_path = project
-        .join(".binpm")
-        .join("bin")
-        .join("tool")
-        .display()
-        .to_string();
-    let cache_ref = cache_ref_path(&home, &project, "tool");
-    let bin_dir = project.join(".binpm").join("bin").display().to_string();
-    assert!(!changed_files.contains(&manifest_path.as_str()));
-    assert!(changed_files.contains(&package_record_path.as_str()));
-    assert!(changed_files.contains(&installed_path.as_str()));
-    assert!(changed_files.contains(&cache_ref.as_str()));
-    assert!(!changed_files.contains(&bin_dir.as_str()));
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 1);
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("Failed to look up release metadata for `github:owner/tool`"));
     assert!(fs::read_to_string(project.join("binpm.toml"))
         .expect("read manifest")
         .contains("source = \"github:owner/tool\""));
@@ -3844,19 +3823,14 @@ bin = "bin/tool"
         .output()
         .expect("update --json");
 
-    assert!(output.status.success());
-    assert!(output.stderr.is_empty());
-    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
-    assert_eq!(payload["command"], "update");
-    assert_eq!(payload["scope"], "local");
-    assert_eq!(payload["dry_run"], true);
-    assert_eq!(payload["tools"][0]["cmd"], "tool");
-    assert_eq!(payload["tools"][0]["action"], "planned-update");
-    assert_eq!(
-        payload["tools"][0]["selected_asset"],
-        "tool-linux-x64.tar.gz"
-    );
-    assert_eq!(payload["tools"][0]["selected_binary"], "bin/tool");
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 1);
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("Failed to look up release metadata for `github:owner/tool`"));
     assert!(!project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
 }

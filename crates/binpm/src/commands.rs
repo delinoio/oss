@@ -1297,7 +1297,13 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<i32> {
         print_update_mode(scope, &args.cmd);
     }
     if args.dry_run {
-        let result = preview_update(scope, frozen_lockfile, &args.cmd, output)?;
+        let result = preview_update(
+            scope,
+            frozen_lockfile,
+            args.require_verified,
+            &args.cmd,
+            output,
+        )?;
         return print_mutation_output(result, output);
     }
     if !output.is_json() {
@@ -1421,11 +1427,12 @@ fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<Mutatio
 fn preview_update(
     scope: Scope,
     frozen_lockfile: bool,
+    require_verified: bool,
     selected: &[String],
     output: OutputMode,
 ) -> Result<MutationOutput> {
     if output.is_json() {
-        return preview_update_result(scope, frozen_lockfile, selected);
+        return preview_update_result(scope, frozen_lockfile, require_verified, selected);
     }
     print_update_plan(scope, selected)?;
     Ok(MutationOutput {
@@ -1502,17 +1509,19 @@ fn print_global_update_plan(selected: &[String]) -> Result<()> {
 fn preview_update_result(
     scope: Scope,
     frozen_lockfile: bool,
+    require_verified: bool,
     selected: &[String],
 ) -> Result<MutationOutput> {
     match scope {
-        Scope::Local => preview_local_update_result(frozen_lockfile, selected),
-        Scope::Global => preview_global_update_result(selected),
+        Scope::Local => preview_local_update_result(frozen_lockfile, require_verified, selected),
+        Scope::Global => preview_global_update_result(require_verified, selected),
         Scope::Auto => unreachable!("select_scope never returns auto"),
     }
 }
 
 fn preview_local_update_result(
     frozen_lockfile: bool,
+    require_verified: bool,
     selected: &[String],
 ) -> Result<MutationOutput> {
     let root = require_manifest_root()?;
@@ -1545,12 +1554,7 @@ fn preview_local_update_result(
         .iter()
         .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
         .map(|(cmd, tool)| {
-            mutation_tool_from_manifest_tool(
-                cmd,
-                tool,
-                MutationAction::PlannedUpdate,
-                Some(&current_target),
-            )
+            preview_local_update_tool(cmd, tool, &paths, require_verified, current_target.clone())
         })
         .collect::<Result<Vec<_>>>()?;
     let orphan_states = if selected.is_empty() {
@@ -1571,11 +1575,9 @@ fn preview_local_update_result(
         };
     for tool in &tools {
         changed_files.push(path_display(&package_record_path(&paths, &tool.cmd)));
-        changed_files.push(path_display(&managed_installed_path(
-            &paths,
-            &tool.cmd,
-            current_target.os,
-        )));
+        if let Some(installed_path) = &tool.installed_path {
+            changed_files.push(installed_path.clone());
+        }
         changed_files.push(local_cache_ref_changed_file_for_cached_record(
             &root, &tool.cmd,
         )?);
@@ -1603,14 +1605,86 @@ fn preview_local_update_result(
     })
 }
 
-fn preview_global_update_result(selected: &[String]) -> Result<MutationOutput> {
+fn preview_local_update_tool(
+    cmd: &str,
+    tool: &ManifestTool,
+    paths: &ScopePaths,
+    require_verified: bool,
+    current_target: HostTarget,
+) -> Result<MutationToolOutput> {
+    let spec = parse_manifest_tool_source(tool)?;
+    let resolved = resolve_asset(&spec, Some(tool))?;
+    preview_local_update_tool_from_resolved(
+        cmd,
+        &spec,
+        resolved,
+        paths,
+        require_verified,
+        current_target,
+    )
+}
+
+fn preview_local_update_tool_from_resolved(
+    cmd: &str,
+    spec: &SourceSpec,
+    resolved: ResolvedAsset,
+    paths: &ScopePaths,
+    require_verified: bool,
+    current_target: HostTarget,
+) -> Result<MutationToolOutput> {
+    ensure_resolved_asset_satisfies_require_verified(&spec, &resolved, require_verified)?;
+    let preview_sha256 = resolved
+        .provider_digest_sha256
+        .clone()
+        .or_else(|| resolved.upstream_checksum_sha256.clone());
+    let include_cache_fields = preview_sha256.is_some();
+    let sha256 = preview_sha256.unwrap_or_else(zero_sha256);
+    let cache_path = CachePaths::new(&paths.root).asset_path(&sha256);
+    let record = package_record_from_resolved(
+        cmd,
+        &resolved,
+        sha256.clone(),
+        &cache_path,
+        &managed_installed_path(paths, cmd, current_target.os),
+        include_cache_fields,
+    )?;
+    Ok(mutation_tool_from_record(
+        cmd,
+        MutationAction::PlannedUpdate,
+        &record,
+    ))
+}
+
+fn zero_sha256() -> String {
+    String::from("0000000000000000000000000000000000000000000000000000000000000000")
+}
+
+fn ensure_resolved_asset_satisfies_require_verified(
+    spec: &SourceSpec,
+    resolved: &ResolvedAsset,
+    require_verified: bool,
+) -> Result<()> {
+    if require_verified
+        && !resolved_has_verified_source(resolved)
+        && !resolved_has_supported_signature_evidence(resolved)
+    {
+        return Err(BinpmError::VerificationRequired {
+            package: spec.to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn preview_global_update_result(
+    require_verified: bool,
+    selected: &[String],
+) -> Result<MutationOutput> {
     let paths = ScopePaths::global(binpm_home()?);
     let current = selected_global_package_records(&paths, selected)?;
-    let planned = preview_global_update_records(&paths, current)?;
+    let planned = preview_global_update_records(&paths, current, require_verified)?;
     let mut changed_files = BTreeSet::new();
     for (cmd, record) in &planned {
-        changed_files.insert(path_display(&package_record_path(&paths, cmd)));
-        changed_files.insert(record.installed_path.clone());
+        changed_files.extend(global_update_changed_files_for_record(&paths, cmd, record));
     }
     Ok(MutationOutput {
         command: "update",
@@ -1629,8 +1703,11 @@ fn preview_global_update_result(selected: &[String]) -> Result<MutationOutput> {
 fn preview_global_update_records(
     paths: &ScopePaths,
     records: Vec<(String, PackageRecord)>,
+    require_verified: bool,
 ) -> Result<Vec<(String, PackageRecord)>> {
-    preview_global_update_records_with(paths, records, preview_global_update_record)
+    preview_global_update_records_with(paths, records, |paths, update| {
+        preview_global_update_record(paths, update, require_verified)
+    })
 }
 
 fn preview_global_update_records_with(
@@ -1648,6 +1725,7 @@ fn preview_global_update_records_with(
 fn preview_global_update_record(
     paths: &ScopePaths,
     update: &PreparedGlobalUpdate,
+    require_verified: bool,
 ) -> Result<PackageRecord> {
     let tool = ManifestTool {
         source: update.spec.source_without_version(),
@@ -1656,27 +1734,34 @@ fn preview_global_update_record(
         targets: BTreeMap::new(),
     };
     let resolved = resolve_asset(&update.spec, Some(&tool))?;
-    let sha256 = resolved
+    ensure_resolved_asset_satisfies_require_verified(&update.spec, &resolved, require_verified)?;
+    let preview_sha256 = resolved
         .provider_digest_sha256
         .clone()
-        .or_else(|| resolved.upstream_checksum_sha256.clone())
-        .unwrap_or_else(|| {
-            String::from("0000000000000000000000000000000000000000000000000000000000000000")
-        });
+        .or_else(|| resolved.upstream_checksum_sha256.clone());
+    let include_cache_fields = preview_sha256.is_some();
+    let sha256 = preview_sha256.unwrap_or_else(zero_sha256);
+    let cache_path = CachePaths::new(&paths.root).asset_path(&sha256);
     package_record_from_resolved(
         &update.cmd,
         &resolved,
         sha256,
-        &CachePaths::new(&paths.root).asset_path(
-            resolved
-                .provider_digest_sha256
-                .as_deref()
-                .or(resolved.upstream_checksum_sha256.as_deref())
-                .unwrap_or("0000000000000000000000000000000000000000000000000000000000000000"),
-        ),
+        &cache_path,
         &managed_installed_path(paths, &update.cmd, resolved.target.os),
-        true,
+        include_cache_fields,
     )
+}
+
+fn global_update_changed_files_for_record(
+    paths: &ScopePaths,
+    cmd: &str,
+    record: &PackageRecord,
+) -> BTreeSet<String> {
+    let mut changed_files = BTreeSet::new();
+    changed_files.insert(path_display(&package_record_path(paths, cmd)));
+    changed_files.insert(record.installed_path.clone());
+    changed_files.extend(global_cache_entry_changed_files(paths, record));
+    changed_files
 }
 
 fn doctor(output: OutputMode) -> Result<i32> {
@@ -8165,40 +8250,44 @@ mod tests {
         checksum_digest_from_text, checksum_manifest_candidates, checksum_sidecar_candidates,
         cleanup_failed_install_cache, clear_mutation_warnings, commit_deferred_cache_hit,
         deterministic_installed_path, download_asset_name, download_initial_capacity,
-        ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
-        format_outdated_tool_line, github_sha256_digest, global_install_mutation_output,
-        global_remove_changed_files, global_update_selected_binary, has_current_cache_record,
-        has_local_runtime_or_lock_state, install_local_from_lock, install_path_collision_key,
-        is_retryable_status, local_manifest_orphan_cmds, local_runtime_lock_records,
-        local_tool_execution_ready, local_update_manifest_with_latest_versions_from,
-        lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
-        locked_record_download_request, locked_record_signature_sidecar,
-        locked_record_verified_download_request, locked_release_lookup_spec, lockfile_digest,
-        manifest_checksum_source, manifest_creation_root_from, manifest_project_root_from,
+        ensure_no_package_record_install_path_collision,
+        ensure_resolved_asset_satisfies_require_verified, execute_command,
+        format_download_progress, format_outdated_tool_line, github_sha256_digest,
+        global_install_mutation_output, global_remove_changed_files,
+        global_update_changed_files_for_record, global_update_selected_binary,
+        has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
+        install_path_collision_key, is_retryable_status, local_manifest_orphan_cmds,
+        local_runtime_lock_records, local_tool_execution_ready,
+        local_update_manifest_with_latest_versions_from, lock_targets_conflict_with_manifest,
+        lock_targets_conflict_with_record, locked_record_download_request,
+        locked_record_signature_sidecar, locked_record_verified_download_request,
+        locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
+        manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
         mutation_tool_from_manifest_tool, mutation_warning, normalize_bin_selection,
         override_snippet_candidate, package_record_output, package_shortcut_command,
         parse_manifest_source, parse_manifest_tool_source, parse_source_argument, path_display,
-        prepare_global_updates, preview_global_update_records_with, project_root_from,
-        read_archive_selected_binary, record_has_signature_evidence,
-        record_matches_current_provider_digest, regex_escape, release_asset_download_request,
-        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, require_executable_managed_file,
-        resolved_has_supported_signature_evidence, resolved_has_verified_source,
-        restore_local_remove_state, restore_runtime_tool_state, sanitize_download_diagnostic_url,
-        select_manifest_asset, selected_asset_display_url, selected_global_package_records,
-        shell_path, shell_quote, signature_sidecar_for_asset, sigstore_trust_policy,
-        snapshot_cache_metadata, source_install_scope, target_override_snippet,
-        update_manifest_tool_source, validate_frozen_update_current_release,
-        validate_locked_record_artifact, validate_locked_record_current_asset,
-        validate_locked_record_current_provider_digest, validate_package_record_metadata,
-        validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verification_state, verify_check_output,
-        verify_check_output_with_state, verify_installed_binary_contents, verify_lockfile_records,
-        verify_runtime_cache_bytes, write_sigstore_verification_inputs, zip_file_is_regular,
-        zip_file_is_symlink, ArtifactKind, HostTarget, InstalledPackage, InstalledPathSnapshot,
-        LocalRemoveState, MutationAction, MutationOutput, OutdatedToolOutput, OutputMode,
-        RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT, SUPPRESS_DIAGNOSTIC_STDERR,
+        prepare_global_updates, preview_global_update_records_with,
+        preview_local_update_tool_from_resolved, project_root_from, read_archive_selected_binary,
+        record_has_signature_evidence, record_matches_current_provider_digest, regex_escape,
+        release_asset_download_request, release_diagnostic_lines, release_diagnostics,
+        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        require_executable_managed_file, resolved_has_supported_signature_evidence,
+        resolved_has_verified_source, restore_local_remove_state, restore_runtime_tool_state,
+        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
+        selected_global_package_records, shell_path, shell_quote, signature_sidecar_for_asset,
+        sigstore_trust_policy, snapshot_cache_metadata, source_install_scope,
+        target_override_snippet, update_manifest_tool_source,
+        validate_frozen_update_current_release, validate_locked_record_artifact,
+        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries, verification_state,
+        verify_check_output, verify_check_output_with_state, verify_installed_binary_contents,
+        verify_lockfile_records, verify_runtime_cache_bytes, write_sigstore_verification_inputs,
+        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, HostTarget, InstalledPackage,
+        InstalledPathSnapshot, LocalRemoveState, MutationAction, MutationOutput,
+        OutdatedToolOutput, OutputMode, RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT,
+        SUPPRESS_DIAGNOSTIC_STDERR,
     };
     use crate::{
         assets::CandidateDecision,
@@ -8210,11 +8299,11 @@ mod tests {
         error::{BinpmError, Result},
         release::{Release, ReleaseAsset, ReleaseClient, ReleaseSelection},
         storage::{
-            ensure_dir, managed_installed_path, read_cache_records, require_regular_managed_file,
-            validate_installed_binary_path, write_cache_record, write_lockfile, write_manifest,
-            write_package_record, CachePaths, CacheRecord, LockTool, Lockfile, Manifest,
-            ManifestTargetOverride, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths,
-            LOCKFILE_FILE, MANIFEST_FILE,
+            ensure_dir, managed_installed_path, package_record_path, read_cache_records,
+            require_regular_managed_file, validate_installed_binary_path, write_cache_record,
+            write_lockfile, write_manifest, write_package_record, CachePaths, CacheRecord,
+            LockTool, Lockfile, Manifest, ManifestTargetOverride, ManifestTool, PackageRecord,
+            ResolvedAsset, ScopePaths, LOCKFILE_FILE, MANIFEST_FILE,
         },
     };
 
@@ -12085,6 +12174,77 @@ mod tests {
         assert_eq!(planned[0].0, "tool");
         assert_eq!(planned[0].1.release_tag, "2.0.0");
         assert_eq!(planned[0].1.requested_version, None);
+    }
+
+    #[test]
+    fn require_verified_preview_rejects_local_checksum_only_resolution() {
+        let mut resolved =
+            resolved_asset("abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123");
+        resolved.provider_digest_sha256 = None;
+        resolved.checksum_source = ChecksumSource::Local;
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source");
+
+        let error = ensure_resolved_asset_satisfies_require_verified(&spec, &resolved, true)
+            .expect_err("local checksum only");
+
+        assert!(matches!(error, BinpmError::VerificationRequired { .. }));
+    }
+
+    #[test]
+    fn global_update_preview_changed_files_include_cache_record_paths() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::global(temp_dir.path().join("home"));
+        let mut record = package_record();
+        record.cache_key = Some(crate::storage::cache_key(&record.sha256));
+        record.cache_path = Some(
+            CachePaths::new(&paths.root)
+                .asset_path(&record.sha256)
+                .display()
+                .to_string(),
+        );
+
+        let changed_files = global_update_changed_files_for_record(&paths, "tool", &record);
+
+        assert!(changed_files.contains(&path_display(&package_record_path(&paths, "tool"))));
+        assert!(changed_files.contains(&record.installed_path));
+        assert!(changed_files.contains(record.cache_path.as_deref().expect("cache path")));
+        assert!(changed_files.contains(&path_display(
+            &CachePaths::new(&paths.root).metadata_path(&record.sha256)
+        )));
+    }
+
+    #[test]
+    fn local_update_preview_tool_uses_resolved_release_details() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let paths = ScopePaths::local(temp_dir.path().join("project"));
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source");
+        let mut resolved =
+            resolved_asset("abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123");
+        resolved.source = spec.clone();
+
+        let tool = preview_local_update_tool_from_resolved(
+            "tool",
+            &spec,
+            resolved,
+            &paths,
+            false,
+            linux_target(),
+        )
+        .expect("preview tool");
+
+        assert_eq!(tool.cmd, "tool");
+        assert!(matches!(tool.action, MutationAction::PlannedUpdate));
+        assert_eq!(tool.source.as_deref(), Some("github:owner/tool"));
+        assert_eq!(tool.requested_version, None);
+        assert_eq!(tool.release_tag.as_deref(), Some("1.0.0"));
+        assert_eq!(tool.selected_asset.as_deref(), Some("tool-linux"));
+        assert_eq!(tool.selected_binary.as_deref(), Some("tool-linux"));
+        let expected_installed_path =
+            path_display(&managed_installed_path(&paths, "tool", TargetOs::Linux));
+        assert_eq!(
+            tool.installed_path.as_deref(),
+            Some(expected_installed_path.as_str())
+        );
     }
 
     #[test]
