@@ -999,10 +999,10 @@ fn manual_cleanup_commands(likely_leftover_paths: &[String], shell: ShellKind) -
     if !likely_leftover_paths.is_empty() {
         commands.push(remove_paths_command(likely_leftover_paths, shell));
     }
-    commands.push(current_session_path_cleanup_command(
-        likely_leftover_paths,
-        shell,
-    ));
+    let shim_dirs = cleanup_shim_directories(likely_leftover_paths);
+    if !shim_dirs.is_empty() {
+        commands.push(current_session_path_cleanup_command(&shim_dirs, shell));
+    }
     commands
 }
 
@@ -1027,12 +1027,7 @@ fn remove_paths_command(paths: &[String], shell: ShellKind) -> String {
     }
 }
 
-fn current_session_path_cleanup_command(
-    likely_leftover_paths: &[String],
-    shell: ShellKind,
-) -> String {
-    let shim_dirs = cleanup_shim_directories(likely_leftover_paths);
-
+fn current_session_path_cleanup_command(shim_dirs: &[String], shell: ShellKind) -> String {
     match shell {
         ShellKind::PowerShell => format!(
             "$env:Path = (($env:Path -split ';') | Where-Object {{ {} }}) -join ';'",
@@ -1072,15 +1067,15 @@ fn current_session_path_cleanup_command(
 }
 
 fn cleanup_shim_directories(likely_leftover_paths: &[String]) -> Vec<String> {
-    shim_directories()
-        .into_iter()
-        .chain(likely_leftover_paths.iter().filter_map(|path| {
+    likely_leftover_paths
+        .iter()
+        .filter_map(|path| {
             if is_likely_shim_path(path) {
                 Path::new(path).parent().map(Path::to_path_buf)
             } else {
                 None
             }
-        }))
+        })
         .map(|path| path.display().to_string())
         .fold(Vec::new(), |mut unique, path| {
             if !unique.iter().any(|existing| existing == &path) {

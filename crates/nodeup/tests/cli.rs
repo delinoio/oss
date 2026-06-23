@@ -3140,6 +3140,33 @@ fn self_uninstall_reports_default_setup_shim_leftovers() {
 
 #[test]
 #[serial]
+fn self_uninstall_omits_default_user_bin_path_cleanup_without_shim_leftovers() {
+    let env = TestEnv::new();
+    let default_user_bin = env.root.join(".local").join("bin");
+    fs::create_dir_all(&default_user_bin).unwrap();
+
+    let output = env
+        .command()
+        .env("HOME", &env.root)
+        .env("SHELL", "/bin/bash")
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall without shim leftovers");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(!payload["manual_cleanup_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command
+            .as_str()
+            .unwrap()
+            .contains(default_user_bin.to_str().unwrap())));
+}
+
+#[test]
+#[serial]
 fn self_uninstall_preserves_configured_shim_dir_inside_removed_root() {
     let env = TestEnv::new();
     let shim_dir = env.data_root.join("shims");
