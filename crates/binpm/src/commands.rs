@@ -1430,6 +1430,7 @@ fn explain(args: ExplainArgs, output: OutputMode) -> Result<i32> {
     println!("archive_format: {}", record.archive_format.as_str());
     println!("checksum_source: {}", record.checksum_source.as_str());
     println!("verification: {}", verification_state(&record).as_str());
+    print_unsupported_verification_sidecars(&record.unsupported_verification_sidecars);
     println!("override_snippet:");
     println!(
         "{}",
@@ -1625,11 +1626,8 @@ fn candidate_explain_lines(
         spec,
         release_tag,
     );
-    if !sidecars.is_empty() {
-        lines.push(format!(
-            "unsupported_verification_sidecars: {}",
-            unsupported_sidecar_names(&sidecars).join(", ")
-        ));
+    if let Some(line) = unsupported_verification_sidecars_line(&sidecars) {
+        lines.push(line);
     }
     lines
 }
@@ -1965,6 +1963,7 @@ fn print_package_record_info(cmd: &str, record: &PackageRecord) {
     println!("installed_path: {}", record.installed_path);
     println!("checksum_source: {}", record.checksum_source.as_str());
     println!("verification: {}", verification_state(record).as_str());
+    print_unsupported_verification_sidecars(&record.unsupported_verification_sidecars);
 }
 
 fn selected_asset_display_url(decision: &crate::assets::CandidateDecision) -> Result<String> {
@@ -2883,6 +2882,10 @@ fn install_resolved(
         let cache_asset = cache_paths.asset_path(&expected);
         reject_symlinked_cache_entry(cache_paths, &expected)?;
         if cache_asset_is_verified_regular(&cache_asset, &expected)? {
+            warn_unsupported_verification_sidecars(
+                spec,
+                &resolved.unsupported_verification_sidecars,
+            );
             let installed_path = managed_installed_path(scope_paths, cmd, resolved.target.os);
             let selected_binary = selected_binary_override(tool, &resolved.target)?;
             install_selected_executable(
@@ -3264,6 +3267,10 @@ fn install_local_from_lock(
         signature_verified: record.signature_verified,
         unsupported_verification_sidecars: record.unsupported_verification_sidecars.clone(),
     };
+    warn_unsupported_verification_sidecars(
+        &resolved_for_install.source,
+        &resolved_for_install.unsupported_verification_sidecars,
+    );
     if let Err(error) = install_selected_executable(
         &cache_paths.asset_path(&record.sha256),
         &installed_path,
@@ -4231,6 +4238,24 @@ fn unsupported_sidecar_names(sidecars: &[UnsupportedVerificationSidecar]) -> Vec
         .iter()
         .map(|sidecar| sidecar.asset_name.clone())
         .collect()
+}
+
+fn unsupported_verification_sidecars_line(
+    sidecars: &[UnsupportedVerificationSidecar],
+) -> Option<String> {
+    if sidecars.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "unsupported_verification_sidecars: {}",
+        unsupported_sidecar_names(sidecars).join(", ")
+    ))
+}
+
+fn print_unsupported_verification_sidecars(sidecars: &[UnsupportedVerificationSidecar]) {
+    if let Some(line) = unsupported_verification_sidecars_line(sidecars) {
+        println!("{line}");
+    }
 }
 
 fn merge_unsupported_verification_sidecars(
@@ -5392,6 +5417,7 @@ fn print_json(value: &impl Serialize) -> Result<i32> {
     Ok(0)
 }
 
+#[cfg(test)]
 fn verify_check_output(
     cmd: String,
     target: Option<HostTarget>,
@@ -5400,6 +5426,7 @@ fn verify_check_output(
     verify_check_output_with_state(cmd, target, record, verification_state(record))
 }
 
+#[cfg(test)]
 fn verify_check_output_with_state(
     cmd: String,
     target: Option<HostTarget>,
@@ -6678,17 +6705,17 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
         validate_package_record_current_provider_digest(&record)?;
         validate_package_record_metadata(&cache_paths, &record)?;
         verify_runtime_cache_bytes(&cache_paths, &record)?;
+        let current_unsupported_sidecars =
+            current_unsupported_verification_sidecars_for_record(&record)?;
+        let unsupported_sidecars = merge_unsupported_verification_sidecars(
+            record.unsupported_verification_sidecars.clone(),
+            current_unsupported_sidecars,
+        );
         let runtime_check = if args.require_verified {
-            let current_unsupported_sidecars =
-                current_unsupported_verification_sidecars_for_record(&record)?;
-            let unsupported_sidecars = merge_unsupported_verification_sidecars(
-                record.unsupported_verification_sidecars.clone(),
-                current_unsupported_sidecars,
-            );
             if !locked_record_verified_source(&cache_paths, &record)?.verified {
                 return Err(BinpmError::VerificationRequired {
                     package: record.package_spec,
-                    unsupported_sidecars,
+                    unsupported_sidecars: unsupported_sidecars.clone(),
                 });
             }
             verify_check_output_with_state_and_sidecars(
@@ -6699,7 +6726,13 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
                 unsupported_sidecars,
             )
         } else {
-            verify_check_output(cmd.clone(), None, &record)
+            verify_check_output_with_state_and_sidecars(
+                cmd.clone(),
+                None,
+                &record,
+                verification_state(&record),
+                unsupported_sidecars,
+            )
         };
         let installed_path = validate_installed_binary_path(&paths, &cmd, &record)?;
         require_regular_managed_file(&installed_path)?;
@@ -6708,6 +6741,12 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
         checks.push(runtime_check);
         if !output.is_json() {
             println!("{cmd} verified {}", record.checksum_source.as_str());
+            print_unsupported_verification_sidecars(
+                &checks
+                    .last()
+                    .expect("runtime check was just pushed")
+                    .unsupported_verification_sidecars,
+            );
         }
         if !locked.contains(&cmd) {
             checked += 1;
@@ -7098,6 +7137,12 @@ fn verify_lockfile_records(
                 println!(
                     "{cmd} lock verified {target_key} {}",
                     record.checksum_source.as_str()
+                );
+                print_unsupported_verification_sidecars(
+                    &checks
+                        .last()
+                        .expect("lock check was just pushed")
+                        .unsupported_verification_sidecars,
                 );
             }
             checked += 1;
@@ -7648,16 +7693,17 @@ mod tests {
         sigstore_trust_policy, snapshot_cache_metadata, source_install_scope,
         target_override_snippet, unsupported_sidecar_names,
         unsupported_verification_sidecars_for_asset, unsupported_verification_sidecars_for_record,
-        update_manifest_tool_source, validate_frozen_update_current_release,
-        validate_locked_record_artifact, validate_locked_record_current_asset,
-        validate_locked_record_current_provider_digest, validate_package_record_metadata,
-        validate_package_record_source_identity, validate_provider_digest_evidence,
-        validate_selected_manifest_entries, verification_state, verify_check_output,
-        verify_check_output_with_state, verify_check_output_with_state_and_sidecars,
-        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
-        write_sigstore_verification_inputs, zip_file_is_regular, zip_file_is_symlink, ArtifactKind,
-        InstalledPackage, InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode,
-        RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT,
+        unsupported_verification_sidecars_line, update_manifest_tool_source,
+        validate_frozen_update_current_release, validate_locked_record_artifact,
+        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
+        validate_package_record_metadata, validate_package_record_source_identity,
+        validate_provider_digest_evidence, validate_selected_manifest_entries, verification_state,
+        verify_check_output, verify_check_output_with_state,
+        verify_check_output_with_state_and_sidecars, verify_installed_binary_contents,
+        verify_lockfile_records, verify_runtime_cache_bytes, write_sigstore_verification_inputs,
+        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
+        InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
+        GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
         assets::CandidateDecision,
@@ -11905,6 +11951,51 @@ mod tests {
                 "tool-linux.asc".to_string(),
                 "tool-linux.sbom.json".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn human_sidecar_line_reports_persisted_package_record_sidecars() {
+        let mut record = package_record();
+        record.unsupported_verification_sidecars = vec![UnsupportedVerificationSidecar {
+            asset_name: "tool-linux.asc".to_string(),
+            kind: UnsupportedVerificationSidecarKind::GpgSignature,
+        }];
+
+        assert_eq!(
+            unsupported_verification_sidecars_line(&record.unsupported_verification_sidecars)
+                .as_deref(),
+            Some("unsupported_verification_sidecars: tool-linux.asc")
+        );
+    }
+
+    #[test]
+    fn non_strict_verify_output_can_report_current_unsupported_sidecars() {
+        let record = package_record();
+        let unsupported_sidecars = merge_unsupported_verification_sidecars(
+            record.unsupported_verification_sidecars.clone(),
+            vec![UnsupportedVerificationSidecar {
+                asset_name: "tool-linux.asc".to_string(),
+                kind: UnsupportedVerificationSidecarKind::GpgSignature,
+            }],
+        );
+
+        let output = verify_check_output_with_state_and_sidecars(
+            "tool".to_string(),
+            None,
+            &record,
+            verification_state(&record),
+            unsupported_sidecars,
+        );
+
+        assert_eq!(
+            unsupported_sidecar_names(&output.unsupported_verification_sidecars),
+            vec!["tool-linux.asc".to_string()]
+        );
+        assert_eq!(
+            unsupported_verification_sidecars_line(&output.unsupported_verification_sidecars)
+                .as_deref(),
+            Some("unsupported_verification_sidecars: tool-linux.asc")
         );
     }
 
