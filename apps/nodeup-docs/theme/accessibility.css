@@ -85,3 +85,26 @@
     padding: 0.625rem 0.75rem;
   }
 }
+
+@media (width <= 480px) {
+  .rp-codeblock__content__scroll-container {
+    overflow-x: hidden;
+  }
+
+  .rp-codeblock__content :where(pre) {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  .rp-codeblock__content :where(code) {
+    width: auto;
+    min-width: 0;
+    padding-right: 104px;
+    white-space: inherit;
+  }
+
+  .rp-codeblock__content :where(.line) {
+    white-space: inherit;
+  }
+}
