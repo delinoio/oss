@@ -493,6 +493,9 @@ fn install(args: InstallArgs, output: OutputMode) -> Result<i32> {
             source_version = spec.version.as_deref().unwrap_or(""),
             "Prepared source install request"
         );
+        if !output.is_json() {
+            print_global_source_install_scope_feedback(&spec)?;
+        }
         install_global_source(spec, &alias, explicit_bin, args.require_verified)
     } else {
         if args.alias.is_some() || explicit_bin.is_some() {
@@ -514,8 +517,42 @@ fn install(args: InstallArgs, output: OutputMode) -> Result<i32> {
             no_confirm = args.no_confirm,
             "Prepared local manifest sync request"
         );
-        install_local_manifest(frozen_lockfile, args.require_verified, &[], output)
+        let root = require_manifest_root()?;
+        if !output.is_json() {
+            print_local_install_scope_feedback(&root);
+        }
+        install_local_manifest_at(root, frozen_lockfile, args.require_verified, &[], output)
     }
+}
+
+fn print_global_source_install_scope_feedback(spec: &SourceSpec) -> Result<()> {
+    println!("install scope: global");
+    println!("install mode: global source install");
+    println!("source: {spec}");
+    match find_manifest_root(&current_dir()?) {
+        Some(root) => {
+            println!(
+                "project manifest detected: {}",
+                root.join(MANIFEST_FILE).display()
+            );
+            println!(
+                "project manifest: not modified; use `binpm add <cmd> {}` for project-local \
+                 declaration",
+                cli_quote(&spec.to_string())
+            );
+        }
+        None => {
+            println!("project manifest: not found; installing to user-global binpm home");
+        }
+    }
+    Ok(())
+}
+
+fn print_local_install_scope_feedback(root: &Path) {
+    println!("install scope: local");
+    println!("install mode: local manifest sync");
+    println!("manifest: {}", root.join(MANIFEST_FILE).display());
+    println!("local bin: {}", root.join(".binpm").join("bin").display());
 }
 
 fn add(args: AddArgs, output: OutputMode) -> Result<i32> {
@@ -2343,6 +2380,16 @@ fn install_local_manifest(
     output: OutputMode,
 ) -> Result<i32> {
     let root = require_manifest_root()?;
+    install_local_manifest_at(root, frozen_lockfile, require_verified, selected, output)
+}
+
+fn install_local_manifest_at(
+    root: PathBuf,
+    frozen_lockfile: bool,
+    require_verified: bool,
+    selected: &[String],
+    output: OutputMode,
+) -> Result<i32> {
     let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
     for cmd in selected {
         validate_command_name(cmd)?;
