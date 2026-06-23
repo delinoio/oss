@@ -24,6 +24,10 @@ struct WhichResponse {
     mode: String,
     reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    package_manager_strategy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    corepack_supported: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     package_spec: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     package_spec_pinned: Option<bool>,
@@ -102,6 +106,11 @@ pub fn execute(
     }
 
     let package_spec = plan.package_spec.as_deref().unwrap_or("none");
+    let package_manager_strategy = plan.package_manager_strategy().unwrap_or("none");
+    let corepack_supported = plan
+        .corepack_supported()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "none".to_string());
     let package_spec_pinned = plan
         .package_spec_pinned()
         .map(|value| value.to_string())
@@ -120,6 +129,8 @@ pub fn execute(
         delegated_command = command,
         mode = plan.mode.as_str(),
         package_spec,
+        package_manager_strategy,
+        corepack_supported,
         package_spec_pinned,
         package_json_path = %package_json_path,
         reason = plan.reason.as_str(),
@@ -135,6 +146,8 @@ pub fn execute(
         executable_path: plan.executable.to_string_lossy().to_string(),
         mode: planning.mode.clone(),
         reason: planning.reason.clone(),
+        package_manager_strategy: planning.package_manager_strategy.clone(),
+        corepack_supported: planning.corepack_supported,
         package_spec: planning.package_spec.clone(),
         package_spec_pinned: planning.package_spec_pinned,
         package_json_path: planning.package_json_path.clone(),
@@ -143,6 +156,8 @@ pub fn execute(
     };
 
     let human = if let Some(notice) = plan.npm_exec_human_notice() {
+        format!("{}\n{notice}", response.executable_path)
+    } else if let Some(notice) = plan.direct_package_manager_human_notice() {
         format!("{}\n{notice}", response.executable_path)
     } else {
         response.executable_path.clone()

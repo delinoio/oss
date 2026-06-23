@@ -217,21 +217,22 @@ nodeup which [--runtime <runtime>] <command>
 
 Prints the executable path Nodeup would run. `--runtime` is an explicit selector and overrides directory/default resolution.
 
-For `yarn` and `pnpm`, `which` uses package-manager planning. In direct mode it prints the selected runtime's package-manager executable. In npm-exec mode it prints the selected runtime's `npm` executable and labels that `npm exec` will invoke the requested package manager with the selected package spec.
+For `yarn` and `pnpm`, `which` uses package-manager planning. In direct mode it prints the selected runtime's package-manager executable and labels it as a direct runtime binary. In npm-exec mode it prints the selected runtime's `npm` executable and labels that `npm exec` will invoke the requested package manager with the selected package spec.
 
-JSON output includes `runtime`, `command`, `requested_command`, `executable_path`, `mode`, `reason`, optional `package_spec`, optional `package_spec_pinned`, optional `package_json_path`, and a nested `planning` object with the same stable planning diagnostics.
+JSON output includes `runtime`, `command`, `requested_command`, `executable_path`, `mode`, `reason`, optional `package_manager_strategy`, optional `corepack_supported`, optional `package_spec`, optional `package_spec_pinned`, optional `package_json_path`, and a nested `planning` object with the same stable planning diagnostics.
 
-Direct-mode human output stays path-only:
+Direct-mode human output includes the path plus the package-manager plan:
 
 ```text
 /home/me/.nodeup/data/toolchains/v22.1.0/bin/yarn
+nodeup: yarn will run as direct runtime binary /home/me/.nodeup/data/toolchains/v22.1.0/bin/yarn (strategy=direct-runtime-binary; package_json=/repo/package.json; reason=package-json-missing-field-direct; corepack=unsupported)
 ```
 
 npm-exec-mode human output includes the `npm` path plus the package-manager plan:
 
 ```text
 /home/me/.nodeup/data/toolchains/v22.1.0/bin/npm
-nodeup: yarn will run via npm exec using package @yarnpkg/cli-dist@4.13.0 (pinned; package_json=/repo/package.json; npm=/home/me/.nodeup/data/toolchains/v22.1.0/bin/npm; reason=package-manager-pinned)
+nodeup: yarn will run via npm exec using package @yarnpkg/cli-dist@4.13.0 (pinned; strategy=pinned-npm-exec; package_json=/repo/package.json; npm=/home/me/.nodeup/data/toolchains/v22.1.0/bin/npm; reason=package-manager-pinned; corepack=unsupported)
 ```
 
 Missing-command JSON errors include `diagnostics.checked_paths`, `diagnostics.selected_path`, linked runtime fields when applicable, `diagnostics.install_on_demand_eligible`, and PATH/PATHEXT precedence guidance.
@@ -244,7 +245,7 @@ nodeup run [--install] <runtime> <command> [args...]
 
 Runs a delegated command with an explicit runtime selector. Missing version runtimes fail unless `--install` is provided.
 
-In human mode, delegated stdio is inherited. If `yarn` or `pnpm` runs through npm-exec, Nodeup prints a planning notice to stderr before delegation so stdout remains owned by the delegated command. In JSON mode, delegated stdout is routed to stderr so stdout can contain the final JSON response with `runtime`, `command`, `exit_code`, and `planning`.
+In human mode, delegated stdio is inherited. If `yarn` or `pnpm` uses package-manager planning, Nodeup prints a planning notice to stderr before delegation so stdout remains owned by the delegated command. In JSON mode, delegated stdout is routed to stderr so stdout can contain the final JSON response with `runtime`, `command`, `exit_code`, and `planning`.
 
 When a version runtime is missing and `--install` is omitted, the error includes the exact retry shape `nodeup run --install <runtime> ...` and explains that `nodeup run` requires explicit installation while managed shim dispatch can install a missing version runtime selected by the active default or override. JSON errors include `diagnostics.install_on_demand_eligible: false`, `diagnostics.retry_with_install`, and checked runtime command paths.
 
