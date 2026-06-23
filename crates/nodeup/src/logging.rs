@@ -50,6 +50,7 @@ pub struct LogColorDecision {
     pub mode: &'static str,
     pub source: &'static str,
     pub no_color_present: bool,
+    pub no_color_overridden_by_nodeup_log_color: bool,
     pub ignored_nodeup_log_color: Option<String>,
 }
 
@@ -66,8 +67,16 @@ pub fn log_color_decision() -> LogColorDecision {
         mode: mode.as_str(),
         source,
         no_color_present,
+        no_color_overridden_by_nodeup_log_color: no_color_present
+            && matches!(parsed_log_color, Some(LogColorMode::Always)),
         ignored_nodeup_log_color,
     }
+}
+
+pub fn invalid_nodeup_log_color_value() -> Option<String> {
+    std::env::var(NODEUP_LOG_COLOR_ENV)
+        .ok()
+        .filter(|value| parse_log_color_mode(value).is_none())
 }
 
 fn resolve_log_color_enabled(nodeup_log_color: Option<&str>, no_color: Option<&str>) -> bool {
@@ -132,8 +141,8 @@ impl LogColorMode {
 
 fn parse_log_color_mode(raw: &str) -> Option<LogColorMode> {
     match raw.trim().to_ascii_lowercase().as_str() {
-        "always" | "on" | "true" | "1" | "yes" => Some(LogColorMode::Always),
-        "never" | "off" | "false" | "0" | "no" => Some(LogColorMode::Never),
+        "always" => Some(LogColorMode::Always),
+        "never" => Some(LogColorMode::Never),
         "auto" => Some(LogColorMode::Auto),
         _ => None,
     }

@@ -83,9 +83,68 @@ fn sanitized_url(url: &reqwest::Url) -> String {
 }
 
 pub fn sanitize_url_text(raw: &str) -> String {
+    if !raw.contains("://") {
+        return sanitize_unparseable_url_text(raw);
+    }
+
     match reqwest::Url::parse(raw) {
         Ok(url) => sanitized_url(&url),
-        Err(_) => raw.to_string(),
+        Err(_) => sanitize_unparseable_url_text(raw),
+    }
+}
+
+fn sanitize_unparseable_url_text(raw: &str) -> String {
+    let without_userinfo = if let Some(scheme_end) = raw.find("://") {
+        let authority_start = scheme_end + 3;
+        strip_unparseable_url_userinfo(raw, authority_start)
+    } else {
+        let without_query_or_fragment = raw.split(['?', '#']).next().unwrap_or_default();
+        strip_unparseable_url_userinfo(without_query_or_fragment, 0)
+    };
+
+    without_userinfo
+        .split(['?', '#'])
+        .next()
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn strip_unparseable_url_userinfo(raw: &str, authority_start: usize) -> String {
+    let search_end = unparseable_userinfo_search_end(raw, authority_start);
+    let Some(userinfo_end) = raw[authority_start..search_end]
+        .rfind('@')
+        .map(|index| authority_start + index)
+    else {
+        return raw.to_string();
+    };
+
+    format!("{}{}", &raw[..authority_start], &raw[userinfo_end + 1..])
+}
+
+fn unparseable_userinfo_search_end(raw: &str, authority_start: usize) -> usize {
+    let Some(query_or_fragment_start) = raw[authority_start..]
+        .find(['?', '#'])
+        .map(|index| authority_start + index)
+    else {
+        return raw.len();
+    };
+
+    let has_path_before_query_or_fragment =
+        raw[authority_start..query_or_fragment_start].contains('/');
+    let has_credential_separator_before_query_or_fragment =
+        raw[authority_start..query_or_fragment_start].contains(':');
+    let delimiter_tail_looks_like_query = raw[query_or_fragment_start + 1..]
+        .split('@')
+        .next()
+        .is_some_and(|query_prefix| query_prefix.contains(['=', '&']));
+
+    if has_path_before_query_or_fragment
+        || !has_credential_separator_before_query_or_fragment
+        || delimiter_tail_looks_like_query
+    {
+        query_or_fragment_start
+    } else {
+        raw.len()
     }
 }
 
@@ -228,6 +287,14 @@ impl NodeupError {
         Self::with_hint(ErrorKind::Conflict, cause, hint)
     }
 
+    pub fn conflict_with_diagnostics(
+        cause: impl Into<String>,
+        hint: impl Into<String>,
+        diagnostics: ErrorDiagnostics,
+    ) -> Self {
+        Self::with_hint_and_diagnostics(ErrorKind::Conflict, cause, hint, diagnostics)
+    }
+
     pub fn not_implemented(cause: impl Into<String>) -> Self {
         Self::new(ErrorKind::NotImplemented, cause)
     }
@@ -357,5 +424,68 @@ mod tests {
             sanitize_url_text("https://user:token@example.test/index.json?token=secret#fragment");
 
         assert_eq!(sanitized, "https://example.test/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_query_and_fragment_from_unparseable_text() {
+        let sanitized = sanitize_url_text("mirror/index.json?token=secret#fragment");
+
+        assert_eq!(sanitized, "mirror/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_userinfo_from_unparseable_text() {
+        let sanitized = sanitize_url_text("https://user:token@example test/index.json?secret=1");
+
+        assert_eq!(sanitized, "https://example test/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_userinfo_before_query_delimiter_from_unparseable_text() {
+        let sanitized = sanitize_url_text("https://user:pa?ss@mirror/index.json#fragment");
+
+        assert_eq!(sanitized, "https://mirror/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_userinfo_before_slash_delimiter_from_unparseable_text() {
+        let sanitized = sanitize_url_text("https://user:pa/ss@mirror/index.json?token=secret");
+
+        assert_eq!(sanitized, "https://mirror/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_userinfo_from_schemeless_text() {
+        let sanitized = sanitize_url_text("user:token@mirror/index.json?secret=1#fragment");
+
+        assert_eq!(sanitized, "mirror/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_strips_username_only_userinfo_from_schemeless_text() {
+        let sanitized = sanitize_url_text("token/part@mirror/index.json?secret=1");
+
+        assert_eq!(sanitized, "mirror/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_does_not_treat_query_at_as_schemeless_userinfo() {
+        let sanitized = sanitize_url_text("mirror/index.json?email=a@b&token=secret");
+
+        assert_eq!(sanitized, "mirror/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_does_not_treat_scheme_query_at_as_userinfo() {
+        let sanitized = sanitize_url_text("https://bad host/index.json?email=a@b&token=secret");
+
+        assert_eq!(sanitized, "https://bad host/index.json");
+    }
+
+    #[test]
+    fn sanitize_url_text_does_not_scan_colon_authority_query_for_userinfo() {
+        let sanitized = sanitize_url_text("https://mirror:bad?email=a@b&token=secret");
+
+        assert_eq!(sanitized, "https://mirror:bad");
     }
 }

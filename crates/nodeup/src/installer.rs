@@ -10,7 +10,7 @@ use tracing::info;
 use zip::ZipArchive;
 
 use crate::{
-    errors::{sanitize_url_text, NodeupError, Result},
+    errors::{sanitize_url_text, ErrorDiagnostics, NodeupError, Result},
     paths::NodeupPaths,
     release_index::{normalize_version, ReleaseIndexClient},
     store::Store,
@@ -154,13 +154,48 @@ impl RuntimeInstaller {
         );
 
         if *expected_checksum != observed_checksum {
-            return Err(NodeupError::conflict_with_hint(
+            let mirror_diagnostic = release_client.mirror_diagnostic();
+            let mut diagnostics = ErrorDiagnostics::new();
+            diagnostics.insert(
+                "archive".to_string(),
+                serde_json::Value::String(archive_filename.to_string()),
+            );
+            diagnostics.insert(
+                "runtime".to_string(),
+                serde_json::Value::String(canonical_version.clone()),
+            );
+            diagnostics.insert(
+                "index_url".to_string(),
+                serde_json::Value::String(mirror_diagnostic.index_url.clone()),
+            );
+            diagnostics.insert(
+                "index_url_source".to_string(),
+                serde_json::Value::String(mirror_diagnostic.index_url_source.to_string()),
+            );
+            diagnostics.insert(
+                "download_base_url".to_string(),
+                serde_json::Value::String(mirror_diagnostic.download_base_url.clone()),
+            );
+            diagnostics.insert(
+                "download_base_url_source".to_string(),
+                serde_json::Value::String(mirror_diagnostic.download_base_url_source.to_string()),
+            );
+            diagnostics.insert(
+                "mirror_override_present".to_string(),
+                serde_json::Value::Bool(mirror_diagnostic.mirror_override_present),
+            );
+            diagnostics.insert(
+                "mirror_mismatch_indicators".to_string(),
+                serde_json::to_value(&mirror_diagnostic.mismatch_indicators)?,
+            );
+
+            return Err(NodeupError::conflict_with_diagnostics(
                 format!(
                     "Checksum mismatch for {archive_filename}. expected={expected_checksum}, \
                      observed={observed_checksum}"
                 ),
-                "Delete the downloaded archive from the nodeup downloads directory and retry the \
-                 install.",
+                checksum_mismatch_hint(release_client),
+                diagnostics,
             ));
         }
 
@@ -173,6 +208,16 @@ impl RuntimeInstaller {
             state: InstallState::Installed,
         })
     }
+}
+
+fn checksum_mismatch_hint(release_client: &ReleaseIndexClient) -> &'static str {
+    if release_client.mirror_override_present() {
+        return "Delete the downloaded archive from the nodeup downloads directory and retry the \
+                install. Because a mirror override is configured, verify NODEUP_INDEX_URL and \
+                NODEUP_DOWNLOAD_BASE_URL point to matching Node.js release data.";
+    }
+
+    "Delete the downloaded archive from the nodeup downloads directory and retry the install."
 }
 
 fn download_file(release_client: &ReleaseIndexClient, url: &str, destination: &Path) -> Result<()> {

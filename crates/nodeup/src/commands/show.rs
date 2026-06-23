@@ -48,6 +48,7 @@ struct HumanColorDiagnostics {
     stream: String,
     is_terminal: bool,
     no_color_present: bool,
+    no_color_overridden_by_nodeup_color: bool,
     ignored_nodeup_color: Option<String>,
 }
 
@@ -60,6 +61,7 @@ impl From<OutputColorDecision> for HumanColorDiagnostics {
             stream: decision.stream.to_string(),
             is_terminal: decision.is_terminal,
             no_color_present: decision.no_color_present,
+            no_color_overridden_by_nodeup_color: decision.no_color_overridden_by_nodeup_color,
             ignored_nodeup_color: decision.ignored_nodeup_color,
         }
     }
@@ -71,6 +73,7 @@ struct LogColorDiagnostics {
     mode: String,
     source: String,
     no_color_present: bool,
+    no_color_overridden_by_nodeup_log_color: bool,
     ignored_nodeup_log_color: Option<String>,
 }
 
@@ -81,6 +84,8 @@ impl From<LogColorDecision> for LogColorDiagnostics {
             mode: decision.mode.to_string(),
             source: decision.source.to_string(),
             no_color_present: decision.no_color_present,
+            no_color_overridden_by_nodeup_log_color: decision
+                .no_color_overridden_by_nodeup_log_color,
             ignored_nodeup_log_color: decision.ignored_nodeup_log_color,
         }
     }
@@ -196,25 +201,30 @@ fn show_color(output: OutputFormat, color: Option<OutputColorMode>) -> Result<i3
     };
     let human = format!(
         "nodeup color decisions:\nhuman_stdout: enabled={} mode={} source={} terminal={} \
-         no_color={} ignored_nodeup_color={}\nhuman_stderr: enabled={} mode={} source={} \
-         terminal={} no_color={} ignored_nodeup_color={}\nlogs: enabled={} mode={} source={} \
-         no_color={} ignored_nodeup_log_color={}",
+         no_color={} no_color_overridden_by_nodeup_color={} \
+         ignored_nodeup_color={}\nhuman_stderr: enabled={} mode={} source={} terminal={} \
+         no_color={} no_color_overridden_by_nodeup_color={} ignored_nodeup_color={}\nlogs: \
+         enabled={} mode={} source={} no_color={} no_color_overridden_by_nodeup_log_color={} \
+         ignored_nodeup_log_color={}",
         response.human_stdout.enabled,
         response.human_stdout.mode,
         response.human_stdout.source,
         response.human_stdout.is_terminal,
         response.human_stdout.no_color_present,
+        response.human_stdout.no_color_overridden_by_nodeup_color,
         optional_env_value(response.human_stdout.ignored_nodeup_color.as_deref()),
         response.human_stderr.enabled,
         response.human_stderr.mode,
         response.human_stderr.source,
         response.human_stderr.is_terminal,
         response.human_stderr.no_color_present,
+        response.human_stderr.no_color_overridden_by_nodeup_color,
         optional_env_value(response.human_stderr.ignored_nodeup_color.as_deref()),
         response.logs.enabled,
         response.logs.mode,
         response.logs.source,
         response.logs.no_color_present,
+        response.logs.no_color_overridden_by_nodeup_log_color,
         optional_env_value(response.logs.ignored_nodeup_log_color.as_deref()),
     );
 

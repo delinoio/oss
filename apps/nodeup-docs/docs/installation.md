@@ -259,5 +259,14 @@ Mirror overrides:
 - `NODEUP_INDEX_URL`
 - `NODEUP_DOWNLOAD_BASE_URL`
 
+When using a mirror, set both variables to matching release data:
+
+```bash
+NODEUP_INDEX_URL=https://mirror.example/download/release/index.json
+NODEUP_DOWNLOAD_BASE_URL=https://mirror.example/download/release
+```
+
+Checksum mismatch diagnostics include sanitized mirror source details when either override is set.
+
 The release index cache TTL defaults to 600 seconds and can be changed with `NODEUP_RELEASE_INDEX_TTL_SECONDS`.
 The value must be a non-negative integer number of seconds. Invalid values such as an empty string, `-1`, or `abc` keep the 600-second fallback and emit a safe diagnostic category without exposing the raw value.

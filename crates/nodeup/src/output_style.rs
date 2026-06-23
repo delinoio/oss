@@ -24,6 +24,7 @@ pub struct OutputColorDecision {
     pub source: &'static str,
     pub is_terminal: bool,
     pub no_color_present: bool,
+    pub no_color_overridden_by_nodeup_color: bool,
     pub ignored_nodeup_color: Option<String>,
 }
 
@@ -46,6 +47,12 @@ pub fn parse_output_color_mode(raw: &str) -> Option<OutputColorMode> {
         "never" => Some(OutputColorMode::Never),
         _ => None,
     }
+}
+
+pub fn invalid_nodeup_color_value() -> Option<String> {
+    std::env::var(NODEUP_COLOR_ENV)
+        .ok()
+        .filter(|value| parse_output_color_mode(value).is_none())
 }
 
 fn style_human_stdout_with_terminal_detection(
@@ -151,6 +158,9 @@ fn output_color_decision_for_stream(
         source,
         is_terminal,
         no_color_present,
+        no_color_overridden_by_nodeup_color: no_color_present
+            && color_flag.is_none()
+            && matches!(env_mode, Some(OutputColorMode::Always)),
         ignored_nodeup_color,
     }
 }

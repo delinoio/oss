@@ -237,8 +237,8 @@ Human output color control:
 - Environment override for human output: `NODEUP_COLOR=auto|always|never`
 - Precedence: `--color` > `NODEUP_COLOR` > `NO_COLOR` > `auto`
 - `auto` enables ANSI styles per stream only when the stream is a terminal
-- `nodeup show color` reports effective human stdout, human stderr, and log color decisions
-- Invalid `NODEUP_COLOR` values are ignored and reported by `nodeup show color`
+- `nodeup show color` reports effective human stdout, human stderr, and log color decisions, including `NO_COLOR` conflicts
+- Invalid `NODEUP_COLOR` values are ignored, warned about in human mode, and reported by `nodeup show color`
 - `--output json` never injects ANSI styles into JSON payloads
 - `completions` output remains raw shell script text even when `--color always` is set
 
@@ -246,7 +246,16 @@ Log color control:
 
 - `NODEUP_LOG_COLOR=always|auto|never` (default `always`)
 - `NO_COLOR` disables color when `NODEUP_LOG_COLOR` is unset or `auto`
-- Invalid `NODEUP_LOG_COLOR` values are ignored and reported by `nodeup show color`
+- Invalid `NODEUP_LOG_COLOR` values are ignored, warned about in human mode, and reported by `nodeup show color`
+
+Mirror overrides:
+
+```bash
+NODEUP_INDEX_URL=https://mirror.example/download/release/index.json
+NODEUP_DOWNLOAD_BASE_URL=https://mirror.example/download/release
+```
+
+Checksum mismatch errors include sanitized mirror diagnostics when a mirror override is configured. Credentials, query strings, and fragments are stripped from reported URLs.
 
 ## Completions
 

@@ -145,7 +145,9 @@ Prints the effective `data_root`, `cache_root`, and `config_root`.
 nodeup show color
 ```
 
-Prints effective color decisions for human stdout, human stderr, and logs. JSON output includes `human_stdout`, `human_stderr`, and `logs` objects with the effective mode, source, enabled state, `NO_COLOR` state, and ignored invalid color environment values when present.
+Prints effective color decisions for human stdout, human stderr, and logs. JSON output includes `human_stdout`, `human_stderr`, and `logs` objects with the effective mode, source, enabled state, `NO_COLOR` state, ignored invalid color environment values when present, and whether `NO_COLOR` was overridden by a Nodeup-specific color setting.
+
+Valid color environment values are `NODEUP_COLOR=auto|always|never` and `NODEUP_LOG_COLOR=auto|always|never`.
 
 ## update
 

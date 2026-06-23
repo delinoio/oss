@@ -68,9 +68,9 @@ Runtime archive integrity is verified against the upstream `SHASUMS256.txt` entr
 Use these environment variables for custom mirrors:
 
 ```bash
-NODEUP_INDEX_URL=https://mirror.example/index.json
-NODEUP_DOWNLOAD_BASE_URL=https://mirror.example/release
+NODEUP_INDEX_URL=https://mirror.example/download/release/index.json
+NODEUP_DOWNLOAD_BASE_URL=https://mirror.example/download/release
 NODEUP_RELEASE_INDEX_TTL_SECONDS=300
 ```
 
-URL diagnostics in errors omit query strings and fragments.
+Set both mirror variables together unless you intentionally mix sources. Checksum mismatch errors include sanitized index and download-base diagnostics when a mirror override is configured, and URL diagnostics omit credentials, query strings, and fragments.

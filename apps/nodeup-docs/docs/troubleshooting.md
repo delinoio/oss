@@ -274,6 +274,16 @@ Fix:
 2. Retry the install.
 3. If a mirror is configured, verify `NODEUP_DOWNLOAD_BASE_URL` and `NODEUP_INDEX_URL` point to matching release data.
 
+Valid paired mirror example:
+
+```bash
+NODEUP_INDEX_URL=https://mirror.example/download/release/index.json \
+NODEUP_DOWNLOAD_BASE_URL=https://mirror.example/download/release \
+nodeup toolchain install 22.1.0
+```
+
+Checksum mismatch JSON errors include sanitized `index_url`, `download_base_url`, source fields, and mirror mismatch indicators when a mirror override is present. Credentials, query strings, and fragments are stripped from those diagnostics.
+
 ## Stale Release Index Cache
 
 Channel selectors such as `lts`, `current`, and `latest` can use the cached Node.js release index. If the cache is expired and refresh fails, Nodeup falls back to stale cache data instead of failing channel resolution.
@@ -343,6 +353,16 @@ nodeup --output json show color
 ```
 
 The diagnostic separates human stdout, human stderr, and log color. Invalid `NODEUP_COLOR` and `NODEUP_LOG_COLOR` values are ignored, and the diagnostic reports the ignored value.
+Human-mode commands also print a concise stderr warning for invalid values. JSON output remains parseable and ANSI-free.
+
+Valid values:
+
+```bash
+NODEUP_COLOR=auto|always|never
+NODEUP_LOG_COLOR=auto|always|never
+```
+
+`NO_COLOR` is lower precedence than Nodeup-specific color settings. For example, `NO_COLOR=1 NODEUP_COLOR=always nodeup show color` reports that `NO_COLOR` is present but overridden for human stdout and stderr.
 
 Force plain output:
 
