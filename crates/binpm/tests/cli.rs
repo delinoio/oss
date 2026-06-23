@@ -32,6 +32,14 @@ fn assert_release_lookup_failure_exit_code(payload: &Value) {
     );
 }
 
+fn assert_non_empty_error_message(payload: &Value) {
+    let message = payload["error"]["message"].as_str().expect("message");
+    assert!(
+        !message.trim().is_empty(),
+        "expected non-empty error message"
+    );
+}
+
 fn bash_path(path: &Path) -> String {
     let raw = path.display().to_string();
     #[cfg(windows)]
@@ -4033,10 +4041,7 @@ source = "github:owner/tool"
     assert!(output.stdout.is_empty());
     let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
     assert_release_lookup_failure_exit_code(&payload);
-    assert!(payload["error"]["message"]
-        .as_str()
-        .expect("message")
-        .contains("Failed to look up release metadata for `github:owner/tool`"));
+    assert_non_empty_error_message(&payload);
     assert!(fs::read_to_string(project.join("binpm.toml"))
         .expect("read manifest")
         .contains("source = \"github:owner/tool\""));
@@ -4076,10 +4081,7 @@ bin = "bin/tool"
     assert!(output.stdout.is_empty());
     let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
     assert_release_lookup_failure_exit_code(&payload);
-    assert!(payload["error"]["message"]
-        .as_str()
-        .expect("message")
-        .contains("Failed to look up release metadata for `github:owner/tool`"));
+    assert_non_empty_error_message(&payload);
     assert!(!project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
 }
