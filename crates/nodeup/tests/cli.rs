@@ -4597,6 +4597,7 @@ fn shim_setup_uses_copy_mode_for_windows_hosts() {
 
     env.command()
         .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .env("SHELL", "/usr/bin/pwsh")
         .args([
             "--output",
             "json",
