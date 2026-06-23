@@ -91,8 +91,8 @@
 - Invalid completion subcommand scopes such as `toolchain install` must suggest the valid top-level scope, for example `nodeup completions bash toolchain`, and JSON errors must include deterministic `rejected_scope`, `allowed_scope_category`, `allowed_scopes`, and optional `suggested_scope` diagnostics.
 - Top-level completion scopes must include `shim`.
 - `completions` output must remain raw script text on stdout even when `--output json` is requested.
-- Script-safe stdout guidance must map structured automation to `--output json`, newline-delimited runtime lists to `nodeup toolchain list --quiet`, completion redirection to `nodeup completions <shell> >file`, and log-free human output to setting `RUST_LOG=off` before `nodeup <command>`. Logs must remain on stderr when enabled so quiet runtime identifiers and completion scripts keep stdout parseable.
-- Tracing logs must be written to stderr when enabled so stdout remains reserved for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts. Management `--output json` keeps tracing logs off by default so JSON stdout and stderr payloads remain parseable unless `RUST_LOG` explicitly enables tracing.
+- Script-safe stdout guidance must map structured automation to `--output json`, newline-delimited runtime lists to `nodeup toolchain list --quiet`, completion redirection to `nodeup completions <shell> >file`, and log-free human output to setting `RUST_LOG=off` before `nodeup <command>` only when stderr also needs to stay quiet after a logging filter was set elsewhere. Logs must remain on stderr when enabled so quiet runtime identifiers and completion scripts keep stdout parseable.
+- Tracing logs must be written to stderr when enabled so stdout remains reserved for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts. Management `--output json`, `nodeup toolchain list --quiet`, and `nodeup completions <shell>` keep tracing logs off by default so JSON stdout, JSON stderr payloads, quiet runtime identifiers, and completion scripts remain parseable unless `RUST_LOG` explicitly enables tracing.
 
 ## Storage
 - Maintains local version metadata, installation roots, and shim state.
@@ -108,7 +108,7 @@
 
 ## Logging
 - Use structured `tracing` logs for install, resolve, and dispatch flows.
-- Default log filters must remain `nodeup=warn` for managed alias dispatch, `nodeup=warn` for human management commands, and `nodeup=off` for JSON management commands unless `RUST_LOG` explicitly overrides them.
+- Default log filters must remain `nodeup=warn` for managed alias dispatch, `nodeup=warn` for human management commands, and `nodeup=off` for JSON management commands, quiet runtime lists, and completion generation unless `RUST_LOG` explicitly overrides them.
 - Include resolution source, requested channel, selected version, result state, release-index cache fallback state, and sanitized URL diagnostics.
 - Delegated command planning logs must include `mode=direct|npm-exec`, `package_spec`, `package_spec_pinned`, `package_json_path`, and `reason`.
 - Completion generation logs must include shell, command scope, and `generated|failed` outcome state.

@@ -516,16 +516,21 @@ fn json_output_help_still_uses_clap_help_output() {
 
 #[test]
 #[serial]
-fn delegated_run_arguments_do_not_request_json_parser_errors() {
+fn delegated_run_arguments_do_not_request_json_application_errors() {
     let env = TestEnv::new();
 
-    env.command()
-        .args(["run", "lts", "node", "--output", "json"])
-        .assert()
-        .failure()
-        .code(4)
-        .stderr(predicates::str::contains("nodeup error:"))
-        .stderr(predicates::str::contains("Release index request failed"));
+    for args in [
+        vec!["run", "current", "node", "--output", "json"],
+        vec!["run", "current", "node", "--output=json"],
+    ] {
+        env.command()
+            .args(&args)
+            .assert()
+            .failure()
+            .code(4)
+            .stderr(predicates::str::contains("nodeup error:"))
+            .stderr(predicates::str::contains("Release index request failed"));
+    }
 }
 
 #[test]
@@ -739,6 +744,20 @@ linked-script = "{}"
         "v22.1.0\nlinked-script\n"
     );
     assert!(script_safe.stderr.is_empty());
+
+    let with_tracing = env
+        .command()
+        .env("RUST_LOG", "nodeup=info")
+        .args(["toolchain", "list", "--quiet"])
+        .output()
+        .expect("toolchain list --quiet with explicit tracing");
+    assert!(with_tracing.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&with_tracing.stdout),
+        "v22.1.0\nlinked-script\n"
+    );
+    let stderr = String::from_utf8_lossy(&with_tracing.stderr);
+    assert!(stderr.contains("command_path: \"nodeup.toolchain.list\""));
 }
 
 #[test]
@@ -2598,6 +2617,20 @@ fn completion_redirection_examples_keep_stdout_clean() {
     assert!(!script_safe_stdout.contains("command_path:"));
     assert!(serde_json::from_slice::<Value>(&script_safe.stdout).is_err());
     assert!(script_safe.stderr.is_empty());
+
+    let with_tracing = env
+        .command()
+        .env("RUST_LOG", "nodeup=info")
+        .args(["completions", "bash"])
+        .output()
+        .expect("RUST_LOG=nodeup=info completions bash");
+    assert!(with_tracing.status.success());
+    let tracing_stdout = String::from_utf8_lossy(&with_tracing.stdout);
+    assert!(tracing_stdout.contains("nodeup"));
+    assert!(!tracing_stdout.contains("command_path:"));
+    assert!(serde_json::from_slice::<Value>(&with_tracing.stdout).is_err());
+    let tracing_stderr = String::from_utf8_lossy(&with_tracing.stderr);
+    assert!(tracing_stderr.contains("command_path: \"nodeup.completions\""));
 }
 
 #[test]
