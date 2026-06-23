@@ -401,12 +401,12 @@ fn install(args: InstallArgs) -> Result<i32> {
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
 
     if let Some(source) = &args.source {
+        let spec = normalize_source_input(source)?;
         if requested_scope == Scope::Local {
             return Err(BinpmError::UnsupportedLocalSourceInstall {
-                package_source: source.clone(),
+                package_source: spec.to_string(),
             });
         }
-        let spec = normalize_source_input(source)?;
         let scope = Scope::Global;
         let alias = args
             .alias

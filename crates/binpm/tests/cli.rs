@@ -2443,6 +2443,37 @@ fn local_source_install_is_rejected_with_add_guidance() {
 }
 
 #[test]
+fn local_source_install_normalizes_source_before_rejection() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "https://user:secret@github.com/owner/tool?token=secret",
+            "--local",
+            "--json",
+        ])
+        .output()
+        .expect("install --json");
+
+    assert!(!output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    let message = payload["error"]["message"].as_str().expect("message");
+    assert!(message.contains("binpm install github:owner/tool --local"));
+    assert!(message.contains("Use `binpm add <cmd> github:owner/tool`"));
+    assert!(!message.contains("secret"));
+    assert!(!message.contains("token"));
+    assert!(!message.contains("user"));
+}
+
+#[test]
 fn auto_frozen_update_recovery_preserves_selected_tool_and_verification() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
