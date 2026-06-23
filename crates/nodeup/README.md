@@ -230,6 +230,7 @@ Script-safe output patterns:
 - Runtime identifier loops: `nodeup toolchain list --quiet`
 - Completion redirection: `nodeup completions <shell> >file`
 - Human output without logs: set `RUST_LOG=off`, then run `nodeup <command>`
+- Explicit tracing: set `RUST_LOG=nodeup=debug` or another tracing filter; logs stay on stderr
 
 Human output color control:
 
@@ -273,6 +274,7 @@ Scope filtering:
 - `nodeup completions <shell> <command>` accepts only top-level command scopes:
   - `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `shim`, `self`, `completions`
   - nested subcommand scopes such as `toolchain install` fail with `invalid-input` and suggest the nearest valid top-level scope, such as `nodeup completions bash toolchain`.
+- Completion generation defaults Nodeup logging off so redirection examples stay script-safe without `RUST_LOG=off`. Explicit `RUST_LOG` filters still enable tracing on stderr.
 
 ## Testing Strategy
 
@@ -301,6 +303,7 @@ cargo test
   - use `nodeup toolchain unlink <name>` to remove a stale linked runtime record
 - JSON parsing issues in automation:
   - use `--output json` and keep `RUST_LOG` unset (or `off`) to keep stdout JSON-only
+  - use `nodeup toolchain list --quiet` for newline-delimited runtime identifiers and `nodeup completions <shell> >file` for raw completion scripts; both default Nodeup logging off
 - Error troubleshooting:
   - follow the `Hint:` action in the error message first, then rerun with `RUST_LOG=nodeup=debug` when deeper diagnostics are needed
 

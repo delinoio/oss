@@ -8,6 +8,7 @@ pub enum LoggingContext {
     ManagedAlias,
     ManagementHuman,
     ManagementJson,
+    ManagementScriptSafe,
 }
 
 impl LoggingContext {
@@ -16,6 +17,7 @@ impl LoggingContext {
             Self::ManagedAlias => "nodeup=warn",
             Self::ManagementHuman => "nodeup=warn",
             Self::ManagementJson => "nodeup=off",
+            Self::ManagementScriptSafe => "nodeup=off",
         }
     }
 }
@@ -178,6 +180,14 @@ mod tests {
     }
 
     #[test]
+    fn management_script_safe_default_filter_is_off() {
+        assert_eq!(
+            LoggingContext::ManagementScriptSafe.default_filter(),
+            "nodeup=off"
+        );
+    }
+
+    #[test]
     fn management_json_respects_explicit_rust_log_filter() {
         let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("RUST_LOG", "nodeup=info");
@@ -186,6 +196,17 @@ mod tests {
 
         std::env::remove_var("RUST_LOG");
         assert_eq!(filter.to_string(), "nodeup=info");
+    }
+
+    #[test]
+    fn management_script_safe_respects_explicit_rust_log_filter() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("RUST_LOG", "nodeup=debug");
+
+        let filter = logging_filter(LoggingContext::ManagementScriptSafe);
+
+        std::env::remove_var("RUST_LOG");
+        assert_eq!(filter.to_string(), "nodeup=debug");
     }
 
     #[test]
