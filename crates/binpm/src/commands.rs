@@ -1472,6 +1472,7 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
             )
         })
         .collect::<Result<Vec<_>>>()?;
+    let paths = ScopePaths::local(root.clone());
     let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
     let mut changed_files = if manifest.tools.is_empty()
         && local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty()
@@ -1480,9 +1481,14 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
     } else {
         vec![
             path_display(&root.join(LOCKFILE_FILE)),
-            path_display(&ScopePaths::local(root).bin),
+            path_display(&paths.bin),
         ]
     };
+    changed_files.extend(
+        tools
+            .iter()
+            .map(|tool| path_display(&package_record_path(&paths, &tool.cmd))),
+    );
     let selected_pinned_tool_may_update = manifest
         .tools
         .iter()
@@ -2425,7 +2431,7 @@ fn install_local_manifest(
                 Ok(snapshot) => snapshot,
                 Err(error) => {
                     let scope_paths = ScopePaths::local(root.clone());
-                    for (orphan_cmd, orphan_state) in orphan_states {
+                    for (orphan_cmd, orphan_state, _) in orphan_states {
                         restore_local_runtime_and_cache_ref(
                             &root,
                             &scope_paths,
@@ -2443,7 +2449,7 @@ fn install_local_manifest(
             };
             if let Err(error) = record_verified_cache_hit(&cache_paths, resolved) {
                 let scope_paths = ScopePaths::local(root.clone());
-                for (orphan_cmd, orphan_state) in orphan_states {
+                for (orphan_cmd, orphan_state, _) in orphan_states {
                     restore_local_runtime_and_cache_ref(
                         &root,
                         &scope_paths,
@@ -2478,6 +2484,9 @@ fn install_local_manifest(
         &manifest.tools,
         &orphan_states,
     ));
+    result
+        .tools
+        .extend(local_orphan_mutation_tools(&orphan_states));
     result.changed_files.sort();
     result.changed_files.dedup();
     Ok(result)
@@ -5540,11 +5549,11 @@ fn local_completed_mutation_output(
 fn local_orphan_changed_files(
     root: &Path,
     manifest_tools: &BTreeMap<String, ManifestTool>,
-    orphan_states: &[(String, RuntimeToolState)],
+    orphan_states: &[(String, RuntimeToolState, Option<LockTool>)],
 ) -> Vec<String> {
     let paths = ScopePaths::local(root.to_path_buf());
     let mut changed_files = BTreeSet::new();
-    for (cmd, state) in orphan_states {
+    for (cmd, state, _) in orphan_states {
         let Some(record) = &state.package_record else {
             continue;
         };
@@ -5560,6 +5569,25 @@ fn local_orphan_changed_files(
         }
     }
     changed_files.into_iter().collect()
+}
+
+fn local_orphan_mutation_tools(
+    orphan_states: &[(String, RuntimeToolState, Option<LockTool>)],
+) -> Vec<MutationToolOutput> {
+    orphan_states
+        .iter()
+        .filter_map(|(cmd, state, lock_tool)| {
+            state
+                .package_record
+                .as_ref()
+                .map(|record| mutation_tool_from_record(cmd, MutationAction::Removed, record))
+                .or_else(|| {
+                    lock_tool.as_ref().map(|tool| {
+                        mutation_tool_from_lock_tool(cmd, tool, MutationAction::Removed)
+                    })
+                })
+        })
+        .collect()
 }
 
 fn global_install_mutation_output(
@@ -6117,13 +6145,19 @@ fn install_path_collision_key(path: &Path, target_os: TargetOs) -> String {
 fn capture_local_manifest_orphan_states(
     root: &Path,
     manifest_tools: &BTreeMap<String, ManifestTool>,
-) -> Result<Vec<(String, RuntimeToolState)>> {
+) -> Result<Vec<(String, RuntimeToolState, Option<LockTool>)>> {
     let scope_paths = ScopePaths::local(root.to_path_buf());
     let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
     let orphan_cmds = local_manifest_orphan_cmds(root, &lockfile, manifest_tools)?;
     orphan_cmds
         .into_iter()
-        .map(|cmd| Ok((cmd.clone(), capture_runtime_tool_state(&scope_paths, &cmd)?)))
+        .map(|cmd| {
+            Ok((
+                cmd.clone(),
+                capture_runtime_tool_state(&scope_paths, &cmd)?,
+                lockfile.tools.get(&cmd).cloned(),
+            ))
+        })
         .collect()
 }
 

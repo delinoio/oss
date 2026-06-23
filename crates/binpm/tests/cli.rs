@@ -2971,7 +2971,11 @@ fn local_install_json_suppresses_orphan_cleanup_stdout() {
     assert!(changed_files.contains(&lockfile_path.as_str()));
     assert!(changed_files.contains(&package_record_path.as_str()));
     assert!(changed_files.contains(&installed_path.as_str()));
-    assert_eq!(payload["tools"].as_array().expect("tools").len(), 0);
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 1);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "removed");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    assert_eq!(payload["tools"][0]["release_tag"], "1.0.0");
     assert!(!project.join(".binpm").join("bin").join("tool").exists());
     assert!(!project
         .join(".binpm")
@@ -3568,10 +3572,18 @@ version = "1.0.0"
         .filter_map(|value| value.as_str())
         .collect::<Vec<_>>();
     let manifest_path = project.join("binpm.toml").display().to_string();
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
     assert!(changed_files.contains(&manifest_path.as_str()));
+    assert!(changed_files.contains(&package_record_path.as_str()));
     assert!(fs::read_to_string(project.join("binpm.toml"))
         .expect("read manifest")
         .contains("version = \"1.0.0\""));
+    assert!(!project.join(".binpm").exists());
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
