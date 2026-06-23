@@ -1359,12 +1359,11 @@ fn doctor(output: OutputMode) -> Result<i32> {
     for tool in &declared_only_tools {
         println!(
             "declared_only_tool: cmd={} state=declared-but-not-installed source={} \
-             requested_version={} expected_executable_path={} next=`binpm install --local {}`",
+             requested_version={} expected_executable_path={} next=`binpm install --local`",
             tool.cmd,
             tool.source,
             tool.requested_version.as_deref().unwrap_or("<latest>"),
-            tool.expected_executable_path,
-            cli_quote(&tool.cmd)
+            tool.expected_executable_path
         );
     }
     if declared_only_next_step.is_some() {
@@ -5310,8 +5309,18 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
         .map(|(cmd, tool)| {
             validate_command_name(&cmd)?;
             let spec = parse_manifest_tool_source(&tool)?;
-            if local_tool_execution_ready(root, &cmd, &spec, Some(&tool))? {
-                return Ok(None);
+            match local_tool_execution_ready(root, &cmd, &spec, Some(&tool)) {
+                Ok(true) => return Ok(None),
+                Ok(false) => {}
+                Err(error) => {
+                    warn!(
+                        command = "doctor",
+                        manifest_path = %manifest_path.display(),
+                        tool_cmd = %cmd,
+                        error = %error,
+                        "Treating local tool as declared-only because readiness could not be checked"
+                    );
+                }
             }
             let paths = ScopePaths::local(root.to_path_buf());
             Ok(DeclaredOnlyToolOutput {
@@ -12267,6 +12276,36 @@ mod tests {
         let tools = declared_only_local_tools(temp_dir.path()).expect("declared-only scan");
 
         assert!(tools.is_empty());
+    }
+
+    #[test]
+    fn doctor_declared_only_scan_reports_when_lockfile_is_malformed() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let root = temp_dir.path();
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    ManifestTool {
+                        source: "github:owner/tool".to_string(),
+                        version: Some("1.0.0".to_string()),
+                        bin: None,
+                        targets: BTreeMap::new(),
+                    },
+                )]),
+            },
+        )
+        .expect("write manifest");
+        fs::write(root.join(LOCKFILE_FILE), "version = [").expect("write malformed lockfile");
+
+        let tools = declared_only_local_tools(root).expect("declared-only scan");
+
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].cmd, "tool");
+        assert_eq!(tools[0].source, "github:owner/tool");
+        assert_eq!(tools[0].requested_version.as_deref(), Some("1.0.0"));
     }
 
     #[test]

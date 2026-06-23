@@ -1441,6 +1441,8 @@ version = "1.0.0"
             "expected_executable_path={}",
             expected_executable.display()
         )))
+        .stdout(predicate::str::contains("next=`binpm install --local`"))
+        .stdout(predicate::str::contains("binpm install --local tool").not())
         .stdout(predicate::str::contains(
             "declared_only_next_step: binpm install",
         ));
