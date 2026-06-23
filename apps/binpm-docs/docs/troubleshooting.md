@@ -15,6 +15,20 @@ Explaining a source may contact the source provider for release information, but
 
 GitHub.com shorthand input such as `BurntSushi/ripgrep` or `https://github.com/BurntSushi/ripgrep` is normalized to `github:BurntSushi/ripgrep`. If you paste a GitLab URL, rewrite it as `gitlab:<host>/<namespace...>/<project>`; direct URL installs are not a binpm source backend.
 
+## Fix Missing Provider Authentication
+
+Private GitHub Enterprise and self-managed GitLab releases require a host-scoped token variable. Missing-auth errors print the exact variable name to set and `--json` errors include it as `error.diagnostic.expected_auth_env_var`.
+
+```bash
+export BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM=<token>
+binpm explain github:ghe.example.com/owner/repo
+
+export BINPM_GITLAB_TOKEN_GITLAB_2E_INTERNAL_2E_EXAMPLE=<token>
+binpm explain gitlab:gitlab.internal.example/group/project
+```
+
+GitHub Enterprise does not use generic `BINPM_GITHUB_TOKEN` or `GITHUB_TOKEN`, and self-managed GitLab does not use generic `BINPM_GITLAB_TOKEN` or `GITLAB_TOKEN`. This keeps SaaS tokens from being sent to explicit private hosts.
+
 ## Fix GitLab HTTPS Rejections
 
 GitLab assets are scored only after binpm verifies that the release link URL, any direct asset URL, and the final redirect target are HTTPS. `binpm explain` distinguishes those rejection reasons before target scoring.
