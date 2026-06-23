@@ -87,10 +87,10 @@
 - In `--output json` mode, clap parser failures must emit JSON error envelopes on stderr with no ANSI styling; without `--output json`, parser failures must keep clap's native human output.
 - ANSI styling must never be injected into `--output json` payloads on stdout/stderr.
 - `completions` must generate raw shell completion scripts for `bash`, `zsh`, `fish`, `powershell`, and `elvish`.
-- `completions <shell> [command]` command scope must accept only top-level command identifiers and fail with `invalid-input` for unsupported scopes.
+- `completions <shell> [command]` command scope must accept only top-level command identifiers and generate scripts that do not advertise sibling top-level commands for supported shells. Unsupported scoped generation must fail with `invalid-input` rather than silently broadening the script.
 - Invalid completion subcommand scopes such as `toolchain install` must suggest the valid top-level scope, for example `nodeup completions bash toolchain`, and JSON errors must include deterministic `rejected_scope`, `allowed_scope_category`, `allowed_scopes`, and optional `suggested_scope` diagnostics.
 - Top-level completion scopes must include `shim`.
-- `completions` output must remain raw script text on stdout even when `--output json` is requested.
+- Successful `completions` output must remain raw script text on stdout even when `--output json` is requested. Invalid shells and unsupported completion scopes must still emit JSON error envelopes on stderr when JSON mode is requested.
 - Script-safe stdout guidance must map structured automation to `--output json`, newline-delimited runtime lists to `nodeup toolchain list --quiet`, completion redirection to `nodeup completions <shell> >file`, and log-free human output to setting `RUST_LOG=off` before `nodeup <command>` only when stderr also needs to stay quiet after a logging filter was set elsewhere. Logs must remain on stderr when enabled so quiet runtime identifiers and completion scripts keep stdout parseable.
 - Tracing logs must be written to stderr when enabled so stdout remains reserved for command results, JSON payloads, quiet runtime identifiers, delegated command stdout, and raw completion scripts. Management `--output json`, `nodeup toolchain list --quiet`, and `nodeup completions <shell>` keep tracing logs off by default so JSON stdout, JSON stderr payloads, quiet runtime identifiers, and completion scripts remain parseable unless `RUST_LOG` explicitly enables tracing.
 

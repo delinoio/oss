@@ -222,6 +222,8 @@ JSON output includes `removed_paths`, `manual_leftover_paths`, `ownership_refuse
 - `completions` command:
   - always writes raw completion script text to stdout
   - does not wrap completion output in JSON, even when `--output json` is set
+  - still reports invalid shells and unsupported scopes as JSON error envelopes
+    on stderr when `--output json` is set
 - logs are written to stderr when enabled
 
 Script-safe output patterns:
@@ -271,9 +273,10 @@ Checksum mismatch errors include sanitized mirror diagnostics when a mirror over
 Scope filtering:
 
 - `nodeup completions <shell>` generates completions for all top-level commands.
-- `nodeup completions <shell> <command>` accepts only top-level command scopes:
+- `nodeup completions <shell> <command>` generates a script scoped to one top-level command:
   - `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `shim`, `self`, `completions`
-  - nested subcommand scopes such as `toolchain install` fail with `invalid-input` and suggest the nearest valid top-level scope, such as `nodeup completions bash toolchain`.
+- Nested subcommand scopes such as `toolchain install` are not supported. They fail with `invalid-input` and suggest the nearest valid top-level scope, such as `nodeup completions bash toolchain`.
+- With `--output json`, invalid shell and unsupported scope failures are written as JSON error envelopes on stderr. Successful completion scripts remain raw text on stdout.
 - Completion generation defaults Nodeup logging off so redirection examples stay script-safe without `RUST_LOG=off`. Explicit `RUST_LOG` filters still enable tracing on stderr.
 
 ## Testing Strategy

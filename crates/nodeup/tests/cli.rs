@@ -313,7 +313,7 @@ fn help_lists_top_level_subcommand_descriptions() {
             "Manage executable-name dispatch shims",
         ))
         .stdout(predicates::str::contains(
-            "Generate shell completion scripts",
+            "Generate raw shell completion scripts",
         ));
 }
 
@@ -346,8 +346,9 @@ fn help_lists_nested_subcommand_descriptions() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "Generate shell completion scripts",
+            "Generate raw shell completion scripts",
         ))
+        .stdout(predicates::str::contains("JSON error envelopes on stderr"))
         .stdout(predicates::str::contains(
             "Optional top-level command scope",
         ));
@@ -2655,7 +2656,10 @@ fn completions_accepts_help_after_shell() {
 
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Generate shell completion scripts"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Generate raw shell completion scripts"));
+    assert!(stdout.contains("Completion output is always raw script text"));
+    assert!(stdout.contains("JSON error envelopes on stderr"));
 }
 
 #[test]
@@ -2671,7 +2675,17 @@ fn completions_accepts_valid_top_level_scope() {
 
     assert!(output.status.success());
     assert!(!output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup"));
+    assert!(stdout.contains("shim"));
+    assert!(
+        !stdout.contains("toolchain"),
+        "scoped bash completion unexpectedly included sibling command: {stdout}"
+    );
+    assert!(
+        !stdout.contains("override"),
+        "scoped bash completion unexpectedly included sibling command: {stdout}"
+    );
 }
 
 #[test]
@@ -2688,7 +2702,55 @@ fn completions_accepts_global_output_after_scope() {
     assert!(output.status.success());
     assert!(!output.stdout.is_empty());
     assert!(serde_json::from_slice::<Value>(&output.stdout).is_err());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("nodeup"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("nodeup"));
+    assert!(stdout.contains("shim"));
+    assert!(
+        !stdout.contains("toolchain"),
+        "JSON-mode scoped bash completion unexpectedly included sibling command: {stdout}"
+    );
+}
+
+#[test]
+#[serial]
+fn completions_scope_generates_truly_scoped_scripts_for_supported_shells() {
+    let env = TestEnv::new();
+
+    for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
+        let output = env
+            .command()
+            .args(["completions", shell, "shim"])
+            .output()
+            .unwrap_or_else(|error| panic!("completions {shell} shim: {error}"));
+
+        assert!(
+            output.status.success(),
+            "completions {shell} shim failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("nodeup"),
+            "scoped {shell} completion did not include nodeup command name"
+        );
+        assert!(
+            stdout.contains("shim"),
+            "scoped {shell} completion did not include selected shim command"
+        );
+        assert!(
+            !stdout.contains("toolchain"),
+            "scoped {shell} completion unexpectedly included toolchain sibling: {stdout}"
+        );
+        assert!(
+            !stdout.contains("override"),
+            "scoped {shell} completion unexpectedly included override sibling: {stdout}"
+        );
+        assert!(
+            !stdout.contains("Manage installed runtimes"),
+            "scoped {shell} completion unexpectedly included toolchain description: {stdout}"
+        );
+    }
 }
 
 #[test]
@@ -2704,7 +2766,9 @@ fn completions_accepts_help_after_scope() {
 
     assert!(output.status.success());
     assert!(output.stderr.is_empty());
-    assert!(String::from_utf8_lossy(&output.stdout).contains("Generate shell completion scripts"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Generate raw shell completion scripts"));
+    assert!(stdout.contains("scoped to one supported top-level command"));
 }
 
 #[test]

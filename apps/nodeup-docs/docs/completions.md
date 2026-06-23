@@ -22,7 +22,7 @@ Generate completions for all top-level commands:
 nodeup completions bash
 ```
 
-Limit generation to one top-level command:
+Generate a script scoped to one top-level command:
 
 ```bash
 nodeup completions bash toolchain
@@ -43,13 +43,15 @@ Supported command scopes:
 - `self`
 - `completions`
 
-Subcommand scopes are not accepted. Use the parent top-level command instead:
+Subcommand scopes are not accepted and are not silently broadened. Use the parent top-level command instead:
 
 ```bash
 nodeup completions bash toolchain
 ```
 
 For example, `nodeup completions bash toolchain install` fails with `invalid-input` and points back to `nodeup completions bash toolchain`.
+
+With `--output json`, invalid shell names and unsupported scopes still use JSON error envelopes on stderr. Successful completion scripts are the exception to JSON output mode: they remain raw script text on stdout.
 
 ## Output Contract
 
@@ -66,7 +68,7 @@ PowerShell:
 nodeup completions powershell > nodeup.ps1
 ```
 
-`--output json` and `--color always` do not wrap or style completion script output. Completion scripts are raw text, not structured command data.
+`--output json` and `--color always` do not wrap or style successful completion script output. Completion scripts are raw text, not structured command data. Errors still follow the selected output mode, so `nodeup --output json completions bad-shell` emits a JSON error envelope on stderr.
 
 ## Install or Source Generated Scripts
 
