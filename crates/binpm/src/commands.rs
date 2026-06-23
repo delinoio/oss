@@ -1410,10 +1410,9 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<i32> {
         print_update_mode(scope, &args.cmd);
     }
     if args.dry_run {
-        let preview_frozen_lockfile = args.lockfile.frozen_lockfile;
         let result = preview_update(
             scope,
-            preview_frozen_lockfile,
+            frozen_lockfile,
             args.require_verified,
             &args.cmd,
             output,
@@ -6374,13 +6373,20 @@ fn local_remove_changed_files(
     if let Some(record) = &prior_state.runtime.package_record {
         validate_installed_binary_path(&paths, cmd, record)?;
         changed_files.push(path_display(&package_record_path(&paths, cmd)));
-        changed_files.push(local_cache_ref_changed_file_for_cached_record(root, cmd)?);
+    }
+    if let Some(cache_ref) = local_removed_cache_ref_changed_file(
+        root,
+        cmd,
+        prior_state.runtime.package_record.as_ref(),
+    )? {
+        changed_files.push(cache_ref);
     }
     if let Some(installed_path) = prior_state
         .runtime
         .package_record
         .as_ref()
         .and_then(|record| {
+            prior_state.runtime.installed_snapshot.as_ref()?;
             let managed_path = managed_installed_path(&paths, cmd, record.target_os);
             (!is_manifest_managed_installed_path(
                 &paths,
@@ -6394,6 +6400,19 @@ fn local_remove_changed_files(
         changed_files.push(installed_path);
     }
     Ok(changed_files)
+}
+
+fn local_removed_cache_ref_changed_file(
+    root: &Path,
+    cmd: &str,
+    record: Option<&PackageRecord>,
+) -> Result<Option<String>> {
+    let cache_paths = CachePaths::new(&binpm_home()?);
+    let ref_path = cache_ref_path(&cache_paths, root, cmd);
+    if record.is_some() || path_exists_or_unreadable(&ref_path) {
+        return Ok(Some(path_display(&ref_path)));
+    }
+    Ok(None)
 }
 
 fn global_install_mutation_output(
@@ -8797,7 +8816,7 @@ mod tests {
         install_path_collision_key, installed_mutation_lines, is_retryable_status,
         local_cache_ref_changed_file_for_cached_record, local_completed_mutation_output,
         local_install_mutation_output, local_manifest_orphan_cmds, local_orphan_changed_files,
-        local_runtime_lock_records, local_tool_execution_ready,
+        local_remove_changed_files, local_runtime_lock_records, local_tool_execution_ready,
         local_update_changed_files_for_record, local_update_manifest_with_latest_versions_from,
         lock_targets_conflict_with_manifest, lock_targets_conflict_with_record,
         locked_record_download_request, locked_record_signature_sidecar,
@@ -8818,7 +8837,7 @@ mod tests {
         rollback_failed_install, sanitize_download_diagnostic_url, select_manifest_asset,
         selected_asset_display_url, selected_global_package_records, shell_path, shell_quote,
         signature_sidecar_for_asset, sigstore_trust_policy, snapshot_cache_metadata,
-        target_override_snippet, update_manifest_tool_source,
+        target_override_snippet, update, update_manifest_tool_source,
         validate_frozen_update_current_release, validate_locked_record_artifact,
         validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
         validate_package_record_metadata, validate_package_record_source_identity,
@@ -8832,7 +8851,7 @@ mod tests {
     };
     use crate::{
         assets::CandidateDecision,
-        cli::Shell,
+        cli::{LockfileArgs, ScopeArgs, Shell, UpdateArgs},
         contract::{
             ArchiveFormat, ChecksumSource, Scope, SourceProvider, SourceSpec, TargetArch,
             TargetLibc, TargetOs, VerificationState,
@@ -10800,6 +10819,148 @@ mod tests {
         };
 
         assert!(has_local_runtime_or_lock_state("tool", &state));
+    }
+
+    #[test]
+    fn local_remove_changed_files_include_stale_cache_ref_without_package_record() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let home = temp_dir.path().join("home");
+        let root = temp_dir.path().join("project");
+        std::env::set_var("BINPM_HOME", &home);
+        let cache_ref =
+            local_cache_ref_changed_file_for_cached_record(&root, "tool").expect("cache ref");
+        let cache_ref_path = PathBuf::from(&cache_ref);
+        fs::create_dir_all(cache_ref_path.parent().expect("cache ref parent"))
+            .expect("create refs dir");
+        fs::write(&cache_ref_path, b"stale ref").expect("write stale ref");
+        let state = LocalRemoveState {
+            manifest: Manifest {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+            lockfile_existed: true,
+            lockfile: Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([(
+                            "linux-x86_64-gnu".to_string(),
+                            package_record(),
+                        )]),
+                    },
+                )]),
+            },
+            runtime: RuntimeToolState {
+                package_record: None,
+                installed_path: None,
+                installed_snapshot: None,
+            },
+        };
+
+        let changed_files = local_remove_changed_files(&root, "tool", &state, &BTreeMap::new())
+            .expect("changed files");
+
+        assert!(changed_files.contains(&cache_ref));
+        std::env::remove_var("BINPM_HOME");
+    }
+
+    #[test]
+    fn local_remove_changed_files_omit_missing_executable() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let home = temp_dir.path().join("home");
+        let root = temp_dir.path().join("project");
+        let paths = ScopePaths::local(root.clone());
+        std::env::set_var("BINPM_HOME", &home);
+        let mut record = package_record();
+        record.installed_path = paths.bin.join("tool").display().to_string();
+        let state = LocalRemoveState {
+            manifest: Manifest {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+            lockfile_existed: false,
+            lockfile: Lockfile {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+            runtime: RuntimeToolState {
+                package_record: Some(record.clone()),
+                installed_path: Some(paths.bin.join("tool")),
+                installed_snapshot: None,
+            },
+        };
+
+        let changed_files = local_remove_changed_files(&root, "tool", &state, &BTreeMap::new())
+            .expect("changed files");
+
+        assert!(!changed_files.contains(&record.installed_path));
+        std::env::remove_var("BINPM_HOME");
+    }
+
+    #[test]
+    fn local_update_json_dry_run_honors_ci_frozen_lockfile() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let prior_cwd = std::env::current_dir().expect("current dir");
+        let root = temp_dir.path().join("project");
+        fs::create_dir_all(&root).expect("create project");
+        write_manifest(
+            &root.join(MANIFEST_FILE),
+            &Manifest {
+                version: 1,
+                tools: BTreeMap::new(),
+            },
+        )
+        .expect("write manifest");
+        write_lockfile(
+            &root.join(LOCKFILE_FILE),
+            &Lockfile {
+                version: 1,
+                tools: BTreeMap::from([(
+                    "tool".to_string(),
+                    LockTool {
+                        source: "github:owner/tool".to_string(),
+                        targets: BTreeMap::from([(
+                            "linux-x86_64-gnu".to_string(),
+                            package_record(),
+                        )]),
+                    },
+                )]),
+            },
+        )
+        .expect("write lockfile");
+        std::env::set_current_dir(&root).expect("set cwd");
+        std::env::set_var("CI", "true");
+
+        let error = update(
+            UpdateArgs {
+                cmd: Vec::new(),
+                scope: ScopeArgs {
+                    local: true,
+                    global: false,
+                },
+                lockfile: LockfileArgs {
+                    frozen_lockfile: false,
+                    no_frozen_lockfile: false,
+                },
+                require_verified: false,
+                dry_run: true,
+                no_confirm: false,
+            },
+            OutputMode::Json,
+        )
+        .expect_err("CI frozen mode should reject orphan cleanup");
+
+        assert!(matches!(
+            error,
+            BinpmError::FrozenLockfileOrphanCleanup { .. }
+        ));
+        std::env::remove_var("CI");
+        std::env::set_current_dir(prior_cwd).expect("restore cwd");
     }
 
     #[test]
