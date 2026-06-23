@@ -369,6 +369,30 @@ fn global_remove_dry_run_json_reports_package_record_and_executable_paths() {
 }
 
 #[test]
+fn global_remove_dry_run_json_rejects_unsafe_package_record_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    write_global_package_record(&home, "alpha", "owner/alpha", "1.0.0");
+    let record_path = home.join("packages").join("alpha.toml");
+    let expected_path = home.join("bin").join("alpha").display().to_string();
+    let unsafe_path = temp_dir.path().join("outside-alpha").display().to_string();
+    let record = fs::read_to_string(&record_path).expect("read record");
+    fs::write(&record_path, record.replace(&expected_path, &unsafe_path)).expect("write record");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--global", "--dry-run", "alpha", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Unsafe installed path"));
+    assert!(record_path.exists());
+}
+
+#[test]
 fn global_remove_dry_run_json_omits_executable_owned_by_remaining_record() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -3270,6 +3294,70 @@ signature_verified = false
     assert!(manifest.contains("tools.tool"));
     assert!(lockfile.contains("tools.tool"));
     assert!(!project.join(".binpm").join("bin").join("tool").exists());
+}
+
+#[test]
+fn local_remove_dry_run_json_rejects_unsafe_package_record_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let unsafe_installed_path = temp_dir.path().join("outside-binpm-tool");
+    fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    let package_record = format!(
+        r#"package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux-x64"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux-x64"
+installed_path = "{}"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+checksum_source = "local"
+signature_available = false
+signature_verified = false
+"#,
+        unsafe_installed_path.display()
+    );
+    let record_path = project.join(".binpm").join("packages").join("tool.toml");
+    fs::write(&record_path, package_record).expect("write package record");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "--dry-run", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Unsafe installed path"));
+    assert!(record_path.exists());
 }
 
 #[test]
