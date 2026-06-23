@@ -89,7 +89,7 @@ nodeup which --runtime 22.1.0 npm
 
 For linked runtimes, verify the runtime root contains a runnable `bin/node` or `bin/node.exe`. On Unix, `bin/node` must have an executable permission bit.
 
-`toolchain link` reports a managed shim availability matrix for `node`, `npm`, `npx`, `yarn`, and `pnpm`. The minimum link requirement is still only runnable `node`; package-manager commands can be missing and fail later when a shim or `nodeup which <command>` needs them.
+`toolchain link` reports the required runnable `node` check separately from optional managed shim availability for `node`, `npm`, `npx`, `yarn`, and `pnpm`. The minimum link requirement is still only runnable `node`; package-manager commands can be missing and fail later when a shim or `nodeup which <command>` needs them.
 
 JSON missing-command diagnostics include:
 

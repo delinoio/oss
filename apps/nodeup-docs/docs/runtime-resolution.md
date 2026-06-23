@@ -83,7 +83,7 @@ For linked runtimes, Unix hosts require an executable bit on `bin/node`. Windows
 
 For platform override tests, `NODEUP_FORCE_PLATFORM` accepts macOS aliases in either documented host spelling (`macos-x64`, `macos-arm64`, `macos/x64`, `macos/arm64`) or runtime archive spelling (`darwin-x64`, `darwin-arm64`).
 
-`toolchain link` only requires the linked runtime to provide runnable `node`. Package-manager commands are checked per command later. Successful link output reports availability for each managed shim command:
+`toolchain link` only requires the linked runtime to provide runnable `node`. Package-manager commands are optional and are checked per command later. Successful link output reports the required `node` check separately from optional availability for each managed shim command:
 
 | Shim command | Linked-runtime direct path on Unix | Linked-runtime direct path on Windows |
 | --- | --- | --- |
