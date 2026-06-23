@@ -2356,7 +2356,9 @@ fn install_local_manifest(
         Vec::new()
     };
     if selected.is_empty() {
-        if let Err(error) = remove_local_manifest_orphans(&root, &manifest.tools, frozen_lockfile) {
+        if let Err(error) =
+            remove_local_manifest_orphans(&root, &manifest.tools, frozen_lockfile, output)
+        {
             let cache_paths = CachePaths::new(&binpm_home()?);
             rollback_completed_local_installs(&root, completed, &cache_paths)?;
             return Err(error);
@@ -5802,6 +5804,7 @@ fn remove_local_manifest_orphans(
     root: &Path,
     manifest_tools: &BTreeMap<String, ManifestTool>,
     frozen_lockfile: bool,
+    output: OutputMode,
 ) -> Result<()> {
     let lockfile_path = root.join(LOCKFILE_FILE);
     let mut lockfile = read_lockfile(&lockfile_path)?;
@@ -5823,9 +5826,14 @@ fn remove_local_manifest_orphans(
         .map(|cmd| Ok((cmd.clone(), capture_runtime_tool_state(&scope_paths, cmd)?)))
         .collect::<Result<Vec<_>>>()?;
     for cmd in &orphan_cmds {
-        if let Err(error) =
-            remove_local_orphan_runtime(root, &scope_paths, &cache_paths, cmd, manifest_tools)
-        {
+        if let Err(error) = remove_local_orphan_runtime(
+            root,
+            &scope_paths,
+            &cache_paths,
+            cmd,
+            manifest_tools,
+            output,
+        ) {
             for (restored_cmd, prior_state) in prior_states {
                 restore_local_runtime_and_cache_ref(
                     root,
@@ -5860,6 +5868,7 @@ fn remove_local_orphan_runtime(
     cache_paths: &CachePaths,
     cmd: &str,
     manifest_tools: &BTreeMap<String, ManifestTool>,
+    output: OutputMode,
 ) -> Result<()> {
     validate_command_name(cmd)?;
     let prior_state = capture_runtime_tool_state(paths, cmd)?;
@@ -5901,7 +5910,9 @@ fn remove_local_orphan_runtime(
         restore_local_runtime_and_cache_ref(root, paths, cache_paths, cmd, prior_state);
         return Err(error);
     }
-    println!("removed {cmd}");
+    if !output.is_json() {
+        println!("removed {cmd}");
+    }
     Ok(())
 }
 
@@ -9753,7 +9764,7 @@ mod tests {
         )
         .expect("write lockfile");
 
-        remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new(), false)
+        remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new(), false, OutputMode::Human)
             .expect("remove orphans");
 
         assert!(!paths.packages.join("tool.toml").exists());
@@ -9788,7 +9799,7 @@ mod tests {
         )
         .expect("write lockfile");
 
-        remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new(), false)
+        remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new(), false, OutputMode::Human)
             .expect("remove lock orphan");
 
         assert_eq!(
@@ -9823,8 +9834,13 @@ mod tests {
         )
         .expect("write lockfile");
 
-        let error = remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new(), false)
-            .expect_err("invalid orphan command");
+        let error = remove_local_manifest_orphans(
+            temp_dir.path(),
+            &BTreeMap::new(),
+            false,
+            OutputMode::Human,
+        )
+        .expect_err("invalid orphan command");
 
         assert!(error.to_string().contains("Invalid command name"));
         assert_eq!(
@@ -9857,8 +9873,13 @@ mod tests {
         )
         .expect("write lockfile");
 
-        let error = remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new(), true)
-            .expect_err("frozen orphan cleanup is rejected");
+        let error = remove_local_manifest_orphans(
+            temp_dir.path(),
+            &BTreeMap::new(),
+            true,
+            OutputMode::Human,
+        )
+        .expect_err("frozen orphan cleanup is rejected");
 
         assert!(matches!(
             error,
@@ -9918,7 +9939,7 @@ mod tests {
             },
         )]);
 
-        remove_local_manifest_orphans(temp_dir.path(), &manifest_tools, false)
+        remove_local_manifest_orphans(temp_dir.path(), &manifest_tools, false, OutputMode::Human)
             .expect("remove colliding orphan");
 
         assert!(!paths.packages.join("foo.toml").exists());
@@ -9965,7 +9986,7 @@ mod tests {
             },
         )]);
 
-        remove_local_manifest_orphans(temp_dir.path(), &manifest_tools, false)
+        remove_local_manifest_orphans(temp_dir.path(), &manifest_tools, false, OutputMode::Human)
             .expect("remove case-colliding orphan");
 
         assert!(!paths.packages.join("foo.toml").exists());
@@ -10012,8 +10033,13 @@ mod tests {
         read_only.set_mode(0o555);
         fs::set_permissions(temp_dir.path(), read_only).expect("make root read-only");
 
-        let error = remove_local_manifest_orphans(temp_dir.path(), &BTreeMap::new(), false)
-            .expect_err("lockfile rewrite fails");
+        let error = remove_local_manifest_orphans(
+            temp_dir.path(),
+            &BTreeMap::new(),
+            false,
+            OutputMode::Human,
+        )
+        .expect_err("lockfile rewrite fails");
 
         fs::set_permissions(temp_dir.path(), original_permissions).expect("restore permissions");
         assert!(error.to_string().contains("Failed to write"));

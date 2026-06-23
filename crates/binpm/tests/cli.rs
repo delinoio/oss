@@ -2787,6 +2787,61 @@ fn frozen_local_install_restores_missing_runtime_from_verified_cache() {
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[test]
+fn local_install_json_suppresses_orphan_cleanup_stdout() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'installed tool\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+
+    binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .assert()
+        .success();
+
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write empty manifest");
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["install", "--local", "--json"])
+        .output()
+        .expect("install --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("removed tool"));
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse install json");
+    assert_eq!(payload["command"], "install");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(
+        payload["changed_files"][0],
+        project.join("binpm.lock").display().to_string()
+    );
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 0);
+    assert!(!project.join(".binpm").join("bin").join("tool").exists());
+    assert!(!project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
+    let lockfile = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
+    assert!(!lockfile.contains("tools.tool"));
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
 fn frozen_x_restores_missing_runtime_from_verified_cache() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
