@@ -21,8 +21,9 @@ use crate::{
         ArtifactKind, BinaryDiscovery, CandidateDecision,
     },
     cli::{
-        AddArgs, CacheCommand, Cli, Command, EnvArgs, ExecArgs, ExplainArgs, InfoArgs, InitArgs,
-        InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs, VerifyArgs,
+        AddArgs, CacheCommand, Cli, Command, EnvArgs, EnvCommand, EnvSetupArgs, ExecArgs,
+        ExplainArgs, InfoArgs, InitArgs, InstallArgs, RemoveArgs, ScopedArgs, Shell, UpdateArgs,
+        VerifyArgs,
     },
     contract::{
         normalize_source_input, validate_version_selector, ArchiveFormat, ChecksumSource,
@@ -7243,6 +7244,18 @@ fn init(args: InitArgs) -> Result<i32> {
 }
 
 fn env_cmd(args: EnvArgs) -> Result<i32> {
+    if let Some(command) = args.command {
+        if args.global || args.local {
+            return Err(BinpmError::ProfileSetupRejectsScopeFlags);
+        }
+        if args.shell.is_some() {
+            return Err(BinpmError::ProfileSetupRejectsParentShellFlag);
+        }
+        return match command {
+            EnvCommand::Setup(setup) => env_setup(setup),
+        };
+    }
+
     let shell = args.shell.map(Ok).unwrap_or_else(infer_env_shell)?;
     let scope = env_path_scope(&args);
 
@@ -7284,6 +7297,58 @@ fn env_cmd(args: EnvArgs) -> Result<i32> {
     );
 
     print_env(shell, scope, global_bin.as_deref(), local_bin.as_deref());
+    Ok(0)
+}
+
+fn env_setup(args: EnvSetupArgs) -> Result<i32> {
+    if matches!(args.shell, Shell::Cmd) {
+        return Err(BinpmError::ProfileSetupUnsupportedShell {
+            shell: args.shell.as_str().to_string(),
+        });
+    }
+
+    let global_bin = binpm_home()?.join("bin");
+    let plan = profile_setup_plan(args.shell, &global_bin)?;
+
+    info!(
+        command = "env setup",
+        shell = args.shell.as_str(),
+        dry_run = args.dry_run,
+        profile = %plan.profile.display(),
+        line = plan.line,
+        global_bin = %global_bin.display(),
+        "Prepared opt-in global PATH profile setup"
+    );
+
+    println!("binpm env setup");
+    println!("profile: {}", plan.profile.display());
+    println!("line: {}", plan.line);
+
+    let existing = read_profile_if_present(args.shell, &plan.profile)?;
+    if profile_contains_line(existing.as_ref(), &plan.line) {
+        println!("status: already present");
+        println!(
+            "rollback: remove the line above from {}",
+            plan.profile.display()
+        );
+        return Ok(0);
+    }
+
+    if args.dry_run {
+        println!("status: would append");
+        println!(
+            "rollback: after applying, remove the line above from {}",
+            plan.profile.display()
+        );
+        return Ok(0);
+    }
+
+    append_profile_line(&plan.profile, existing.as_ref(), &plan.line)?;
+    println!("status: appended");
+    println!(
+        "rollback: remove the line above from {}",
+        plan.profile.display()
+    );
     Ok(0)
 }
 
@@ -7332,7 +7397,8 @@ fn shell_from_program(program: &std::ffi::OsStr) -> Option<Shell> {
         "bash" => Some(Shell::Bash),
         "zsh" => Some(Shell::Zsh),
         "fish" => Some(Shell::Fish),
-        "powershell" | "pwsh" => Some(Shell::Powershell),
+        "powershell" => Some(Shell::Powershell),
+        "pwsh" => Some(Shell::Pwsh),
         "cmd" => Some(Shell::Cmd),
         _ => None,
     }
@@ -7369,7 +7435,7 @@ fn print_env(
                 println!("set -gx PATH {local} $PATH");
             }
         }
-        Shell::Powershell => {
+        Shell::Powershell | Shell::Pwsh => {
             if matches!(scope, EnvPathScope::Both | EnvPathScope::Global) {
                 let global = shell_quote(shell, global_bin.expect("global bin path for env scope"));
                 println!("# Global bin: persist this line in shell profiles");
@@ -7389,6 +7455,314 @@ fn print_env(
         }
         Shell::Cmd => unreachable!("cmd shell is explicitly deferred before rendering"),
     }
+}
+
+#[derive(Debug)]
+struct ProfileSetupPlan {
+    profile: PathBuf,
+    line: String,
+}
+
+#[derive(Debug)]
+struct ProfileContents {
+    text: String,
+    encoding: ProfileEncoding,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ProfileEncoding {
+    Utf8,
+    Utf16Le,
+    Utf16Be,
+}
+
+fn profile_setup_plan(shell: Shell, global_bin: &Path) -> Result<ProfileSetupPlan> {
+    let profile = profile_path(shell)?;
+    ensure_supported_profile(shell, &profile)?;
+    Ok(ProfileSetupPlan {
+        profile,
+        line: global_profile_path_line(shell, global_bin),
+    })
+}
+
+fn profile_path(shell: Shell) -> Result<PathBuf> {
+    let home = profile_home(shell)?;
+    match shell {
+        Shell::Bash => bash_profile_path(&home),
+        Shell::Zsh => Ok(home.join(".zshrc")),
+        Shell::Fish => Ok(home
+            .join(".config")
+            .join("fish")
+            .join("conf.d")
+            .join("binpm.fish")),
+        Shell::Powershell if cfg!(windows) => Ok(home
+            .join("Documents")
+            .join("WindowsPowerShell")
+            .join("Microsoft.PowerShell_profile.ps1")),
+        Shell::Pwsh if cfg!(windows) => Ok(home
+            .join("Documents")
+            .join("PowerShell")
+            .join("Microsoft.PowerShell_profile.ps1")),
+        Shell::Powershell | Shell::Pwsh => Ok(home
+            .join(".config")
+            .join("powershell")
+            .join("Microsoft.PowerShell_profile.ps1")),
+        Shell::Cmd => Err(BinpmError::ProfileSetupUnsupportedShell {
+            shell: shell.as_str().to_string(),
+        }),
+    }
+}
+
+fn bash_profile_path(home: &Path) -> Result<PathBuf> {
+    if !cfg!(any(target_os = "macos", windows)) {
+        let bashrc = home.join(".bashrc");
+        if bashrc.exists() || !bash_login_profiles(home).any(|profile| profile.exists()) {
+            return Ok(bashrc);
+        }
+
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: Shell::Bash.as_str(),
+            path: home.to_path_buf(),
+            message: "bash profile target is ambiguous because an existing login profile is \
+                      present but non-login interactive bash reads ~/.bashrc; create ~/.bashrc \
+                      before running setup"
+                .to_string(),
+        });
+    }
+
+    for profile_name in [".bash_profile", ".bash_login", ".profile"] {
+        let profile = home.join(profile_name);
+        if profile.exists() {
+            return Ok(profile);
+        }
+    }
+
+    Ok(home.join(".bash_profile"))
+}
+
+fn bash_login_profiles(home: &Path) -> impl Iterator<Item = PathBuf> + '_ {
+    [".bash_profile", ".bash_login", ".profile"]
+        .into_iter()
+        .map(|profile_name| home.join(profile_name))
+}
+
+fn profile_home(shell: Shell) -> Result<PathBuf> {
+    let home = match shell {
+        Shell::Powershell | Shell::Pwsh if cfg!(windows) => {
+            env_path("USERPROFILE").or_else(|| env_path("HOME"))
+        }
+        Shell::Powershell | Shell::Pwsh => env_path("HOME"),
+        Shell::Bash | Shell::Zsh | Shell::Fish => env_path("HOME"),
+        Shell::Cmd => None,
+    };
+    let Some(home) = home else {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: PathBuf::from("~"),
+            message: "could not determine a home directory for this shell".to_string(),
+        });
+    };
+    if !home.is_absolute() {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: home,
+            message: "home directory must be absolute".to_string(),
+        });
+    }
+    if !home.exists() {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: home,
+            message: "home directory does not exist".to_string(),
+        });
+    }
+    if !home.is_dir() {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: home,
+            message: "home path is not a directory".to_string(),
+        });
+    }
+    Ok(home)
+}
+
+fn global_profile_path_line(shell: Shell, global_bin: &Path) -> String {
+    let global = shell_quote(shell, global_bin);
+    match shell {
+        Shell::Bash | Shell::Zsh => format!("export PATH={global}${{PATH:+:$PATH}}"),
+        Shell::Fish => format!("set -gx PATH {global} $PATH"),
+        Shell::Powershell | Shell::Pwsh => format!(
+            "$env:PATH = {global} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
+             $env:PATH }} else {{ '' }})"
+        ),
+        Shell::Cmd => unreachable!("cmd shell is refused before profile setup rendering"),
+    }
+}
+
+fn ensure_supported_profile(shell: Shell, profile: &Path) -> Result<()> {
+    let parent = profile
+        .parent()
+        .ok_or_else(|| BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: profile.to_path_buf(),
+            message: "profile path has no parent directory".to_string(),
+        })?;
+    if parent.exists() && !parent.is_dir() {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: profile.to_path_buf(),
+            message: "profile parent exists but is not a directory".to_string(),
+        });
+    }
+    if !parent.exists() && !matches!(shell, Shell::Fish | Shell::Powershell | Shell::Pwsh) {
+        return Err(BinpmError::ProfileSetupRefused {
+            shell: shell.as_str(),
+            path: profile.to_path_buf(),
+            message: "profile parent directory does not exist".to_string(),
+        });
+    }
+    if let Ok(metadata) = fs::symlink_metadata(profile) {
+        if metadata.file_type().is_symlink() {
+            return Err(BinpmError::ProfileSetupRefused {
+                shell: shell.as_str(),
+                path: profile.to_path_buf(),
+                message: "profile files must not be symlinks".to_string(),
+            });
+        }
+        if !metadata.is_file() {
+            return Err(BinpmError::ProfileSetupRefused {
+                shell: shell.as_str(),
+                path: profile.to_path_buf(),
+                message: "profile path exists but is not a regular file".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn read_profile_if_present(shell: Shell, profile: &Path) -> Result<Option<ProfileContents>> {
+    let bytes = match fs::read(profile) {
+        Ok(bytes) => bytes,
+        Err(source) if source.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(source) => {
+            return Err(BinpmError::ReadFile {
+                path: profile.to_path_buf(),
+                source,
+            });
+        }
+    };
+    decode_profile_contents(shell, profile, bytes).map(Some)
+}
+
+fn decode_profile_contents(
+    shell: Shell,
+    profile: &Path,
+    bytes: Vec<u8>,
+) -> Result<ProfileContents> {
+    if bytes.starts_with(&[0xff, 0xfe]) {
+        return decode_utf16_profile(shell, profile, &bytes[2..], ProfileEncoding::Utf16Le);
+    }
+    if bytes.starts_with(&[0xfe, 0xff]) {
+        return decode_utf16_profile(shell, profile, &bytes[2..], ProfileEncoding::Utf16Be);
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) => Ok(ProfileContents {
+            text,
+            encoding: ProfileEncoding::Utf8,
+        }),
+        Err(_) => Err(BinpmError::ProfileSetupRefused {
+            path: profile.to_path_buf(),
+            shell: shell.as_str(),
+            message: "profile encoding must be UTF-8 or UTF-16 with a byte-order mark".to_string(),
+        }),
+    }
+}
+
+fn decode_utf16_profile(
+    shell: Shell,
+    profile: &Path,
+    bytes: &[u8],
+    encoding: ProfileEncoding,
+) -> Result<ProfileContents> {
+    if !bytes.len().is_multiple_of(2) {
+        return Err(BinpmError::ProfileSetupRefused {
+            path: profile.to_path_buf(),
+            shell: shell.as_str(),
+            message: "UTF-16 profile has an odd byte length".to_string(),
+        });
+    }
+    let units = bytes.chunks_exact(2).map(|chunk| match encoding {
+        ProfileEncoding::Utf16Le => u16::from_le_bytes([chunk[0], chunk[1]]),
+        ProfileEncoding::Utf16Be => u16::from_be_bytes([chunk[0], chunk[1]]),
+        ProfileEncoding::Utf8 => unreachable!("UTF-8 profiles are decoded separately"),
+    });
+    let text = String::from_utf16(&units.collect::<Vec<_>>()).map_err(|_| {
+        BinpmError::ProfileSetupRefused {
+            path: profile.to_path_buf(),
+            shell: shell.as_str(),
+            message: "UTF-16 profile contains invalid code units".to_string(),
+        }
+    })?;
+    Ok(ProfileContents { text, encoding })
+}
+
+fn profile_contains_line(contents: Option<&ProfileContents>, line: &str) -> bool {
+    contents
+        .map(|contents| contents.text.lines().any(|candidate| candidate == line))
+        .unwrap_or(false)
+}
+
+fn append_profile_line(
+    profile: &Path,
+    existing: Option<&ProfileContents>,
+    line: &str,
+) -> Result<()> {
+    if let Some(parent) = profile.parent() {
+        fs::create_dir_all(parent).map_err(|source| BinpmError::CreateDirectory {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(profile)
+        .map_err(|source| BinpmError::WriteFile {
+            path: profile.to_path_buf(),
+            source,
+        })?;
+    let encoding = existing
+        .map(|contents| contents.encoding)
+        .unwrap_or(ProfileEncoding::Utf8);
+    if existing.is_some_and(|contents| !contents.text.is_empty() && !contents.text.ends_with('\n'))
+    {
+        write_profile_text(&mut file, profile, encoding, "\n")?;
+    }
+    write_profile_text(&mut file, profile, encoding, &format!("{line}\n"))
+}
+
+fn write_profile_text(
+    file: &mut fs::File,
+    profile: &Path,
+    encoding: ProfileEncoding,
+    text: &str,
+) -> Result<()> {
+    let bytes = match encoding {
+        ProfileEncoding::Utf8 => text.as_bytes().to_vec(),
+        ProfileEncoding::Utf16Le => text
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>(),
+        ProfileEncoding::Utf16Be => text
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect::<Vec<_>>(),
+    };
+    file.write_all(&bytes)
+        .map_err(|source| BinpmError::WriteFile {
+            path: profile.to_path_buf(),
+            source,
+        })
 }
 
 fn cmd_path_hint(
@@ -7450,7 +7824,7 @@ fn shell_quote(shell: Shell, path: &Path) -> String {
     match shell {
         Shell::Bash | Shell::Zsh => posix_single_quote(&raw),
         Shell::Fish => fish_single_quote(&raw),
-        Shell::Powershell => powershell_single_quote(&raw),
+        Shell::Powershell | Shell::Pwsh => powershell_single_quote(&raw),
         Shell::Cmd => unreachable!("cmd shell is explicitly deferred before quoting"),
     }
 }
@@ -7460,7 +7834,7 @@ fn shell_path(shell: Shell, raw: &str) -> String {
         Shell::Bash | Shell::Zsh => {
             windows_path_for_posix_shell(raw).unwrap_or_else(|| raw.to_owned())
         }
-        Shell::Fish | Shell::Powershell => raw.to_owned(),
+        Shell::Fish | Shell::Powershell | Shell::Pwsh => raw.to_owned(),
         Shell::Cmd => unreachable!("cmd shell is explicitly deferred before path rendering"),
     }
 }
@@ -7702,8 +8076,8 @@ fn print_global_path_setup_guidance(global_bin: &Path) {
          setup commands"
     );
     println!(
-        "path_setup: profile changes are opt-in; persist only the global bin line in shell \
-         profiles"
+        "path_setup: profile changes are opt-in; run `binpm env setup --shell \
+         <bash|zsh|fish|powershell|pwsh>` to preview and apply only the global bin line"
     );
     println!("path_setup: the project-local PATH line is for the current project/session only");
 }
@@ -7780,6 +8154,59 @@ mod tests {
     };
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn bash_profile_path_selects_supported_platform_profile() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let home = temp_dir.path();
+
+        #[cfg(not(any(target_os = "macos", windows)))]
+        {
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".bashrc")
+            );
+
+            fs::write(home.join(".profile"), "").expect("write profile");
+            assert!(matches!(
+                super::bash_profile_path(home),
+                Err(BinpmError::ProfileSetupRefused { .. })
+            ));
+
+            fs::write(home.join(".bashrc"), "").expect("write bashrc");
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".bashrc")
+            );
+        }
+
+        #[cfg(any(target_os = "macos", windows))]
+        {
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".bash_profile")
+            );
+
+            fs::write(home.join(".profile"), "").expect("write profile");
+
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".profile")
+            );
+
+            fs::write(home.join(".bash_login"), "").expect("write bash login");
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".bash_login")
+            );
+
+            fs::write(home.join(".bash_profile"), "").expect("write bash profile");
+            assert_eq!(
+                super::bash_profile_path(home).unwrap(),
+                home.join(".bash_profile")
+            );
+        }
+    }
 
     struct StaticReleaseClient {
         tag: &'static str,
@@ -12911,6 +13338,14 @@ mod tests {
     fn powershell_env_preserves_windows_paths() {
         assert_eq!(
             shell_path(Shell::Powershell, r"C:\Users\me\.binpm\bin"),
+            r"C:\Users\me\.binpm\bin"
+        );
+    }
+
+    #[test]
+    fn pwsh_env_preserves_windows_paths() {
+        assert_eq!(
+            shell_path(Shell::Pwsh, r"C:\Users\me\.binpm\bin"),
             r"C:\Users\me\.binpm\bin"
         );
     }

@@ -12,6 +12,21 @@ fn binpm() -> Command {
     Command::new(env!("CARGO_BIN_EXE_binpm"))
 }
 
+fn utf16le_bom(text: &str) -> Vec<u8> {
+    let mut bytes = vec![0xff, 0xfe];
+    bytes.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+    bytes
+}
+
+fn decode_utf16le_bom(bytes: &[u8]) -> String {
+    assert!(bytes.starts_with(&[0xff, 0xfe]));
+    let units = bytes[2..]
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<_>>();
+    String::from_utf16(&units).expect("utf16le profile")
+}
+
 fn assert_success(output: &std::process::Output) {
     assert!(
         output.status.success(),
@@ -72,6 +87,25 @@ fn posix_single_quote(raw: &str) -> String {
 
 fn bash_quote_path(path: &Path) -> String {
     posix_single_quote(&bash_path(path))
+}
+
+fn fish_single_quote(raw: &str) -> String {
+    format!("'{}'", raw.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+fn fish_quote_path(path: &Path) -> String {
+    fish_single_quote(&path.display().to_string())
+}
+
+fn bash_setup_profile(home: &Path) -> std::path::PathBuf {
+    #[cfg(any(target_os = "macos", windows))]
+    {
+        home.join(".bash_profile")
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        home.join(".bashrc")
+    }
 }
 
 #[test]
@@ -887,6 +921,500 @@ fn env_local_scope_does_not_require_global_home() {
         .stdout(predicate::str::contains("Global bin").not())
         .stdout(predicate::str::contains("Project-local bin"))
         .stdout(predicate::str::contains(bash_quote_path(&local_bin)));
+}
+
+#[test]
+fn env_setup_dry_run_reports_profile_and_line_without_mutation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    let profile = bash_setup_profile(&home_dir);
+    let expected_line = format!(
+        "export PATH={}${{PATH:+:$PATH}}",
+        bash_quote_path(&global_bin)
+    );
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "profile: {}",
+            profile.display()
+        )))
+        .stdout(predicate::str::contains(format!("line: {expected_line}")))
+        .stdout(predicate::str::contains("status: would append"));
+
+    assert!(!profile.exists(), "dry-run must not create the profile");
+}
+
+#[test]
+fn env_setup_appends_only_global_path_line() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    let local_bin = temp_dir.path().join(".binpm").join("bin");
+    let profile = bash_setup_profile(&home_dir);
+    fs::write(&profile, "# existing").expect("write profile");
+    let expected_line = format!(
+        "export PATH={}${{PATH:+:$PATH}}",
+        bash_quote_path(&global_bin)
+    );
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"))
+        .stdout(predicate::str::contains("rollback: remove the line above"));
+
+    let contents = fs::read_to_string(&profile).expect("read profile");
+    assert!(contents.contains(&expected_line));
+    assert!(
+        !contents.contains(&local_bin.display().to_string()),
+        "profile setup must not persist project-local bin paths"
+    );
+}
+
+#[cfg(any(target_os = "macos", windows))]
+#[test]
+fn env_setup_bash_uses_existing_login_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bash_profile = home_dir.join(".bash_profile");
+    let profile = home_dir.join(".profile");
+    fs::write(&profile, "# existing").expect("write profile");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "profile: {}",
+            profile.display()
+        )))
+        .stdout(predicate::str::contains("status: appended"));
+
+    assert!(!bash_profile.exists());
+    assert!(profile.is_file());
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+#[test]
+fn env_setup_bash_refuses_login_profile_without_bashrc_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bashrc = home_dir.join(".bashrc");
+    let profile = home_dir.join(".profile");
+    fs::write(&profile, "# existing").expect("write profile");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("bash profile target is ambiguous"))
+        .stderr(predicate::str::contains(
+            "non-login interactive bash reads ~/.bashrc",
+        ));
+
+    assert!(!bashrc.exists());
+    assert_eq!(
+        fs::read_to_string(&profile).expect("read profile"),
+        "# existing"
+    );
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+#[test]
+fn env_setup_bash_uses_existing_bashrc_when_login_profiles_exist_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bashrc = home_dir.join(".bashrc");
+    let profile = home_dir.join(".profile");
+    fs::write(&profile, "# existing profile").expect("write profile");
+    fs::write(&bashrc, "# existing bashrc").expect("write bashrc");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "profile: {}",
+            bashrc.display()
+        )))
+        .stdout(predicate::str::contains("status: appended"));
+
+    assert!(fs::read_to_string(&bashrc)
+        .expect("read bashrc")
+        .contains("export PATH="));
+    assert_eq!(
+        fs::read_to_string(&profile).expect("read profile"),
+        "# existing profile"
+    );
+}
+
+#[test]
+fn env_setup_rejects_parent_scope_flags() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let profile = bash_setup_profile(&home_dir);
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "--local", "setup", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "`binpm env setup` only persists the global bin PATH line",
+        ));
+
+    assert!(
+        !profile.exists(),
+        "scoped setup invocations must not mutate profile files"
+    );
+}
+
+#[test]
+fn env_setup_rejects_parent_shell_flag() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bash_profile = bash_setup_profile(&home_dir);
+    let fish_profile = home_dir
+        .join(".config")
+        .join("fish")
+        .join("conf.d")
+        .join("binpm.fish");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "--shell", "fish", "setup", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "do not pass parent `binpm env --shell` with setup",
+        ));
+
+    assert!(!bash_profile.exists());
+    assert!(!fish_profile.exists());
+}
+
+#[test]
+fn env_setup_is_idempotent_for_existing_line() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    let profile = home_dir.join(".zshrc");
+    let expected_line = format!(
+        "export PATH={}${{PATH:+:$PATH}}",
+        bash_quote_path(&global_bin)
+    );
+    fs::write(&profile, format!("{expected_line}\n")).expect("write profile");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "zsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: already present"));
+
+    let contents = fs::read_to_string(&profile).expect("read profile");
+    assert_eq!(contents.matches(&expected_line).count(), 1);
+}
+
+#[test]
+fn env_setup_supports_fish_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    let profile = home_dir
+        .join(".config")
+        .join("fish")
+        .join("conf.d")
+        .join("binpm.fish");
+    let expected_line = format!("set -gx PATH {} $PATH", fish_quote_path(&global_bin));
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "fish"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    let contents = fs::read_to_string(&profile).expect("read fish profile");
+    assert!(contents.contains(&expected_line));
+}
+
+#[test]
+fn env_setup_supports_powershell_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let userprofile = temp_dir.path().join("userprofile");
+    fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    #[cfg(windows)]
+    let profile = userprofile
+        .join("Documents")
+        .join("WindowsPowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    #[cfg(not(windows))]
+    let profile = home_dir
+        .join(".config")
+        .join("powershell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let expected_line = format!(
+        "$env:PATH = '{}' + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} \
+         else {{ '' }})",
+        global_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "powershell"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    let contents = fs::read_to_string(&profile).expect("read powershell profile");
+    assert!(contents.contains(&expected_line));
+}
+
+#[test]
+fn env_setup_appends_to_utf16le_powershell_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let userprofile = temp_dir.path().join("userprofile");
+    fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    #[cfg(windows)]
+    let profile = userprofile
+        .join("Documents")
+        .join("WindowsPowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    #[cfg(not(windows))]
+    let profile = home_dir
+        .join(".config")
+        .join("powershell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    fs::create_dir_all(profile.parent().expect("profile parent")).expect("profile parent dir");
+    fs::write(
+        &profile,
+        utf16le_bom("# existing Windows PowerShell profile"),
+    )
+    .expect("write utf16 profile");
+    let expected_line = format!(
+        "$env:PATH = '{}' + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} \
+         else {{ '' }})",
+        global_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "powershell"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    let bytes = fs::read(&profile).expect("read powershell profile");
+    let contents = decode_utf16le_bom(&bytes);
+    assert!(contents.contains("# existing Windows PowerShell profile"));
+    assert!(contents.contains(&expected_line));
+}
+
+#[test]
+fn env_setup_supports_pwsh_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let userprofile = temp_dir.path().join("userprofile");
+    fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    #[cfg(windows)]
+    let profile = userprofile
+        .join("Documents")
+        .join("PowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    #[cfg(not(windows))]
+    let profile = home_dir
+        .join(".config")
+        .join("powershell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let expected_line = format!(
+        "$env:PATH = '{}' + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} \
+         else {{ '' }})",
+        global_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "pwsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    let contents = fs::read_to_string(&profile).expect("read pwsh profile");
+    assert!(contents.contains(&expected_line));
+}
+
+#[cfg(windows)]
+#[test]
+fn env_setup_powershell_uses_windows_powershell_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let userprofile = temp_dir.path().join("userprofile");
+    fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let windows_powershell_profile = userprofile
+        .join("Documents")
+        .join("WindowsPowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let pwsh_profile = userprofile
+        .join("Documents")
+        .join("PowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "powershell"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    assert!(windows_powershell_profile.is_file());
+    assert!(!pwsh_profile.exists());
+}
+
+#[test]
+fn env_setup_refuses_cmd_and_ambiguous_profile_targets() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_file = temp_dir.path().join("home-file");
+    fs::write(&home_file, "").expect("home file");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let mut cmd_command = binpm();
+
+    cmd_command
+        .env_clear()
+        .env("HOME", temp_dir.path())
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Unsupported shell `cmd`"));
+
+    let mut ambiguous_command = binpm();
+    ambiguous_command
+        .env_clear()
+        .env("HOME", &home_file)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("home path is not a directory"));
+}
+
+#[test]
+fn env_setup_refuses_missing_home_directories() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let missing_home = temp_dir.path().join("missing-home");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let would_be_profile = missing_home
+        .join(".config")
+        .join("fish")
+        .join("conf.d")
+        .join("binpm.fish");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &missing_home)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "fish"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("home directory does not exist"));
+
+    assert!(
+        !would_be_profile.exists(),
+        "missing homes must be refused before profile directories are created"
+    );
 }
 
 #[test]
@@ -1807,7 +2335,8 @@ fn doctor_guides_path_setup_when_global_bin_is_absent_from_path() {
         .stdout(predicate::str::contains("global_bin_on_path: no"))
         .stdout(predicate::str::contains("binpm env --global --shell"))
         .stdout(predicate::str::contains("profile changes are opt-in"))
-        .stdout(predicate::str::contains("persist only the global bin line"))
+        .stdout(predicate::str::contains("binpm env setup --shell"))
+        .stdout(predicate::str::contains("apply only the global bin line"))
         .stdout(predicate::str::contains(
             "project-local PATH line is for the current project/session only",
         ));
