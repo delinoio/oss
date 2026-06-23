@@ -521,7 +521,7 @@ impl ShellKind {
 }
 
 fn path_instruction(dir: &Path, shell: ShellKind) -> String {
-    let dir = dir.display().to_string();
+    let dir = shell_path_text(&dir.display().to_string(), shell);
     match shell {
         ShellKind::PowerShellWindows => format!(
             "$env:Path = '{};' + $env:Path",
@@ -590,7 +590,7 @@ fn profile_persistence_hint(dir: &str, shell: ShellKind) -> String {
 }
 
 fn verification_commands(dir: &Path, shell: ShellKind) -> Vec<String> {
-    let dir = dir.display().to_string();
+    let dir = shell_path_text(&dir.display().to_string(), shell);
     match shell {
         ShellKind::PowerShellWindows | ShellKind::PowerShellUnix => vec![format!(
             "Get-Command node,npm,npx,yarn,pnpm | Select-Object Name,Source # Source should start \
@@ -600,18 +600,55 @@ fn verification_commands(dir: &Path, shell: ShellKind) -> Vec<String> {
         ShellKind::Fish => vec![
             "for cmd in node npm npx yarn pnpm; command -v $cmd; end".to_string(),
             format!(
-                "string match -q -e -- {} (command -v node)",
+                "for cmd in node npm npx yarn pnpm; set resolved (command -v $cmd); or exit 1; \
+                 test (string sub -s 1 -l {} -- $resolved) = {}; or begin; echo \
+                 nodeup-shim-inactive:$cmd; exit 1; end; echo $resolved; end; echo \
+                 nodeup-shim-active",
+                format!("{}/", dir.trim_end_matches('/')).len(),
                 shell_single_quote(&format!("{}/", dir.trim_end_matches('/')))
             ),
         ],
         ShellKind::Bash | ShellKind::Zsh | ShellKind::Posix => vec![
             "for cmd in node npm npx yarn pnpm; do command -v \"$cmd\"; done".to_string(),
             format!(
-                "case \"$(command -v node)\" in {}/*) echo nodeup-shim-active;; *) echo \
-                 nodeup-shim-inactive;; esac",
+                "for cmd in node npm npx yarn pnpm; do resolved=$(command -v \"$cmd\") || exit 1; \
+                 case \"$resolved\" in {}/*) ;; *) echo nodeup-shim-inactive:$cmd; exit 1;; esac; \
+                 printf '%s\\n' \"$resolved\"; done; echo nodeup-shim-active",
                 shell_single_quote(&dir)
             ),
         ],
+    }
+}
+
+fn shell_path_text(path: &str, shell: ShellKind) -> String {
+    if host_is_windows()
+        && matches!(
+            shell,
+            ShellKind::Bash | ShellKind::Zsh | ShellKind::Fish | ShellKind::Posix
+        )
+    {
+        windows_drive_path_to_posix(path).unwrap_or_else(|| path.to_string())
+    } else {
+        path.to_string()
+    }
+}
+
+fn windows_drive_path_to_posix(path: &str) -> Option<String> {
+    let bytes = path.as_bytes();
+    if bytes.len() < 3
+        || bytes[1] != b':'
+        || !bytes[0].is_ascii_alphabetic()
+        || !matches!(bytes[2], b'\\' | b'/')
+    {
+        return None;
+    }
+
+    let drive = (bytes[0] as char).to_ascii_lowercase();
+    let rest = path[2..].trim_start_matches(['\\', '/']).replace('\\', "/");
+    if rest.is_empty() {
+        Some(format!("/{drive}"))
+    } else {
+        Some(format!("/{drive}/{rest}"))
     }
 }
 
@@ -734,6 +771,24 @@ fn shell_single_quote(value: &str) -> String {
 
 fn escape_powershell_single_quoted(value: &str) -> String {
     value.replace('\'', "''")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::windows_drive_path_to_posix;
+
+    #[test]
+    fn converts_windows_drive_paths_to_posix_shell_paths() {
+        assert_eq!(
+            windows_drive_path_to_posix(r"C:\Users\me\.local\bin").as_deref(),
+            Some("/c/Users/me/.local/bin")
+        );
+        assert_eq!(
+            windows_drive_path_to_posix("D:/Tools/nodeup").as_deref(),
+            Some("/d/Tools/nodeup")
+        );
+        assert_eq!(windows_drive_path_to_posix("/already/posix"), None);
+    }
 }
 
 fn shim_internal(cause: impl Into<String>) -> NodeupError {

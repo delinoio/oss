@@ -1020,7 +1020,7 @@ fn remove_paths_command(paths: &[String], shell: ShellKind) -> String {
             "rm -f -- {}",
             paths
                 .iter()
-                .map(|path| shell_single_quote(path))
+                .map(|path| shell_single_quote(&shell_path_text(path, shell)))
                 .collect::<Vec<_>>()
                 .join(" ")
         ),
@@ -1050,7 +1050,10 @@ fn current_session_path_cleanup_command(shim_dirs: &[String], shell: ShellKind) 
              end; end)",
             shim_dirs
                 .iter()
-                .map(|path| format!("\"$path\" != {}", shell_single_quote(path)))
+                .map(|path| format!(
+                    "\"$path\" != {}",
+                    shell_single_quote(&shell_path_text(path, shell))
+                ))
                 .collect::<Vec<_>>()
                 .join(" -a ")
         ),
@@ -1059,7 +1062,10 @@ fn current_session_path_cleanup_command(shim_dirs: &[String], shell: ShellKind) 
             shim_dirs
                 .iter()
                 .enumerate()
-                .map(|(index, path)| format!("-v d{index}={}", shell_single_quote(path)))
+                .map(|(index, path)| format!(
+                    "-v d{index}={}",
+                    shell_single_quote(&shell_path_text(path, shell))
+                ))
                 .collect::<Vec<_>>()
                 .join(" "),
             shell_single_quote(&format!(
@@ -1072,6 +1078,38 @@ fn current_session_path_cleanup_command(shim_dirs: &[String], shell: ShellKind) 
                     .join(" && ")
             ))
         ),
+    }
+}
+
+fn shell_path_text(path: &str, shell: ShellKind) -> String {
+    if host_is_windows()
+        && matches!(
+            shell,
+            ShellKind::Bash | ShellKind::Zsh | ShellKind::Fish | ShellKind::Posix
+        )
+    {
+        windows_drive_path_to_posix(path).unwrap_or_else(|| path.to_string())
+    } else {
+        path.to_string()
+    }
+}
+
+fn windows_drive_path_to_posix(path: &str) -> Option<String> {
+    let bytes = path.as_bytes();
+    if bytes.len() < 3
+        || bytes[1] != b':'
+        || !bytes[0].is_ascii_alphabetic()
+        || !matches!(bytes[2], b'\\' | b'/')
+    {
+        return None;
+    }
+
+    let drive = (bytes[0] as char).to_ascii_lowercase();
+    let rest = path[2..].trim_start_matches(['\\', '/']).replace('\\', "/");
+    if rest.is_empty() {
+        Some(format!("/{drive}"))
+    } else {
+        Some(format!("/{drive}/{rest}"))
     }
 }
 
@@ -1161,6 +1199,24 @@ fn shell_single_quote(value: &str) -> String {
 
 fn escape_powershell_single_quoted(value: &str) -> String {
     value.replace('\'', "''")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::windows_drive_path_to_posix;
+
+    #[test]
+    fn converts_windows_drive_paths_to_posix_shell_paths() {
+        assert_eq!(
+            windows_drive_path_to_posix(r"C:\Users\me\.local\bin").as_deref(),
+            Some("/c/Users/me/.local/bin")
+        );
+        assert_eq!(
+            windows_drive_path_to_posix("D:/Tools/nodeup").as_deref(),
+            Some("/d/Tools/nodeup")
+        );
+        assert_eq!(windows_drive_path_to_posix("/already/posix"), None);
+    }
 }
 
 fn default_shim_dir() -> PathBuf {

@@ -53,6 +53,10 @@ fn path_string_ends_with_components(path: &str, suffix: &[&str]) -> bool {
     components.ends_with(suffix)
 }
 
+fn shell_single_quote_for_test(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
 fn closed_loopback_download_base_url() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -4393,6 +4397,14 @@ fn shim_setup_respects_bash_shell_guidance_on_windows_hosts() {
         .unwrap()
         .iter()
         .any(|command| command.as_str().unwrap().contains("command -v")));
+    assert!(payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command
+            .as_str()
+            .unwrap()
+            .contains("nodeup-shim-inactive:$cmd")));
 }
 
 #[test]
@@ -4401,10 +4413,7 @@ fn shim_setup_escapes_fish_verification_path_guidance() {
     let env = TestEnv::new();
     let shim_dir = env.root.join("fish-shims-[glob]'quoted");
     let shim_dir_text = shim_dir.to_str().unwrap();
-    let expected = format!(
-        "string match -q -e -- '{}/' (command -v node)",
-        shim_dir_text.trim_end_matches('/').replace('\'', "'\"'\"'")
-    );
+    let expected_prefix = format!("{}/", shim_dir_text.trim_end_matches('/'));
 
     let output = env
         .command()
@@ -4421,7 +4430,13 @@ fn shim_setup_escapes_fish_verification_path_guidance() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|command| command.as_str().unwrap() == expected));
+        .any(|command| {
+            let command = command.as_str().unwrap();
+            command.contains("for cmd in node npm npx yarn pnpm")
+                && command.contains("string sub")
+                && command.contains(&shell_single_quote_for_test(&expected_prefix))
+                && command.contains("nodeup-shim-inactive:$cmd")
+        }));
     assert!(!payload["verification_commands"]
         .as_array()
         .unwrap()
