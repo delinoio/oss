@@ -72,7 +72,7 @@ binpm cache prune
 binpm cache clean
 ```
 
-`binpm cache key` is read-only. If `binpm.lock` is missing, human output warns that the empty lockfile digest is used; `--json` exposes `lockfile` status with the computed key.
+`binpm cache key` is read-only. With `binpm.lock` present, human output is one cache key line for CI cache setup. If `binpm.lock` is missing, human output labels the key as `missing-lockfile`, warns that the empty lockfile digest is used, and recommends `binpm install`; `--json` exposes `status`, `lockfile`, and `recommended_next_command` with the computed key.
 
 `binpm cache prune` removes stale structured local-project cache references before deleting unreferenced cached assets. Active references from other checkouts are preserved, and legacy plain-text references remain preserving until rewritten.
 
