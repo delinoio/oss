@@ -61,6 +61,8 @@ Committed lockfiles store sanitized asset URLs only. They do not store query str
 
 Frozen-lockfile errors include structured diagnostics with `mode`, `reason`, `file`, `record`, `on_demand_install_attempt`, `would_change`, `safest_next_command`, and `local_development_escape_hatch` fields. Use those fields to distinguish CI frozen mode (`mode = "CI=true"`) from explicit `--frozen-lockfile`, missing lockfiles from stale records, and regular sync failures from `binpm x` on-demand install attempts.
 
+Frozen restore diagnostics are separate from stale-lockfile diagnostics. If cache repair downloads the locked asset URL and fails, JSON diagnostics report `kind = "frozen_restore"`, whether network access was attempted, whether provider authentication was attached, the cache state, and the locked sanitized URL. For private GitHub or GitLab releases, CI should either restore the global cache entry for the locked SHA-256 or provide the documented host-scoped provider token so same-origin locked provider URLs can be fetched without storing credentials.
+
 ## Local Paths
 
 Project-local executable files are installed under:

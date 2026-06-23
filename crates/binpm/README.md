@@ -25,6 +25,14 @@ show release selection, skipped release reasons, and asset scoring. `binpm
 explain <cmd>` is both read-only and network-free because it inspects existing
 package records only.
 
+Source archives such as `source.tar.gz`, `source.zip`, GitHub generated source
+downloads, and GitLab `assets.sources` entries are ignored for installation.
+Source-only releases report a source-archive-only diagnostic instead of a
+generic no-asset or target-mismatch failure. On Linux musl targets, assets with
+missing libc signals are rejected unless they explicitly say `musl`, `static`,
+`portable`, `universal`, or `any`; diagnostics list the rejected assets and
+guide users to verify compatibility before adding target overrides.
+
 Cache commands keep asset cleanup separate from uninstall behavior:
 `binpm cache clean` removes global cache asset entries while preserving cache
 references, package records, and executable links or copies, and `binpm cache
@@ -32,7 +40,9 @@ prune` repairs stale structured project references before pruning unreferenced
 assets. Both commands make removed and preserved boundaries explicit in human
 output and `--json` summaries. Legacy cache references are preserved until a
 local install, update, or remove rewrites them as structured references.
-`binpm cache key` remains read-only and reports missing lockfiles explicitly.
+`binpm cache key` remains read-only, prints a concise lockfile-backed key when
+`binpm.lock` exists, and labels missing-lockfile keys with a recommended
+`binpm install` follow-up.
 
 Global binpm state lives under the fixed `~/.binpm` home by default. binpm does
 not split global cache, package records, binaries, or temporary extraction state

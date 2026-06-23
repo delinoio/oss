@@ -19,8 +19,10 @@
 - The app is registered through the existing `apps/*` pnpm workspace glob.
 - The canonical production URL is `https://nodeup.delino.io`.
 - Stable documentation route IDs are `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, and `/reference`.
+- Stable public direct-installer file entrypoints are `/install.sh` and `/install.ps1`.
 - The development server uses fixed port `46250`.
 - Local production preview uses fixed port `46251`.
+- Fixed-port dev and preview commands must preflight port availability and print actionable recovery steps when a listener already owns the requested port. Temporary local overrides are supported through `NODEUP_DOCS_DEV_PORT` and `NODEUP_DOCS_PREVIEW_PORT`; those overrides do not change the canonical defaults or CI validation behavior.
 - The production output directory is `doc_build`.
 - The default theme must expose a visible GitHub repository link to `https://github.com/delinoio/oss`, including the top-level GitHub social link and the document-page footer repository link.
 - The docs theme must preserve keyboard accessibility for generated navigation controls: mobile documentation navigation closes on `Escape`, returns focus to its opener, keeps closed sidebar links out of the tab order, uses a labeled button for mobile search, avoids redundant ambiguous hamburger labels, keeps search overlays clear of the sticky header, removes decorative heading anchors from sequential keyboard navigation, and keeps Markdown tables horizontally readable on mobile viewports.
@@ -37,7 +39,7 @@
 - Published content must not expose internal architecture, operational, CI, or repository-layout details that are not part of a stable public contract.
 - Installation guidance must preserve the Nodeup direct-installer verification contract for `SHA256SUMS` and Sigstore bundle sidecars and must explain that legacy `.sig` or `.pem` sidecars do not satisfy the direct-installer bundle requirement.
 - Installation guidance must include a chooser that states when to use Homebrew, direct installers, `cargo-binstall`, and binpm.
-- Direct-installer guidance must provide remote copy-paste POSIX and PowerShell commands using stable first-party `delinoio/oss` raw GitHub URLs, include tag/commit-pinned command patterns for reproducible automation, keep canonical in-repo script paths visible for maintainer workflows, present `cosign` as a required prerequisite before direct installer commands, and distinguish missing prerequisite failures from missing release material and verification failures.
+- Direct-installer guidance must provide remote copy-paste POSIX and PowerShell commands using `https://nodeup.delino.io/install.sh` and `https://nodeup.delino.io/install.ps1`, preserve current raw GitHub examples using stable first-party `delinoio/oss` raw GitHub URLs, include tag/commit-pinned raw GitHub command patterns for reproducible automation, keep canonical in-repo script paths visible for maintainer workflows, present `cosign` as a required prerequisite before direct installer commands, and distinguish missing prerequisite failures from missing release material and verification failures.
 - Installation, release, and troubleshooting guidance must explain that Nodeup `cargo-binstall` support uses first-party release assets only and does not enable `quick-install` or `compile` fallback strategies.
 - Cloudflare Pages deployment credentials must remain managed by CI or hosting configuration, not checked into the repository.
 
@@ -46,7 +48,7 @@
 - Log output must be safe for public CI surfaces.
 
 ## Build and Test
-- Local validation: `pnpm --filter nodeup-docs test`, which builds the Rspress output and verifies documented route IDs are emitted as extensionless links rather than `.html` hrefs.
+- Local validation: `pnpm --filter nodeup-docs test`, which builds the Rspress output, verifies documented route IDs are emitted as extensionless links rather than `.html` hrefs, and verifies the public installer files are emitted.
 - Production build: `pnpm --filter nodeup-docs build`
 - CI alignment: `node-nodeup-docs-test`
 - App preparation: `pnpm run prepare` invokes `prepare:app`; `nodeup-docs` currently has no app-specific preparation step.

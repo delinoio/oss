@@ -103,7 +103,7 @@ The command removes Nodeup-owned data, cache, and config roots only. Binary remo
 
 ## Completion Output
 
-`nodeup completions` always writes raw shell script text to stdout. It does not wrap output in JSON, even when `--output json` is supplied.
+`nodeup completions` always writes successful shell scripts as raw text to stdout. It does not wrap successful script output in JSON, even when `--output json` is supplied. Invalid shells and unsupported completion scopes still follow JSON mode by writing JSON error envelopes to stderr.
 
 ## Human Color Precedence
 

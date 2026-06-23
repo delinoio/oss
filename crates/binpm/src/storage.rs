@@ -1113,7 +1113,7 @@ fn cache_ref_record_is_active(record: &CacheRefRecord) -> Result<bool> {
     }
 }
 
-fn cache_ref_path(cache: &CachePaths, project_root: &Path, cmd: &str) -> PathBuf {
+pub fn cache_ref_path(cache: &CachePaths, project_root: &Path, cmd: &str) -> PathBuf {
     let digest = Sha256::digest(format!("{}:{cmd}", project_root.display()).as_bytes());
     cache.refs.join(format!("{digest:x}.ref"))
 }

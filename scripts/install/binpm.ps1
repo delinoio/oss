@@ -10,8 +10,8 @@ $ErrorActionPreference = "Stop"
 $Repo = "delinoio/oss"
 $TagPrefix = "binpm@v"
 $WorkflowIdentityPattern = "^https://github.com/delinoio/oss/.github/workflows/release-binpm.yml@"
-$SupportedPlatforms = "macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64"
-$UnsupportedPlatformHint = "Use an x64/arm64 host or a supported CI image: macOS x64/arm64, Linux x64/arm64, or Windows x64/arm64."
+$SupportedDirectTargets = "darwin/amd64 (macOS x64), darwin/arm64 (macOS arm64), linux/amd64 (Linux x64), linux/arm64 (Linux arm64), windows/amd64 (Windows x64), windows/arm64 (Windows arm64)"
+$UnsupportedPlatformHint = "On Windows, use an x64/arm64 host or supported CI image for PowerShell direct install. On macOS/Linux x64 or arm64, use the POSIX installer. Otherwise use Homebrew or cargo-binstall where they support your host, or build binpm from source."
 
 function Resolve-LatestTag {
   $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=200"
@@ -98,12 +98,56 @@ function Verify-Bundle {
   }
 }
 
+function Get-DetectedOs {
+  if ($env:BINPM_INSTALL_TEST_OS) {
+    return $env:BINPM_INSTALL_TEST_OS.ToLowerInvariant()
+  }
+
+  if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)) {
+    return "windows"
+  }
+  if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Linux)) {
+    return "linux"
+  }
+  if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::OSX)) {
+    return "darwin"
+  }
+
+  return [System.Runtime.InteropServices.RuntimeInformation]::OSDescription.ToLowerInvariant()
+}
+
+function New-UnsupportedDirectPlatformMessage {
+  param(
+    [string]$Os,
+    [string]$Architecture
+  )
+
+  $artifactBoundary = if ($Os -eq "windows") {
+    "no first-party binpm PowerShell direct installer artifact is published for this detected host"
+  }
+  else {
+    "this PowerShell installer only installs Windows direct artifacts; use the POSIX installer for supported macOS/Linux hosts"
+  }
+
+  return @"
+[install.binpm] unsupported host platform for direct installation: detected os=$Os, arch=$Architecture
+[install.binpm] $artifactBoundary
+[install.binpm] supported direct-install targets: $SupportedDirectTargets
+[install.binpm] recommended alternatives: $UnsupportedPlatformHint
+"@
+}
+
 function Get-DirectPlatform {
+  $os = Get-DetectedOs
   $architecture = if ($env:BINPM_INSTALL_TEST_ARCHITECTURE) {
     $env:BINPM_INSTALL_TEST_ARCHITECTURE.ToLowerInvariant()
   }
   else {
     [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+  }
+
+  if ($os -ne "windows") {
+    throw (New-UnsupportedDirectPlatformMessage -Os $os -Architecture $architecture)
   }
 
   $assetArch = switch ($architecture) {
@@ -113,23 +157,24 @@ function Get-DirectPlatform {
     "arm64" { "arm64" }
     "aarch64" { "arm64" }
     "x86" {
-      throw "[install.binpm] unsupported host platform for direct installation: os=windows, arch=$architecture. Supported platforms: $SupportedPlatforms; x86 hosts are unsupported. Hint: $UnsupportedPlatformHint"
+      throw (New-UnsupportedDirectPlatformMessage -Os $os -Architecture $architecture)
     }
     "i386" {
-      throw "[install.binpm] unsupported host platform for direct installation: os=windows, arch=$architecture. Supported platforms: $SupportedPlatforms; x86 hosts are unsupported. Hint: $UnsupportedPlatformHint"
+      throw (New-UnsupportedDirectPlatformMessage -Os $os -Architecture $architecture)
     }
     "i686" {
-      throw "[install.binpm] unsupported host platform for direct installation: os=windows, arch=$architecture. Supported platforms: $SupportedPlatforms; x86 hosts are unsupported. Hint: $UnsupportedPlatformHint"
+      throw (New-UnsupportedDirectPlatformMessage -Os $os -Architecture $architecture)
     }
     "ia32" {
-      throw "[install.binpm] unsupported host platform for direct installation: os=windows, arch=$architecture. Supported platforms: $SupportedPlatforms; x86 hosts are unsupported. Hint: $UnsupportedPlatformHint"
+      throw (New-UnsupportedDirectPlatformMessage -Os $os -Architecture $architecture)
     }
     default {
-      throw "[install.binpm] unsupported host platform for direct installation: os=windows, arch=$architecture. Supported platforms: $SupportedPlatforms; x86 hosts are unsupported. Hint: $UnsupportedPlatformHint"
+      throw (New-UnsupportedDirectPlatformMessage -Os $os -Architecture $architecture)
     }
   }
 
   return @{
+    Os = $os
     AssetArch = $assetArch
     Architecture = $architecture
   }
