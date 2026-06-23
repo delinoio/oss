@@ -1074,15 +1074,20 @@ fn cache_key_from_nested_directory_uses_git_root_lockfile() {
     fs::create_dir_all(&nested_dir).expect("create nested dir");
     let expected_digest = format!("{:x}", Sha256::digest(b"root lock\n"));
     let empty_digest = format!("{:x}", Sha256::digest([]));
-    let mut command = binpm();
-
-    command
+    let output = binpm()
         .current_dir(&nested_dir)
         .args(["cache", "key"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(expected_digest))
-        .stdout(predicate::str::contains(empty_digest).not());
+        .output()
+        .expect("cache key");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    assert!(stdout.starts_with("binpm-v1-"));
+    assert!(stdout.ends_with(&format!("{expected_digest}\n")));
+    assert_eq!(stdout.lines().count(), 1);
+    assert!(!stdout.contains("missing-lockfile"));
+    assert!(!stdout.contains(&empty_digest));
 }
 
 #[test]
@@ -1128,17 +1133,19 @@ fn cache_key_from_nested_directory_uses_manifest_ancestor_lockfile_without_git()
 fn cache_key_warns_when_lockfile_is_missing_without_mutating_state() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let empty_digest = format!("{:x}", Sha256::digest([]));
-    let mut command = binpm();
-
-    command
+    let output = binpm()
         .current_dir(temp_dir.path())
         .args(["cache", "key"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(empty_digest))
-        .stderr(predicate::str::contains(
-            "cache key uses the empty lockfile digest",
-        ));
+        .output()
+        .expect("cache key");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+    let stderr = String::from_utf8(output.stderr).expect("utf8 stderr");
+    assert!(stdout.contains(&format!("missing-lockfile cache key: binpm-v1-")));
+    assert!(stdout.contains(&empty_digest));
+    assert!(stdout.contains("next command: binpm install"));
+    assert!(stderr.contains("cache key uses the empty lockfile digest"));
 
     assert!(!temp_dir.path().join("binpm.lock").exists());
 }
@@ -1156,7 +1163,9 @@ fn cache_key_json_reports_lockfile_status() {
     assert!(output.stderr.is_empty());
     let payload: Value = serde_json::from_slice(&output.stdout).expect("parse cache key json");
     assert_eq!(payload["command"], "cache key");
+    assert_eq!(payload["status"], "missing-lockfile");
     assert_eq!(payload["lockfile"], "missing");
+    assert_eq!(payload["recommended_next_command"], "binpm install");
     assert_eq!(payload["read_only"], true);
     assert!(payload["cache_key"]
         .as_str()

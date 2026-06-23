@@ -194,6 +194,14 @@ enum PathState {
     Missing,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+enum CacheKeyStatus {
+    #[serde(rename = "lockfile-backed")]
+    LockfileBacked,
+    #[serde(rename = "missing-lockfile")]
+    MissingLockfile,
+}
+
 #[derive(Debug, Serialize)]
 struct VerifyOutput {
     command: &'static str,
@@ -215,12 +223,14 @@ struct VerifyCheckOutput {
 #[derive(Debug, Serialize)]
 struct CacheKeyOutput {
     command: &'static str,
+    status: CacheKeyStatus,
     cache_key: String,
     target: HostTarget,
     target_key: String,
     lockfile_path: String,
     lockfile: PathState,
     lockfile_digest: String,
+    recommended_next_command: Option<&'static str>,
     read_only: bool,
 }
 
@@ -894,6 +904,16 @@ fn cache_key(output: OutputMode) -> Result<i32> {
     let lockfile_path = project_root.join(LOCKFILE_FILE);
     let target = HostTarget::current()?;
     let lockfile = json_path_state(&lockfile_path);
+    let status = if lockfile == PathState::Missing {
+        CacheKeyStatus::MissingLockfile
+    } else {
+        CacheKeyStatus::LockfileBacked
+    };
+    let recommended_next_command = if status == CacheKeyStatus::MissingLockfile {
+        Some("binpm install")
+    } else {
+        None
+    };
     let digest = lockfile_digest(&lockfile_path)?;
     let target_key = target.key();
     let cache_key = format!("binpm-v1-{target_key}-{digest}");
@@ -908,12 +928,14 @@ fn cache_key(output: OutputMode) -> Result<i32> {
     if output.is_json() {
         return print_json(&CacheKeyOutput {
             command: "cache key",
+            status,
             cache_key,
             target,
             target_key,
             lockfile_path: lockfile_path.display().to_string(),
             lockfile,
             lockfile_digest: digest,
+            recommended_next_command,
             read_only: true,
         });
     }
@@ -922,6 +944,12 @@ fn cache_key(output: OutputMode) -> Result<i32> {
             "warning: {} is missing; cache key uses the empty lockfile digest",
             lockfile_path.display()
         );
+        println!("missing-lockfile cache key: {cache_key}");
+        println!(
+            "next command: {}",
+            recommended_next_command.unwrap_or("binpm install")
+        );
+        return Ok(0);
     }
     println!("{cache_key}");
     Ok(0)
