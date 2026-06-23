@@ -676,7 +676,7 @@ fn add(args: AddArgs, output: OutputMode) -> Result<i32> {
         &completed,
         !args.lockfile.frozen_lockfile(),
         MutationAction::Installed,
-    );
+    )?;
     result.changed_files.insert(0, path_display(&manifest_path));
     if output.is_json() {
         return print_json(&result);
@@ -1355,7 +1355,10 @@ fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<Mutatio
                 command: "remove",
                 scope,
                 dry_run: true,
-                changed_files: vec![path_display(&paths.packages), path_display(&paths.bin)],
+                changed_files: vec![
+                    path_display(&package_record_path(&paths, cmd)),
+                    record.installed_path.clone(),
+                ],
                 tools: vec![mutation_tool_from_record(
                     cmd,
                     MutationAction::PlannedRemove,
@@ -1368,11 +1371,17 @@ fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<Mutatio
 }
 
 fn preview_update(scope: Scope, selected: &[String], output: OutputMode) -> Result<MutationOutput> {
-    if !output.is_json() {
-        print_update_plan(scope, selected)?;
-        println!("dry run: no changes made");
+    if output.is_json() {
+        return preview_update_result(scope, selected);
     }
-    preview_update_result(scope, selected)
+    print_update_plan(scope, selected)?;
+    Ok(MutationOutput {
+        command: "update",
+        scope,
+        dry_run: true,
+        changed_files: Vec::new(),
+        tools: Vec::new(),
+    })
 }
 
 fn print_update_plan(scope: Scope, selected: &[String]) -> Result<()> {
@@ -1484,16 +1493,18 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
     let mut changed_files = if manifest.tools.is_empty() && orphan_states.is_empty() {
         Vec::new()
     } else {
-        vec![
-            path_display(&root.join(LOCKFILE_FILE)),
-            path_display(&paths.bin),
-        ]
+        vec![path_display(&root.join(LOCKFILE_FILE))]
     };
-    changed_files.extend(
-        tools
-            .iter()
-            .map(|tool| path_display(&package_record_path(&paths, &tool.cmd))),
-    );
+    changed_files.extend(tools.iter().flat_map(|tool| {
+        [
+            path_display(&package_record_path(&paths, &tool.cmd)),
+            path_display(&managed_installed_path(
+                &paths,
+                &tool.cmd,
+                current_target.os,
+            )),
+        ]
+    }));
     changed_files.extend(local_orphan_changed_files(
         &root,
         &manifest.tools,
@@ -1522,16 +1533,16 @@ fn preview_global_update_result(selected: &[String]) -> Result<MutationOutput> {
     let paths = ScopePaths::global(binpm_home()?);
     let planned = selected_global_package_records(&paths, selected)?;
     prepare_global_updates(planned.clone())?;
-    let changed_files = if planned.is_empty() {
-        Vec::new()
-    } else {
-        vec![path_display(&paths.packages), path_display(&paths.bin)]
-    };
+    let mut changed_files = BTreeSet::new();
+    for (cmd, record) in &planned {
+        changed_files.insert(path_display(&package_record_path(&paths, cmd)));
+        changed_files.insert(record.installed_path.clone());
+    }
     Ok(MutationOutput {
         command: "update",
         scope: Scope::Global,
         dry_run: true,
-        changed_files,
+        changed_files: changed_files.into_iter().collect(),
         tools: planned
             .iter()
             .map(|(cmd, record)| {
@@ -2282,7 +2293,7 @@ fn install_local_source(
         return Err(error);
     }
     let mut result =
-        local_install_mutation_output("install", &root, &cmd, &record, frozen_lockfile);
+        local_install_mutation_output("install", &root, &cmd, &record, frozen_lockfile)?;
     result.changed_files.insert(0, path_display(&manifest_path));
     Ok(result)
 }
@@ -2343,7 +2354,8 @@ fn install_local_source_as(
         )?;
         return Err(error);
     }
-    let mut result = local_install_mutation_output("install", &root, cmd, &record, frozen_lockfile);
+    let mut result =
+        local_install_mutation_output("install", &root, cmd, &record, frozen_lockfile)?;
     result.changed_files.insert(0, path_display(&manifest_path));
     Ok(result)
 }
@@ -2490,7 +2502,7 @@ fn install_local_manifest(
         &completed,
         !frozen_lockfile && (!completed.is_empty() || !orphan_states.is_empty()),
         MutationAction::Installed,
-    );
+    )?;
     result.changed_files.extend(local_orphan_changed_files(
         &root,
         &manifest.tools,
@@ -5500,7 +5512,7 @@ fn local_install_mutation_output(
     cmd: &str,
     record: &PackageRecord,
     frozen_lockfile: bool,
-) -> MutationOutput {
+) -> Result<MutationOutput> {
     let mut changed_files = vec![
         path_display(&package_record_path(
             &ScopePaths::local(root.to_path_buf()),
@@ -5508,10 +5520,13 @@ fn local_install_mutation_output(
         )),
         record.installed_path.clone(),
     ];
+    if let Some(cache_ref) = local_cache_ref_changed_file(root, cmd, record)? {
+        changed_files.push(cache_ref);
+    }
     if !frozen_lockfile {
         changed_files.insert(0, path_display(&root.join(LOCKFILE_FILE)));
     }
-    MutationOutput {
+    Ok(MutationOutput {
         command,
         scope: Scope::Local,
         dry_run: false,
@@ -5521,7 +5536,7 @@ fn local_install_mutation_output(
             MutationAction::Installed,
             record,
         )],
-    }
+    })
 }
 
 fn local_completed_mutation_output(
@@ -5530,7 +5545,7 @@ fn local_completed_mutation_output(
     completed: &[CompletedLocalInstall],
     lockfile_changed: bool,
     action: MutationAction,
-) -> MutationOutput {
+) -> Result<MutationOutput> {
     let paths = ScopePaths::local(root.to_path_buf());
     let mut changed_files = BTreeSet::new();
     if lockfile_changed {
@@ -5542,8 +5557,15 @@ fn local_completed_mutation_output(
             &completed_install.cmd,
         )));
         changed_files.insert(completed_install.install.record.installed_path.clone());
+        if let Some(cache_ref) = local_cache_ref_changed_file(
+            root,
+            &completed_install.cmd,
+            &completed_install.install.record,
+        )? {
+            changed_files.insert(cache_ref);
+        }
     }
-    MutationOutput {
+    Ok(MutationOutput {
         command,
         scope: Scope::Local,
         dry_run: false,
@@ -5558,7 +5580,22 @@ fn local_completed_mutation_output(
                 )
             })
             .collect(),
+    })
+}
+
+fn local_cache_ref_changed_file(
+    root: &Path,
+    cmd: &str,
+    record: &PackageRecord,
+) -> Result<Option<String>> {
+    if record.cache_key.is_none() {
+        return Ok(None);
     }
+    let cache_paths = CachePaths::new(&binpm_home()?);
+    let digest = Sha256::digest(format!("{}:{cmd}", root.display()).as_bytes());
+    Ok(Some(path_display(
+        &cache_paths.refs.join(format!("{digest:x}.ref")),
+    )))
 }
 
 fn local_orphan_changed_files(

@@ -116,6 +116,15 @@ fn write_cache_asset(home: &Path, sha256: &str, bytes: &[u8]) {
     fs::write(entry.join("asset"), bytes).expect("write cache asset");
 }
 
+fn cache_ref_path(home: &Path, project_root: &Path, cmd: &str) -> String {
+    let digest = Sha256::digest(format!("{}:{cmd}", project_root.display()).as_bytes());
+    home.join("cache")
+        .join("refs")
+        .join(format!("{digest:x}.ref"))
+        .display()
+        .to_string()
+}
+
 fn write_global_package_record(home: &Path, cmd: &str, source_path: &str, release_tag: &str) {
     let packages = home.join("packages");
     fs::create_dir_all(&packages).expect("create global packages");
@@ -293,6 +302,24 @@ fn global_update_dry_run_json_reports_one_parseable_plan_without_mutation() {
     assert_eq!(payload["tools"][0]["selected_binary"], "alpha-linux-x64");
     assert_eq!(payload["tools"][0]["checksum_source"], "local");
     assert_eq!(payload["tools"][0]["verification"], "unverified");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let alpha_record = home
+        .join("packages")
+        .join("alpha.toml")
+        .display()
+        .to_string();
+    let alpha_bin = home.join("bin").join("alpha").display().to_string();
+    let packages_dir = home.join("packages").display().to_string();
+    let bin_dir = home.join("bin").display().to_string();
+    assert!(changed_files.contains(&alpha_record.as_str()));
+    assert!(changed_files.contains(&alpha_bin.as_str()));
+    assert!(!changed_files.contains(&packages_dir.as_str()));
+    assert!(!changed_files.contains(&bin_dir.as_str()));
     assert_eq!(
         fs::read_to_string(alpha_record_path).expect("read alpha record after"),
         alpha_before
@@ -325,6 +352,44 @@ fn global_update_dry_run_json_empty_scope_reports_no_changed_files() {
         0
     );
     assert_eq!(payload["tools"].as_array().expect("tools").len(), 0);
+}
+
+#[test]
+fn global_remove_dry_run_json_reports_package_record_and_executable_paths() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    write_global_package_record(&home, "alpha", "owner/alpha", "1.0.0");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--global", "--dry-run", "alpha", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let package_record_path = home
+        .join("packages")
+        .join("alpha.toml")
+        .display()
+        .to_string();
+    let installed_path = home.join("bin").join("alpha").display().to_string();
+    let packages_dir = home.join("packages").display().to_string();
+    let bin_dir = home.join("bin").display().to_string();
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(!changed_files.contains(&packages_dir.as_str()));
+    assert!(!changed_files.contains(&bin_dir.as_str()));
+    assert_eq!(payload["tools"][0]["action"], "planned-remove");
+    assert!(home.join("packages").join("alpha.toml").exists());
 }
 
 #[test]
@@ -2899,10 +2964,12 @@ fn frozen_local_install_json_restore_omits_lockfile_changed_file() {
         .join("tool")
         .display()
         .to_string();
+    let cache_ref = cache_ref_path(&home, &project, "tool");
 
     assert!(!changed_files.contains(&lockfile_path.as_str()));
     assert!(changed_files.contains(&package_record_path.as_str()));
     assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref.as_str()));
     assert_eq!(
         fs::read_to_string(project.join("binpm.lock")).expect("read lockfile"),
         lock_before
@@ -3684,8 +3751,17 @@ source = "github:owner/tool"
         .join("tool.toml")
         .display()
         .to_string();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+    let bin_dir = project.join(".binpm").join("bin").display().to_string();
     assert!(!changed_files.contains(&manifest_path.as_str()));
     assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(!changed_files.contains(&bin_dir.as_str()));
     assert!(fs::read_to_string(project.join("binpm.toml"))
         .expect("read manifest")
         .contains("source = \"github:owner/tool\""));
