@@ -222,9 +222,14 @@ function syncAccessibleControls() {
         ? isOpen
           ? "Close site navigation"
           : "Open site navigation"
-        : "Open site controls",
+        : isOpen
+          ? "Close site controls"
+          : "Open site controls",
     );
-    button.setAttribute("aria-expanded", String(isNavigationDrawer && isOpen));
+    const ariaExpanded = String(isNavigationDrawer && isOpen);
+    if (button.getAttribute("aria-expanded") !== ariaExpanded) {
+      button.setAttribute("aria-expanded", ariaExpanded);
+    }
   }
 
   syncHeadingPermalinks();

@@ -4,6 +4,7 @@ const stableDocsRoutes = [
   {
     text: "Overview",
     link: "/",
+    activeMatch: "^/$",
   },
   {
     text: "Installation",
