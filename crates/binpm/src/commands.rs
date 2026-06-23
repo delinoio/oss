@@ -6609,19 +6609,25 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
         validate_package_record_metadata(&cache_paths, &record)?;
         verify_runtime_cache_bytes(&cache_paths, &record)?;
         let runtime_check = if args.require_verified {
+            let current_unsupported_sidecars =
+                current_unsupported_verification_sidecars_for_record(&record)?;
+            let unsupported_sidecars = merge_unsupported_verification_sidecars(
+                record.unsupported_verification_sidecars.clone(),
+                current_unsupported_sidecars,
+            );
             if !locked_record_verified_source(&cache_paths, &record)?.verified {
-                let current_unsupported_sidecars =
-                    current_unsupported_verification_sidecars_for_record(&record)?;
-                let unsupported_sidecars = merge_unsupported_verification_sidecars(
-                    record.unsupported_verification_sidecars.clone(),
-                    current_unsupported_sidecars,
-                );
                 return Err(BinpmError::VerificationRequired {
                     package: record.package_spec,
                     unsupported_sidecars,
                 });
             }
-            verify_check_output_with_state(cmd.clone(), None, &record, VerificationState::Verified)
+            verify_check_output_with_state_and_sidecars(
+                cmd.clone(),
+                None,
+                &record,
+                VerificationState::Verified,
+                unsupported_sidecars,
+            )
         } else {
             verify_check_output(cmd.clone(), None, &record)
         };
@@ -7557,29 +7563,30 @@ mod tests {
         locked_release_lookup_spec, lockfile_digest, manifest_checksum_source,
         manifest_creation_root_from, manifest_project_root_from,
         manifest_root_or_creation_root_from, manifest_target_override, manifest_tool_from_source,
-        normalize_bin_selection, override_snippet_candidate, package_record_output,
-        package_shortcut_command, parse_manifest_source, parse_manifest_tool_source,
-        parse_source_argument, prepare_global_updates, project_root_from,
-        read_archive_selected_binary, record_has_signature_evidence,
-        record_matches_current_provider_digest, regex_escape, release_asset_download_request,
-        release_diagnostic_lines, release_diagnostics, remove_global_tool_from_paths,
-        remove_local_manifest_orphans, require_executable_managed_file,
-        resolved_has_supported_signature_evidence, resolved_has_verified_source,
-        restore_local_remove_state, restore_runtime_tool_state, sanitize_download_diagnostic_url,
-        select_manifest_asset, selected_asset_display_url, selected_global_package_records,
-        shell_path, shell_quote, signature_sidecar_for_asset, sigstore_trust_policy,
-        snapshot_cache_metadata, source_install_scope, target_override_snippet,
-        unsupported_sidecar_names, unsupported_verification_sidecars_for_asset,
-        unsupported_verification_sidecars_for_record, update_manifest_tool_source,
-        validate_frozen_update_current_release, validate_locked_record_artifact,
-        validate_locked_record_current_asset, validate_locked_record_current_provider_digest,
-        validate_package_record_metadata, validate_package_record_source_identity,
-        validate_provider_digest_evidence, validate_selected_manifest_entries, verification_state,
-        verify_check_output, verify_check_output_with_state, verify_installed_binary_contents,
-        verify_lockfile_records, verify_runtime_cache_bytes, write_sigstore_verification_inputs,
-        zip_file_is_regular, zip_file_is_symlink, ArtifactKind, InstalledPackage,
-        InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode, RuntimeToolState,
-        GITHUB_ASSET_DOWNLOAD_ACCEPT,
+        merge_unsupported_verification_sidecars, normalize_bin_selection,
+        override_snippet_candidate, package_record_output, package_shortcut_command,
+        parse_manifest_source, parse_manifest_tool_source, parse_source_argument,
+        prepare_global_updates, project_root_from, read_archive_selected_binary,
+        record_has_signature_evidence, record_matches_current_provider_digest, regex_escape,
+        release_asset_download_request, release_diagnostic_lines, release_diagnostics,
+        remove_global_tool_from_paths, remove_local_manifest_orphans,
+        require_executable_managed_file, resolved_has_supported_signature_evidence,
+        resolved_has_verified_source, restore_local_remove_state, restore_runtime_tool_state,
+        sanitize_download_diagnostic_url, select_manifest_asset, selected_asset_display_url,
+        selected_global_package_records, shell_path, shell_quote, signature_sidecar_for_asset,
+        sigstore_trust_policy, snapshot_cache_metadata, source_install_scope,
+        target_override_snippet, unsupported_sidecar_names,
+        unsupported_verification_sidecars_for_asset, unsupported_verification_sidecars_for_record,
+        update_manifest_tool_source, validate_frozen_update_current_release,
+        validate_locked_record_artifact, validate_locked_record_current_asset,
+        validate_locked_record_current_provider_digest, validate_package_record_metadata,
+        validate_package_record_source_identity, validate_provider_digest_evidence,
+        validate_selected_manifest_entries, verification_state, verify_check_output,
+        verify_check_output_with_state, verify_check_output_with_state_and_sidecars,
+        verify_installed_binary_contents, verify_lockfile_records, verify_runtime_cache_bytes,
+        write_sigstore_verification_inputs, zip_file_is_regular, zip_file_is_symlink, ArtifactKind,
+        InstalledPackage, InstalledPathSnapshot, LocalRemoveState, OutdatedToolOutput, OutputMode,
+        RuntimeToolState, GITHUB_ASSET_DOWNLOAD_ACCEPT,
     };
     use crate::{
         assets::CandidateDecision,
@@ -11724,6 +11731,46 @@ mod tests {
         assert_eq!(
             unsupported_sidecar_names(&sidecars),
             vec!["tool-linux.asc".to_string()]
+        );
+    }
+
+    #[test]
+    fn verified_check_output_reports_current_unsupported_sidecars() {
+        let mut record = package_record();
+        record.unsupported_verification_sidecars = vec![UnsupportedVerificationSidecar {
+            asset_name: "tool-linux.sbom.json".to_string(),
+            kind: UnsupportedVerificationSidecarKind::Sbom,
+        }];
+        let current_sidecars = vec![
+            UnsupportedVerificationSidecar {
+                asset_name: "tool-linux.asc".to_string(),
+                kind: UnsupportedVerificationSidecarKind::GpgSignature,
+            },
+            UnsupportedVerificationSidecar {
+                asset_name: "tool-linux.sbom.json".to_string(),
+                kind: UnsupportedVerificationSidecarKind::Sbom,
+            },
+        ];
+        let unsupported_sidecars = merge_unsupported_verification_sidecars(
+            record.unsupported_verification_sidecars.clone(),
+            current_sidecars,
+        );
+
+        let output = verify_check_output_with_state_and_sidecars(
+            "tool".to_string(),
+            None,
+            &record,
+            VerificationState::Verified,
+            unsupported_sidecars,
+        );
+
+        assert_eq!(output.verification, VerificationState::Verified);
+        assert_eq!(
+            unsupported_sidecar_names(&output.unsupported_verification_sidecars),
+            vec![
+                "tool-linux.asc".to_string(),
+                "tool-linux.sbom.json".to_string(),
+            ]
         );
     }
 
