@@ -200,7 +200,7 @@ JSON output includes `path`, `selector`, and `status: "set"`.
 ## override unset
 
 ```bash
-nodeup override unset [--path <path>] [--nonexistent]
+nodeup override unset [--path <path> | --nonexistent]
 ```
 
 Removes an override for the provided path or current directory. `--nonexistent` removes stale entries whose directories no longer exist.
