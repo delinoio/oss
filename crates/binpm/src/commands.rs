@@ -32,7 +32,7 @@ use crate::{
     error::{BinpmError, Result},
     release::{
         client_for_source, provider_auth_for_source, GitHubReleaseClient, GitLabReleaseClient,
-        ProviderAuth, ReleaseAsset, ReleaseClient, GITHUB_ASSET_DOWNLOAD_ACCEPT,
+        ProviderAuth, Release, ReleaseAsset, ReleaseClient, GITHUB_ASSET_DOWNLOAD_ACCEPT,
     },
     storage::{
         archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
@@ -3390,8 +3390,7 @@ fn validate_locked_record_current_release(
     cmd: &str,
     record: &PackageRecord,
 ) -> Result<Vec<UnsupportedVerificationSidecar>> {
-    let spec = locked_release_lookup_spec(record)?;
-    let release = client_for_source(&spec)?.resolve_release(&spec)?.release;
+    let release = current_release_for_record(record)?;
     if release.tag != record.release_tag {
         return Err(BinpmError::StaleLockfile {
             path: lockfile_path.to_path_buf(),
@@ -3404,6 +3403,21 @@ fn validate_locked_record_current_release(
         record,
         &release.assets,
     )?)
+}
+
+fn current_unsupported_verification_sidecars_for_record(
+    record: &PackageRecord,
+) -> Result<Vec<UnsupportedVerificationSidecar>> {
+    let release = current_release_for_record(record)?;
+    Ok(unsupported_verification_sidecars_for_record(
+        record,
+        &release.assets,
+    )?)
+}
+
+fn current_release_for_record(record: &PackageRecord) -> Result<Release> {
+    let spec = locked_release_lookup_spec(record)?;
+    Ok(client_for_source(&spec)?.resolve_release(&spec)?.release)
 }
 
 fn validate_locked_record_current_asset(
@@ -5322,12 +5336,28 @@ fn verify_check_output_with_state(
     record: &PackageRecord,
     verification: VerificationState,
 ) -> VerifyCheckOutput {
+    verify_check_output_with_state_and_sidecars(
+        cmd,
+        target,
+        record,
+        verification,
+        record.unsupported_verification_sidecars.clone(),
+    )
+}
+
+fn verify_check_output_with_state_and_sidecars(
+    cmd: String,
+    target: Option<HostTarget>,
+    record: &PackageRecord,
+    verification: VerificationState,
+    unsupported_verification_sidecars: Vec<UnsupportedVerificationSidecar>,
+) -> VerifyCheckOutput {
     VerifyCheckOutput {
         cmd,
         target,
         checksum_source: record.checksum_source,
         verification,
-        unsupported_verification_sidecars: record.unsupported_verification_sidecars.clone(),
+        unsupported_verification_sidecars,
     }
 }
 
@@ -6580,9 +6610,15 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
         verify_runtime_cache_bytes(&cache_paths, &record)?;
         let runtime_check = if args.require_verified {
             if !locked_record_verified_source(&cache_paths, &record)?.verified {
+                let current_unsupported_sidecars =
+                    current_unsupported_verification_sidecars_for_record(&record)?;
+                let unsupported_sidecars = merge_unsupported_verification_sidecars(
+                    record.unsupported_verification_sidecars.clone(),
+                    current_unsupported_sidecars,
+                );
                 return Err(BinpmError::VerificationRequired {
                     package: record.package_spec,
-                    unsupported_sidecars: record.unsupported_verification_sidecars.clone(),
+                    unsupported_sidecars,
                 });
             }
             verify_check_output_with_state(cmd.clone(), None, &record, VerificationState::Verified)
@@ -6964,14 +7000,21 @@ fn verify_lockfile_records(
                         unsupported_sidecars,
                     });
                 }
-                verify_check_output_with_state(
+                verify_check_output_with_state_and_sidecars(
                     cmd.clone(),
                     Some(target.clone()),
                     &record,
                     VerificationState::Verified,
+                    unsupported_sidecars,
                 )
             } else {
-                verify_check_output(cmd.clone(), Some(target.clone()), &record)
+                verify_check_output_with_state_and_sidecars(
+                    cmd.clone(),
+                    Some(target.clone()),
+                    &record,
+                    verification_state(&record),
+                    unsupported_sidecars,
+                )
             };
             locked.insert(cmd.clone());
             checks.push(lock_check);
