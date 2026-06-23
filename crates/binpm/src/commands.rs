@@ -46,8 +46,9 @@ use crate::{
         require_regular_managed_file, require_verified_regular_cache_asset, sanitize_persisted_url,
         scan_cache_references, validate_command_name, validate_download_url,
         validate_installed_binary_path, validate_sha256_digest, write_cache_ref, write_lockfile,
-        write_manifest, write_package_record, CachePaths, LockTool, Manifest, ManifestTool,
-        PackageRecord, ResolvedAsset, ScopePaths, SignatureSidecar, LOCKFILE_FILE, MANIFEST_FILE,
+        write_manifest, write_package_record, CachePaths, LockTool, Manifest,
+        ManifestTargetOverride, ManifestTool, PackageRecord, ResolvedAsset, ScopePaths,
+        SignatureSidecar, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
 
@@ -5728,16 +5729,22 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
 
     let manifest = match read_manifest(&manifest_path) {
         Ok(manifest) => manifest,
-        Err(
-            error @ (BinpmError::ParseToml { .. }
-            | BinpmError::UnsupportedStorageVersion {
-                kind: "manifest", ..
-            }),
-        ) => {
+        Err(BinpmError::ParseToml { .. }) => {
             warn!(
                 command = "doctor",
                 manifest_path = %manifest_path.display(),
-                error = %error,
+                error_kind = "parse toml",
+                "Skipping declared-only tool scan because the manifest could not be parsed"
+            );
+            return Ok(Vec::new());
+        }
+        Err(BinpmError::UnsupportedStorageVersion {
+            kind: "manifest", ..
+        }) => {
+            warn!(
+                command = "doctor",
+                manifest_path = %manifest_path.display(),
+                error_kind = "unsupported storage version",
                 "Skipping declared-only tool scan because the manifest could not be parsed"
             );
             return Ok(Vec::new());
@@ -5792,7 +5799,11 @@ fn declared_only_local_tools(root: &Path) -> Result<Vec<DeclaredOnlyToolOutput>>
                     manifest_path = %manifest_path.display(),
                     lockfile_path = %lockfile_path.display(),
                     tool_cmd = %cmd,
-                    error = %error,
+                    error_kind = match error {
+                        BinpmError::ParseToml { .. } => "parse toml",
+                        BinpmError::UnsupportedStorageVersion { .. } => "unsupported storage version",
+                        _ => "unknown",
+                    },
                     "Skipping declared-only tool scan because the lockfile could not be parsed"
                 );
                 return Ok(Vec::new());
@@ -5841,14 +5852,32 @@ fn local_runtime_record_matches_manifest(
         return Ok(false);
     }
     if let Some(override_target) = manifest_target_override(Some(tool), &target)? {
-        return Ok(record.asset_name == override_target.asset
-            && manifest_bin_matches_record(&override_target.bin, &record.selected_binary));
+        return Ok(
+            manifest_checksum_source_matches_record(&override_target, record)
+                && record.asset_name == override_target.asset
+                && manifest_bin_matches_record(&override_target.bin, &record.selected_binary),
+        );
     }
     Ok(tool
         .bin
         .as_ref()
         .map(|bin| manifest_bin_matches_record(bin, &record.selected_binary))
         .unwrap_or(true))
+}
+
+fn manifest_checksum_source_matches_record(
+    override_target: &ManifestTargetOverride,
+    record: &PackageRecord,
+) -> bool {
+    match override_target.checksum_source {
+        Some(ChecksumSource::GitHubDigest) => {
+            record.source_provider == crate::contract::SourceProvider::GitHub
+                && record.checksum_source == ChecksumSource::GitHubDigest
+                && record.provider_digest_sha256.as_deref() == Some(record.sha256.as_str())
+        }
+        Some(_) => false,
+        None => true,
+    }
 }
 
 fn local_runtime_tool_record(root: &Path, cmd: &str) -> Result<Option<PackageRecord>> {
@@ -13314,6 +13343,41 @@ mod tests {
         };
         assert!(
             !local_runtime_record_matches_manifest(&changed_bin, &record).expect("bin mismatch")
+        );
+    }
+
+    #[test]
+    fn local_runtime_record_matches_manifest_rejects_stale_checksum_source_override() {
+        let target = HostTarget::current().expect("current target");
+        let mut record = package_record();
+        record.target_os = target.os;
+        record.target_arch = target.arch;
+        record.target_libc = target.libc;
+        record.asset_name = "tool-linux".to_string();
+        record.selected_binary = "tool-linux".to_string();
+        record.checksum_source = ChecksumSource::Local;
+        let tool = ManifestTool {
+            source: "github:owner/tool".to_string(),
+            version: Some("1.0.0".to_string()),
+            bin: None,
+            targets: BTreeMap::from([(
+                target.key(),
+                ManifestTargetOverride {
+                    asset: "tool-linux".to_string(),
+                    bin: "tool-linux".to_string(),
+                    checksum_source: Some(ChecksumSource::GitHubDigest),
+                },
+            )]),
+        };
+
+        assert!(!local_runtime_record_matches_manifest(&tool, &record)
+            .expect("checksum source mismatch"));
+
+        record.checksum_source = ChecksumSource::GitHubDigest;
+        record.provider_digest_sha256 = Some(record.sha256.clone());
+
+        assert!(
+            local_runtime_record_matches_manifest(&tool, &record).expect("checksum source match")
         );
     }
 
