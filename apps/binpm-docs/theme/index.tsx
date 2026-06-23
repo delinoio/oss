@@ -127,7 +127,9 @@ function syncHeadingPermalinks() {
     const headingHref = `#${headingId}`;
     const keyboardLabel = `Permalink to ${headingText}`;
 
-    setLocalHref(anchor, headingHref);
+    if (anchor.hasAttribute("href")) {
+      anchor.removeAttribute("href");
+    }
     setTextContent(anchor, "#");
     if (anchor.getAttribute("aria-hidden") !== "true") {
       anchor.setAttribute("aria-hidden", "true");
@@ -226,7 +228,7 @@ function syncAccessibleControls() {
           ? "Close site controls"
           : "Open site controls",
     );
-    const ariaExpanded = String(isNavigationDrawer && isOpen);
+    const ariaExpanded = String(isOpen);
     if (button.getAttribute("aria-expanded") !== ariaExpanded) {
       button.setAttribute("aria-expanded", ariaExpanded);
     }
@@ -296,12 +298,12 @@ function AccessibilitySync() {
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("resize", setMobileDrawerState);
+    window.addEventListener("resize", syncAccessibleControls);
 
     return () => {
       observer.disconnect();
       window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("resize", setMobileDrawerState);
+      window.removeEventListener("resize", syncAccessibleControls);
     };
   }, []);
 
