@@ -12,7 +12,7 @@ binpm update [cmd...] [--local|--global] [--dry-run]
 binpm remove <cmd> [--local|--global]
 ```
 
-`binpm install <source>` installs globally by default, even inside a repository with `binpm.toml`. Pass `--local` to add the source to the project-local manifest instead. Use `--as <cmd>` when the global command name should differ from the repository name, and `--bin <upstream-binary>` when an archive needs explicit binary selection. Successful installs print the installed command alias separately from the selected upstream binary, so a repository like `ripgrep` can expose a command such as `rg` when you choose it explicitly. `binpm install` without a package spec syncs the local `binpm.toml` manifest.
+`binpm install <source>` installs globally, even inside a repository with `binpm.toml`. Use `--as <cmd>` when the global command name should differ from the repository name, and `--bin <upstream-binary>` when an archive needs explicit binary selection. Successful installs print the installed command alias separately from the selected upstream binary, so a repository like `ripgrep` can expose a command such as `rg` when you choose it explicitly. `binpm install <source> --local` is not supported; use `binpm add <cmd> <source>` to declare and install a project-local tool. `binpm install` without a package spec syncs the local `binpm.toml` manifest.
 
 Use `binpm add <cmd> <source> --bin <upstream-binary>` when the release archive contains multiple executables or when the upstream executable name differs from the local command name. The selected binary is persisted in `binpm.toml`.
 
