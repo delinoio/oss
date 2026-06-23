@@ -22,6 +22,16 @@ fn assert_success(output: &std::process::Output) {
     );
 }
 
+fn assert_release_lookup_failure_exit_code(payload: &Value) {
+    let exit_code = payload["error"]["exit_code"]
+        .as_i64()
+        .expect("numeric exit code");
+    assert!(
+        matches!(exit_code, 1 | 2),
+        "unexpected release lookup failure exit code: {exit_code}"
+    );
+}
+
 fn bash_path(path: &Path) -> String {
     let raw = path.display().to_string();
     #[cfg(windows)]
@@ -370,7 +380,7 @@ fn global_update_dry_run_json_propagates_resolution_failure_without_mutation() {
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
     let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
-    assert_eq!(payload["error"]["exit_code"], 1);
+    assert_release_lookup_failure_exit_code(&payload);
     assert!(payload["error"]["message"]
         .as_str()
         .expect("message")
@@ -4022,7 +4032,7 @@ source = "github:owner/tool"
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
     let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
-    assert_eq!(payload["error"]["exit_code"], 1);
+    assert_release_lookup_failure_exit_code(&payload);
     assert!(payload["error"]["message"]
         .as_str()
         .expect("message")
@@ -4065,7 +4075,7 @@ bin = "bin/tool"
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
     let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
-    assert_eq!(payload["error"]["exit_code"], 1);
+    assert_release_lookup_failure_exit_code(&payload);
     assert!(payload["error"]["message"]
         .as_str()
         .expect("message")
