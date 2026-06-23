@@ -1573,6 +1573,29 @@ mod tests {
     }
 
     #[test]
+    fn gitlab_generated_sources_remain_source_archives() {
+        let release = GitLabRelease {
+            tag_name: "v1.0.0".to_string(),
+            released_at: None,
+            upcoming_release: false,
+            assets: super::GitLabAssets {
+                links: Vec::new(),
+                sources: vec![super::GitLabSource {
+                    format: "tar.gz".to_string(),
+                    url:
+                        "https://gitlab.example.com/group/tool/-/archive/v1.0.0/tool-v1.0.0.tar.gz"
+                            .to_string(),
+                }],
+            },
+        }
+        .into_release(Utc.with_ymd_and_hms(2026, 6, 19, 0, 0, 0).unwrap());
+
+        assert_eq!(release.assets.len(), 1);
+        assert_eq!(release.assets[0].name, "tar.gz");
+        assert!(release.assets[0].source_archive);
+    }
+
+    #[test]
     fn gitlab_release_stability_keeps_stable_hyphenated_non_semver_tags() {
         assert!(!has_prerelease_tag("v1.2.3"));
         assert!(!has_prerelease_tag("tool-v1.2.3"));

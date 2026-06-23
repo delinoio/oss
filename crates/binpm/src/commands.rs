@@ -318,7 +318,11 @@ struct ReleaseDiagnosticOutput {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     unsupported_installers: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    source_archives: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     sidecar_assets: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    target_mismatches: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     remediation: Option<String>,
 }
@@ -327,8 +331,12 @@ struct ReleaseDiagnosticOutput {
 enum ReleaseDiagnosticKind {
     #[serde(rename = "no-downloadable-assets")]
     NoDownloadableAssets,
+    #[serde(rename = "source-archive-only")]
+    SourceArchiveOnly,
     #[serde(rename = "unsupported-installers")]
     UnsupportedInstallers,
+    #[serde(rename = "target-mismatch")]
+    TargetMismatch,
     #[serde(rename = "target-scoring-remediation")]
     TargetScoringRemediation,
     #[serde(rename = "gitlab-https-rejection")]
@@ -1596,10 +1604,22 @@ fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget
                     diagnostic.unsupported_installers.join(", ")
                 ));
             }
+            if !diagnostic.source_archives.is_empty() {
+                lines.push(format!(
+                    "source_archives: {}",
+                    diagnostic.source_archives.join(", ")
+                ));
+            }
             if !diagnostic.sidecar_assets.is_empty() {
                 lines.push(format!(
                     "sidecar_assets: {}",
                     diagnostic.sidecar_assets.join(", ")
+                ));
+            }
+            if !diagnostic.target_mismatches.is_empty() {
+                lines.push(format!(
+                    "target_mismatches: {}",
+                    diagnostic.target_mismatches.join(", ")
                 ));
             }
             if let Some(remediation) = diagnostic.remediation {
@@ -1624,10 +1644,22 @@ fn selection_failure_diagnostics(
                     diagnostic.unsupported_installers.join(", ")
                 ));
             }
+            if !diagnostic.source_archives.is_empty() {
+                parts.push(format!(
+                    "source archives: {}",
+                    diagnostic.source_archives.join(", ")
+                ));
+            }
             if !diagnostic.sidecar_assets.is_empty() {
                 parts.push(format!(
                     "sidecar assets: {}",
                     diagnostic.sidecar_assets.join(", ")
+                ));
+            }
+            if !diagnostic.target_mismatches.is_empty() {
+                parts.push(format!(
+                    "target mismatches: {}",
+                    diagnostic.target_mismatches.join(", ")
                 ));
             }
             if let Some(remediation) = diagnostic.remediation {
@@ -1648,7 +1680,9 @@ fn release_diagnostics(
             target: target.clone(),
             message: "release has no downloadable assets for binpm to score".to_string(),
             unsupported_installers: Vec::new(),
+            source_archives: Vec::new(),
             sidecar_assets: Vec::new(),
+            target_mismatches: Vec::new(),
             remediation: None,
         }];
     }
@@ -1662,13 +1696,60 @@ fn release_diagnostics(
         .filter(|decision| decision.kind == ArtifactKind::DesktopPackage)
         .map(|decision| decision.asset_name.as_str())
         .collect::<Vec<_>>();
+    let source_archives = decisions
+        .iter()
+        .filter(|decision| decision.kind == ArtifactKind::SourceArchive)
+        .map(|decision| decision.asset_name.as_str())
+        .collect::<Vec<_>>();
     let sidecars = decisions
         .iter()
         .filter(|decision| decision.kind == ArtifactKind::Sidecar)
         .map(|decision| decision.asset_name.as_str())
         .collect::<Vec<_>>();
+    let source_archive_only = installable_count == 0
+        && !source_archives.is_empty()
+        && decisions.iter().all(|decision| {
+            matches!(
+                decision.kind,
+                ArtifactKind::SourceArchive | ArtifactKind::Sidecar
+            )
+        });
 
     let mut diagnostics = Vec::new();
+    if source_archive_only {
+        diagnostics.push(ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::SourceArchiveOnly,
+            target: target.clone(),
+            message: format!(
+                "release only provides source archives for target {}; binpm installs prebuilt \
+                 portable archives or bare executables and does not build from source archives",
+                target.key()
+            ),
+            unsupported_installers: Vec::new(),
+            source_archives: source_archives
+                .iter()
+                .map(|asset_name| (*asset_name).to_string())
+                .collect(),
+            sidecar_assets: if sidecars.is_empty() {
+                Vec::new()
+            } else {
+                sidecars
+                    .iter()
+                    .map(|asset_name| (*asset_name).to_string())
+                    .collect()
+            },
+            target_mismatches: Vec::new(),
+            remediation: Some(format!(
+                "ask upstream to publish a target-specific portable binary archive or bare \
+                 executable for {}, for example an asset named with {}, {}, and a compatible libc \
+                 signal such as musl, gnu, static, portable, universal, or any",
+                target.key(),
+                target.os.as_str(),
+                target.arch.as_str()
+            )),
+        });
+    }
+
     if installable_count == 0 && !desktop_packages.is_empty() {
         diagnostics.push(ReleaseDiagnosticOutput {
             kind: ReleaseDiagnosticKind::UnsupportedInstallers,
@@ -1682,6 +1763,7 @@ fn release_diagnostics(
                 .iter()
                 .map(|asset_name| (*asset_name).to_string())
                 .collect(),
+            source_archives: Vec::new(),
             sidecar_assets: if sidecars.is_empty() {
                 Vec::new()
             } else {
@@ -1690,6 +1772,7 @@ fn release_diagnostics(
                     .map(|asset_name| (*asset_name).to_string())
                     .collect()
             },
+            target_mismatches: Vec::new(),
             remediation: Some(
                 "ask upstream for a portable archive or bare executable asset; installer package \
                  installation is not enabled by default"
@@ -1698,24 +1781,39 @@ fn release_diagnostics(
         });
     }
 
-    if decisions.iter().any(|decision| {
-        decision.rejection_reason.as_deref().is_some_and(|reason| {
-            reason.contains("linux musl target requires an explicit libc signal")
+    let musl_missing_libc_assets = decisions
+        .iter()
+        .filter(|decision| {
+            decision.rejection_reason.as_deref().is_some_and(|reason| {
+                reason.contains("linux musl target requires an explicit libc signal")
+            })
         })
-    }) {
+        .map(|decision| decision.asset_name.as_str())
+        .collect::<Vec<_>>();
+    if !musl_missing_libc_assets.is_empty() {
         diagnostics.push(ReleaseDiagnosticOutput {
             kind: ReleaseDiagnosticKind::TargetScoringRemediation,
             target: target.clone(),
-            message: "target-specific release assets need clearer libc compatibility signals"
+            message: "Linux musl target rejected assets whose names do not include a concrete \
+                      libc or portability signal"
                 .to_string(),
             unsupported_installers: Vec::new(),
+            source_archives: Vec::new(),
             sidecar_assets: Vec::new(),
-            remediation: Some(
-                "Linux musl releases should include musl, static, portable, universal, or any in \
-                 compatible asset names; use the override snippet only when you have verified \
-                 compatibility"
-                    .to_string(),
-            ),
+            target_mismatches: musl_missing_libc_assets
+                .iter()
+                .map(|asset_name| (*asset_name).to_string())
+                .collect(),
+            remediation: Some(format!(
+                "safe next steps: ask upstream to rename or publish assets with musl, static, \
+                 portable, universal, or any; if you control the release, publish a {} asset with \
+                 one of those libc signals; otherwise download and inspect the binary outside \
+                 binpm with tools such as file and ldd/readelf, then add the generated \
+                 [tools.<cmd>.targets.{}] override only after confirming musl or static \
+                 compatibility",
+                target.key(),
+                target.key()
+            )),
         });
     }
 
@@ -1741,7 +1839,9 @@ fn release_diagnostics(
                 .iter()
                 .map(|asset_name| (*asset_name).to_string())
                 .collect(),
+            source_archives: Vec::new(),
             sidecar_assets: Vec::new(),
+            target_mismatches: Vec::new(),
             remediation: Some(
                 "configure GitLab release links to use HTTPS URLs and HTTPS redirect targets; \
                  prefer secure direct asset URLs when GitLab exposes them"
@@ -1769,12 +1869,49 @@ fn release_diagnostics(
                       assets because host CPU capability selection is not implemented"
                 .to_string(),
             unsupported_installers: Vec::new(),
+            source_archives: Vec::new(),
             sidecar_assets: Vec::new(),
+            target_mismatches: Vec::new(),
             remediation: Some(
                 "publish a baseline asset alongside higher-feature variants, or use an explicit \
                  target override only after verifying host compatibility"
                     .to_string(),
             ),
+        });
+    }
+
+    let target_mismatches = decisions
+        .iter()
+        .filter(|decision| {
+            decision.kind.is_installable()
+                && decision.rejection_reason.as_deref()
+                    == Some("asset target does not match host target")
+        })
+        .map(|decision| decision.asset_name.as_str())
+        .collect::<Vec<_>>();
+    if !has_eligible_installable
+        && !target_mismatches.is_empty()
+        && musl_missing_libc_assets.is_empty()
+    {
+        diagnostics.push(ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::TargetMismatch,
+            target: target.clone(),
+            message: format!(
+                "release has installable assets, but none match target {}",
+                target.key()
+            ),
+            unsupported_installers: Vec::new(),
+            source_archives: Vec::new(),
+            sidecar_assets: Vec::new(),
+            target_mismatches: target_mismatches
+                .iter()
+                .map(|asset_name| (*asset_name).to_string())
+                .collect(),
+            remediation: Some(format!(
+                "publish an archive or bare executable named for {}; use a target override only \
+                 after verifying one of the listed assets is compatible with that target",
+                target.key()
+            )),
         });
     }
 
@@ -10424,6 +10561,66 @@ mod tests {
     }
 
     #[test]
+    fn explain_diagnostics_distinguish_source_archive_only_releases() {
+        let target = linux_target();
+        let assets = [
+            ReleaseAsset {
+                source_archive: true,
+                ..release_asset("source.tar.gz")
+            },
+            ReleaseAsset {
+                source_archive: true,
+                ..release_asset("source.zip")
+            },
+            release_asset("source.tar.gz.sha256"),
+        ];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(override_snippet_candidate(&decisions).is_none());
+        let diagnostics = release_diagnostics(&decisions, &target);
+        let payload = serde_json::to_value(&diagnostics[0]).expect("serialize diagnostic");
+
+        assert_eq!(payload["kind"], "source-archive-only");
+        assert_eq!(payload["source_archives"][0], "source.zip");
+        assert_eq!(payload["source_archives"][1], "source.tar.gz");
+        assert!(payload["remediation"]
+            .as_str()
+            .expect("remediation")
+            .contains("target-specific portable binary archive"));
+
+        let lines = release_diagnostic_lines(&decisions, &target);
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("release only provides source archives")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("source_archives: source.zip, source.tar.gz")));
+    }
+
+    #[test]
+    fn install_selection_failure_reports_source_archive_only_boundary() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let assets = [
+            ReleaseAsset {
+                source_archive: true,
+                ..release_asset("source.tar.gz")
+            },
+            ReleaseAsset {
+                source_archive: true,
+                ..release_asset("source.zip")
+            },
+        ];
+
+        let error = select_manifest_asset(&spec, None, &target, &assets).expect_err("source-only");
+        let rendered = error.to_string();
+
+        assert!(rendered.contains("release only provides source archives"));
+        assert!(rendered.contains("source archives: source.zip, source.tar.gz"));
+        assert!(rendered.contains("target-specific portable binary archive"));
+    }
+
+    #[test]
     fn explain_diagnostics_suggest_musl_override_for_missing_libc_assets() {
         let target = HostTarget {
             os: TargetOs::Linux,
@@ -10453,7 +10650,42 @@ mod tests {
         let lines = release_diagnostic_lines(&decisions, &target);
         assert!(lines
             .iter()
-            .any(|line| line.contains("Linux musl releases should include")));
+            .any(|line| line.contains("target_mismatches: tool-linux-x64.tar.gz")));
+        assert!(lines.iter().any(|line| {
+            line.contains("download and inspect the binary outside binpm")
+                && line.contains("[tools.<cmd>.targets.linux-x86_64-musl]")
+        }));
+
+        let diagnostics = release_diagnostics(&decisions, &target);
+        let payload = serde_json::to_value(&diagnostics[0]).expect("serialize diagnostic");
+        assert_eq!(payload["kind"], "target-scoring-remediation");
+        assert_eq!(payload["target"]["libc"], "musl");
+        assert_eq!(payload["target_mismatches"][0], "tool-linux-x64.tar.gz");
+        assert!(payload["message"]
+            .as_str()
+            .expect("message")
+            .contains("do not include a concrete libc"));
+    }
+
+    #[test]
+    fn explain_diagnostics_distinguish_target_mismatch_failures() {
+        let target = HostTarget {
+            os: TargetOs::Darwin,
+            arch: TargetArch::Aarch64,
+            libc: TargetLibc::Any,
+        };
+        let assets = [release_asset("tool-linux-x64-gnu.tar.gz")];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+        let diagnostics = release_diagnostics(&decisions, &target);
+        let payload = serde_json::to_value(&diagnostics[0]).expect("serialize diagnostic");
+
+        assert_eq!(payload["kind"], "target-mismatch");
+        assert_eq!(payload["target"]["os"], "darwin");
+        assert_eq!(payload["target_mismatches"][0], "tool-linux-x64-gnu.tar.gz");
+        assert!(payload["message"]
+            .as_str()
+            .expect("message")
+            .contains("none match target darwin-aarch64-any"));
     }
 
     #[test]

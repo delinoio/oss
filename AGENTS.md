@@ -138,6 +138,8 @@ enum ProjectId {
 - GitLab versionless installs must exclude upcoming releases, releases with future `released_at` values, and known SemVer prerelease tag identifiers while preserving non-SemVer stable GitLab tags.
 - GitLab release asset links must use HTTPS link URLs and HTTPS final redirect targets before candidate scoring or download.
 - GitLab generated `assets.sources` source archives must not be selected as installable assets.
+- Source-archive-only release diagnostics must remain distinct from no-asset and target-mismatch failures, list ignored source archive names when safe, and guide maintainers toward prebuilt portable archives or bare executables.
+- Linux musl missing-libc diagnostics must name rejected assets and include safe remediation: upstream explicit `musl`/`static`/`portable`/`universal`/`any` naming first, then target overrides only after compatibility verification.
 - Direct URLs, registries, and package-manager backends remain out of scope until documented in `docs/crates-binpm-foundation.md`; recognizable package-manager backend prefixes must fail with explicit unsupported-backend diagnostics.
 
 ### binpm Local Tooling Contract

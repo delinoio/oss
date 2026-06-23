@@ -36,6 +36,8 @@ The target model is broader than binpm's own first-party release matrix. Direct 
 
 GitLab release links must use HTTPS for the release link URL, the direct asset URL when present, and the final redirect target. `binpm explain` reports those cases separately so maintainers can fix the GitLab release link or publish a secure direct asset URL. Redirect diagnostics show only a sanitized origin and omit credentials, query strings, and fragments.
 
+Generated source archives are not binary package assets. GitHub source downloads, GitLab `assets.sources`, and files such as `source.tar.gz` or `source.zip` are reported as ignored source archives and are never selected automatically or through target overrides. Releases need a portable prebuilt archive or bare executable for the target.
+
 ## Global Update Status
 
 `binpm update [cmd...] [--local|--global] [--dry-run]` updates selected tools or all tools in the selected scope. Omitting command names is explicit all-tools mode; output states that mode before the planned update list, and `--dry-run` previews it without mutation. Global updates use existing global package records, preserve each command alias and selected upstream binary, resolve the latest stable release for the recorded source, and finalize through the same cache, install, rollback, and verification behavior as global installs.

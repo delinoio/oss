@@ -21,6 +21,18 @@ GitLab assets are scored only after binpm verifies that the release link URL, an
 
 If every matching GitLab asset is rejected for HTTPS, update the GitLab release link to use HTTPS or publish a secure direct asset URL. Redirect diagnostics show only the origin, so query strings, credentials, and tokens are not echoed.
 
+## Fix Source-Archive-Only Releases
+
+`source.tar.gz`, `source.zip`, GitHub generated source downloads, and GitLab `assets.sources` entries are source snapshots, not installable binary packages. binpm ignores them for installation and reports `source-archive-only` when no portable binary asset is available.
+
+Publish a prebuilt archive or bare executable named for the target instead, such as `tool-linux-x86_64-musl.tar.gz`, `tool-linux-x86_64-gnu.tar.gz`, `tool-darwin-aarch64.tar.gz`, or `tool-windows-x86_64.zip`. Keep checksums, signatures, SBOMs, and source archives as sidecar downloads rather than the only release artifacts.
+
+## Fix Alpine And Musl Assets
+
+On Linux musl hosts, binpm rejects Linux assets whose names omit libc or portability signals. An asset named only `tool-linux-x64.tar.gz` may be a glibc binary, so automatic selection requires a token such as `musl`, `static`, `portable`, `universal`, or `any`.
+
+Prefer an upstream fix first: publish or rename a compatible asset with an explicit signal, for example `tool-linux-x86_64-musl.tar.gz`. If you must override locally, download and inspect the binary outside binpm with tools such as `file`, `ldd`, or `readelf`, confirm it is musl-linked or static, then use the unverified `[tools.<cmd>.targets.linux-x86_64-musl]` snippet from `binpm explain <source>` as a starting point.
+
 ## Resolve CPU Feature Variants
 
 Some projects publish CPU feature variants such as `baseline` and `modern`. binpm treats these as CPU feature signals, not architecture names.
