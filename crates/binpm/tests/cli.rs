@@ -360,6 +360,7 @@ fn add_manifest_only_json_reports_declarations_without_human_stdout() {
     assert_eq!(payload["tools"][0]["action"], "declared");
     assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
     assert_eq!(payload["tools"][0]["requested_version"], "1.0.0");
+    assert_eq!(payload["tools"][0]["selected_binary"], "tool-linux-x64");
     assert!(payload["tools"][0]["release_tag"].is_null());
     assert!(!String::from_utf8_lossy(&output.stdout).contains("manifest-only:"));
     assert!(temp_dir.path().join("binpm.toml").exists());
@@ -2042,6 +2043,38 @@ fn frozen_local_update_allows_empty_manifest_without_lockfile() {
 }
 
 #[test]
+fn frozen_local_update_json_empty_manifest_reports_no_changed_files() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--frozen-lockfile", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(
+        payload["changed_files"]
+            .as_array()
+            .expect("changed files")
+            .len(),
+        0
+    );
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 0);
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
 fn ci_local_update_allows_empty_manifest_without_lockfile() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -3041,6 +3074,72 @@ source = "github:owner/tool"
     assert!(fs::read_to_string(project.join("binpm.lock"))
         .expect("read lockfile")
         .contains("tools.tool"));
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn local_remove_json_reports_removed_executable_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let sha256 = format!("{:x}", Sha256::digest(b"tool"));
+    write_locked_tool_project(&project, &sha256);
+    fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    fs::create_dir_all(project.join(".binpm").join("bin")).expect("create bin");
+    fs::write(project.join(".binpm").join("bin").join("tool"), "tool").expect("write executable");
+    fs::write(
+        project.join(".binpm").join("packages").join("tool.toml"),
+        format!(
+            r#"package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux"
+installed_path = "{}"
+sha256 = "{sha256}"
+checksum_source = "github-digest"
+provider_digest_sha256 = "{sha256}"
+signature_available = false
+signature_verified = false
+"#,
+            project.join(".binpm").join("bin").join("tool").display()
+        ),
+    )
+    .expect("write package record");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(!project.join(".binpm").join("bin").join("tool").exists());
 }
 
 #[test]
