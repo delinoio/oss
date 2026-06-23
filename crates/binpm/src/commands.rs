@@ -38,19 +38,19 @@ use crate::{
         ProviderAuth, ReleaseAsset, ReleaseClient, GITHUB_ASSET_DOWNLOAD_ACCEPT,
     },
     storage::{
-        archive_format, cache_asset_is_verified_regular, clean_cache, deterministic_installed_path,
-        ensure_dir, install_bare_executable, install_executable_bytes, installed_filename,
-        list_package_records, managed_installed_path, package_record_from_resolved,
-        package_record_path, populate_cache_from_bytes, prune_cache, read_cache_records,
-        read_lockfile, read_manifest, read_package_record, record_verified_cache_hit,
-        referenced_cache_keys, reject_symlinked_cache_entry, reject_symlinked_package_record_dirs,
-        remove_cache_ref, remove_installed_binary, remove_package_record, remove_path_if_exists,
-        remove_stale_cache_refs, require_regular_managed_file,
-        require_verified_regular_cache_asset, sanitize_persisted_url, scan_cache_references,
-        validate_command_name, validate_download_url, validate_installed_binary_path,
-        validate_sha256_digest, write_cache_ref, write_lockfile, write_manifest,
-        write_package_record, CachePaths, LockTool, Manifest, ManifestTool, PackageRecord,
-        ResolvedAsset, ScopePaths, SignatureSidecar, LOCKFILE_FILE, MANIFEST_FILE,
+        archive_format, cache_asset_is_verified_regular, cache_ref_path, clean_cache,
+        deterministic_installed_path, ensure_dir, install_bare_executable,
+        install_executable_bytes, installed_filename, list_package_records, managed_installed_path,
+        package_record_from_resolved, package_record_path, populate_cache_from_bytes, prune_cache,
+        read_cache_records, read_lockfile, read_manifest, read_package_record,
+        record_verified_cache_hit, referenced_cache_keys, reject_symlinked_cache_entry,
+        reject_symlinked_package_record_dirs, remove_cache_ref, remove_installed_binary,
+        remove_package_record, remove_path_if_exists, remove_stale_cache_refs,
+        require_regular_managed_file, require_verified_regular_cache_asset, sanitize_persisted_url,
+        scan_cache_references, validate_command_name, validate_download_url,
+        validate_installed_binary_path, validate_sha256_digest, write_cache_ref, write_lockfile,
+        write_manifest, write_package_record, CachePaths, LockTool, Manifest, ManifestTool,
+        PackageRecord, ResolvedAsset, ScopePaths, SignatureSidecar, LOCKFILE_FILE, MANIFEST_FILE,
     },
 };
 
@@ -251,6 +251,14 @@ enum PathState {
     Missing,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+enum CacheKeyStatus {
+    #[serde(rename = "lockfile-backed")]
+    LockfileBacked,
+    #[serde(rename = "missing-lockfile")]
+    MissingLockfile,
+}
+
 #[derive(Debug, Serialize)]
 struct VerifyOutput {
     command: &'static str,
@@ -272,12 +280,14 @@ struct VerifyCheckOutput {
 #[derive(Debug, Serialize)]
 struct CacheKeyOutput {
     command: &'static str,
+    status: CacheKeyStatus,
     cache_key: String,
     target: HostTarget,
     target_key: String,
     lockfile_path: String,
     lockfile: PathState,
     lockfile_digest: String,
+    recommended_next_command: Option<&'static str>,
     read_only: bool,
 }
 
@@ -375,7 +385,11 @@ struct ReleaseDiagnosticOutput {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     unsupported_installers: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    source_archives: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     sidecar_assets: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    target_mismatches: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     remediation: Option<String>,
 }
@@ -384,8 +398,12 @@ struct ReleaseDiagnosticOutput {
 enum ReleaseDiagnosticKind {
     #[serde(rename = "no-downloadable-assets")]
     NoDownloadableAssets,
+    #[serde(rename = "source-archive-only")]
+    SourceArchiveOnly,
     #[serde(rename = "unsupported-installers")]
     UnsupportedInstallers,
+    #[serde(rename = "target-mismatch")]
+    TargetMismatch,
     #[serde(rename = "target-scoring-remediation")]
     TargetScoringRemediation,
     #[serde(rename = "gitlab-https-rejection")]
@@ -416,6 +434,44 @@ struct PackageRecordOutput {
     signature_verified: bool,
 }
 
+#[derive(Debug, Serialize)]
+struct UpdatePlanOutput {
+    command: &'static str,
+    scope: Scope,
+    dry_run: bool,
+    frozen_lockfile: bool,
+    selected_all_tools: bool,
+    changed_files: Vec<String>,
+    tools: Vec<MutationToolOutput>,
+    planned_updates: Vec<UpdatePlannedToolOutput>,
+    file_changes: Vec<String>,
+    runtime_changes: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    no_op: Option<UpdateNoOpOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct UpdatePlannedToolOutput {
+    cmd: String,
+    source: String,
+    version: String,
+}
+
+#[derive(Debug, Serialize)]
+struct UpdateNoOpOutput {
+    reason: &'static str,
+    declared_tools: usize,
+    lockfile_created: bool,
+    message: &'static str,
+}
+
+struct UpdatePlan {
+    planned_updates: Vec<UpdatePlannedToolOutput>,
+    file_changes: Vec<String>,
+    runtime_changes: Vec<String>,
+    no_op: Option<UpdateNoOpOutput>,
+}
+
 const DOWNLOAD_RETRY_ATTEMPTS: usize = 3;
 const DOWNLOAD_RETRY_BASE_DELAY: Duration = Duration::from_millis(200);
 const DOWNLOAD_PROGRESS_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024;
@@ -441,7 +497,7 @@ pub fn run(cli: Cli) -> Result<i32> {
     match cli.command {
         Command::Install(args) => install(args, output),
         Command::Add(args) => add(args, output),
-        Command::Exec(args) => exec(args),
+        Command::Exec(args) => exec(args, output),
         Command::Cache(args) => cache(args.command, output),
         Command::List(args) => list(args, output),
         Command::Remove(args) => remove(args, output),
@@ -750,7 +806,7 @@ fn source_install_scope(requested_scope: Scope) -> Scope {
     }
 }
 
-fn exec(args: ExecArgs) -> Result<i32> {
+fn exec(args: ExecArgs, output: OutputMode) -> Result<i32> {
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     let cmd = match args.cmd() {
         Some(cmd) => {
@@ -853,7 +909,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
         Some(&tool),
         args.lockfile.frozen_lockfile(),
         false,
-        OutputMode::Human,
+        output,
     )?;
     let cache_paths = CachePaths::new(&binpm_home()?);
     if let Err(error) = commit_deferred_cache_hit(&cache_paths, &install) {
@@ -1024,6 +1080,16 @@ fn cache_key(output: OutputMode) -> Result<i32> {
     let lockfile_path = project_root.join(LOCKFILE_FILE);
     let target = HostTarget::current()?;
     let lockfile = json_path_state(&lockfile_path);
+    let status = if lockfile == PathState::Missing {
+        CacheKeyStatus::MissingLockfile
+    } else {
+        CacheKeyStatus::LockfileBacked
+    };
+    let recommended_next_command = if status == CacheKeyStatus::MissingLockfile {
+        Some("binpm install")
+    } else {
+        None
+    };
     let digest = lockfile_digest(&lockfile_path)?;
     let target_key = target.key();
     let cache_key = format!("binpm-v1-{target_key}-{digest}");
@@ -1038,12 +1104,14 @@ fn cache_key(output: OutputMode) -> Result<i32> {
     if output.is_json() {
         return print_json(&CacheKeyOutput {
             command: "cache key",
+            status,
             cache_key,
             target,
             target_key,
             lockfile_path: lockfile_path.display().to_string(),
             lockfile,
             lockfile_digest: digest,
+            recommended_next_command,
             read_only: true,
         });
     }
@@ -1052,6 +1120,12 @@ fn cache_key(output: OutputMode) -> Result<i32> {
             "warning: {} is missing; cache key uses the empty lockfile digest",
             lockfile_path.display()
         ));
+        println!("missing-lockfile cache key: {cache_key}");
+        println!(
+            "next command: {}",
+            recommended_next_command.unwrap_or("binpm install")
+        );
+        return Ok(0);
     }
     println!("{cache_key}");
     Ok(0)
@@ -1292,6 +1366,15 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<i32> {
         "Prepared update request"
     );
     let scope = select_scope(args.scope.scope())?;
+    if output.is_json() && scope == Scope::Local {
+        let plan = build_local_update_plan(&args.cmd)?;
+        if plan.no_op.is_some() {
+            return print_update_plan_json(scope, &args.cmd, frozen_lockfile, args.dry_run, plan);
+        }
+    }
+    if output.is_json() && args.dry_run && args.lockfile.no_frozen_lockfile {
+        return preview_update_json(scope, &args.cmd, frozen_lockfile);
+    }
     if !output.is_json() {
         print_selected_mutation_scope("update", scope);
         print_update_mode(scope, &args.cmd);
@@ -1444,6 +1527,43 @@ fn preview_update(
     })
 }
 
+fn preview_update_json(scope: Scope, selected: &[String], frozen_lockfile: bool) -> Result<i32> {
+    let plan = match scope {
+        Scope::Local => {
+            let plan = build_local_update_plan(selected)?;
+            if frozen_lockfile {
+                validate_frozen_local_update_dry_run(selected)?;
+            }
+            plan
+        }
+        Scope::Global => build_global_update_plan(selected)?,
+        Scope::Auto => unreachable!("select_scope never returns auto"),
+    };
+    print_update_plan_json(scope, selected, frozen_lockfile, true, plan)
+}
+
+fn print_update_plan_json(
+    scope: Scope,
+    selected: &[String],
+    frozen_lockfile: bool,
+    dry_run: bool,
+    plan: UpdatePlan,
+) -> Result<i32> {
+    print_json(&UpdatePlanOutput {
+        command: "update",
+        scope,
+        dry_run,
+        frozen_lockfile,
+        selected_all_tools: selected.is_empty(),
+        changed_files: Vec::new(),
+        tools: Vec::new(),
+        planned_updates: plan.planned_updates,
+        file_changes: plan.file_changes,
+        runtime_changes: plan.runtime_changes,
+        no_op: plan.no_op,
+    })
+}
+
 fn print_update_plan(scope: Scope, selected: &[String]) -> Result<()> {
     match scope {
         Scope::Local => print_local_update_plan(selected),
@@ -1453,6 +1573,28 @@ fn print_update_plan(scope: Scope, selected: &[String]) -> Result<()> {
 }
 
 fn print_local_update_plan(selected: &[String]) -> Result<()> {
+    let plan = build_local_update_plan(selected)?;
+    print_update_plan_details(&plan);
+    Ok(())
+}
+
+fn validate_frozen_local_update_dry_run(selected: &[String]) -> Result<()> {
+    let root = require_manifest_root()?;
+    let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
+    validate_frozen_local_update_latest(&root, &manifest, selected)?;
+    if selected.is_empty() {
+        let lockfile_path = root.join(LOCKFILE_FILE);
+        let lockfile = read_lockfile(&lockfile_path)?;
+        if !local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty() {
+            return Err(BinpmError::FrozenLockfileOrphanCleanup {
+                path: lockfile_path,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn build_local_update_plan(selected: &[String]) -> Result<UpdatePlan> {
     let root = require_manifest_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
     let manifest = read_manifest(&manifest_path)?;
@@ -1473,37 +1615,104 @@ fn print_local_update_plan(selected: &[String]) -> Result<()> {
         .iter()
         .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
         .collect();
-    println!("planned updates: {}", planned.len());
-    for (cmd, tool) in planned {
-        let version = tool.version.as_deref().unwrap_or("<latest>");
-        println!("would update {cmd} from {} {version}", tool.source);
-    }
+    let manifest_can_change = planned.iter().any(|(_, tool)| tool.version.is_some());
+    let planned_updates = planned
+        .into_iter()
+        .map(|(cmd, tool)| UpdatePlannedToolOutput {
+            cmd: cmd.clone(),
+            source: tool.source.clone(),
+            version: tool.version.as_deref().unwrap_or("<latest>").to_string(),
+        })
+        .collect();
     let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
-    if manifest.tools.is_empty()
-        && local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty()
-    {
-        println!("empty manifest: no lockfile or local executable changes needed");
-        return Ok(());
+    let orphan_cmds = local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?;
+    if manifest.tools.is_empty() && orphan_cmds.is_empty() {
+        return Ok(UpdatePlan {
+            planned_updates,
+            file_changes: Vec::new(),
+            runtime_changes: Vec::new(),
+            no_op: Some(UpdateNoOpOutput {
+                reason: "empty_manifest_no_tools_no_lockfile_changes",
+                declared_tools: 0,
+                lockfile_created: false,
+                message: "empty manifest declares no tools; no lockfile was created",
+            }),
+        });
     }
-    println!("would update {}", root.join(LOCKFILE_FILE).display());
-    println!("would update {}", ScopePaths::local(root).bin.display());
-    Ok(())
+    let mut file_changes = Vec::new();
+    if manifest_can_change {
+        file_changes.push(root.join(MANIFEST_FILE).display().to_string());
+    }
+    file_changes.push(root.join(LOCKFILE_FILE).display().to_string());
+    let scope_paths = ScopePaths::local(root.clone());
+    let mut runtime_changes = vec![scope_paths.bin.display().to_string()];
+    if !orphan_cmds.is_empty() {
+        let cache_paths = CachePaths::new(&binpm_home()?);
+        for cmd in orphan_cmds {
+            runtime_changes.push(
+                package_record_path(&scope_paths, &cmd)
+                    .display()
+                    .to_string(),
+            );
+            runtime_changes.push(
+                cache_ref_path(&cache_paths, &root, &cmd)
+                    .display()
+                    .to_string(),
+            );
+        }
+    }
+    Ok(UpdatePlan {
+        planned_updates,
+        file_changes,
+        runtime_changes,
+        no_op: None,
+    })
 }
 
 fn print_global_update_plan(selected: &[String]) -> Result<()> {
+    let plan = build_global_update_plan(selected)?;
+    print_update_plan_details(&plan);
+    Ok(())
+}
+
+fn build_global_update_plan(selected: &[String]) -> Result<UpdatePlan> {
     let paths = ScopePaths::global(binpm_home()?);
     let planned = selected_global_package_records(&paths, selected)?;
     prepare_global_updates(planned.clone())?;
-    println!("planned updates: {}", planned.len());
-    for (cmd, record) in &planned {
+    let planned_updates = planned
+        .into_iter()
+        .map(|(cmd, record)| UpdatePlannedToolOutput {
+            cmd,
+            source: record.source,
+            version: record.release_tag,
+        })
+        .collect();
+    Ok(UpdatePlan {
+        planned_updates,
+        file_changes: vec![paths.packages.display().to_string()],
+        runtime_changes: vec![paths.bin.display().to_string()],
+        no_op: None,
+    })
+}
+
+fn print_update_plan_details(plan: &UpdatePlan) {
+    println!("planned updates: {}", plan.planned_updates.len());
+    for update in &plan.planned_updates {
         println!(
-            "would update {cmd} from {} {}",
-            record.source, record.release_tag
+            "would update {} from {} {}",
+            update.cmd, update.source, update.version
         );
     }
-    println!("would update {}", paths.packages.display());
-    println!("would update {}", paths.bin.display());
-    Ok(())
+    if let Some(no_op) = &plan.no_op {
+        println!("{}", no_op.message);
+        return;
+    }
+    for path in &plan.file_changes {
+        println!("would update {path}");
+    }
+    for path in &plan.runtime_changes {
+        println!("would update {path}");
+    }
 }
 
 fn preview_update_result(
@@ -2072,10 +2281,22 @@ fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget
                     diagnostic.unsupported_installers.join(", ")
                 ));
             }
+            if !diagnostic.source_archives.is_empty() {
+                lines.push(format!(
+                    "source_archives: {}",
+                    diagnostic.source_archives.join(", ")
+                ));
+            }
             if !diagnostic.sidecar_assets.is_empty() {
                 lines.push(format!(
                     "sidecar_assets: {}",
                     diagnostic.sidecar_assets.join(", ")
+                ));
+            }
+            if !diagnostic.target_mismatches.is_empty() {
+                lines.push(format!(
+                    "target_mismatches: {}",
+                    diagnostic.target_mismatches.join(", ")
                 ));
             }
             if let Some(remediation) = diagnostic.remediation {
@@ -2100,10 +2321,22 @@ fn selection_failure_diagnostics(
                     diagnostic.unsupported_installers.join(", ")
                 ));
             }
+            if !diagnostic.source_archives.is_empty() {
+                parts.push(format!(
+                    "source archives: {}",
+                    diagnostic.source_archives.join(", ")
+                ));
+            }
             if !diagnostic.sidecar_assets.is_empty() {
                 parts.push(format!(
                     "sidecar assets: {}",
                     diagnostic.sidecar_assets.join(", ")
+                ));
+            }
+            if !diagnostic.target_mismatches.is_empty() {
+                parts.push(format!(
+                    "target mismatches: {}",
+                    diagnostic.target_mismatches.join(", ")
                 ));
             }
             if let Some(remediation) = diagnostic.remediation {
@@ -2124,7 +2357,9 @@ fn release_diagnostics(
             target: target.clone(),
             message: "release has no downloadable assets for binpm to score".to_string(),
             unsupported_installers: Vec::new(),
+            source_archives: Vec::new(),
             sidecar_assets: Vec::new(),
+            target_mismatches: Vec::new(),
             remediation: None,
         }];
     }
@@ -2138,13 +2373,60 @@ fn release_diagnostics(
         .filter(|decision| decision.kind == ArtifactKind::DesktopPackage)
         .map(|decision| decision.asset_name.as_str())
         .collect::<Vec<_>>();
+    let source_archives = decisions
+        .iter()
+        .filter(|decision| decision.kind == ArtifactKind::SourceArchive)
+        .map(|decision| decision.asset_name.as_str())
+        .collect::<Vec<_>>();
     let sidecars = decisions
         .iter()
         .filter(|decision| decision.kind == ArtifactKind::Sidecar)
         .map(|decision| decision.asset_name.as_str())
         .collect::<Vec<_>>();
+    let source_archive_only = installable_count == 0
+        && !source_archives.is_empty()
+        && decisions.iter().all(|decision| {
+            matches!(
+                decision.kind,
+                ArtifactKind::SourceArchive | ArtifactKind::Sidecar
+            )
+        });
 
     let mut diagnostics = Vec::new();
+    if source_archive_only {
+        diagnostics.push(ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::SourceArchiveOnly,
+            target: target.clone(),
+            message: format!(
+                "release only provides source archives for target {}; binpm installs prebuilt \
+                 portable archives or bare executables and does not build from source archives",
+                target.key()
+            ),
+            unsupported_installers: Vec::new(),
+            source_archives: source_archives
+                .iter()
+                .map(|asset_name| (*asset_name).to_string())
+                .collect(),
+            sidecar_assets: if sidecars.is_empty() {
+                Vec::new()
+            } else {
+                sidecars
+                    .iter()
+                    .map(|asset_name| (*asset_name).to_string())
+                    .collect()
+            },
+            target_mismatches: Vec::new(),
+            remediation: Some(format!(
+                "ask upstream to publish a target-specific portable binary archive or bare \
+                 executable for {}, for example an asset named with {}, {}, and a compatible libc \
+                 signal such as musl, gnu, static, portable, universal, or any",
+                target.key(),
+                target.os.as_str(),
+                target.arch.as_str()
+            )),
+        });
+    }
+
     if installable_count == 0 && !desktop_packages.is_empty() {
         diagnostics.push(ReleaseDiagnosticOutput {
             kind: ReleaseDiagnosticKind::UnsupportedInstallers,
@@ -2158,6 +2440,7 @@ fn release_diagnostics(
                 .iter()
                 .map(|asset_name| (*asset_name).to_string())
                 .collect(),
+            source_archives: Vec::new(),
             sidecar_assets: if sidecars.is_empty() {
                 Vec::new()
             } else {
@@ -2166,6 +2449,7 @@ fn release_diagnostics(
                     .map(|asset_name| (*asset_name).to_string())
                     .collect()
             },
+            target_mismatches: Vec::new(),
             remediation: Some(
                 "ask upstream for a portable archive or bare executable asset; installer package \
                  installation is not enabled by default"
@@ -2174,24 +2458,39 @@ fn release_diagnostics(
         });
     }
 
-    if decisions.iter().any(|decision| {
-        decision.rejection_reason.as_deref().is_some_and(|reason| {
-            reason.contains("linux musl target requires an explicit libc signal")
+    let musl_missing_libc_assets = decisions
+        .iter()
+        .filter(|decision| {
+            decision.rejection_reason.as_deref().is_some_and(|reason| {
+                reason.contains("linux musl target requires an explicit libc signal")
+            })
         })
-    }) {
+        .map(|decision| decision.asset_name.as_str())
+        .collect::<Vec<_>>();
+    if !musl_missing_libc_assets.is_empty() {
         diagnostics.push(ReleaseDiagnosticOutput {
             kind: ReleaseDiagnosticKind::TargetScoringRemediation,
             target: target.clone(),
-            message: "target-specific release assets need clearer libc compatibility signals"
+            message: "Linux musl target rejected assets whose names do not include a concrete \
+                      libc or portability signal"
                 .to_string(),
             unsupported_installers: Vec::new(),
+            source_archives: Vec::new(),
             sidecar_assets: Vec::new(),
-            remediation: Some(
-                "Linux musl releases should include musl, static, portable, universal, or any in \
-                 compatible asset names; use the override snippet only when you have verified \
-                 compatibility"
-                    .to_string(),
-            ),
+            target_mismatches: musl_missing_libc_assets
+                .iter()
+                .map(|asset_name| (*asset_name).to_string())
+                .collect(),
+            remediation: Some(format!(
+                "safe next steps: ask upstream to rename or publish assets with musl, static, \
+                 portable, universal, or any; if you control the release, publish a {} asset with \
+                 one of those libc signals; otherwise download and inspect the binary outside \
+                 binpm with tools such as file and ldd/readelf, then add the generated \
+                 [tools.<cmd>.targets.{}] override only after confirming musl or static \
+                 compatibility",
+                target.key(),
+                target.key()
+            )),
         });
     }
 
@@ -2217,7 +2516,9 @@ fn release_diagnostics(
                 .iter()
                 .map(|asset_name| (*asset_name).to_string())
                 .collect(),
+            source_archives: Vec::new(),
             sidecar_assets: Vec::new(),
+            target_mismatches: Vec::new(),
             remediation: Some(
                 "configure GitLab release links to use HTTPS URLs and HTTPS redirect targets; \
                  prefer secure direct asset URLs when GitLab exposes them"
@@ -2245,7 +2546,9 @@ fn release_diagnostics(
                       assets because host CPU capability selection is not implemented"
                 .to_string(),
             unsupported_installers: Vec::new(),
+            source_archives: Vec::new(),
             sidecar_assets: Vec::new(),
+            target_mismatches: Vec::new(),
             remediation: Some(
                 "publish a baseline asset alongside higher-feature variants, or use an explicit \
                  target override only after verifying host compatibility"
@@ -2254,7 +2557,53 @@ fn release_diagnostics(
         });
     }
 
+    let target_mismatches = decisions
+        .iter()
+        .filter(|decision| {
+            decision.kind.is_installable()
+                && !decision.eligible
+                && decision
+                    .rejection_reason
+                    .as_deref()
+                    .is_some_and(is_target_mismatch_rejection)
+        })
+        .map(|decision| decision.asset_name.as_str())
+        .collect::<Vec<_>>();
+    if !has_eligible_installable
+        && !target_mismatches.is_empty()
+        && musl_missing_libc_assets.is_empty()
+    {
+        diagnostics.push(ReleaseDiagnosticOutput {
+            kind: ReleaseDiagnosticKind::TargetMismatch,
+            target: target.clone(),
+            message: format!(
+                "release has installable assets, but none match target {}",
+                target.key()
+            ),
+            unsupported_installers: Vec::new(),
+            source_archives: Vec::new(),
+            sidecar_assets: Vec::new(),
+            target_mismatches: target_mismatches
+                .iter()
+                .map(|asset_name| (*asset_name).to_string())
+                .collect(),
+            remediation: Some(format!(
+                "publish an archive or bare executable named for {}; use a target override only \
+                 after verifying one of the listed assets is compatible with that target",
+                target.key()
+            )),
+        });
+    }
+
     diagnostics
+}
+
+fn is_target_mismatch_rejection(reason: &str) -> bool {
+    !reason.contains("linux musl target requires an explicit libc signal")
+        && !reason.contains("CPU feature variant `modern` requires explicit host capability")
+        && !reason.contains("gitlab asset link URL is not HTTPS")
+        && !reason.contains("gitlab direct asset URL is not HTTPS")
+        && !reason.contains("gitlab asset redirect target is not HTTPS")
 }
 
 fn override_snippet_candidate(decisions: &[CandidateDecision]) -> Option<&CandidateDecision> {
@@ -2824,6 +3173,24 @@ fn latest_stable_tag_for_update(tool: &ManifestTool) -> Result<String> {
         .tag)
 }
 
+fn frozen_restore_download_error(
+    cmd: &str,
+    cache_path: &Path,
+    cache_state: &'static str,
+    url: &str,
+    authenticated: bool,
+    source: BinpmError,
+) -> BinpmError {
+    BinpmError::FrozenRestoreDownload {
+        cmd: cmd.to_string(),
+        cache_path: cache_path.to_path_buf(),
+        cache_state,
+        url: sanitize_download_diagnostic_url(url),
+        authenticated,
+        source: Box::new(source),
+    }
+}
+
 fn update_global_packages(require_verified: bool, selected: &[String]) -> Result<MutationOutput> {
     let home = binpm_home()?;
     let scope_paths = ScopePaths::global(home.clone());
@@ -3107,7 +3474,7 @@ fn install_local_tool(
         return Err(error);
     }
     if !output.is_json() {
-        println!("installed {cmd} {}", record.installed_path);
+        print_install_summary(Scope::Local, cmd, &record);
     }
     Ok(InstalledPackage {
         record,
@@ -3181,6 +3548,33 @@ struct InstalledPackage {
     populated_cache_entry: bool,
     deferred_cache_hit: Option<ResolvedAsset>,
     cache_metadata_snapshot: Option<CacheMetadataSnapshot>,
+}
+
+fn print_install_summary(scope: Scope, cmd: &str, record: &PackageRecord) {
+    println!("installed {cmd} {}", record.installed_path);
+    println!("installed command: {cmd}");
+    println!("selected binary: {}", record.selected_binary);
+    if scope == Scope::Global && command_alias_differs_from_upstream(cmd, &record.selected_binary) {
+        println!(
+            "alias note: installed command `{cmd}` invokes upstream binary `{}`; use `--as <cmd>` \
+             to choose the local/global command alias and `--bin <upstream-binary>` to choose the \
+             upstream executable.",
+            record.selected_binary
+        );
+    }
+}
+
+fn command_alias_differs_from_upstream(cmd: &str, selected_binary: &str) -> bool {
+    upstream_binary_basename(selected_binary)
+        .map(|basename| basename != cmd)
+        .unwrap_or(false)
+}
+
+fn upstream_binary_basename(selected_binary: &str) -> Option<&str> {
+    selected_binary
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|basename| !basename.is_empty())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3462,7 +3856,13 @@ fn install_resolved(
             });
         }
     }
-    verify_signature_sidecar(cache_paths, &mut resolved, &bytes, require_verified)?;
+    verify_signature_sidecar(
+        cache_paths,
+        &mut resolved,
+        &bytes,
+        require_verified,
+        SignatureVerificationOptions::default(),
+    )?;
     if require_verified && !resolved_has_verified_source(&resolved) {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
@@ -3651,27 +4051,86 @@ fn install_local_from_lock(
         });
     }
     if !cache_asset_is_verified_regular(&cache_asset, &record.sha256)? {
+        let cache_state = if had_existing_cache_entry {
+            "invalid"
+        } else {
+            "missing"
+        };
         let repair_result = (|| {
             let download_request = locked_record_download_request(&record)?;
-            let bytes = download_asset(
+            let download_url = download_request.url.clone();
+            let download_authenticated = download_request.auth.is_some();
+            if !output.is_json() {
+                eprintln!(
+                    "binpm: frozen restore cache {cache_state} for {cmd}; downloading locked \
+                     asset URL (network_access_attempted=true, \
+                     provider_authentication_attached={})",
+                    download_authenticated
+                );
+            }
+            let bytes = download_asset_with_options(
                 &download_request.url,
                 download_request.auth.as_ref(),
                 download_request.accept,
-            )?;
+                DownloadAssetOptions {
+                    silent: output.is_json(),
+                },
+            )
+            .map_err(|source| {
+                frozen_restore_download_error(
+                    cmd,
+                    &cache_asset,
+                    cache_state,
+                    &download_url,
+                    download_authenticated,
+                    source,
+                )
+            })?;
             let actual = format!("{:x}", Sha256::digest(&bytes));
             if actual != record.sha256 {
-                return Err(BinpmError::DigestMismatch {
-                    path: cache_asset.clone(),
-                    expected: record.sha256.clone(),
-                    actual,
-                });
+                return Err(frozen_restore_download_error(
+                    cmd,
+                    &cache_asset,
+                    cache_state,
+                    &download_url,
+                    download_authenticated,
+                    BinpmError::DigestMismatch {
+                        path: cache_asset.clone(),
+                        expected: record.sha256.clone(),
+                        actual,
+                    },
+                ));
             }
             if require_verified && !record.has_verified_source() {
-                let verification = reverify_locked_record_signature(&cache_paths, &record, &bytes)?;
+                let verification = reverify_locked_record_signature_with_options(
+                    &cache_paths,
+                    &record,
+                    &bytes,
+                    SignatureVerificationOptions {
+                        silent: output.is_json(),
+                    },
+                )
+                .map_err(|source| {
+                    frozen_restore_download_error(
+                        cmd,
+                        &cache_asset,
+                        cache_state,
+                        &download_url,
+                        download_authenticated,
+                        source,
+                    )
+                })?;
                 if !verification.verified {
-                    return Err(BinpmError::VerificationRequired {
-                        package: record.package_spec.clone(),
-                    });
+                    return Err(frozen_restore_download_error(
+                        cmd,
+                        &cache_asset,
+                        cache_state,
+                        &download_url,
+                        download_authenticated,
+                        BinpmError::VerificationRequired {
+                            package: record.package_spec.clone(),
+                        },
+                    ));
                 }
                 repair_locked_verification = Some(verification);
             }
@@ -3710,7 +4169,16 @@ fn install_local_from_lock(
                 signature_available: record.signature_available,
                 signature_verified: record.signature_verified,
             };
-            populate_cache_from_bytes(&cache_paths, &resolved, &bytes)?;
+            populate_cache_from_bytes(&cache_paths, &resolved, &bytes).map_err(|source| {
+                frozen_restore_download_error(
+                    cmd,
+                    &cache_asset,
+                    cache_state,
+                    &download_url,
+                    download_authenticated,
+                    source,
+                )
+            })?;
             Ok(())
         })();
         if let Err(error) = repair_result {
@@ -3720,6 +4188,11 @@ fn install_local_from_lock(
             return Err(error);
         }
         populated_cache_entry = cache_metadata_snapshot.is_none();
+    } else if !output.is_json() {
+        eprintln!(
+            "binpm: frozen restore reused verified cache for {cmd} \
+             (network_access_attempted=false)"
+        );
     }
     let locked_verification = if require_verified {
         let verification = match repair_locked_verification {
@@ -3826,7 +4299,7 @@ fn install_local_from_lock(
         return Err(error);
     }
     if !output.is_json() {
-        println!("installed {cmd} {}", runtime_record.installed_path);
+        print_install_summary(Scope::Local, cmd, &runtime_record);
     }
     Ok(InstalledPackage {
         record: runtime_record,
@@ -4204,12 +4677,19 @@ struct DownloadRequest {
 }
 
 fn locked_record_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
+    let source = SourceSpec {
+        provider: record.source_provider,
+        host: record.source_host.clone(),
+        path: record.source_path.clone(),
+        version: Some(record.release_tag.clone()),
+    };
     let url = sanitize_persisted_url(&record.asset_url)?;
-    Ok(DownloadRequest {
-        url,
-        auth: None,
-        accept: None,
-    })
+    let auth = provider_origin_download_auth(&source, &url, provider_auth_for_source(&source));
+    let accept = match (record.source_provider, auth.as_ref()) {
+        (SourceProvider::GitHub, Some(_)) => Some(GITHUB_ASSET_DOWNLOAD_ACCEPT),
+        _ => None,
+    };
+    Ok(DownloadRequest { url, auth, accept })
 }
 
 fn locked_record_verified_download_request(record: &PackageRecord) -> Result<DownloadRequest> {
@@ -4397,6 +4877,7 @@ fn verify_signature_sidecar(
     resolved: &mut ResolvedAsset,
     asset_bytes: &[u8],
     require_verified: bool,
+    options: SignatureVerificationOptions,
 ) -> Result<()> {
     if resolved.checksum_source.is_upstream_verified() {
         return Ok(());
@@ -4412,7 +4893,7 @@ fn verify_signature_sidecar(
             signature_sidecar = %sidecar.asset_name,
             "Skipping package signature verification because no trust policy applies"
         );
-        if require_verified {
+        if require_verified && !options.silent {
             diagnostic_eprintln(format_args!(
                 "warning: signature sidecar {} is present for {}, but binpm has no applicable \
                  trust policy for this package",
@@ -4422,10 +4903,13 @@ fn verify_signature_sidecar(
         return Ok(());
     };
 
-    let bundle_bytes = match download_asset(
+    let bundle_bytes = match download_asset_with_options(
         &sidecar.download_url,
         sidecar.download_auth.as_ref(),
         sidecar.download_accept,
+        DownloadAssetOptions {
+            silent: options.silent,
+        },
     ) {
         Ok(bytes) => bytes,
         Err(error) if !require_verified => {
@@ -4495,7 +4979,7 @@ fn verify_signature_sidecar(
                 stderr = %stderr.trim(),
                 "Package signature sidecar did not verify"
             );
-            if require_verified {
+            if require_verified && !options.silent {
                 diagnostic_eprintln(format_args!(
                     "warning: signature verification failed for {} using sidecar {}",
                     resolved.source, sidecar.asset_name
@@ -4509,7 +4993,7 @@ fn verify_signature_sidecar(
                 signature_sidecar = %sidecar.asset_name,
                 "Skipping package signature verification because cosign is not on PATH"
             );
-            if require_verified {
+            if require_verified && !options.silent {
                 diagnostic_eprintln(format_args!(
                     "warning: --require-verified needs cosign on PATH to validate signature \
                      sidecar {} for {}",
@@ -4535,6 +5019,11 @@ fn verify_signature_sidecar(
     }
 
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct SignatureVerificationOptions {
+    silent: bool,
 }
 
 fn resolved_has_verified_source(resolved: &ResolvedAsset) -> bool {
@@ -4616,6 +5105,20 @@ fn reverify_locked_record_signature(
     record: &PackageRecord,
     asset_bytes: &[u8],
 ) -> Result<LockedRecordVerification> {
+    reverify_locked_record_signature_with_options(
+        cache_paths,
+        record,
+        asset_bytes,
+        SignatureVerificationOptions::default(),
+    )
+}
+
+fn reverify_locked_record_signature_with_options(
+    cache_paths: &CachePaths,
+    record: &PackageRecord,
+    asset_bytes: &[u8],
+    options: SignatureVerificationOptions,
+) -> Result<LockedRecordVerification> {
     let signature_sidecar = locked_record_signature_sidecar(record)?;
     let mut resolved = ResolvedAsset {
         source: SourceSpec::from_str(
@@ -4656,7 +5159,7 @@ fn reverify_locked_record_signature(
         signature_available: true,
         signature_verified: false,
     };
-    verify_signature_sidecar(cache_paths, &mut resolved, asset_bytes, true)?;
+    verify_signature_sidecar(cache_paths, &mut resolved, asset_bytes, true, options)?;
     if resolved_has_verified_source(&resolved) {
         Ok(LockedRecordVerification::SIGNATURE_REVERIFIED)
     } else {
@@ -6690,6 +7193,20 @@ fn download_asset(
     auth: Option<&ProviderAuth>,
     accept: Option<&'static str>,
 ) -> Result<Vec<u8>> {
+    download_asset_with_options(url, auth, accept, DownloadAssetOptions::default())
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct DownloadAssetOptions {
+    silent: bool,
+}
+
+fn download_asset_with_options(
+    url: &str,
+    auth: Option<&ProviderAuth>,
+    accept: Option<&'static str>,
+    options: DownloadAssetOptions,
+) -> Result<Vec<u8>> {
     validate_download_url(url)?;
     let sanitized_url = sanitize_download_diagnostic_url(url);
     let asset_name = download_asset_name(&sanitized_url);
@@ -6707,15 +7224,13 @@ fn download_asset(
 
     let mut last_error = None;
     for attempt in 1..=DOWNLOAD_RETRY_ATTEMPTS {
-        match download_asset_attempt(
-            &client,
-            url,
-            auth,
-            accept,
+        let context = DownloadAssetAttemptContext {
             attempt,
-            &sanitized_url,
-            &asset_name,
-        ) {
+            sanitized_url: &sanitized_url,
+            asset_name: &asset_name,
+            options,
+        };
+        match download_asset_attempt(&client, url, auth, accept, context) {
             Ok(bytes) => return Ok(bytes),
             Err(error)
                 if attempt < DOWNLOAD_RETRY_ATTEMPTS && is_retryable_download_error(&error) =>
@@ -6729,12 +7244,14 @@ fn download_asset(
                     error = %error,
                     "Retrying release asset download"
                 );
-                diagnostic_eprintln(format_args!(
-                    "binpm: retrying download of {asset_name} after a transient failure (attempt \
-                     {}/{})",
-                    attempt + 1,
-                    DOWNLOAD_RETRY_ATTEMPTS
-                ));
+                if !options.silent {
+                    diagnostic_eprintln(format_args!(
+                        "binpm: retrying download of {asset_name} after a transient failure \
+                         (attempt {}/{})",
+                        attempt + 1,
+                        DOWNLOAD_RETRY_ATTEMPTS
+                    ));
+                }
                 thread::sleep(delay);
                 last_error = Some(error);
             }
@@ -6745,15 +7262,27 @@ fn download_asset(
     Err(last_error.expect("download retry loop always returns before exhaustion"))
 }
 
+#[derive(Clone, Copy, Debug)]
+struct DownloadAssetAttemptContext<'a> {
+    attempt: usize,
+    sanitized_url: &'a str,
+    asset_name: &'a str,
+    options: DownloadAssetOptions,
+}
+
 fn download_asset_attempt(
     client: &reqwest::blocking::Client,
     url: &str,
     auth: Option<&ProviderAuth>,
     accept: Option<&'static str>,
-    attempt: usize,
-    sanitized_url: &str,
-    asset_name: &str,
+    context: DownloadAssetAttemptContext<'_>,
 ) -> Result<Vec<u8>> {
+    let DownloadAssetAttemptContext {
+        attempt,
+        sanitized_url,
+        asset_name,
+        options,
+    } = context;
     let origin = reqwest::Url::parse(url).expect("download URL was already validated");
     let mut current_url = url.to_string();
     let mut visited_urls = BTreeSet::new();
@@ -6817,7 +7346,7 @@ fn download_asset_attempt(
     }
 
     let total_bytes = response.content_length();
-    let show_progress = download_progress_enabled(total_bytes);
+    let show_progress = !options.silent && download_progress_enabled(total_bytes);
     if show_progress {
         diagnostic_eprintln(format_args!(
             "binpm: downloading {asset_name}{}",
@@ -8260,9 +8789,9 @@ mod tests {
         assert_lock_record_matches_source_and_target, assert_runtime_record_matches_lock,
         binpm_home_from_values, capture_local_remove_state, capture_runtime_tool_state,
         checksum_digest_from_text, checksum_manifest_candidates, checksum_sidecar_candidates,
-        cleanup_failed_install_cache, clear_mutation_warnings, commit_deferred_cache_hit,
-        deterministic_installed_path, download_asset_name, download_initial_capacity,
-        ensure_no_package_record_install_path_collision,
+        cleanup_failed_install_cache, clear_mutation_warnings, command_alias_differs_from_upstream,
+        commit_deferred_cache_hit, deterministic_installed_path, download_asset_name,
+        download_initial_capacity, ensure_no_package_record_install_path_collision,
         ensure_resolved_asset_satisfies_require_verified, execute_command,
         format_download_progress, format_outdated_tool_line, github_sha256_digest,
         global_install_mutation_output, global_remove_changed_files,
@@ -9514,6 +10043,15 @@ mod tests {
         assert!(message.contains("bin/beta"));
         assert!(message.contains("binpm add tool github:owner/tool@1.0.0 --bin bin/alpha"));
         assert!(message.contains("binpm x --package github:owner/tool@1.0.0 --bin bin/beta tool"));
+        assert!(message.contains("--also <cmd=upstream-binary>"));
+        assert!(message.contains("separate `[tools.<cmd>]`"));
+    }
+
+    #[test]
+    fn install_summary_alias_comparison_uses_upstream_basename() {
+        assert!(!command_alias_differs_from_upstream("rg", "rg"));
+        assert!(!command_alias_differs_from_upstream("rg", "bin/rg"));
+        assert!(command_alias_differs_from_upstream("ripgrep", "bin/rg"));
     }
 
     #[test]
@@ -11626,6 +12164,66 @@ mod tests {
     }
 
     #[test]
+    fn explain_diagnostics_distinguish_source_archive_only_releases() {
+        let target = linux_target();
+        let assets = [
+            ReleaseAsset {
+                source_archive: true,
+                ..release_asset("source.tar.gz")
+            },
+            ReleaseAsset {
+                source_archive: true,
+                ..release_asset("source.zip")
+            },
+            release_asset("source.tar.gz.sha256"),
+        ];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+
+        assert!(override_snippet_candidate(&decisions).is_none());
+        let diagnostics = release_diagnostics(&decisions, &target);
+        let payload = serde_json::to_value(&diagnostics[0]).expect("serialize diagnostic");
+
+        assert_eq!(payload["kind"], "source-archive-only");
+        assert_eq!(payload["source_archives"][0], "source.zip");
+        assert_eq!(payload["source_archives"][1], "source.tar.gz");
+        assert!(payload["remediation"]
+            .as_str()
+            .expect("remediation")
+            .contains("target-specific portable binary archive"));
+
+        let lines = release_diagnostic_lines(&decisions, &target);
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("release only provides source archives")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("source_archives: source.zip, source.tar.gz")));
+    }
+
+    #[test]
+    fn install_selection_failure_reports_source_archive_only_boundary() {
+        let target = linux_target();
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source spec");
+        let assets = [
+            ReleaseAsset {
+                source_archive: true,
+                ..release_asset("source.tar.gz")
+            },
+            ReleaseAsset {
+                source_archive: true,
+                ..release_asset("source.zip")
+            },
+        ];
+
+        let error = select_manifest_asset(&spec, None, &target, &assets).expect_err("source-only");
+        let rendered = error.to_string();
+
+        assert!(rendered.contains("release only provides source archives"));
+        assert!(rendered.contains("source archives: source.zip, source.tar.gz"));
+        assert!(rendered.contains("target-specific portable binary archive"));
+    }
+
+    #[test]
     fn explain_diagnostics_suggest_musl_override_for_missing_libc_assets() {
         let target = HostTarget {
             os: TargetOs::Linux,
@@ -11655,7 +12253,63 @@ mod tests {
         let lines = release_diagnostic_lines(&decisions, &target);
         assert!(lines
             .iter()
-            .any(|line| line.contains("Linux musl releases should include")));
+            .any(|line| line.contains("target_mismatches: tool-linux-x64.tar.gz")));
+        assert!(lines.iter().any(|line| {
+            line.contains("download and inspect the binary outside binpm")
+                && line.contains("[tools.<cmd>.targets.linux-x86_64-musl]")
+        }));
+
+        let diagnostics = release_diagnostics(&decisions, &target);
+        let payload = serde_json::to_value(&diagnostics[0]).expect("serialize diagnostic");
+        assert_eq!(payload["kind"], "target-scoring-remediation");
+        assert_eq!(payload["target"]["libc"], "musl");
+        assert_eq!(payload["target_mismatches"][0], "tool-linux-x64.tar.gz");
+        assert!(payload["message"]
+            .as_str()
+            .expect("message")
+            .contains("do not include a concrete libc"));
+    }
+
+    #[test]
+    fn explain_diagnostics_distinguish_target_mismatch_failures() {
+        let target = HostTarget {
+            os: TargetOs::Darwin,
+            arch: TargetArch::Aarch64,
+            libc: TargetLibc::Any,
+        };
+        let assets = [release_asset("tool-linux-x64-gnu.tar.gz")];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+        let diagnostics = release_diagnostics(&decisions, &target);
+        let payload = serde_json::to_value(&diagnostics[0]).expect("serialize diagnostic");
+
+        assert_eq!(payload["kind"], "target-mismatch");
+        assert_eq!(payload["target"]["os"], "darwin");
+        assert_eq!(payload["target_mismatches"][0], "tool-linux-x64-gnu.tar.gz");
+        assert!(payload["message"]
+            .as_str()
+            .expect("message")
+            .contains("none match target darwin-aarch64-any"));
+    }
+
+    #[test]
+    fn explain_diagnostics_reports_armv7_assets_missing_arch_token_as_target_mismatch() {
+        let target = HostTarget {
+            os: TargetOs::Linux,
+            arch: TargetArch::Armv7,
+            libc: TargetLibc::Gnu,
+        };
+        let assets = [release_asset("tool-linux.tar.gz")];
+        let decisions = crate::assets::score_assets(SourceProvider::GitHub, &target, &assets);
+        let diagnostics = release_diagnostics(&decisions, &target);
+        let payload = serde_json::to_value(&diagnostics[0]).expect("serialize diagnostic");
+
+        assert_eq!(payload["kind"], "target-mismatch");
+        assert_eq!(payload["target"]["arch"], "armv7");
+        assert_eq!(payload["target_mismatches"][0], "tool-linux.tar.gz");
+        assert!(payload["message"]
+            .as_str()
+            .expect("message")
+            .contains("none match target linux-armv7-gnu"));
     }
 
     #[test]
@@ -11912,7 +12566,7 @@ mod tests {
     }
 
     #[test]
-    fn locked_record_download_request_omits_provider_auth_for_provider_asset_url() {
+    fn locked_record_download_request_uses_provider_auth_for_provider_asset_url() {
         let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "github:ghe.locked.example/owner/tool".to_string();
@@ -11928,8 +12582,11 @@ mod tests {
 
         std::env::remove_var("BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
         assert_eq!(request.url, record.asset_url);
-        assert_eq!(request.auth, None);
-        assert_eq!(request.accept, None);
+        assert_eq!(request.accept, Some(GITHUB_ASSET_DOWNLOAD_ACCEPT));
+        let auth = request.auth.expect("provider auth");
+        assert_eq!(auth.header_name, "authorization");
+        assert_eq!(auth.header_value, "Bearer locked-token");
+        assert_eq!(auth.env_var, "BINPM_GITHUB_TOKEN_GHE_2E_LOCKED_2E_EXAMPLE");
     }
 
     #[test]
@@ -11955,7 +12612,7 @@ mod tests {
     }
 
     #[test]
-    fn locked_record_download_request_omits_gitlab_auth_for_provider_asset_url() {
+    fn locked_record_download_request_uses_gitlab_auth_for_provider_asset_url() {
         let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
@@ -11974,7 +12631,13 @@ mod tests {
 
         std::env::remove_var("BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE");
         assert_eq!(request.url, record.asset_url);
-        assert_eq!(request.auth, None);
+        let auth = request.auth.expect("provider auth");
+        assert_eq!(auth.header_name, "PRIVATE-TOKEN");
+        assert_eq!(auth.header_value, "locked-token");
+        assert_eq!(
+            auth.env_var,
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_LOCKED_2E_EXAMPLE"
+        );
         assert_eq!(request.accept, None);
     }
 
@@ -12048,6 +12711,7 @@ mod tests {
 
     #[test]
     fn locked_record_signature_sidecar_preserves_provider_auth_metadata() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "github:ghe.locked.example/owner/tool".to_string();
         record.source_host = "ghe.locked.example".to_string();
@@ -12074,6 +12738,7 @@ mod tests {
 
     #[test]
     fn locked_record_signature_sidecar_omits_provider_auth_for_external_asset_url() {
+        let _env_lock = ENV_LOCK.lock().expect("env lock");
         let mut record = package_record();
         record.source = "gitlab:gitlab.locked.example/group/tool".to_string();
         record.source_provider = SourceProvider::GitLab;

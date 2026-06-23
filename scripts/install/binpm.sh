@@ -20,8 +20,8 @@ USAGE
 repo="delinoio/oss"
 tag_prefix="binpm@v"
 workflow_identity="https://github.com/delinoio/oss/.github/workflows/release-binpm.yml@"
-supported_platforms="macOS x64, macOS arm64, Linux x64, Linux arm64, Windows x64, and Windows arm64"
-unsupported_platform_hint="Use an x64/arm64 host or a supported CI image: macOS x64/arm64, Linux x64/arm64, or Windows x64/arm64."
+supported_direct_targets="darwin/amd64 (macOS x64), darwin/arm64 (macOS arm64), linux/amd64 (Linux x64), linux/arm64 (Linux arm64), windows/amd64 (Windows x64), windows/arm64 (Windows arm64)"
+unsupported_platform_hint="Use an x64/arm64 host or supported CI image for direct install, use Homebrew or cargo-binstall where they support your host, or build binpm from source."
 
 version="latest"
 method="package-manager"
@@ -128,10 +128,24 @@ verify_bundle() {
     "$artifact"
 }
 
+unsupported_direct_platform() {
+  local os="$1"
+  local arch="$2"
+
+  echo "[install.binpm] unsupported host platform for direct installation: detected os=${os}, arch=${arch}" >&2
+  echo "[install.binpm] no first-party binpm direct installer artifact is published for this detected host" >&2
+  echo "[install.binpm] supported direct-install targets: ${supported_direct_targets}" >&2
+  echo "[install.binpm] recommended alternatives: ${unsupported_platform_hint}" >&2
+  return 1
+}
+
 detect_direct_platform() {
   local uname_os
   uname_os="${BINPM_INSTALL_TEST_UNAME_OS:-$(uname -s)}"
   uname_os="$(printf '%s' "$uname_os" | tr '[:upper:]' '[:lower:]')"
+
+  local uname_arch
+  uname_arch="${BINPM_INSTALL_TEST_UNAME_ARCH:-$(uname -m)}"
 
   local os=""
   case "$uname_os" in
@@ -142,15 +156,10 @@ detect_direct_platform() {
       os="darwin"
       ;;
     *)
-      echo "[install.binpm] unsupported host platform for direct installation: os=${uname_os}, arch=unknown" >&2
-      echo "[install.binpm] supported platforms: ${supported_platforms}; x86 hosts are unsupported" >&2
-      echo "[install.binpm] hint: ${unsupported_platform_hint}" >&2
-      return 1
+      unsupported_direct_platform "$uname_os" "$uname_arch"
+      return
       ;;
   esac
-
-  local uname_arch
-  uname_arch="${BINPM_INSTALL_TEST_UNAME_ARCH:-$(uname -m)}"
 
   local arch=""
   case "$uname_arch" in
@@ -161,16 +170,12 @@ detect_direct_platform() {
       arch="arm64"
       ;;
     x86|i386|i486|i586|i686|ia32|386)
-      echo "[install.binpm] unsupported host platform for direct installation: os=${os}, arch=${uname_arch}" >&2
-      echo "[install.binpm] supported platforms: ${supported_platforms}; x86 hosts are unsupported" >&2
-      echo "[install.binpm] hint: ${unsupported_platform_hint}" >&2
-      return 1
+      unsupported_direct_platform "$os" "$uname_arch"
+      return
       ;;
     *)
-      echo "[install.binpm] unsupported host platform for direct installation: os=${os}, arch=${uname_arch}" >&2
-      echo "[install.binpm] supported platforms: ${supported_platforms}; x86 hosts are unsupported" >&2
-      echo "[install.binpm] hint: ${unsupported_platform_hint}" >&2
-      return 1
+      unsupported_direct_platform "$os" "$uname_arch"
+      return
       ;;
   esac
 
