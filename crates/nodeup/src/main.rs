@@ -325,10 +325,6 @@ where
             break;
         };
 
-        if command_scan_state == CommandScanState::RunDelegated {
-            break;
-        }
-
         let Some(arg) = arg.to_str() else {
             output_value_expected = false;
             color_value_expected = false;
@@ -380,9 +376,8 @@ where
                 };
             }
             CommandScanState::RunBeforeRuntime => {
-                // `run` captures all arguments after the runtime selector as delegated argv.
-                // Stop scanning once runtime is encountered so delegated flags do not
-                // affect nodeup's own output mode detection.
+                // Clap still accepts Nodeup global flags after the runtime selector,
+                // so the delegated argv boundary is the first non-Nodeup token after it.
                 if arg.starts_with('-') {
                     continue;
                 }
@@ -400,7 +395,7 @@ where
                 }
                 break;
             }
-            CommandScanState::RunDelegated | CommandScanState::AfterSubcommand => {}
+            CommandScanState::AfterSubcommand => {}
         }
     }
 
@@ -430,7 +425,6 @@ enum CommandScanState {
     BeforeSubcommand,
     RunBeforeRuntime,
     RunBeforeDelegatedCommand,
-    RunDelegated,
     AfterSubcommand,
 }
 
