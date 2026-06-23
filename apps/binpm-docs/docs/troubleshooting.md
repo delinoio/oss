@@ -49,6 +49,10 @@ Homebrew installs consume first-party prebuilt binpm archives for macOS and Linu
 
 Direct installer failures before any artifact download usually mean the host is outside the first-party binpm release matrix or `cosign` is missing from `PATH`. Install `cosign`, choose a supported macOS/Linux/Windows x64 or arm64 host, or build from source for other runtime targets.
 
+When the direct installer reports an unsupported host, it has stopped before release lookup and before artifact download. The message includes the detected OS and architecture, the supported direct-install targets (`darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`, `windows/amd64`, and `windows/arm64`), and alternatives for the current host. It should not print release URLs, artifact URLs, query strings, fragments, credentials, or tokens.
+
+An unsupported-host message means there is no first-party direct-installer artifact for that detected host. It does not mean binpm is unsupported as a project on every possible path. Use a supported x64/arm64 host or CI image for direct install, try Homebrew or `cargo-binstall` where they support your host, or build binpm from source.
+
 ## Validate Local State
 
 Use `binpm doctor` to inspect manifest discovery, lockfile readability, cache state, installed executables, PATH visibility, and provider configuration without changing them.
