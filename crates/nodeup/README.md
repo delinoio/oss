@@ -283,6 +283,7 @@ Scope filtering:
 - Unit tests cover selectors, resolver, release index cache behavior, logging mode selection, and installer helpers.
 - CLI integration tests cover command contracts, JSON error envelopes, selector precedence, override lifecycle, update/check branches, self-management commands, alias dispatch (`node`, `npm`, `npx`, `yarn`, `pnpm`), and `packageManager`-aware execution planning.
 - `nodeup update` treats exact-version selectors as immutable pins, reports `skipped-exact-version`, and canonicalizes tracked exact selectors such as `22.1.0` and `v22.1.0` to one `v<semver>` entry.
+- Multi-selector `toolchain install` and explicit `update` invocations preflight all selectors before channel resolution, runtime download, extraction, tracking, or install mutation.
 
 Run locally from repository root:
 

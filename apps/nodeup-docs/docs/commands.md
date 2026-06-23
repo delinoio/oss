@@ -38,7 +38,7 @@ nodeup toolchain install 22.1.0
 nodeup toolchain install v22.1.0 lts current latest
 ```
 
-The command rejects linked runtime names before linked-runtime lookup, so a linked-name selector fails the same way whether or not that linked runtime exists. JSON output is an array of entries with `selector`, `runtime`, and `status`, where `status` is `installed` or `already-installed`.
+The command validates every requested selector before resolving channels, downloading archives, extracting runtimes, or tracking selectors. It rejects linked runtime names before linked-runtime lookup, so a linked-name selector fails the same way whether or not that linked runtime exists. JSON output is an array of entries with `selector`, `runtime`, and `status`, where `status` is `installed` or `already-installed`.
 
 ## toolchain uninstall
 
@@ -155,7 +155,7 @@ Valid color environment values are `NODEUP_COLOR=auto|always|never` and `NODEUP_
 nodeup update [runtime]...
 ```
 
-With explicit selectors, processes those selectors. Without arguments, updates tracked selectors first; if no selectors are tracked, it falls back to installed runtimes. JSON entries for no-argument updates include `selector_source` (`tracked-selectors` or `installed-runtimes`) and `implicit_target: true`.
+With explicit selectors, validates every requested selector before resolving channels or installing runtimes, then processes those selectors. Without arguments, updates tracked selectors first; if no selectors are tracked, it falls back to installed runtimes. JSON entries for no-argument updates include `selector_source` (`tracked-selectors` or `installed-runtimes`) and `implicit_target: true`.
 
 Behavior by selector:
 

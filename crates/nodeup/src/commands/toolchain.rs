@@ -204,22 +204,11 @@ fn install(
         ));
     }
 
+    let requested_selectors = preflight_install_selectors(runtimes)?;
     PlatformTarget::ensure_supported_host("runtime installation")?;
 
     let mut results = Vec::new();
-    for runtime in runtimes {
-        let selector = RuntimeSelector::parse(runtime)?;
-        if matches!(selector, RuntimeSelector::LinkedName(_)) {
-            return Err(NodeupError::invalid_input_with_hint(
-                format!(
-                    "`toolchain install` only supports semantic version or channel selectors \
-                     (selector={runtime})"
-                ),
-                "Use selectors like `22.1.0`, `v22.1.0`, `lts`, `current`, or `latest`. Linked \
-                 runtimes are added with `nodeup toolchain link <name> <path>`.",
-            ));
-        }
-
+    for (runtime, selector) in requested_selectors {
         let resolved = app.resolver.resolve_selector_with_source(
             &selector.stable_id(),
             crate::types::RuntimeSelectorSource::Explicit,
@@ -277,6 +266,26 @@ fn install(
     print_output(output, color, &human, &results)?;
 
     Ok(0)
+}
+
+fn preflight_install_selectors(runtimes: &[String]) -> Result<Vec<(&String, RuntimeSelector)>> {
+    let mut selectors = Vec::with_capacity(runtimes.len());
+    for runtime in runtimes {
+        let selector = RuntimeSelector::parse(runtime)?;
+        if matches!(selector, RuntimeSelector::LinkedName(_)) {
+            return Err(NodeupError::invalid_input_with_hint(
+                format!(
+                    "`toolchain install` only supports semantic version or channel selectors \
+                     (selector={runtime})"
+                ),
+                "Use selectors like `22.1.0`, `v22.1.0`, `lts`, `current`, or `latest`. Linked \
+                 runtimes are added with `nodeup toolchain link <name> <path>`.",
+            ));
+        }
+        selectors.push((runtime, selector));
+    }
+
+    Ok(selectors)
 }
 
 fn append_release_index_human_notes<'a>(
