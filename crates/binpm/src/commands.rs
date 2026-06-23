@@ -1664,10 +1664,7 @@ fn ensure_resolved_asset_satisfies_require_verified(
     resolved: &ResolvedAsset,
     require_verified: bool,
 ) -> Result<()> {
-    if require_verified
-        && !resolved_has_verified_source(resolved)
-        && !resolved_has_supported_signature_evidence(resolved)
-    {
+    if require_verified && !resolved_has_verified_source(resolved) {
         return Err(BinpmError::VerificationRequired {
             package: spec.to_string(),
         });
@@ -2458,7 +2455,7 @@ fn install_local_source(
     spec: SourceSpec,
     frozen_lockfile: bool,
     require_verified: bool,
-    output: OutputMode,
+    _output: OutputMode,
 ) -> Result<MutationOutput> {
     let root = require_manifest_root()?;
     let cmd = repo_name(&spec).to_string();
@@ -2480,7 +2477,7 @@ fn install_local_source(
         Some(&next_manifest_tool),
         frozen_lockfile,
         require_verified,
-        output,
+        OutputMode::Json,
     )?;
     let record = install.record.clone();
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
@@ -2516,7 +2513,7 @@ fn install_local_source_as(
     explicit_bin: Option<String>,
     frozen_lockfile: bool,
     require_verified: bool,
-    output: OutputMode,
+    _output: OutputMode,
 ) -> Result<MutationOutput> {
     let root = require_manifest_root()?;
     validate_command_name(cmd)?;
@@ -2542,7 +2539,7 @@ fn install_local_source_as(
         Some(&next_manifest_tool),
         frozen_lockfile,
         require_verified,
-        output,
+        OutputMode::Json,
     )?;
     let record = install.record.clone();
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
@@ -2616,7 +2613,7 @@ fn install_local_manifest(
             Some(tool),
             frozen_lockfile,
             require_verified,
-            output,
+            OutputMode::Json,
         ) {
             Ok(install) => completed.push(CompletedLocalInstall {
                 cmd: cmd.clone(),
@@ -12186,6 +12183,21 @@ mod tests {
 
         let error = ensure_resolved_asset_satisfies_require_verified(&spec, &resolved, true)
             .expect_err("local checksum only");
+
+        assert!(matches!(error, BinpmError::VerificationRequired { .. }));
+    }
+
+    #[test]
+    fn require_verified_preview_rejects_unverified_signature_sidecar_resolution() {
+        let mut resolved =
+            resolved_asset("abcdefabcdef0123456789abcdef0123456789abcdef0123456789abcdef0123");
+        resolved.provider_digest_sha256 = None;
+        resolved.checksum_source = ChecksumSource::Local;
+        resolved.signature_available = true;
+        let spec = SourceSpec::from_str("github:owner/tool").expect("source");
+
+        let error = ensure_resolved_asset_satisfies_require_verified(&spec, &resolved, true)
+            .expect_err("signature sidecar was not verified");
 
         assert!(matches!(error, BinpmError::VerificationRequired { .. }));
     }
