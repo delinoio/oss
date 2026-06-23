@@ -84,42 +84,69 @@ impl RuntimeInstaller {
         info!(
             command_path = "nodeup.installer.download",
             runtime = %canonical_version,
-            url = %archive_url,
+            url = %archive_url_sanitized,
             download_path = %archive_path.display(),
             "Downloading runtime archive"
         );
 
-        download_file(release_client, &archive_url, &archive_path)?;
+        download_file(
+            release_client,
+            &archive_url,
+            &archive_path,
+            &canonical_version,
+            archive_filename,
+        )?;
 
         let shasums_url = release_client.shasums_url(&canonical_version);
         let shasums_url_sanitized = sanitize_url_text(&shasums_url);
         let shasums_content = release_client
             .http()
             .get(&shasums_url)
-            .send()?
+            .send()
+            .map_err(|error| {
+                network_error_with_optional_mirror_diagnostics(
+                    release_client,
+                    format!(
+                        "Failed to fetch SHASUMS256.txt (runtime={canonical_version}, \
+                         url={shasums_url_sanitized}, {})",
+                        reqwest_error_context(&error)
+                    ),
+                    "Check network connectivity and retry the install command.",
+                    &canonical_version,
+                    archive_filename,
+                )
+            })?
             .error_for_status()
             .map_err(|error| {
                 let status = error
                     .status()
                     .map(|status| status.as_u16().to_string())
                     .unwrap_or_else(|| "none".to_string());
-                NodeupError::network_with_hint(
+                network_error_with_optional_mirror_diagnostics(
+                    release_client,
                     format!(
                         "Failed to fetch SHASUMS256.txt (runtime={canonical_version}, \
-                         url={shasums_url_sanitized}, status={status}): {error}"
+                         url={shasums_url_sanitized}, status={status}, {})",
+                        reqwest_error_context(&error)
                     ),
                     "Check network connectivity and retry the install command.",
+                    &canonical_version,
+                    archive_filename,
                 )
             })?
             .text()
             .map_err(|error| {
-                NodeupError::network_with_hint(
+                network_error_with_optional_mirror_diagnostics(
+                    release_client,
                     format!(
                         "Failed to read SHASUMS256.txt body (runtime={canonical_version}, \
-                         url={shasums_url_sanitized}): {error}"
+                         url={shasums_url_sanitized}, {})",
+                        reqwest_error_context(&error)
                     ),
                     "Retry the command. If it keeps failing, run with `RUST_LOG=nodeup=debug` and \
                      inspect HTTP response details.",
+                    &canonical_version,
+                    archive_filename,
                 )
             })?;
 
@@ -154,45 +181,14 @@ impl RuntimeInstaller {
         );
 
         if *expected_checksum != observed_checksum {
-            let mirror_diagnostic = release_client.mirror_diagnostic();
-            let mut diagnostics = ErrorDiagnostics::new();
-            diagnostics.insert(
-                "archive".to_string(),
-                serde_json::Value::String(archive_filename.to_string()),
-            );
-            diagnostics.insert(
-                "runtime".to_string(),
-                serde_json::Value::String(canonical_version.clone()),
-            );
-            diagnostics.insert(
-                "index_url".to_string(),
-                serde_json::Value::String(mirror_diagnostic.index_url.clone()),
-            );
-            diagnostics.insert(
-                "index_url_source".to_string(),
-                serde_json::Value::String(mirror_diagnostic.index_url_source.to_string()),
-            );
-            diagnostics.insert(
-                "download_base_url".to_string(),
-                serde_json::Value::String(mirror_diagnostic.download_base_url.clone()),
-            );
-            diagnostics.insert(
-                "download_base_url_source".to_string(),
-                serde_json::Value::String(mirror_diagnostic.download_base_url_source.to_string()),
-            );
-            diagnostics.insert(
-                "mirror_override_present".to_string(),
-                serde_json::Value::Bool(mirror_diagnostic.mirror_override_present),
-            );
-            diagnostics.insert(
-                "mirror_mismatch_indicators".to_string(),
-                serde_json::to_value(&mirror_diagnostic.mismatch_indicators)?,
-            );
+            let diagnostics =
+                mirror_error_diagnostics(release_client, &canonical_version, archive_filename);
+            let mirror_context = mirror_context_for_message(release_client);
 
             return Err(NodeupError::conflict_with_diagnostics(
                 format!(
                     "Checksum mismatch for {archive_filename}. expected={expected_checksum}, \
-                     observed={observed_checksum}"
+                     observed={observed_checksum}{mirror_context}"
                 ),
                 checksum_mismatch_hint(release_client),
                 diagnostics,
@@ -220,36 +216,182 @@ fn checksum_mismatch_hint(release_client: &ReleaseIndexClient) -> &'static str {
     "Delete the downloaded archive from the nodeup downloads directory and retry the install."
 }
 
-fn download_file(release_client: &ReleaseIndexClient, url: &str, destination: &Path) -> Result<()> {
+fn download_file(
+    release_client: &ReleaseIndexClient,
+    url: &str,
+    destination: &Path,
+    runtime: &str,
+    archive: &str,
+) -> Result<()> {
     let sanitized_url = sanitize_url_text(url);
     let mut response = release_client
         .http()
         .get(url)
-        .send()?
+        .send()
+        .map_err(|error| {
+            network_error_with_optional_mirror_diagnostics(
+                release_client,
+                format!(
+                    "Download request failed (url={sanitized_url}, {})",
+                    reqwest_error_context(&error)
+                ),
+                "Check network connectivity and retry the command.",
+                runtime,
+                archive,
+            )
+        })?
         .error_for_status()
         .map_err(|error| {
             let status = error
                 .status()
                 .map(|status| status.as_u16().to_string())
                 .unwrap_or_else(|| "none".to_string());
-            NodeupError::network_with_hint(
-                format!("Download request failed (url={sanitized_url}, status={status}): {error}"),
+            network_error_with_optional_mirror_diagnostics(
+                release_client,
+                format!(
+                    "Download request failed (url={sanitized_url}, status={status}, {})",
+                    reqwest_error_context(&error)
+                ),
                 "Check network connectivity and retry the command.",
+                runtime,
+                archive,
             )
         })?;
 
     let mut output = File::create(destination)?;
     response.copy_to(&mut output).map_err(|error| {
-        NodeupError::network_with_hint(
+        network_error_with_optional_mirror_diagnostics(
+            release_client,
             format!(
-                "Failed to stream downloaded bytes (url={sanitized_url}, destination={}): {error}",
+                "Failed to stream downloaded bytes (url={sanitized_url}, destination={}, {})",
                 destination.display(),
+                reqwest_error_context(&error)
             ),
             "Ensure the downloads directory is writable, then retry.",
+            runtime,
+            archive,
         )
     })?;
     output.flush()?;
     Ok(())
+}
+
+fn reqwest_error_context(error: &reqwest::Error) -> String {
+    let classification = if error.is_timeout() {
+        "timeout"
+    } else if error.is_connect() {
+        "connect"
+    } else if error.is_status() {
+        "http-status"
+    } else if error.is_decode() {
+        "decode"
+    } else if error.is_request() {
+        "request"
+    } else if error.is_body() {
+        "body"
+    } else {
+        "other"
+    };
+    let status = error
+        .status()
+        .map(|status| status.as_u16().to_string())
+        .unwrap_or_else(|| "none".to_string());
+    let url = error
+        .url()
+        .map(|url| sanitize_url_text(url.as_str()))
+        .unwrap_or_else(|| "none".to_string());
+
+    format!("classification={classification}, error_status={status}, error_url={url}")
+}
+
+fn network_error_with_optional_mirror_diagnostics(
+    release_client: &ReleaseIndexClient,
+    cause: String,
+    hint: &'static str,
+    runtime: &str,
+    archive: &str,
+) -> NodeupError {
+    if release_client.mirror_override_present() {
+        return NodeupError::network_with_diagnostics(
+            format!("{cause}{}", mirror_context_for_message(release_client)),
+            mirror_consistency_hint(hint),
+            mirror_error_diagnostics(release_client, runtime, archive),
+        );
+    }
+
+    NodeupError::network_with_hint(cause, hint)
+}
+
+fn mirror_consistency_hint(base_hint: &'static str) -> String {
+    format!(
+        "{base_hint} If a mirror override is configured, verify NODEUP_INDEX_URL and \
+         NODEUP_DOWNLOAD_BASE_URL point to matching Node.js release data."
+    )
+}
+
+fn mirror_error_diagnostics(
+    release_client: &ReleaseIndexClient,
+    runtime: &str,
+    archive: &str,
+) -> ErrorDiagnostics {
+    let mirror_diagnostic = release_client.mirror_diagnostic();
+    let mut diagnostics = ErrorDiagnostics::new();
+    diagnostics.insert(
+        "archive".to_string(),
+        serde_json::Value::String(archive.to_string()),
+    );
+    diagnostics.insert(
+        "runtime".to_string(),
+        serde_json::Value::String(runtime.to_string()),
+    );
+    diagnostics.insert(
+        "index_url".to_string(),
+        serde_json::Value::String(mirror_diagnostic.index_url.clone()),
+    );
+    diagnostics.insert(
+        "index_url_source".to_string(),
+        serde_json::Value::String(mirror_diagnostic.index_url_source.to_string()),
+    );
+    diagnostics.insert(
+        "download_base_url".to_string(),
+        serde_json::Value::String(mirror_diagnostic.download_base_url.clone()),
+    );
+    diagnostics.insert(
+        "download_base_url_source".to_string(),
+        serde_json::Value::String(mirror_diagnostic.download_base_url_source.to_string()),
+    );
+    diagnostics.insert(
+        "mirror_override_present".to_string(),
+        serde_json::Value::Bool(mirror_diagnostic.mirror_override_present),
+    );
+    diagnostics.insert(
+        "mirror_mismatch_indicators".to_string(),
+        serde_json::Value::Array(
+            mirror_diagnostic
+                .mismatch_indicators
+                .iter()
+                .map(|indicator| serde_json::Value::String((*indicator).to_string()))
+                .collect(),
+        ),
+    );
+    diagnostics
+}
+
+fn mirror_context_for_message(release_client: &ReleaseIndexClient) -> String {
+    let diagnostic = release_client.mirror_diagnostic();
+    if !diagnostic.mirror_override_present {
+        return String::new();
+    }
+
+    format!(
+        ", index_url={}, index_url_source={}, download_base_url={}, download_base_url_source={}, \
+         mirror_mismatch_indicators={}",
+        diagnostic.index_url,
+        diagnostic.index_url_source,
+        diagnostic.download_base_url,
+        diagnostic.download_base_url_source,
+        diagnostic.mismatch_indicators.join("|")
+    )
 }
 
 fn extract_archive_to_runtime(

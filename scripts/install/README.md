@@ -7,6 +7,7 @@ Cross-platform install scripts with the shared interface:
 - `direct` verifies `SHA256SUMS` plus Sigstore bundle sidecars (`*.sigstore.json`)
 - `direct` requires [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/) for Sigstore bundle verification and fails before release artifact download when `cosign` is not on `PATH`
 - Missing `cosign` is a prerequisite failure; checksum mismatch or `cosign verify-blob` failure is a verification failure
+- Unsupported direct-installer hosts fail before release lookup or artifact download and must report detected OS/architecture, supported direct-install targets, and alternatives without printing release or artifact URLs
 - Older releases that only published legacy `.sig`/`.pem` files are not supported in direct mode
 - PowerShell installers default to `-Method direct` on Windows hosts
 - `cargo-mono` accepts `package-manager` only as a compatibility alias and maps it to `direct`

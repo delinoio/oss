@@ -6,9 +6,9 @@
   "scripts": {
     "prepare:app": "echo 'binpm-docs: no prepare step'",
     "dev": "rspress dev --port 46260",
-    "build": "rspress build",
+    "build": "rspress build && node scripts/copy-installers.mjs",
     "preview": "rspress preview --port 46261",
-    "test": "rspress build && node scripts/validate-clean-urls.mjs"
+    "test": "rspress build && node scripts/copy-installers.mjs && node scripts/validate-clean-urls.mjs"
   },
   "devDependencies": {
     "@rspress/core": "^2.0.0"
