@@ -101,8 +101,8 @@ pub enum Command {
     /// Update channels/tracked selectors; exact versions are immutable pins.
     Update {
         /// Runtime selectors to update. Exact versions are skipped as immutable
-        /// pins; install or select a newer exact runtime with `toolchain install`,
-        /// `default`, or `override set`.
+        /// pins; install or select a newer exact runtime with `toolchain
+        /// install`, `default`, or `override set`.
         runtimes: Vec<String>,
     },
     /// Check for available updates without installing them.
