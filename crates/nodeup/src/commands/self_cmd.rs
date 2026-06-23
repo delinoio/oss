@@ -967,10 +967,6 @@ enum ShellKind {
 
 impl ShellKind {
     fn detect() -> Self {
-        if host_is_windows() {
-            return Self::PowerShell;
-        }
-
         let shell_name = env::var_os("SHELL")
             .and_then(|value| PathBuf::from(value).file_name().map(|name| name.to_owned()))
             .and_then(|name| name.to_str().map(|value| value.to_ascii_lowercase()));
@@ -979,6 +975,7 @@ impl ShellKind {
             Some("bash") => Self::Bash,
             Some("zsh") => Self::Zsh,
             Some("fish") => Self::Fish,
+            _ if host_is_windows() => Self::PowerShell,
             _ => Self::Posix,
         }
     }
