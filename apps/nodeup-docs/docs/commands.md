@@ -38,7 +38,7 @@ nodeup toolchain install 22.1.0
 nodeup toolchain install v22.1.0 lts current latest
 ```
 
-The command rejects linked runtime names before linked-runtime lookup, so a linked-name selector fails the same way whether or not that linked runtime exists. JSON output is an array of entries with `selector`, `runtime`, and `status`, where `status` is `installed` or `already-installed`.
+The command validates every requested selector before resolving channels, downloading archives, extracting runtimes, or tracking selectors. It rejects linked runtime names before linked-runtime lookup, so a linked-name selector fails the same way whether or not that linked runtime exists. JSON output is an array of entries with `selector`, `runtime`, and `status`, where `status` is `installed` or `already-installed`.
 
 ## toolchain uninstall
 
@@ -72,11 +72,11 @@ nodeup toolchain link <name> <path>
 
 Registers an existing runtime directory. The directory must contain `bin/node` or `bin/node.exe`.
 
-Linked names must match `[A-Za-z0-9][A-Za-z0-9_-]*`. Reserved channel names `lts`, `current`, and `latest` cannot be used as linked runtime names.
+Linked names must match `[A-Za-z0-9][A-Za-z0-9_-]*`. Reserved channel names `lts`, `current`, and `latest` cannot be used as linked runtime names. Case variants such as `LTS`, `Current`, and `LATEST` are also rejected because they are ambiguous with channel selectors. Use a distinct name such as `local-lts` or `work-node`.
 
 The linked `node` command must be runnable. Unix hosts require an executable permission bit on `bin/node`; Windows platform behavior uses `bin/node.exe`.
 
-Linking validates the minimum runtime requirement only. It does not require every managed alias command to exist. Successful human output includes a managed shim command availability matrix for `node`, `npm`, `npx`, `yarn`, and `pnpm`, including the checked runtime paths.
+Linking validates the minimum runtime requirement only: the linked `node` command is runnable. It does not require every managed alias command to exist. Successful human output separates the required `node` check from optional managed shim availability, warns when optional package-manager shims are missing, and includes checked runtime paths for `node`, `npm`, `npx`, `yarn`, and `pnpm`.
 
 JSON output includes `name`, `path`, `status: "linked"`, `managed_shim_commands`, `install_on_demand_eligible`, and `path_precedence_guidance`. Each `managed_shim_commands` entry includes:
 
@@ -100,9 +100,9 @@ nodeup toolchain unlink <name>...
 
 Removes linked runtime records from nodeup settings and tracked selectors without deleting the external runtime directories.
 
-Unlinking fails with `conflict` when a linked name is the current default or is referenced by a directory override. Change the default or remove/update the override before unlinking.
+Unlinking fails with `conflict` when a linked name is the current default or is referenced by a directory override. The conflict output names every blocker, includes remediation commands such as `nodeup default <runtime>` or `nodeup override unset --path <path>`, and includes the retry command. External runtime directories are not deleted.
 
-Missing linked names fail with `not-found`. JSON output is the removed linked-name list.
+Missing linked names fail with `not-found`. JSON output is the removed linked-name list. Blocked JSON errors include `diagnostics.blocked_linked_runtimes`, `diagnostics.blockers`, and `diagnostics.retry_commands`; each blocker includes `reference_type`, `runtime`, `selector`, `path`, `clear_command`, `change_command`, and `action`.
 
 ## default
 
@@ -155,7 +155,7 @@ Valid color environment values are `NODEUP_COLOR=auto|always|never` and `NODEUP_
 nodeup update [runtime]...
 ```
 
-With explicit selectors, processes those selectors. Without arguments, updates tracked selectors first; if no selectors are tracked, it falls back to installed runtimes. JSON entries for no-argument updates include `selector_source` (`tracked-selectors` or `installed-runtimes`) and `implicit_target: true`.
+With explicit selectors, validates every requested selector before resolving channels or installing runtimes, then processes those selectors. Without arguments, updates tracked selectors first; if no selectors are tracked, it falls back to installed runtimes. JSON entries for no-argument updates include `selector_source` (`tracked-selectors` or `installed-runtimes`) and `implicit_target: true`.
 
 Behavior by selector:
 
@@ -200,7 +200,7 @@ JSON output includes `path`, `selector`, and `status: "set"`.
 ## override unset
 
 ```bash
-nodeup override unset [--path <path>] [--nonexistent]
+nodeup override unset [--path <path> | --nonexistent]
 ```
 
 Removes an override for the provided path or current directory. `--nonexistent` removes stale entries whose directories no longer exist.
@@ -217,21 +217,22 @@ nodeup which [--runtime <runtime>] <command>
 
 Prints the executable path Nodeup would run. `--runtime` is an explicit selector and overrides directory/default resolution.
 
-For `yarn` and `pnpm`, `which` uses package-manager planning. In direct mode it prints the selected runtime's package-manager executable. In npm-exec mode it prints the selected runtime's `npm` executable and labels that `npm exec` will invoke the requested package manager with the selected package spec.
+For `yarn` and `pnpm`, `which` uses package-manager planning. In direct mode it prints the selected runtime's package-manager executable and labels it as a direct runtime binary. In npm-exec mode it prints the selected runtime's `npm` executable and labels that `npm exec` will invoke the requested package manager with the selected package spec.
 
-JSON output includes `runtime`, `command`, `requested_command`, `executable_path`, `mode`, `reason`, optional `package_spec`, optional `package_spec_pinned`, optional `package_json_path`, and a nested `planning` object with the same stable planning diagnostics.
+JSON output includes `runtime`, `command`, `requested_command`, `executable_path`, `mode`, `reason`, optional `package_manager_strategy`, optional `corepack_supported`, optional `package_spec`, optional `package_spec_pinned`, optional `package_json_path`, and a nested `planning` object with the same stable planning diagnostics.
 
-Direct-mode human output stays path-only:
+Direct-mode human output includes the path plus the package-manager plan:
 
 ```text
 /home/me/.nodeup/data/toolchains/v22.1.0/bin/yarn
+nodeup: yarn will run as direct runtime binary /home/me/.nodeup/data/toolchains/v22.1.0/bin/yarn (strategy=direct-runtime-binary; package_json=/repo/package.json; reason=package-json-missing-field-direct; corepack=unsupported)
 ```
 
 npm-exec-mode human output includes the `npm` path plus the package-manager plan:
 
 ```text
 /home/me/.nodeup/data/toolchains/v22.1.0/bin/npm
-nodeup: yarn will run via npm exec using package @yarnpkg/cli-dist@4.13.0 (pinned; package_json=/repo/package.json; npm=/home/me/.nodeup/data/toolchains/v22.1.0/bin/npm; reason=package-manager-pinned)
+nodeup: yarn will run via npm exec using package @yarnpkg/cli-dist@4.13.0 (pinned; strategy=pinned-npm-exec; package_json=/repo/package.json; npm=/home/me/.nodeup/data/toolchains/v22.1.0/bin/npm; reason=package-manager-pinned; corepack=unsupported)
 ```
 
 Missing-command JSON errors include `diagnostics.checked_paths`, `diagnostics.selected_path`, linked runtime fields when applicable, `diagnostics.install_on_demand_eligible`, and PATH/PATHEXT precedence guidance.
@@ -244,7 +245,7 @@ nodeup run [--install] <runtime> <command> [args...]
 
 Runs a delegated command with an explicit runtime selector. Missing version runtimes fail unless `--install` is provided.
 
-In human mode, delegated stdio is inherited. If `yarn` or `pnpm` runs through npm-exec, Nodeup prints a planning notice to stderr before delegation so stdout remains owned by the delegated command. In JSON mode, delegated stdout is routed to stderr so stdout can contain the final JSON response with `runtime`, `command`, `exit_code`, and `planning`.
+In human mode, delegated stdio is inherited. If `yarn` or `pnpm` uses package-manager planning, Nodeup prints a planning notice to stderr before delegation so stdout remains owned by the delegated command. In JSON mode, delegated stdout is routed to stderr so stdout can contain the final JSON response with `runtime`, `command`, `exit_code`, and `planning`.
 
 When a version runtime is missing and `--install` is omitted, the error includes the exact retry shape `nodeup run --install <runtime> ...` and explains that `nodeup run` requires explicit installation while managed shim dispatch can install a missing version runtime selected by the active default or override. JSON errors include `diagnostics.install_on_demand_eligible: false`, `diagnostics.retry_with_install`, and checked runtime command paths.
 
@@ -311,4 +312,4 @@ JSON output includes the action, top-level status, and per-file migration result
 nodeup completions <shell> [command]
 ```
 
-Generates raw completion scripts. See [Completions](/completions).
+Generates raw completion scripts. The optional command scope is top-level only and produces a script scoped to that command. Successful scripts stay raw on stdout even with `--output json`; invalid shells and unsupported scopes use JSON error envelopes on stderr when JSON mode is requested. See [Completions](/completions).

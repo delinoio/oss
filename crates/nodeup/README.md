@@ -125,7 +125,7 @@ $env:Path = "$HOME\.local\bin;$env:Path"
 - `nodeup check`
 - `nodeup override list`
 - `nodeup override set <runtime> [--path <path>]`
-- `nodeup override unset [--path <path>] [--nonexistent]`
+- `nodeup override unset [--path <path> | --nonexistent]`
 - `nodeup which [--runtime <runtime>] <command>`
 - `nodeup run [--install] <runtime> <command>...`
 - `nodeup shim setup [--dir <path>]`
@@ -154,12 +154,22 @@ Node executable under `bin/`: `bin/node` on Unix-like hosts or `bin/node.exe`
 when Windows platform behavior is selected. Unix hosts require an executable
 permission bit on `bin/node`.
 
+Linked runtime names cannot be reserved channel selectors (`lts`, `current`,
+`latest`) or case variants such as `LTS`, `Current`, or `LATEST`. Use distinct
+names such as `local-lts` or `work-node`.
+
+Successful link output separates the required runnable `node` check from
+optional managed shim availability. Missing package-manager shims (`npm`,
+`npx`, `yarn`, or `pnpm`) are reported at link time but do not make linking
+fail.
+
 `nodeup toolchain unlink <name>...` removes linked runtime records from nodeup
 settings and tracked selectors without deleting external runtime directories.
 Unlinking fails with `conflict` when the linked name is the current default or
 is referenced by a directory override; change the default or remove/update the
-override before unlinking. Missing linked names fail with deterministic
-`not-found` errors.
+override before unlinking. Conflict diagnostics include blocker details,
+remediation commands, and retry commands. Missing linked names fail with
+deterministic `not-found` errors.
 
 ## `packageManager` Support
 
@@ -222,6 +232,8 @@ JSON output includes `removed_paths`, `manual_leftover_paths`, `ownership_refuse
 - `completions` command:
   - always writes raw completion script text to stdout
   - does not wrap completion output in JSON, even when `--output json` is set
+  - still reports invalid shells and unsupported scopes as JSON error envelopes
+    on stderr when `--output json` is set
 - logs are written to stderr when enabled
 
 Script-safe output patterns:
@@ -271,9 +283,10 @@ Checksum mismatch errors include sanitized mirror diagnostics when a mirror over
 Scope filtering:
 
 - `nodeup completions <shell>` generates completions for all top-level commands.
-- `nodeup completions <shell> <command>` accepts only top-level command scopes:
+- `nodeup completions <shell> <command>` generates a script scoped to one top-level command:
   - `toolchain`, `default`, `show`, `update`, `check`, `override`, `which`, `run`, `shim`, `self`, `completions`
-  - nested subcommand scopes such as `toolchain install` fail with `invalid-input` and suggest the nearest valid top-level scope, such as `nodeup completions bash toolchain`.
+- Nested subcommand scopes such as `toolchain install` are not supported. They fail with `invalid-input` and suggest the nearest valid top-level scope, such as `nodeup completions bash toolchain`.
+- With `--output json`, invalid shell and unsupported scope failures are written as JSON error envelopes on stderr. Successful completion scripts remain raw text on stdout.
 - Completion generation defaults Nodeup logging off so redirection examples stay script-safe without `RUST_LOG=off`. Explicit `RUST_LOG` filters still enable tracing on stderr.
 
 ## Testing Strategy
@@ -283,6 +296,7 @@ Scope filtering:
 - Unit tests cover selectors, resolver, release index cache behavior, logging mode selection, and installer helpers.
 - CLI integration tests cover command contracts, JSON error envelopes, selector precedence, override lifecycle, update/check branches, self-management commands, alias dispatch (`node`, `npm`, `npx`, `yarn`, `pnpm`), and `packageManager`-aware execution planning.
 - `nodeup update` treats exact-version selectors as immutable pins, reports `skipped-exact-version`, and canonicalizes tracked exact selectors such as `22.1.0` and `v22.1.0` to one `v<semver>` entry. To move from one exact runtime to another, install or select the newer exact version with `nodeup toolchain install <version>`, `nodeup default <version>`, or `nodeup override set <version> --path <path>`.
+- Multi-selector `toolchain install` and explicit `update` invocations preflight all selectors before channel resolution, runtime download, extraction, tracking, or install mutation.
 
 Run locally from repository root:
 

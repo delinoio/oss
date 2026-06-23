@@ -24,7 +24,14 @@ Cache hits are revalidated before extraction or install finalization. If cache r
 
 `binpm cache clean` removes cached asset entries under `~/.binpm/cache/sha256`. It preserves the project-reference index under `~/.binpm/cache/refs`, installed package records, and executable links or copies under `~/.binpm/bin`; command output states those removed and preserved boundaries.
 
-`binpm cache key` prints a stable CI cache key derived from the current target and `binpm.lock`; it does not download, install, or populate cache entries. When `binpm.lock` is absent, human output warns that the empty lockfile digest is used. `binpm cache key --json` reports the same key with `lockfile` status.
+`binpm cache key` prints a stable CI cache key derived from the current target and `binpm.lock`; it does not download, install, or populate cache entries. Use the lockfile-backed output for CI cache setup:
+
+```bash
+binpm install
+binpm cache key
+```
+
+When `binpm.lock` is absent, output is exceptional: the key line is labeled `missing-lockfile`, stderr warns that the empty lockfile digest is used, and the next command is `binpm install`. `binpm cache key --json` reports `status: "missing-lockfile"`, `lockfile: "missing"`, and `recommended_next_command: "binpm install"` so CI can fail or warn before using an unresolved cache key.
 
 `binpm doctor` reports stale and legacy cache-reference counts without repairing them. Run `binpm cache prune` to remove stale structured references and then prune unreferenced cache entries.
 

@@ -143,7 +143,14 @@ pub enum Command {
         #[command(subcommand)]
         command: SelfCommand,
     },
-    /// Generate shell completion scripts.
+    /// Generate raw shell completion scripts.
+    #[command(
+        after_help = "Completion output is always raw script text on stdout, even with `--output \
+                      json`. Invalid shells or unsupported scopes still emit JSON error envelopes \
+                      on stderr when `--output json` is requested.\n\n`nodeup completions <shell> \
+                      <command>` generates a script scoped to one supported top-level command. \
+                      Nested subcommand scopes are not supported."
+    )]
     Completions {
         /// Target shell (for example: `bash`, `zsh`, or `fish`).
         shell: String,
@@ -214,12 +221,15 @@ pub enum OverrideCommand {
         #[arg(long)]
         path: Option<String>,
     },
-    /// Remove a runtime override for a directory.
+    /// Remove a runtime override for a directory, or remove stale override
+    /// entries.
     Unset {
         /// Override target directory. Defaults to current working directory.
+        /// Mutually exclusive with `--nonexistent`.
         #[arg(long, conflicts_with = "nonexistent")]
         path: Option<String>,
-        /// Remove stale entries whose directories no longer exist.
+        /// Remove stale entries whose directories no longer exist. Mutually
+        /// exclusive with `--path`.
         #[arg(long, conflicts_with = "path")]
         nonexistent: bool,
     },

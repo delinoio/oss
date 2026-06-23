@@ -11,7 +11,10 @@ use tracing::{debug, info};
 use crate::{
     assets::{classify_artifact, ArtifactKind},
     contract::{SourceProvider, SourceSpec},
-    error::{BinpmError, ReleaseLookupDiagnosticKind, ReleaseSkipDiagnostic, Result},
+    error::{
+        BinpmError, ReleaseLookupDiagnostic, ReleaseLookupDiagnosticKind, ReleaseSkipDiagnostic,
+        Result,
+    },
 };
 
 const USER_AGENT: &str = concat!("binpm/", env!("CARGO_PKG_VERSION"));
@@ -140,39 +143,7 @@ impl ReleaseClient for GitHubReleaseClient {
 
         Ok(releases
             .into_iter()
-            .map(|release| {
-                let stable = !release.draft && !release.prerelease;
-                let stability_reason = if stable {
-                    None
-                } else if release.draft {
-                    Some("github draft release".to_string())
-                } else {
-                    Some("github prerelease release".to_string())
-                };
-
-                Release {
-                    tag: release.tag_name,
-                    stable,
-                    released_at: None,
-                    stability_reason,
-                    assets: release
-                        .assets
-                        .into_iter()
-                        .map(|asset| ReleaseAsset {
-                            name: asset.name,
-                            url: asset.browser_download_url,
-                            provider_url: None,
-                            download_url: auth.as_ref().map(|_| asset.url.clone()),
-                            download_auth: auth.clone(),
-                            download_accept: auth.as_ref().map(|_| GITHUB_ASSET_DOWNLOAD_ACCEPT),
-                            digest: asset.digest,
-                            source_archive: false,
-                            final_url_https: None,
-                            final_url: None,
-                        })
-                        .collect(),
-                }
-            })
+            .map(|release| release.into_release_with_auth(auth.as_ref()))
             .collect())
     }
 }
@@ -530,6 +501,8 @@ fn release_lookup_diagnostic(
     headers: &header::HeaderMap,
 ) -> Option<BinpmError> {
     let kind = classify_release_lookup_status(status, auth.is_some(), headers)?;
+    let expected_auth_env_vars = provider_token_env_candidates(source.provider, &source.host);
+    let configured_auth_env_var = auth.map(|auth| auth.env_var.clone());
     let message = match kind {
         ReleaseLookupDiagnosticKind::MissingAuth => "The provider did not return release metadata \
                                                      for an unauthenticated request."
@@ -542,15 +515,19 @@ fn release_lookup_diagnostic(
     };
     let hint = release_lookup_hint(source, auth, kind);
 
-    Some(BinpmError::ReleaseLookupDiagnostic {
-        package: source.to_string(),
-        provider: source.provider.as_str(),
-        host: source.host.clone(),
-        status: status.as_u16(),
-        kind,
-        message,
-        hint,
-    })
+    Some(BinpmError::ReleaseLookupDiagnostic(Box::new(
+        ReleaseLookupDiagnostic {
+            package: source.to_string(),
+            provider: source.provider.as_str(),
+            host: source.host.clone(),
+            status: status.as_u16(),
+            kind,
+            message,
+            hint,
+            expected_auth_env_vars,
+            configured_auth_env_var,
+        },
+    )))
 }
 
 fn classify_release_lookup_status(
@@ -711,8 +688,70 @@ struct GitHubRelease {
     tag_name: String,
     draft: bool,
     prerelease: bool,
+    zipball_url: Option<String>,
+    tarball_url: Option<String>,
     #[serde(default)]
     assets: Vec<GitHubAsset>,
+}
+
+impl GitHubRelease {
+    fn into_release_with_auth(self, auth: Option<&ProviderAuth>) -> Release {
+        let stable = !self.draft && !self.prerelease;
+        let stability_reason = if stable {
+            None
+        } else if self.draft {
+            Some("github draft release".to_string())
+        } else {
+            Some("github prerelease release".to_string())
+        };
+
+        let mut assets = self
+            .assets
+            .into_iter()
+            .map(|asset| ReleaseAsset {
+                name: asset.name,
+                url: asset.browser_download_url,
+                provider_url: None,
+                download_url: auth.map(|_| asset.url.clone()),
+                download_auth: auth.cloned(),
+                download_accept: auth.map(|_| GITHUB_ASSET_DOWNLOAD_ACCEPT),
+                digest: asset.digest,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            })
+            .collect::<Vec<_>>();
+
+        if let Some(zipball_url) = self.zipball_url {
+            assets.push(github_source_archive_asset("source.zip", zipball_url));
+        }
+        if let Some(tarball_url) = self.tarball_url {
+            assets.push(github_source_archive_asset("source.tar.gz", tarball_url));
+        }
+
+        Release {
+            tag: self.tag_name,
+            stable,
+            released_at: None,
+            stability_reason,
+            assets,
+        }
+    }
+}
+
+fn github_source_archive_asset(name: &str, url: String) -> ReleaseAsset {
+    ReleaseAsset {
+        name: name.to_string(),
+        url,
+        provider_url: None,
+        download_url: None,
+        download_auth: None,
+        download_accept: None,
+        digest: None,
+        source_archive: true,
+        final_url_https: None,
+        final_url: None,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1050,12 +1089,12 @@ mod tests {
         classify_release_lookup_status, exact_tag_prefix_hint, has_prerelease_tag, next_page_url,
         provider_auth_for_source_with, provider_token_env_candidates, release_lookup_diagnostic,
         release_request, releases_page_url, sanitize_url, select_release, sort_gitlab_releases,
-        validate_pagination_url, verify_gitlab_asset_redirects, GitHubReleaseClient, GitLabRelease,
-        GitLabReleaseClient, Release,
+        validate_pagination_url, verify_gitlab_asset_redirects, GitHubRelease, GitHubReleaseClient,
+        GitLabRelease, GitLabReleaseClient, Release,
     };
     use crate::{
         contract::{SourceProvider, SourceSpec},
-        error::{BinpmError, ReleaseLookupDiagnosticKind},
+        error::{BinpmError, ReleaseLookupDiagnostic, ReleaseLookupDiagnosticKind},
         release::ReleaseAsset,
     };
 
@@ -1077,6 +1116,25 @@ mod tests {
             GitHubReleaseClient::releases_api_url(&source),
             "https://ghe.example.com/api/v3/repos/owner/repo/releases"
         );
+    }
+
+    #[test]
+    fn github_generated_sources_are_modeled_as_source_archives() {
+        let release = GitHubRelease {
+            tag_name: "v1.0.0".to_string(),
+            draft: false,
+            prerelease: false,
+            zipball_url: Some("https://api.github.com/repos/owner/tool/zipball/v1.0.0".to_string()),
+            tarball_url: Some("https://api.github.com/repos/owner/tool/tarball/v1.0.0".to_string()),
+            assets: Vec::new(),
+        }
+        .into_release_with_auth(None);
+
+        assert_eq!(release.assets.len(), 2);
+        assert_eq!(release.assets[0].name, "source.zip");
+        assert!(release.assets[0].source_archive);
+        assert_eq!(release.assets[1].name, "source.tar.gz");
+        assert!(release.assets[1].source_archive);
     }
 
     #[test]
@@ -1184,6 +1242,14 @@ mod tests {
         assert_ne!(
             provider_token_env_candidates(SourceProvider::GitHub, "ghe.example.com"),
             provider_token_env_candidates(SourceProvider::GitHub, "ghe-example.com")
+        );
+        assert_eq!(
+            provider_token_env_candidates(SourceProvider::GitHub, "ghe-example.com"),
+            ["BINPM_GITHUB_TOKEN_GHE_2D_EXAMPLE_2E_COM"]
+        );
+        assert_eq!(
+            provider_token_env_candidates(SourceProvider::GitLab, "gitlab.例え.com"),
+            ["BINPM_GITLAB_TOKEN_GITLAB_2E__E4__BE__8B__E3__81__88__2E_COM"]
         );
     }
 
@@ -1344,9 +1410,25 @@ mod tests {
             .expect("missing auth diagnostic");
 
         match missing {
-            BinpmError::ReleaseLookupDiagnostic { kind, hint, .. } => {
+            BinpmError::ReleaseLookupDiagnostic(diagnostic) => {
+                let ReleaseLookupDiagnostic {
+                    kind,
+                    hint,
+                    expected_auth_env_vars,
+                    configured_auth_env_var,
+                    ..
+                } = *diagnostic;
                 assert_eq!(kind, ReleaseLookupDiagnosticKind::MissingAuth);
                 assert!(hint.contains("BINPM_GITHUB_TOKEN_GITHUB_COM"));
+                assert_eq!(
+                    expected_auth_env_vars,
+                    [
+                        "BINPM_GITHUB_TOKEN_GITHUB_COM",
+                        "BINPM_GITHUB_TOKEN",
+                        "GITHUB_TOKEN"
+                    ]
+                );
+                assert_eq!(configured_auth_env_var, None);
             }
             other => panic!("unexpected diagnostic: {other}"),
         }
@@ -1375,6 +1457,69 @@ mod tests {
             classify_release_lookup_status(StatusCode::SEE_OTHER, true, &headers),
             Some(ReleaseLookupDiagnosticKind::InsufficientPermissions)
         );
+    }
+
+    #[test]
+    fn release_lookup_diagnostic_names_exact_enterprise_auth_variable() {
+        let source: SourceSpec = "github:ghe.example.com/owner/private"
+            .parse()
+            .expect("source");
+        let headers = header::HeaderMap::new();
+        let diagnostic = release_lookup_diagnostic(&source, None, StatusCode::NOT_FOUND, &headers)
+            .expect("missing auth diagnostic");
+
+        match diagnostic {
+            BinpmError::ReleaseLookupDiagnostic(diagnostic) => {
+                let ReleaseLookupDiagnostic {
+                    hint,
+                    expected_auth_env_vars,
+                    configured_auth_env_var,
+                    ..
+                } = *diagnostic;
+                assert_eq!(
+                    expected_auth_env_vars,
+                    ["BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM"]
+                );
+                assert!(hint.contains("BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM"));
+                assert_eq!(configured_auth_env_var, None);
+                assert!(!hint.contains("GITHUB_TOKEN`"));
+            }
+            other => panic!("unexpected diagnostic: {other}"),
+        }
+    }
+
+    #[test]
+    fn release_lookup_structured_diagnostic_is_safe_and_actionable() {
+        let source: SourceSpec = "gitlab:gitlab.internal.example/group/tool"
+            .parse()
+            .expect("source");
+        let headers = header::HeaderMap::new();
+        let diagnostic =
+            release_lookup_diagnostic(&source, None, StatusCode::UNAUTHORIZED, &headers)
+                .expect("missing auth diagnostic");
+        let payload = diagnostic
+            .structured_diagnostic()
+            .expect("structured diagnostic");
+
+        assert_eq!(payload["kind"], "release_lookup");
+        assert_eq!(payload["diagnostic"], "missing_auth");
+        assert_eq!(
+            payload["package"],
+            "gitlab:gitlab.internal.example/group/tool"
+        );
+        assert_eq!(payload["provider"], "gitlab");
+        assert_eq!(payload["host"], "gitlab.internal.example");
+        assert_eq!(payload["status"], 401);
+        assert_eq!(
+            payload["expected_auth_env_var"],
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_INTERNAL_2E_EXAMPLE"
+        );
+        assert_eq!(
+            payload["expected_auth_env_vars"][0],
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_INTERNAL_2E_EXAMPLE"
+        );
+        assert!(payload["configured_auth_env_var"].is_null());
+        assert!(!payload.to_string().contains("secret-token"));
     }
 
     #[test]
@@ -1570,6 +1715,29 @@ mod tests {
         .into_release(Utc.with_ymd_and_hms(2026, 6, 19, 0, 0, 0).unwrap());
 
         assert_eq!(release.assets[0].name, "tool-linux-amd64.tar.gz");
+    }
+
+    #[test]
+    fn gitlab_generated_sources_remain_source_archives() {
+        let release = GitLabRelease {
+            tag_name: "v1.0.0".to_string(),
+            released_at: None,
+            upcoming_release: false,
+            assets: super::GitLabAssets {
+                links: Vec::new(),
+                sources: vec![super::GitLabSource {
+                    format: "tar.gz".to_string(),
+                    url:
+                        "https://gitlab.example.com/group/tool/-/archive/v1.0.0/tool-v1.0.0.tar.gz"
+                            .to_string(),
+                }],
+            },
+        }
+        .into_release(Utc.with_ymd_and_hms(2026, 6, 19, 0, 0, 0).unwrap());
+
+        assert_eq!(release.assets.len(), 1);
+        assert_eq!(release.assets[0].name, "tar.gz");
+        assert!(release.assets[0].source_archive);
     }
 
     #[test]
