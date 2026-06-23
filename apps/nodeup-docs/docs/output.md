@@ -9,8 +9,8 @@ Use one of these patterns when stdout is consumed by another program:
 | Need | Recommended command | Stdout contract |
 | --- | --- | --- |
 | Structured command data | `nodeup --output json <command>` | JSON only; JSON mode defaults Nodeup logging off unless `RUST_LOG` is set. |
-| Runtime identifiers for shell loops | `nodeup toolchain list --quiet` | One runtime identifier per line, no headings. |
-| Completion script redirection | `nodeup completions <shell> >file` | Raw shell completion script text only. |
+| Runtime identifiers for shell loops | `nodeup toolchain list --quiet` | One runtime identifier per line, no headings; Nodeup logging defaults off unless `RUST_LOG` is set. |
+| Completion script redirection | `nodeup completions <shell> >file` | Raw shell completion script text only; Nodeup logging defaults off unless `RUST_LOG` is set. |
 | Human command output with logs disabled | Set `RUST_LOG=off`, then run `nodeup <command>` | Human result text only. |
 
 Tracing logs are written to stderr when enabled, so stdout remains parseable for quiet runtime lists and completion scripts. Use `RUST_LOG=nodeup=debug` for troubleshooting, not in pipelines that parse stderr.
@@ -150,6 +150,7 @@ Default filters depend on context:
 - Managed alias dispatch: `nodeup=warn`
 - Human management commands: `nodeup=warn`
 - JSON management commands: `nodeup=off`
+- Script-safe quiet runtime lists and completion generation: `nodeup=off`
 
 Set `RUST_LOG` to override logging:
 
@@ -157,4 +158,4 @@ Set `RUST_LOG` to override logging:
 RUST_LOG=nodeup=debug nodeup show active-runtime
 ```
 
-Keep `RUST_LOG` unset or off when a script needs clean JSON output.
+Keep `RUST_LOG` unset or off when a script needs clean JSON output, quiet runtime lists, completion scripts, or stderr.

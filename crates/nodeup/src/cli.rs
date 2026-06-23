@@ -59,12 +59,12 @@ impl ToolchainListDetail {
                   `nodeup toolchain list --quiet` for raw runtime identifiers.\n  Use `nodeup \
                   completions <shell> >file` for raw completion scripts.\n  Logs are written to \
                   stderr when enabled; JSON mode keeps Nodeup logging off by default for \
-                  parseable automation output.\n\nColor controls:\n  --color accepts auto, \
-                  always, or never.\n  NODEUP_COLOR accepts auto, always, or never for human \
-                  stdout/stderr.\n  NODEUP_LOG_COLOR accepts auto, always, or never for logs.\n  \
-                  Precedence for human output is --color > NODEUP_COLOR > NO_COLOR > stream-aware \
-                  auto.\n  Run `nodeup show color` to inspect ignored invalid values and NO_COLOR \
-                  conflicts."
+                  parseable automation output, as do quiet runtime lists and completion \
+                  generation.\n\nColor controls:\n  --color accepts auto, always, or never.\n  \
+                  NODEUP_COLOR accepts auto, always, or never for human stdout/stderr.\n  \
+                  NODEUP_LOG_COLOR accepts auto, always, or never for logs.\n  Precedence for \
+                  human output is --color > NODEUP_COLOR > NO_COLOR > stream-aware auto.\n  Run \
+                  `nodeup show color` to inspect ignored invalid values and NO_COLOR conflicts."
 )]
 pub struct Cli {
     /// Output format for command results. Use `json` for structured automation;

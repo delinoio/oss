@@ -75,6 +75,12 @@ fn install_help_distinguishes_global_source_and_local_declaration_forms() {
         ));
 }
 
+fn expected_project_path(project: &Path, relative: impl AsRef<Path>) -> std::path::PathBuf {
+    fs::canonicalize(project)
+        .expect("canonical project root")
+        .join(relative)
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 fn write_locked_tool_project(project: &Path, sha256: &str) {
     fs::create_dir_all(project).expect("create project");
@@ -489,7 +495,7 @@ fn execution_aliases_accept_package_and_forwarded_flags() {
 #[test]
 fn init_writes_minimal_manifest() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
-    let manifest_path = temp_dir.path().join("binpm.toml");
+    let manifest_path = expected_project_path(temp_dir.path(), "binpm.toml");
     let mut command = binpm();
 
     command
@@ -516,7 +522,7 @@ fn init_from_nested_directory_writes_manifest_at_git_root() {
     fs::create_dir(temp_dir.path().join(".git")).expect("create .git");
     let nested_dir = temp_dir.path().join("packages").join("cli");
     fs::create_dir_all(&nested_dir).expect("create nested dir");
-    let manifest_path = temp_dir.path().join("binpm.toml");
+    let manifest_path = expected_project_path(temp_dir.path(), "binpm.toml");
     let mut command = binpm();
 
     command
@@ -633,6 +639,7 @@ fn init_force_is_rejected() {
 fn init_from_nested_directory_detects_existing_manifest_without_git() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let manifest_path = temp_dir.path().join("binpm.toml");
+    let expected_manifest_path = expected_project_path(temp_dir.path(), "binpm.toml");
     fs::write(&manifest_path, "version = 1\n").expect("write manifest");
     let nested_dir = temp_dir.path().join("packages").join("cli");
     fs::create_dir_all(&nested_dir).expect("create nested dir");
@@ -646,7 +653,7 @@ fn init_from_nested_directory_detects_existing_manifest_without_git() {
         .code(2)
         .stdout(predicate::str::contains(format!(
             "manifest destination: {}",
-            manifest_path.display()
+            expected_manifest_path.display()
         )))
         .stdout(predicate::str::contains("created manifest:").not())
         .stderr(predicate::str::contains(
@@ -661,6 +668,7 @@ fn init_from_nested_directory_detects_existing_manifest_without_git() {
 fn init_treats_broken_manifest_symlink_as_existing_manifest() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let manifest_path = temp_dir.path().join("binpm.toml");
+    let expected_manifest_path = expected_project_path(temp_dir.path(), "binpm.toml");
     std::os::unix::fs::symlink(
         temp_dir.path().join("missing-manifest-target"),
         &manifest_path,
@@ -678,7 +686,7 @@ fn init_treats_broken_manifest_symlink_as_existing_manifest() {
         .code(2)
         .stdout(predicate::str::contains(format!(
             "manifest destination: {}",
-            manifest_path.display()
+            expected_manifest_path.display()
         )))
         .stdout(predicate::str::contains("created manifest:").not())
         .stderr(predicate::str::contains(
@@ -1311,10 +1319,7 @@ fn doctor_json_reports_path_states() {
     );
     assert_eq!(
         payload["local_bin"],
-        temp_dir
-            .path()
-            .join(".binpm")
-            .join("bin")
+        expected_project_path(temp_dir.path(), ".binpm/bin")
             .display()
             .to_string()
     );
@@ -2050,7 +2055,9 @@ version = "1.0.0"
     assert_eq!(payload["error"]["diagnostic"]["reason"], "missing_lockfile");
     assert_eq!(
         payload["error"]["diagnostic"]["would_change"],
-        project.join("binpm.lock").display().to_string()
+        expected_project_path(&project, "binpm.lock")
+            .display()
+            .to_string()
     );
     assert_eq!(
         payload["error"]["diagnostic"]["safest_next_command"],
@@ -3031,7 +3038,7 @@ source = "github:owner/tool"
         )
         .stdout(predicate::str::contains(format!(
             "would update {}",
-            project.join("binpm.lock").display()
+            expected_project_path(&project, "binpm.lock").display()
         )))
         .stdout(predicate::str::contains("dry run: no changes made"));
 
