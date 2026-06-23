@@ -28,6 +28,18 @@ function setButtonName(element: Element | null, label: string) {
   }
 }
 
+function setTextContent(element: HTMLElement, text: string) {
+  if (element.textContent !== text) {
+    element.textContent = text;
+  }
+}
+
+function setLocalHref(anchor: HTMLAnchorElement, href: string) {
+  if (anchor.getAttribute("href") !== href) {
+    anchor.setAttribute("href", href);
+  }
+}
+
 function setInteractiveDiv(element: Element | null, label: string) {
   if (!(element instanceof HTMLElement)) {
     return;
@@ -112,8 +124,11 @@ function syncHeadingPermalinks() {
       continue;
     }
 
-    anchor.href = `#${headingId}`;
-    anchor.textContent = "#";
+    const headingHref = `#${headingId}`;
+    const keyboardLabel = `Permalink to ${headingText}`;
+
+    setLocalHref(anchor, headingHref);
+    setTextContent(anchor, "#");
     if (anchor.getAttribute("aria-hidden") !== "true") {
       anchor.setAttribute("aria-hidden", "true");
     }
@@ -131,9 +146,9 @@ function syncHeadingPermalinks() {
       heading.after(keyboardAnchor);
     }
 
-    keyboardAnchor.href = `#${headingId}`;
-    keyboardAnchor.textContent = `Permalink to ${headingText}`;
-    setButtonName(keyboardAnchor, `Permalink to ${headingText}`);
+    setLocalHref(keyboardAnchor, headingHref);
+    setTextContent(keyboardAnchor, keyboardLabel);
+    setButtonName(keyboardAnchor, keyboardLabel);
   }
 }
 

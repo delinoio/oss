@@ -86,7 +86,13 @@
   outline-offset: 2px;
 }
 
-.rp-doc h2 + .rp-codeblock .rp-codeblock__content :where(code) {
+.rp-doc h2 + .rp-codeblock .rp-codeblock__content :where(code),
+.rp-doc
+  h2
+  + .delino-heading-permalink-keyboard
+  + .rp-codeblock
+  .rp-codeblock__content
+  :where(code) {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   word-break: normal;
@@ -123,11 +129,5 @@
 @media (width <= 768px) {
   .rp-doc-layout__sidebar:not(.rp-doc-layout__sidebar--open) {
     visibility: hidden;
-  }
-}
-
-@media (width > 768px) {
-  .rp-nav-hamburger__md {
-    display: none;
   }
 }

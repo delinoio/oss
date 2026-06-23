@@ -48,7 +48,16 @@ export default defineConfig({
     cleanUrls: true,
   },
   themeConfig: {
-    nav: stableDocsRoutes,
+    nav: [
+      {
+        text: "Overview",
+        link: "/",
+      },
+      {
+        text: "Docs",
+        items: stableDocsRoutes.slice(1),
+      },
+    ],
     sidebar: {
       "/": [
         {
