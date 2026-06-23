@@ -79,7 +79,15 @@ nodeup run 22.1.0 node --version
 nodeup override set 22.1.0 --path ~/src/my-app
 ```
 
-Exact-version selectors may include or omit the `v` prefix. Nodeup stores tracked exact versions in canonical `v<semver>` form, treats `22.1.0` and `v22.1.0` as the same selector, and keeps exact versions immutable during `nodeup update`.
+Exact-version selectors may include or omit the `v` prefix. Nodeup stores tracked exact versions in canonical `v<semver>` form, treats `22.1.0` and `v22.1.0` as the same selector, and keeps exact versions immutable during `nodeup update`. Use exact versions when you need a fixed runtime. Use channels such as `lts` or `current` when you want `nodeup update` to move the selector as new releases become available.
+
+To move a pin from one exact runtime to another, install or select the newer exact version explicitly:
+
+```bash
+nodeup toolchain install 22.2.0
+nodeup default 22.2.0
+nodeup override set 22.2.0 --path ~/src/my-app
+```
 
 ## 6. Use Shims
 

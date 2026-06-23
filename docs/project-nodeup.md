@@ -17,7 +17,7 @@ Provide a Rust-based Node.js version manager with predictable channel resolution
 ## Cross-Domain Invariants
 - Stable channel naming and runtime dispatch semantics must be preserved.
 - `current` is the canonical selector for the newest Node.js release-index entry; `latest` remains a supported alias that resolves identically and reports canonical alias metadata in JSON output.
-- Exact-version runtime selectors are immutable pins for `nodeup update`; they are canonicalized to `v<semver>` when tracked and are semantically deduplicated with non-`v` inputs.
+- Exact-version runtime selectors are immutable pins for `nodeup update`; they are canonicalized to `v<semver>` when tracked and are semantically deduplicated with non-`v` inputs. Users who intend to move to a newer exact runtime must install or select that newer exact version explicitly with `nodeup toolchain install <version>`, `nodeup default <version>`, or `nodeup override set <version> --path <path>`.
 - Tracked semantic selectors must be canonicalized so legacy duplicate exact selectors and channel aliases such as `current`/`latest` do not produce duplicate update work.
 - No-argument `nodeup update` must report whether implicit targets came from tracked selectors or installed runtimes, including structured empty-target diagnostics for automation.
 - Shim behavior must remain deterministic across supported operating systems.
