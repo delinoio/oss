@@ -975,6 +975,7 @@ impl ShellKind {
             Some("bash") => Self::Bash,
             Some("zsh") => Self::Zsh,
             Some("fish") => Self::Fish,
+            Some("pwsh") | Some("powershell") => Self::PowerShell,
             _ if host_is_windows() => Self::PowerShell,
             _ => Self::Posix,
         }
