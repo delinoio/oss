@@ -433,25 +433,31 @@ impl BinpmError {
                 cache_state,
                 url,
                 authenticated,
-                ..
-            } => Some(serde_json::json!({
-                "kind": "frozen_restore",
-                "mode": frozen_lockfile_mode_label(),
-                "reason": "locked_asset_download_failed",
-                "cmd": cmd,
-                "cache_path": cache_path.display().to_string(),
-                "cache_state": cache_state,
-                "restore_source": "locked_sanitized_asset_url",
-                "locked_asset_url": url,
-                "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
-                "would_change": cache_path.display().to_string(),
-                "network_access_attempted": true,
-                "provider_authentication_attached": authenticated,
-                "offline_or_cache_only": false,
-                "release_list_pagination_attempted": false,
-                "safest_next_command": "pre-populate the binpm cache for the locked SHA-256 or run binpm install --local outside frozen mode with the required provider token",
-                "local_development_escape_hatch": "--no-frozen-lockfile"
-            })),
+                source,
+            } => {
+                let mut diagnostic = serde_json::json!({
+                    "kind": "frozen_restore",
+                    "mode": frozen_lockfile_mode_label(),
+                    "reason": "locked_asset_download_failed",
+                    "cmd": cmd,
+                    "cache_path": cache_path.display().to_string(),
+                    "cache_state": cache_state,
+                    "restore_source": "locked_sanitized_asset_url",
+                    "locked_asset_url": url,
+                    "on_demand_install_attempt": frozen_lockfile_on_demand_install_attempt(),
+                    "would_change": cache_path.display().to_string(),
+                    "network_access_attempted": true,
+                    "provider_authentication_attached": authenticated,
+                    "offline_or_cache_only": false,
+                    "release_list_pagination_attempted": false,
+                    "safest_next_command": "pre-populate the binpm cache for the locked SHA-256 or run binpm install --local outside frozen mode with the required provider token",
+                    "local_development_escape_hatch": "--no-frozen-lockfile"
+                });
+                if let Some(source_diagnostic) = source.structured_diagnostic() {
+                    diagnostic["source_diagnostic"] = source_diagnostic;
+                }
+                Some(diagnostic)
+            }
             Self::ReleaseNotFound {
                 skipped_releases, ..
             } if !skipped_releases.is_empty() => Some(serde_json::json!({
@@ -899,6 +905,46 @@ mod tests {
         assert_eq!(
             diagnostic["local_development_escape_hatch"],
             "--no-frozen-lockfile"
+        );
+    }
+
+    #[test]
+    fn frozen_restore_download_diagnostic_preserves_nested_verification_details() {
+        let cache_path = PathBuf::from("/tmp/binpm/cache/sha256/abc/asset");
+        let error = BinpmError::FrozenRestoreDownload {
+            cmd: "tool".to_string(),
+            cache_path,
+            cache_state: "missing",
+            url: "https://github.com/owner/tool/releases/download/1.0.0/tool-linux".to_string(),
+            authenticated: false,
+            source: Box::new(BinpmError::VerificationRequired {
+                package: "github:owner/tool@1.0.0".to_string(),
+                unsupported_sidecars: vec![UnsupportedVerificationSidecar {
+                    asset_name: "tool-linux.asc".to_string(),
+                    kind: UnsupportedVerificationSidecarKind::GpgSignature,
+                }],
+            }),
+        };
+
+        let diagnostic = error
+            .structured_diagnostic()
+            .expect("frozen restore diagnostic");
+        assert_eq!(diagnostic["kind"], "frozen_restore");
+        assert_eq!(
+            diagnostic["source_diagnostic"]["kind"],
+            "verification_required"
+        );
+        assert_eq!(
+            diagnostic["source_diagnostic"]["reason"],
+            "unsupported_sidecar_presence"
+        );
+        assert_eq!(
+            diagnostic["source_diagnostic"]["unsupported_sidecars"][0]["asset_name"],
+            "tool-linux.asc"
+        );
+        assert_eq!(
+            diagnostic["source_diagnostic"]["unsupported_sidecars"][0]["kind"],
+            "gpg-signature"
         );
     }
 }

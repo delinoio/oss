@@ -3808,6 +3808,12 @@ fn current_unsupported_verification_sidecars_for_record(
     unsupported_verification_sidecars_for_record(record, &release.assets)
 }
 
+fn best_effort_current_unsupported_verification_sidecars_for_record(
+    record: &PackageRecord,
+) -> Vec<UnsupportedVerificationSidecar> {
+    current_unsupported_verification_sidecars_for_record(record).unwrap_or_default()
+}
+
 fn current_release_for_record(record: &PackageRecord) -> Result<Release> {
     let spec = locked_release_lookup_spec(record)?;
     Ok(client_for_source(&spec)?.resolve_release(&spec)?.release)
@@ -7112,7 +7118,7 @@ fn verify(args: VerifyArgs, output: OutputMode) -> Result<i32> {
         validate_package_record_metadata(&cache_paths, &record)?;
         verify_runtime_cache_bytes(&cache_paths, &record)?;
         let current_unsupported_sidecars =
-            current_unsupported_verification_sidecars_for_record(&record)?;
+            best_effort_current_unsupported_verification_sidecars_for_record(&record);
         let unsupported_sidecars = merge_unsupported_verification_sidecars(
             record.unsupported_verification_sidecars.clone(),
             current_unsupported_sidecars,
@@ -8067,16 +8073,18 @@ mod tests {
     use super::{
         add_unsupported_signature_sidecar_without_policy, assert_local_runtime_records_complete,
         assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
-        assert_runtime_record_matches_lock, binpm_home_from_values, candidate_explain_lines,
-        candidate_output, capture_local_remove_state, capture_runtime_tool_state,
-        checksum_digest_from_text, checksum_manifest_candidates, checksum_sidecar_candidates,
-        cleanup_failed_install_cache, command_alias_differs_from_upstream,
-        commit_deferred_cache_hit, deterministic_installed_path, download_asset_name,
-        download_initial_capacity, ensure_no_package_record_install_path_collision,
-        execute_command, format_download_progress, format_outdated_tool_line, github_sha256_digest,
-        global_update_selected_binary, has_current_cache_record, has_local_runtime_or_lock_state,
-        install_local_from_lock, install_path_collision_key, is_retryable_status,
-        local_manifest_orphan_cmds, local_runtime_lock_records, local_tool_execution_ready,
+        assert_runtime_record_matches_lock,
+        best_effort_current_unsupported_verification_sidecars_for_record, binpm_home_from_values,
+        candidate_explain_lines, candidate_output, capture_local_remove_state,
+        capture_runtime_tool_state, checksum_digest_from_text, checksum_manifest_candidates,
+        checksum_sidecar_candidates, cleanup_failed_install_cache,
+        command_alias_differs_from_upstream, commit_deferred_cache_hit,
+        deterministic_installed_path, download_asset_name, download_initial_capacity,
+        ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
+        format_outdated_tool_line, github_sha256_digest, global_update_selected_binary,
+        has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
+        install_path_collision_key, is_retryable_status, local_manifest_orphan_cmds,
+        local_runtime_lock_records, local_tool_execution_ready,
         local_update_manifest_with_latest_versions_from, lock_targets_conflict_with_manifest,
         lock_targets_conflict_with_record, locked_record_download_request,
         locked_record_signature_sidecar, locked_record_verified_download_request,
@@ -12549,6 +12557,28 @@ mod tests {
             unsupported_verification_sidecars_line(&output.unsupported_verification_sidecars)
                 .as_deref(),
             Some("unsupported_verification_sidecars: tool-linux.asc")
+        );
+    }
+
+    #[test]
+    fn best_effort_current_sidecar_refresh_falls_back_to_persisted_sidecars() {
+        let mut record = package_record();
+        record.source.clear();
+        record.unsupported_verification_sidecars = vec![UnsupportedVerificationSidecar {
+            asset_name: "tool-linux.asc".to_string(),
+            kind: UnsupportedVerificationSidecarKind::GpgSignature,
+        }];
+
+        let current_sidecars =
+            best_effort_current_unsupported_verification_sidecars_for_record(&record);
+        let unsupported_sidecars = merge_unsupported_verification_sidecars(
+            record.unsupported_verification_sidecars.clone(),
+            current_sidecars,
+        );
+
+        assert_eq!(
+            unsupported_sidecar_names(&unsupported_sidecars),
+            vec!["tool-linux.asc".to_string()]
         );
     }
 
