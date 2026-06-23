@@ -530,6 +530,8 @@ fn release_lookup_diagnostic(
     headers: &header::HeaderMap,
 ) -> Option<BinpmError> {
     let kind = classify_release_lookup_status(status, auth.is_some(), headers)?;
+    let expected_auth_env_vars = provider_token_env_candidates(source.provider, &source.host);
+    let configured_auth_env_var = auth.map(|auth| auth.env_var.clone());
     let message = match kind {
         ReleaseLookupDiagnosticKind::MissingAuth => "The provider did not return release metadata \
                                                      for an unauthenticated request."
@@ -550,6 +552,8 @@ fn release_lookup_diagnostic(
         kind,
         message,
         hint,
+        expected_auth_env_vars,
+        configured_auth_env_var,
     })
 }
 
@@ -1185,6 +1189,14 @@ mod tests {
             provider_token_env_candidates(SourceProvider::GitHub, "ghe.example.com"),
             provider_token_env_candidates(SourceProvider::GitHub, "ghe-example.com")
         );
+        assert_eq!(
+            provider_token_env_candidates(SourceProvider::GitHub, "ghe-example.com"),
+            ["BINPM_GITHUB_TOKEN_GHE_2D_EXAMPLE_2E_COM"]
+        );
+        assert_eq!(
+            provider_token_env_candidates(SourceProvider::GitLab, "gitlab.例え.com"),
+            ["BINPM_GITLAB_TOKEN_GITLAB_2E__E4__BE__8B__E3__81__88__2E_COM"]
+        );
     }
 
     #[test]
@@ -1344,9 +1356,24 @@ mod tests {
             .expect("missing auth diagnostic");
 
         match missing {
-            BinpmError::ReleaseLookupDiagnostic { kind, hint, .. } => {
+            BinpmError::ReleaseLookupDiagnostic {
+                kind,
+                hint,
+                expected_auth_env_vars,
+                configured_auth_env_var,
+                ..
+            } => {
                 assert_eq!(kind, ReleaseLookupDiagnosticKind::MissingAuth);
                 assert!(hint.contains("BINPM_GITHUB_TOKEN_GITHUB_COM"));
+                assert_eq!(
+                    expected_auth_env_vars,
+                    [
+                        "BINPM_GITHUB_TOKEN_GITHUB_COM",
+                        "BINPM_GITHUB_TOKEN",
+                        "GITHUB_TOKEN"
+                    ]
+                );
+                assert_eq!(configured_auth_env_var, None);
             }
             other => panic!("unexpected diagnostic: {other}"),
         }
@@ -1375,6 +1402,68 @@ mod tests {
             classify_release_lookup_status(StatusCode::SEE_OTHER, true, &headers),
             Some(ReleaseLookupDiagnosticKind::InsufficientPermissions)
         );
+    }
+
+    #[test]
+    fn release_lookup_diagnostic_names_exact_enterprise_auth_variable() {
+        let source: SourceSpec = "github:ghe.example.com/owner/private"
+            .parse()
+            .expect("source");
+        let headers = header::HeaderMap::new();
+        let diagnostic = release_lookup_diagnostic(&source, None, StatusCode::NOT_FOUND, &headers)
+            .expect("missing auth diagnostic");
+
+        match diagnostic {
+            BinpmError::ReleaseLookupDiagnostic {
+                hint,
+                expected_auth_env_vars,
+                configured_auth_env_var,
+                ..
+            } => {
+                assert_eq!(
+                    expected_auth_env_vars,
+                    ["BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM"]
+                );
+                assert!(hint.contains("BINPM_GITHUB_TOKEN_GHE_2E_EXAMPLE_2E_COM"));
+                assert_eq!(configured_auth_env_var, None);
+                assert!(!hint.contains("GITHUB_TOKEN`"));
+            }
+            other => panic!("unexpected diagnostic: {other}"),
+        }
+    }
+
+    #[test]
+    fn release_lookup_structured_diagnostic_is_safe_and_actionable() {
+        let source: SourceSpec = "gitlab:gitlab.internal.example/group/tool"
+            .parse()
+            .expect("source");
+        let headers = header::HeaderMap::new();
+        let diagnostic =
+            release_lookup_diagnostic(&source, None, StatusCode::UNAUTHORIZED, &headers)
+                .expect("missing auth diagnostic");
+        let payload = diagnostic
+            .structured_diagnostic()
+            .expect("structured diagnostic");
+
+        assert_eq!(payload["kind"], "release_lookup");
+        assert_eq!(payload["diagnostic"], "missing_auth");
+        assert_eq!(
+            payload["package"],
+            "gitlab:gitlab.internal.example/group/tool"
+        );
+        assert_eq!(payload["provider"], "gitlab");
+        assert_eq!(payload["host"], "gitlab.internal.example");
+        assert_eq!(payload["status"], 401);
+        assert_eq!(
+            payload["expected_auth_env_var"],
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_INTERNAL_2E_EXAMPLE"
+        );
+        assert_eq!(
+            payload["expected_auth_env_vars"][0],
+            "BINPM_GITLAB_TOKEN_GITLAB_2E_INTERNAL_2E_EXAMPLE"
+        );
+        assert!(payload["configured_auth_env_var"].is_null());
+        assert!(!payload.to_string().contains("secret-token"));
     }
 
     #[test]

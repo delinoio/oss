@@ -120,6 +120,8 @@ pub enum BinpmError {
         kind: ReleaseLookupDiagnosticKind,
         message: String,
         hint: String,
+        expected_auth_env_vars: Vec<String>,
+        configured_auth_env_var: Option<String>,
     },
     #[error("Release asset `{url}` returned unexpected HTTP status {status}.")]
     ReleaseAssetStatus { url: String, status: u16 },
@@ -400,6 +402,26 @@ impl BinpmError {
                     }))
                     .collect::<Vec<_>>()
             })),
+            Self::ReleaseLookupDiagnostic {
+                package,
+                provider,
+                host,
+                status,
+                kind,
+                expected_auth_env_vars,
+                configured_auth_env_var,
+                ..
+            } => Some(serde_json::json!({
+                "kind": "release_lookup",
+                "diagnostic": release_lookup_diagnostic_kind_json(*kind),
+                "package": package,
+                "provider": provider,
+                "host": host,
+                "status": status,
+                "expected_auth_env_var": expected_auth_env_vars.first(),
+                "expected_auth_env_vars": expected_auth_env_vars,
+                "configured_auth_env_var": configured_auth_env_var,
+            })),
             _ => None,
         }
     }
@@ -466,6 +488,14 @@ impl BinpmError {
             | Self::CommandFailed { .. } => 2,
             Self::Execute { .. } => 1,
         }
+    }
+}
+
+fn release_lookup_diagnostic_kind_json(kind: ReleaseLookupDiagnosticKind) -> &'static str {
+    match kind {
+        ReleaseLookupDiagnosticKind::MissingAuth => "missing_auth",
+        ReleaseLookupDiagnosticKind::InsufficientPermissions => "insufficient_permissions",
+        ReleaseLookupDiagnosticKind::RateLimited => "rate_limited",
     }
 }
 
