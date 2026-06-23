@@ -264,8 +264,9 @@ Creates or repairs managed executable-name dispatch shims for `node`, `npm`, `np
 - Existing unrelated commands are reported as conflicts and are not replaced. Conflict output includes the path, ownership classification, and remediation; JSON errors expose the same data under `diagnostics.conflicts`.
 - Stale Nodeup symlinks are repaired.
 - Non-Nodeup files and different existing Windows executables are refused instead of being overwritten.
+- PATH activation remains manual. When the shim directory is not active, output includes a shell- and OS-aware current-session command, profile persistence hint, and verification commands.
 
-JSON output includes `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, and `shims`. Each shim entry includes `alias`, `path`, `status`, and `method`.
+JSON output includes `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, `detected_shell`, `operating_system`, `path_next_steps`, `verification_commands`, and `shims`. Each shim entry includes `alias`, `path`, `status`, and `method`.
 
 ## self update
 
@@ -294,7 +295,7 @@ Cleanup boundaries:
 - Shims: manual; Nodeup does not delete aliases created by `nodeup shim setup`.
 - Shell profile/PATH: manual; Nodeup does not edit shell profile files or the user PATH.
 
-Human output separates removed paths, manual leftovers, ownership-refused paths, and remaining manual steps. JSON output includes `action`, `status`, `removed_paths`, `manual_leftover_paths`, `ownership_refused_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
+Human output separates removed Nodeup-owned data/cache/config paths from remaining manual binary, shim, shell-profile, and PATH cleanup. JSON output includes `action`, `status`, `removed_paths`, `manual_leftover_paths`, `ownership_refused_paths`, `cleanup_boundaries`, `remaining_manual_steps`, `detected_shell`, `operating_system`, `manual_cleanup_commands`, `verification_commands`, and `likely_leftover_paths`.
 
 ## self upgrade-data
 

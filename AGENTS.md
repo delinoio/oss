@@ -122,6 +122,7 @@ enum ProjectId {
 - `binpm` CLI source input may normalize GitHub.com shorthands such as `owner/repo` and supported `https://github.com/owner/repo` release URLs, but persisted manifests, lockfiles, package records, cache metadata, logs, and JSON diagnostics must use canonical `github:` or `gitlab:` source strings.
 - `binpm` cache reuse must be validated with the strongest available integrity source: provider asset digest, upstream checksum material, successfully verified signature, or locally recorded SHA-256 metadata.
 - `binpm` package signature verification is distinct from direct-installer verification for binpm's own release artifacts. Package signatures may satisfy strict verification only when a supported verifier validates the selected asset under the documented package trust policy; raw signature sidecar presence alone is not verification evidence.
+- `binpm --json` must preserve stable read-only diagnostic contracts and must also support stable final-result envelopes for mutating `install`, `add`, `update`, and `remove` commands. Successful JSON mode must emit exactly one compact object on stdout without ANSI color; progress, human diagnostics, and tracing must stay separate from stdout; errors must keep the parseable stderr envelope with `error.message` and `error.exit_code`.
 - Cache management and diagnostic command identifiers are `list`, `prune`, `clean`, and `key` under `binpm cache`.
 - `binpm cache prune` and `binpm cache clean` must not remove installed package records or executable links/copies under `~/.binpm/bin`.
 - `binpm cache clean` must state the removed cache asset boundary and the preserved `~/.binpm/cache/refs`, package-record, and executable boundaries in human and JSON output.
@@ -160,8 +161,8 @@ enum ProjectId {
 - `binpm verify --require-verified` must fail when no provider digest, upstream checksum sidecar, upstream checksum manifest, or successfully verified signature under a documented trust policy is available.
 - Local and global `binpm update` and scoped `binpm remove` must print selected local/global scope before mutation and support `--dry-run` previews that do not mutate manifests, lockfiles, package records, cache references, or executables. `binpm update` with no command names must visibly state that all tools in the selected scope are targeted. Local update must advance exact-version manifest records to latest stable by updating `binpm.toml`, `binpm.lock`, and installed project-local executables consistently. `binpm update --global [cmd...]` must use existing global package records, preserve command aliases and selected upstream binaries, resolve latest stable releases, and finalize through the same cache/install/verification path as global installs.
 - `--no-confirm` is a stable scripting flag for bypassing confirmation prompts on future dangerous operations.
-- `binpm env --shell` must keep supported shell values explicit: `bash`, `zsh`, `fish`, and `powershell` are supported, `pwsh` is accepted as a PowerShell alias, and `cmd` is accepted only to return a clear deferred-shell diagnostic with actionable cmd.exe PATH guidance. `--shell` may be omitted for best-effort shell inference, and `--global`/`--local` may narrow output to one PATH command without mutating profiles.
-- Global install and doctor PATH setup messaging must remain guided and opt-in; binpm must not edit shell profile files unless a future contract explicitly adds an opt-in profile modification command, and must not imply project-local `.binpm/bin` entries are suitable for profile persistence.
+- `binpm env --shell` must keep supported shell values explicit: `bash`, `zsh`, `fish`, `powershell`, and `pwsh` are supported; `pwsh` targets PowerShell 7 setup profiles; and `cmd` is accepted only to return a clear deferred-shell diagnostic with actionable cmd.exe PATH guidance. `--shell` may be omitted for best-effort shell inference, and `--global`/`--local` may narrow output to one PATH command without mutating profiles.
+- Global install, add, doctor, and plain env PATH setup messaging must remain guided and non-mutating. `binpm env setup --shell <shell> [--dry-run]` is the explicit opt-in profile modification command and may append only the global bin PATH line after previewing the exact file and line; it must tell PowerShell 7 users to pass `--shell pwsh`, refuse ambiguous shell/profile targets, and not imply project-local `.binpm/bin` entries are suitable for profile persistence.
 
 ### binpm Docs App Contract
 
@@ -184,7 +185,8 @@ enum ProjectId {
 ### nodeup Shim and Self Cleanup Contract
 
 - `nodeup shim setup` is the stable idempotent setup/repair command for managed `node`, `npm`, `npx`, `yarn`, and `pnpm` shims.
-- `nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only; binary, managed shims, and shell profile/PATH cleanup remain manual and must be reported in human and JSON output.
+- `nodeup shim setup` PATH activation remains non-mutating by default; output must provide shell- and OS-aware activation and verification guidance when the shim directory is not active.
+- `nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only; binary, managed shims, and shell profile/PATH cleanup remain manual and must be separated from removed data in human and JSON output with shell- and OS-aware follow-up guidance.
 
 ### Thenv Component Contract
 

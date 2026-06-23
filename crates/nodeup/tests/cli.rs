@@ -53,6 +53,10 @@ fn path_string_ends_with_components(path: &str, suffix: &[&str]) -> bool {
     components.ends_with(suffix)
 }
 
+fn shell_single_quote_for_test(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
 fn closed_loopback_download_base_url() -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
@@ -3376,27 +3380,181 @@ fn self_uninstall_reports_cleanup_boundaries_and_manual_steps() {
     };
     fs::write(env.config_root.join("config-marker.txt"), "config").unwrap();
 
-    env.command()
+    let output = env
+        .command()
+        .env("SHELL", "/bin/bash")
         .env("NODEUP_SHIM_DIR", &shim_dir)
         .env("NODEUP_SELF_BIN_PATH", &binary_path)
         .args(["--output", "json", "self", "uninstall"])
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("\"removed_paths\""))
-        .stdout(predicates::str::contains("\"manual_leftover_paths\""))
-        .stdout(predicates::str::contains("\"ownership_refused_paths\""))
-        .stdout(predicates::str::contains("\"cleanup_boundaries\""))
-        .stdout(predicates::str::contains("\"category\": \"binary\""))
-        .stdout(predicates::str::contains("\"category\": \"shims\""))
-        .stdout(predicates::str::contains(
-            "\"category\": \"shell-profile-path\"",
-        ))
-        .stdout(predicates::str::contains("\"remaining_manual_steps\""))
-        .stdout(predicates::str::contains(binary_path.to_str().unwrap()))
-        .stdout(predicates::str::contains(shim_path.to_str().unwrap()));
+        .output()
+        .expect("json self uninstall cleanup guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["removed_paths"].is_array());
+    assert!(payload["manual_leftover_paths"].is_array());
+    assert!(payload["ownership_refused_paths"].is_array());
+    assert!(payload["cleanup_boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|boundary| boundary["category"] == "binary"));
+    assert!(payload["cleanup_boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|boundary| boundary["category"] == "shims"));
+    assert!(payload["cleanup_boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|boundary| boundary["category"] == "shell-profile-path"));
+    assert!(payload["remaining_manual_steps"].is_array());
+    assert!(payload["manual_cleanup_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("rm -f --")));
+    assert!(payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("command -v")));
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == binary_path.to_str().unwrap()));
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == shim_path.to_str().unwrap()));
 
     assert!(binary_path.exists());
     assert!(shim_path.exists() || fs::symlink_metadata(&shim_path).is_ok());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_reports_fish_cleanup_and_verification_commands() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("fish-shims-leftover");
+    let binary_path = env.root.join("bin").join("nodeup");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&binary_path, shim_dir.join("node")).unwrap();
+    #[cfg(not(unix))]
+    {
+        fs::write(shim_dir.join("node.exe"), "shim").unwrap();
+        fs::write(shim_dir.join(".node.exe.nodeup-shim"), "nodeup shim copy\n").unwrap();
+    }
+
+    let output = env
+        .command()
+        .env("SHELL", "/usr/bin/fish")
+        .env("NODEUP_SHIM_DIR", &shim_dir)
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("json self uninstall fish cleanup guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["detected_shell"], "fish");
+
+    let manual_cleanup_commands = payload["manual_cleanup_commands"].as_array().unwrap();
+    let path_cleanup = manual_cleanup_commands
+        .iter()
+        .find_map(|command| {
+            let command = command.as_str().unwrap();
+            command.starts_with("set -gx PATH").then_some(command)
+        })
+        .unwrap();
+    assert!(path_cleanup.contains("string split : $PATH | while read -l path"));
+    assert!(path_cleanup.contains("\"$path\" !="));
+    assert!(!path_cleanup.contains("string match -v '"));
+    assert!(!path_cleanup.contains("string match -v -e"));
+
+    let verification_commands = payload["verification_commands"].as_array().unwrap();
+    assert!(verification_commands.iter().any(|command| {
+        command.as_str().unwrap()
+            == "for cmd in node npm npx yarn pnpm; command -v $cmd; or true; end"
+    }));
+    assert!(!verification_commands
+        .iter()
+        .any(|command| command.as_str().unwrap().contains(" do ")));
+}
+
+#[test]
+#[serial]
+fn self_uninstall_reports_powershell_core_cleanup_and_verification_commands() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("pwsh-shims-leftover");
+    let binary_path = env.root.join("bin").join("nodeup");
+    fs::create_dir_all(&shim_dir).unwrap();
+    fs::create_dir_all(binary_path.parent().unwrap()).unwrap();
+    fs::write(&binary_path, "nodeup").unwrap();
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&binary_path, shim_dir.join("node")).unwrap();
+    #[cfg(not(unix))]
+    {
+        fs::write(shim_dir.join("node.exe"), "shim").unwrap();
+        fs::write(shim_dir.join(".node.exe.nodeup-shim"), "nodeup shim copy\n").unwrap();
+    }
+
+    let output = env
+        .command()
+        .env("SHELL", "/usr/bin/pwsh")
+        .env("NODEUP_SHIM_DIR", &shim_dir)
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("json self uninstall powershell cleanup guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["detected_shell"], "powershell");
+
+    let manual_cleanup_commands = payload["manual_cleanup_commands"].as_array().unwrap();
+    assert!(manual_cleanup_commands.iter().any(|command| {
+        command
+            .as_str()
+            .unwrap()
+            .contains("Remove-Item -LiteralPath")
+    }));
+    let path_cleanup = manual_cleanup_commands
+        .iter()
+        .find_map(|command| {
+            let command = command.as_str().unwrap();
+            command.contains("Where-Object").then_some(command)
+        })
+        .unwrap();
+    if cfg!(windows) {
+        assert!(path_cleanup.contains("$env:Path = (($env:Path -split ';')"));
+        assert!(path_cleanup.contains(") -join ';'"));
+        assert!(path_cleanup.contains("$_ -ne '"));
+    } else {
+        assert!(path_cleanup.contains("$env:PATH = (($env:PATH -split ':')"));
+        assert!(path_cleanup.contains(") -join ':'"));
+        assert!(path_cleanup.contains("$_ -cne '"));
+        assert!(!path_cleanup.contains("$_ -ne '"));
+    }
+    assert!(!manual_cleanup_commands
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("rm -f")));
+
+    let verification_commands = payload["verification_commands"].as_array().unwrap();
+    assert!(verification_commands
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("Get-Command")));
+    assert!(!verification_commands
+        .iter()
+        .any(|command| command.as_str().unwrap().contains(" do ")));
 }
 
 #[test]
@@ -3424,6 +3582,67 @@ fn self_uninstall_reports_default_setup_shim_leftovers() {
         .stdout(predicates::str::contains(node_shim.to_str().unwrap()));
 
     assert!(node_shim.exists());
+}
+
+#[test]
+#[serial]
+fn self_uninstall_omits_default_user_bin_path_cleanup_without_shim_leftovers() {
+    let env = TestEnv::new();
+    let default_user_bin = env.root.join(".local").join("bin");
+    fs::create_dir_all(&default_user_bin).unwrap();
+
+    let output = env
+        .command()
+        .env("HOME", &env.root)
+        .env("SHELL", "/bin/bash")
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall without shim leftovers");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(!payload["manual_cleanup_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command
+            .as_str()
+            .unwrap()
+            .contains(default_user_bin.to_str().unwrap())));
+}
+
+#[test]
+#[serial]
+fn self_uninstall_does_not_treat_binary_suffix_as_shim_dir() {
+    let env = TestEnv::new();
+    let binary_path = env.root.join("nodeup-node");
+    fs::write(&binary_path, "nodeup").unwrap();
+
+    let output = env
+        .command()
+        .env("SHELL", "/bin/bash")
+        .env("NODEUP_SELF_BIN_PATH", &binary_path)
+        .args(["--output", "json", "self", "uninstall"])
+        .output()
+        .expect("self uninstall with binary suffix");
+
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["likely_leftover_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|path| path == binary_path.to_str().unwrap()));
+    assert!(!payload["manual_cleanup_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| {
+            command
+                .as_str()
+                .unwrap()
+                .starts_with("export PATH=\"$(printf")
+        }));
 }
 
 #[test]
@@ -3543,6 +3762,14 @@ fn self_uninstall_preserves_custom_managed_shim_dir_inside_removed_root() {
         .unwrap()
         .iter()
         .any(|path| path == node_shim.to_str().unwrap()));
+    assert!(payload["manual_cleanup_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command
+            .as_str()
+            .unwrap()
+            .contains(shim_dir.to_str().unwrap())));
     assert!(payload["removed_paths"]
         .as_array()
         .unwrap()
@@ -4056,7 +4283,9 @@ fn shim_setup_creates_all_aliases_and_reports_path_guidance() {
     let env = TestEnv::new();
     let shim_dir = env.root.join("nodeup-shims");
 
-    env.command()
+    let output = env
+        .command()
+        .env("SHELL", "/bin/bash")
         .args([
             "--output",
             "json",
@@ -4065,10 +4294,27 @@ fn shim_setup_creates_all_aliases_and_reports_path_guidance() {
             "--dir",
             shim_dir.to_str().unwrap(),
         ])
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("\"status\": \"created\""))
-        .stdout(predicates::str::contains("\"path_active\": false"));
+        .output()
+        .expect("json shim setup guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["status"], "created");
+    assert_eq!(payload["path_active"], false);
+    assert!(payload["path_instruction"]
+        .as_str()
+        .unwrap()
+        .contains("PATH"));
+    assert!(payload["path_next_steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|step| step.as_str().unwrap().contains("current shell")));
+    assert!(payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("command -v")));
 
     if cfg!(windows) {
         env.command()
@@ -4109,6 +4355,203 @@ fn shim_setup_creates_all_aliases_and_reports_path_guidance() {
 
 #[test]
 #[serial]
+fn shim_setup_reports_powershell_core_path_guidance() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-pwsh-shims");
+
+    let output = env
+        .command()
+        .env("SHELL", "/usr/bin/pwsh")
+        .env("PATH", env.root.join("empty-path"))
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("json shim setup powershell guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["detected_shell"], "powershell");
+    let path_instruction = payload["path_instruction"].as_str().unwrap();
+    if cfg!(windows) {
+        assert!(path_instruction.starts_with("$env:Path ="));
+        assert!(path_instruction.contains(";"));
+    } else {
+        assert!(path_instruction.starts_with("$env:PATH ="));
+        assert!(path_instruction.contains(":"));
+        assert!(!path_instruction.contains("$env:Path"));
+    }
+    assert!(!payload["path_instruction"]
+        .as_str()
+        .unwrap()
+        .contains("export PATH="));
+
+    let verification_commands = payload["verification_commands"].as_array().unwrap();
+    assert!(verification_commands.iter().any(|command| {
+        let command = command.as_str().unwrap();
+        command.contains("$nodeupShimDir =")
+            && command.contains("Get-Command $cmd -ErrorAction Stop")
+            && command.contains("nodeup-shim-inactive:$cmd")
+            && command.contains("nodeup-shim-active")
+    }));
+    if cfg!(windows) {
+        assert!(verification_commands.iter().any(|command| {
+            let command = command.as_str().unwrap();
+            command.contains("[IO.Path]::GetFullPath")
+                && command.contains("[StringComparison]::OrdinalIgnoreCase")
+        }));
+    } else {
+        assert!(verification_commands.iter().any(|command| {
+            command
+                .as_str()
+                .unwrap()
+                .contains("[StringComparison]::Ordinal")
+        }));
+    }
+    assert!(!verification_commands
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("for cmd in")));
+}
+
+#[test]
+#[serial]
+fn shim_setup_respects_bash_shell_guidance_on_windows_hosts() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-windows-bash-shims");
+
+    let output = env
+        .command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .env("SHELL", "/usr/bin/bash")
+        .env("PATH", env.root.join("empty-path"))
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("json shim setup windows bash guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["detected_shell"], "bash");
+    assert!(payload["path_instruction"]
+        .as_str()
+        .unwrap()
+        .starts_with("export PATH="));
+    assert!(payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("command -v")));
+    assert!(payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command
+            .as_str()
+            .unwrap()
+            .contains("nodeup-shim-inactive:$cmd")));
+}
+
+#[test]
+#[serial]
+fn shim_setup_escapes_fish_verification_path_guidance() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("fish-shims-[glob]'quoted");
+    let shim_dir_text = shim_dir.to_str().unwrap();
+    let expected_prefix = format!("{}/", shim_dir_text.trim_end_matches('/'));
+
+    let output = env
+        .command()
+        .env("SHELL", "/usr/bin/fish")
+        .env("PATH", env.root.join("empty-path"))
+        .args(["--output", "json", "shim", "setup", "--dir", shim_dir_text])
+        .output()
+        .expect("json shim setup fish guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["detected_shell"], "fish");
+    assert!(payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| {
+            let command = command.as_str().unwrap();
+            command.contains("for cmd in node npm npx yarn pnpm")
+                && command.contains("string sub")
+                && command.contains("string length -- $nodeup_shim_prefix")
+                && command.contains(&shell_single_quote_for_test(&expected_prefix))
+                && command.contains("nodeup-shim-inactive:$cmd")
+        }));
+    assert!(!payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command
+            .as_str()
+            .unwrap()
+            .contains(&format!("-l {}", expected_prefix.len()))));
+    assert!(!payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| command.as_str().unwrap().contains("/*")));
+}
+
+#[test]
+#[serial]
+fn shim_setup_reports_windows_powershell_path_aware_verification() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-windows-powershell-shims");
+
+    let output = env
+        .command()
+        .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .env(
+            "SHELL",
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+        )
+        .env("PATH", env.root.join("empty-path"))
+        .args([
+            "--output",
+            "json",
+            "shim",
+            "setup",
+            "--dir",
+            shim_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("json shim setup windows powershell guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["detected_shell"], "powershell");
+    let verification_commands = payload["verification_commands"].as_array().unwrap();
+    assert!(verification_commands.iter().any(|command| {
+        let command = command.as_str().unwrap();
+        command.contains("[IO.Path]::GetFullPath")
+            && command.contains("[IO.Path]::AltDirectorySeparatorChar")
+            && command.contains("[StringComparison]::OrdinalIgnoreCase")
+            && command.contains("nodeup-shim-inactive:$cmd")
+    }));
+    assert!(!verification_commands.iter().any(|command| command
+        .as_str()
+        .unwrap()
+        .contains(".StartsWith($nodeupShimDir +")));
+}
+
+#[test]
+#[serial]
 #[cfg(unix)]
 fn shim_setup_escapes_posix_path_guidance() {
     let env = TestEnv::new();
@@ -4125,6 +4568,38 @@ fn shim_setup_escapes_posix_path_guidance() {
         .assert()
         .success()
         .stdout(predicates::str::contains(expected));
+}
+
+#[test]
+#[serial]
+#[cfg(unix)]
+fn shim_setup_trims_trailing_separator_in_posix_verification() {
+    let env = TestEnv::new();
+    let shim_dir = env.root.join("nodeup-shims-trailing");
+    let shim_dir_text = format!("{}/", shim_dir.display());
+    let expected_pattern = format!(
+        "{}/*)",
+        shell_single_quote_for_test(shim_dir.to_str().unwrap())
+    );
+
+    let output = env
+        .command()
+        .env("SHELL", "/bin/bash")
+        .env("PATH", env.root.join("empty-path"))
+        .args(["--output", "json", "shim", "setup", "--dir", &shim_dir_text])
+        .output()
+        .expect("json shim setup trailing separator guidance");
+
+    assert_eq!(output.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(payload["verification_commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|command| {
+            let command = command.as_str().unwrap();
+            command.contains(&expected_pattern) && !command.contains("//*)")
+        }));
 }
 
 #[test]
@@ -4275,6 +4750,7 @@ fn shim_setup_uses_copy_mode_for_windows_hosts() {
 
     env.command()
         .env("NODEUP_FORCE_PLATFORM", "windows-x64")
+        .env("SHELL", "/usr/bin/pwsh")
         .args([
             "--output",
             "json",
