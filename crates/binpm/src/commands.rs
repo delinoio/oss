@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command as ProcessCommand,
     str::FromStr,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -401,6 +401,7 @@ const DOWNLOAD_PROGRESS_INTERVAL: Duration = Duration::from_secs(2);
 const DOWNLOAD_INITIAL_CAPACITY_LIMIT: usize = 8 * 1024 * 1024;
 const GITHUB_ACTIONS_OIDC_ISSUER: &str = "https://token.actions.githubusercontent.com";
 static SIGSTORE_TEMP_ATTEMPT: AtomicU64 = AtomicU64::new(0);
+static SUPPRESS_DIAGNOSTIC_STDERR: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EnvPathScope {
@@ -411,6 +412,7 @@ enum EnvPathScope {
 
 pub fn run(cli: Cli) -> Result<i32> {
     let output = OutputMode::from_json_flag(cli.json);
+    SUPPRESS_DIAGNOSTIC_STDERR.store(output.is_json(), Ordering::Relaxed);
     match cli.command {
         Command::Install(args) => install(args, output),
         Command::Add(args) => add(args, output),
@@ -426,6 +428,12 @@ pub fn run(cli: Cli) -> Result<i32> {
         Command::Verify(args) => verify(args, output),
         Command::Init(args) => init(args),
         Command::Env(args) => env_cmd(args),
+    }
+}
+
+fn diagnostic_eprintln(args: std::fmt::Arguments<'_>) {
+    if !SUPPRESS_DIAGNOSTIC_STDERR.load(Ordering::Relaxed) {
+        eprintln!("{args}");
     }
 }
 
@@ -662,8 +670,13 @@ fn add(args: AddArgs, output: OutputMode) -> Result<i32> {
         }
         return Err(error);
     }
-    let mut result =
-        local_completed_mutation_output("add", &root, &completed, true, MutationAction::Installed);
+    let mut result = local_completed_mutation_output(
+        "add",
+        &root,
+        &completed,
+        !args.lockfile.frozen_lockfile(),
+        MutationAction::Installed,
+    );
     result.changed_files.insert(0, path_display(&manifest_path));
     if output.is_json() {
         return print_json(&result);
@@ -984,10 +997,10 @@ fn cache_key(output: OutputMode) -> Result<i32> {
         });
     }
     if lockfile == PathState::Missing {
-        eprintln!(
+        diagnostic_eprintln(format_args!(
             "warning: {} is missing; cache key uses the empty lockfile digest",
             lockfile_path.display()
-        );
+        ));
     }
     println!("{cache_key}");
     Ok(0)
@@ -1438,7 +1451,7 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
         })
         .collect();
     let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
-    let changed_files = if manifest.tools.is_empty()
+    let mut changed_files = if manifest.tools.is_empty()
         && local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty()
     {
         Vec::new()
@@ -1448,6 +1461,14 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
             path_display(&ScopePaths::local(root).bin),
         ]
     };
+    let selected_pinned_tool_may_update = manifest
+        .tools
+        .iter()
+        .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
+        .any(|(_, tool)| tool.version.is_some());
+    if selected_pinned_tool_may_update {
+        changed_files.insert(0, path_display(&manifest_path));
+    }
     Ok(MutationOutput {
         command: "update",
         scope: Scope::Local,
@@ -2418,13 +2439,21 @@ fn install_local_manifest(
             }
         }
     }
-    Ok(local_completed_mutation_output(
+    let mut result = local_completed_mutation_output(
         "install",
         &root,
         &completed,
         !completed.is_empty() || !orphan_states.is_empty(),
         MutationAction::Installed,
-    ))
+    );
+    result.changed_files.extend(local_orphan_changed_files(
+        &root,
+        &manifest.tools,
+        &orphan_states,
+    ));
+    result.changed_files.sort();
+    result.changed_files.dedup();
+    Ok(result)
 }
 
 fn update_local_manifest(
@@ -2748,7 +2777,7 @@ fn install_local_tool(
     validate_command_name(cmd)?;
     let lockfile_path = root.join(LOCKFILE_FILE);
     if frozen_lockfile {
-        return install_local_from_lock(root, cmd, spec, tool, require_verified);
+        return install_local_from_lock(root, cmd, spec, tool, require_verified, output);
     }
 
     let home = binpm_home()?;
@@ -3168,11 +3197,11 @@ fn install_resolved(
         });
     }
     if resolved.checksum_source == ChecksumSource::Local {
-        eprintln!(
+        diagnostic_eprintln(format_args!(
             "warning: no upstream checksum or verified signature was available for {}; using a \
              locally computed SHA-256",
             spec
-        );
+        ));
     }
     let (sha256, cache_asset) = match populate_cache_from_bytes(cache_paths, &resolved, &bytes) {
         Ok(cache_entry) => cache_entry,
@@ -3287,6 +3316,7 @@ fn install_local_from_lock(
     spec: &SourceSpec,
     tool: Option<&ManifestTool>,
     require_verified: bool,
+    output: OutputMode,
 ) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
     let lockfile_path = root.join(LOCKFILE_FILE);
@@ -3523,7 +3553,9 @@ fn install_local_from_lock(
         cleanup_failed_install_cache(&cache_paths, &runtime_record.sha256, Some(root), &install)?;
         return Err(error);
     }
-    println!("installed {cmd} {}", runtime_record.installed_path);
+    if !output.is_json() {
+        println!("installed {cmd} {}", runtime_record.installed_path);
+    }
     Ok(InstalledPackage {
         record: runtime_record,
         populated_cache_entry,
@@ -4109,11 +4141,11 @@ fn verify_signature_sidecar(
             "Skipping package signature verification because no trust policy applies"
         );
         if require_verified {
-            eprintln!(
+            diagnostic_eprintln(format_args!(
                 "warning: signature sidecar {} is present for {}, but binpm has no applicable \
                  trust policy for this package",
                 sidecar.asset_name, resolved.source
-            );
+            ));
         }
         return Ok(());
     };
@@ -4192,10 +4224,10 @@ fn verify_signature_sidecar(
                 "Package signature sidecar did not verify"
             );
             if require_verified {
-                eprintln!(
+                diagnostic_eprintln(format_args!(
                     "warning: signature verification failed for {} using sidecar {}",
                     resolved.source, sidecar.asset_name
-                );
+                ));
             }
         }
         Err(error) if error.kind() == ErrorKind::NotFound => {
@@ -4206,11 +4238,11 @@ fn verify_signature_sidecar(
                 "Skipping package signature verification because cosign is not on PATH"
             );
             if require_verified {
-                eprintln!(
+                diagnostic_eprintln(format_args!(
                     "warning: --require-verified needs cosign on PATH to validate signature \
                      sidecar {} for {}",
                     sidecar.asset_name, resolved.source
-                );
+                ));
             }
         }
         Err(error) => {
@@ -5478,6 +5510,31 @@ fn local_completed_mutation_output(
     }
 }
 
+fn local_orphan_changed_files(
+    root: &Path,
+    manifest_tools: &BTreeMap<String, ManifestTool>,
+    orphan_states: &[(String, RuntimeToolState)],
+) -> Vec<String> {
+    let paths = ScopePaths::local(root.to_path_buf());
+    let mut changed_files = BTreeSet::new();
+    for (cmd, state) in orphan_states {
+        let Some(record) = &state.package_record else {
+            continue;
+        };
+        changed_files.insert(path_display(&package_record_path(&paths, cmd)));
+        let installed_path = managed_installed_path(&paths, cmd, record.target_os);
+        if !is_manifest_managed_installed_path(
+            &paths,
+            manifest_tools,
+            &installed_path,
+            record.target_os,
+        ) {
+            changed_files.insert(record.installed_path.clone());
+        }
+    }
+    changed_files.into_iter().collect()
+}
+
 fn global_install_mutation_output(
     command: &'static str,
     cmd: &str,
@@ -5535,6 +5592,28 @@ fn mutation_tool_from_record(
         installed_path: Some(record.installed_path.clone()),
         checksum_source: Some(record.checksum_source),
         verification: Some(verification_state(record)),
+    }
+}
+
+fn mutation_tool_from_lock_tool(
+    cmd: &str,
+    lock_tool: &LockTool,
+    action: MutationAction,
+) -> MutationToolOutput {
+    if let Some(record) = lock_tool.targets.values().next() {
+        return mutation_tool_from_record(cmd, action, record);
+    }
+    MutationToolOutput {
+        cmd: cmd.to_string(),
+        action,
+        source: Some(lock_tool.source.clone()),
+        requested_version: None,
+        release_tag: None,
+        selected_asset: None,
+        selected_binary: None,
+        installed_path: None,
+        checksum_source: None,
+        verification: None,
     }
 }
 
@@ -6247,12 +6326,12 @@ fn download_asset(
                     error = %error,
                     "Retrying release asset download"
                 );
-                eprintln!(
+                diagnostic_eprintln(format_args!(
                     "binpm: retrying download of {asset_name} after a transient failure (attempt \
                      {}/{})",
                     attempt + 1,
                     DOWNLOAD_RETRY_ATTEMPTS
-                );
+                ));
                 thread::sleep(delay);
                 last_error = Some(error);
             }
@@ -6337,12 +6416,12 @@ fn download_asset_attempt(
     let total_bytes = response.content_length();
     let show_progress = download_progress_enabled(total_bytes);
     if show_progress {
-        eprintln!(
+        diagnostic_eprintln(format_args!(
             "binpm: downloading {asset_name}{}",
             total_bytes
                 .map(|bytes| format!(" ({})", human_bytes(bytes)))
                 .unwrap_or_default()
-        );
+        ));
     }
 
     let mut bytes = Vec::with_capacity(download_initial_capacity(total_bytes));
@@ -6368,10 +6447,10 @@ fn download_asset_attempt(
             && (downloaded >= next_progress_at
                 || last_progress_at.elapsed() >= DOWNLOAD_PROGRESS_INTERVAL)
         {
-            eprintln!(
+            diagnostic_eprintln(format_args!(
                 "binpm: downloading {asset_name} {}",
                 format_download_progress(downloaded, total_bytes)
-            );
+            ));
             let _ = std::io::stderr().flush();
             next_progress_at =
                 ((downloaded / DOWNLOAD_PROGRESS_STEP_BYTES) + 1) * DOWNLOAD_PROGRESS_STEP_BYTES;
@@ -6380,10 +6459,10 @@ fn download_asset_attempt(
     }
 
     if show_progress {
-        eprintln!(
+        diagnostic_eprintln(format_args!(
             "binpm: downloaded {asset_name} {}",
             format_download_progress(downloaded, total_bytes)
-        );
+        ));
     }
     info!(
         asset_url = %sanitized_url,
@@ -6587,6 +6666,13 @@ fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
                 .tools
                 .get(cmd)
                 .map(|tool| mutation_tool_from_manifest_tool(cmd, tool, MutationAction::Removed))
+        })
+        .or_else(|| {
+            prior_state
+                .lockfile
+                .tools
+                .get(cmd)
+                .map(|tool| mutation_tool_from_lock_tool(cmd, tool, MutationAction::Removed))
         })
         .into_iter()
         .collect();
@@ -9176,7 +9262,14 @@ mod tests {
         )
         .expect("write lockfile");
 
-        let error = match install_local_from_lock(temp_dir.path(), "tool", &spec, None, false) {
+        let error = match install_local_from_lock(
+            temp_dir.path(),
+            "tool",
+            &spec,
+            None,
+            false,
+            OutputMode::Human,
+        ) {
             Ok(_) => panic!("expected stale lockfile"),
             Err(error) => error,
         };
