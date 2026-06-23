@@ -282,7 +282,7 @@ NODEUP_DOWNLOAD_BASE_URL=https://mirror.example/download/release \
 nodeup toolchain install 22.1.0
 ```
 
-Checksum mismatch JSON errors include sanitized `index_url`, `download_base_url`, source fields, and mirror mismatch indicators when a mirror override is present. Credentials, query strings, and fragments are stripped from those diagnostics.
+Checksum mismatch and runtime download JSON errors include sanitized `index_url`, `download_base_url`, source fields, and mirror mismatch indicators when a mirror override is present. Credentials, query strings, and fragments are stripped from those diagnostics.
 
 ## Stale Release Index Cache
 
