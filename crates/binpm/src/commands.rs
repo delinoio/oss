@@ -414,9 +414,9 @@ enum EnvPathScope {
 pub fn run(cli: Cli) -> Result<i32> {
     let output = OutputMode::from_json_flag(cli.json);
     match cli.command {
-        Command::Install(args) => install(args),
-        Command::Add(args) => add(args),
-        Command::Exec(args) => exec(args),
+        Command::Install(args) => install(args, output),
+        Command::Add(args) => add(args, output),
+        Command::Exec(args) => exec(args, output),
         Command::Cache(args) => cache(args.command, output),
         Command::List(args) => list(args, output),
         Command::Remove(args) => remove(args),
@@ -431,7 +431,7 @@ pub fn run(cli: Cli) -> Result<i32> {
     }
 }
 
-fn install(args: InstallArgs) -> Result<i32> {
+fn install(args: InstallArgs, output: OutputMode) -> Result<i32> {
     let requested_scope = args.scope.scope();
     let frozen_lockfile = args.lockfile.frozen_lockfile();
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
@@ -466,9 +466,10 @@ fn install(args: InstallArgs) -> Result<i32> {
                     explicit_bin,
                     frozen_lockfile,
                     args.require_verified,
+                    output,
                 );
             }
-            return install_local_source(spec, frozen_lockfile, args.require_verified);
+            return install_local_source(spec, frozen_lockfile, args.require_verified, output);
         }
         install_global_source(spec, &alias, explicit_bin, args.require_verified)
     } else {
@@ -491,11 +492,11 @@ fn install(args: InstallArgs) -> Result<i32> {
             no_confirm = args.no_confirm,
             "Prepared local manifest sync request"
         );
-        install_local_manifest(frozen_lockfile, args.require_verified, &[])
+        install_local_manifest(frozen_lockfile, args.require_verified, &[], output)
     }
 }
 
-fn add(args: AddArgs) -> Result<i32> {
+fn add(args: AddArgs, output: OutputMode) -> Result<i32> {
     let spec = normalize_source_input(&args.source)?;
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     let additional = parse_additional_declarations(&args.also)?;
@@ -601,6 +602,7 @@ fn add(args: AddArgs) -> Result<i32> {
             Some(&tool),
             args.lockfile.frozen_lockfile(),
             args.require_verified,
+            output,
         ) {
             Ok(install) => install,
             Err(error) => {
@@ -657,7 +659,7 @@ fn source_install_scope(requested_scope: Scope) -> Scope {
     }
 }
 
-fn exec(args: ExecArgs) -> Result<i32> {
+fn exec(args: ExecArgs, output: OutputMode) -> Result<i32> {
     let explicit_bin = normalize_bin_selection(args.bin.as_deref())?;
     let cmd = match args.cmd() {
         Some(cmd) => {
@@ -760,6 +762,7 @@ fn exec(args: ExecArgs) -> Result<i32> {
         Some(&tool),
         args.lockfile.frozen_lockfile(),
         false,
+        output,
     )?;
     let cache_paths = CachePaths::new(&binpm_home()?);
     if let Err(error) = commit_deferred_cache_hit(&cache_paths, &install) {
@@ -1197,20 +1200,22 @@ fn update(args: UpdateArgs, output: OutputMode) -> Result<i32> {
     if output.is_json() && args.dry_run {
         return preview_update_json(scope, &args.cmd, frozen_lockfile);
     }
-    print_selected_mutation_scope("update", scope);
-    print_update_mode(scope, &args.cmd);
-    if args.dry_run {
-        return preview_update(scope, &args.cmd);
-    }
     if output.is_json() && scope == Scope::Local {
         let plan = build_local_update_plan(&args.cmd)?;
         if plan.no_op.is_some() {
             return print_update_plan_json(scope, &args.cmd, frozen_lockfile, false, plan);
         }
     }
+    print_selected_mutation_scope("update", scope);
+    print_update_mode(scope, &args.cmd);
+    if args.dry_run {
+        return preview_update(scope, &args.cmd);
+    }
     print_update_plan(scope, &args.cmd)?;
     match scope {
-        Scope::Local => update_local_manifest(frozen_lockfile, args.require_verified, &args.cmd),
+        Scope::Local => {
+            update_local_manifest(frozen_lockfile, args.require_verified, &args.cmd, output)
+        }
         Scope::Global => update_global_packages(args.require_verified, &args.cmd),
         Scope::Auto => unreachable!("select_scope never returns auto"),
     }
@@ -2103,6 +2108,7 @@ fn install_local_source(
     spec: SourceSpec,
     frozen_lockfile: bool,
     require_verified: bool,
+    output: OutputMode,
 ) -> Result<i32> {
     let root = require_manifest_root()?;
     let cmd = repo_name(&spec).to_string();
@@ -2124,6 +2130,7 @@ fn install_local_source(
         Some(&next_manifest_tool),
         frozen_lockfile,
         require_verified,
+        output,
     )?;
     let record = install.record.clone();
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
@@ -2156,6 +2163,7 @@ fn install_local_source_as(
     explicit_bin: Option<String>,
     frozen_lockfile: bool,
     require_verified: bool,
+    output: OutputMode,
 ) -> Result<i32> {
     let root = require_manifest_root()?;
     validate_command_name(cmd)?;
@@ -2181,6 +2189,7 @@ fn install_local_source_as(
         Some(&next_manifest_tool),
         frozen_lockfile,
         require_verified,
+        output,
     )?;
     let record = install.record.clone();
     if let Err(error) = write_manifest(&manifest_path, &manifest) {
@@ -2213,6 +2222,7 @@ fn install_local_manifest(
     frozen_lockfile: bool,
     require_verified: bool,
     selected: &[String],
+    output: OutputMode,
 ) -> Result<i32> {
     let root = require_manifest_root()?;
     let manifest = read_manifest(&root.join(MANIFEST_FILE))?;
@@ -2252,6 +2262,7 @@ fn install_local_manifest(
             Some(tool),
             frozen_lockfile,
             require_verified,
+            output,
         ) {
             Ok(install) => completed.push(CompletedLocalInstall {
                 cmd: cmd.clone(),
@@ -2348,26 +2359,29 @@ fn update_local_manifest(
     frozen_lockfile: bool,
     require_verified: bool,
     selected: &[String],
+    output: OutputMode,
 ) -> Result<i32> {
     let root = require_manifest_root()?;
     let manifest_path = root.join(MANIFEST_FILE);
     let manifest = read_manifest(&manifest_path)?;
     if frozen_lockfile {
         validate_frozen_local_update_latest(&root, &manifest, selected)?;
-        return install_local_manifest(frozen_lockfile, require_verified, selected);
+        return install_local_manifest(frozen_lockfile, require_verified, selected, output);
     }
 
     let (next_manifest, manifest_changed) =
         local_update_manifest_with_latest_versions(&manifest, selected)?;
     if manifest_changed {
         write_manifest(&manifest_path, &next_manifest)?;
-        if let Err(error) = install_local_manifest(frozen_lockfile, require_verified, selected) {
+        if let Err(error) =
+            install_local_manifest(frozen_lockfile, require_verified, selected, output)
+        {
             let _ = write_manifest(&manifest_path, &manifest);
             return Err(error);
         }
         return Ok(0);
     }
-    install_local_manifest(frozen_lockfile, require_verified, selected)
+    install_local_manifest(frozen_lockfile, require_verified, selected, output)
 }
 
 fn local_update_manifest_with_latest_versions(
@@ -2601,11 +2615,12 @@ fn install_local_tool(
     tool: Option<&ManifestTool>,
     frozen_lockfile: bool,
     require_verified: bool,
+    output: OutputMode,
 ) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
     let lockfile_path = root.join(LOCKFILE_FILE);
     if frozen_lockfile {
-        return install_local_from_lock(root, cmd, spec, tool, require_verified);
+        return install_local_from_lock(root, cmd, spec, tool, require_verified, output);
     }
 
     let home = binpm_home()?;
@@ -3142,6 +3157,7 @@ fn install_local_from_lock(
     spec: &SourceSpec,
     tool: Option<&ManifestTool>,
     require_verified: bool,
+    output: OutputMode,
 ) -> Result<InstalledPackage> {
     validate_command_name(cmd)?;
     let lockfile_path = root.join(LOCKFILE_FILE);
@@ -3211,11 +3227,14 @@ fn install_local_from_lock(
         };
         let repair_result = (|| {
             let download_request = locked_record_download_request(&record)?;
-            eprintln!(
-                "binpm: frozen restore cache {cache_state} for {cmd}; downloading locked asset \
-                 URL (network_access_attempted=true, provider_authentication_attached={})",
-                download_request.auth.is_some()
-            );
+            if !output.is_json() {
+                eprintln!(
+                    "binpm: frozen restore cache {cache_state} for {cmd}; downloading locked \
+                     asset URL (network_access_attempted=true, \
+                     provider_authentication_attached={})",
+                    download_request.auth.is_some()
+                );
+            }
             let bytes = download_asset(
                 &download_request.url,
                 download_request.auth.as_ref(),
@@ -8819,7 +8838,14 @@ mod tests {
         )
         .expect("write lockfile");
 
-        let error = match install_local_from_lock(temp_dir.path(), "tool", &spec, None, false) {
+        let error = match install_local_from_lock(
+            temp_dir.path(),
+            "tool",
+            &spec,
+            None,
+            false,
+            OutputMode::Human,
+        ) {
             Ok(_) => panic!("expected stale lockfile"),
             Err(error) => error,
         };

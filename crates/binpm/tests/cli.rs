@@ -3022,6 +3022,43 @@ fn local_update_json_dry_run_reports_empty_manifest_no_op_reason() {
 }
 
 #[test]
+fn local_update_json_reports_empty_manifest_no_op_without_human_prefix() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    let output = command
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["--json", "update", "--local", "--frozen-lockfile"])
+        .output()
+        .expect("update json");
+
+    assert!(output.status.success());
+    assert!(
+        output.stderr.is_empty(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["dry_run"], false);
+    assert_eq!(payload["frozen_lockfile"], true);
+    assert_eq!(
+        payload["no_op"]["reason"],
+        "empty_manifest_no_tools_no_lockfile_changes"
+    );
+    assert_eq!(payload["planned_updates"].as_array().unwrap().len(), 0);
+    assert_eq!(payload["file_changes"].as_array().unwrap().len(), 0);
+    assert_eq!(payload["runtime_changes"].as_array().unwrap().len(), 0);
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
 fn local_update_dry_run_reports_empty_manifest_orphan_cleanup() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
