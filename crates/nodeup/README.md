@@ -205,7 +205,8 @@ Fallback rules when `packageManager` is absent:
 - macOS/Linux: symlink aliases
 - Windows: copied `.exe` aliases
 - Conflicts report the existing path, ownership classification, and remediation; unrelated commands are not replaced
-- JSON output includes `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, and per-alias `shims`
+- PATH activation remains manual by default; output includes shell- and OS-aware current-session commands, profile persistence hints, and verification commands
+- JSON output includes `action`, `status`, `shim_dir`, `nodeup_binary`, `path_active`, `path_instruction`, `detected_shell`, `operating_system`, `path_next_steps`, `verification_commands`, and per-alias `shims`
 
 Re-run the command after moving the Nodeup binary or when an alias is stale.
 
@@ -213,7 +214,7 @@ Re-run the command after moving the Nodeup binary or when an alias is stale.
 
 `nodeup self uninstall` removes Nodeup-owned data, cache, and config roots only. It does not remove the running binary, managed shims, shell profile entries, or user PATH values. Configured roots that are not clearly Nodeup-owned are refused without deletion and reported separately.
 
-JSON output includes `removed_paths`, `manual_leftover_paths`, `ownership_refused_paths`, `cleanup_boundaries`, `remaining_manual_steps`, and `likely_leftover_paths`.
+Human output separates removed Nodeup-owned data/cache/config roots from remaining manual binary, shim, shell-profile, and PATH cleanup. JSON output includes `removed_paths`, `manual_leftover_paths`, `ownership_refused_paths`, `cleanup_boundaries`, `remaining_manual_steps`, `detected_shell`, `operating_system`, `manual_cleanup_commands`, `verification_commands`, and `likely_leftover_paths`.
 
 ## Output and Logging
 

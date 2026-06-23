@@ -120,6 +120,30 @@ pub enum BinpmError {
          <bash|zsh|fish|powershell|pwsh|cmd>`."
     )]
     ShellRequired,
+    #[error(
+        "Unsupported shell `{shell}` for binpm env setup. Profile setup supports bash, zsh, fish, \
+         and powershell. cmd.exe PATH setup must be done through Windows Environment Variables."
+    )]
+    ProfileSetupUnsupportedShell { shell: String },
+    #[error(
+        "`binpm env setup` only persists the global bin PATH line; do not pass `--global` or \
+         `--local` with setup."
+    )]
+    ProfileSetupRejectsScopeFlags,
+    #[error(
+        "`binpm env setup` requires its own `setup --shell <shell>` value; do not pass parent \
+         `binpm env --shell` with setup."
+    )]
+    ProfileSetupRejectsParentShellFlag,
+    #[error(
+        "Refusing to update {shell} profile `{}`: {message}",
+        path.display()
+    )]
+    ProfileSetupRefused {
+        shell: &'static str,
+        path: PathBuf,
+        message: String,
+    },
     #[error("Failed to build release HTTP client: {0}")]
     ReleaseHttpClient(#[source] reqwest::Error),
     #[error("Failed to look up release metadata: {0}")]
@@ -498,6 +522,10 @@ impl BinpmError {
             | Self::UnsupportedTargetComponent { .. }
             | Self::UnsupportedShell { .. }
             | Self::ShellRequired
+            | Self::ProfileSetupUnsupportedShell { .. }
+            | Self::ProfileSetupRejectsScopeFlags
+            | Self::ProfileSetupRejectsParentShellFlag
+            | Self::ProfileSetupRefused { .. }
             | Self::ReleaseNotFound { .. }
             | Self::ManifestExists { .. }
             | Self::InvalidInitManifestPath { .. }

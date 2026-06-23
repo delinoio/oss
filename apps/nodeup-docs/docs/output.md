@@ -97,9 +97,13 @@ Stable JSON fields:
 - `ownership_refused_paths`
 - `cleanup_boundaries`
 - `remaining_manual_steps`
+- `detected_shell`
+- `operating_system`
+- `manual_cleanup_commands`
+- `verification_commands`
 - `likely_leftover_paths`
 
-The command removes Nodeup-owned data, cache, and config roots only. Binary removal, managed shim cleanup, and shell profile or PATH edits are always manual. Configured roots that are not clearly Nodeup-owned are refused without deletion and reported in `ownership_refused_paths`.
+The command removes Nodeup-owned data, cache, and config roots only. Binary removal, managed shim cleanup, and shell profile or PATH edits are always manual. Output separates removed roots from remaining manual cleanup and includes shell- and OS-aware cleanup and verification commands. Configured roots that are not clearly Nodeup-owned are refused without deletion and reported in `ownership_refused_paths`.
 
 ## Completion Output
 

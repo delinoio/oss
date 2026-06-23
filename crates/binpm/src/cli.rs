@@ -72,7 +72,7 @@ pub enum LogVerbosity {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Sync local tools, or install a source globally.
+    /// Sync a project manifest, or install a source globally.
     Install(InstallArgs),
     /// Declare a local tool and install it into the project bin directory.
     #[command(after_help = "\
@@ -109,16 +109,20 @@ Each command is written as a separate [tools.<cmd>] manifest table.
     Verify(VerifyArgs),
     /// Create a minimal local binpm.toml manifest.
     Init(InitArgs),
-    /// Print shell commands for adding binpm bin directories to PATH.
+    /// Print shell commands or opt in to global PATH profile setup.
     Env(EnvArgs),
 }
 
 #[derive(Debug, Clone, Args)]
 #[command(
-    after_help = "Supported forms:\n  binpm install\n      Sync the local binpm.toml manifest.\n  \
-                  binpm install <source> [--as <cmd>] [--bin <upstream-binary>]\n      Install a \
-                  source globally, even inside a project.\n\nUse `binpm add <cmd> <source>` for \
-                  project-local tools. `binpm install <source> --local` is not supported."
+    after_help = "Supported forms:\n  binpm install\n      Local sync: resolve the current \
+                  project binpm.toml into .binpm/bin and binpm.lock.\n  binpm add <cmd> <source> \
+                  [--bin <upstream-binary>]\n      Local declaration: add or update a project \
+                  tool in binpm.toml, then install it unless --manifest-only is used.\n  binpm \
+                  install <source> [--as <cmd>] [--bin <upstream-binary>]\n      Global source \
+                  install: install into the user-global binpm home, even inside a \
+                  project.\n\n`binpm install <source> --local` is not supported. Use `binpm add \
+                  <cmd> <source>` for project-local tools."
 )]
 pub struct InstallArgs {
     /// Source spec for a global install. Omit to sync the local binpm.toml
@@ -338,6 +342,9 @@ pub struct InitArgs {
 
 #[derive(Debug, Clone, Args)]
 pub struct EnvArgs {
+    #[command(subcommand)]
+    pub command: Option<EnvCommand>,
+
     /// Shell syntax to render. Omit to infer from SHELL or ComSpec.
     #[arg(long, value_enum, ignore_case = true)]
     pub shell: Option<Shell>,
@@ -349,6 +356,23 @@ pub struct EnvArgs {
     /// Print only the project-local bin PATH command for this project/session.
     #[arg(long)]
     pub local: bool,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum EnvCommand {
+    /// Preview and apply the global bin PATH line to a shell profile.
+    Setup(EnvSetupArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct EnvSetupArgs {
+    /// Shell profile syntax and destination to update.
+    #[arg(long, value_enum, ignore_case = true)]
+    pub shell: Shell,
+
+    /// Preview the exact profile file and line without changing files.
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -412,8 +436,8 @@ pub enum Shell {
     Bash,
     Zsh,
     Fish,
-    #[value(alias = "pwsh")]
     Powershell,
+    Pwsh,
     Cmd,
 }
 
@@ -424,6 +448,7 @@ impl Shell {
             Self::Zsh => "zsh",
             Self::Fish => "fish",
             Self::Powershell => "powershell",
+            Self::Pwsh => "pwsh",
             Self::Cmd => "cmd",
         }
     }
@@ -435,7 +460,7 @@ mod tests {
 
     use clap::Parser;
 
-    use super::{CacheCommand, Cli, Command, Shell};
+    use super::{CacheCommand, Cli, Command, EnvCommand, Shell};
     use crate::contract::Scope;
 
     #[test]
@@ -461,6 +486,7 @@ mod tests {
             "verify",
             "init",
             "env",
+            "setup",
         ] {
             assert!(
                 help.contains(expected),
@@ -672,11 +698,11 @@ mod tests {
     }
 
     #[test]
-    fn parses_env_pwsh_alias_as_powershell() {
+    fn parses_env_pwsh_shell() {
         let cli = Cli::parse_from(["binpm", "env", "--shell", "pwsh"]);
 
         match cli.command {
-            Command::Env(args) => assert_eq!(args.shell, Some(Shell::Powershell)),
+            Command::Env(args) => assert_eq!(args.shell, Some(Shell::Pwsh)),
             other => panic!("unexpected command: {other:?}"),
         }
     }
@@ -700,6 +726,22 @@ mod tests {
 
         match cli.command {
             Command::Env(args) => assert_eq!(args.shell, Some(Shell::Cmd)),
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_env_setup_shell_and_dry_run() {
+        let cli = Cli::parse_from(["binpm", "env", "setup", "--shell", "bash", "--dry-run"]);
+
+        match cli.command {
+            Command::Env(args) => match args.command {
+                Some(EnvCommand::Setup(setup)) => {
+                    assert_eq!(setup.shell, Shell::Bash);
+                    assert!(setup.dry_run);
+                }
+                other => panic!("unexpected env command: {other:?}"),
+            },
             other => panic!("unexpected command: {other:?}"),
         }
     }

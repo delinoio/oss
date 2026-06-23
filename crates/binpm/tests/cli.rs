@@ -12,6 +12,21 @@ fn binpm() -> Command {
     Command::new(env!("CARGO_BIN_EXE_binpm"))
 }
 
+fn utf16le_bom(text: &str) -> Vec<u8> {
+    let mut bytes = vec![0xff, 0xfe];
+    bytes.extend(text.encode_utf16().flat_map(u16::to_le_bytes));
+    bytes
+}
+
+fn decode_utf16le_bom(bytes: &[u8]) -> String {
+    assert!(bytes.starts_with(&[0xff, 0xfe]));
+    let units = bytes[2..]
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect::<Vec<_>>();
+    String::from_utf16(&units).expect("utf16le profile")
+}
+
 fn assert_success(output: &std::process::Output) {
     assert!(
         output.status.success(),
@@ -19,6 +34,24 @@ fn assert_success(output: &std::process::Output) {
         output.status,
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn assert_release_lookup_failure_exit_code(payload: &Value) {
+    let exit_code = payload["error"]["exit_code"]
+        .as_i64()
+        .expect("numeric exit code");
+    assert!(
+        matches!(exit_code, 1 | 2),
+        "unexpected release lookup failure exit code: {exit_code}"
+    );
+}
+
+fn assert_non_empty_error_message(payload: &Value) {
+    let message = payload["error"]["message"].as_str().expect("message");
+    assert!(
+        !message.trim().is_empty(),
+        "expected non-empty error message"
     );
 }
 
@@ -74,18 +107,70 @@ fn bash_quote_path(path: &Path) -> String {
     posix_single_quote(&bash_path(path))
 }
 
+fn fish_single_quote(raw: &str) -> String {
+    format!("'{}'", raw.replace('\\', "\\\\").replace('\'', "\\'"))
+}
+
+fn fish_quote_path(path: &Path) -> String {
+    fish_single_quote(&path.display().to_string())
+}
+
+fn bash_setup_profile(home: &Path) -> std::path::PathBuf {
+    #[cfg(any(target_os = "macos", windows))]
+    {
+        home.join(".bash_profile")
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
+    {
+        home.join(".bashrc")
+    }
+}
+
 #[test]
 fn install_help_distinguishes_global_source_and_local_declaration_forms() {
     binpm()
         .args(["install", "--help"])
         .assert()
         .success()
+        .stdout(predicate::str::contains("Local sync"))
+        .stdout(predicate::str::contains("Local declaration"))
+        .stdout(predicate::str::contains("Global source install"))
         .stdout(predicate::str::contains("binpm install <source>"))
-        .stdout(predicate::str::contains("Install a source globally"))
+        .stdout(predicate::str::contains("install into the user-global"))
         .stdout(predicate::str::contains("binpm add <cmd> <source>"))
         .stdout(predicate::str::contains(
             "binpm install <source> --local` is not supported",
         ));
+}
+
+#[test]
+fn source_install_inside_project_announces_global_scope_before_failure() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    let mut command = binpm();
+
+    command
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", "relative-home")
+        .args(["install", "github:owner/tool"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("install scope: global"))
+        .stdout(predicate::str::contains(
+            "install mode: global source install",
+        ))
+        .stdout(predicate::str::contains(format!(
+            "project manifest detected: {}",
+            project.join("binpm.toml").display()
+        )))
+        .stdout(predicate::str::contains("project manifest: not modified"))
+        .stdout(predicate::str::contains(
+            "use `binpm add <cmd> github:owner/tool`",
+        ))
+        .stderr(predicate::str::contains("BINPM_HOME"));
 }
 
 fn structured_cache_ref_path(home: &Path, project: &Path, cmd: &str) -> PathBuf {
@@ -154,6 +239,15 @@ fn write_cache_asset(home: &Path, sha256: &str, bytes: &[u8]) {
     let entry = home.join("cache").join("sha256").join(sha256);
     fs::create_dir_all(&entry).expect("create cache entry");
     fs::write(entry.join("asset"), bytes).expect("write cache asset");
+}
+
+fn cache_ref_path(home: &Path, project_root: &Path, cmd: &str) -> String {
+    let digest = Sha256::digest(format!("{}:{cmd}", project_root.display()).as_bytes());
+    home.join("cache")
+        .join("refs")
+        .join(format!("{digest:x}.ref"))
+        .display()
+        .to_string()
 }
 
 fn write_global_package_record(home: &Path, cmd: &str, source_path: &str, release_tag: &str) {
@@ -310,6 +404,191 @@ fn global_update_dry_run_reports_all_global_records_without_mutation() {
 }
 
 #[test]
+fn global_update_dry_run_json_propagates_resolution_failure_without_mutation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    write_global_package_record(&home, "alpha", "owner/alpha", "1.0.0");
+    write_global_package_record(&home, "beta", "owner/beta", "2.0.0");
+    let alpha_record_path = home.join("packages").join("alpha.toml");
+    let alpha_before = fs::read_to_string(&alpha_record_path).expect("read alpha record");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["update", "--global", "--dry-run", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_release_lookup_failure_exit_code(&payload);
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("Failed to look up release metadata for `github:owner/alpha`"));
+    assert_eq!(
+        fs::read_to_string(alpha_record_path).expect("read alpha record after"),
+        alpha_before
+    );
+}
+
+#[test]
+fn global_update_dry_run_json_empty_scope_reports_no_changed_files() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["update", "--global", "--dry-run", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["scope"], "global");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(
+        payload["changed_files"]
+            .as_array()
+            .expect("changed files")
+            .len(),
+        0
+    );
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 0);
+}
+
+#[test]
+fn global_remove_dry_run_json_reports_package_record_and_executable_paths() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    write_global_package_record(&home, "alpha", "owner/alpha", "1.0.0");
+    fs::create_dir_all(home.join("bin")).expect("create global bin");
+    fs::write(home.join("bin").join("alpha"), "alpha").expect("write installed binary");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--global", "--dry-run", "alpha", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let package_record_path = home
+        .join("packages")
+        .join("alpha.toml")
+        .display()
+        .to_string();
+    let installed_path = home.join("bin").join("alpha").display().to_string();
+    let packages_dir = home.join("packages").display().to_string();
+    let bin_dir = home.join("bin").display().to_string();
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(!changed_files.contains(&packages_dir.as_str()));
+    assert!(!changed_files.contains(&bin_dir.as_str()));
+    assert_eq!(payload["tools"][0]["action"], "planned-remove");
+    assert!(home.join("packages").join("alpha.toml").exists());
+}
+
+#[test]
+fn global_remove_dry_run_json_rejects_unsafe_package_record_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    write_global_package_record(&home, "alpha", "owner/alpha", "1.0.0");
+    let record_path = home.join("packages").join("alpha.toml");
+    let expected_path = home.join("bin").join("alpha").display().to_string();
+    let unsafe_path = temp_dir.path().join("outside-alpha").display().to_string();
+    let record = fs::read_to_string(&record_path).expect("read record");
+    fs::write(&record_path, record.replace(&expected_path, &unsafe_path)).expect("write record");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--global", "--dry-run", "alpha", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Unsafe installed path"));
+    assert!(record_path.exists());
+}
+
+#[test]
+fn global_remove_dry_run_json_omits_executable_owned_by_remaining_record() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let packages = home.join("packages");
+    fs::create_dir_all(&packages).expect("create packages");
+    let tool_exe = home.join("bin").join("tool.exe").display().to_string();
+    for cmd in ["tool", "tool.exe"] {
+        fs::write(
+            packages.join(format!("{cmd}.toml")),
+            format!(
+                r#"package_spec = "github:owner/{cmd}@1.0.0"
+source = "github:owner/{cmd}"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/{cmd}"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "{cmd}.exe"
+asset_url = "https://github.com/owner/{cmd}/releases/download/1.0.0/{cmd}.exe"
+target_os = "windows"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "{cmd}.exe"
+installed_path = "{tool_exe}"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+checksum_source = "local"
+signature_available = false
+signature_verified = false
+"#
+            ),
+        )
+        .expect("write package record");
+    }
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--global", "--dry-run", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let package_record_path = home
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(!changed_files.contains(&tool_exe.as_str()));
+    assert!(home.join("packages").join("tool.toml").exists());
+    assert!(home.join("packages").join("tool.exe.toml").exists());
+}
+
+#[test]
 fn global_update_dry_run_reports_selected_global_records_without_mutation() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -338,6 +617,66 @@ fn global_update_dry_run_reports_selected_global_records_without_mutation() {
         fs::read_to_string(beta_record_path).expect("read beta record after"),
         beta_before
     );
+}
+
+#[test]
+fn add_manifest_only_json_reports_declarations_without_human_stdout() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "tool",
+            "owner/tool@1.0.0",
+            "--bin",
+            "tool-linux-x64",
+            "--manifest-only",
+            "--json",
+        ])
+        .output()
+        .expect("add --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse add json");
+    assert_eq!(payload["command"], "add");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["dry_run"], false);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "declared");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    assert_eq!(payload["tools"][0]["requested_version"], "1.0.0");
+    assert_eq!(payload["tools"][0]["selected_binary"], "tool-linux-x64");
+    assert!(payload["tools"][0]["release_tag"].is_null());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("manifest-only:"));
+    assert!(temp_dir.path().join("binpm.toml").exists());
+    assert!(!temp_dir.path().join("binpm.lock").exists());
+    assert!(!temp_dir.path().join(".binpm").exists());
+}
+
+#[test]
+fn failing_mutating_json_command_emits_stable_error_envelope_on_stderr() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+
+    let output = binpm()
+        .current_dir(temp_dir.path())
+        .env("BINPM_HOME", &home)
+        .args(["add", "tool", "npm:tool", "--manifest-only", "--json"])
+        .output()
+        .expect("add failure --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(payload["error"]["exit_code"], 2);
+    assert!(payload["error"]["message"]
+        .as_str()
+        .expect("message")
+        .contains("is a package-manager backend"));
 }
 
 #[test]
@@ -854,6 +1193,500 @@ fn env_local_scope_does_not_require_global_home() {
         .stdout(predicate::str::contains("Global bin").not())
         .stdout(predicate::str::contains("Project-local bin"))
         .stdout(predicate::str::contains(bash_quote_path(&local_bin)));
+}
+
+#[test]
+fn env_setup_dry_run_reports_profile_and_line_without_mutation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    let profile = bash_setup_profile(&home_dir);
+    let expected_line = format!(
+        "export PATH={}${{PATH:+:$PATH}}",
+        bash_quote_path(&global_bin)
+    );
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "profile: {}",
+            profile.display()
+        )))
+        .stdout(predicate::str::contains(format!("line: {expected_line}")))
+        .stdout(predicate::str::contains("status: would append"));
+
+    assert!(!profile.exists(), "dry-run must not create the profile");
+}
+
+#[test]
+fn env_setup_appends_only_global_path_line() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    let local_bin = temp_dir.path().join(".binpm").join("bin");
+    let profile = bash_setup_profile(&home_dir);
+    fs::write(&profile, "# existing").expect("write profile");
+    let expected_line = format!(
+        "export PATH={}${{PATH:+:$PATH}}",
+        bash_quote_path(&global_bin)
+    );
+    let mut command = binpm();
+
+    command
+        .current_dir(temp_dir.path())
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"))
+        .stdout(predicate::str::contains("rollback: remove the line above"));
+
+    let contents = fs::read_to_string(&profile).expect("read profile");
+    assert!(contents.contains(&expected_line));
+    assert!(
+        !contents.contains(&local_bin.display().to_string()),
+        "profile setup must not persist project-local bin paths"
+    );
+}
+
+#[cfg(any(target_os = "macos", windows))]
+#[test]
+fn env_setup_bash_uses_existing_login_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bash_profile = home_dir.join(".bash_profile");
+    let profile = home_dir.join(".profile");
+    fs::write(&profile, "# existing").expect("write profile");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "profile: {}",
+            profile.display()
+        )))
+        .stdout(predicate::str::contains("status: appended"));
+
+    assert!(!bash_profile.exists());
+    assert!(profile.is_file());
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+#[test]
+fn env_setup_bash_refuses_login_profile_without_bashrc_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bashrc = home_dir.join(".bashrc");
+    let profile = home_dir.join(".profile");
+    fs::write(&profile, "# existing").expect("write profile");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("bash profile target is ambiguous"))
+        .stderr(predicate::str::contains(
+            "non-login interactive bash reads ~/.bashrc",
+        ));
+
+    assert!(!bashrc.exists());
+    assert_eq!(
+        fs::read_to_string(&profile).expect("read profile"),
+        "# existing"
+    );
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+#[test]
+fn env_setup_bash_uses_existing_bashrc_when_login_profiles_exist_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bashrc = home_dir.join(".bashrc");
+    let profile = home_dir.join(".profile");
+    fs::write(&profile, "# existing profile").expect("write profile");
+    fs::write(&bashrc, "# existing bashrc").expect("write bashrc");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!(
+            "profile: {}",
+            bashrc.display()
+        )))
+        .stdout(predicate::str::contains("status: appended"));
+
+    assert!(fs::read_to_string(&bashrc)
+        .expect("read bashrc")
+        .contains("export PATH="));
+    assert_eq!(
+        fs::read_to_string(&profile).expect("read profile"),
+        "# existing profile"
+    );
+}
+
+#[test]
+fn env_setup_rejects_parent_scope_flags() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let profile = bash_setup_profile(&home_dir);
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "--local", "setup", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "`binpm env setup` only persists the global bin PATH line",
+        ));
+
+    assert!(
+        !profile.exists(),
+        "scoped setup invocations must not mutate profile files"
+    );
+}
+
+#[test]
+fn env_setup_rejects_parent_shell_flag() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let bash_profile = bash_setup_profile(&home_dir);
+    let fish_profile = home_dir
+        .join(".config")
+        .join("fish")
+        .join("conf.d")
+        .join("binpm.fish");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "--shell", "fish", "setup", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains(
+            "do not pass parent `binpm env --shell` with setup",
+        ));
+
+    assert!(!bash_profile.exists());
+    assert!(!fish_profile.exists());
+}
+
+#[test]
+fn env_setup_is_idempotent_for_existing_line() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    let profile = home_dir.join(".zshrc");
+    let expected_line = format!(
+        "export PATH={}${{PATH:+:$PATH}}",
+        bash_quote_path(&global_bin)
+    );
+    fs::write(&profile, format!("{expected_line}\n")).expect("write profile");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "zsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: already present"));
+
+    let contents = fs::read_to_string(&profile).expect("read profile");
+    assert_eq!(contents.matches(&expected_line).count(), 1);
+}
+
+#[test]
+fn env_setup_supports_fish_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    let profile = home_dir
+        .join(".config")
+        .join("fish")
+        .join("conf.d")
+        .join("binpm.fish");
+    let expected_line = format!("set -gx PATH {} $PATH", fish_quote_path(&global_bin));
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "fish"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    let contents = fs::read_to_string(&profile).expect("read fish profile");
+    assert!(contents.contains(&expected_line));
+}
+
+#[test]
+fn env_setup_supports_powershell_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let userprofile = temp_dir.path().join("userprofile");
+    fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    #[cfg(windows)]
+    let profile = userprofile
+        .join("Documents")
+        .join("WindowsPowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    #[cfg(not(windows))]
+    let profile = home_dir
+        .join(".config")
+        .join("powershell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let expected_line = format!(
+        "$env:PATH = '{}' + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} \
+         else {{ '' }})",
+        global_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "powershell"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    let contents = fs::read_to_string(&profile).expect("read powershell profile");
+    assert!(contents.contains(&expected_line));
+}
+
+#[test]
+fn env_setup_appends_to_utf16le_powershell_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let userprofile = temp_dir.path().join("userprofile");
+    fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    #[cfg(windows)]
+    let profile = userprofile
+        .join("Documents")
+        .join("WindowsPowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    #[cfg(not(windows))]
+    let profile = home_dir
+        .join(".config")
+        .join("powershell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    fs::create_dir_all(profile.parent().expect("profile parent")).expect("profile parent dir");
+    fs::write(
+        &profile,
+        utf16le_bom("# existing Windows PowerShell profile"),
+    )
+    .expect("write utf16 profile");
+    let expected_line = format!(
+        "$env:PATH = '{}' + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} \
+         else {{ '' }})",
+        global_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "powershell"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    let bytes = fs::read(&profile).expect("read powershell profile");
+    let contents = decode_utf16le_bom(&bytes);
+    assert!(contents.contains("# existing Windows PowerShell profile"));
+    assert!(contents.contains(&expected_line));
+}
+
+#[test]
+fn env_setup_supports_pwsh_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let userprofile = temp_dir.path().join("userprofile");
+    fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    #[cfg(windows)]
+    let profile = userprofile
+        .join("Documents")
+        .join("PowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    #[cfg(not(windows))]
+    let profile = home_dir
+        .join(".config")
+        .join("powershell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let expected_line = format!(
+        "$env:PATH = '{}' + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} \
+         else {{ '' }})",
+        global_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "pwsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    let contents = fs::read_to_string(&profile).expect("read pwsh profile");
+    assert!(contents.contains(&expected_line));
+}
+
+#[cfg(windows)]
+#[test]
+fn env_setup_powershell_uses_windows_powershell_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let userprofile = temp_dir.path().join("userprofile");
+    fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let windows_powershell_profile = userprofile
+        .join("Documents")
+        .join("WindowsPowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let pwsh_profile = userprofile
+        .join("Documents")
+        .join("PowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "powershell"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    assert!(windows_powershell_profile.is_file());
+    assert!(!pwsh_profile.exists());
+}
+
+#[test]
+fn env_setup_refuses_cmd_and_ambiguous_profile_targets() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home_file = temp_dir.path().join("home-file");
+    fs::write(&home_file, "").expect("home file");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let mut cmd_command = binpm();
+
+    cmd_command
+        .env_clear()
+        .env("HOME", temp_dir.path())
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "cmd"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("Unsupported shell `cmd`"));
+
+    let mut ambiguous_command = binpm();
+    ambiguous_command
+        .env_clear()
+        .env("HOME", &home_file)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "bash"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("home path is not a directory"));
+}
+
+#[test]
+fn env_setup_refuses_missing_home_directories() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let missing_home = temp_dir.path().join("missing-home");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let would_be_profile = missing_home
+        .join(".config")
+        .join("fish")
+        .join("conf.d")
+        .join("binpm.fish");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("HOME", &missing_home)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "fish"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicate::str::contains("home directory does not exist"));
+
+    assert!(
+        !would_be_profile.exists(),
+        "missing homes must be refused before profile directories are created"
+    );
 }
 
 #[test]
@@ -1774,7 +2607,8 @@ fn doctor_guides_path_setup_when_global_bin_is_absent_from_path() {
         .stdout(predicate::str::contains("global_bin_on_path: no"))
         .stdout(predicate::str::contains("binpm env --global --shell"))
         .stdout(predicate::str::contains("profile changes are opt-in"))
-        .stdout(predicate::str::contains("persist only the global bin line"))
+        .stdout(predicate::str::contains("binpm env setup --shell"))
+        .stdout(predicate::str::contains("apply only the global bin line"))
         .stdout(predicate::str::contains(
             "project-local PATH line is for the current project/session only",
         ));
@@ -1997,6 +2831,38 @@ fn frozen_local_update_allows_empty_manifest_without_lockfile() {
         ))
         .stdout(predicate::str::contains("would update").not());
 
+    assert!(!project.join("binpm.lock").exists());
+}
+
+#[test]
+fn frozen_local_update_json_empty_manifest_reports_no_changed_files() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--frozen-lockfile", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(
+        payload["changed_files"]
+            .as_array()
+            .expect("changed files")
+            .len(),
+        0
+    );
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 0);
     assert!(!project.join("binpm.lock").exists());
 }
 
@@ -2532,6 +3398,44 @@ fn local_source_install_quotes_source_in_rejection_guidance() {
     assert!(message.contains("run `binpm install 'github:owner/tool@v1&foo'`"));
 }
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn frozen_add_json_omits_unchanged_lockfile() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'installed tool\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "add",
+            "tool",
+            "github:owner/tool@1.0.0",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("add --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse add json");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    assert!(changed_files.contains(&project.join("binpm.toml").display().to_string().as_str()));
+    assert!(!changed_files.contains(&project.join("binpm.lock").display().to_string().as_str()));
+}
+
 #[test]
 fn auto_frozen_update_recovery_preserves_selected_tool_and_verification() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
@@ -2756,6 +3660,11 @@ fn frozen_local_install_restores_missing_runtime_from_verified_cache() {
         ])
         .assert()
         .success()
+        .stdout(predicate::str::contains("install scope: local"))
+        .stdout(predicate::str::contains(
+            "install mode: local manifest sync",
+        ))
+        .stdout(predicate::str::contains("manifest:"))
         .stdout(predicate::str::contains("installed tool"));
 
     assert!(project.join(".binpm").join("bin").join("tool").exists());
@@ -2768,6 +3677,188 @@ fn frozen_local_install_restores_missing_runtime_from_verified_cache() {
         fs::read_to_string(project.join("binpm.lock")).expect("read lockfile"),
         lock_before
     );
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn frozen_local_install_json_restore_omits_lockfile_changed_file() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'restored install\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+    let lock_before = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+            "--json",
+        ])
+        .output()
+        .expect("install --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse install json");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let lockfile_path = project.join("binpm.lock").display().to_string();
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+    let cache_ref = cache_ref_path(&home, &project, "tool");
+
+    assert!(!changed_files.contains(&lockfile_path.as_str()));
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref.as_str()));
+    assert_eq!(
+        fs::read_to_string(project.join("binpm.lock")).expect("read lockfile"),
+        lock_before
+    );
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn local_install_json_suppresses_orphan_cleanup_stdout() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'installed tool\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+
+    binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .assert()
+        .success();
+
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write empty manifest");
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["install", "--local", "--json"])
+        .output()
+        .expect("install --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains("removed tool"));
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse install json");
+    assert_eq!(payload["command"], "install");
+    assert_eq!(payload["scope"], "local");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let lockfile_path = project.join("binpm.lock").display().to_string();
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+    let cache_ref = cache_ref_path(&home, &project, "tool");
+    assert!(changed_files.contains(&lockfile_path.as_str()));
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref.as_str()));
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 1);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "removed");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    assert_eq!(payload["tools"][0]["release_tag"], "1.0.0");
+    assert!(!project.join(".binpm").join("bin").join("tool").exists());
+    assert!(!project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
+    let lockfile = fs::read_to_string(project.join("binpm.lock")).expect("read lockfile");
+    assert!(!lockfile.contains("tools.tool"));
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn local_update_json_preserves_orphan_removed_action() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'installed tool\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+
+    binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .assert()
+        .success();
+
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write empty manifest");
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 1);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "removed");
+    assert!(!project.join(".binpm").join("bin").join("tool").exists());
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
@@ -2906,6 +3997,70 @@ signature_verified = false
 }
 
 #[test]
+fn local_remove_dry_run_json_rejects_unsafe_package_record_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let unsafe_installed_path = temp_dir.path().join("outside-binpm-tool");
+    fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    let package_record = format!(
+        r#"package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux-x64"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux-x64"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux-x64"
+installed_path = "{}"
+sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+checksum_source = "local"
+signature_available = false
+signature_verified = false
+"#,
+        unsafe_installed_path.display()
+    );
+    let record_path = project.join(".binpm").join("packages").join("tool.toml");
+    fs::write(&record_path, package_record).expect("write package record");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "--dry-run", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Unsafe installed path"));
+    assert!(record_path.exists());
+}
+
+#[test]
 fn local_remove_without_package_record_preserves_unowned_binary() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -3004,6 +4159,329 @@ source = "github:owner/tool"
 }
 
 #[test]
+fn local_remove_dry_run_json_reports_one_parseable_plan_without_mutation() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(project.join(".binpm").join("bin")).expect("create bin");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+    fs::write(project.join(".binpm").join("bin").join("tool"), "manual")
+        .expect("write manual executable");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "--dry-run", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("remove scope"));
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    assert_eq!(payload["command"], "remove");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "planned-remove");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    assert!(payload["tools"][0]["release_tag"].is_null());
+    assert_eq!(
+        fs::read_to_string(project.join(".binpm").join("bin").join("tool"))
+            .expect("read manual executable"),
+        "manual"
+    );
+    assert!(fs::read_to_string(project.join("binpm.toml"))
+        .expect("read manifest")
+        .contains("tools.tool"));
+    assert!(fs::read_to_string(project.join("binpm.lock"))
+        .expect("read lockfile")
+        .contains("tools.tool"));
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn local_remove_dry_run_json_reports_package_record_and_executable_paths() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'installed tool\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+
+    binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .assert()
+        .success();
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "--dry-run", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+    let cache_ref = cache_ref_path(&home, &project, "tool");
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref.as_str()));
+    assert_eq!(payload["tools"][0]["action"], "planned-remove");
+    assert!(project.join(".binpm").join("bin").join("tool").exists());
+    assert!(project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
+}
+
+#[test]
+fn local_remove_dry_run_json_reports_lockfile_only_tool() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "--dry-run", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    assert_eq!(payload["command"], "remove");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 1);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "planned-remove");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    assert!(fs::read_to_string(project.join("binpm.lock"))
+        .expect("read lockfile")
+        .contains("tools.tool"));
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn local_remove_json_reports_removed_executable_path() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let sha256 = format!("{:x}", Sha256::digest(b"tool"));
+    write_locked_tool_project(&project, &sha256);
+    fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    fs::create_dir_all(project.join(".binpm").join("bin")).expect("create bin");
+    fs::write(project.join(".binpm").join("bin").join("tool"), "tool").expect("write executable");
+    fs::write(
+        project.join(".binpm").join("packages").join("tool.toml"),
+        format!(
+            r#"package_spec = "github:owner/tool@1.0.0"
+source = "github:owner/tool"
+source_provider = "github"
+source_host = "github.com"
+source_path = "owner/tool"
+requested_version = "1.0.0"
+release_tag = "1.0.0"
+asset_name = "tool-linux"
+asset_url = "https://github.com/owner/tool/releases/download/1.0.0/tool-linux"
+target_os = "linux"
+target_arch = "x86_64"
+target_libc = "gnu"
+archive_format = "bare-executable"
+selected_binary = "tool-linux"
+installed_path = "{}"
+sha256 = "{sha256}"
+checksum_source = "github-digest"
+provider_digest_sha256 = "{sha256}"
+signature_available = false
+signature_verified = false
+"#,
+            project.join(".binpm").join("bin").join("tool").display()
+        ),
+    )
+    .expect("write package record");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+    let cache_ref = cache_ref_path(&home, &project, "tool");
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref.as_str()));
+    assert!(!project.join(".binpm").join("bin").join("tool").exists());
+}
+
+#[test]
+fn local_remove_json_reports_lockfile_only_tool() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "removed");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    assert!(!changed_files.contains(&package_record_path.as_str()));
+    assert!(!project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .exists());
+    assert!(!fs::read_to_string(project.join("binpm.lock"))
+        .expect("read lockfile")
+        .contains("tools.tool"));
+}
+
+#[test]
+fn local_remove_json_manifest_only_tool_skips_invalid_target_alias() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+
+[tools.tool.targets.linux-amd64-glibc]
+asset = "tool-linux"
+bin = "tool"
+"#,
+    )
+    .expect("write manifest");
+    fs::write(project.join("binpm.lock"), "version = 1\n").expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "removed");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    assert!(!fs::read_to_string(project.join("binpm.toml"))
+        .expect("read manifest")
+        .contains("tools.tool"));
+}
+
+#[test]
 fn local_remove_missing_tool_does_not_create_lockfile() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
@@ -3063,6 +4541,78 @@ version = "1.0.0"
         ))
         .stdout(predicate::str::contains("dry run: no changes made"));
 
+    assert!(!project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
+}
+
+#[test]
+fn local_update_dry_run_json_resolves_floating_tools_before_planning() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--dry-run", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_release_lookup_failure_exit_code(&payload);
+    assert_non_empty_error_message(&payload);
+    assert!(fs::read_to_string(project.join("binpm.toml"))
+        .expect("read manifest")
+        .contains("source = \"github:owner/tool\""));
+    assert!(!project.join(".binpm").exists());
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn local_update_dry_run_json_reports_target_override_binary_and_asset() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+bin = "top-level-tool"
+
+[tools.tool.targets.linux-x86_64-gnu]
+asset = "tool-linux-x64.tar.gz"
+bin = "bin/tool"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--dry-run", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_release_lookup_failure_exit_code(&payload);
+    assert_non_empty_error_message(&payload);
     assert!(!project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
 }
@@ -3219,7 +4769,7 @@ fn local_update_json_reports_empty_manifest_no_op_without_human_prefix() {
 }
 
 #[test]
-fn local_update_json_dry_run_reports_manifest_and_lockfile_file_changes() {
+fn local_update_json_dry_run_no_frozen_resolves_versioned_tools() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
@@ -3248,21 +4798,27 @@ version = "1.0.0"
         .output()
         .expect("update json dry-run");
 
-    assert_success(&output);
-    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert!(!output.status.success());
+    assert!(
+        output.stdout.is_empty(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse update error json");
     assert_eq!(
-        payload["file_changes"],
-        serde_json::json!([
-            project.join("binpm.toml").display().to_string(),
-            project.join("binpm.lock").display().to_string()
-        ])
+        payload["error"]["diagnostic"]["kind"],
+        serde_json::json!("release_lookup")
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["package"],
+        serde_json::json!("github:owner/tool")
     );
     assert!(!project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
 }
 
 #[test]
-fn local_update_json_dry_run_omits_manifest_for_versionless_tools() {
+fn local_update_json_dry_run_no_frozen_resolves_versionless_tools() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
@@ -3290,11 +4846,20 @@ source = "github:owner/tool"
         .output()
         .expect("update json dry-run");
 
-    assert_success(&output);
-    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert!(!output.status.success());
+    assert!(
+        output.stdout.is_empty(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse update error json");
     assert_eq!(
-        payload["file_changes"],
-        serde_json::json!([project.join("binpm.lock").display().to_string()])
+        payload["error"]["diagnostic"]["kind"],
+        serde_json::json!("release_lookup")
+    );
+    assert_eq!(
+        payload["error"]["diagnostic"]["package"],
+        serde_json::json!("github:owner/tool")
     );
     assert!(!project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
@@ -3306,6 +4871,7 @@ fn local_update_json_dry_run_reports_orphan_cleanup_paths() {
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
     fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    fs::create_dir_all(project.join(".binpm").join("bin")).expect("create bin directory");
     fs::create_dir_all(home.join("cache").join("refs")).expect("create cache refs");
     fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
     fs::write(
@@ -3345,6 +4911,11 @@ signature_verified = false
         ),
     )
     .expect("write package record");
+    fs::write(
+        project.join(".binpm").join("bin").join("tool"),
+        b"#!/bin/sh\nprintf 'installed tool\\n'\n",
+    )
+    .expect("write installed binary");
     let cache_ref = structured_cache_ref_path(&home, &project, "tool");
     fs::write(&cache_ref, "cache ref").expect("write cache ref");
 
@@ -3363,23 +4934,32 @@ signature_verified = false
 
     assert_success(&output);
     let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
-    assert_eq!(
-        payload["file_changes"],
-        serde_json::json!([project.join("binpm.lock").display().to_string()])
-    );
-    assert_eq!(
-        payload["runtime_changes"],
-        serde_json::json!([
-            project.join(".binpm").join("bin").display().to_string(),
-            project
-                .join(".binpm")
-                .join("packages")
-                .join("tool.toml")
-                .display()
-                .to_string(),
-            cache_ref.display().to_string(),
-        ])
-    );
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["dry_run"], true);
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let lockfile_path = project.join("binpm.lock").display().to_string();
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+    let cache_ref_path = cache_ref.display().to_string();
+    assert!(changed_files.contains(&lockfile_path.as_str()));
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref_path.as_str()));
     assert!(project
         .join(".binpm")
         .join("packages")
@@ -3426,6 +5006,158 @@ source = "github:owner/tool"
 
     assert!(project.join("binpm.lock").exists());
     assert!(!project.join(".binpm").exists());
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn local_update_dry_run_json_reports_orphan_cleanup_plan() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'installed tool\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+
+    binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .assert()
+        .success();
+
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write empty manifest");
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--dry-run", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 1);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "planned-remove");
+    let changed_files = payload["changed_files"]
+        .as_array()
+        .expect("changed files")
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let package_record_path = project
+        .join(".binpm")
+        .join("packages")
+        .join("tool.toml")
+        .display()
+        .to_string();
+    let installed_path = project
+        .join(".binpm")
+        .join("bin")
+        .join("tool")
+        .display()
+        .to_string();
+    let cache_ref = cache_ref_path(&home, &project, "tool");
+    assert!(changed_files.contains(&package_record_path.as_str()));
+    assert!(changed_files.contains(&installed_path.as_str()));
+    assert!(changed_files.contains(&cache_ref.as_str()));
+    assert!(project.join(".binpm").join("bin").join("tool").exists());
+    assert!(fs::read_to_string(project.join("binpm.lock"))
+        .expect("read lockfile")
+        .contains("tools.tool"));
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn frozen_local_install_human_restore_reports_network_attempt() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    write_locked_tool_project(&project, sha256);
+
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .output()
+        .expect("install --local --frozen-lockfile");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("frozen restore cache missing for tool"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("network_access_attempted=true"), "{stderr}");
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn frozen_local_update_dry_run_json_rejects_orphan_cleanup_plan() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    let tool_bytes = b"#!/bin/sh\nprintf 'installed tool\\n'\n";
+    let sha256 = format!("{:x}", Sha256::digest(tool_bytes));
+    write_locked_tool_project(&project, &sha256);
+    write_cache_asset(&home, &sha256, tool_bytes);
+
+    binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "install",
+            "--local",
+            "--frozen-lockfile",
+            "--require-verified",
+        ])
+        .assert()
+        .success();
+
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write empty manifest");
+    let output = binpm()
+        .current_dir(&project)
+        .env_clear()
+        .env("BINPM_HOME", &home)
+        .args([
+            "update",
+            "--local",
+            "--dry-run",
+            "--frozen-lockfile",
+            "--json",
+        ])
+        .output()
+        .expect("update --json");
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).expect("parse error json");
+    assert_eq!(
+        payload["error"]["diagnostic"]["reason"],
+        "orphan_lockfile_record"
+    );
+    assert!(project.join(".binpm").join("bin").join("tool").exists());
+    assert!(fs::read_to_string(project.join("binpm.lock"))
+        .expect("read lockfile")
+        .contains("tools.tool"));
 }
 
 #[test]
