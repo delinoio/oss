@@ -115,6 +115,41 @@
   background: color-mix(in srgb, var(--rp-c-bg-soft) 82%, transparent);
 }
 
+.rp-search-panel__modal {
+  position: relative;
+}
+
+.delino-search-dialog-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--rp-radius-small);
+  background: transparent;
+  color: var(--rp-c-text-2);
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.delino-search-dialog-close:hover,
+.delino-search-dialog-close:focus-visible {
+  background: var(--rp-c-bg-mute);
+  color: var(--rp-c-text-1);
+}
+
+.delino-search-dialog-close:focus-visible {
+  outline: 2px solid var(--rp-c-brand);
+  outline-offset: 2px;
+}
+
 .rp-switch-appearance {
   width: 44px;
   height: 44px;
