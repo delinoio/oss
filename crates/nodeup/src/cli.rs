@@ -212,12 +212,15 @@ pub enum OverrideCommand {
         #[arg(long)]
         path: Option<String>,
     },
-    /// Remove a runtime override for a directory.
+    /// Remove a runtime override for a directory, or remove stale override
+    /// entries.
     Unset {
         /// Override target directory. Defaults to current working directory.
+        /// Mutually exclusive with `--nonexistent`.
         #[arg(long, conflicts_with = "nonexistent")]
         path: Option<String>,
-        /// Remove stale entries whose directories no longer exist.
+        /// Remove stale entries whose directories no longer exist. Mutually
+        /// exclusive with `--path`.
         #[arg(long, conflicts_with = "path")]
         nonexistent: bool,
     },

@@ -125,7 +125,7 @@ $env:Path = "$HOME\.local\bin;$env:Path"
 - `nodeup check`
 - `nodeup override list`
 - `nodeup override set <runtime> [--path <path>]`
-- `nodeup override unset [--path <path>] [--nonexistent]`
+- `nodeup override unset [--path <path> | --nonexistent]`
 - `nodeup which [--runtime <runtime>] <command>`
 - `nodeup run [--install] <runtime> <command>...`
 - `nodeup shim setup [--dir <path>]`

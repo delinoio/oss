@@ -367,6 +367,17 @@ fn help_lists_nested_subcommand_descriptions() {
         ));
 
     env.command()
+        .args(["override", "unset", "--help"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "Mutually exclusive with `--nonexistent`",
+        ))
+        .stdout(predicates::str::contains(
+            "Mutually exclusive with `--path`",
+        ));
+
+    env.command()
         .args(["shim", "--help"])
         .assert()
         .success()
