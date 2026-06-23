@@ -5853,7 +5853,7 @@ fn local_runtime_record_matches_manifest(
     }
     if let Some(override_target) = manifest_target_override(Some(tool), &target)? {
         return Ok(
-            manifest_checksum_source_matches_record(&override_target, record)
+            manifest_checksum_source_matches_record(override_target, record)
                 && record.asset_name == override_target.asset
                 && manifest_bin_matches_record(&override_target.bin, &record.selected_binary),
         );
