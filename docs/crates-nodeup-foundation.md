@@ -31,6 +31,7 @@
 - Tracked exact-version selectors must be stored and processed by their canonical `v<semver>` identity, so `22.1.0` and `v22.1.0` are the same tracked selector.
 - Tracked channel aliases must be stored and processed by canonical selector identity, so `latest` and `current` are one tracked selector, `current`.
 - `nodeup update` treats exact-version selectors as immutable pins and reports them with `skipped-exact-version` rather than installing or reporting a newer runtime for that selector.
+- Explicit `nodeup update <runtime>...` invocations must preflight every requested selector before resolving any channel or installing any runtime. Valid linked-name selectors remain accepted and report `skipped-linked-runtime`.
 - `nodeup update` without explicit selectors must expose the implicit target source in JSON entries (`tracked-selectors` or `installed-runtimes`) and include structured empty-target diagnostics with selector source, counts, and selector preview.
 - Host support must include `macOS`, `Linux`, and `Windows` x64/arm64, while x86 hosts remain unsupported.
 - Public Nodeup docs must explain that release asset names use `amd64` for the same CPU family commonly called `x64`.
@@ -65,6 +66,7 @@
 - `which yarn|pnpm` in npm-exec mode must resolve to the runtime `npm` executable path and must label that path as npm-exec delegation rather than a direct package-manager binary.
 - `toolchain install` and `toolchain uninstall` runtime selector lists are required command-line arguments.
 - `toolchain install` must reject linked-name selectors before linked-runtime lookup; the error kind must be `invalid-input` whether or not a linked runtime by that name exists.
+- `toolchain install <runtime>...` must preflight every requested selector before release-index resolution, archive download, extraction, settings tracking, or runtime installation starts.
 - `toolchain uninstall` must remove exact installed versions only; channel selectors and linked-name selectors must fail with `invalid-input` before reference-blocker checks.
 - `toolchain uninstall` must fail atomically with `conflict` when any requested exact runtime is referenced by an exact-version global default or exact-version directory override.
 - `toolchain uninstall` reference-blocker conflicts must report each blocking reference type (`global-default` or `directory-override`), the blocking path, selector, runtime, and follow-up commands for changing the default or unsetting/updating the override.

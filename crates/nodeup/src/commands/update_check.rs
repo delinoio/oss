@@ -123,14 +123,14 @@ pub fn update(
         ));
     }
 
+    let requested_selectors =
+        preflight_update_selectors(selectors, selector_context.allow_legacy_stored_linked_names)?;
     let mut updates = Vec::new();
     let selector_source = selector_context
         .implicit_targets
         .then(|| selector_context.source.to_string());
     let implicit_target = selector_context.implicit_targets.then_some(true);
-    for selector in selectors {
-        let parsed =
-            parse_update_selector(&selector, selector_context.allow_legacy_stored_linked_names)?;
+    for (selector, parsed) in requested_selectors {
         let selector_kind = parsed.kind().as_str().to_string();
         let canonical_selector = parsed.canonical_id();
         let selector_alias_of = parsed.alias_of();
@@ -241,6 +241,19 @@ fn append_release_index_human_notes<'a>(
     } else {
         format!("{human} (release index: {})", notes.join(", "))
     }
+}
+
+fn preflight_update_selectors(
+    selectors: Vec<String>,
+    allow_legacy_stored_linked_names: bool,
+) -> Result<Vec<(String, RuntimeSelector)>> {
+    selectors
+        .into_iter()
+        .map(|selector| {
+            parse_update_selector(&selector, allow_legacy_stored_linked_names)
+                .map(|parsed| (selector, parsed))
+        })
+        .collect()
 }
 
 fn selectors_for_update(app: &NodeupApp) -> Result<(Vec<String>, UpdateSelectorContext)> {

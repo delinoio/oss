@@ -17,6 +17,8 @@ Use `current` in examples and automation when you want the newest release-index 
 
 Linked runtime names must match `[A-Za-z0-9][A-Za-z0-9_-]*`. Selector names are case-sensitive, but linked names that differ from reserved channels only by case, such as `LTS`, `Current`, or `LATEST`, are rejected to avoid confusing them with `lts`, `current`, and `latest`.
 
+Multi-selector `toolchain install` and explicit `update` commands validate every requested selector before resolving channels or installing runtimes. A later invalid selector prevents earlier valid selectors in the same invocation from mutating local runtime state.
+
 ## Precedence
 
 Runtime resolution follows this order:

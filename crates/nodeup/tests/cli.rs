@@ -5837,6 +5837,103 @@ fn toolchain_install_rejects_missing_linked_runtime_selector_before_lookup() {
 
 #[test]
 #[serial]
+fn toolchain_install_preflights_all_selectors_before_installing() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "install",
+            "current",
+            "linked-name",
+        ])
+        .output()
+        .expect("toolchain install current linked-name");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("selector=linked-name"));
+    assert!(!env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn toolchain_install_preflights_reserved_case_channel_variants() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["toolchain", "install", "current", "LTS"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "Reserved channel selectors are case-sensitive",
+        ));
+
+    assert!(!env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn toolchain_install_valid_multi_selector_installs_each_target() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", None), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "toolchain",
+            "install",
+            "22.1.0",
+            "current",
+        ])
+        .output()
+        .expect("toolchain install valid multi-selector");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("install JSON array");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["runtime"], "v22.1.0");
+    assert_eq!(entries[1]["runtime"], "v24.0.0");
+    assert!(env.data_root.join("toolchains").join("v22.1.0").exists());
+    assert!(env.data_root.join("toolchains").join("v24.0.0").exists());
+}
+
+#[test]
+#[serial]
 fn toolchain_uninstall_requires_at_least_one_runtime_selector() {
     let env = TestEnv::new();
 
@@ -6039,6 +6136,94 @@ fn update_linked_selector_reports_skipped_status() {
     assert_eq!(entries[0]["status"], "skipped-linked-runtime");
     assert!(entries[0]["previous_runtime"].is_null());
     assert!(entries[0]["updated_runtime"].is_null());
+}
+
+#[test]
+#[serial]
+fn update_preflights_all_explicit_selectors_before_installing() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    let output = env
+        .command()
+        .args(["--output", "json", "update", "current", "LTS"])
+        .output()
+        .expect("update current LTS");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "invalid-input");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Reserved channel selectors are case-sensitive"));
+    assert!(!env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn update_preflights_alias_before_reserved_case_channel_variant() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "22.1.0",
+        make_archive("22.1.0", "linux-x64", &[("node", "#!/bin/sh\necho 22.1\n")]),
+        None,
+    );
+
+    env.command()
+        .args(["update", "latest", "Current"])
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(predicates::str::contains(
+            "Reserved channel selectors are case-sensitive",
+        ));
+
+    assert!(!env.data_root.join("toolchains").join("v22.1.0").exists());
+}
+
+#[test]
+#[serial]
+fn update_valid_multi_selector_preserves_channel_and_linked_behavior() {
+    let env = TestEnv::new();
+    env.register_index(&[("24.0.0", None), ("22.1.0", Some("Jod"))]);
+    env.register_release(
+        "24.0.0",
+        make_archive("24.0.0", "linux-x64", &[("node", "#!/bin/sh\necho 24\n")]),
+        None,
+    );
+
+    let output = env
+        .command()
+        .args([
+            "--output",
+            "json",
+            "update",
+            "current",
+            "linked-update-explicit",
+            "22.1.0",
+        ])
+        .output()
+        .expect("update valid multi-selector");
+    assert!(output.status.success());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let entries = payload.as_array().expect("update JSON array");
+    assert_eq!(entries.len(), 3);
+    assert_eq!(entries[0]["selector"], "current");
+    assert_eq!(entries[0]["status"], "updated");
+    assert_eq!(entries[0]["updated_runtime"], "v24.0.0");
+    assert_eq!(entries[1]["selector"], "linked-update-explicit");
+    assert_eq!(entries[1]["status"], "skipped-linked-runtime");
+    assert_eq!(entries[2]["selector"], "22.1.0");
+    assert_eq!(entries[2]["status"], "skipped-exact-version");
 }
 
 #[test]
