@@ -3245,6 +3245,45 @@ source = "github:owner/tool"
         .contains("tools.tool"));
 }
 
+#[test]
+fn local_remove_dry_run_json_reports_lockfile_only_tool() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");
+    fs::write(
+        project.join("binpm.lock"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+"#,
+    )
+    .expect("write lockfile");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["remove", "--local", "--dry-run", "tool", "--json"])
+        .output()
+        .expect("remove --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse remove json");
+    assert_eq!(payload["command"], "remove");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(payload["tools"].as_array().expect("tools").len(), 1);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "planned-remove");
+    assert_eq!(payload["tools"][0]["source"], "github:owner/tool");
+    assert!(fs::read_to_string(project.join("binpm.lock"))
+        .expect("read lockfile")
+        .contains("tools.tool"));
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
 #[test]
 fn local_remove_json_reports_removed_executable_path() {
@@ -3448,6 +3487,52 @@ version = "1.0.0"
     assert!(fs::read_to_string(project.join("binpm.toml"))
         .expect("read manifest")
         .contains("version = \"1.0.0\""));
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[test]
+fn local_update_dry_run_json_reports_target_override_binary_and_asset() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let home = temp_dir.path().join("binpm-home");
+    let project = temp_dir.path().join("project");
+    fs::create_dir_all(&project).expect("create project");
+    fs::write(
+        project.join("binpm.toml"),
+        r#"version = 1
+
+[tools.tool]
+source = "github:owner/tool"
+bin = "top-level-tool"
+
+[tools.tool.targets.linux-x86_64-gnu]
+asset = "tool-linux-x64.tar.gz"
+bin = "bin/tool"
+"#,
+    )
+    .expect("write manifest");
+
+    let output = binpm()
+        .current_dir(&project)
+        .env("BINPM_HOME", &home)
+        .args(["update", "--local", "--dry-run", "--json"])
+        .output()
+        .expect("update --json");
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("parse update json");
+    assert_eq!(payload["command"], "update");
+    assert_eq!(payload["scope"], "local");
+    assert_eq!(payload["dry_run"], true);
+    assert_eq!(payload["tools"][0]["cmd"], "tool");
+    assert_eq!(payload["tools"][0]["action"], "planned-update");
+    assert_eq!(
+        payload["tools"][0]["selected_asset"],
+        "tool-linux-x64.tar.gz"
+    );
+    assert_eq!(payload["tools"][0]["selected_binary"], "bin/tool");
+    assert!(!project.join("binpm.lock").exists());
+    assert!(!project.join(".binpm").exists());
 }
 
 #[test]

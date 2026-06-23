@@ -586,9 +586,9 @@ fn add(args: AddArgs, output: OutputMode) -> Result<i32> {
                         .tools
                         .get(cmd)
                         .expect("selected command was inserted into manifest");
-                    mutation_tool_from_manifest_tool(cmd, tool, MutationAction::Declared)
+                    mutation_tool_from_manifest_tool(cmd, tool, MutationAction::Declared, None)
                 })
-                .collect(),
+                .collect::<Result<Vec<_>>>()?,
         };
         if output.is_json() {
             return print_json(&result);
@@ -1304,11 +1304,28 @@ fn preview_remove(scope: Scope, cmd: &str, output: OutputMode) -> Result<Mutatio
                 .package_record
                 .as_ref()
                 .map(|record| mutation_tool_from_record(cmd, MutationAction::PlannedRemove, record))
+                .map(Ok)
                 .or_else(|| {
                     manifest.tools.get(cmd).map(|tool| {
-                        mutation_tool_from_manifest_tool(cmd, tool, MutationAction::PlannedRemove)
+                        let target = HostTarget::current()?;
+                        mutation_tool_from_manifest_tool(
+                            cmd,
+                            tool,
+                            MutationAction::PlannedRemove,
+                            Some(&target),
+                        )
                     })
                 })
+                .or_else(|| {
+                    prior_state.lockfile.tools.get(cmd).map(|tool| {
+                        Ok(mutation_tool_from_lock_tool(
+                            cmd,
+                            tool,
+                            MutationAction::PlannedRemove,
+                        ))
+                    })
+                })
+                .transpose()?
                 .into_iter()
                 .collect();
             let result = MutationOutput {
@@ -1442,14 +1459,20 @@ fn preview_local_update_result(selected: &[String]) -> Result<MutationOutput> {
     validate_selected_manifest_entries(&manifest, selected)?;
     ensure_no_selected_install_path_collisions(&manifest, selected)?;
 
+    let current_target = HostTarget::current()?;
     let tools = manifest
         .tools
         .iter()
         .filter(|(cmd, _)| selected.is_empty() || selected.contains(cmd))
         .map(|(cmd, tool)| {
-            mutation_tool_from_manifest_tool(cmd, tool, MutationAction::PlannedUpdate)
+            mutation_tool_from_manifest_tool(
+                cmd,
+                tool,
+                MutationAction::PlannedUpdate,
+                Some(&current_target),
+            )
         })
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
     let lockfile = read_lockfile(&root.join(LOCKFILE_FILE))?;
     let mut changed_files = if manifest.tools.is_empty()
         && local_manifest_orphan_cmds(&root, &lockfile, &manifest.tools)?.is_empty()
@@ -5561,19 +5584,26 @@ fn mutation_tool_from_manifest_tool(
     cmd: &str,
     tool: &ManifestTool,
     action: MutationAction,
-) -> MutationToolOutput {
-    MutationToolOutput {
+    target: Option<&HostTarget>,
+) -> Result<MutationToolOutput> {
+    let target_override = target
+        .map(|target| manifest_target_override(Some(tool), target))
+        .transpose()?
+        .flatten();
+    Ok(MutationToolOutput {
         cmd: cmd.to_string(),
         action,
         source: Some(tool.source.clone()),
         requested_version: tool.version.clone(),
         release_tag: None,
-        selected_asset: None,
-        selected_binary: tool.bin.clone(),
+        selected_asset: target_override.map(|override_target| override_target.asset.clone()),
+        selected_binary: target_override
+            .map(|override_target| override_target.bin.clone())
+            .or_else(|| tool.bin.clone()),
         installed_path: None,
         checksum_source: None,
         verification: None,
-    }
+    })
 }
 
 fn mutation_tool_from_record(
@@ -6661,19 +6691,23 @@ fn remove_local_tool(cmd: &str, output: OutputMode) -> Result<MutationOutput> {
         .package_record
         .as_ref()
         .map(|record| mutation_tool_from_record(cmd, MutationAction::Removed, record))
+        .map(Ok)
         .or_else(|| {
-            manifest
-                .tools
-                .get(cmd)
-                .map(|tool| mutation_tool_from_manifest_tool(cmd, tool, MutationAction::Removed))
+            manifest.tools.get(cmd).map(|tool| {
+                let target = HostTarget::current()?;
+                mutation_tool_from_manifest_tool(cmd, tool, MutationAction::Removed, Some(&target))
+            })
         })
         .or_else(|| {
-            prior_state
-                .lockfile
-                .tools
-                .get(cmd)
-                .map(|tool| mutation_tool_from_lock_tool(cmd, tool, MutationAction::Removed))
+            prior_state.lockfile.tools.get(cmd).map(|tool| {
+                Ok(mutation_tool_from_lock_tool(
+                    cmd,
+                    tool,
+                    MutationAction::Removed,
+                ))
+            })
         })
+        .transpose()?
         .into_iter()
         .collect();
     let record_path = package_record_path(&paths, cmd);
