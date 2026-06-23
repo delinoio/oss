@@ -1475,10 +1475,10 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
         Some(selection) => selection.decisions.clone(),
         None => crate::assets::score_assets(spec.provider, &target, &selection.release.assets),
     };
+    let release_tag = selection.release.tag.clone();
 
     if output.is_json() {
         let release_api = release_api_url(&spec);
-        let release_tag = selection.release.tag;
         return print_json(&ExplainOutput::Source {
             command: "explain",
             read_only: true,
@@ -1537,18 +1537,25 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
     }
 
     match asset_selection {
-        Some(selection) => {
-            println!("selected_asset: {}", selection.selected.asset_name);
+        Some(asset_selection) => {
+            println!("selected_asset: {}", asset_selection.selected.asset_name);
             println!(
                 "selected_asset_url: {}",
-                selected_asset_display_url(&selection.selected)?
+                selected_asset_display_url(&asset_selection.selected)?
             );
             println!(
                 "selected_asset_score: {}",
-                selection.selected.score.unwrap_or_default()
+                asset_selection.selected.score.unwrap_or_default()
             );
-            for decision in selection.decisions {
-                println!("{}", decision.explain_line());
+            for decision in &asset_selection.decisions {
+                for line in candidate_explain_lines(
+                    decision,
+                    &selection.release.assets,
+                    &spec,
+                    &release_tag,
+                ) {
+                    println!("{line}");
+                }
             }
             println!("override_snippet_unverified:");
             println!(
@@ -1560,8 +1567,8 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
                 target_override_snippet(
                     repo_name(&spec),
                     &target,
-                    &selection.selected.asset_name,
-                    &override_snippet_bin(&spec, &selection.selected),
+                    &asset_selection.selected.asset_name,
+                    &override_snippet_bin(&spec, &asset_selection.selected),
                     None,
                 )
             );
@@ -1569,7 +1576,14 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
         None => {
             println!("selected_asset: <none>");
             for decision in &all_decisions {
-                println!("{}", decision.explain_line());
+                for line in candidate_explain_lines(
+                    decision,
+                    &selection.release.assets,
+                    &spec,
+                    &release_tag,
+                ) {
+                    println!("{line}");
+                }
             }
             for line in release_diagnostic_lines(&all_decisions, &target) {
                 println!("{line}");
@@ -1596,6 +1610,28 @@ fn explain_source(spec: SourceSpec, target: HostTarget, output: OutputMode) -> R
     }
 
     Ok(0)
+}
+
+fn candidate_explain_lines(
+    decision: &CandidateDecision,
+    assets: &[ReleaseAsset],
+    spec: &SourceSpec,
+    release_tag: &str,
+) -> Vec<String> {
+    let mut lines = vec![decision.explain_line()];
+    let sidecars = unsupported_verification_sidecars_for_candidate(
+        &decision.asset_name,
+        assets,
+        spec,
+        release_tag,
+    );
+    if !sidecars.is_empty() {
+        lines.push(format!(
+            "unsupported_verification_sidecars: {}",
+            unsupported_sidecar_names(&sidecars).join(", ")
+        ));
+    }
+    lines
 }
 
 fn release_diagnostic_lines(decisions: &[CandidateDecision], target: &HostTarget) -> Vec<String> {
@@ -2912,8 +2948,8 @@ fn install_resolved(
             unsupported_sidecars: resolved.unsupported_verification_sidecars.clone(),
         });
     }
+    warn_unsupported_verification_sidecars(spec, &resolved.unsupported_verification_sidecars);
     if resolved.checksum_source == ChecksumSource::Local {
-        warn_unsupported_verification_sidecars(spec, &resolved.unsupported_verification_sidecars);
         eprintln!(
             "warning: no upstream checksum or verified signature was available for {}; using a \
              locally computed SHA-256",
@@ -7582,15 +7618,16 @@ mod tests {
     use super::{
         add_unsupported_signature_sidecar_without_policy, assert_local_runtime_records_complete,
         assert_lock_matches_manifest_tool, assert_lock_record_matches_source_and_target,
-        assert_runtime_record_matches_lock, binpm_home_from_values, candidate_output,
-        capture_local_remove_state, capture_runtime_tool_state, checksum_digest_from_text,
-        checksum_manifest_candidates, checksum_sidecar_candidates, cleanup_failed_install_cache,
-        commit_deferred_cache_hit, deterministic_installed_path, download_asset_name,
-        download_initial_capacity, ensure_no_package_record_install_path_collision,
-        execute_command, format_download_progress, format_outdated_tool_line, github_sha256_digest,
-        global_update_selected_binary, has_current_cache_record, has_local_runtime_or_lock_state,
-        install_local_from_lock, install_path_collision_key, is_retryable_status,
-        local_manifest_orphan_cmds, local_runtime_lock_records, local_tool_execution_ready,
+        assert_runtime_record_matches_lock, binpm_home_from_values, candidate_explain_lines,
+        candidate_output, capture_local_remove_state, capture_runtime_tool_state,
+        checksum_digest_from_text, checksum_manifest_candidates, checksum_sidecar_candidates,
+        cleanup_failed_install_cache, commit_deferred_cache_hit, deterministic_installed_path,
+        download_asset_name, download_initial_capacity,
+        ensure_no_package_record_install_path_collision, execute_command, format_download_progress,
+        format_outdated_tool_line, github_sha256_digest, global_update_selected_binary,
+        has_current_cache_record, has_local_runtime_or_lock_state, install_local_from_lock,
+        install_path_collision_key, is_retryable_status, local_manifest_orphan_cmds,
+        local_runtime_lock_records, local_tool_execution_ready,
         local_update_manifest_with_latest_versions_from, lock_targets_conflict_with_manifest,
         lock_targets_conflict_with_record, locked_record_download_request,
         locked_record_signature_sidecar, locked_record_verified_download_request,
@@ -10681,6 +10718,51 @@ mod tests {
         assert_eq!(
             output.unsupported_verification_sidecars[0].kind,
             UnsupportedVerificationSidecarKind::GpgSignature
+        );
+    }
+
+    #[test]
+    fn explain_human_candidate_lines_report_unsupported_verification_sidecars() {
+        let target = linux_target();
+        let assets = [
+            ReleaseAsset {
+                name: "tool-x86_64-unknown-linux-gnu.tar.gz".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz"
+                    .to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            },
+            ReleaseAsset {
+                name: "tool-x86_64-unknown-linux-gnu.tar.gz.asc".to_string(),
+                url: "https://github.com/owner/tool/releases/download/1.0.0/tool.tar.gz.asc"
+                    .to_string(),
+                provider_url: None,
+                download_url: None,
+                download_auth: None,
+                download_accept: None,
+                digest: None,
+                source_archive: false,
+                final_url_https: None,
+                final_url: None,
+            },
+        ];
+        let selection =
+            crate::assets::select_asset(SourceProvider::GitHub, &target, &assets).expect("asset");
+        let spec = SourceSpec::from_str("github:owner/tool@1.0.0").expect("source");
+
+        let lines = candidate_explain_lines(&selection.selected, &assets, &spec, "1.0.0");
+
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].starts_with("candidate tool-x86_64-unknown-linux-gnu.tar.gz"));
+        assert_eq!(
+            lines[1],
+            "unsupported_verification_sidecars: tool-x86_64-unknown-linux-gnu.tar.gz.asc"
         );
     }
 
