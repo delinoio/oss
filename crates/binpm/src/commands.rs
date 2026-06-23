@@ -6935,7 +6935,8 @@ fn shell_from_program(program: &std::ffi::OsStr) -> Option<Shell> {
         "bash" => Some(Shell::Bash),
         "zsh" => Some(Shell::Zsh),
         "fish" => Some(Shell::Fish),
-        "powershell" | "pwsh" => Some(Shell::Powershell),
+        "powershell" => Some(Shell::Powershell),
+        "pwsh" => Some(Shell::Pwsh),
         "cmd" => Some(Shell::Cmd),
         _ => None,
     }
@@ -6972,7 +6973,7 @@ fn print_env(
                 println!("set -gx PATH {local} $PATH");
             }
         }
-        Shell::Powershell => {
+        Shell::Powershell | Shell::Pwsh => {
             if matches!(scope, EnvPathScope::Both | EnvPathScope::Global) {
                 let global = shell_quote(shell, global_bin.expect("global bin path for env scope"));
                 println!("# Global bin: persist this line in shell profiles");
@@ -7012,7 +7013,7 @@ fn profile_setup_plan(shell: Shell, global_bin: &Path) -> Result<ProfileSetupPla
 fn profile_path(shell: Shell) -> Result<PathBuf> {
     let home = profile_home(shell)?;
     match shell {
-        Shell::Bash => Ok(home.join(".bashrc")),
+        Shell::Bash => Ok(home.join(bash_profile_name())),
         Shell::Zsh => Ok(home.join(".zshrc")),
         Shell::Fish => Ok(home
             .join(".config")
@@ -7021,9 +7022,13 @@ fn profile_path(shell: Shell) -> Result<PathBuf> {
             .join("binpm.fish")),
         Shell::Powershell if cfg!(windows) => Ok(home
             .join("Documents")
+            .join("WindowsPowerShell")
+            .join("Microsoft.PowerShell_profile.ps1")),
+        Shell::Pwsh if cfg!(windows) => Ok(home
+            .join("Documents")
             .join("PowerShell")
             .join("Microsoft.PowerShell_profile.ps1")),
-        Shell::Powershell => Ok(home
+        Shell::Powershell | Shell::Pwsh => Ok(home
             .join(".config")
             .join("powershell")
             .join("Microsoft.PowerShell_profile.ps1")),
@@ -7033,10 +7038,20 @@ fn profile_path(shell: Shell) -> Result<PathBuf> {
     }
 }
 
+fn bash_profile_name() -> &'static str {
+    if cfg!(target_os = "macos") {
+        ".bash_profile"
+    } else {
+        ".bashrc"
+    }
+}
+
 fn profile_home(shell: Shell) -> Result<PathBuf> {
     let home = match shell {
-        Shell::Powershell if cfg!(windows) => env_path("USERPROFILE").or_else(|| env_path("HOME")),
-        Shell::Powershell => env_path("HOME"),
+        Shell::Powershell | Shell::Pwsh if cfg!(windows) => {
+            env_path("USERPROFILE").or_else(|| env_path("HOME"))
+        }
+        Shell::Powershell | Shell::Pwsh => env_path("HOME"),
         Shell::Bash | Shell::Zsh | Shell::Fish => env_path("HOME"),
         Shell::Cmd => None,
     };
@@ -7076,7 +7091,7 @@ fn global_profile_path_line(shell: Shell, global_bin: &Path) -> String {
     match shell {
         Shell::Bash | Shell::Zsh => format!("export PATH={global}${{PATH:+:$PATH}}"),
         Shell::Fish => format!("set -gx PATH {global} $PATH"),
-        Shell::Powershell => format!(
+        Shell::Powershell | Shell::Pwsh => format!(
             "$env:PATH = {global} + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + \
              $env:PATH }} else {{ '' }})"
         ),
@@ -7099,7 +7114,7 @@ fn ensure_supported_profile(shell: Shell, profile: &Path) -> Result<()> {
             message: "profile parent exists but is not a directory".to_string(),
         });
     }
-    if !parent.exists() && !matches!(shell, Shell::Fish | Shell::Powershell) {
+    if !parent.exists() && !matches!(shell, Shell::Fish | Shell::Powershell | Shell::Pwsh) {
         return Err(BinpmError::ProfileSetupRefused {
             shell: shell.as_str(),
             path: profile.to_path_buf(),
@@ -7228,7 +7243,7 @@ fn shell_quote(shell: Shell, path: &Path) -> String {
     match shell {
         Shell::Bash | Shell::Zsh => posix_single_quote(&raw),
         Shell::Fish => fish_single_quote(&raw),
-        Shell::Powershell => powershell_single_quote(&raw),
+        Shell::Powershell | Shell::Pwsh => powershell_single_quote(&raw),
         Shell::Cmd => unreachable!("cmd shell is explicitly deferred before quoting"),
     }
 }
@@ -7238,7 +7253,7 @@ fn shell_path(shell: Shell, raw: &str) -> String {
         Shell::Bash | Shell::Zsh => {
             windows_path_for_posix_shell(raw).unwrap_or_else(|| raw.to_owned())
         }
-        Shell::Fish | Shell::Powershell => raw.to_owned(),
+        Shell::Fish | Shell::Powershell | Shell::Pwsh => raw.to_owned(),
         Shell::Cmd => unreachable!("cmd shell is explicitly deferred before path rendering"),
     }
 }
@@ -12554,6 +12569,14 @@ mod tests {
     fn powershell_env_preserves_windows_paths() {
         assert_eq!(
             shell_path(Shell::Powershell, r"C:\Users\me\.binpm\bin"),
+            r"C:\Users\me\.binpm\bin"
+        );
+    }
+
+    #[test]
+    fn pwsh_env_preserves_windows_paths() {
+        assert_eq!(
+            shell_path(Shell::Pwsh, r"C:\Users\me\.binpm\bin"),
             r"C:\Users\me\.binpm\bin"
         );
     }

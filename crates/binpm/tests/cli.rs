@@ -969,7 +969,7 @@ fn env_setup_supports_powershell_profile_fixture() {
     #[cfg(windows)]
     let profile = userprofile
         .join("Documents")
-        .join("PowerShell")
+        .join("WindowsPowerShell")
         .join("Microsoft.PowerShell_profile.ps1");
     #[cfg(not(windows))]
     let profile = home_dir
@@ -995,6 +995,79 @@ fn env_setup_supports_powershell_profile_fixture() {
 
     let contents = fs::read_to_string(&profile).expect("read powershell profile");
     assert!(contents.contains(&expected_line));
+}
+
+#[test]
+fn env_setup_supports_pwsh_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let userprofile = temp_dir.path().join("userprofile");
+    fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let global_bin = binpm_home.join("bin");
+    #[cfg(windows)]
+    let profile = userprofile
+        .join("Documents")
+        .join("PowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    #[cfg(not(windows))]
+    let profile = home_dir
+        .join(".config")
+        .join("powershell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let expected_line = format!(
+        "$env:PATH = '{}' + $(if ($env:PATH) {{ [System.IO.Path]::PathSeparator + $env:PATH }} \
+         else {{ '' }})",
+        global_bin.display()
+    );
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "pwsh"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    let contents = fs::read_to_string(&profile).expect("read pwsh profile");
+    assert!(contents.contains(&expected_line));
+}
+
+#[cfg(windows)]
+#[test]
+fn env_setup_powershell_uses_windows_powershell_profile_fixture() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let userprofile = temp_dir.path().join("userprofile");
+    fs::create_dir_all(&userprofile).expect("userprofile dir");
+    let home_dir = temp_dir.path().join("home");
+    fs::create_dir_all(&home_dir).expect("home dir");
+    let binpm_home = temp_dir.path().join("binpm-home");
+    let windows_powershell_profile = userprofile
+        .join("Documents")
+        .join("WindowsPowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let pwsh_profile = userprofile
+        .join("Documents")
+        .join("PowerShell")
+        .join("Microsoft.PowerShell_profile.ps1");
+    let mut command = binpm();
+
+    command
+        .env_clear()
+        .env("USERPROFILE", &userprofile)
+        .env("HOME", &home_dir)
+        .env("BINPM_HOME", &binpm_home)
+        .args(["env", "setup", "--shell", "powershell"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: appended"));
+
+    assert!(windows_powershell_profile.is_file());
+    assert!(!pwsh_profile.exists());
 }
 
 #[test]

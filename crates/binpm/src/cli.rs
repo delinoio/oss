@@ -416,8 +416,8 @@ pub enum Shell {
     Bash,
     Zsh,
     Fish,
-    #[value(alias = "pwsh")]
     Powershell,
+    Pwsh,
     Cmd,
 }
 
@@ -428,6 +428,7 @@ impl Shell {
             Self::Zsh => "zsh",
             Self::Fish => "fish",
             Self::Powershell => "powershell",
+            Self::Pwsh => "pwsh",
             Self::Cmd => "cmd",
         }
     }
@@ -677,11 +678,11 @@ mod tests {
     }
 
     #[test]
-    fn parses_env_pwsh_alias_as_powershell() {
+    fn parses_env_pwsh_shell() {
         let cli = Cli::parse_from(["binpm", "env", "--shell", "pwsh"]);
 
         match cli.command {
-            Command::Env(args) => assert_eq!(args.shell, Some(Shell::Powershell)),
+            Command::Env(args) => assert_eq!(args.shell, Some(Shell::Pwsh)),
             other => panic!("unexpected command: {other:?}"),
         }
     }
