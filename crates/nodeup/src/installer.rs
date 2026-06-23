@@ -102,7 +102,20 @@ impl RuntimeInstaller {
         let shasums_content = release_client
             .http()
             .get(&shasums_url)
-            .send()?
+            .send()
+            .map_err(|error| {
+                network_error_with_optional_mirror_diagnostics(
+                    release_client,
+                    format!(
+                        "Failed to fetch SHASUMS256.txt (runtime={canonical_version}, \
+                         url={shasums_url_sanitized}, {})",
+                        reqwest_error_context(&error)
+                    ),
+                    "Check network connectivity and retry the install command.",
+                    &canonical_version,
+                    archive_filename,
+                )
+            })?
             .error_for_status()
             .map_err(|error| {
                 let status = error
@@ -214,7 +227,19 @@ fn download_file(
     let mut response = release_client
         .http()
         .get(url)
-        .send()?
+        .send()
+        .map_err(|error| {
+            network_error_with_optional_mirror_diagnostics(
+                release_client,
+                format!(
+                    "Download request failed (url={sanitized_url}, {})",
+                    reqwest_error_context(&error)
+                ),
+                "Check network connectivity and retry the command.",
+                runtime,
+                archive,
+            )
+        })?
         .error_for_status()
         .map_err(|error| {
             let status = error

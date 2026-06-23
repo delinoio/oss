@@ -4,6 +4,7 @@ use std::{
     collections::HashMap,
     fs,
     io::Write,
+    net::TcpListener,
     path::{Path, PathBuf},
 };
 
@@ -50,6 +51,13 @@ fn path_string_ends_with_components(path: &str, suffix: &[&str]) -> bool {
     let normalized = path.replace('\\', "/");
     let components = normalized.split('/').collect::<Vec<_>>();
     components.ends_with(suffix)
+}
+
+fn closed_loopback_download_base_url() -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    format!("http://user:secret@{address}/download/release")
 }
 
 impl TestEnv {
@@ -4920,6 +4928,51 @@ fn download_failure_json_includes_sanitized_mirror_diagnostics() {
     assert!(!stderr.contains("secret"));
     assert!(!stderr.contains("token="));
     assert!(!stderr.contains("fragment"));
+}
+
+#[test]
+#[serial]
+fn archive_send_failure_json_includes_sanitized_mirror_diagnostics() {
+    let env = TestEnv::new();
+    env.register_index(&[("22.1.0", Some("Jod"))]);
+
+    let download_base_url = closed_loopback_download_base_url();
+
+    let output = env
+        .command()
+        .env("NODEUP_DOWNLOAD_BASE_URL", &download_base_url)
+        .args(["--output", "json", "toolchain", "install", "22.1.0"])
+        .output()
+        .expect("install archive send failure json diagnostics");
+
+    assert_eq!(output.status.code(), Some(4));
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["kind"], "network");
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("Download request failed"));
+    assert!(payload["message"]
+        .as_str()
+        .unwrap()
+        .contains("verify NODEUP_INDEX_URL and NODEUP_DOWNLOAD_BASE_URL"));
+    assert_eq!(payload["diagnostics"]["index_url"], env.index_url);
+    assert_eq!(
+        payload["diagnostics"]["download_base_url"],
+        download_base_url.replace("user:secret@", "")
+    );
+    assert_eq!(payload["diagnostics"]["index_url_source"], "env");
+    assert_eq!(payload["diagnostics"]["download_base_url_source"], "env");
+    assert_eq!(payload["diagnostics"]["mirror_override_present"], true);
+    assert!(payload["diagnostics"]["mirror_mismatch_indicators"]
+        .as_array()
+        .unwrap()
+        .contains(&Value::String("different-host".to_string())));
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("secret"));
 }
 
 #[test]
